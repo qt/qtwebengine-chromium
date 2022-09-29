@@ -166,7 +166,8 @@ bool CPVT_VariableText::Iterator::GetLine(CPVT_Line& line) const {
   return true;
 }
 
-CPVT_VariableText::CPVT_VariableText() = default;
+CPVT_VariableText::CPVT_VariableText(Provider* pProvider)
+    : m_pVTProvider(pProvider) {}
 
 CPVT_VariableText::~CPVT_VariableText() = default;
 
@@ -305,7 +306,7 @@ void CPVT_VariableText::SetText(const WideString& swText) {
 void CPVT_VariableText::UpdateWordPlace(CPVT_WordPlace& place) const {
   if (place.nSecIndex < 0)
     place = GetBeginWordPlace();
-  if (place.nSecIndex >= fxcrt::CollectionSize<int32_t>(m_SectionArray))
+  if (static_cast<size_t>(place.nSecIndex) >= m_SectionArray.size())
     place = GetEndWordPlace();
 
   place = PrevLineHeaderPlace(place);
@@ -337,8 +338,7 @@ CPVT_WordPlace CPVT_VariableText::WordIndexToWordPlace(int32_t index) const {
   int32_t nOldIndex = 0;
   int32_t nIndex = 0;
   bool bFound = false;
-  for (int32_t i = 0, sz = fxcrt::CollectionSize<int32_t>(m_SectionArray);
-       i < sz; i++) {
+  for (size_t i = 0; i < m_SectionArray.size(); ++i) {
     CPVT_Section* pSection = m_SectionArray[i].get();
     nIndex += pSection->GetWordArraySize();
     if (nIndex == index) {
@@ -347,13 +347,13 @@ CPVT_WordPlace CPVT_VariableText::WordIndexToWordPlace(int32_t index) const {
       break;
     }
     if (nIndex > index) {
-      place.nSecIndex = i;
+      place.nSecIndex = pdfium::base::checked_cast<int32_t>(i);
       place.nWordIndex = index - nOldIndex - 1;
       pSection->UpdateWordPlace(place);
       bFound = true;
       break;
     }
-    if (i != sz - 1)
+    if (i != m_SectionArray.size() - 1)
       nIndex += kReturnLength;
     nOldIndex = nIndex;
   }
@@ -376,7 +376,7 @@ CPVT_WordPlace CPVT_VariableText::GetPrevWordPlace(
     const CPVT_WordPlace& place) const {
   if (place.nSecIndex < 0)
     return GetBeginWordPlace();
-  if (place.nSecIndex >= fxcrt::CollectionSize<int32_t>(m_SectionArray))
+  if (static_cast<size_t>(place.nSecIndex) >= m_SectionArray.size())
     return GetEndWordPlace();
 
   CPVT_Section* pSection = m_SectionArray[place.nSecIndex].get();
@@ -391,7 +391,7 @@ CPVT_WordPlace CPVT_VariableText::GetNextWordPlace(
     const CPVT_WordPlace& place) const {
   if (place.nSecIndex < 0)
     return GetBeginWordPlace();
-  if (place.nSecIndex >= fxcrt::CollectionSize<int32_t>(m_SectionArray))
+  if (static_cast<size_t>(place.nSecIndex) >= m_SectionArray.size())
     return GetEndWordPlace();
 
   CPVT_Section* pSection = m_SectionArray[place.nSecIndex].get();
@@ -866,7 +866,7 @@ CPVT_VariableText::Iterator* CPVT_VariableText::GetIterator() {
   return m_pVTIterator.get();
 }
 
-void CPVT_VariableText::SetProvider(CPVT_VariableText::Provider* pProvider) {
+void CPVT_VariableText::SetProvider(Provider* pProvider) {
   m_pVTProvider = pProvider;
 }
 

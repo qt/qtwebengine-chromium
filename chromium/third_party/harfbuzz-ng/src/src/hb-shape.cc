@@ -50,7 +50,7 @@
 
 static inline void free_static_shaper_list ();
 
-static const char *nil_shaper_list[] = {nullptr};
+static const char * const nil_shaper_list[] = {nullptr};
 
 static struct hb_shaper_list_lazy_loader_t : hb_lazy_loader_t<const char *,
 							      hb_shaper_list_lazy_loader_t>
@@ -73,7 +73,7 @@ static struct hb_shaper_list_lazy_loader_t : hb_lazy_loader_t<const char *,
   }
   static void destroy (const char **l)
   { hb_free (l); }
-  static const char ** get_null ()
+  static const char * const * get_null ()
   { return nil_shaper_list; }
 } static_shaper_list;
 
@@ -106,12 +106,12 @@ hb_shape_list_shapers ()
  * @font: an #hb_font_t to use for shaping
  * @buffer: an #hb_buffer_t to shape
  * @features: (array length=num_features) (nullable): an array of user
- *    specified #hb_feature_t or %NULL
+ *    specified #hb_feature_t or `NULL`
  * @num_features: the length of @features array
- * @shaper_list: (array zero-terminated=1) (nullable): a %NULL-terminated
- *    array of shapers to use or %NULL
+ * @shaper_list: (array zero-terminated=1) (nullable): a `NULL`-terminated
+ *    array of shapers to use or `NULL`
  *
- * See hb_shape() for details. If @shaper_list is not %NULL, the specified
+ * See hb_shape() for details. If @shaper_list is not `NULL`, the specified
  * shapers will be used in the given order, otherwise the default shapers list
  * will be used.
  *
@@ -173,11 +173,11 @@ hb_shape_full (hb_font_t          *font,
  * @font: an #hb_font_t to use for shaping
  * @buffer: an #hb_buffer_t to shape
  * @features: (array length=num_features) (nullable): an array of user
- *    specified #hb_feature_t or %NULL
+ *    specified #hb_feature_t or `NULL`
  * @num_features: the length of @features array
  *
  * Shapes @buffer using @font turning its Unicode characters content to
- * positioned glyphs. If @features is not %NULL, it will be used to control the
+ * positioned glyphs. If @features is not `NULL`, it will be used to control the
  * features applied during shaping. If two @features have the same tag but
  * overlapping ranges the value of the feature with the higher index takes
  * precedence.

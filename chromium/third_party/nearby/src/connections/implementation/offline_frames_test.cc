@@ -16,6 +16,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -111,12 +112,19 @@ TEST(OfflineFramesTest, CanGenerateConnectionRequest) {
         keep_alive_timeout_millis: 5000
       >
     >)pb";
-  ByteArray bytes = ForConnectionRequest(
-      std::string(kEndpointId), ByteArray{std::string(kEndpointName)}, kNonce,
-      kSupports5ghz, std::string(kBssid), kApFrequency, std::string(kIp4Bytes),
-      std::vector<Medium, std::allocator<Medium>>(kMediums.begin(),
-                                                  kMediums.end()),
-      kKeepAliveIntervalMillis, kKeepAliveTimeoutMillis);
+
+  ConnectionInfo connection_info{std::string(kEndpointId),
+                                 ByteArray{std::string(kEndpointName)},
+                                 kNonce,
+                                 kSupports5ghz,
+                                 std::string(kBssid),
+                                 kApFrequency,
+                                 std::string(kIp4Bytes),
+                                 std::vector<Medium, std::allocator<Medium>>(
+                                     kMediums.begin(), kMediums.end()),
+                                 kKeepAliveIntervalMillis,
+                                 kKeepAliveTimeoutMillis};
+  ByteArray bytes = ForConnectionRequest(connection_info);
   auto response = FromBytes(bytes);
   ASSERT_TRUE(response.ok());
   OfflineFrame message = FromBytes(bytes).result();
@@ -365,10 +373,14 @@ TEST(OfflineFramesTest, CanGenerateBwuIntroduction) {
       type: BANDWIDTH_UPGRADE_NEGOTIATION
       bandwidth_upgrade_negotiation: <
         event_type: CLIENT_INTRODUCTION
-        client_introduction: < endpoint_id: "ABC" >
+        client_introduction: < 
+          endpoint_id: "ABC"
+          supports_disabling_encryption: false
+        >
       >
     >)pb";
-  ByteArray bytes = ForBwuIntroduction(std::string(kEndpointId));
+  ByteArray bytes = ForBwuIntroduction(
+      std::string(kEndpointId), false /* supports_disabling_encryption */);
   auto response = FromBytes(bytes);
   ASSERT_TRUE(response.ok());
   OfflineFrame message = FromBytes(bytes).result();

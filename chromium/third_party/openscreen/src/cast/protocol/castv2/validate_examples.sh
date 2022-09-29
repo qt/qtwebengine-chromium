@@ -6,13 +6,11 @@
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-# NOTE: this is based on this script running from cast/protocol/castv2
-YAJSV_BIN="$SCRIPT_DIR/../../../tools/yajsv"
-
-if [ ! -f "$YAJSV_BIN" ]; then
-    echo "Could not find yajsv, please run tools/download-yajsv.py"
+YAJSV_BIN=$(which yajsv)
+if [ "$YAJSV_BIN" == "" ]; then
+  echo "Could not find yajsv, see the top-level README.md"
+  exit 1
 fi
-
 
 for filename in $SCRIPT_DIR/streaming_examples/*.json; do
 "$YAJSV_BIN" -s "$SCRIPT_DIR/streaming_schema.json" "$filename"

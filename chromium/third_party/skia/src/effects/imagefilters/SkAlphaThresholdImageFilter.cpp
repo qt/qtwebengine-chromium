@@ -24,7 +24,7 @@
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #if SK_GPU_V1
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #endif // SK_GPU_V1
 #endif // SK_SUPPORT_GPU
 
@@ -139,7 +139,7 @@ static std::unique_ptr<GrFragmentProcessor> make_alpha_threshold_fp(
         std::unique_ptr<GrFragmentProcessor> maskFP,
         float innerThreshold,
         float outerThreshold) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader maskFP;
         uniform half innerThreshold;
         uniform half outerThreshold;

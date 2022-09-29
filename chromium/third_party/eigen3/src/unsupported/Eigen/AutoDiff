@@ -10,6 +10,8 @@
 #ifndef EIGEN_AUTODIFF_MODULE_H
 #define EIGEN_AUTODIFF_MODULE_H
 
+#include "../../Eigen/Core"
+
 namespace Eigen {
 
 /**

@@ -47,11 +47,10 @@ struct Vendor {
 };
 
 #if DAWN_PLATFORM_IS(MACOS)
-const Vendor kVendors[] = {{"AMD", gpu_info::kVendorID_AMD},
-                           {"Radeon", gpu_info::kVendorID_AMD},
-                           {"Intel", gpu_info::kVendorID_Intel},
-                           {"Geforce", gpu_info::kVendorID_Nvidia},
-                           {"Quadro", gpu_info::kVendorID_Nvidia}};
+const Vendor kVendors[] = {
+    {"AMD", gpu_info::kVendorID_AMD},        {"Apple", gpu_info::kVendorID_Apple},
+    {"Radeon", gpu_info::kVendorID_AMD},     {"Intel", gpu_info::kVendorID_Intel},
+    {"Geforce", gpu_info::kVendorID_Nvidia}, {"Quadro", gpu_info::kVendorID_Nvidia}};
 
 // Find vendor ID from MTLDevice name.
 MaybeError GetVendorIdFromVendors(id<MTLDevice> device, PCIIDs* ids) {
@@ -147,28 +146,26 @@ MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
     // [device registryID] is introduced on macOS 10.13+, otherwise workaround to get vendor
     // id by vendor name on old macOS
     if (@available(macos 10.13, *)) {
-        return GetDeviceIORegistryPCIInfo(device, ids);
-    } else {
-        return GetVendorIdFromVendors(device, ids);
+        auto result = GetDeviceIORegistryPCIInfo(device, ids);
+        if (result.IsError()) {
+            dawn::WarningLog() << "GetDeviceIORegistryPCIInfo failed: "
+                               << result.AcquireError()->GetFormattedMessage();
+        } else if (ids->vendorId != 0) {
+            return result;
+        }
     }
+
+    return GetVendorIdFromVendors(device, ids);
 }
 
-bool IsMetalSupported() {
-    // Metal was first introduced in macOS 10.11
-    // WebGPU is targeted at macOS 10.12+
-    // TODO(dawn:1181): Dawn native should allow non-conformant WebGPU on macOS 10.11
-    return IsMacOSVersionAtLeast(10, 12);
-}
 #elif DAWN_PLATFORM_IS(IOS)
+
 MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
     DAWN_UNUSED(device);
     *ids = PCIIDs{0, 0};
     return {};
 }
 
-bool IsMetalSupported() {
-    return true;
-}
 #else
 #error "Unsupported Apple platform."
 #endif
@@ -366,7 +363,7 @@ class Adapter : public AdapterBase {
         }
 
         if (@available(macOS 10.11, iOS 11.0, *)) {
-            mSupportedFeatures.EnableFeature(Feature::DepthClamping);
+            mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
         }
 
         if (@available(macOS 10.11, iOS 9.0, *)) {
@@ -379,17 +376,37 @@ class Adapter : public AdapterBase {
             mSupportedFeatures.EnableFeature(Feature::MultiPlanarFormats);
         }
 
-#if DAWN_PLATFORM_IS(MACOS)
-        // MTLPixelFormatDepth24Unorm_Stencil8 is only available on macOS 10.11+
-        if ([*mDevice isDepth24Stencil8PixelFormatSupported]) {
-            mSupportedFeatures.EnableFeature(Feature::Depth24UnormStencil8);
-        }
-#endif
-
         mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
 
         return {};
     }
+
+    void InitializeVendorArchitectureImpl() override {
+        if (@available(macOS 10.15, iOS 13.0, *)) {
+            // According to Apple's documentation:
+            // https://developer.apple.com/documentation/metal/gpu_devices_and_work_submission/detecting_gpu_features_and_metal_software_versions
+            // - "Use the Common family to create apps that target a range of GPUs on multiple
+            //   platforms.""
+            // - "A GPU can be a member of more than one family; in most cases, a GPU supports one
+            //   of the Common families and then one or more families specific to the build target."
+            // So we'll use the highest supported common family as the reported "architecture" on
+            // devices where a deviceID isn't available.
+            if (mDeviceId == 0) {
+                if ([*mDevice supportsFamily:MTLGPUFamilyCommon3]) {
+                    mArchitectureName = "common-3";
+                } else if ([*mDevice supportsFamily:MTLGPUFamilyCommon2]) {
+                    mArchitectureName = "common-2";
+                } else if ([*mDevice supportsFamily:MTLGPUFamilyCommon1]) {
+                    mArchitectureName = "common-1";
+                }
+            }
+        }
+
+        mVendorName = gpu_info::GetVendorName(mVendorId);
+        if (mDeviceId != 0) {
+            mArchitectureName = gpu_info::GetArchitectureName(mVendorId, mDeviceId);
+        }
+    };
 
     enum class MTLGPUFamily {
         Apple1,
@@ -442,10 +459,8 @@ class Adapter : public AdapterBase {
                 return MTLGPUFamily::Mac2;
             }
         }
-        if (@available(macOS 10.11, *)) {
-            if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
-                return MTLGPUFamily::Mac1;
-            }
+        if ([*mDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v1]) {
+            return MTLGPUFamily::Mac1;
         }
 #elif TARGET_OS_IOS
         if (@available(iOS 10.11, *)) {
@@ -486,6 +501,7 @@ class Adapter : public AdapterBase {
             uint32_t max3DTextureSize;
             uint32_t maxTextureArrayLayers;
             uint32_t minBufferOffsetAlignment;
+            uint32_t maxColorRenderTargets;
         };
 
         struct LimitsForFamily {
@@ -497,7 +513,7 @@ class Adapter : public AdapterBase {
             // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
             //                                                               Apple                                                      Mac
             //                                                                   1,      2,      3,      4,      5,      6,      7,       1,      2
-            constexpr LimitsForFamily kMTLLimits[12] = {
+            constexpr LimitsForFamily kMTLLimits[13] = {
                 {&MTLDeviceLimits::maxVertexAttribsPerDescriptor,         {    31u,    31u,    31u,    31u,    31u,    31u,    31u,     31u,    31u }},
                 {&MTLDeviceLimits::maxBufferArgumentEntriesPerFunc,       {    31u,    31u,    31u,    31u,    31u,    31u,    31u,     31u,    31u }},
                 {&MTLDeviceLimits::maxTextureArgumentEntriesPerFunc,      {    31u,    31u,    31u,    96u,    96u,   128u,   128u,    128u,   128u }},
@@ -510,6 +526,7 @@ class Adapter : public AdapterBase {
                 {&MTLDeviceLimits::max3DTextureSize,                      {  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,   2048u,  2048u }},
                 {&MTLDeviceLimits::maxTextureArrayLayers,                 {  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,  2048u,   2048u,  2048u }},
                 {&MTLDeviceLimits::minBufferOffsetAlignment,              {     4u,     4u,     4u,     4u,     4u,     4u,     4u,    256u,   256u }},
+                {&MTLDeviceLimits::maxColorRenderTargets,                 {     4u,     8u,     8u,     8u,     8u,     8u,     8u,      8u,     8u }},
             };
         // clang-format on
 
@@ -527,6 +544,7 @@ class Adapter : public AdapterBase {
         limits->v1.maxTextureDimension2D = mtlLimits.max2DTextureSize;
         limits->v1.maxTextureDimension3D = mtlLimits.max3DTextureSize;
         limits->v1.maxTextureArrayLayers = mtlLimits.maxTextureArrayLayers;
+        limits->v1.maxColorAttachments = mtlLimits.maxColorRenderTargets;
 
         uint32_t maxBuffersPerStage = mtlLimits.maxBufferArgumentEntriesPerFunc;
         maxBuffersPerStage -= 1;  // One slot is reserved to store buffer lengths.
@@ -591,10 +609,13 @@ class Adapter : public AdapterBase {
         limits->v1.maxUniformBufferBindingSize = maxBufferSize;
         limits->v1.maxStorageBufferBindingSize = maxBufferSize;
 
+        // Using base limits for:
         // TODO(crbug.com/dawn/685):
-        // LIMITS NOT SET:
         // - maxBindGroups
         // - maxVertexBufferArrayStride
+
+        // TODO(crbug.com/dawn/1448):
+        // - maxInterStageShaderVariables
 
         return {};
     }
@@ -627,43 +648,30 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
     ASSERT(optionsBase->backendType == WGPUBackendType_Metal);
 
     std::vector<Ref<AdapterBase>> adapters;
-    BOOL supportedVersion = NO;
 #if DAWN_PLATFORM_IS(MACOS)
-    if (@available(macOS 10.11, *)) {
-        supportedVersion = YES;
+    NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
 
-        NSRef<NSArray<id<MTLDevice>>> devices = AcquireNSRef(MTLCopyAllDevices());
-
-        for (id<MTLDevice> device in devices.Get()) {
-            Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), device));
-            if (!GetInstance()->ConsumedError(adapter->Initialize())) {
-                adapters.push_back(std::move(adapter));
-            }
-        }
-    }
-#endif
-
-#if DAWN_PLATFORM_IS(IOS)
-    if (@available(iOS 8.0, *)) {
-        supportedVersion = YES;
-        // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
-        Ref<Adapter> adapter =
-            AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
+    for (id<MTLDevice> device in devices.Get()) {
+        Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), device));
         if (!GetInstance()->ConsumedError(adapter->Initialize())) {
             adapters.push_back(std::move(adapter));
         }
     }
 #endif
-    if (!supportedVersion) {
-        UNREACHABLE();
+
+    // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
+#if defined(DAWN_PLATFORM_IOS)
+    Ref<Adapter> adapter =
+        AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
+    if (!GetInstance()->ConsumedError(adapter->Initialize())) {
+        adapters.push_back(std::move(adapter));
     }
+#endif
+
     return adapters;
 }
 
 BackendConnection* Connect(InstanceBase* instance) {
-    if (!IsMetalSupported()) {
-        return nullptr;
-    }
     return new Backend(instance);
 }
 

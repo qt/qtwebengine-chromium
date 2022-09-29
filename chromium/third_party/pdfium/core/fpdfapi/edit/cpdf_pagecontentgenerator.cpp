@@ -103,7 +103,7 @@ CPDF_PageContentGenerator::GenerateModifiedStreams() {
     // Set the default graphic state values
     buf << "q\n";
     if (!m_pObjHolder->GetLastCTM().IsIdentity())
-      buf << m_pObjHolder->GetLastCTM().GetInverse() << " cm\n";
+      WriteMatrix(buf, m_pObjHolder->GetLastCTM().GetInverse()) << " cm\n";
 
     ProcessDefaultGraphics(&buf);
     streams[dirty_stream] = std::move(buf);
@@ -181,13 +181,13 @@ ByteString CPDF_PageContentGenerator::RealizeResource(
   DCHECK(pResource);
   if (!m_pObjHolder->GetResources()) {
     m_pObjHolder->SetResources(m_pDocument->NewIndirect<CPDF_Dictionary>());
-    m_pObjHolder->GetDict()->SetNewFor<CPDF_Reference>(
+    m_pObjHolder->GetMutableDict()->SetNewFor<CPDF_Reference>(
         "Resources", m_pDocument.Get(),
         m_pObjHolder->GetResources()->GetObjNum());
   }
 
-  CPDF_Dictionary* pResList =
-      GetOrCreateDict(m_pObjHolder->GetResources(), bsType);
+  RetainPtr<CPDF_Dictionary> pResList =
+      m_pObjHolder->GetMutableResources()->GetOrCreateDictFor(bsType);
   ByteString name;
   int idnum = 1;
   while (true) {
@@ -313,11 +313,12 @@ void CPDF_PageContentGenerator::ProcessImage(fxcrt::ostringstream* buf,
   if (pImage->IsInline())
     return;
 
-  CPDF_Stream* pStream = pImage->GetStream();
+  const CPDF_Stream* pStream = pImage->GetStream();
   if (!pStream)
     return;
 
-  *buf << "q " << pImageObj->matrix() << " cm ";
+  *buf << "q ";
+  WriteMatrix(*buf, pImageObj->matrix()) << " cm ";
 
   bool bWasInline = pStream->IsInline();
   if (bWasInline)
@@ -343,7 +344,8 @@ void CPDF_PageContentGenerator::ProcessForm(fxcrt::ostringstream* buf,
   if (!pStream)
     return;
 
-  *buf << "q\n" << pFormObj->form_matrix() << " cm ";
+  *buf << "q\n";
+  WriteMatrix(*buf, pFormObj->form_matrix()) << " cm ";
 
   ByteString name = RealizeResource(pStream, "XObject");
   *buf << "/" << PDF_NameEncode(name) << " Do Q\n";
@@ -362,14 +364,15 @@ void CPDF_PageContentGenerator::ProcessPathPoints(fxcrt::ostringstream* buf,
   pdfium::span<const CFX_Path::Point> points = pPath->GetPoints();
   if (pPath->IsRect()) {
     CFX_PointF diff = points[2].m_Point - points[0].m_Point;
-    *buf << points[0].m_Point << " " << diff << " re";
+    WritePoint(*buf, points[0].m_Point) << " ";
+    WritePoint(*buf, diff) << " re";
     return;
   }
   for (size_t i = 0; i < points.size(); ++i) {
     if (i > 0)
       *buf << " ";
 
-    *buf << points[i].m_Point;
+    WritePoint(*buf, points[i].m_Point);
 
     CFX_Path::Point::Type point_type = points[i].m_Type;
     if (point_type == CFX_Path::Point::Type::kMove) {
@@ -386,8 +389,8 @@ void CPDF_PageContentGenerator::ProcessPathPoints(fxcrt::ostringstream* buf,
         break;
       }
       *buf << " ";
-      *buf << points[i + 1].m_Point << " ";
-      *buf << points[i + 2].m_Point << " c";
+      WritePoint(*buf, points[i + 1].m_Point) << " ";
+      WritePoint(*buf, points[i + 2].m_Point) << " c";
       i += 2;
     }
     if (points[i].m_CloseFigure)
@@ -403,7 +406,7 @@ void CPDF_PageContentGenerator::ProcessPath(fxcrt::ostringstream* buf,
                                             CPDF_PathObject* pPathObj) {
   ProcessGraphics(buf, pPathObj);
 
-  *buf << pPathObj->matrix() << " cm ";
+  WriteMatrix(*buf, pPathObj->matrix()) << " cm ";
   ProcessPathPoints(buf, &pPathObj->path());
 
   if (pPathObj->has_no_filltype())
@@ -542,7 +545,8 @@ ByteString CPDF_PageContentGenerator::GetOrCreateDefaultGraphics() const {
 void CPDF_PageContentGenerator::ProcessText(fxcrt::ostringstream* buf,
                                             CPDF_TextObject* pTextObj) {
   ProcessGraphics(buf, pTextObj);
-  *buf << "BT " << pTextObj->GetTextMatrix() << " Tm ";
+  *buf << "BT ";
+  WriteMatrix(*buf, pTextObj->GetTextMatrix()) << " Tm ";
   RetainPtr<CPDF_Font> pFont(pTextObj->GetFont());
   if (!pFont)
     pFont = CPDF_Font::GetStockFont(m_pDocument.Get(), "Helvetica");
@@ -567,7 +571,7 @@ void CPDF_PageContentGenerator::ProcessText(fxcrt::ostringstream* buf,
   if (maybe_name.has_value()) {
     dictName = std::move(maybe_name.value());
   } else {
-    CPDF_Object* pIndirectFont = pFont->GetFontDict();
+    const CPDF_Object* pIndirectFont = pFont->GetFontDict();
     if (pIndirectFont->IsInline()) {
       // In this case we assume it must be a standard font
       auto pFontDict = pdfium::MakeRetain<CPDF_Dictionary>();

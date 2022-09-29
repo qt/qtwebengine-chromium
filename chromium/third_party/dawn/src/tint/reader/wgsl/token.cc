@@ -29,12 +29,16 @@ std::string_view Token::TypeToName(Type type) {
             return "abstract float literal";
         case Token::Type::kFloatLiteral_F:
             return "'f'-suffixed float literal";
+        case Token::Type::kFloatLiteral_H:
+            return "'h'-suffixed float literal";
         case Token::Type::kIntLiteral:
             return "abstract integer literal";
         case Token::Type::kIntLiteral_I:
             return "'i'-suffixed integer literal";
         case Token::Type::kIntLiteral_U:
             return "'u'-suffixed integer literal";
+        case Token::Type::kPlaceholder:
+            return "placeholder";
         case Token::Type::kUninitialized:
             return "uninitialized";
 
@@ -126,6 +130,10 @@ std::string_view Token::TypeToName(Type type) {
             return "|=";
         case Token::Type::kXorEqual:
             return "^=";
+        case Token::Type::kShiftLeftEqual:
+            return "<<=";
+        case Token::Type::kShiftRightEqual:
+            return ">>=";
 
         case Token::Type::kArray:
             return "array";
@@ -139,6 +147,8 @@ std::string_view Token::TypeToName(Type type) {
             return "break";
         case Token::Type::kCase:
             return "case";
+        case Token::Type::kConst:
+            return "const";
         case Token::Type::kContinue:
             return "continue";
         case Token::Type::kContinuing:
@@ -163,14 +173,10 @@ std::string_view Token::TypeToName(Type type) {
             return "fn";
         case Token::Type::kFor:
             return "for";
-        case Token::Type::kFunction:
-            return "function";
         case Token::Type::kI32:
             return "i32";
         case Token::Type::kIf:
             return "if";
-        case Token::Type::kImport:
-            return "import";
         case Token::Type::kLet:
             return "let";
         case Token::Type::kLoop:
@@ -195,8 +201,6 @@ std::string_view Token::TypeToName(Type type) {
             return "mat4x4";
         case Token::Type::kOverride:
             return "override";
-        case Token::Type::kPrivate:
-            return "private";
         case Token::Type::kPtr:
             return "ptr";
         case Token::Type::kReturn:
@@ -205,8 +209,8 @@ std::string_view Token::TypeToName(Type type) {
             return "sampler";
         case Token::Type::kComparisonSampler:
             return "sampler_comparison";
-        case Token::Type::kStorage:
-            return "storage";
+        case Token::Type::kStaticAssert:
+            return "static_assert";
         case Token::Type::kStruct:
             return "struct";
         case Token::Type::kSwitch:
@@ -251,8 +255,6 @@ std::string_view Token::TypeToName(Type type) {
             return "type";
         case Token::Type::kU32:
             return "u32";
-        case Token::Type::kUniform:
-            return "uniform";
         case Token::Type::kVar:
             return "var";
         case Token::Type::kVec2:
@@ -261,8 +263,8 @@ std::string_view Token::TypeToName(Type type) {
             return "vec3";
         case Token::Type::kVec4:
             return "vec4";
-        case Token::Type::kWorkgroup:
-            return "workgroup";
+        case Token::Type::kWhile:
+            return "while";
     }
 
     return "<unknown>";
@@ -289,13 +291,9 @@ Token::Token(Type type, const Source& source) : type_(type), source_(source) {}
 
 Token::Token(Token&&) = default;
 
-Token::Token(const Token&) = default;
-
 Token::~Token() = default;
 
-Token& Token::operator=(const Token& rhs) = default;
-
-bool Token::operator==(std::string_view ident) {
+bool Token::operator==(std::string_view ident) const {
     if (type_ != Type::kIdentifier) {
         return false;
     }
@@ -311,6 +309,8 @@ std::string Token::to_str() const {
             return std::to_string(std::get<double>(value_));
         case Type::kFloatLiteral_F:
             return std::to_string(std::get<double>(value_)) + "f";
+        case Type::kFloatLiteral_H:
+            return std::to_string(std::get<double>(value_)) + "h";
         case Type::kIntLiteral:
             return std::to_string(std::get<int64_t>(value_));
         case Type::kIntLiteral_I:

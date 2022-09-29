@@ -60,6 +60,7 @@
 #include "src/objects/js-segmenter.h"
 #include "src/objects/js-segments.h"
 #endif  // V8_INTL_SUPPORT
+#include "src/objects/js-shared-array-inl.h"
 #include "src/objects/js-struct-inl.h"
 #include "src/objects/js-temporal-objects-inl.h"
 #include "src/objects/js-weak-refs.h"
@@ -187,14 +188,13 @@ Maybe<bool> JSReceiver::HasInPrototypeChain(Isolate* isolate,
 }
 
 // static
-bool JSReceiver::CheckPrivateNameStore(LookupIterator* it, bool is_define) {
+Maybe<bool> JSReceiver::CheckPrivateNameStore(LookupIterator* it,
+                                              bool is_define) {
   DCHECK(it->GetName()->IsPrivateName());
   Isolate* isolate = it->isolate();
   Handle<String> name_string(
       String::cast(Handle<Symbol>::cast(it->GetName())->description()),
       isolate);
-  bool should_throw = GetShouldThrow(isolate, Nothing<ShouldThrow>()) ==
-                      ShouldThrow::kThrowOnError;
   for (; it->IsFound(); it->Next()) {
     switch (it->state()) {
       case LookupIterator::TRANSITION:
@@ -208,31 +208,30 @@ bool JSReceiver::CheckPrivateNameStore(LookupIterator* it, bool is_define) {
         if (!it->HasAccess()) {
           isolate->ReportFailedAccessCheck(
               Handle<JSObject>::cast(it->GetReceiver()));
-          RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, false);
-          return false;
+          RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
+          return Just(false);
         }
         break;
       case LookupIterator::DATA:
-        if (is_define && should_throw) {
+        if (is_define) {
           MessageTemplate message =
               it->GetName()->IsPrivateBrand()
                   ? MessageTemplate::kInvalidPrivateBrandReinitialization
                   : MessageTemplate::kInvalidPrivateFieldReinitialization;
-          isolate->Throw(*(isolate->factory()->NewTypeError(
-              message, name_string, it->GetReceiver())));
-          return false;
+          RETURN_FAILURE(isolate,
+                         GetShouldThrow(isolate, Nothing<ShouldThrow>()),
+                         NewTypeError(message, name_string, it->GetReceiver()));
         }
-        return true;
+        return Just(true);
     }
   }
   DCHECK(!it->IsFound());
-  if (!is_define && should_throw) {
-    isolate->Throw(*(isolate->factory()->NewTypeError(
-        MessageTemplate::kInvalidPrivateMemberWrite, name_string,
-        it->GetReceiver())));
-    return false;
+  if (!is_define) {
+    RETURN_FAILURE(isolate, GetShouldThrow(isolate, Nothing<ShouldThrow>()),
+                   NewTypeError(MessageTemplate::kInvalidPrivateMemberWrite,
+                                name_string, it->GetReceiver()));
   }
-  return true;
+  return Just(true);
 }
 
 // static
@@ -1748,7 +1747,7 @@ Maybe<bool> JSReceiver::AddPrivateField(LookupIterator* it,
       if (!it->HasAccess()) {
         it->isolate()->ReportFailedAccessCheck(it->GetHolder<JSObject>());
         RETURN_VALUE_IF_SCHEDULED_EXCEPTION(it->isolate(), Nothing<bool>());
-        return Just(true);
+        return Just(false);
       }
       break;
     }
@@ -2363,6 +2362,19 @@ void JSObject::EnsureWritableFastElements(Handle<JSObject> object) {
   object->set_elements(*writable_elems);
 }
 
+// For FATAL in JSObject::GetHeaderSize
+static const char* NonAPIInstanceTypeToString(InstanceType instance_type) {
+  DCHECK(!InstanceTypeChecker::IsJSApiObject(instance_type));
+  switch (instance_type) {
+#define WRITE_TYPE(TYPE) \
+  case TYPE:             \
+    return #TYPE;
+    INSTANCE_TYPE_LIST(WRITE_TYPE)
+#undef WRITE_TYPE
+  }
+  UNREACHABLE();
+}
+
 int JSObject::GetHeaderSize(InstanceType type,
                             bool function_has_prototype_slot) {
   switch (type) {
@@ -2379,6 +2391,9 @@ int JSObject::GetHeaderSize(InstanceType type,
     case JS_STRING_ITERATOR_PROTOTYPE_TYPE:
     case JS_ARRAY_ITERATOR_PROTOTYPE_TYPE:
     case JS_TYPED_ARRAY_PROTOTYPE_TYPE:
+    case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
+    case JS_ARGUMENTS_OBJECT_TYPE:
+    case JS_ERROR_TYPE:
       return JSObject::kHeaderSize;
     case JS_GENERATOR_OBJECT_TYPE:
       return JSGeneratorObject::kHeaderSize;
@@ -2443,14 +2458,8 @@ int JSObject::GetHeaderSize(InstanceType type,
       return JSRegExp::kHeaderSize;
     case JS_REG_EXP_STRING_ITERATOR_TYPE:
       return JSRegExpStringIterator::kHeaderSize;
-    case JS_CONTEXT_EXTENSION_OBJECT_TYPE:
-      return JSObject::kHeaderSize;
     case JS_MESSAGE_OBJECT_TYPE:
       return JSMessageObject::kHeaderSize;
-    case JS_ARGUMENTS_OBJECT_TYPE:
-      return JSObject::kHeaderSize;
-    case JS_ERROR_TYPE:
-      return JSObject::kHeaderSize;
     case JS_EXTERNAL_OBJECT_TYPE:
       return JSExternalObject::kHeaderSize;
     case JS_SHADOW_REALM_TYPE:
@@ -2459,10 +2468,14 @@ int JSObject::GetHeaderSize(InstanceType type,
       return JSStringIterator::kHeaderSize;
     case JS_MODULE_NAMESPACE_TYPE:
       return JSModuleNamespace::kHeaderSize;
+    case JS_SHARED_ARRAY_TYPE:
+      return JSSharedArray::kHeaderSize;
     case JS_SHARED_STRUCT_TYPE:
       return JSSharedStruct::kHeaderSize;
     case JS_ATOMICS_MUTEX_TYPE:
       return JSAtomicsMutex::kHeaderSize;
+    case JS_ATOMICS_CONDITION_TYPE:
+      return JSAtomicsCondition::kHeaderSize;
     case JS_TEMPORAL_CALENDAR_TYPE:
       return JSTemporalCalendar::kHeaderSize;
     case JS_TEMPORAL_DURATION_TYPE:
@@ -2528,6 +2541,8 @@ int JSObject::GetHeaderSize(InstanceType type,
       return WasmValueObject::kHeaderSize;
     case WASM_TAG_OBJECT_TYPE:
       return WasmTagObject::kHeaderSize;
+    case WASM_EXCEPTION_PACKAGE_TYPE:
+      return WasmExceptionPackage::kHeaderSize;
 #endif  // V8_ENABLE_WEBASSEMBLY
     default: {
       // Special type check for API Objects because they are in a large variable
@@ -2535,9 +2550,7 @@ int JSObject::GetHeaderSize(InstanceType type,
       if (InstanceTypeChecker::IsJSApiObject(type)) {
         return JSObject::kHeaderSize;
       }
-      std::stringstream ss;
-      ss << type;
-      FATAL("unexpected instance type: %s\n", ss.str().c_str());
+      FATAL("unexpected instance type: %s\n", NonAPIInstanceTypeToString(type));
     }
   }
 }
@@ -2548,6 +2561,9 @@ bool JSObject::AllCanRead(LookupIterator* it) {
   // which have already been checked.
   DCHECK(it->state() == LookupIterator::ACCESS_CHECK ||
          it->state() == LookupIterator::INTERCEPTOR);
+  if (it->IsPrivateName()) {
+    return false;
+  }
   for (it->Next(); it->IsFound(); it->Next()) {
     if (it->state() == LookupIterator::ACCESSOR) {
       auto accessors = it->GetAccessors();
@@ -2633,6 +2649,9 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithFailedAccessCheck(
 
 // static
 bool JSObject::AllCanWrite(LookupIterator* it) {
+  if (it->IsPrivateName()) {
+    return false;
+  }
   for (; it->IsFound() && it->state() != LookupIterator::JSPROXY; it->Next()) {
     if (it->state() == LookupIterator::ACCESSOR) {
       Handle<Object> accessors = it->GetAccessors();
@@ -3673,12 +3692,12 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
 void JSObject::NormalizeProperties(Isolate* isolate, Handle<JSObject> object,
                                    PropertyNormalizationMode mode,
                                    int expected_additional_properties,
-                                   const char* reason) {
+                                   bool use_cache, const char* reason) {
   if (!object->HasFastProperties()) return;
 
   Handle<Map> map(object->map(), isolate);
-  Handle<Map> new_map =
-      Map::Normalize(isolate, map, map->elements_kind(), mode, reason);
+  Handle<Map> new_map = Map::Normalize(isolate, map, map->elements_kind(), mode,
+                                       use_cache, reason);
 
   JSObject::MigrateToMap(isolate, object, new_map,
                          expected_additional_properties);
@@ -4494,7 +4513,8 @@ bool JSObject::HasEnumerableElements() {
     case PACKED_FROZEN_ELEMENTS:
     case PACKED_SEALED_ELEMENTS:
     case PACKED_NONEXTENSIBLE_ELEMENTS:
-    case PACKED_DOUBLE_ELEMENTS: {
+    case PACKED_DOUBLE_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS: {
       int length = object.IsJSArray()
                        ? Smi::ToInt(JSArray::cast(object).length())
                        : object.elements().length();
@@ -4738,20 +4758,41 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
                                    bool enable_setup_mode) {
   Isolate* isolate = object->GetIsolate();
   if (object->IsJSGlobalObject()) return;
-  if (enable_setup_mode && PrototypeBenefitsFromNormalization(object)) {
-    // First normalize to ensure all JSFunctions are DATA_CONSTANT.
-    JSObject::NormalizeProperties(isolate, object, KEEP_INOBJECT_PROPERTIES, 0,
-                                  "NormalizeAsPrototype");
-  }
-  if (object->map().is_prototype_map()) {
+  if (object->map(isolate).is_prototype_map()) {
+    if (enable_setup_mode && PrototypeBenefitsFromNormalization(object)) {
+      // This is the only way PrototypeBenefitsFromNormalization can be true:
+      DCHECK(!object->map(isolate).should_be_fast_prototype_map());
+      // First normalize to ensure all JSFunctions are DATA_CONSTANT.
+      constexpr bool kUseCache = true;
+      JSObject::NormalizeProperties(isolate, object, KEEP_INOBJECT_PROPERTIES,
+                                    0, kUseCache, "NormalizeAsPrototype");
+    }
     if (!V8_DICT_PROPERTY_CONST_TRACKING_BOOL &&
-        object->map().should_be_fast_prototype_map() &&
+        object->map(isolate).should_be_fast_prototype_map() &&
         !object->HasFastProperties()) {
       JSObject::MigrateSlowToFast(object, 0, "OptimizeAsPrototype");
     }
   } else {
-    Handle<Map> new_map =
-        Map::Copy(isolate, handle(object->map(), isolate), "CopyAsPrototype");
+    Handle<Map> new_map;
+    if (enable_setup_mode && PrototypeBenefitsFromNormalization(object)) {
+#if DEBUG
+      Handle<Map> old_map = handle(object->map(isolate), isolate);
+#endif  // DEBUG
+      // First normalize to ensure all JSFunctions are DATA_CONSTANT. Don't use
+      // the cache, since we're going to use the normalized version directly,
+      // without making a copy.
+      constexpr bool kUseCache = false;
+      JSObject::NormalizeProperties(isolate, object, KEEP_INOBJECT_PROPERTIES,
+                                    0, kUseCache,
+                                    "NormalizeAndCopyAsPrototype");
+      // A new map was created.
+      DCHECK_NE(*old_map, object->map(isolate));
+
+      new_map = handle(object->map(isolate), isolate);
+    } else {
+      new_map =
+          Map::Copy(isolate, handle(object->map(), isolate), "CopyAsPrototype");
+    }
     new_map->set_is_prototype_map(true);
 
     // Replace the pointer to the exact constructor with the Object function
@@ -4792,8 +4833,9 @@ void JSObject::OptimizeAsPrototype(Handle<JSObject> object,
 #ifdef DEBUG
   bool should_be_dictionary = V8_DICT_PROPERTY_CONST_TRACKING_BOOL &&
                               enable_setup_mode && !object->IsJSGlobalProxy() &&
-                              !object->GetIsolate()->bootstrapper()->IsActive();
-  DCHECK_IMPLIES(should_be_dictionary, object->map().is_dictionary_map());
+                              !isolate->bootstrapper()->IsActive();
+  DCHECK_IMPLIES(should_be_dictionary,
+                 object->map(isolate).is_dictionary_map());
 #endif
 }
 
@@ -4924,8 +4966,8 @@ void InvalidateOnePrototypeValidityCellInternal(Map map) {
   if (V8_DICT_PROPERTY_CONST_TRACKING_BOOL && map.is_dictionary_map()) {
     // TODO(11527): pass Isolate as an argument.
     Isolate* isolate = GetIsolateFromWritableObject(map);
-    map.dependent_code().DeoptimizeDependentCodeGroup(
-        isolate, DependentCode::kPrototypeCheckGroup);
+    DependentCode::DeoptimizeDependencyGroups(
+        isolate, map, DependentCode::kPrototypeCheckGroup);
   }
 }
 
@@ -5066,6 +5108,8 @@ Maybe<bool> JSObject::SetPrototype(Isolate* isolate, Handle<JSObject> object,
   // Set the new prototype of the object.
 
   isolate->UpdateNoElementsProtectorOnSetPrototype(real_receiver);
+  isolate->UpdateTypedArraySpeciesLookupChainProtectorOnSetPrototype(
+      real_receiver);
 
   Handle<Map> new_map =
       Map::TransitionToPrototype(isolate, map, Handle<HeapObject>::cast(value));
@@ -5092,7 +5136,8 @@ void JSObject::EnsureCanContainElements(Handle<JSObject> object,
                                         JavaScriptArguments* args,
                                         uint32_t arg_count,
                                         EnsureElementsMode mode) {
-  return EnsureCanContainElements(object, args->first_slot(), arg_count, mode);
+  return EnsureCanContainElements(
+      object, FullObjectSlot(args->address_of_arg_at(0)), arg_count, mode);
 }
 
 void JSObject::ValidateElements(JSObject object) {
@@ -5322,6 +5367,7 @@ int JSObject::GetFastElementsUsage() {
     case PACKED_FROZEN_ELEMENTS:
     case PACKED_SEALED_ELEMENTS:
     case PACKED_NONEXTENSIBLE_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS:
       return IsJSArray() ? Smi::ToInt(JSArray::cast(*this).length())
                          : store.length();
     case FAST_SLOPPY_ARGUMENTS_ELEMENTS:
@@ -5610,7 +5656,7 @@ void JSMessageObject::EnsureSourcePositionsAvailable(
     SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate, shared_info);
     DCHECK(shared_info->HasBytecodeArray());
     int position = shared_info->abstract_code(isolate).SourcePosition(
-        message->bytecode_offset().value());
+        isolate, message->bytecode_offset().value());
     DCHECK_GE(position, 0);
     message->set_start_position(position);
     message->set_end_position(position + 1);

@@ -137,8 +137,8 @@ bool IsValidAudioCaptureConfig(const AudioCaptureConfig& config) {
 
 // We don't support resolutions below our minimums.
 bool IsSupportedResolution(const Resolution& resolution) {
-  return resolution.width > kMinVideoWidth &&
-         resolution.height > kMinVideoHeight;
+  return resolution.width >= kMinVideoWidth &&
+         resolution.height >= kMinVideoHeight;
 }
 
 bool IsValidVideoCaptureConfig(const VideoCaptureConfig& config) {

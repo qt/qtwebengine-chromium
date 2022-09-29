@@ -45,6 +45,9 @@ config("skia_public") {
   if (skia_enable_sksl) {
     defines += [ "SK_ENABLE_SKSL" ]
   }
+  if (skia_enable_precompile) {
+    defines += [ "SK_ENABLE_PRECOMPILE" ]
+  }
   if (is_fuchsia) {
     defines += fuchsia_defines
   }
@@ -63,6 +66,9 @@ config("skia_public") {
   }
   if (!skia_enable_skgpu_v1) {
     defines += [ "SK_GPU_V1=0" ]
+  }
+  if (skia_use_perfetto) {
+    defines += [ "SK_USE_PERFETTO" ]
   }
 
   # Some older versions of the Clang toolchain change the visibility of
@@ -632,12 +638,14 @@ if (skia_compile_modules || skia_compile_sksl_tests) {
   # Copy the module source files into the out directory.
   copy("sksl_pre_includes") {
     sources = [
+      "src/sksl/sksl_compute.sksl",
       "src/sksl/sksl_frag.sksl",
       "src/sksl/sksl_gpu.sksl",
       "src/sksl/sksl_graphite_frag.sksl",
       "src/sksl/sksl_graphite_vert.sksl",
       "src/sksl/sksl_public.sksl",
       "src/sksl/sksl_rt_shader.sksl",
+      "src/sksl/sksl_shared.sksl",
       "src/sksl/sksl_vert.sksl",
     ]
     outputs = [ "$root_out_dir/{{source_file_part}}" ]
@@ -975,23 +983,29 @@ optional("gpu") {
   if (skia_use_dawn) {
     public_defines += [ "SK_DAWN" ]
     sources += skia_dawn_sources
-    public_deps += [ "//third_party/externals/dawn/include/dawn:cpp_headers" ]
-    deps += [
-      "//third_party/externals/dawn/src/dawn:cpp",
-      "//third_party/externals/dawn/src/dawn:proc",
-    ]
-    if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
-        dawn_enable_opengles || dawn_enable_vulkan) {
-      deps += [ "//third_party/externals/dawn/src/dawn/native" ]
-    }
-    if (dawn_enable_d3d12) {
-      libs += [
-        "d3d12.lib",
-        "dxgi.lib",
-        "d3dcompiler.lib",
+
+    # When building for WASM, the WebGPU headers are provided by Emscripten. For native builds we
+    # have to depend on Dawn directly.
+    if (!skia_use_webgpu) {
+      public_deps += [ "//third_party/externals/dawn/include/dawn:cpp_headers" ]
+      deps += [
+        "//third_party/externals/dawn/src/dawn:cpp",
+        "//third_party/externals/dawn/src/dawn:proc",
       ]
-    } else if (dawn_enable_metal) {
-      frameworks += [ "Metal.framework" ]
+
+      if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
+          dawn_enable_opengles || dawn_enable_vulkan) {
+        deps += [ "//third_party/externals/dawn/src/dawn/native" ]
+      }
+      if (dawn_enable_d3d12) {
+        libs += [
+          "d3d12.lib",
+          "dxgi.lib",
+          "d3dcompiler.lib",
+        ]
+      } else if (dawn_enable_metal) {
+        frameworks += [ "Metal.framework" ]
+      }
     }
   }
 
@@ -1062,6 +1076,15 @@ optional("heif") {
   deps = []
 
   sources = [ "src/codec/SkHeifCodec.cpp" ]
+}
+
+optional("avif") {
+  enabled = skia_use_libavif
+  public_defines = [ "SK_CODEC_DECODES_AVIF" ]
+
+  deps = [ "//third_party/libavif" ]
+
+  sources = [ "src/codec/SkAvifCodec.cpp" ]
 }
 
 optional("jpeg_decode") {
@@ -1196,21 +1219,6 @@ optional("raw") {
   sources = [ "src/codec/SkRawCodec.cpp" ]
 }
 
-import("third_party/skcms/skcms.gni")
-skia_source_set("skcms") {
-  cflags = []
-  if (!is_win || is_clang) {
-    cflags += [
-      "-w",
-      "-std=c11",
-    ]
-  }
-
-  public = [ "include/third_party/skcms/skcms.h" ]
-  include_dirs = [ "include/third_party/skcms" ]
-  sources = rebase_path(skcms_sources, ".", "third_party/skcms")
-}
-
 optional("typeface_freetype") {
   enabled = skia_use_freetype
 
@@ -1263,11 +1271,6 @@ optional("xml") {
 optional("skvm_jit") {
   enabled = skia_enable_skvm_jit_when_possible
   public_defines = [ "SKVM_JIT_WHEN_POSSIBLE" ]
-  if (skia_vtune_path != "") {
-    public_defines += [ "SKVM_JIT_VTUNE" ]
-    public_include_dirs = [ "$skia_vtune_path/include" ]
-    libs = [ "$skia_vtune_path/lib64/jitprofiling.lib" ]
-  }
 }
 
 if (skia_enable_gpu && skia_generate_workarounds) {
@@ -1311,7 +1314,6 @@ skia_component("skia") {
     ":gpu",
     ":graphite",
     ":pdf",
-    ":skcms",
     ":xps",
   ]
 
@@ -1319,6 +1321,7 @@ skia_component("skia") {
     ":android_utils",
     ":arm64",
     ":armv7",
+    ":avif",
     ":avx",
     ":crc32",
     ":fontmgr_factory",
@@ -1343,6 +1346,7 @@ skia_component("skia") {
     ":webp_encode",
     ":wuffs",
     ":xml",
+    "modules/skcms",
   ]
 
   public = skia_core_public
@@ -1398,6 +1402,11 @@ skia_component("skia") {
       defines += [ "SKSL_ENABLE_TRACING" ]
       sources += skia_sksl_tracing_sources
     }
+  }
+
+  if (skia_enable_precompile) {
+    public += skia_precompile_public
+    sources += skia_precompile_sources
   }
 
   if (skia_build_for_debugger) {
@@ -1604,7 +1613,6 @@ if (skia_enable_tools) {
   skia_public_includes = [
     "client_utils/android",
     "include/android",
-    "include/c",
     "include/codec",
     "include/config",
     "include/core",
@@ -1699,7 +1707,7 @@ if (skia_enable_tools) {
     ]
 
     if (skia_use_dawn) {
-      deps += [ "//third_party/externals/dawn/src/dawn:dawn_headers" ]
+      deps += [ "//third_party/externals/dawn/include/dawn:headers" ]
     }
   }
 
@@ -1886,7 +1894,7 @@ if (skia_enable_tools) {
       sources += [ "tools/gpu/d3d/D3DTestUtils.cpp" ]
     }
     if (skia_use_dawn) {
-      public_deps += [ "//third_party/externals/dawn/src/dawn:dawn_headers" ]
+      public_deps += [ "//third_party/externals/dawn/include/dawn:headers" ]
       sources += [ "tools/gpu/dawn/DawnTestContext.cpp" ]
       if (is_clang) {
         cflags_cc = [ "-Wno-microsoft-cast" ]
@@ -1951,6 +1959,14 @@ if (skia_enable_tools) {
       "tools/trace/SkDebugfTracer.cpp",
       "tools/trace/SkDebugfTracer.h",
     ]
+    if (skia_use_perfetto) {
+      deps += [ "//third_party/perfetto" ]
+      sources += [
+        "tools/trace/SkPerfettoTrace.cpp",
+        "tools/trace/SkPerfettoTrace.h",
+      ]
+      defines = [ "SK_USE_PERFETTO" ]
+    }
   }
 
   test_lib("tool_utils") {
@@ -2074,6 +2090,7 @@ if (skia_enable_tools) {
 
   test_lib("test") {
     sources = [
+      "tests/CtsEnforcement.cpp",
       "tests/Test.cpp",
       "tests/Test.h",
       "tests/TestHarness.cpp",
@@ -2111,6 +2128,9 @@ if (skia_enable_tools) {
     }
     if (!skia_enable_skgpu_v1) {
       sources -= skgpu_v1_tests_sources
+    }
+    if (skia_enable_precompile) {
+      sources += precompile_tests_sources
     }
     deps = [
       ":flags",
@@ -2157,6 +2177,12 @@ if (skia_enable_tools) {
       test_app("skottie_tool") {
         deps = [ "modules/skottie:tool" ]
       }
+      test_app("skottie_tool_cpu") {
+        deps = [ "modules/skottie:tool_cpu" ]
+      }
+      test_app("skottie_tool_gpu") {
+        deps = [ "modules/skottie:tool_gpu" ]
+      }
     }
     test_app("svg_tool") {
       deps = [ "modules/svg:tool" ]
@@ -2201,8 +2227,8 @@ if (skia_enable_tools) {
     test_app("imgcvt") {
       sources = [ "tools/imgcvt.cpp" ]
       deps = [
-        ":skcms",
         ":skia",
+        "modules/skcms",
       ]
     }
     test_app("fm") {
@@ -2511,9 +2537,9 @@ if (skia_enable_tools) {
       testonly = true
       public_configs = [ ":skia_private" ]
       sources = [
-        "dm/DMGpuTestProcs.cpp",
         "tools/skqp/src/skqp.cpp",
         "tools/skqp/src/skqp.h",
+        "tools/skqp/src/skqp_GpuTestProcs.cpp",
       ]
       deps = [
         ":gm",
@@ -3355,10 +3381,4 @@ if (is_ios && skia_enable_skottie && !skia_enable_flutter_defines) {
   group("skottie_ios") {
     deps = [ "tools/skottie_ios_app" ]
   }
-}
-
-skia_executable("skia_c_api_example") {
-  sources = [ "experimental/c-api-example/skia-c-example.c" ]
-  include_dirs = [ "." ]
-  deps = [ ":skia" ]
 }

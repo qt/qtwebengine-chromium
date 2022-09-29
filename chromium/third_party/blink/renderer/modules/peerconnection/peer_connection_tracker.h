@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
+#include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_peer_connection_handler_client.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_rtp_transceiver_platform.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_session_description_platform.h"
@@ -29,7 +30,6 @@ class DataChannelInterface;
 
 namespace blink {
 class LocalFrame;
-class MediaConstraints;
 class MockPeerConnectionTracker;
 class PeerConnectionTrackerTest;
 class RTCAnswerOptionsPlatform;
@@ -105,15 +105,13 @@ class MODULES_EXPORT PeerConnectionTracker
 
   // Sends an update when a PeerConnection has been created in Javascript. This
   // should be called once and only once for each PeerConnection. The
-  // |pc_handler| is the handler object associated with the PeerConnection, the
-  // |servers| are the server configurations used to establish the connection,
-  // the |constraints| are the media constraints used to initialize the
-  // PeerConnection, the |frame| is the WebLocalFrame object representing the
-  // page in which the PeerConnection is created.
+  // `pc_handler` is the handler object associated with the PeerConnection,
+  // the `config` is used to initialize the PeerConnection and the `frame` is
+  // the WebLocalFrame object representing the page in which the PeerConnection
+  // is created.
   void RegisterPeerConnection(
       RTCPeerConnectionHandler* pc_handler,
       const webrtc::PeerConnectionInterface::RTCConfiguration& config,
-      const MediaConstraints& constraints,
       const blink::WebLocalFrame* frame);
 
   // Sends an update when a PeerConnection has been destroyed.
@@ -194,19 +192,7 @@ class MODULES_EXPORT PeerConnectionTracker
       webrtc::PeerConnectionInterface::SignalingState state);
 
   // Sends an update when the ICE connection state of a PeerConnection has
-  // changed. There's a legacy and non-legacy version. The non-legacy version
-  // reflects the blink::RTCPeerConnection::iceConnectionState.
-  //
-  // "Legacy" usage: In Unifed Plan, TrackLegacyIceConnectionStateChange() is
-  // used to report the webrtc::PeerConnection layer implementation of the
-  // state, which might not always be the same as the
-  // blink::RTCPeerConnection::iceConnectionState reported with
-  // TrackIceConnectionStateChange(). In Plan B, the webrtc::PeerConnection
-  // layer implementation is the only iceConnectionState version, and
-  // TrackLegacyIceConnectionStateChange() is not applicable.
-  virtual void TrackLegacyIceConnectionStateChange(
-      RTCPeerConnectionHandler* pc_handler,
-      webrtc::PeerConnectionInterface::IceConnectionState state);
+  // changed.
   virtual void TrackIceConnectionStateChange(
       RTCPeerConnectionHandler* pc_handler,
       webrtc::PeerConnectionInterface::IceConnectionState state);
@@ -251,6 +237,11 @@ class MODULES_EXPORT PeerConnectionTracker
   // Sends a new fragment on an RtcEventLog.
   virtual void TrackRtcEventLogWrite(RTCPeerConnectionHandler* pc_handler,
                                      const WTF::Vector<uint8_t>& output);
+
+  void Trace(Visitor* visitor) const override {
+    visitor->Trace(receiver_);
+    Supplement<LocalDOMWindow>::Trace(visitor);
+  }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PeerConnectionTrackerTest, OnSuspend);
@@ -320,7 +311,9 @@ class MODULES_EXPORT PeerConnectionTracker
   THREAD_CHECKER(main_thread_);
   mojo::Remote<blink::mojom::blink::PeerConnectionTrackerHost>
       peer_connection_tracker_host_;
-  mojo::Receiver<blink::mojom::blink::PeerConnectionManager> receiver_{this};
+  HeapMojoReceiver<blink::mojom::blink::PeerConnectionManager,
+                   PeerConnectionTracker>
+      receiver_;
 
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 };

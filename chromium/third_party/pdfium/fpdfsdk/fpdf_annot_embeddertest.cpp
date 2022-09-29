@@ -136,14 +136,15 @@ TEST_F(FPDFAnnotEmbedderTest, SetAP) {
   // Verify that appearance stream is created as form XObject
   CPDF_AnnotContext* context = CPDFAnnotContextFromFPDFAnnotation(annot.get());
   ASSERT_TRUE(context);
-  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  const CPDF_Dictionary* annot_dict = context->GetAnnotDict();
   ASSERT_TRUE(annot_dict);
-  CPDF_Dictionary* ap_dict = annot_dict->GetDictFor(pdfium::annotation::kAP);
+  const CPDF_Dictionary* ap_dict =
+      annot_dict->GetDictFor(pdfium::annotation::kAP);
   ASSERT_TRUE(ap_dict);
-  CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
+  const CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
   ASSERT_TRUE(stream_dict);
   // Check for non-existence of resources dictionary in case of opaque color
-  CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
+  const CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
   ASSERT_FALSE(resources_dict);
   ByteString type = stream_dict->GetStringFor(pdfium::annotation::kType);
   EXPECT_EQ("XObject", type);
@@ -184,17 +185,19 @@ TEST_F(FPDFAnnotEmbedderTest, SetAPWithOpacity) {
 
   CPDF_AnnotContext* context = CPDFAnnotContextFromFPDFAnnotation(annot.get());
   ASSERT_TRUE(context);
-  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  const CPDF_Dictionary* annot_dict = context->GetAnnotDict();
   ASSERT_TRUE(annot_dict);
-  CPDF_Dictionary* ap_dict = annot_dict->GetDictFor(pdfium::annotation::kAP);
+  const CPDF_Dictionary* ap_dict =
+      annot_dict->GetDictFor(pdfium::annotation::kAP);
   ASSERT_TRUE(ap_dict);
-  CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
+  const CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
   ASSERT_TRUE(stream_dict);
-  CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
+  const CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
   ASSERT_TRUE(stream_dict);
-  CPDF_Dictionary* extGState_dict = resources_dict->GetDictFor("ExtGState");
+  const CPDF_Dictionary* extGState_dict =
+      resources_dict->GetDictFor("ExtGState");
   ASSERT_TRUE(extGState_dict);
-  CPDF_Dictionary* gs_dict = extGState_dict->GetDictFor("GS");
+  const CPDF_Dictionary* gs_dict = extGState_dict->GetDictFor("GS");
   ASSERT_TRUE(gs_dict);
   ByteString type = gs_dict->GetStringFor(pdfium::annotation::kType);
   EXPECT_EQ("ExtGState", type);
@@ -220,7 +223,7 @@ TEST_F(FPDFAnnotEmbedderTest, InkListAPIValidations) {
   CPDF_AnnotContext* context =
       CPDFAnnotContextFromFPDFAnnotation(ink_annot.get());
   ASSERT_TRUE(context);
-  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  const CPDF_Dictionary* annot_dict = context->GetAnnotDict();
   ASSERT_TRUE(annot_dict);
 
   static constexpr FS_POINTF kFirstInkStroke[] = {
@@ -267,7 +270,7 @@ TEST_F(FPDFAnnotEmbedderTest, InkListAPIValidations) {
   EXPECT_EQ(0, FPDFAnnot_AddInkStroke(ink_annot.get(), kFirstInkStroke,
                                       kFirstStrokePointCount));
 
-  CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
+  const CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
   ASSERT_TRUE(inklist);
   EXPECT_EQ(1u, inklist->size());
   EXPECT_EQ(kFirstStrokePointCount * 2, inklist->GetArrayAt(0)->size());
@@ -310,7 +313,7 @@ TEST_F(FPDFAnnotEmbedderTest, RemoveInkList) {
   CPDF_AnnotContext* context =
       CPDFAnnotContextFromFPDFAnnotation(ink_annot.get());
   ASSERT_TRUE(context);
-  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  const CPDF_Dictionary* annot_dict = context->GetAnnotDict();
   ASSERT_TRUE(annot_dict);
 
   static constexpr FS_POINTF kInkStroke[] = {{80.0f, 90.0f}, {81.0f, 91.0f},
@@ -323,7 +326,7 @@ TEST_F(FPDFAnnotEmbedderTest, RemoveInkList) {
   EXPECT_EQ(0,
             FPDFAnnot_AddInkStroke(ink_annot.get(), kInkStroke, kPointCount));
 
-  CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
+  const CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
   ASSERT_TRUE(inklist);
   ASSERT_EQ(1u, inklist->size());
   EXPECT_EQ(kPointCount * 2, inklist->GetArrayAt(0)->size());
@@ -880,14 +883,13 @@ TEST_F(FPDFAnnotEmbedderTest, GetAndSetQuadPoints) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/1569): Fix this issue and enable the test for Skia.
+TEST_F(FPDFAnnotEmbedderTest, ModifyRectQuadpointsWithAP) {
 #if defined(_SKIA_SUPPORT_)
-#define MAYBE_ModifyRectQuadpointsWithAP DISABLED_ModifyRectQuadpointsWithAP
-#else
-#define MAYBE_ModifyRectQuadpointsWithAP ModifyRectQuadpointsWithAP
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_ModifyRectQuadpointsWithAP) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+  static const char kMd5Original[] = "0dd4c099b93d24eed9926a948ac5101c";
+  static const char kMd5ModifiedHighlight[] =
+      "92dfe7960d248635a694f43c66db7a4d";
+  static const char kMd5ModifiedSquare[] = "eb16eae7904705fa24f4ec9c1acf90c7";
+#elif defined(_SKIA_SUPPORT_PATHS_)
   static const char kMd5Original[] = "127c2d3b4452555e3317827b0dbbb6a0";
   static const char kMd5ModifiedHighlight[] =
       "6ffe732be6f80540b60921c4803b590a";
@@ -904,7 +906,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_ModifyRectQuadpointsWithAP) {
       "66f3caef3a7d488a4fa1ad37fc06310e";
   static const char kMd5ModifiedSquare[] = "a456dad0bc6801ee2d6408a4394af563";
 #endif  // BUILDFLAG(IS_APPLE)
-#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#endif
 
   // Open a file with four annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_highlight_square_with_ap.pdf"));
@@ -1303,14 +1305,15 @@ TEST_F(FPDFAnnotEmbedderTest, ModifyAnnotationFlags) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/1541): Fix this test and enable.
+// TODO(crbug.com/pdfium/1541): When Skia is enabled and its cache rendering is
+// disabled (To turn off cache, set `m_debugDisable` to true in
+// core/fxge/skia/fx_skia_device.cpp.), `kMd5NewImage`'s rendering result is
+// incorrect compared to the expectation.
+TEST_F(FPDFAnnotEmbedderTest, AddAndModifyImage) {
 #if defined(_SKIA_SUPPORT_)
-#define MAYBE_AddAndModifyImage DISABLED_AddAndModifyImage
-#else
-#define MAYBE_AddAndModifyImage AddAndModifyImage
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
-#if defined(_SKIA_SUPPORT_PATHS_)
+  static const char kMd5NewImage[] = "4ba31e174d873b3fda1d7a160d4a0e85";
+  static const char kMd5ModifiedImage[] = "5806fadc1a192bc4bb07511a0711c957";
+#elif defined(_SKIA_SUPPORT_PATHS_)
   static const char kMd5NewImage[] = "bf158b64c0373f3f36e347ae83e55cde";
   static const char kMd5ModifiedImage[] = "5806fadc1a192bc4bb07511a0711c957";
 #else
@@ -1320,8 +1323,8 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
 #else
   static const char kMd5NewImage[] = "62c2706511cb50e32e7caeb82b1d3d49";
   static const char kMd5ModifiedImage[] = "83093ce9fac746db69fbd2fb394434ac";
-#endif
-#endif  // defined(_SKIA_SUPPORT_PATHS_)
+#endif  // BUILDFLAG(IS_APPLE)
+#endif  // defined(_SKIA_SUPPORT_)
 
   // Open a file with two annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));

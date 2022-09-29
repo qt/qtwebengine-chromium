@@ -358,7 +358,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *rframe,
                         int *got_frame, AVPacket *avpkt)
 {
     AnsiContext *s = avctx->priv_data;
-    uint8_t *buf = avpkt->data;
+    const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     const uint8_t *buf_end   = buf+buf_size;
     int ret, i, count;
@@ -490,6 +490,5 @@ const FFCodec ff_ansi_decoder = {
     .close          = decode_close,
     FF_CODEC_DECODE_CB(decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
     .defaults       = ansi_defaults,
 };

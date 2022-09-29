@@ -34,6 +34,7 @@
 #include "quiche/spdy/core/http2_frame_decoder_adapter.h"
 
 using http2::Http2DecoderAdapter;
+using spdy::Http2HeaderBlock;
 using spdy::Http2WeightToSpdy3Priority;
 using spdy::Spdy3PriorityToHttp2Weight;
 using spdy::SpdyErrorCode;
@@ -41,7 +42,6 @@ using spdy::SpdyFramer;
 using spdy::SpdyFramerDebugVisitorInterface;
 using spdy::SpdyFramerVisitorInterface;
 using spdy::SpdyFrameType;
-using spdy::SpdyHeaderBlock;
 using spdy::SpdyHeadersHandlerInterface;
 using spdy::SpdyHeadersIR;
 using spdy::SpdyPingId;
@@ -389,6 +389,12 @@ class QuicSpdySession::SpdyFramerVisitor
     return false;
   }
 
+  void OnUnknownFrameStart(SpdyStreamId /*stream_id*/, size_t /*length*/,
+                           uint8_t /*type*/, uint8_t /*flags*/) override {}
+
+  void OnUnknownFramePayload(SpdyStreamId /*stream_id*/,
+                             absl::string_view /*payload*/) override {}
+
   // SpdyFramerDebugVisitorInterface implementation
   void OnSendCompressedFrame(SpdyStreamId /*stream_id*/, SpdyFrameType /*type*/,
                              size_t payload_len, size_t frame_len) override {
@@ -684,7 +690,7 @@ size_t QuicSpdySession::ProcessHeaderData(const struct iovec& iov) {
 }
 
 size_t QuicSpdySession::WriteHeadersOnHeadersStream(
-    QuicStreamId id, SpdyHeaderBlock headers, bool fin,
+    QuicStreamId id, Http2HeaderBlock headers, bool fin,
     const spdy::SpdyStreamPrecedence& precedence,
     quiche::QuicheReferenceCountedPointer<QuicAckListenerInterface>
         ack_listener) {
@@ -796,7 +802,7 @@ void QuicSpdySession::SendHttp3GoAway(QuicErrorCode error_code,
 
 void QuicSpdySession::WritePushPromise(QuicStreamId original_stream_id,
                                        QuicStreamId promised_stream_id,
-                                       SpdyHeaderBlock headers) {
+                                       Http2HeaderBlock headers) {
   if (perspective() == Perspective::IS_CLIENT) {
     QUIC_BUG(quic_bug_10360_4) << "Client shouldn't send PUSH_PROMISE";
     return;
@@ -903,7 +909,7 @@ bool QuicSpdySession::UsesPendingStreamForFrame(QuicFrameType type,
 }
 
 size_t QuicSpdySession::WriteHeadersOnHeadersStreamImpl(
-    QuicStreamId id, spdy::SpdyHeaderBlock headers, bool fin,
+    QuicStreamId id, spdy::Http2HeaderBlock headers, bool fin,
     QuicStreamId parent_stream_id, int weight, bool exclusive,
     quiche::QuicheReferenceCountedPointer<QuicAckListenerInterface>
         ack_listener) {

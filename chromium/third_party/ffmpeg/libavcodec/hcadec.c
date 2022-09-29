@@ -23,6 +23,7 @@
 #include "libavutil/tx.h"
 
 #include "avcodec.h"
+#include "bytestream.h"
 #include "codec_internal.h"
 #include "get_bits.h"
 #include "internal.h"
@@ -42,8 +43,6 @@ typedef struct ChannelContext {
 } ChannelContext;
 
 typedef struct HCAContext {
-    GetBitContext gb;
-
     const AVCRC *crc_table;
 
     ChannelContext ch[16];
@@ -106,7 +105,7 @@ static inline unsigned ceil2(unsigned a, unsigned b)
 static av_cold int decode_init(AVCodecContext *avctx)
 {
     HCAContext *c = avctx->priv_data;
-    GetBitContext *gb = &c->gb;
+    GetByteContext gb0, *const gb = &gb0;
     int8_t r[16] = { 0 };
     float scale = 1.f / 8.f;
     unsigned b, chunk;
@@ -118,41 +117,42 @@ static av_cold int decode_init(AVCodecContext *avctx)
     if (avctx->ch_layout.nb_channels <= 0 || avctx->ch_layout.nb_channels > 16)
         return AVERROR(EINVAL);
 
-    ret = init_get_bits8(gb, avctx->extradata, avctx->extradata_size);
-    if (ret < 0)
-        return ret;
-    skip_bits_long(gb, 32);
-    version = get_bits(gb, 16);
-    skip_bits_long(gb, 16);
+    if (avctx->extradata_size < 36)
+        return AVERROR_INVALIDDATA;
+    bytestream2_init(gb, avctx->extradata, avctx->extradata_size);
+
+    bytestream2_skipu(gb, 4);
+    version = bytestream2_get_be16(gb);
+    bytestream2_skipu(gb, 2);
 
     c->ath_type = version >= 0x200 ? 0 : 1;
 
-    if (get_bits_long(gb, 32) != MKBETAG('f', 'm', 't', 0))
+    if (bytestream2_get_be32u(gb) != MKBETAG('f', 'm', 't', 0))
         return AVERROR_INVALIDDATA;
-    skip_bits_long(gb, 32);
-    skip_bits_long(gb, 32);
-    skip_bits_long(gb, 32);
+    bytestream2_skipu(gb, 4);
+    bytestream2_skipu(gb, 4);
+    bytestream2_skipu(gb, 4);
 
-    chunk = get_bits_long(gb, 32);
+    chunk = bytestream2_get_be32u(gb);
     if (chunk == MKBETAG('c', 'o', 'm', 'p')) {
-        skip_bits_long(gb, 16);
-        skip_bits_long(gb, 8);
-        skip_bits_long(gb, 8);
-        c->track_count = get_bits(gb, 8);
-        c->channel_config = get_bits(gb, 8);
-        c->total_band_count = get_bits(gb, 8);
-        c->base_band_count = get_bits(gb, 8);
-        c->stereo_band_count = get_bits(gb, 8);
-        c->bands_per_hfr_group = get_bits(gb, 8);
+        bytestream2_skipu(gb, 2);
+        bytestream2_skipu(gb, 1);
+        bytestream2_skipu(gb, 1);
+        c->track_count         = bytestream2_get_byteu(gb);
+        c->channel_config      = bytestream2_get_byteu(gb);
+        c->total_band_count    = bytestream2_get_byteu(gb);
+        c->base_band_count     = bytestream2_get_byteu(gb);
+        c->stereo_band_count   = bytestream2_get_byte (gb);
+        c->bands_per_hfr_group = bytestream2_get_byte (gb);
     } else if (chunk == MKBETAG('d', 'e', 'c', 0)) {
-        skip_bits_long(gb, 16);
-        skip_bits_long(gb, 8);
-        skip_bits_long(gb, 8);
-        c->total_band_count = get_bits(gb, 8) + 1;
-        c->base_band_count = get_bits(gb, 8) + 1;
-        c->track_count = get_bits(gb, 4);
-        c->channel_config = get_bits(gb, 4);
-        if (!get_bits(gb, 8))
+        bytestream2_skipu(gb, 2);
+        bytestream2_skipu(gb, 1);
+        bytestream2_skipu(gb, 1);
+        c->total_band_count = bytestream2_get_byteu(gb) + 1;
+        c->base_band_count  = bytestream2_get_byteu(gb) + 1;
+        c->track_count      = bytestream2_peek_byteu(gb) >> 4;
+        c->channel_config   = bytestream2_get_byteu(gb) & 0xF;
+        if (!bytestream2_get_byteu(gb))
             c->base_band_count = c->total_band_count;
         c->stereo_band_count = c->total_band_count - c->base_band_count;
         c->bands_per_hfr_group = 0;
@@ -163,24 +163,20 @@ static av_cold int decode_init(AVCodecContext *avctx)
         return AVERROR_INVALIDDATA;
 
 
-    while (get_bits_left(gb) >= 32) {
-        chunk = get_bits_long(gb, 32);
+    while (bytestream2_get_bytes_left(gb) >= 4) {
+        chunk = bytestream2_get_be32u(gb);
         if (chunk == MKBETAG('v', 'b', 'r', 0)) {
-            skip_bits_long(gb, 16);
-            skip_bits_long(gb, 16);
+            bytestream2_skip(gb, 2 + 2);
         } else if (chunk == MKBETAG('a', 't', 'h', 0)) {
-            c->ath_type = get_bits(gb, 16);
+            c->ath_type = bytestream2_get_be16(gb);
         } else if (chunk == MKBETAG('r', 'v', 'a', 0)) {
-            skip_bits_long(gb, 32);
+            bytestream2_skip(gb, 4);
         } else if (chunk == MKBETAG('c', 'o', 'm', 'm')) {
-            skip_bits_long(gb, get_bits(gb, 8) * 8);
+            bytestream2_skip(gb, bytestream2_get_byte(gb) * 8);
         } else if (chunk == MKBETAG('c', 'i', 'p', 'h')) {
-            skip_bits_long(gb, 16);
+            bytestream2_skip(gb, 2);
         } else if (chunk == MKBETAG('l', 'o', 'o', 'p')) {
-            skip_bits_long(gb, 32);
-            skip_bits_long(gb, 32);
-            skip_bits_long(gb, 16);
-            skip_bits_long(gb, 16);
+            bytestream2_skip(gb, 4 + 4 + 2 + 2);
         } else if (chunk == MKBETAG('p', 'a', 'd', 0)) {
             break;
         } else {
@@ -301,10 +297,9 @@ static void reconstruct_hfr(HCAContext *s, ChannelContext *ch,
     ch->imdct_in[127] = 0;
 }
 
-static void dequantize_coefficients(HCAContext *c, ChannelContext *ch)
+static void dequantize_coefficients(HCAContext *c, ChannelContext *ch,
+                                    GetBitContext *gb)
 {
-    GetBitContext *gb = &c->gb;
-
     for (int i = 0; i < ch->count; i++) {
         unsigned scale = ch->scale[i];
         int nb_bits = max_bits_table[scale];
@@ -328,11 +323,11 @@ static void dequantize_coefficients(HCAContext *c, ChannelContext *ch)
 }
 
 static void unpack(HCAContext *c, ChannelContext *ch,
+                   GetBitContext *gb,
                    unsigned hfr_group_count,
                    int packed_noise_level,
                    const uint8_t *ath)
 {
-    GetBitContext *gb = &c->gb;
     int delta_bits = get_bits(gb, 3);
 
     if (delta_bits > 5) {
@@ -392,7 +387,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
 {
     HCAContext *c = avctx->priv_data;
     int ch, ret, packed_noise_level;
-    GetBitContext *gb = &c->gb;
+    GetBitContext gb0, *const gb = &gb0;
     float **samples;
 
     if (avctx->err_recognition & AV_EF_CRCCHECK) {
@@ -414,11 +409,11 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     packed_noise_level = (get_bits(gb, 9) << 8) - get_bits(gb, 7);
 
     for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
-        unpack(c, &c->ch[ch], c->hfr_group_count, packed_noise_level, c->ath);
+        unpack(c, &c->ch[ch], gb, c->hfr_group_count, packed_noise_level, c->ath);
 
     for (int i = 0; i < 8; i++) {
         for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
-            dequantize_coefficients(c, &c->ch[ch]);
+            dequantize_coefficients(c, &c->ch[ch], gb);
         for (ch = 0; ch < avctx->ch_layout.nb_channels; ch++)
             reconstruct_hfr(c, &c->ch[ch], c->hfr_group_count, c->bands_per_hfr_group,
                             c->stereo_band_count + c->base_band_count, c->total_band_count);
@@ -455,7 +450,7 @@ const FFCodec ff_hca_decoder = {
     FF_CODEC_DECODE_CB(decode_frame),
     .close          = decode_close,
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                       AV_SAMPLE_FMT_NONE },
 };

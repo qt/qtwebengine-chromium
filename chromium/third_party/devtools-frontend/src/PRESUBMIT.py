@@ -42,7 +42,7 @@ USE_PYTHON3 = True
 
 def _ExecuteSubProcess(input_api, output_api, script_path, args, results):
     if isinstance(script_path, six.string_types):
-        script_path = [input_api.python_executable, script_path]
+        script_path = [input_api.python3_executable, script_path]
 
     start_time = time.time()
     process = input_api.subprocess.Popen(script_path + args,
@@ -65,6 +65,7 @@ def _ExecuteSubProcess(input_api, output_api, script_path, args, results):
 def _CheckChangesAreExclusiveToDirectory(input_api, output_api):
     if input_api.change.DISABLE_THIRD_PARTY_CHECK != None:
         return []
+
     results = [output_api.PresubmitNotifyResult('Directory Exclusivity Check:')]
 
     def IsParentDir(file, dir):
@@ -84,6 +85,8 @@ def _CheckChangesAreExclusiveToDirectory(input_api, output_api):
     EXCLUSIVE_CHANGE_DIRECTORIES = [
         [
             'third_party', 'v8',
+            input_api.os_path.join('front_end', 'models',
+                                   'javascript_metadata'),
             input_api.os_path.join('front_end', 'generated')
         ],
         [
@@ -655,9 +658,10 @@ def _getFilesToLint(input_api, output_api, lint_config_files,
                                           default_linted_directories, ['D'],
                                           accepted_endings)
 
-        # Exclude front_end/third_party files.
+        # Exclude front_end/third_party and front_end/generated files.
         files_to_lint = [
-            file for file in files_to_lint if "third_party" not in file
+            file for file in files_to_lint
+            if "third_party" not in file or "generated" not in file
         ]
 
         if len(files_to_lint) == 0:

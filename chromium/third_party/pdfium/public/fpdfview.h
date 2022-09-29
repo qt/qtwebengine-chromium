@@ -69,11 +69,11 @@ typedef struct fpdf_page_t__* FPDF_PAGE;
 typedef struct fpdf_pagelink_t__* FPDF_PAGELINK;
 typedef struct fpdf_pageobject_t__* FPDF_PAGEOBJECT;  // (text, path, etc.)
 typedef struct fpdf_pageobjectmark_t__* FPDF_PAGEOBJECTMARK;
-typedef struct fpdf_pagerange_t__* FPDF_PAGERANGE;
+typedef const struct fpdf_pagerange_t__* FPDF_PAGERANGE;
 typedef const struct fpdf_pathsegment_t* FPDF_PATHSEGMENT;
 typedef void* FPDF_RECORDER;  // Passed into skia.
 typedef struct fpdf_schhandle_t__* FPDF_SCHHANDLE;
-typedef struct fpdf_signature_t__* FPDF_SIGNATURE;
+typedef const struct fpdf_signature_t__* FPDF_SIGNATURE;
 typedef struct fpdf_structelement_t__* FPDF_STRUCTELEMENT;
 typedef const struct fpdf_structelement_attr_t__* FPDF_STRUCTELEMENT_ATTR;
 typedef struct fpdf_structtree_t__* FPDF_STRUCTTREE;
@@ -172,6 +172,17 @@ typedef struct FS_POINTF_ {
 
 // Const Pointer to FS_POINTF structure.
 typedef const FS_POINTF* FS_LPCPOINTF;
+
+typedef struct _FS_QUADPOINTSF {
+  FS_FLOAT x1;
+  FS_FLOAT y1;
+  FS_FLOAT x2;
+  FS_FLOAT y2;
+  FS_FLOAT x3;
+  FS_FLOAT y3;
+  FS_FLOAT x4;
+  FS_FLOAT y4;
+} FS_QUADPOINTSF;
 
 // Annotation enums.
 typedef int FPDF_ANNOTATION_SUBTYPE;
@@ -571,7 +582,8 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_GetFileVersion(FPDF_DOCUMENT doc,
 //          A 32-bit integer indicating error code as defined above.
 // Comments:
 //          If the previous SDK call succeeded, the return value of this
-//          function is not defined.
+//          function is not defined. This function only works in conjunction
+//          with APIs that mention FPDF_GetLastError() in their documentation.
 FPDF_EXPORT unsigned long FPDF_CALLCONV FPDF_GetLastError();
 
 // Experimental API.
@@ -1047,9 +1059,15 @@ FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV FPDFBitmap_Create(int width,
 //                          above.
 //          first_scan  -   A pointer to the first byte of the first line if
 //                          using an external buffer. If this parameter is NULL,
-//                          then the a new buffer will be created.
-//          stride      -   Number of bytes for each scan line, for external
-//                          buffer only.
+//                          then a new buffer will be created.
+//          stride      -   Number of bytes for each scan line. The value must
+//                          be 0 or greater. When the value is 0,
+//                          FPDFBitmap_CreateEx() will automatically calculate
+//                          the appropriate value using |width| and |format|.
+//                          When using an external buffer, it is recommended for
+//                          the caller to pass in the value.
+//                          When not using an external buffer, it is recommended
+//                          for the caller to pass in 0.
 // Return value:
 //          The bitmap handle, or NULL if parameter error or out of memory.
 // Comments:
@@ -1058,9 +1076,11 @@ FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV FPDFBitmap_Create(int width,
 //          function can be used in any place that a FPDF_BITMAP handle is
 //          required.
 //
-//          If an external buffer is used, then the application should destroy
-//          the buffer by itself. FPDFBitmap_Destroy function will not destroy
-//          the buffer.
+//          If an external buffer is used, then the caller should destroy the
+//          buffer. FPDFBitmap_Destroy() will not destroy the buffer.
+//
+//          It is recommended to use FPDFBitmap_GetStride() to get the stride
+//          value.
 FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV FPDFBitmap_CreateEx(int width,
                                                           int height,
                                                           int format,

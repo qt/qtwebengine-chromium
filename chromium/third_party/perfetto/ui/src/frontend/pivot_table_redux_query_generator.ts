@@ -26,6 +26,12 @@ import {
 } from '../controller/aggregation/slice_aggregation_controller';
 
 import {globals} from './globals';
+import {
+  Aggregation,
+  AggregationFunction,
+  TableColumn,
+  tableColumnEquals,
+} from './pivot_table_redux_types';
 
 export interface Table {
   name: string;
@@ -84,35 +90,11 @@ export interface ArgumentColumn {
   argument: string;
 }
 
-export type TableColumn = RegularColumn|ArgumentColumn;
-
-export type AggregationFunction = 'COUNT'|'SUM'|'MIN'|'MAX';
-
 function outerAggregation(fn: AggregationFunction): AggregationFunction {
   if (fn === 'COUNT') {
     return 'SUM';
   }
   return fn;
-}
-
-export interface Aggregation {
-  aggregationFunction: AggregationFunction;
-  column: TableColumn;
-}
-
-export function tableColumnEquals(first: TableColumn, second: TableColumn) {
-  switch (first.kind) {
-    case 'regular': {
-      return second.kind === 'regular' && first.table === second.table &&
-          first.column === second.column;
-    }
-    case 'argument': {
-      return second.kind === 'argument' && first.argument === second.argument;
-    }
-    default: {
-      throw new Error(`malformed table column ${first}`);
-    }
-  }
 }
 
 // Exception thrown by query generator in case incoming parameters are not
@@ -128,7 +110,7 @@ function aggregationAlias(
 
 export function areaFilter(area: Area): string {
   return `
-    ts > ${toNs(area.startSec)}
+    ts + dur > ${toNs(area.startSec)}
     and ts < ${toNs(area.endSec)}
     and track_id in (${getSelectedTrackIds(area).join(', ')})
   `;
@@ -136,15 +118,12 @@ export function areaFilter(area: Area): string {
 
 export function expression(column: TableColumn): string {
   switch (column.kind) {
-    case 'regular': {
+    case 'regular':
       return column.column;
-    }
-    case 'argument': {
+    case 'argument':
       return extractArgumentExpression(column.argument);
-    }
-    default: {
+    default:
       throw new Error(`malformed table column ${column}`);
-    }
   }
 }
 
@@ -247,49 +226,28 @@ export function aggregationIndex(
 export function generateQueryFromState(
     state: PivotTableReduxState,
     ): PivotTableReduxQuery {
-  if (state.selectionArea === null) {
+  if (state.selectionArea === undefined) {
     throw new QueryGeneratorError('Should not be called without area');
   }
   return generateQuery(
-      state.selectedPivotsMap,
+      state.selectedPivots,
+      state.selectedSlicePivots,
       state.selectedAggregations,
       globals.state.areas[state.selectionArea.areaId],
       state.constrainToArea);
 }
 
 export function generateQuery(
-    selectedPivots: Map<string, TableColumn>,
+    nonSlicePivots: RegularColumn[],
+    slicePivots: TableColumn[],
     selectedAggregations: Map<string, Aggregation>,
     area: Area,
     constrainToArea: boolean): PivotTableReduxQuery {
   const sliceTableAggregations =
       computeSliceTableAggregations(selectedAggregations);
-  const slicePivots: TableColumn[] = [];
-  const nonSlicePivots: RegularColumn[] = [];
 
   if (sliceTableAggregations.flatAggregations.length === 0) {
     throw new QueryGeneratorError('No aggregations selected');
-  }
-
-  for (const tableColumn of selectedPivots.values()) {
-    switch (tableColumn.kind) {
-      case 'regular': {
-        if (tableColumn.table === 'slice' ||
-            tableColumn.table === 'thread_slice') {
-          slicePivots.push(tableColumn);
-        } else {
-          nonSlicePivots.push(tableColumn);
-        }
-        break;
-      }
-      case 'argument': {
-        slicePivots.push(tableColumn);
-        break;
-      }
-      default: {
-        throw new Error(`malformed table column ${tableColumn}`);
-      }
-    }
   }
 
   if (slicePivots.length === 0 && nonSlicePivots.length === 0) {

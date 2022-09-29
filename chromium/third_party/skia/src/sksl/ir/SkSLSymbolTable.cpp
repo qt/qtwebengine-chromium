@@ -7,77 +7,36 @@
 
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
-#include "include/sksl/SkSLErrorReporter.h"
-#include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
 
 namespace SkSL {
 
-std::vector<const FunctionDeclaration*> SymbolTable::GetFunctions(const Symbol& s) {
-    switch (s.kind()) {
-        case Symbol::Kind::kFunctionDeclaration:
-            return { &s.as<FunctionDeclaration>() };
-        case Symbol::Kind::kUnresolvedFunction:
-            return s.as<UnresolvedFunction>().functions();
-        default:
-            return std::vector<const FunctionDeclaration*>();
-    }
+const Symbol* SymbolTable::operator[](std::string_view name) const {
+    return this->lookup(MakeSymbolKey(name));
 }
 
-const Symbol* SymbolTable::operator[](std::string_view name) {
-    return this->lookup(fBuiltin ? nullptr : this, MakeSymbolKey(name));
+bool SymbolTable::isType(std::string_view name) const {
+    const Symbol* symbol = (*this)[name];
+    return symbol && symbol->is<Type>();
 }
 
-const Symbol* SymbolTable::lookup(SymbolTable* writableSymbolTable, const SymbolKey& key) {
-    // Symbol-table lookup can cause new UnresolvedFunction nodes to be created; however, we don't
-    // want these to end up in built-in root symbol tables (where they will outlive the Program
-    // associated with those UnresolvedFunction nodes). `writableSymbolTable` tracks the closest
-    // symbol table to the root which is not a built-in.
-    if (!fBuiltin) {
-        writableSymbolTable = this;
+bool SymbolTable::isBuiltinType(std::string_view name) const {
+    if (!this->isBuiltin()) {
+        return fParent && fParent->isBuiltinType(name);
     }
+    return this->isType(name);
+}
+
+const Symbol* SymbolTable::lookup(const SymbolKey& key) const {
     const Symbol** symbolPPtr = fSymbols.find(key);
-    if (!symbolPPtr) {
-        if (fParent) {
-            return fParent->lookup(writableSymbolTable, key);
-        }
-        return nullptr;
+    if (symbolPPtr) {
+        return *symbolPPtr;
     }
 
-    const Symbol* symbol = *symbolPPtr;
-    if (fParent) {
-        auto functions = GetFunctions(*symbol);
-        if (functions.size() > 0) {
-            bool modified = false;
-            const Symbol* previous = fParent->lookup(writableSymbolTable, key);
-            if (previous) {
-                auto previousFunctions = GetFunctions(*previous);
-                for (const FunctionDeclaration* prev : previousFunctions) {
-                    bool found = false;
-                    for (const FunctionDeclaration* current : functions) {
-                        if (current->matches(*prev)) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        functions.push_back(prev);
-                        modified = true;
-                    }
-                }
-                if (modified) {
-                    SkASSERT(functions.size() > 1);
-                    return writableSymbolTable
-                                   ? writableSymbolTable->takeOwnershipOfSymbol(
-                                             std::make_unique<UnresolvedFunction>(functions))
-                                   : nullptr;
-                }
-            }
-        }
-    }
-    return symbol;
+    // The symbol wasn't found; recurse into the parent symbol table.
+    return fParent ? fParent->lookup(key) : nullptr;
 }
 
 const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
@@ -86,44 +45,44 @@ const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
     return &fOwnedStrings.front();
 }
 
-void SymbolTable::addWithoutOwnership(const Symbol* symbol) {
-    const std::string_view& name = symbol->name();
+void SymbolTable::addWithoutOwnership(Symbol* symbol) {
+    auto key = MakeSymbolKey(symbol->name());
 
-    const Symbol*& refInSymbolTable = fSymbols[MakeSymbolKey(name)];
+    // If this is a function declaration, we need to keep the overload chain in sync.
+    if (symbol->is<FunctionDeclaration>()) {
+        // If we have a function with the same name...
+        const Symbol* existingSymbol = this->lookup(key);
+        if (existingSymbol && existingSymbol->is<FunctionDeclaration>()) {
+            // ... add the existing function as the next overload in the chain.
+            const FunctionDeclaration* existingDecl = &existingSymbol->as<FunctionDeclaration>();
+            symbol->as<FunctionDeclaration>().setNextOverload(existingDecl);
+            fSymbols[key] = symbol;
+            return;
+        }
+    }
+
+    return this->addWithoutOwnership(symbol, key);
+}
+
+void SymbolTable::addWithoutOwnership(const Symbol* symbol, const SymbolKey& key) {
+    const Symbol*& refInSymbolTable = fSymbols[key];
+
     if (refInSymbolTable == nullptr) {
         refInSymbolTable = symbol;
         return;
     }
 
-    if (!symbol->is<FunctionDeclaration>()) {
-        fContext.fErrors->error(symbol->fPosition, "symbol '" + std::string(name) +
-                "' was already defined");
-        return;
-    }
-
-    std::vector<const FunctionDeclaration*> functions;
-    if (refInSymbolTable->is<FunctionDeclaration>()) {
-        functions = {&refInSymbolTable->as<FunctionDeclaration>(),
-                     &symbol->as<FunctionDeclaration>()};
-
-        refInSymbolTable = this->takeOwnershipOfSymbol(
-                std::make_unique<UnresolvedFunction>(std::move(functions)));
-    } else if (refInSymbolTable->is<UnresolvedFunction>()) {
-        functions = refInSymbolTable->as<UnresolvedFunction>().functions();
-        functions.push_back(&symbol->as<FunctionDeclaration>());
-
-        refInSymbolTable = this->takeOwnershipOfSymbol(
-                std::make_unique<UnresolvedFunction>(std::move(functions)));
-    }
+    ThreadContext::ReportError("symbol '" + std::string(symbol->name()) + "' was already defined",
+                               symbol->fPosition);
 }
 
 const Type* SymbolTable::addArrayDimension(const Type* type, int arraySize) {
     if (arraySize == 0) {
         return type;
     }
-    // If this is a builtin type, we add it to the topmost non-builtin symbol table to enable
-    // additional reuse of the array-type.
-    if (type->isInBuiltinTypes() && fParent && !fParent->fBuiltin) {
+    // If this is a builtin type, we add it as high as possible in the symbol table tree (at the
+    // module boundary), to enable additional reuse of the array-type.
+    if (type->isInBuiltinTypes() && fParent && !fAtModuleBoundary) {
         return fParent->addArrayDimension(type, arraySize);
     }
     // Reuse an existing array type with this name if one already exists in our symbol table.

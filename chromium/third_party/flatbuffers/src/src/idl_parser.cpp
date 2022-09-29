@@ -93,33 +93,6 @@ static bool IsLowerSnakeCase(const std::string &str) {
   return true;
 }
 
-// Convert an underscore_based_identifier in to camelCase.
-// Also uppercases the first character if first is true.
-std::string MakeCamel(const std::string &in, bool first) {
-  std::string s;
-  for (size_t i = 0; i < in.length(); i++) {
-    if (!i && first)
-      s += CharToUpper(in[0]);
-    else if (in[i] == '_' && i + 1 < in.length())
-      s += CharToUpper(in[++i]);
-    else
-      s += in[i];
-  }
-  return s;
-}
-
-// Convert an underscore_based_identifier in to screaming snake case.
-std::string MakeScreamingCamel(const std::string &in) {
-  std::string s;
-  for (size_t i = 0; i < in.length(); i++) {
-    if (in[i] != '_')
-      s += CharToUpper(in[i]);
-    else
-      s += in[i];
-  }
-  return s;
-}
-
 void DeserializeDoc(std::vector<std::string> &doc,
                     const Vector<Offset<String>> *documentation) {
   if (documentation == nullptr) return;
@@ -144,7 +117,10 @@ void Parser::Message(const std::string &msg) {
 }
 
 void Parser::Warning(const std::string &msg) {
-  if (!opts.no_warnings) Message("warning: " + msg);
+  if (!opts.no_warnings) {
+    Message("warning: " + msg);
+    has_warning_ = true;  // for opts.warnings_as_errors
+  }
 }
 
 CheckedError Parser::Error(const std::string &msg) {
@@ -513,10 +489,21 @@ CheckedError Parser::Next() {
         }
 
         const auto has_sign = (c == '+') || (c == '-');
-        if (has_sign && IsIdentifierStart(*cursor_)) {
-          // '-'/'+' and following identifier - it could be a predefined
-          // constant. Return the sign in token_, see ParseSingleValue.
-          return NoError();
+        if (has_sign) {
+          // Check for +/-inf which is considered a float constant.
+          if (strncmp(cursor_, "inf", 3) == 0 &&
+              !(IsIdentifierStart(cursor_[3]) || is_digit(cursor_[3]))) {
+            attribute_.assign(cursor_ - 1, cursor_ + 3);
+            token_ = kTokenFloatConstant;
+            cursor_ += 3;
+            return NoError();
+          }
+
+          if (IsIdentifierStart(*cursor_)) {
+            // '-'/'+' and following identifier - it could be a predefined
+            // constant. Return the sign in token_, see ParseSingleValue.
+            return NoError();
+          }
         }
 
         auto dot_lvl =
@@ -918,7 +905,7 @@ CheckedError Parser::ParseField(StructDef &struct_def) {
     }
     if (!SupportsOptionalScalars()) {
       return Error(
-          "Optional scalars are not yet supported in at least one the of "
+          "Optional scalars are not yet supported in at least one of "
           "the specified programming languages.");
     }
   }
@@ -1125,6 +1112,10 @@ CheckedError Parser::ParseAnyValue(Value &val, FieldDef *field,
       }
       uint8_t enum_idx;
       if (vector_of_union_types) {
+        if (vector_of_union_types->size() <= count)
+          return Error(
+              "union types vector smaller than union values vector for: " +
+              field->name);
         enum_idx = vector_of_union_types->Get(count);
       } else {
         ECHECK(atot(constant.c_str(), *this, &enum_idx));
@@ -1674,8 +1665,9 @@ CheckedError Parser::ParseNestedFlatbuffer(Value &val, FieldDef *field,
     if (opts.json_nested_legacy_flatbuffers) {
       ECHECK(ParseAnyValue(val, field, fieldn, parent_struct_def, 0));
     } else {
-      return Error("cannot parse nested_flatbuffer as bytes unless"
-                   " --json-nested-bytes is set");
+      return Error(
+          "cannot parse nested_flatbuffer as bytes unless"
+          " --json-nested-bytes is set");
     }
   } else {
     auto cursor_at_value_begin = cursor_;
@@ -2164,9 +2156,7 @@ void EnumDef::SortByValue() {
     });
   else
     std::sort(v.begin(), v.end(), [](const EnumVal *e1, const EnumVal *e2) {
-      if (e1->GetAsInt64() == e2->GetAsInt64()) {
-        return e1->name < e2->name;
-      }
+      if (e1->GetAsInt64() == e2->GetAsInt64()) { return e1->name < e2->name; }
       return e1->GetAsInt64() < e2->GetAsInt64();
     });
 }
@@ -2199,8 +2189,12 @@ template<typename T> void EnumDef::ChangeEnumValue(EnumVal *ev, T new_value) {
 }
 
 namespace EnumHelper {
-template<BaseType E> struct EnumValType { typedef int64_t type; };
-template<> struct EnumValType<BASE_TYPE_ULONG> { typedef uint64_t type; };
+template<BaseType E> struct EnumValType {
+  typedef int64_t type;
+};
+template<> struct EnumValType<BASE_TYPE_ULONG> {
+  typedef uint64_t type;
+};
 }  // namespace EnumHelper
 
 struct EnumValBuilder {
@@ -2474,7 +2468,8 @@ bool Parser::SupportsOptionalScalars(const flatbuffers::IDLOptions &opts) {
   static FLATBUFFERS_CONSTEXPR unsigned long supported_langs =
       IDLOptions::kRust | IDLOptions::kSwift | IDLOptions::kLobster |
       IDLOptions::kKotlin | IDLOptions::kCpp | IDLOptions::kJava |
-      IDLOptions::kCSharp | IDLOptions::kTs | IDLOptions::kBinary;
+      IDLOptions::kCSharp | IDLOptions::kTs | IDLOptions::kBinary |
+      IDLOptions::kGo;
   unsigned long langs = opts.lang_to_generate;
   return (langs > 0 && langs < IDLOptions::kMAX) && !(langs & ~supported_langs);
 }
@@ -2850,7 +2845,7 @@ CheckedError Parser::ParseProtoFields(StructDef *struct_def, bool isextend,
       if (IsIdent("group") || oneof) {
         if (!oneof) NEXT();
         if (oneof && opts.proto_oneof_union) {
-          auto name = MakeCamel(attribute_, true) + "Union";
+          auto name = ConvertCase(attribute_, Case::kUpperCamel) + "Union";
           ECHECK(StartEnum(name, true, &oneof_union));
           type = Type(BASE_TYPE_UNION, nullptr, oneof_union);
         } else {
@@ -2905,7 +2900,11 @@ CheckedError Parser::ParseProtoFields(StructDef *struct_def, bool isextend,
           if (key == "default") {
             // Temp: skip non-numeric and non-boolean defaults (enums).
             auto numeric = strpbrk(val.c_str(), "0123456789-+.");
-            if (IsScalar(type.base_type) && numeric == val.c_str()) {
+            if (IsFloat(type.base_type) &&
+                (val == "inf" || val == "+inf" || val == "-inf")) {
+              // Prefer to be explicit with +inf.
+              field->value.constant = val == "inf" ? "+inf" : val;
+            } else if (IsScalar(type.base_type) && numeric == val.c_str()) {
               field->value.constant = val;
             } else if (val == "true") {
               field->value.constant = val;
@@ -3053,7 +3052,8 @@ CheckedError Parser::SkipAnyJsonValue() {
     case kTokenIntegerConstant:
     case kTokenFloatConstant: NEXT(); break;
     default:
-      if (IsIdent("true") || IsIdent("false") || IsIdent("null")) {
+      if (IsIdent("true") || IsIdent("false") || IsIdent("null") ||
+          IsIdent("inf")) {
         NEXT();
       } else
         return TokenError();
@@ -3276,7 +3276,6 @@ CheckedError Parser::ParseRoot(const char *source, const char **include_paths,
   }
   // Parse JSON object only if the scheme has been parsed.
   if (token_ == '{') { ECHECK(DoParseJson()); }
-  EXPECT(kTokenEof);
   return NoError();
 }
 
@@ -3443,6 +3442,10 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
     } else {
       ECHECK(ParseDecl(source_filename));
     }
+  }
+  EXPECT(kTokenEof);
+  if (opts.warnings_as_errors && has_warning_) {
+    return Error("treating warnings as errors, failed due to above warnings");
   }
   return NoError();
 }

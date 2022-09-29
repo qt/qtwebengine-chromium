@@ -77,6 +77,23 @@ constexpr uint32_t kPipelineCacheVkUpdatePeriod = 60;
 // version of Vulkan.
 constexpr uint32_t kPreferredVulkanAPIVersion = VK_API_VERSION_1_1;
 
+bool IsQualcommOpenSource(uint32_t vendorId, uint32_t driverId, const char *deviceName)
+{
+    if (!IsQualcomm(vendorId))
+    {
+        return false;
+    }
+
+    // Where driver id is available, distinguish by driver id:
+    if (driverId != 0)
+    {
+        return driverId != VK_DRIVER_ID_QUALCOMM_PROPRIETARY;
+    }
+
+    // Otherwise, look for Venus or Turnip in the device name.
+    return strstr(deviceName, "Venus") != nullptr || strstr(deviceName, "Turnip") != nullptr;
+}
+
 angle::vk::ICD ChooseICDFromAttribs(const egl::AttributeMap &attribs)
 {
 #if !defined(ANGLE_PLATFORM_ANDROID)
@@ -198,6 +215,10 @@ constexpr const char *kSkippedMessages[] = {
     // http://anglebug.com/7338
     "VUID-VkGraphicsPipelineCreateInfo-renderPass-06040",
     "VUID-VkGraphicsPipelineCreateInfo-renderPass-06039",
+    // http://anglebug.com/7470
+    "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-ClearValueWithoutLoadOpClear",
+    // http://anglebug.com/7513
+    "VUID-VkGraphicsPipelineCreateInfo-pStages-06896",
 };
 
 // Some syncval errors are resolved in the presence of the NONE load or store render pass ops.  For
@@ -386,7 +407,7 @@ constexpr vk::SkippedSyncvalMessage kSkippedSyncvalMessages[] = {
         "SYNC-HAZARD-READ_AFTER_WRITE",
         "type: VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC",
     },
-    // Coherent framebuffer fetch is enabled on some platforms that are known apriori to have the
+    // Coherent framebuffer fetch is enabled on some platforms that are known a priori to have the
     // needed behavior, even though this is not specified in the Vulkan spec.  These generate
     // syncval errors that are benign on those platforms.
     // http://anglebug.com/6870
@@ -416,6 +437,13 @@ constexpr vk::SkippedSyncvalMessage kSkippedSyncvalMessages[] = {
     {
         "SYNC-HAZARD-WRITE_AFTER_READ",
         "type: VK_DESCRIPTOR_TYPE_STORAGE_BUFFER",
+    },
+    // From: TracePerfTest.Run/vulkan_car_chase http://anglebug.com/7125#c6
+    {
+        "SYNC-HAZARD-WRITE_AFTER_READ",
+        "Access info (usage: SYNC_COPY_TRANSFER_WRITE, "
+        "prior_usage: SYNC_FRAGMENT_SHADER_UNIFORM_READ, "
+        "read_barriers: VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, command: vkCmdDrawIndexed",
     },
     // From: TracePerfTest.Run/vulkan_special_forces_group_2 http://anglebug.com/5592
     {
@@ -451,6 +479,38 @@ constexpr vk::SkippedSyncvalMessage kSkippedSyncvalMessages[] = {
      "FRAGMENT_SHADER_UNIFORM_READ, "
      "command: vkCmdPipelineBarrier, seq_no: 3,",
      "", false},
+    // http://anglebug.com/7456
+    {
+        "SYNC-HAZARD-READ_AFTER_WRITE",
+        "type: VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, "
+        "imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL",
+        "Access info (usage: SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, "
+        "prior_usage: SYNC_IMAGE_LAYOUT_TRANSITION, "
+        "write_barriers: SYNC_VERTEX_SHADER_SHADER_SAMPLED_READ|"
+        "SYNC_VERTEX_SHADER_SHADER_STORAGE_READ|SYNC_VERTEX_SHADER_UNIFORM_READ, "
+        "command: vkCmdPipelineBarrier",
+    },
+    {
+        "SYNC-HAZARD-READ_AFTER_WRITE",
+        "type: VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, "
+        "imageLayout: VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL",
+        "Access info (usage: SYNC_COMPUTE_SHADER_SHADER_STORAGE_READ, "
+        "prior_usage: SYNC_IMAGE_LAYOUT_TRANSITION, "
+        "write_barriers: SYNC_VERTEX_ATTRIBUTE_INPUT_VERTEX_ATTRIBUTE_READ|"
+        "SYNC_FRAGMENT_SHADER_SHADER_SAMPLED_READ|SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ|"
+        "SYNC_FRAGMENT_SHADER_UNIFORM_READ, "
+        "command: vkCmdPipelineBarrier",
+    },
+    // The validation layers don't properly account for VK_EXT_fragment_shader_interlock, which
+    // gives synchronization guarantees without the need for an image barrier. Suppress these
+    // syncval errors globally until it's fixed.
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/4387
+    {"SYNC-HAZARD-READ_AFTER_WRITE",
+     "type: VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, "
+     "imageLayout: VK_IMAGE_LAYOUT_GENERAL",
+     "Access info (usage: SYNC_FRAGMENT_SHADER_SHADER_STORAGE_READ, "
+     "prior_usage: SYNC_FRAGMENT_SHADER_SHADER_STORAGE_WRITE, "
+     "write_barriers: 0"},
 
 };
 
@@ -850,7 +910,7 @@ gl::Version LimitVersionTo(const gl::Version &current, const gl::Version &lower)
     return std::min(current, lower);
 }
 
-ANGLE_MAYBE_UNUSED bool FencePropertiesCompatibleWithAndroid(
+[[maybe_unused]] bool FencePropertiesCompatibleWithAndroid(
     const VkExternalFenceProperties &externalFenceProperties)
 {
     // handleType here is the external fence type -
@@ -881,7 +941,7 @@ ANGLE_MAYBE_UNUSED bool FencePropertiesCompatibleWithAndroid(
     return true;
 }
 
-ANGLE_MAYBE_UNUSED bool SemaphorePropertiesCompatibleWithAndroid(
+[[maybe_unused]] bool SemaphorePropertiesCompatibleWithAndroid(
     const VkExternalSemaphoreProperties &externalSemaphoreProperties)
 {
     // handleType here is the external semaphore type -
@@ -1171,7 +1231,8 @@ RendererVk::RendererVk()
       mPipelineCacheInitialized(false),
       mValidationMessageCount(0),
       mCommandProcessor(this),
-      mSupportedVulkanPipelineStageMask(0)
+      mSupportedVulkanPipelineStageMask(0),
+      mSupportedVulkanShaderStageMask(0)
 {
     VkFormatProperties invalid = {0, 0, kInvalidFormatFeatureFlags};
     mFormatProperties.fill(invalid);
@@ -1638,8 +1699,13 @@ angle::Result RendererVk::initialize(DisplayVk *displayVk,
     std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
     ANGLE_VK_TRY(displayVk, vkEnumeratePhysicalDevices(mInstance, &physicalDeviceCount,
                                                        physicalDevices.data()));
+    uint32_t preferredVendorId =
+        static_cast<uint32_t>(attribs.get(EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE, 0));
+    uint32_t preferredDeviceId =
+        static_cast<uint32_t>(attribs.get(EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE, 0));
     ChoosePhysicalDevice(vkGetPhysicalDeviceProperties, physicalDevices, mEnabledICD,
-                         &mPhysicalDevice, &mPhysicalDeviceProperties);
+                         preferredVendorId, preferredDeviceId, &mPhysicalDevice,
+                         &mPhysicalDeviceProperties);
 
     mGarbageCollectionFlushThreshold =
         static_cast<uint32_t>(mPhysicalDeviceProperties.limits.maxMemoryAllocationCount *
@@ -1852,7 +1918,7 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
 
     mMultisampledRenderToSingleSampledFeatures = {};
     mMultisampledRenderToSingleSampledFeatures.sType =
-        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_FEATURES_EXT;
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_FEATURES_GOOGLEX;
 
     mImage2dViewOf3dFeatures = {};
     mImage2dViewOf3dFeatures.sType =
@@ -1885,6 +1951,10 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
     mDepthClipControlFeatures.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT;
 
+    mPrimitivesGeneratedQueryFeatures = {};
+    mPrimitivesGeneratedQueryFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVES_GENERATED_QUERY_FEATURES_EXT;
+
     mBlendOperationAdvancedFeatures = {};
     mBlendOperationAdvancedFeatures.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT;
@@ -1904,6 +1974,14 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
     mFragmentShadingRateFeatures = {};
     mFragmentShadingRateFeatures.sType =
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR;
+
+    mFragmentShaderInterlockFeatures = {};
+    mFragmentShaderInterlockFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT;
+
+    mImagelessFramebufferFeatures = {};
+    mImagelessFramebufferFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES_KHR;
 
     if (!vkGetPhysicalDeviceProperties2KHR || !vkGetPhysicalDeviceFeatures2KHR)
     {
@@ -1979,7 +2057,7 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
     }
 
     // Query multisampled render to single-sampled features
-    if (ExtensionFound(VK_EXT_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME,
+    if (ExtensionFound(VK_GOOGLEX_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME,
                        deviceExtensionNames))
     {
         vk::AddToPNextChain(&deviceFeatures, &mMultisampledRenderToSingleSampledFeatures);
@@ -2037,6 +2115,11 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
         vk::AddToPNextChain(&deviceFeatures, &mDepthClipControlFeatures);
     }
 
+    if (ExtensionFound(VK_EXT_PRIMITIVES_GENERATED_QUERY_EXTENSION_NAME, deviceExtensionNames))
+    {
+        vk::AddToPNextChain(&deviceFeatures, &mPrimitivesGeneratedQueryFeatures);
+    }
+
     if (ExtensionFound(VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, deviceExtensionNames))
     {
         vk::AddToPNextChain(&deviceFeatures, &mBlendOperationAdvancedFeatures);
@@ -2060,6 +2143,16 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
     if (ExtensionFound(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME, deviceExtensionNames))
     {
         vk::AddToPNextChain(&deviceFeatures, &mFragmentShadingRateFeatures);
+    }
+
+    if (ExtensionFound(VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME, deviceExtensionNames))
+    {
+        vk::AddToPNextChain(&deviceFeatures, &mFragmentShaderInterlockFeatures);
+    }
+
+    if (ExtensionFound(VK_KHR_IMAGELESS_FRAMEBUFFER_EXTENSION_NAME, deviceExtensionNames))
+    {
+        vk::AddToPNextChain(&deviceFeatures, &mImagelessFramebufferFeatures);
     }
 
     vkGetPhysicalDeviceFeatures2KHR(mPhysicalDevice, &deviceFeatures);
@@ -2089,11 +2182,14 @@ void RendererVk::queryDeviceExtensionFeatures(const vk::ExtensionNameList &devic
     mProtectedMemoryProperties.pNext                 = nullptr;
     mHostQueryResetFeatures.pNext                    = nullptr;
     mDepthClipControlFeatures.pNext                  = nullptr;
+    mPrimitivesGeneratedQueryFeatures.pNext          = nullptr;
     mBlendOperationAdvancedFeatures.pNext            = nullptr;
     mPipelineCreationCacheControlFeatures.pNext      = nullptr;
     mExtendedDynamicStateFeatures.pNext              = nullptr;
     mExtendedDynamicState2Features.pNext             = nullptr;
     mFragmentShadingRateFeatures.pNext               = nullptr;
+    mFragmentShaderInterlockFeatures.pNext           = nullptr;
+    mImagelessFramebufferFeatures.pNext              = nullptr;
 }
 
 angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex)
@@ -2357,6 +2453,7 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
         mPhysicalDeviceFeatures.fragmentStoresAndAtomics;
     // Used to emulate the primitives generated query:
     mEnabledFeatures.features.pipelineStatisticsQuery =
+        !getFeatures().supportsPrimitivesGeneratedQuery.enabled &&
         getFeatures().supportsPipelineStatisticsQuery.enabled;
     // Used to support geometry shaders:
     mEnabledFeatures.features.geometryShader = mPhysicalDeviceFeatures.geometryShader;
@@ -2449,7 +2546,7 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     if (getFeatures().supportsMultisampledRenderToSingleSampled.enabled)
     {
         mEnabledDeviceExtensions.push_back(
-            VK_EXT_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME);
+            VK_GOOGLEX_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME);
         vk::AddToPNextChain(&mEnabledFeatures, &mMultisampledRenderToSingleSampledFeatures);
     }
 
@@ -2550,6 +2647,12 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
         vk::AddToPNextChain(&mEnabledFeatures, &mDepthClipControlFeatures);
     }
 
+    if (getFeatures().supportsPrimitivesGeneratedQuery.enabled)
+    {
+        mEnabledDeviceExtensions.push_back(VK_EXT_PRIMITIVES_GENERATED_QUERY_EXTENSION_NAME);
+        vk::AddToPNextChain(&mEnabledFeatures, &mPrimitivesGeneratedQueryFeatures);
+    }
+
     if (getFeatures().supportsBlendOperationAdvanced.enabled)
     {
         mEnabledDeviceExtensions.push_back(VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME);
@@ -2572,6 +2675,18 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     {
         mEnabledDeviceExtensions.push_back(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
         vk::AddToPNextChain(&mEnabledFeatures, &mFragmentShadingRateFeatures);
+    }
+
+    if (getFeatures().supportsFragmentShaderPixelInterlock.enabled)
+    {
+        mEnabledDeviceExtensions.push_back(VK_EXT_FRAGMENT_SHADER_INTERLOCK_EXTENSION_NAME);
+        vk::AddToPNextChain(&mEnabledFeatures, &mFragmentShaderInterlockFeatures);
+    }
+
+    if (getFeatures().supportsImagelessFramebuffer.enabled)
+    {
+        mEnabledDeviceExtensions.push_back(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME);
+        vk::AddToPNextChain(&mEnabledFeatures, &mImagelessFramebufferFeatures);
     }
 
     mCurrentQueueFamilyIndex = queueFamilyIndex;
@@ -2697,14 +2812,25 @@ angle::Result RendererVk::initializeDevice(DisplayVk *displayVk, uint32_t queueF
     // transitions that cover many stages (such as AllGraphicsReadOnly) to mask out unsupported
     // stages, which avoids enumerating every possible combination of stages in the layouts.
     VkPipelineStageFlags unsupportedStages = 0;
+    mSupportedVulkanShaderStageMask =
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
     if (!mPhysicalDeviceFeatures.tessellationShader)
     {
         unsupportedStages |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT |
                              VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
     }
+    else
+    {
+        mSupportedVulkanShaderStageMask |=
+            VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    }
     if (!mPhysicalDeviceFeatures.geometryShader)
     {
         unsupportedStages |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+    }
+    else
+    {
+        mSupportedVulkanShaderStageMask |= VK_SHADER_STAGE_GEOMETRY_BIT;
     }
     mSupportedVulkanPipelineStageMask = ~unsupportedStages;
 
@@ -2993,21 +3119,21 @@ bool RendererVk::canSupportFragmentShadingRate(const vk::ExtensionNameList &devi
     ASSERT(vkGetPhysicalDeviceFragmentShadingRatesKHR);
     ASSERT(vkCmdSetFragmentShadingRateKHR);
 
-    // Query supported shading rates
-    constexpr uint32_t kShadingRatesCount                                               = 6;
-    uint32_t shadingRatesCount                                                          = 6;
-    std::array<VkPhysicalDeviceFragmentShadingRateKHR, kShadingRatesCount> shadingRates = {
-        {{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {1, 1}},
-         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {1, 2}},
-         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {2, 1}},
-         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {2, 2}},
-         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {4, 2}},
-         {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {4, 4}}}};
+    // Query number of supported shading rates first
+    uint32_t shadingRatesCount = 0;
+    VkResult result =
+        vkGetPhysicalDeviceFragmentShadingRatesKHR(mPhysicalDevice, &shadingRatesCount, nullptr);
+    ASSERT(result == VK_SUCCESS);
+    ASSERT(shadingRatesCount > 0);
 
-    VkResult result = vkGetPhysicalDeviceFragmentShadingRatesKHR(
-        mPhysicalDevice, &shadingRatesCount, shadingRates.data());
-    ASSERT(result == VK_SUCCESS || result == VK_INCOMPLETE);
-    ASSERT(shadingRatesCount > 0 && shadingRatesCount <= kShadingRatesCount);
+    std::vector<VkPhysicalDeviceFragmentShadingRateKHR> shadingRates(
+        shadingRatesCount,
+        {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR, nullptr, 0, {0, 0}});
+
+    // Query supported shading rates
+    result = vkGetPhysicalDeviceFragmentShadingRatesKHR(mPhysicalDevice, &shadingRatesCount,
+                                                        shadingRates.data());
+    ASSERT(result == VK_SUCCESS);
 
     // Cache supported fragment shading rates
     mSupportedFragmentShadingRates.reset();
@@ -3055,6 +3181,12 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     const bool isSwiftShader =
         IsSwiftshader(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID);
 
+    // Distinguish between the open source and proprietary Qualcomm drivers
+    const bool isQualcommOpenSource =
+        IsQualcommOpenSource(mPhysicalDeviceProperties.vendorID, mDriverProperties.driverID,
+                             mPhysicalDeviceProperties.deviceName);
+    const bool isQualcommProprietary = isQualcomm && !isQualcommOpenSource;
+
     // Classify devices based on general architecture:
     //
     // - IMR (Immediate-Mode Rendering) devices generally progress through draw calls once and use
@@ -3086,12 +3218,6 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
         ASSERT(mLineRasterizationFeatures.sType ==
                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT);
         ANGLE_FEATURE_CONDITION(&mFeatures, bresenhamLineRasterization, true);
-    }
-    else
-    {
-        // Use OpenGL line rasterization rules if extension not available by default.
-        // TODO(jmadill): Fix Android support. http://anglebug.com/2830
-        ANGLE_FEATURE_CONDITION(&mFeatures, basicGLLineRasterization, !IsAndroid() && !isPowerVR);
     }
 
     if (mProvokingVertexFeatures.provokingVertexLast == VK_TRUE)
@@ -3236,6 +3362,12 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
                                 (mFeatures.supportsExternalFenceFd.enabled &&
                                  mFeatures.supportsExternalSemaphoreFd.enabled));
     }
+
+    // Enable extra logging and checking on Android-Swiftshader to try to find the root
+    // cause of a rare/random crash.
+    // https://issuetracker.google.com/issues/236098131
+    ANGLE_FEATURE_CONDITION(&mFeatures, extraBufferLoggingAndChecking,
+                            (IsAndroid() && isSwiftShader));
 #endif  // defined(ANGLE_PLATFORM_ANDROID)
 
     ANGLE_FEATURE_CONDITION(
@@ -3246,6 +3378,8 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
         &mFeatures, supportsRenderPassLoadStoreOpNone,
         ExtensionFound(VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME, deviceExtensionNames));
 
+    ANGLE_FEATURE_CONDITION(&mFeatures, disallowMixedDepthStencilLoadOpNoneAndLoad, isARM);
+
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsRenderPassStoreOpNone,
         !mFeatures.supportsRenderPassLoadStoreOpNone.enabled &&
@@ -3253,6 +3387,13 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
 
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsDepthClipControl,
                             mDepthClipControlFeatures.depthClipControl == VK_TRUE);
+
+    // Disable this feature for now because VK_EXT_primitives_generated_query is not tested
+    // https://anglebug.com/7554, https://anglebug.com/5430
+    //    ANGLE_FEATURE_CONDITION(&mFeatures, supportsPrimitivesGeneratedQuery,
+    //                            mPrimitivesGeneratedQueryFeatures.primitivesGeneratedQuery ==
+    //                            VK_TRUE);
+    ANGLE_FEATURE_CONDITION(&mFeatures, supportsPrimitivesGeneratedQuery, false);
 
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsBlendOperationAdvanced,
@@ -3288,30 +3429,28 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
                              mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics == VK_TRUE));
 
     // TODO: http://anglebug.com/5927 - drop dependency on customBorderColorWithoutFormat.
-    // TODO: http://anglebug.com/6200 - re-enable on SwS when possible
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsCustomBorderColor,
         mCustomBorderColorFeatures.customBorderColors == VK_TRUE &&
-            mCustomBorderColorFeatures.customBorderColorWithoutFormat == VK_TRUE && !isSwiftShader);
+            mCustomBorderColorFeatures.customBorderColorWithoutFormat == VK_TRUE);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsMultiDrawIndirect,
                             mPhysicalDeviceFeatures.multiDrawIndirect == VK_TRUE);
 
     ANGLE_FEATURE_CONDITION(&mFeatures, disableFifoPresentMode, IsLinux() && isIntel);
 
-    ANGLE_FEATURE_CONDITION(&mFeatures, bindEmptyForUnusedDescriptorSets,
-                            IsAndroid() && isQualcomm);
-
     ANGLE_FEATURE_CONDITION(&mFeatures, perFrameWindowSizeQuery,
-                            isIntel || (IsWindows() && isAMD) || IsFuchsia() || isSamsung);
+                            IsAndroid() || isIntel || (IsWindows() && isAMD) || IsFuchsia() ||
+                                isSamsung || displayVk->isWayland());
 
     ANGLE_FEATURE_CONDITION(&mFeatures, padBuffersToMaxVertexAttribStride, isAMD || isSamsung);
     mMaxVertexAttribStride = std::min(static_cast<uint32_t>(gl::limits::kMaxVertexAttribStride),
                                       mPhysicalDeviceProperties.limits.maxVertexInputBindingStride);
 
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceD16TexFilter, IsAndroid() && isQualcomm);
+    ANGLE_FEATURE_CONDITION(&mFeatures, forceD16TexFilter, IsAndroid() && isQualcommProprietary);
 
-    ANGLE_FEATURE_CONDITION(&mFeatures, disableFlippingBlitWithCommand, IsAndroid() && isQualcomm);
+    ANGLE_FEATURE_CONDITION(&mFeatures, disableFlippingBlitWithCommand,
+                            IsAndroid() && isQualcommProprietary);
 
     // Allocation sanitization disabled by default because of a heaveyweight implementation
     // that can cause OOM and timeouts.
@@ -3383,10 +3522,11 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     // - Imagination hardware
     // - SwiftShader
     //
-    ANGLE_FEATURE_CONDITION(&mFeatures, preferDriverUniformOverSpecConst,
-                            (isQualcomm && mPhysicalDeviceProperties.driverVersion <
-                                               kPixel4DriverWithWorkingSpecConstSupport) ||
-                                isARM || isPowerVR || isSwiftShader);
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, preferDriverUniformOverSpecConst,
+        (isQualcommProprietary &&
+         mPhysicalDeviceProperties.driverVersion < kPixel4DriverWithWorkingSpecConstSupport) ||
+            isARM || isPowerVR || isSwiftShader);
 
     // The compute shader used to generate mipmaps needs -
     // 1. subgroup quad operations in compute shader stage.
@@ -3418,7 +3558,8 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
                                 ((isAMD && !IsWindows()) || isNvidia || isSamsung));
 
     bool isAdreno540 = mPhysicalDeviceProperties.deviceID == angle::kDeviceID_Adreno540;
-    ANGLE_FEATURE_CONDITION(&mFeatures, forceMaxUniformBufferSize16KB, isQualcomm && isAdreno540);
+    ANGLE_FEATURE_CONDITION(&mFeatures, forceMaxUniformBufferSize16KB,
+                            isQualcommProprietary && isAdreno540);
 
     ANGLE_FEATURE_CONDITION(
         &mFeatures, supportsImageFormatList,
@@ -3447,21 +3588,20 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsImageCubeArray,
                             mPhysicalDeviceFeatures.imageCubeArray == VK_TRUE);
 
-    // TODO: Only enable if VK_EXT_primitives_generated_query is not present.
-    // http://anglebug.com/5430
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsPipelineStatisticsQuery,
                             mPhysicalDeviceFeatures.pipelineStatisticsQuery == VK_TRUE);
 
     // Defer glFLush call causes manhattan 3.0 perf regression. Let Qualcomm driver opt out from
     // this optimization.
-    ANGLE_FEATURE_CONDITION(&mFeatures, deferFlushUntilEndRenderPass, !isQualcomm);
+    ANGLE_FEATURE_CONDITION(&mFeatures, deferFlushUntilEndRenderPass, !isQualcommProprietary);
 
     // Android mistakenly destroys the old swapchain when creating a new one.
     ANGLE_FEATURE_CONDITION(&mFeatures, waitIdleBeforeSwapchainRecreation, IsAndroid() && isARM);
 
     // vkCmdClearAttachments races with draw calls on Qualcomm hardware as observed on Pixel2 and
     // Pixel4.  https://issuetracker.google.com/issues/166809097
-    ANGLE_FEATURE_CONDITION(&mFeatures, preferDrawClearOverVkCmdClearAttachments, isQualcomm);
+    ANGLE_FEATURE_CONDITION(&mFeatures, preferDrawClearOverVkCmdClearAttachments,
+                            isQualcommProprietary);
 
     // r32f image emulation is done unconditionally so VK_FORMAT_FEATURE_STORAGE_*_ATOMIC_BIT is not
     // required.
@@ -3507,6 +3647,13 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsShaderFramebufferFetchNonCoherent,
                             (IsAndroid() && !(isARM || isQualcomm)) || isSwiftShader);
 
+    // On tile-based renderers, breaking the render pass is costly.  Changing into and out of
+    // framebuffer fetch causes the render pass to break so that the layout of the color attachments
+    // can be adjusted.  On such hardware, the switch to framebuffer fetch mode is made permanent so
+    // such render pass breaks don't happen.
+    ANGLE_FEATURE_CONDITION(&mFeatures, permanentlySwitchToFramebufferFetchMode,
+                            isTileBasedRenderer);
+
     // Support EGL_KHR_lock_surface3 extension.
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsLockSurfaceExtension, IsAndroid());
 
@@ -3533,10 +3680,19 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     ANGLE_FEATURE_CONDITION(&mFeatures, emulateAdvancedBlendEquations,
                             !mFeatures.supportsBlendOperationAdvanced.enabled && !isIntel);
 
+    // Workaround for platforms that do not return 1.0f even when dividend and divisor have the same
+    // value.
+    ANGLE_FEATURE_CONDITION(&mFeatures, precisionSafeDivision, isSamsung || isAMD);
+
     // http://anglebug.com/6933
     // Android expects VkPresentRegionsKHR rectangles with a bottom-left origin, while spec
     // states they should have a top-left origin.
     ANGLE_FEATURE_CONDITION(&mFeatures, bottomLeftOriginPresentRegionRectangles, IsAndroid());
+
+    // http://anglebug.com/7308
+    // Flushing mutable textures causes flakes in perf tests using Windows/Intel GPU. Failures are
+    // due to lost context/device.
+    ANGLE_FEATURE_CONDITION(&mFeatures, mutableMipmapTextureUpload, !(IsWindows() && isIntel));
 
     // Retain debug info in SPIR-V blob.
     ANGLE_FEATURE_CONDITION(&mFeatures, retainSPIRVDebugInfo, getEnableValidationLayers());
@@ -3556,6 +3712,41 @@ void RendererVk::initFeatures(DisplayVk *displayVk,
     // Support GL_QCOM_shading_rate extension
     ANGLE_FEATURE_CONDITION(&mFeatures, supportsFragmentShadingRate,
                             canSupportFragmentShadingRate(deviceExtensionNames));
+
+    // We can use the interlock to support GL_ANGLE_shader_pixel_local_storage_coherent.
+    ANGLE_FEATURE_CONDITION(
+        &mFeatures, supportsFragmentShaderPixelInterlock,
+        mFragmentShaderInterlockFeatures.fragmentShaderPixelInterlock == VK_TRUE);
+
+    ANGLE_FEATURE_CONDITION(&mFeatures, supportsImagelessFramebuffer,
+                            mImagelessFramebufferFeatures.imagelessFramebuffer == VK_TRUE);
+
+    // The following drivers are known to key the pipeline cache blobs with vertex input and
+    // fragment output state, causing draw-time pipeline creation to miss the cache regardless of
+    // warmup:
+    //
+    // - ARM drivers
+    // - Imagination drivers
+    //
+    // The following drivers are instead known to _not_ include said state, and hit the cache at
+    // draw time.
+    //
+    // - SwiftShader
+    // - Open source Qualcomm drivers
+    //
+    // The situation is unknown for other drivers.
+    //
+    // Additionally, numerous tests that previously never created a Vulkan pipeline fail or crash on
+    // proprietary Qualcomm drivers when they do during cache warm up.  On Intel/Linux, one trace
+    // shows flakiness with this.
+    ANGLE_FEATURE_CONDITION(&mFeatures, warmUpPipelineCacheAtLink,
+                            !isARM && !isPowerVR && !isQualcommProprietary &&
+                                !(IsLinux() && isIntel) && !(IsChromeOS() && isSwiftShader));
+
+    // On ARM, dynamic state for stencil write mask doesn't work correctly in the presence of
+    // discard or alpha to coverage, if the static state provided when creating the pipeline has a
+    // value of 0.
+    ANGLE_FEATURE_CONDITION(&mFeatures, useNonZeroStencilWriteMaskStaticState, isARM);
 
     // On ARM, per-sample shading is not enabled despite the presence of a Sample decoration.  As a
     // workaround, per-sample shading is inferred by ANGLE and explicitly enabled by the API.
@@ -3639,6 +3830,16 @@ angle::Result RendererVk::getPipelineCache(PipelineCacheAccess *pipelineCacheOut
     return angle::Result::Continue;
 }
 
+angle::Result RendererVk::mergeIntoPipelineCache(const vk::PipelineCache &pipelineCache)
+{
+    PipelineCacheAccess globalCache;
+    ANGLE_TRY(getPipelineCache(&globalCache));
+
+    globalCache.merge(this, pipelineCache);
+
+    return angle::Result::Continue;
+}
+
 const gl::Caps &RendererVk::getNativeCaps() const
 {
     ensureCapsInitialized();
@@ -3663,6 +3864,17 @@ const gl::Limitations &RendererVk::getNativeLimitations() const
     return mNativeLimitations;
 }
 
+void RendererVk::initializeFrontendFeatures(angle::FrontendFeatures *features) const
+{
+    bool isSwiftShader =
+        IsSwiftshader(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID);
+
+    // Hopefully-temporary work-around for a crash on SwiftShader.  An Android process is turning
+    // off GL error checking, and then asking ANGLE to write past the end of a buffer.
+    // https://issuetracker.google.com/issues/220069903
+    ANGLE_FEATURE_CONDITION(features, forceGlErrorChecking, (IsAndroid() && isSwiftShader));
+}
+
 angle::Result RendererVk::getPipelineCacheSize(DisplayVk *displayVk, size_t *pipelineCacheSizeOut)
 {
     VkResult result = mPipelineCache.getCacheData(mDevice, pipelineCacheSizeOut, nullptr);
@@ -3673,8 +3885,17 @@ angle::Result RendererVk::getPipelineCacheSize(DisplayVk *displayVk, size_t *pip
 
 angle::Result RendererVk::syncPipelineCacheVk(DisplayVk *displayVk, const gl::Context *context)
 {
-    // TODO: Synchronize access to the pipeline/blob caches?
     ASSERT(mPipelineCache.valid());
+
+    // If the pipeline cache is being warmed up at link time, the blobs corresponding to each
+    // program is individually retrieved and stored in the blob cache.  This should be enabled only
+    // on platforms where draw time pipeline creation hits the cache due to said warm up.  As a
+    // result, there's no need to store the aggregate cache (the one owned by RendererVk) in the
+    // blob cache too.
+    if (mFeatures.warmUpPipelineCacheAtLink.enabled)
+    {
+        return angle::Result::Continue;
+    }
 
     if (--mPipelineCacheVkUpdateTimeout > 0)
     {

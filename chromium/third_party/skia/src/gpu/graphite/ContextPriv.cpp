@@ -8,17 +8,15 @@
 #include "src/gpu/graphite/ContextPriv.h"
 
 #include "src/gpu/graphite/GlobalCache.h"
-#include "src/gpu/graphite/Gpu.h"
+#include "src/gpu/graphite/SharedContext.h"
 
 namespace skgpu::graphite {
 
-Gpu* ContextPriv::gpu() {
-    return fContext->fGpu.get();
+#if GRAPHITE_TEST_UTILS
+const Caps* ContextPriv::caps() const {
+    return fContext->fSharedContext->caps();
 }
-
-const Gpu* ContextPriv::gpu() const {
-    return fContext->fGpu.get();
-}
+#endif
 
 SkShaderCodeDictionary* ContextPriv::shaderCodeDictionary() {
     return fContext->fGlobalCache->shaderCodeDictionary();

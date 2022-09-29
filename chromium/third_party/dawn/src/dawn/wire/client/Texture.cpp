@@ -21,30 +21,45 @@ namespace dawn::wire::client {
 
 // static
 WGPUTexture Texture::Create(Device* device, const WGPUTextureDescriptor* descriptor) {
-    Client* wireClient = device->client;
-    auto* textureObjectAndSerial = wireClient->TextureAllocator().New(wireClient);
-
-    // Copy over descriptor data for reflection.
-    Texture* texture = textureObjectAndSerial->object.get();
-    texture->mSize = descriptor->size;
-    texture->mMipLevelCount = descriptor->mipLevelCount;
-    texture->mSampleCount = descriptor->sampleCount;
-    texture->mDimension = descriptor->dimension;
-    texture->mFormat = descriptor->format;
-    texture->mUsage = static_cast<WGPUTextureUsage>(descriptor->usage);
+    Client* wireClient = device->GetClient();
+    Texture* texture = wireClient->Make<Texture>(descriptor);
 
     // Send the Device::CreateTexture command without modifications.
     DeviceCreateTextureCmd cmd;
     cmd.self = ToAPI(device);
-    cmd.selfId = device->id;
+    cmd.selfId = device->GetWireId();
     cmd.descriptor = descriptor;
-    cmd.result = ObjectHandle{texture->id, textureObjectAndSerial->generation};
+    cmd.result = texture->GetWireHandle();
     wireClient->SerializeCommand(cmd);
 
     return ToAPI(texture);
 }
 
-Texture::Texture(Client* c, uint32_t r, uint32_t i) : ObjectBase(c, r, i) {}
+// static
+WGPUTexture Texture::CreateError(Device* device, const WGPUTextureDescriptor* descriptor) {
+    Client* wireClient = device->GetClient();
+    Texture* texture = wireClient->Make<Texture>(descriptor);
+
+    // Send the Device::CreateErrorTexture command without modifications.
+    DeviceCreateErrorTextureCmd cmd;
+    cmd.self = ToAPI(device);
+    cmd.selfId = device->GetWireId();
+    cmd.descriptor = descriptor;
+    cmd.result = texture->GetWireHandle();
+    wireClient->SerializeCommand(cmd);
+
+    return ToAPI(texture);
+}
+
+Texture::Texture(const ObjectBaseParams& params, const WGPUTextureDescriptor* descriptor)
+    : ObjectBase(params),
+      mSize(descriptor->size),
+      mMipLevelCount(descriptor->mipLevelCount),
+      mSampleCount(descriptor->sampleCount),
+      mDimension(descriptor->dimension),
+      mFormat(descriptor->format),
+      mUsage(static_cast<WGPUTextureUsage>(descriptor->usage)) {}
+
 Texture::~Texture() = default;
 
 uint32_t Texture::GetWidth() const {

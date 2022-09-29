@@ -188,6 +188,8 @@ class ClientProxy final {
   // rotates.
   void ExitHighVisibilityMode();
 
+  std::string Dump();
+
  private:
   struct Connection {
     // Status: may be either:
@@ -234,7 +236,7 @@ class ClientProxy final {
   };
 
   void RemoveAllEndpoints();
-  void ResetLocalEndpointIdIfNeeded();
+  void OnSessionComplete();
   bool ConnectionStatusesContains(const std::string& endpoint_id,
                                   Connection::Status status_to_match) const;
   void AppendConnectionStatus(const std::string& endpoint_id,

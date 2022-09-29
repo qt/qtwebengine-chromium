@@ -53,13 +53,12 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
               [this](api::ble_v2::BlePeripheral& peripheral,
                      BleAdvertisementData advertisement_data) {
                 MutexLock lock(&mutex_);
-                if (peripherals_.contains(&peripheral)) {
+                if (!peripherals_.contains(&peripheral)) {
                   NEARBY_LOGS(INFO)
                       << "There is no need to callback due to peripheral impl="
                       << &peripheral << ", which already exists.";
-                  return;
+                  peripherals_.insert(&peripheral);
                 }
-                peripherals_.insert(&peripheral);
                 BleV2Peripheral proxy(&peripheral);
                 NEARBY_LOGS(INFO)
                     << "New peripheral imp=" << &peripheral
@@ -74,7 +73,7 @@ bool BleV2Medium::StartScanning(const Uuid& service_uuid,
     // Clear the `peripherals_` after succeeded in StartScanning and before the
     // advertisement_found callback has been reached. This prevents deleting the
     // existing `peripherals_` if the scanning is not started successfully. If
-    // sanning is started successfully, we need to clear `peripherals_` to
+    // scanning is started successfully, we need to clear `peripherals_` to
     // prevent the stale data in cache.
     peripherals_.clear();
     scanning_enabled_ = true;

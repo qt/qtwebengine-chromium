@@ -20,6 +20,7 @@
 
 #include "src/tint/ast/function.h"
 #include "src/tint/program_id.h"
+#include "src/tint/sem/constant.h"
 #include "src/tint/sem/info.h"
 #include "src/tint/sem/type_manager.h"
 #include "src/tint/symbol_table.h"
@@ -43,6 +44,9 @@ class Program {
     /// SemNodeAllocator is an alias to BlockAllocator<sem::Node>
     using SemNodeAllocator = utils::BlockAllocator<sem::Node>;
 
+    /// ConstantAllocator is an alias to BlockAllocator<sem::Constant>
+    using ConstantAllocator = utils::BlockAllocator<sem::Constant>;
+
     /// Constructor
     Program();
 
@@ -64,6 +68,9 @@ class Program {
 
     /// @returns the unique identifier for this program
     ProgramID ID() const { return id_; }
+
+    /// @returns the last allocated (numerically highest) AST node identifier.
+    ast::NodeID HighestASTNodeID() const { return highest_node_id_; }
 
     /// @returns a reference to the program's types
     const sem::Manager& Types() const {
@@ -157,9 +164,11 @@ class Program {
     void AssertNotMoved() const;
 
     ProgramID id_;
+    ast::NodeID highest_node_id_;
     sem::Manager types_;
     ASTNodeAllocator ast_nodes_;
     SemNodeAllocator sem_nodes_;
+    ConstantAllocator constant_nodes_;
     ast::Module* ast_ = nullptr;
     sem::Info sem_;
     SymbolTable symbols_{id_};

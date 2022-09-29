@@ -147,16 +147,8 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
     }
 
-    if (mDeviceInfo.features.depthClamp == VK_TRUE) {
-        mSupportedFeatures.EnableFeature(Feature::DepthClamping);
-    }
-
     if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
-    }
-
-    if (IsDepthStencilFormatSupported(VK_FORMAT_D24_UNORM_S8_UINT)) {
-        mSupportedFeatures.EnableFeature(Feature::Depth24UnormStencil8);
     }
 
     if (IsDepthStencilFormatSupported(VK_FORMAT_D32_SFLOAT_S8_UINT)) {
@@ -173,6 +165,11 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         mDeviceInfo.shaderIntegerDotProductProperties
                 .integerDotProduct4x8BitPackedUnsignedAccelerated == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::ChromiumExperimentalDp4a);
+    }
+
+    if (mDeviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
+        mDeviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE) {
+        mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
     }
 
 #if defined(DAWN_USE_SYNC_FDS)
@@ -281,9 +278,7 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
         vkLimits.maxComputeWorkGroupCount[2],
     });
 
-    if (vkLimits.maxColorAttachments < kMaxColorAttachments) {
-        return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for maxColorAttachments");
-    }
+    CHECK_AND_SET_V1_MAX_LIMIT(maxColorAttachments, maxColorAttachments);
     if (!IsSubset(VkSampleCountFlags(VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT),
                   vkLimits.framebufferColorSampleCounts)) {
         return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for framebufferColorSampleCounts");
@@ -344,6 +339,10 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
             limits->v1.maxStorageBuffersPerShaderStage -= numFewerStorageBuffers;
         }
     }
+
+    // Using base limits for:
+    // TODO(crbug.com/dawn/1448):
+    // - maxInterStageShaderVariables
 
     return {};
 }

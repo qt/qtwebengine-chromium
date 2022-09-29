@@ -57,7 +57,6 @@ class AdapterBase : public RefCounted {
     FeaturesSet GetSupportedFeatures() const;
     bool SupportsAllRequiredFeatures(
         const ityp::span<size_t, const wgpu::FeatureName>& features) const;
-    WGPUDeviceProperties GetAdapterProperties() const;
 
     bool GetLimits(SupportedLimits* limits) const;
 
@@ -85,6 +84,8 @@ class AdapterBase : public RefCounted {
 
     // Check base WebGPU limits and populate supported limits.
     virtual MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) = 0;
+
+    virtual void InitializeVendorArchitectureImpl();
 
     ResultOrError<Ref<DeviceBase>> CreateDeviceInternal(const DeviceDescriptor* descriptor);
 

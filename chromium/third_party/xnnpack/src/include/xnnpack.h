@@ -497,15 +497,34 @@ enum xnn_status xnn_define_depth_to_space(
   uint32_t block_size,
   uint32_t flags);
 
+/// Define a 1D Global Average Pooling Node and add it to a Subgraph.
+///
+/// @param subgraph - a Subgraph object that will own the created Node.
+/// @param output_min - lower bound for clipping output values.
+/// @param output_max - upper bound for clipping output values.
+/// @param input_id - Value ID for the input tensor. The input tensor must be a dense tensor with 2 or more dimensions
+///                   defined in the @a subgraph. Averaging is performed across the second-innermost dimension.
+/// @param output_id - Value ID for the output tensor. The output tensor must be a dense tensor with 2 or more
+///                    dimensions defined in the @a subgraph.
+/// @param flags - binary features of the 1D Global Average Pooling Node. No supported flags are currently defined.
+enum xnn_status xnn_define_global_average_pooling_1d(
+  xnn_subgraph_t subgraph,
+  float output_min,
+  float output_max,
+  uint32_t input_id,
+  uint32_t output_id,
+  uint32_t flags);
+
 /// Define a 2D Global Average Pooling Node and add it to a Subgraph.
 ///
 /// @param subgraph - a Subgraph object that will own the created Node.
 /// @param output_min - lower bound for clipping output values.
 /// @param output_max - upper bound for clipping output values.
-/// @param input_id - Value ID for the input tensor. The input tensor must be a 4D tensor defined in the @a subgraph
-///                   with [N, H, W, C] dimensions
-/// @param output_id - Value ID for the output tensor. The output tensor must be a 4D tensor defined in the @a subgraph
-///                    with [N, 1, 1, C] dimensions.
+/// @param input_id - Value ID for the input tensor. The input tensor must be a dense tensor with 3 or more dimensions
+///                   defined in the @a subgraph. Averaging is performed across the second- and third-innermost
+///                   dimensions.
+/// @param output_id - Value ID for the output tensor. The output tensor must be a dense tensor with 3 or more
+///                    dimensions defined in the @a subgraph.
 /// @param flags - binary features of the 2D Global Average Pooling Node. No supported flags are currently defined.
 enum xnn_status xnn_define_global_average_pooling_2d(
   xnn_subgraph_t subgraph,
@@ -1334,11 +1353,14 @@ enum xnn_status xnn_define_static_transpose(
 /// Weights cache is a cache for packed weights. It can be reused between runtimes.
 typedef struct xnn_weights_cache* xnn_weights_cache_t;
 
-/// Create a weights cache object.
+enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out);
+
+/// Create a weights cache object specifying the initial size of weights cache (in bytes).
+/// @size - initial capacity of the weights cache (in bytes), i.e. it can hold size bytes without growing.
 /// @param weights_cache_out - pointer to the variable that will be initialized to a handle to the weights cache object
 ///                            upon successful return. Once created, the weights cache object can be shared between
 ///                            different Runtime objects.
-enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out);
+enum xnn_status xnn_create_weights_cache_with_size(size_t size, xnn_weights_cache_t* weights_cache_out);
 
 
 /// Weights cache can be finalized in these ways:
@@ -1362,6 +1384,18 @@ enum xnn_status xnn_finalize_weights_cache(
 /// Destroy a weights cache object, as well as memory used for the cache.
 /// @param weights_cache - the weights cache object to destroy.
 enum xnn_status xnn_delete_weights_cache(xnn_weights_cache_t weights_cache);
+
+typedef struct xnn_workspace* xnn_workspace_t;
+
+/// Create a workspace object.
+/// @param workspace_out - pointer to the variable that will be initialized to a handle to the workspace object upon
+///                        successful return. Once created, the workspace can be shared between different Runtime
+///                        objects.
+enum xnn_status xnn_create_workspace(xnn_workspace_t* workspace_out);
+/// Destroy a workspace object, as well as memory used by the workspace. Object destruction can be deferred until all
+/// Runtime objects created with this workspace are destroyed.
+/// @param workspace - the workspace object to destroy.
+enum xnn_status xnn_release_workspace(xnn_workspace_t workspace);
 
 /// Runtime is a combination of an execution plan for subgraph Nodes and a memory manager for subgraph Values.
 typedef struct xnn_runtime* xnn_runtime_t;
@@ -1398,6 +1432,9 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
 ///                   Nodes can be added to the runtime once it is constructed.
 /// @param weights_cache - a cache for packed weights. The runtime will look up and reuse packed weights in this cache,
 ///                        this will reduce memory allocated for packed weights.
+/// @param workspace - a workspace to hold internal tensors. The runtime will allocate space used for internal tensors
+///                    and track them using workspace. Workspace can be shared and reused across different runtimes. If
+///                    workspace is NULL, there will be no sharing: each runtime has its own workspace.
 /// @param threadpool - the thread pool to be used for parallelisation of computations in the runtime. If the thread
 ///                     pool is NULL, the computation would run on the caller thread without parallelization.
 /// @param flags - binary features of the runtime. The only currently supported values are
@@ -1407,6 +1444,14 @@ enum xnn_status xnn_get_runtime_profiling_info(xnn_runtime_t runtime,
 /// @param runtime_out - pointer to the variable that will be initialized with a handle to the Runtime object upon
 ///                      successful return. Once constructed, the Runtime object is independent of the Subgraph object
 ///                      used to create it.
+enum xnn_status xnn_create_runtime_v4(
+  xnn_subgraph_t subgraph,
+  xnn_weights_cache_t weights_cache,
+  xnn_workspace_t workspace,
+  pthreadpool_t threadpool,
+  uint32_t flags,
+  xnn_runtime_t* runtime_out);
+
 enum xnn_status xnn_create_runtime_v3(
   xnn_subgraph_t subgraph,
   xnn_weights_cache_t weights_cache,
@@ -2373,6 +2418,21 @@ enum xnn_status xnn_setup_divide_nd_f16(
   void* output,
   pthreadpool_t threadpool);
 
+enum xnn_status xnn_create_elu_nc_f16(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float alpha,
+  uint32_t flags,
+  xnn_operator_t* elu_op_out);
+
+enum xnn_status xnn_setup_elu_nc_f16(
+  xnn_operator_t elu_op,
+  size_t batch_size,
+  const void* input,
+  void* output,
+  pthreadpool_t threadpool);
+
 enum xnn_status xnn_create_floor_nc_f16(
   size_t channels,
   size_t input_stride,
@@ -2978,6 +3038,25 @@ enum xnn_status xnn_setup_multiply_nd_qs8(
   int8_t* output,
   pthreadpool_t threadpool);
 
+enum xnn_status xnn_create_leaky_relu_nc_qs8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float negative_slope,
+  int8_t input_zero_point,
+  float input_scale,
+  int8_t output_zero_point,
+  float output_scale,
+  uint32_t flags,
+  xnn_operator_t* leaky_relu_op_out);
+
+enum xnn_status xnn_setup_leaky_relu_nc_qs8(
+  xnn_operator_t leaky_relu_op,
+  size_t batch_size,
+  const int8_t* input,
+  int8_t* output,
+  pthreadpool_t threadpool);
+
 enum xnn_status xnn_create_sigmoid_nc_qs8(
   size_t channels,
   size_t input_stride,
@@ -3234,8 +3313,6 @@ enum xnn_status xnn_create_leaky_relu_nc_qu8(
   float input_scale,
   uint8_t output_zero_point,
   float output_scale,
-  uint8_t output_min,
-  uint8_t output_max,
   uint32_t flags,
   xnn_operator_t* leaky_relu_op_out);
 
@@ -3627,6 +3704,24 @@ enum xnn_status xnn_setup_convert_nc_f32_qu8(
   uint8_t* output,
   pthreadpool_t threadpool);
 
+enum xnn_status xnn_create_convert_nc_qs8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float input_scale,
+  int8_t input_zero_point,
+  float output_scale,
+  int8_t output_zero_point,
+  uint32_t flags,
+  xnn_operator_t* convert_op_out);
+
+enum xnn_status xnn_setup_convert_nc_qs8(
+  xnn_operator_t convert_op,
+  size_t batch_size,
+  const int8_t* input,
+  int8_t* output,
+  pthreadpool_t threadpool);
+
 enum xnn_status xnn_create_convert_nc_qs8_f32(
   size_t channels,
   size_t input_stride,
@@ -3641,6 +3736,24 @@ enum xnn_status xnn_setup_convert_nc_qs8_f32(
   size_t batch_size,
   const int8_t* input,
   float* output,
+  pthreadpool_t threadpool);
+
+enum xnn_status xnn_create_convert_nc_qu8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float input_scale,
+  uint8_t input_zero_point,
+  float output_scale,
+  uint8_t output_zero_point,
+  uint32_t flags,
+  xnn_operator_t* convert_op_out);
+
+enum xnn_status xnn_setup_convert_nc_qu8(
+  xnn_operator_t convert_op,
+  size_t batch_size,
+  const uint8_t* input,
+  uint8_t* output,
   pthreadpool_t threadpool);
 
 enum xnn_status xnn_create_convert_nc_qu8_f32(

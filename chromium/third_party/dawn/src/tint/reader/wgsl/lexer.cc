@@ -19,7 +19,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
-#include <optional>  // NOLINT(build/include_order)
+#include <optional>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -36,6 +36,8 @@ namespace {
 static_assert(sizeof(decltype(tint::Source::FileContent::data[0])) == sizeof(uint8_t),
               "tint::reader::wgsl requires the size of a std::string element "
               "to be a single byte");
+
+static constexpr size_t kDefaultListSize = 512;
 
 bool read_blankspace(std::string_view str, size_t i, bool* is_blankspace, size_t* blankspace_size) {
     // See https://www.w3.org/TR/WGSL/#blankspace
@@ -87,6 +89,27 @@ uint32_t hex_value(char c) {
 Lexer::Lexer(const Source::File* file) : file_(file), location_{1, 1} {}
 
 Lexer::~Lexer() = default;
+
+std::vector<Token> Lexer::Lex() {
+    std::vector<Token> tokens;
+    tokens.reserve(kDefaultListSize);
+    while (true) {
+        tokens.emplace_back(next());
+
+        // If the token can be split, we insert a placeholder element into
+        // the stream to hold the split character.
+        if (tokens.back().IsSplittable()) {
+            auto src = tokens.back().source();
+            src.range.begin.column++;
+            tokens.emplace_back(Token(Token::Type::kPlaceholder, src));
+        }
+
+        if (tokens.back().IsEof() || tokens.back().IsError()) {
+            break;
+        }
+    }
+    return tokens;
+}
 
 const std::string_view Lexer::line() const {
     if (file_->content.lines.size() == 0) {
@@ -204,6 +227,13 @@ bool Lexer::matches(size_t pos, std::string_view sub_string) {
     return substr(pos, sub_string.size()) == sub_string;
 }
 
+bool Lexer::matches(size_t pos, char ch) {
+    if (pos >= length()) {
+        return false;
+    }
+    return line()[pos] == ch;
+}
+
 Token Lexer::skip_blankspace_and_comments() {
     for (;;) {
         auto loc = location_;
@@ -298,7 +328,7 @@ Token Lexer::try_float() {
     auto source = begin_source();
     bool has_mantissa_digits = false;
 
-    if (matches(end, "-")) {
+    if (matches(end, '-')) {
         end++;
     }
     while (end < length() && is_digit(at(end))) {
@@ -307,7 +337,7 @@ Token Lexer::try_float() {
     }
 
     bool has_point = false;
-    if (end < length() && matches(end, ".")) {
+    if (end < length() && matches(end, '.')) {
         has_point = true;
         end++;
     }
@@ -323,9 +353,9 @@ Token Lexer::try_float() {
 
     // Parse the exponent if one exists
     bool has_exponent = false;
-    if (end < length() && (matches(end, "e") || matches(end, "E"))) {
+    if (end < length() && (matches(end, 'e') || matches(end, 'E'))) {
         end++;
-        if (end < length() && (matches(end, "+") || matches(end, "-"))) {
+        if (end < length() && (matches(end, '+') || matches(end, '-'))) {
             end++;
         }
 
@@ -343,18 +373,19 @@ Token Lexer::try_float() {
     }
 
     bool has_f_suffix = false;
-    if (end < length() && matches(end, "f")) {
+    bool has_h_suffix = false;
+    if (end < length() && matches(end, 'f')) {
         end++;
         has_f_suffix = true;
+    } else if (end < length() && matches(end, 'h')) {
+        end++;
+        has_h_suffix = true;
     }
 
-    if (!has_point && !has_exponent && !has_f_suffix) {
+    if (!has_point && !has_exponent && !has_f_suffix && !has_h_suffix) {
         // If it only has digits then it's an integer.
         return {};
     }
-
-    // Save the error string, for use by diagnostics.
-    const auto str = std::string{substr(start, end - start)};
 
     advance(end - start);
     end_source(source);
@@ -366,6 +397,14 @@ Token Lexer::try_float() {
             return {Token::Type::kFloatLiteral_F, source, static_cast<double>(f.Get())};
         } else {
             return {Token::Type::kError, source, "value cannot be represented as 'f32'"};
+        }
+    }
+
+    if (has_h_suffix) {
+        if (auto f = CheckedConvert<f16>(AFloat(value))) {
+            return {Token::Type::kFloatLiteral_H, source, static_cast<double>(f.Get())};
+        } else {
+            return {Token::Type::kError, source, "value cannot be represented as 'f16'"};
         }
     }
 
@@ -400,13 +439,13 @@ Token Lexer::try_hex_float() {
     // clang-format on
 
     // -?
-    int64_t sign_bit = 0;
-    if (matches(end, "-")) {
+    uint64_t sign_bit = 0;
+    if (matches(end, '-')) {
         sign_bit = 1;
         end++;
     }
     // 0[xX]
-    if (matches(end, "0x") || matches(end, "0X")) {
+    if (matches(end, '0') && (matches(end + 1, 'x') || matches(end + 1, 'X'))) {
         end += 2;
     } else {
         return {};
@@ -452,7 +491,7 @@ Token Lexer::try_hex_float() {
 
     // .?
     bool hex_point = false;
-    if (matches(end, ".")) {
+    if (matches(end, '.')) {
         hex_point = true;
         end++;
     }
@@ -470,7 +509,7 @@ Token Lexer::try_hex_float() {
     }
 
     // Is the binary exponent present?  It's optional.
-    const bool has_exponent = (matches(end, "p") || matches(end, "P"));
+    const bool has_exponent = (matches(end, 'p') || matches(end, 'P'));
     if (has_exponent) {
         end++;
     }
@@ -547,12 +586,13 @@ Token Lexer::try_hex_float() {
     int64_t exponent_sign = 1;
     // If the 'p' part is present, the rest of the exponent must exist.
     bool has_f_suffix = false;
+    bool has_h_suffix = false;
     if (has_exponent) {
         // Parse the rest of the exponent.
         // (+|-)?
-        if (matches(end, "+")) {
+        if (matches(end, '+')) {
             end++;
-        } else if (matches(end, "-")) {
+        } else if (matches(end, '-')) {
             exponent_sign = -1;
             end++;
         }
@@ -574,11 +614,14 @@ Token Lexer::try_hex_float() {
             end++;
         }
 
-        // Parse optional 'f' suffix.  For a hex float, it can only exist
+        // Parse optional 'f' or 'h' suffix.  For a hex float, it can only exist
         // when the exponent is present. Otherwise it will look like
         // one of the mantissa digits.
-        if (end < length() && matches(end, "f")) {
+        if (end < length() && matches(end, 'f')) {
             has_f_suffix = true;
+            end++;
+        } else if (end < length() && matches(end, 'h')) {
+            has_h_suffix = true;
             end++;
         }
 
@@ -648,7 +691,7 @@ Token Lexer::try_hex_float() {
     }
 
     if (signed_exponent >= kExponentMax || (signed_exponent == kExponentMax && mantissa != 0)) {
-        std::string type = has_f_suffix ? "f32" : "abstract-float";
+        std::string type = has_f_suffix ? "f32" : (has_h_suffix ? "f16" : "abstract-float");
         return {Token::Type::kError, source, "value cannot be represented as '" + type + "'"};
     }
 
@@ -663,18 +706,111 @@ Token Lexer::try_hex_float() {
 
     if (has_f_suffix) {
         // Check value fits in f32
-        if (result_f64 < static_cast<double>(f32::kLowest) ||
-            result_f64 > static_cast<double>(f32::kHighest)) {
+        if (result_f64 < static_cast<double>(f32::kLowestValue) ||
+            result_f64 > static_cast<double>(f32::kHighestValue)) {
             return {Token::Type::kError, source, "value cannot be represented as 'f32'"};
         }
-        // Check the value can be exactly represented (low 29 mantissa bits must be 0)
-        if (result_u64 & 0x1fffffff) {
+        // Check the value can be exactly represented, i.e. only high 23 mantissa bits are valid for
+        // normal f32 values, and less for subnormal f32 values. The rest low mantissa bits must be
+        // 0.
+        int valid_mantissa_bits = 0;
+        double abs_result_f64 = std::fabs(result_f64);
+        if (abs_result_f64 >= static_cast<double>(f32::kSmallestValue)) {
+            // The result shall be a normal f32 value.
+            valid_mantissa_bits = 23;
+        } else if (abs_result_f64 >= static_cast<double>(f32::kSmallestSubnormalValue)) {
+            // The result shall be a subnormal f32 value, represented as double.
+            // The smallest positive normal f32 is f32::kSmallestValue = 2^-126 = 0x1.0p-126, and
+            // the
+            //   smallest positive subnormal f32 is f32::kSmallestSubnormalValue = 2^-149. Thus, the
+            //   value v in range 2^-126 > v >= 2^-149 must be represented as a subnormal f32
+            //   number, but is still normal double (f64) number, and has a exponent in range -127
+            //   to -149, inclusive.
+            // A value v, if 2^-126 > v >= 2^-127, its binary32 representation will have binary form
+            //   s_00000000_1xxxxxxxxxxxxxxxxxxxxxx, having mantissa of 1 leading 1 bit and 22
+            //   arbitrary bits. Since this value is represented as normal double number, the
+            //   leading 1 bit is omitted, only the highest 22 mantissia bits can be arbitrary, and
+            //   the rest lowest 40 mantissa bits of f64 number must be zero.
+            // 2^-127 > v >= 2^-128, binary32 s_00000000_01xxxxxxxxxxxxxxxxxxxxx, having mantissa of
+            //   1 leading 0 bit, 1 leading 1 bit, and 21 arbitrary bits. The f64 representation
+            //   omits the leading 0 and 1 bits, and only the highest 21 mantissia bits can be
+            //   arbitrary.
+            // 2^-128 > v >= 2^-129, binary32 s_00000000_001xxxxxxxxxxxxxxxxxxxx, 20 arbitrary bits.
+            // ...
+            // 2^-147 > v >= 2^-148, binary32 s_00000000_0000000000000000000001x, 1 arbitrary bit.
+            // 2^-148 > v >= 2^-149, binary32 s_00000000_00000000000000000000001, 0 arbitrary bit.
+
+            // signed_exponent must be in range -149 + 1023 = 874 to -127 + 1023 = 896, inclusive
+            TINT_ASSERT(Reader, (874 <= signed_exponent) && (signed_exponent <= 896));
+            int unbiased_exponent =
+                static_cast<int>(signed_exponent) - static_cast<int>(kExponentBias);
+            TINT_ASSERT(Reader, (-149 <= unbiased_exponent) && (unbiased_exponent <= -127));
+            valid_mantissa_bits = unbiased_exponent + 149;  // 0 for -149, and 22 for -127
+        } else if (abs_result_f64 != 0.0) {
+            // The result is smaller than the smallest subnormal f32 value, but not equal to zero.
+            // Such value will never be exactly represented by f32.
             return {Token::Type::kError, source, "value cannot be exactly represented as 'f32'"};
         }
+        // Check the low 52-valid_mantissa_bits mantissa bits must be 0.
+        TINT_ASSERT(Reader, (0 <= valid_mantissa_bits) && (valid_mantissa_bits <= 23));
+        if (result_u64 & ((uint64_t(1) << (52 - valid_mantissa_bits)) - 1)) {
+            return {Token::Type::kError, source, "value cannot be exactly represented as 'f32'"};
+        }
+        return {Token::Type::kFloatLiteral_F, source, result_f64};
+    } else if (has_h_suffix) {
+        // Check value fits in f16
+        if (result_f64 < static_cast<double>(f16::kLowestValue) ||
+            result_f64 > static_cast<double>(f16::kHighestValue)) {
+            return {Token::Type::kError, source, "value cannot be represented as 'f16'"};
+        }
+        // Check the value can be exactly represented, i.e. only high 10 mantissa bits are valid for
+        // normal f16 values, and less for subnormal f16 values. The rest low mantissa bits must be
+        // 0.
+        int valid_mantissa_bits = 0;
+        double abs_result_f64 = std::fabs(result_f64);
+        if (abs_result_f64 >= static_cast<double>(f16::kSmallestValue)) {
+            // The result shall be a normal f16 value.
+            valid_mantissa_bits = 10;
+        } else if (abs_result_f64 >= static_cast<double>(f16::kSmallestSubnormalValue)) {
+            // The result shall be a subnormal f16 value, represented as double.
+            // The smallest positive normal f16 is f16::kSmallestValue = 2^-14 = 0x1.0p-14, and the
+            //   smallest positive subnormal f16 is f16::kSmallestSubnormalValue = 2^-24. Thus, the
+            //   value v in range 2^-14 > v >= 2^-24 must be represented as a subnormal f16 number,
+            //   but is still normal double (f64) number, and has a exponent in range -15 to -24,
+            //   inclusive.
+            // A value v, if 2^-14 > v >= 2^-15, its binary16 representation will have binary form
+            //   s_00000_1xxxxxxxxx, having mantissa of 1 leading 1 bit and 9 arbitrary bits. Since
+            //   this value is represented as normal double number, the leading 1 bit is omitted,
+            //   only the highest 9 mantissia bits can be arbitrary, and the rest lowest 43 mantissa
+            //   bits of f64 number must be zero.
+            // 2^-15 > v >= 2^-16, binary16 s_00000_01xxxxxxxx, having mantissa of 1 leading 0 bit,
+            //   1 leading 1 bit, and 8 arbitrary bits. The f64 representation omits the leading 0
+            //   and 1 bits, and only the highest 8 mantissia bits can be arbitrary.
+            // 2^-16 > v >= 2^-17, binary16 s_00000_001xxxxxxx, 7 arbitrary bits.
+            // ...
+            // 2^-22 > v >= 2^-23, binary16 s_00000_000000001x, 1 arbitrary bits.
+            // 2^-23 > v >= 2^-24, binary16 s_00000_0000000001, 0 arbitrary bits.
+
+            // signed_exponent must be in range -24 + 1023 = 999 to -15 + 1023 = 1008, inclusive
+            TINT_ASSERT(Reader, (999 <= signed_exponent) && (signed_exponent <= 1008));
+            int unbiased_exponent =
+                static_cast<int>(signed_exponent) - static_cast<int>(kExponentBias);
+            TINT_ASSERT(Reader, (-24 <= unbiased_exponent) && (unbiased_exponent <= -15));
+            valid_mantissa_bits = unbiased_exponent + 24;  // 0 for -24, and 9 for -15
+        } else if (abs_result_f64 != 0.0) {
+            // The result is smaller than the smallest subnormal f16 value, but not equal to zero.
+            // Such value will never be exactly represented by f16.
+            return {Token::Type::kError, source, "value cannot be exactly represented as 'f16'"};
+        }
+        // Check the low 52-valid_mantissa_bits mantissa bits must be 0.
+        TINT_ASSERT(Reader, (0 <= valid_mantissa_bits) && (valid_mantissa_bits <= 10));
+        if (result_u64 & ((uint64_t(1) << (52 - valid_mantissa_bits)) - 1)) {
+            return {Token::Type::kError, source, "value cannot be exactly represented as 'f16'"};
+        }
+        return {Token::Type::kFloatLiteral_H, source, result_f64};
     }
 
-    return {has_f_suffix ? Token::Type::kFloatLiteral_F : Token::Type::kFloatLiteral, source,
-            result_f64};
+    return {Token::Type::kFloatLiteral, source, result_f64};
 }
 
 Token Lexer::build_token_from_int_if_possible(Source source, size_t start, int32_t base) {
@@ -686,10 +822,10 @@ Token Lexer::build_token_from_int_if_possible(Source source, size_t start, int32
     const bool overflow = errno == ERANGE;
 
     if (end_ptr) {
-        advance(end_ptr - start_ptr);
+        advance(static_cast<size_t>(end_ptr - start_ptr));
     }
 
-    if (matches(pos(), "u")) {
+    if (matches(pos(), 'u')) {
         if (!overflow && CheckedConvert<u32>(AInt(res))) {
             advance(1);
             end_source(source);
@@ -698,7 +834,7 @@ Token Lexer::build_token_from_int_if_possible(Source source, size_t start, int32
         return {Token::Type::kError, source, "value cannot be represented as 'u32'"};
     }
 
-    if (matches(pos(), "i")) {
+    if (matches(pos(), 'i')) {
         if (!overflow && CheckedConvert<i32>(AInt(res))) {
             advance(1);
             end_source(source);
@@ -720,11 +856,11 @@ Token Lexer::try_hex_integer() {
 
     auto source = begin_source();
 
-    if (matches(curr, "-")) {
+    if (matches(curr, '-')) {
         curr++;
     }
 
-    if (matches(curr, "0x") || matches(curr, "0X")) {
+    if (matches(curr, '0') && (matches(curr + 1, 'x') || matches(curr + 1, 'X'))) {
         curr += 2;
     } else {
         return {};
@@ -744,7 +880,7 @@ Token Lexer::try_integer() {
 
     auto source = begin_source();
 
-    if (matches(curr, "-")) {
+    if (matches(curr, '-')) {
         curr++;
     }
 
@@ -822,138 +958,172 @@ Token Lexer::try_punctuation() {
     auto source = begin_source();
     auto type = Token::Type::kUninitialized;
 
-    if (matches(pos(), "@")) {
+    if (matches(pos(), '@')) {
         type = Token::Type::kAttr;
         advance(1);
-    } else if (matches(pos(), "(")) {
+    } else if (matches(pos(), '(')) {
         type = Token::Type::kParenLeft;
         advance(1);
-    } else if (matches(pos(), ")")) {
+    } else if (matches(pos(), ')')) {
         type = Token::Type::kParenRight;
         advance(1);
-    } else if (matches(pos(), "[")) {
+    } else if (matches(pos(), '[')) {
         type = Token::Type::kBracketLeft;
         advance(1);
-    } else if (matches(pos(), "]")) {
+    } else if (matches(pos(), ']')) {
         type = Token::Type::kBracketRight;
         advance(1);
-    } else if (matches(pos(), "{")) {
+    } else if (matches(pos(), '{')) {
         type = Token::Type::kBraceLeft;
         advance(1);
-    } else if (matches(pos(), "}")) {
+    } else if (matches(pos(), '}')) {
         type = Token::Type::kBraceRight;
         advance(1);
-    } else if (matches(pos(), "&&")) {
-        type = Token::Type::kAndAnd;
-        advance(2);
-    } else if (matches(pos(), "&=")) {
-        type = Token::Type::kAndEqual;
-        advance(2);
-    } else if (matches(pos(), "&")) {
-        type = Token::Type::kAnd;
-        advance(1);
-    } else if (matches(pos(), "/=")) {
-        type = Token::Type::kDivisionEqual;
-        advance(2);
-    } else if (matches(pos(), "/")) {
-        type = Token::Type::kForwardSlash;
-        advance(1);
-    } else if (matches(pos(), "!=")) {
-        type = Token::Type::kNotEqual;
-        advance(2);
-    } else if (matches(pos(), "!")) {
-        type = Token::Type::kBang;
-        advance(1);
-    } else if (matches(pos(), ":")) {
+    } else if (matches(pos(), '&')) {
+        if (matches(pos() + 1, '&')) {
+            type = Token::Type::kAndAnd;
+            advance(2);
+        } else if (matches(pos() + 1, '=')) {
+            type = Token::Type::kAndEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kAnd;
+            advance(1);
+        }
+    } else if (matches(pos(), '/')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kDivisionEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kForwardSlash;
+            advance(1);
+        }
+    } else if (matches(pos(), '!')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kNotEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kBang;
+            advance(1);
+        }
+    } else if (matches(pos(), ':')) {
         type = Token::Type::kColon;
         advance(1);
-    } else if (matches(pos(), ",")) {
+    } else if (matches(pos(), ',')) {
         type = Token::Type::kComma;
         advance(1);
-    } else if (matches(pos(), "==")) {
-        type = Token::Type::kEqualEqual;
-        advance(2);
-    } else if (matches(pos(), "=")) {
-        type = Token::Type::kEqual;
-        advance(1);
-    } else if (matches(pos(), ">=")) {
-        type = Token::Type::kGreaterThanEqual;
-        advance(2);
-    } else if (matches(pos(), ">>")) {
-        type = Token::Type::kShiftRight;
-        advance(2);
-    } else if (matches(pos(), ">")) {
-        type = Token::Type::kGreaterThan;
-        advance(1);
-    } else if (matches(pos(), "<=")) {
-        type = Token::Type::kLessThanEqual;
-        advance(2);
-    } else if (matches(pos(), "<<")) {
-        type = Token::Type::kShiftLeft;
-        advance(2);
-    } else if (matches(pos(), "<")) {
-        type = Token::Type::kLessThan;
-        advance(1);
-    } else if (matches(pos(), "%=")) {
-        type = Token::Type::kModuloEqual;
-        advance(2);
-    } else if (matches(pos(), "%")) {
-        type = Token::Type::kMod;
-        advance(1);
-    } else if (matches(pos(), "->")) {
-        type = Token::Type::kArrow;
-        advance(2);
-    } else if (matches(pos(), "--")) {
-        type = Token::Type::kMinusMinus;
-        advance(2);
-    } else if (matches(pos(), "-=")) {
-        type = Token::Type::kMinusEqual;
-        advance(2);
-    } else if (matches(pos(), "-")) {
-        type = Token::Type::kMinus;
-        advance(1);
-    } else if (matches(pos(), ".")) {
+    } else if (matches(pos(), '=')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kEqualEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kEqual;
+            advance(1);
+        }
+    } else if (matches(pos(), '>')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kGreaterThanEqual;
+            advance(2);
+        } else if (matches(pos() + 1, '>')) {
+            if (matches(pos() + 2, '=')) {
+                type = Token::Type::kShiftRightEqual;
+                advance(3);
+            } else {
+                type = Token::Type::kShiftRight;
+                advance(2);
+            }
+        } else {
+            type = Token::Type::kGreaterThan;
+            advance(1);
+        }
+    } else if (matches(pos(), '<')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kLessThanEqual;
+            advance(2);
+        } else if (matches(pos() + 1, '<')) {
+            if (matches(pos() + 2, '=')) {
+                type = Token::Type::kShiftLeftEqual;
+                advance(3);
+            } else {
+                type = Token::Type::kShiftLeft;
+                advance(2);
+            }
+        } else {
+            type = Token::Type::kLessThan;
+            advance(1);
+        }
+    } else if (matches(pos(), '%')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kModuloEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kMod;
+            advance(1);
+        }
+    } else if (matches(pos(), '-')) {
+        if (matches(pos() + 1, '>')) {
+            type = Token::Type::kArrow;
+            advance(2);
+        } else if (matches(pos() + 1, '-')) {
+            type = Token::Type::kMinusMinus;
+            advance(2);
+        } else if (matches(pos() + 1, '=')) {
+            type = Token::Type::kMinusEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kMinus;
+            advance(1);
+        }
+    } else if (matches(pos(), '.')) {
         type = Token::Type::kPeriod;
         advance(1);
-    } else if (matches(pos(), "++")) {
-        type = Token::Type::kPlusPlus;
-        advance(2);
-    } else if (matches(pos(), "+=")) {
-        type = Token::Type::kPlusEqual;
-        advance(2);
-    } else if (matches(pos(), "+")) {
-        type = Token::Type::kPlus;
-        advance(1);
-    } else if (matches(pos(), "||")) {
-        type = Token::Type::kOrOr;
-        advance(2);
-    } else if (matches(pos(), "|=")) {
-        type = Token::Type::kOrEqual;
-        advance(2);
-    } else if (matches(pos(), "|")) {
-        type = Token::Type::kOr;
-        advance(1);
-    } else if (matches(pos(), ";")) {
+    } else if (matches(pos(), '+')) {
+        if (matches(pos() + 1, '+')) {
+            type = Token::Type::kPlusPlus;
+            advance(2);
+        } else if (matches(pos() + 1, '=')) {
+            type = Token::Type::kPlusEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kPlus;
+            advance(1);
+        }
+    } else if (matches(pos(), '|')) {
+        if (matches(pos() + 1, '|')) {
+            type = Token::Type::kOrOr;
+            advance(2);
+        } else if (matches(pos() + 1, '=')) {
+            type = Token::Type::kOrEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kOr;
+            advance(1);
+        }
+    } else if (matches(pos(), ';')) {
         type = Token::Type::kSemicolon;
         advance(1);
-    } else if (matches(pos(), "*=")) {
-        type = Token::Type::kTimesEqual;
-        advance(2);
-    } else if (matches(pos(), "*")) {
-        type = Token::Type::kStar;
-        advance(1);
-    } else if (matches(pos(), "~")) {
+    } else if (matches(pos(), '*')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kTimesEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kStar;
+            advance(1);
+        }
+    } else if (matches(pos(), '~')) {
         type = Token::Type::kTilde;
         advance(1);
-    } else if (matches(pos(), "_")) {
+    } else if (matches(pos(), '_')) {
         type = Token::Type::kUnderscore;
         advance(1);
-    } else if (matches(pos(), "^=")) {
-        type = Token::Type::kXorEqual;
-        advance(2);
-    } else if (matches(pos(), "^")) {
-        type = Token::Type::kXor;
-        advance(1);
+    } else if (matches(pos(), '^')) {
+        if (matches(pos() + 1, '=')) {
+            type = Token::Type::kXorEqual;
+            advance(2);
+        } else {
+            type = Token::Type::kXor;
+            advance(1);
+        }
     }
 
     end_source(source);
@@ -979,6 +1149,9 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     }
     if (str == "case") {
         return {Token::Type::kCase, source, "case"};
+    }
+    if (str == "const") {
+        return {Token::Type::kConst, source, "const"};
     }
     if (str == "continue") {
         return {Token::Type::kContinue, source, "continue"};
@@ -1016,17 +1189,11 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "for") {
         return {Token::Type::kFor, source, "for"};
     }
-    if (str == "function") {
-        return {Token::Type::kFunction, source, "function"};
-    }
     if (str == "i32") {
         return {Token::Type::kI32, source, "i32"};
     }
     if (str == "if") {
         return {Token::Type::kIf, source, "if"};
-    }
-    if (str == "import") {
-        return {Token::Type::kImport, source, "import"};
     }
     if (str == "let") {
         return {Token::Type::kLet, source, "let"};
@@ -1064,9 +1231,6 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "override") {
         return {Token::Type::kOverride, source, "override"};
     }
-    if (str == "private") {
-        return {Token::Type::kPrivate, source, "private"};
-    }
     if (str == "ptr") {
         return {Token::Type::kPtr, source, "ptr"};
     }
@@ -1079,8 +1243,8 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "sampler_comparison") {
         return {Token::Type::kComparisonSampler, source, "sampler_comparison"};
     }
-    if (str == "storage_buffer" || str == "storage") {
-        return {Token::Type::kStorage, source, "storage"};
+    if (str == "static_assert") {
+        return {Token::Type::kStaticAssert, source, "static_assert"};
     }
     if (str == "struct") {
         return {Token::Type::kStruct, source, "struct"};
@@ -1148,9 +1312,6 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "u32") {
         return {Token::Type::kU32, source, "u32"};
     }
-    if (str == "uniform") {
-        return {Token::Type::kUniform, source, "uniform"};
-    }
     if (str == "var") {
         return {Token::Type::kVar, source, "var"};
     }
@@ -1163,8 +1324,8 @@ Token Lexer::check_keyword(const Source& source, std::string_view str) {
     if (str == "vec4") {
         return {Token::Type::kVec4, source, "vec4"};
     }
-    if (str == "workgroup") {
-        return {Token::Type::kWorkgroup, source, "workgroup"};
+    if (str == "while") {
+        return {Token::Type::kWhile, source, "while"};
     }
     return {};
 }

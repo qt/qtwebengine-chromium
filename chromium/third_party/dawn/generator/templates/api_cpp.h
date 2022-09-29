@@ -27,6 +27,12 @@
 
 namespace {{metadata.namespace}} {
 
+    namespace detail {
+        constexpr size_t ConstexprMax(size_t a, size_t b) {
+            return a > b ? a : b;
+        }
+    }  // namespace detail
+
     {% set c_prefix = metadata.c_prefix %}
     {% for constant in by_category["constant"] %}
         {% set type = as_cppType(constant.type.name) %}
@@ -146,7 +152,8 @@ namespace {{metadata.namespace}} {
     };
 
 {% macro render_cpp_default_value(member, is_struct=True) -%}
-    {%- if member.annotation in ["*", "const*"] and member.optional or member.default_value == "nullptr" -%}
+    {%- if member.json_data.get("no_default", false) -%}
+    {%- elif member.annotation in ["*", "const*"] and member.optional or member.default_value == "nullptr" -%}
         {{" "}}= nullptr
     {%- elif member.type.category == "object" and member.optional and is_struct -%}
         {{" "}}= nullptr
@@ -219,6 +226,9 @@ namespace {{metadata.namespace}} {
         {% set Out = "Out" if type.output else "" %}
         {% set const = "const" if not type.output else "" %}
         {% if type.chained %}
+            {% for root in type.chain_roots %}
+                // Can be chained in {{as_cppType(root.name)}}
+            {% endfor %}
             struct {{as_cppType(type.name)}} : ChainedStruct{{Out}} {
                 {{as_cppType(type.name)}}() {
                     sType = SType::{{type.name.CamelCase()}};
@@ -232,8 +242,10 @@ namespace {{metadata.namespace}} {
             {% for member in type.members %}
                 {% set member_declaration = as_annotated_cppType(member) + render_cpp_default_value(member) %}
                 {% if type.chained and loop.first %}
-                    //* Align the first member to ChainedStruct to match the C struct layout.
-                    alignas(ChainedStruct{{Out}}) {{member_declaration}};
+                    //* Align the first member after ChainedStruct to match the C struct layout.
+                    //* It has to be aligned both to its natural and ChainedStruct's alignment.
+                    static constexpr size_t kFirstMemberAlignment = detail::ConstexprMax(alignof(ChainedStruct{{out}}), alignof({{decorate("", as_cppType(member.type.name), member)}}));
+                    alignas(kFirstMemberAlignment) {{member_declaration}};
                 {% else %}
                     {{member_declaration}};
                 {% endif %}

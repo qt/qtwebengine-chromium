@@ -45,12 +45,12 @@ import {CSSMedia} from './CSSMedia.js';
 import {CSSStyleRule} from './CSSRule.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
 import {CSSStyleSheetHeader} from './CSSStyleSheetHeader.js';
-import type {DOMNode} from './DOMModel.js';
-import {DOMModel} from './DOMModel.js';
-import type {ResourceTreeFrame} from './ResourceTreeModel.js';
-import {Events as ResourceTreeModelEvents, ResourceTreeModel} from './ResourceTreeModel.js';
-import type {Target} from './Target.js';
-import {Capability} from './Target.js';
+
+import {DOMModel, type DOMNode} from './DOMModel.js';
+
+import {Events as ResourceTreeModelEvents, ResourceTreeModel, type ResourceTreeFrame} from './ResourceTreeModel.js';
+
+import {Capability, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import {SourceMapManager} from './SourceMapManager.js';
 
@@ -305,7 +305,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     return new CSSMatchedStyles(
         this, (node as DOMNode), response.inlineStyle || null, response.attributesStyle || null,
         response.matchedCSSRules || [], response.pseudoElements || [], response.inherited || [],
-        response.inheritedPseudoElements || [], response.cssKeyframesRules || []);
+        response.inheritedPseudoElements || [], response.cssKeyframesRules || [], response.parentLayoutNodeId);
   }
 
   async getClassNames(styleSheetId: Protocol.CSS.StyleSheetId): Promise<string[]> {
@@ -313,7 +313,10 @@ export class CSSModel extends SDKModel<EventTypes> {
     return classNames || [];
   }
 
-  getComputedStyle(nodeId: Protocol.DOM.NodeId): Promise<Map<string, string>|null> {
+  async getComputedStyle(nodeId: Protocol.DOM.NodeId): Promise<Map<string, string>|null> {
+    if (!this.isEnabled()) {
+      await this.enable();
+    }
     return this.#styleLoader.computedStylePromise(nodeId);
   }
 
@@ -457,6 +460,28 @@ export class CSSModel extends SDKModel<EventTypes> {
       this.fireStyleSheetChanged(styleSheetId, edit);
       return true;
     } catch (e) {
+      return false;
+    }
+  }
+
+  async setScopeText(
+      styleSheetId: Protocol.CSS.StyleSheetId, range: TextUtils.TextRange.TextRange,
+      newScopeText: string): Promise<boolean> {
+    Host.userMetrics.actionTaken(Host.UserMetrics.Action.StyleRuleEdited);
+
+    try {
+      await this.ensureOriginalStyleSheetText(styleSheetId);
+      const {scope} = await this.agent.invoke_setScopeText({styleSheetId, range, text: newScopeText});
+
+      if (!scope) {
+        return false;
+      }
+      this.#domModel.markUndoableState();
+      const edit = new Edit(styleSheetId, range, newScopeText, scope);
+      this.fireStyleSheetChanged(styleSheetId, edit);
+      return true;
+    } catch (e) {
+      console.error(e);
       return false;
     }
   }
@@ -661,7 +686,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     // is different from the regular navigations. In this case, events about CSS
     // stylesheet has already been received and they are mixed with the previous page
     // stylesheets. Therefore, we re-enable the CSS agent to get fresh events.
-    // For the regular navigatons, we can just clear the local data because events about
+    // For the regular navigations, we can just clear the local data because events about
     // stylesheets will arrive later.
     if (event.data.backForwardCacheDetails.restoredFromCache) {
       await this.suspendModel();

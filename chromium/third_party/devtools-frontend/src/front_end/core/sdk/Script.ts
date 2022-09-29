@@ -33,13 +33,12 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 
-import type {DebuggerModel} from './DebuggerModel.js';
-import {Location} from './DebuggerModel.js';
-import type {FrameAssociated} from './FrameAssociated.js';
-import type {PageResourceLoadInitiator} from './PageResourceLoader.js';
+import {Location, type DebuggerModel} from './DebuggerModel.js';
+import {type FrameAssociated} from './FrameAssociated.js';
+import {type PageResourceLoadInitiator} from './PageResourceLoader.js';
 import {ResourceTreeModel} from './ResourceTreeModel.js';
-import type {ExecutionContext} from './RuntimeModel.js';
-import type {Target} from './Target.js';
+import {type ExecutionContext} from './RuntimeModel.js';
+import {type Target} from './Target.js';
 
 const UIStrings = {
   /**
@@ -66,11 +65,10 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
   hash: string;
   readonly #isContentScriptInternal: boolean;
   readonly #isLiveEditInternal: boolean;
-  sourceMapURL: Platform.DevToolsPath.UrlString|undefined;
+  sourceMapURL?: string;
   debugSymbols: Protocol.Debugger.DebugSymbols|null;
   hasSourceURL: boolean;
   contentLength: number;
-  #originalContentProviderInternal: TextUtils.ContentProvider.ContentProvider|null;
   originStackTrace: Protocol.Runtime.StackTrace|null;
   readonly #codeOffsetInternal: number|null;
   readonly #language: string|null;
@@ -80,10 +78,9 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
   constructor(
       debuggerModel: DebuggerModel, scriptId: Protocol.Runtime.ScriptId, sourceURL: Platform.DevToolsPath.UrlString,
       startLine: number, startColumn: number, endLine: number, endColumn: number, executionContextId: number,
-      hash: string, isContentScript: boolean, isLiveEdit: boolean,
-      sourceMapURL: Platform.DevToolsPath.UrlString|undefined, hasSourceURL: boolean, length: number,
-      isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null, codeOffset: number|null,
-      scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols|null,
+      hash: string, isContentScript: boolean, isLiveEdit: boolean, sourceMapURL: string|undefined,
+      hasSourceURL: boolean, length: number, isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null,
+      codeOffset: number|null, scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols|null,
       embedderName: Platform.DevToolsPath.UrlString|null) {
     this.debuggerModel = debuggerModel;
     this.scriptId = scriptId;
@@ -102,7 +99,6 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     this.debugSymbols = debugSymbols;
     this.hasSourceURL = hasSourceURL;
     this.contentLength = length;
-    this.#originalContentProviderInternal = null;
     this.originStackTrace = originStackTrace;
     this.#codeOffsetInternal = codeOffset;
     this.#language = scriptLanguage;
@@ -173,13 +169,79 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return Common.ResourceType.resourceTypes.Script;
   }
 
-  async contentEncoded(): Promise<boolean> {
-    return false;
+  private async loadTextContent(): Promise<TextUtils.ContentProvider.DeferredContent> {
+    const result = await this.debuggerModel.target().debuggerAgent().invoke_getScriptSource({scriptId: this.scriptId});
+    if (result.getError()) {
+      throw new Error(result.getError());
+    }
+    const {scriptSource, bytecode} = result;
+    if (bytecode) {
+      return {content: bytecode, isEncoded: true};
+    }
+    let content: string = scriptSource || '';
+    if (this.hasSourceURL && this.sourceURL.startsWith('snippet://')) {
+      // TODO(crbug.com/1330846): Find a better way to establish the snippet automapping binding then adding
+      // a sourceURL comment before evaluation and removing it here.
+      content = Script.trimSourceURLComment(content);
+    }
+    return {content, isEncoded: false};
+  }
+
+  private async loadWasmContent(): Promise<TextUtils.ContentProvider.DeferredContent> {
+    if (!this.isWasm()) {
+      throw new Error('Not a wasm script');
+    }
+    const result =
+        await this.debuggerModel.target().debuggerAgent().invoke_disassembleWasmModule({scriptId: this.scriptId});
+
+    if (result.getError()) {
+      // Fall through to text content loading if v8-based disassembly fails. This is to ensure backwards compatibility with
+      // older v8 versions;
+      return this.loadTextContent();
+    }
+
+    const {streamId, functionBodyOffsets, chunk: {lines, bytecodeOffsets}} = result;
+    const lineChunks = [];
+    const bytecodeOffsetChunks = [];
+    if (streamId) {
+      while (true) {
+        const result = await this.debuggerModel.target().debuggerAgent().invoke_nextWasmDisassemblyChunk({streamId});
+
+        if (result.getError()) {
+          throw new Error(result.getError());
+        }
+
+        const {chunk: {lines: linesChunk, bytecodeOffsets: bytecodeOffsetsChunk}} = result;
+        if (linesChunk.length === 0) {
+          break;
+        }
+        lineChunks.push(linesChunk);
+        bytecodeOffsetChunks.push(bytecodeOffsetsChunk);
+      }
+    }
+    const functionBodyRanges: Array<{start: number, end: number}> = [];
+    // functionBodyOffsets contains a sequence of pairs of start and end offsets
+    for (let i = 0; i < functionBodyOffsets.length; i += 2) {
+      functionBodyRanges.push({start: functionBodyOffsets[i], end: functionBodyOffsets[i + 1]});
+    }
+    const wasmDisassemblyInfo = new Common.WasmDisassembly.WasmDisassembly(
+        lines.concat(...lineChunks), bytecodeOffsets.concat(...bytecodeOffsetChunks), functionBodyRanges);
+    return {content: '', isEncoded: false, wasmDisassemblyInfo};
   }
 
   requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {
     if (!this.#contentPromise) {
-      this.#contentPromise = this.originalContentProvider().requestContent();
+      this.#contentPromise = (async(): Promise<TextUtils.ContentProvider.DeferredContent> => {
+        if (!this.scriptId) {
+          return {content: null, error: i18nString(UIStrings.scriptRemovedOrDeleted), isEncoded: false};
+        }
+        try {
+          return this.isWasm() ? await this.loadWasmContent() : await this.loadTextContent();
+        } catch (err) {
+          // TODO(bmeurer): Propagate errors as exceptions / rejections.
+          return {content: null, error: i18nString(UIStrings.unableToFetchScriptSource), isEncoded: false};
+        }
+      })();
     }
     return this.#contentPromise;
   }
@@ -191,51 +253,8 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
   }
 
   originalContentProvider(): TextUtils.ContentProvider.ContentProvider {
-    if (!this.#originalContentProviderInternal) {
-      let lazyContentPromise: Promise<TextUtils.ContentProvider.DeferredContent>|null;
-      this.#originalContentProviderInternal =
-          new TextUtils.StaticContentProvider.StaticContentProvider(this.contentURL(), this.contentType(), () => {
-            if (!lazyContentPromise) {
-              lazyContentPromise = (async(): Promise<{
-                                      content: null,
-                                      error: Common.UIString.LocalizedString,
-                                      isEncoded: boolean,
-                                    }|{
-                                      content: string,
-                                      isEncoded: boolean,
-                                      error?: undefined,
-                                    }> => {
-                if (!this.scriptId) {
-                  return {content: null, error: i18nString(UIStrings.scriptRemovedOrDeleted), isEncoded: false};
-                }
-                try {
-                  const result = await this.debuggerModel.target().debuggerAgent().invoke_getScriptSource(
-                      {scriptId: this.scriptId});
-                  if (result.getError()) {
-                    throw new Error(result.getError());
-                  }
-                  const {scriptSource, bytecode} = result;
-                  if (bytecode) {
-                    return {content: bytecode, isEncoded: true};
-                  }
-                  let content: string = scriptSource || '';
-                  if (this.hasSourceURL && this.sourceURL.startsWith('snippet://')) {
-                    // TODO(crbug.com/1330846): Find a better way to establish the snippet automapping binding then adding
-                    // a sourceURL comment before evaluation and removing it here.
-                    content = Script.trimSourceURLComment(content);
-                  }
-                  return {content, isEncoded: false};
-
-                } catch (err) {
-                  // TODO(bmeurer): Propagate errors as exceptions / rejections.
-                  return {content: null, error: i18nString(UIStrings.unableToFetchScriptSource), isEncoded: false};
-                }
-              })();
-            }
-            return lazyContentPromise;
-          });
-    }
-    return this.#originalContentProviderInternal;
+    return new TextUtils.StaticContentProvider.StaticContentProvider(
+        this.contentURL(), this.contentType(), () => this.requestContent());
   }
 
   async searchInContent(query: string, caseSensitive: boolean, isRegex: boolean):
@@ -257,37 +276,29 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return source + '\n //# sourceURL=' + this.sourceURL;
   }
 
-  async editSource(
-      newSource: string,
-      callback:
-          (error: string|null, arg1?: Protocol.Runtime.ExceptionDetails|undefined,
-           arg2?: Array<Protocol.Debugger.CallFrame>|undefined, arg3?: Protocol.Runtime.StackTrace|undefined,
-           arg4?: Protocol.Runtime.StackTraceId|undefined, arg5?: boolean|undefined) => void): Promise<void> {
+  async editSource(newSource: string): Promise<
+      {status: Protocol.Debugger.SetScriptSourceResponseStatus, exceptionDetails?: Protocol.Runtime.ExceptionDetails}> {
     newSource = Script.trimSourceURLComment(newSource);
     // We append correct #sourceURL to script for consistency only. It's not actually needed for things to work correctly.
     newSource = this.appendSourceURLCommentIfNeeded(newSource);
 
-    if (!this.scriptId) {
-      callback('Script failed to parse');
-      return;
-    }
-
     const {content: oldSource} = await this.requestContent();
     if (oldSource === newSource) {
-      callback(null);
-      return;
+      return {status: Protocol.Debugger.SetScriptSourceResponseStatus.Ok};
     }
     const response = await this.debuggerModel.target().debuggerAgent().invoke_setScriptSource(
-        {scriptId: this.scriptId, scriptSource: newSource});
+        {scriptId: this.scriptId, scriptSource: newSource, allowTopFrameEditing: true});
+    if (response.getError()) {
+      // Something went seriously wrong, like the V8 inspector no longer knowing about this script without
+      // shutting down the Debugger agent etc.
+      throw new Error(`Script#editSource failed for script with id ${this.scriptId}: ${response.getError()}`);
+    }
 
-    if (!response.getError() && !response.exceptionDetails) {
+    if (!response.getError() && response.status === Protocol.Debugger.SetScriptSourceResponseStatus.Ok) {
       this.#contentPromise = Promise.resolve({content: newSource, isEncoded: false});
     }
 
-    const needsStepIn = Boolean(response.stackChanged);
-    callback(
-        response.getError() || null, response.exceptionDetails, response.callFrames, response.asyncStackTrace,
-        response.asyncStackTraceId, needsStepIn);
+    return {status: response.status, exceptionDetails: response.exceptionDetails};
   }
 
   rawLocation(lineNumber: number, columnNumber: number): Location|null {

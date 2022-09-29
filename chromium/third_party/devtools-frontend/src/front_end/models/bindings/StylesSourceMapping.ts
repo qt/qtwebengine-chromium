@@ -35,7 +35,7 @@ import type * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
-import type {SourceMapping} from './CSSWorkspaceBinding.js';
+import {type SourceMapping} from './CSSWorkspaceBinding.js';
 import {NetworkProject} from './NetworkProject.js';
 import {metadataForURL} from './ResourceUtils.js';
 
@@ -306,11 +306,6 @@ export class StyleFile implements TextUtils.ContentProvider.ContentProvider {
   contentType(): Common.ResourceType.ResourceType {
     console.assert(this.headers.size > 0);
     return this.headers.values().next().value.originalContentProvider().contentType();
-  }
-
-  contentEncoded(): Promise<boolean> {
-    console.assert(this.headers.size > 0);
-    return this.headers.values().next().value.originalContentProvider().contentEncoded();
   }
 
   requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {

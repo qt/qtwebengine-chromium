@@ -152,6 +152,8 @@ class DwarfCFIToModule: public CallFrameInfo::Handler {
                                  const string& expression);
   virtual bool End();
 
+  virtual string Architecture();
+
  private:
   // Return the name to use for register REG.
   string RegisterName(int i);

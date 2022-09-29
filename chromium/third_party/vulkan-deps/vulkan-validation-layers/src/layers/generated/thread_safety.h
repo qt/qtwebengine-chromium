@@ -5611,6 +5611,17 @@ void PostCallRecordGetPrivateDataEXT(
     VkPrivateDataSlot                           privateDataSlot,
     uint64_t*                                   pData) override;
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+
+void PreCallRecordExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) override;
+
+void PostCallRecordExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) override;
+#endif // VK_USE_PLATFORM_METAL_EXT
+
 void PreCallRecordCmdSetFragmentShadingRateEnumNV(
     VkCommandBuffer                             commandBuffer,
     VkFragmentShadingRateNV                     shadingRate,
@@ -5962,6 +5973,50 @@ void PostCallRecordGetDescriptorSetHostMappingVALVE(
     VkDevice                                    device,
     VkDescriptorSet                             descriptorSet,
     void**                                      ppData) override;
+
+void PreCallRecordGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) override;
+
+void PostCallRecordGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) override;
+
+void PreCallRecordGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) override;
+
+void PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) override;
+
+void PreCallRecordGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties) override;
+
+void PostCallRecordGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties,
+    VkResult                                    result) override;
+
+void PreCallRecordGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties) override;
+
+void PostCallRecordGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties,
+    VkResult                                    result) override;
 
 void PreCallRecordCreateAccelerationStructureKHR(
     VkDevice                                    device,

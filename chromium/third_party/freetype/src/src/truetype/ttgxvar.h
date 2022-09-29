@@ -361,11 +361,9 @@ FT_BEGIN_HEADER
 
 
   FT_LOCAL( FT_Error )
-  TT_Vary_Apply_Glyph_Deltas( TT_Face      face,
-                              FT_UInt      glyph_index,
+  TT_Vary_Apply_Glyph_Deltas( TT_Loader    loader,
                               FT_Outline*  outline,
-                              FT_Vector*   unrounded,
-                              FT_UInt      n_points );
+                              FT_Vector*   unrounded );
 
   FT_LOCAL( FT_Error )
   tt_hadvance_adjust( TT_Face  face,
@@ -393,7 +391,7 @@ FT_BEGIN_HEADER
                                        GX_ItemVarStore    itemStore,
                                        FT_ULong           table_len );
 
-  FT_LOCAL( FT_Int )
+  FT_LOCAL( FT_ItemVarDelta )
   tt_var_get_item_delta( TT_Face          face,
                          GX_ItemVarStore  itemStore,
                          FT_UInt          outerIndex,

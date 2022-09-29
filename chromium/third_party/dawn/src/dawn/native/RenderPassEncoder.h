@@ -33,7 +33,6 @@ class RenderPassEncoder final : public RenderEncoderBase {
                                          EncodingContext* encodingContext,
                                          RenderPassResourceUsageTracker usageTracker,
                                          Ref<AttachmentState> attachmentState,
-                                         std::vector<TimestampWrite> timestampWritesAtEnd,
                                          uint32_t renderTargetWidth,
                                          uint32_t renderTargetHeight,
                                          bool depthReadOnly,
@@ -70,7 +69,6 @@ class RenderPassEncoder final : public RenderEncoderBase {
                       EncodingContext* encodingContext,
                       RenderPassResourceUsageTracker usageTracker,
                       Ref<AttachmentState> attachmentState,
-                      std::vector<TimestampWrite> timestampWritesAtEnd,
                       uint32_t renderTargetWidth,
                       uint32_t renderTargetHeight,
                       bool depthReadOnly,
@@ -97,7 +95,8 @@ class RenderPassEncoder final : public RenderEncoderBase {
     uint32_t mCurrentOcclusionQueryIndex = 0;
     bool mOcclusionQueryActive = false;
 
-    std::vector<TimestampWrite> mTimestampWritesAtEnd;
+    // This is the hardcoded value in the WebGPU spec.
+    uint64_t mMaxDrawCount = 50000000;
 };
 
 }  // namespace dawn::native

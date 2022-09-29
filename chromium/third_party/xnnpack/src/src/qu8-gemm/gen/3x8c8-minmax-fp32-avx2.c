@@ -14,6 +14,7 @@
 #include <xnnpack/gemm.h>
 #include <xnnpack/intrinsics-polyfill.h>
 #include <xnnpack/math.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qu8_gemm_minmax_fp32_ukernel_3x8c8__avx2(
@@ -54,17 +55,17 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x8c8__avx2(
   }
 
   do {
-    const __m128i vbias0x0 = _mm_loadu_si32(w);
-    const __m128i vbias0x1 = _mm_loadu_si32((const int32_t*) w + 1);
+    const __m128i vbias0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
+    const __m128i vbias0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
     __m256i vacc0x01 = _mm256_inserti128_si256(_mm256_castsi128_si256(vbias0x0), vbias0x1, 1);
-    const __m128i vbias0x2 = _mm_loadu_si32((const int32_t*) w + 2);
-    const __m128i vbias0x3 = _mm_loadu_si32((const int32_t*) w + 3);
+    const __m128i vbias0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
+    const __m128i vbias0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
     __m256i vacc0x23 = _mm256_inserti128_si256(_mm256_castsi128_si256(vbias0x2), vbias0x3, 1);
-    const __m128i vbias0x4 = _mm_loadu_si32((const int32_t*) w + 4);
-    const __m128i vbias0x5 = _mm_loadu_si32((const int32_t*) w + 5);
+    const __m128i vbias0x4 = _mm_cvtsi32_si128(((const int*) w)[4]);
+    const __m128i vbias0x5 = _mm_cvtsi32_si128(((const int*) w)[5]);
     __m256i vacc0x45 = _mm256_inserti128_si256(_mm256_castsi128_si256(vbias0x4), vbias0x5, 1);
-    const __m128i vbias0x6 = _mm_loadu_si32((const int32_t*) w + 6);
-    const __m128i vbias0x7 = _mm_loadu_si32((const int32_t*) w + 7);
+    const __m128i vbias0x6 = _mm_cvtsi32_si128(((const int*) w)[6]);
+    const __m128i vbias0x7 = _mm_cvtsi32_si128(((const int*) w)[7]);
     __m256i vacc0x67 = _mm256_inserti128_si256(_mm256_castsi128_si256(vbias0x6), vbias0x7, 1);
     __m256i vacc1x01 = vacc0x01;
     __m256i vacc1x23 = vacc0x23;
@@ -74,7 +75,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x8c8__avx2(
     __m256i vacc2x23 = vacc0x23;
     __m256i vacc2x45 = vacc0x45;
     __m256i vacc2x67 = vacc0x67;
-    w = (const void*) ((const int32_t*) w + 8);
+    w = (const int32_t*) w + 8;
 
     size_t k = 0;
     const __m256i vb_zero_point = _mm256_load_si256((const __m256i*) params->fp32_avx2.kernel_zero_point);
@@ -184,7 +185,7 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x8c8__avx2(
       if (nc & 4) {
         _mm_storeu_si32(c0, vout_lo);
         _mm_storeu_si32(c1, vout_hi);
-        *((uint32_t*) c2) = (uint32_t) _mm_extract_epi32(vout_lo, 2);
+        unaligned_store_u32(c2, (uint32_t) _mm_extract_epi32(vout_lo, 2));
 
         c0 += 4;
         c1 += 4;
@@ -194,9 +195,9 @@ void xnn_qu8_gemm_minmax_fp32_ukernel_3x8c8__avx2(
         vout_hi = _mm_srli_epi64(vout_hi, 32);
       }
       if (nc & 2) {
-        *((uint16_t*) c0) = (uint16_t) _mm_extract_epi16(vout_lo, 0);
-        *((uint16_t*) c1) = (uint16_t) _mm_extract_epi16(vout_hi, 0);
-        *((uint16_t*) c2) = (uint16_t) _mm_extract_epi16(vout_lo, 4);
+        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout_lo, 0));
+        unaligned_store_u16(c1, (uint16_t) _mm_extract_epi16(vout_hi, 0));
+        unaligned_store_u16(c2, (uint16_t) _mm_extract_epi16(vout_lo, 4));
 
         c0 += 2;
         c1 += 2;

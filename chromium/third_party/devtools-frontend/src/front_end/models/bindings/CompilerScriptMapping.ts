@@ -36,7 +36,11 @@ import * as TextUtils from '../text_utils/text_utils.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
-import type {DebuggerSourceMapping, DebuggerWorkspaceBinding, RawLocationRange} from './DebuggerWorkspaceBinding.js';
+import {
+  type DebuggerSourceMapping,
+  type DebuggerWorkspaceBinding,
+  type RawLocationRange,
+} from './DebuggerWorkspaceBinding.js';
 import {IgnoreListManager} from './IgnoreListManager.js';
 import {NetworkProject} from './NetworkProject.js';
 
@@ -243,7 +247,7 @@ export class CompilerScriptMapping implements DebuggerSourceMapping {
     const sourceMap = event.data.sourceMap;
     await this.removeStubUISourceCode(script);
 
-    if (IgnoreListManager.instance().isIgnoreListedURL(script.sourceURL, script.isContentScript())) {
+    if (IgnoreListManager.instance().isUserIgnoreListedURL(script.sourceURL, script.isContentScript())) {
       this.sourceMapAttachedForTest(sourceMap);
       return;
     }
@@ -341,11 +345,14 @@ class Binding {
     this.uiSourceCode = null;
   }
 
-  private recreateUISourceCodeIfNeeded(frameId: Protocol.Page.FrameId): void {
+  private recreateUISourceCodeIfNeeded(frameId: Protocol.Page.FrameId, isKnownThirdParty: boolean): void {
     const sourceMap = this.referringSourceMaps[this.referringSourceMaps.length - 1];
 
     const newUISourceCode =
         this.#project.createUISourceCode(this.#url, Common.ResourceType.resourceTypes.SourceMapScript);
+    if (isKnownThirdParty) {
+      newUISourceCode.markKnownThirdParty();
+    }
     uiSourceCodeToBinding.set(newUISourceCode, this);
     const contentProvider =
         sourceMap.sourceContentProvider(this.#url, Common.ResourceType.resourceTypes.SourceMapScript);
@@ -370,7 +377,7 @@ class Binding {
       NetworkProject.addFrameAttribution(this.uiSourceCode, frameId);
     }
     this.referringSourceMaps.push(sourceMap);
-    this.recreateUISourceCodeIfNeeded(frameId);
+    this.recreateUISourceCodeIfNeeded(frameId, sourceMap.hasIgnoreListHint(this.#url));
   }
 
   removeSourceMap(sourceMap: SDK.SourceMap.SourceMap, frameId: Protocol.Page.FrameId): void {
@@ -384,7 +391,7 @@ class Binding {
       this.#project.removeFile(uiSourceCode.url());
       this.uiSourceCode = null;
     } else {
-      this.recreateUISourceCodeIfNeeded(frameId);
+      this.recreateUISourceCodeIfNeeded(frameId, sourceMap.hasIgnoreListHint(this.#url));
     }
   }
 

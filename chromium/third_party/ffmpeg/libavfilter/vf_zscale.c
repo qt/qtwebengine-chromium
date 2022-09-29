@@ -45,6 +45,7 @@
 #include "libavutil/imgutils.h"
 
 #define ZIMG_ALIGNMENT 64
+#define MIN_TILESIZE 64
 #define MAX_THREADS 64
 
 static const char *const var_names[] = {
@@ -148,12 +149,6 @@ static av_cold int init(AVFilterContext *ctx)
 {
     ZScaleContext *s = ctx->priv;
     int ret;
-    int i;
-    for (i = 0; i < MAX_THREADS; i++) {
-        s->tmp[i] = NULL;
-        s->graph[i] = NULL;
-        s->alpha_graph[i] = NULL;
-    }
     zimg_image_format_default(&s->src_format, ZIMG_API_VERSION);
     zimg_image_format_default(&s->dst_format, ZIMG_API_VERSION);
     zimg_image_format_default(&s->src_format_tmp, ZIMG_API_VERSION);
@@ -232,22 +227,12 @@ static int query_formats(AVFilterContext *ctx)
 
 static void slice_params(ZScaleContext *s, int out_h, int in_h)
 {
-    int slice_size;
-
-    slice_size = (out_h + s->nb_threads - 1) / s->nb_threads;
-    if (slice_size % 2)
-        slice_size += 1;
     s->out_slice_start[0] = 0;
-    s->out_slice_end[0] = FFMIN(out_h, slice_size);
-    for (int i = 1; i < s->nb_threads - 1; i++) {
-        s->out_slice_start[i] = s->out_slice_end[i-1];
-        s->out_slice_end[i] = s->out_slice_start[i] + slice_size;
+    for (int i = 1; i < s->nb_threads; i++) {
+        int slice_end = out_h * i / s->nb_threads;
+        s->out_slice_end[i - 1] = s->out_slice_start[i] = FFALIGN(slice_end, 2);
     }
-
-    if (s->nb_threads > 1) {
-        s->out_slice_start[s->nb_threads - 1] = s->out_slice_end[s->nb_threads - 2];
-        s->out_slice_end[s->nb_threads - 1] = out_h;
-    }
+    s->out_slice_end[s->nb_threads - 1] = out_h;
 
     for (int i = 0; i < s->nb_threads; i++) {
         s->in_slice_start[i] = s->out_slice_start[i] * in_h / (double)out_h;
@@ -829,7 +814,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
         link->dst->inputs[0]->w      = in->width;
         link->dst->inputs[0]->h      = in->height;
 
-        s->nb_threads = av_clip(FFMIN(ff_filter_get_nb_threads(ctx), FFMIN(link->h, outlink->h) / 8), 1, MAX_THREADS);
+        s->nb_threads = av_clip(FFMIN(ff_filter_get_nb_threads(ctx), FFMIN(link->h, outlink->h) / MIN_TILESIZE), 1, MAX_THREADS);
         s->in_colorspace = in->colorspace;
         s->in_trc = in->color_trc;
         s->in_primaries = in->color_primaries;
@@ -852,7 +837,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
         s->first_time = 0;
 
         s->params.dither_type = s->dither;
-        s->params.cpu_type = ZIMG_CPU_AUTO;
+        s->params.cpu_type = ZIMG_CPU_AUTO_64B;
         s->params.resample_filter = s->filter;
         s->params.resample_filter_uv = s->filter;
         s->params.nominal_peak_luminance = s->nominal_peak_luminance;
@@ -866,7 +851,7 @@ static int filter_frame(AVFilterLink *link, AVFrame *in)
             zimg_graph_builder_params_default(&s->alpha_params, ZIMG_API_VERSION);
 
             s->alpha_params.dither_type = s->dither;
-            s->alpha_params.cpu_type = ZIMG_CPU_AUTO;
+            s->alpha_params.cpu_type = ZIMG_CPU_AUTO_64B;
             s->alpha_params.resample_filter = s->filter;
 
             s->alpha_src_format.width = in->width;

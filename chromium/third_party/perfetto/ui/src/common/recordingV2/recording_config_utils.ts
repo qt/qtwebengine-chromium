@@ -70,6 +70,9 @@ export class RecordingConfigUtils {
 
 export function genTraceConfig(
     uiCfg: RecordConfig, targetInfo: TargetInfo): TraceConfig {
+  const androidApiLevel = (targetInfo.targetType === 'ANDROID') ?
+      targetInfo.androidApiLevel :
+      undefined;
   const protoCfg = new TraceConfig();
   protoCfg.durationMs = uiCfg.durationMs;
 
@@ -123,8 +126,7 @@ export function genTraceConfig(
     procThreadAssociationPolling = true;
     procThreadAssociationFtrace = true;
     uiCfg.ftrace = true;
-    if (targetInfo.targetType === 'ANDROID' &&
-        targetInfo.androidApiLevel >= 31) {
+    if (androidApiLevel && androidApiLevel >= 31) {
       uiCfg.symbolizeKsyms = true;
     }
     ftraceEvents.add('sched/sched_switch');
@@ -225,7 +227,6 @@ export function genTraceConfig(
     if (sysStatsCfg === undefined) sysStatsCfg = new SysStatsConfig();
     sysStatsCfg.meminfoPeriodMs = uiCfg.meminfoPeriodMs;
     sysStatsCfg.meminfoCounters = uiCfg.meminfoCounters.map((name) => {
-      // tslint:disable-next-line no-any
       return MeminfoCounters[name as any as number] as any as number;
     });
   }
@@ -234,7 +235,6 @@ export function genTraceConfig(
     if (sysStatsCfg === undefined) sysStatsCfg = new SysStatsConfig();
     sysStatsCfg.vmstatPeriodMs = uiCfg.vmstatPeriodMs;
     sysStatsCfg.vmstatCounters = uiCfg.vmstatCounters.map((name) => {
-      // tslint:disable-next-line no-any
       return VmstatCounters[name as any as number] as any as number;
     });
   }
@@ -331,7 +331,6 @@ export function genTraceConfig(
     ds.config.name = 'android.log';
     ds.config.androidLogConfig = new AndroidLogConfig();
     ds.config.androidLogConfig.logIds = uiCfg.androidLogBuffers.map((name) => {
-      // tslint:disable-next-line no-any
       return AndroidLogId[name as any as number] as any as number;
     });
 
@@ -546,8 +545,7 @@ export function genTraceConfig(
     }
 
     let ftraceEventsArray: string[] = [];
-    if (targetInfo.targetType === 'ANDROID' &&
-        targetInfo.androidApiLevel === 28) {
+    if (androidApiLevel && androidApiLevel === 28) {
       for (const ftraceEvent of ftraceEvents) {
         // On P, we don't support groups so strip all group names from ftrace
         // events.
@@ -571,8 +569,7 @@ export function genTraceConfig(
     ds.config.ftraceConfig.atraceCategories = Array.from(atraceCats);
     ds.config.ftraceConfig.atraceApps = Array.from(atraceApps);
 
-    if (targetInfo.targetType === 'ANDROID' &&
-        targetInfo.androidApiLevel >= 31) {
+    if (androidApiLevel && androidApiLevel >= 31) {
       const compact = new FtraceConfig.CompactSchedConfig();
       compact.enabled = true;
       ds.config.ftraceConfig.compactSched = compact;
@@ -618,8 +615,6 @@ function toPbtxt(configBuffer: Uint8Array): string {
     for (const [key, value] of Object.entries(msg)) {
       const isRepeated = Array.isArray(value);
       const isNested = typeof value === 'object' && !isRepeated;
-      // disabling because a of mismatch between tslint and the formatting tool
-      // tslint:disable-next-line whitespace
       for (const entry of (isRepeated ? value as Array<{}>: [value])) {
         yield ' '.repeat(indent) + `${snakeCase(key)}${isNested ? '' : ':'} `;
         if (typeof entry === 'string') {

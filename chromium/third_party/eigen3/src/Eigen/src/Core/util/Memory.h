@@ -216,6 +216,7 @@ EIGEN_DEVICE_FUNC inline void aligned_free(void *ptr)
   */
 inline void* aligned_realloc(void *ptr, std::size_t new_size, std::size_t old_size)
 {
+  if (ptr == 0) return aligned_malloc(new_size);
   EIGEN_UNUSED_VARIABLE(old_size)
 
   void *result;

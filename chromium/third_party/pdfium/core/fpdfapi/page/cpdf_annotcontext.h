@@ -19,15 +19,16 @@ class IPDF_Page;
 
 class CPDF_AnnotContext {
  public:
-  CPDF_AnnotContext(CPDF_Dictionary* pAnnotDict, IPDF_Page* pPage);
+  CPDF_AnnotContext(RetainPtr<CPDF_Dictionary> pAnnotDict, IPDF_Page* pPage);
   ~CPDF_AnnotContext();
 
-  void SetForm(CPDF_Stream* pStream);
+  void SetForm(RetainPtr<CPDF_Stream> pStream);
   bool HasForm() const { return !!m_pAnnotForm; }
   CPDF_Form* GetForm() const { return m_pAnnotForm.get(); }
 
   // Never nullptr.
-  CPDF_Dictionary* GetAnnotDict() const { return m_pAnnotDict.Get(); }
+  RetainPtr<CPDF_Dictionary> GetMutableAnnotDict() { return m_pAnnotDict; }
+  const CPDF_Dictionary* GetAnnotDict() const { return m_pAnnotDict.Get(); }
 
   // Never nullptr.
   IPDF_Page* GetPage() const { return m_pPage.Get(); }

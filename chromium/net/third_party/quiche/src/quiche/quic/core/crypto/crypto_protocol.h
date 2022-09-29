@@ -30,7 +30,7 @@ using ServerConfigID = std::string;
 // "1CON", "BBQ4", "NCON", "RCID", "SREJ", "TBKP", "TB10", "SCLS", "SMHL",
 // "QNZR", "B2HI", "H2PR", "FIFO", "LIFO", "RRWS", "QNSP", "B2CL", "CHSP",
 // "BPTE", "ACKD", "AKD2", "AKD4", "MAD1", "MAD4", "MAD5", "ACD0", "ACKQ",
-// "TLPR", "CCS\0", "PDP4"
+// "TLPR", "CCS\0", "PDP4", "NCHP", "NBPE"
 
 // clang-format off
 const QuicTag kCHLO = TAG('C', 'H', 'L', 'O');   // Client hello
@@ -301,7 +301,7 @@ const QuicTag kNPCO = TAG('N', 'P', 'C', 'O');    // No pacing offload.
 const QuicTag kBWRE = TAG('B', 'W', 'R', 'E');  // Bandwidth resumption.
 const QuicTag kBWMX = TAG('B', 'W', 'M', 'X');  // Max bandwidth resumption.
 const QuicTag kBWID = TAG('B', 'W', 'I', 'D');  // Send bandwidth when idle.
-const QuicTag kBWR1 = TAG('B', 'W', 'I', '1');  // Resume bandwidth experiment 1
+const QuicTag kBWI1 = TAG('B', 'W', 'I', '1');  // Resume bandwidth experiment 1
 const QuicTag kBWRS = TAG('B', 'W', 'R', 'S');  // Server bandwidth resumption.
 const QuicTag kBWS2 = TAG('B', 'W', 'S', '2');  // Server bw resumption v2.
 const QuicTag kBWS3 = TAG('B', 'W', 'S', '3');  // QUIC Initial CWND - Control.
@@ -354,9 +354,6 @@ const QuicTag kMTUL = TAG('M', 'T', 'U', 'L');  // Low-target MTU discovery.
 
 const QuicTag kNSLC = TAG('N', 'S', 'L', 'C');  // Always send connection close
                                                 // for idle timeout.
-const QuicTag kNCHP = TAG('N', 'C', 'H', 'P');  // No chaos protection.
-const QuicTag kNBPE = TAG('N', 'B', 'P', 'E');  // No BoringSSL Permutes
-                                                // TLS Extensions.
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R

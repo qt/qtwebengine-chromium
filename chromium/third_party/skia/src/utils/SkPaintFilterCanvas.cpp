@@ -13,18 +13,17 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h" // IWYU pragma: keep
+#include "include/core/SkSurfaceProps.h"
 
 #include <optional>
 
 class SkData;
 class SkDrawable;
-class SkGlyphRunList;
 class SkImage;
 class SkPath;
 class SkPicture;
 class SkRRect;
 class SkRegion;
-class SkSurfaceProps;
 class SkTextBlob;
 class SkVertices;
 struct SkDrawShadowRec;
@@ -166,8 +165,8 @@ void SkPaintFilterCanvas::onDrawVerticesObject(const SkVertices* vertices,
     }
 }
 
-void SkPaintFilterCanvas::onDrawPatch(const SkPoint cubics[], const SkColor colors[],
-                                      const SkPoint texCoords[], SkBlendMode bmode,
+void SkPaintFilterCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                                      const SkPoint texCoords[4], SkBlendMode bmode,
                                       const SkPaint& paint) {
     AutoPaintFilter apf(this, paint);
     if (apf.shouldDraw()) {
@@ -207,7 +206,8 @@ void SkPaintFilterCanvas::onDrawDrawable(SkDrawable* drawable, const SkMatrix* m
     }
 }
 
-void SkPaintFilterCanvas::onDrawGlyphRunList(const SkGlyphRunList& list, const SkPaint& paint) {
+void SkPaintFilterCanvas::onDrawGlyphRunList(
+        const sktext::GlyphRunList& list, const SkPaint& paint) {
     AutoPaintFilter apf(this, paint);
     if (apf.shouldDraw()) {
         this->SkNWayCanvas::onDrawGlyphRunList(list, apf.paint());
@@ -292,6 +292,9 @@ SkImageInfo SkPaintFilterCanvas::onImageInfo() const {
     return this->proxy()->imageInfo();
 }
 
-bool SkPaintFilterCanvas::onGetProps(SkSurfaceProps* props) const {
-    return this->proxy()->getProps(props);
+bool SkPaintFilterCanvas::onGetProps(SkSurfaceProps* props, bool top) const {
+    if (props) {
+        *props = top ? this->proxy()->getTopProps() : this->proxy()->getBaseProps();
+    }
+    return true;
 }

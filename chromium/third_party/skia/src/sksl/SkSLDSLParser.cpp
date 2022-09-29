@@ -30,6 +30,7 @@
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <algorithm>
+#include <climits>
 #include <initializer_list>
 #include <memory>
 #include <type_traits>
@@ -60,6 +61,10 @@ static int parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_MEDIUMP:        return Modifiers::kMediump_Flag;
         case Token::Kind::TK_LOWP:           return Modifiers::kLowp_Flag;
         case Token::Kind::TK_ES3:            return Modifiers::kES3_Flag;
+        case Token::Kind::TK_THREADGROUP:    return Modifiers::kThreadgroup_Flag;
+        case Token::Kind::TK_READONLY:       return Modifiers::kReadOnly_Flag;
+        case Token::Kind::TK_WRITEONLY:      return Modifiers::kWriteOnly_Flag;
+        case Token::Kind::TK_BUFFER:         return Modifiers::kBuffer_Flag;
         default:                             return 0;
     }
 }
@@ -153,6 +158,22 @@ static bool is_whitespace(Token::Kind kind) {
     }
 }
 
+bool DSLParser::expectNewline() {
+    Token token = this->nextRawToken();
+    if (token.fKind == Token::Kind::TK_WHITESPACE) {
+        // The lexer doesn't distinguish newlines from other forms of whitespace, so we check
+        // for newlines by searching through the token text.
+        std::string_view tokenText = this->text(token);
+        if (tokenText.find_first_of('\r') != std::string_view::npos ||
+            tokenText.find_first_of('\n') != std::string_view::npos) {
+            return true;
+        }
+    }
+    // We didn't find a newline.
+    this->pushback(token);
+    return false;
+}
+
 Token DSLParser::nextToken() {
     for (;;) {
         Token token = this->nextRawToken();
@@ -208,7 +229,7 @@ bool DSLParser::expectIdentifier(Token* result) {
     if (!this->expect(Token::Kind::TK_IDENTIFIER, "an identifier", result)) {
         return false;
     }
-    if (IsBuiltinType(this->text(*result))) {
+    if (CurrentSymbolTable()->isBuiltinType(this->text(*result))) {
         this->error(*result, "expected an identifier, but found type '" +
                              std::string(this->text(*result)) + "'");
         this->fEncounteredFatalError = true;
@@ -221,7 +242,7 @@ bool DSLParser::checkIdentifier(Token* result) {
     if (!this->checkNext(Token::Kind::TK_IDENTIFIER, result)) {
         return false;
     }
-    if (IsBuiltinType(this->text(*result))) {
+    if (CurrentSymbolTable()->isBuiltinType(this->text(*result))) {
         this->pushback(std::move(*result));
         return false;
     }
@@ -316,7 +337,8 @@ void DSLParser::declarations() {
     }
 }
 
-/* DIRECTIVE(#extension) IDENTIFIER COLON IDENTIFIER */
+/* DIRECTIVE(#extension) IDENTIFIER COLON IDENTIFIER NEWLINE |
+   DIRECTIVE(#version) INTLITERAL NEWLINE */
 void DSLParser::directive(bool allowVersion) {
     Token start;
     if (!this->expect(Token::Kind::TK_DIRECTIVE, "a directive", &start)) {
@@ -337,14 +359,19 @@ void DSLParser::directive(bool allowVersion) {
             return;
         }
         std::string_view behaviorText = this->text(behavior);
-        if (behaviorText == "disable") {
-            return;
+        if (behaviorText != "disable") {
+            if (behaviorText == "require" || behaviorText == "enable" || behaviorText == "warn") {
+                // We don't currently do anything different between require, enable, and warn
+                dsl::AddExtension(this->text(name));
+            } else {
+                this->error(behavior, "expected 'require', 'enable', 'warn', or 'disable'");
+            }
         }
-        if (behaviorText != "require" && behaviorText != "enable" && behaviorText != "warn") {
-            this->error(behavior, "expected 'require', 'enable', 'warn', or 'disable'");
+
+        // We expect a newline after an #extension directive.
+        if (!this->expectNewline()) {
+            this->error(start, "invalid #extension directive");
         }
-        // We don't currently do anything different between require, enable, and warn
-        dsl::AddExtension(this->text(name));
     } else if (text == "#version") {
         if (!allowVersion) {
             this->error(start, "#version directive must appear before anything else");
@@ -365,6 +392,10 @@ void DSLParser::directive(bool allowVersion) {
                 this->error(start, "unsupported version number");
                 return;
         }
+        // We expect a newline after a #version directive.
+        if (!this->expectNewline()) {
+            this->error(start, "invalid #version directive");
+        }
     } else {
         this->error(start, "unsupported directive '" + std::string(this->text(start)) + "'");
     }
@@ -381,7 +412,8 @@ bool DSLParser::declaration() {
     }
     DSLModifiers modifiers = this->modifiers();
     Token lookahead = this->peek();
-    if (lookahead.fKind == Token::Kind::TK_IDENTIFIER && !IsType(this->text(lookahead))) {
+    if (lookahead.fKind == Token::Kind::TK_IDENTIFIER &&
+        !CurrentSymbolTable()->isType(this->text(lookahead))) {
         // we have an identifier that's not a type, could be the start of an interface block
         return this->interfaceBlock(modifiers);
     }
@@ -497,7 +529,11 @@ bool DSLParser::parseArrayDimensions(Position pos, DSLType* type) {
     Token next;
     while (this->checkNext(Token::Kind::TK_LBRACKET, &next)) {
         if (this->checkNext(Token::Kind::TK_RBRACKET)) {
-            this->error(this->rangeFrom(pos), "unsized arrays are not permitted here");
+            if (this->allowUnsizedArrays()) {
+                *type = UnsizedArray(*type, this->rangeFrom(pos));
+            } else {
+                this->error(this->rangeFrom(pos), "unsized arrays are not permitted here");
+            }
         } else {
             SKSL_INT size;
             if (!this->arraySize(&size)) {
@@ -615,7 +651,7 @@ DSLStatement DSLParser::varDeclarationsOrExpressionStatement() {
     if (nextToken.fKind == Token::Kind::TK_HIGHP ||
         nextToken.fKind == Token::Kind::TK_MEDIUMP ||
         nextToken.fKind == Token::Kind::TK_LOWP ||
-        IsType(this->text(nextToken))) {
+        CurrentSymbolTable()->isType(this->text(nextToken))) {
         // Statements that begin with a typename are most often variable declarations, but
         // occasionally the type is part of a constructor, and these are actually expression-
         // statements in disguise. First, attempt the common case: parse it as a vardecl.
@@ -724,7 +760,7 @@ DSLType DSLParser::structDeclaration() {
         this->error(this->rangeFrom(start), "struct '" + std::string(this->text(name)) +
                 "' must contain at least one field");
     }
-    return dsl::Struct(this->text(name), SkMakeSpan(fields), this->rangeFrom(start));
+    return dsl::Struct(this->text(name), SkSpan(fields), this->rangeFrom(start));
 }
 
 /* structDeclaration ((IDENTIFIER varDeclarationEnd) | SEMICOLON) */
@@ -892,7 +928,7 @@ DSLLayout DSLParser::layout() {
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | LOWP | MEDIUMP | HIGHP | FLAT | NOPERSPECTIVE |
-            VARYING | INLINE)* */
+            VARYING | INLINE | THREADGROUP | READONLY | WRITEONLY | BUFFER)* */
 DSLModifiers DSLParser::modifiers() {
     int start = this->peek().fOffset;
     DSLLayout layout = this->layout();
@@ -903,13 +939,19 @@ DSLModifiers DSLParser::modifiers() {
     }
     int flags = 0;
     for (;;) {
-        // TODO(ethannicholas): handle duplicate / incompatible flags
+        // TODO: handle duplicate flags
         int tokenFlag = parse_modifier_token(peek().fKind);
         if (!tokenFlag) {
             break;
         }
+        Token modifier = this->nextToken();
+        // We have to check for this (internal) modifier here. It's automatically added to user
+        // functions before the IR is built, so testing for it in Convert gives false positives.
+        if (tokenFlag == Modifiers::kHasSideEffects_Flag && !ThreadContext::IsModule()) {
+            this->error(modifier, "'sk_has_side_effects' is not permitted here");
+        }
         flags |= tokenFlag;
-        end = this->position(this->nextToken()).endOffset();
+        end = this->position(modifier).endOffset();
     }
     return DSLModifiers(std::move(layout), flags, Position::Range(start, end));
 }
@@ -967,7 +1009,7 @@ DSLType DSLParser::type(DSLModifiers* modifiers) {
     if (!this->expect(Token::Kind::TK_IDENTIFIER, "a type", &type)) {
         return DSLType(nullptr);
     }
-    if (!IsType(this->text(type))) {
+    if (!CurrentSymbolTable()->isType(this->text(type))) {
         this->error(type, "no type named '" + std::string(this->text(type)) + "'");
         return DSLType(nullptr);
     }
@@ -975,7 +1017,11 @@ DSLType DSLParser::type(DSLModifiers* modifiers) {
     Token bracket;
     while (this->checkNext(Token::Kind::TK_LBRACKET, &bracket)) {
         if (this->checkNext(Token::Kind::TK_RBRACKET)) {
-            this->error(this->rangeFrom(bracket), "unsized arrays are not permitted here");
+            if (this->allowUnsizedArrays()) {
+                result = UnsizedArray(result, this->rangeFrom(type));
+            } else {
+                this->error(this->rangeFrom(bracket), "unsized arrays are not permitted here");
+            }
         } else {
             SKSL_INT size;
             if (!this->arraySize(&size)) {

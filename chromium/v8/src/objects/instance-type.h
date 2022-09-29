@@ -39,6 +39,13 @@ static_assert((kConsStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
 static_assert((kSlicedStringTag & kIsIndirectStringMask) ==
               kIsIndirectStringTag);
 static_assert((kThinStringTag & kIsIndirectStringMask) == kIsIndirectStringTag);
+const uint32_t kThinStringTagBit = 1 << 2;
+// Assert that the kThinStringTagBit is only used in kThinStringTag.
+static_assert((kSeqStringTag & kThinStringTagBit) == 0);
+static_assert((kConsStringTag & kThinStringTagBit) == 0);
+static_assert((kExternalStringTag & kThinStringTagBit) == 0);
+static_assert((kSlicedStringTag & kThinStringTagBit) == 0);
+static_assert((kThinStringTag & kThinStringTagBit) == kThinStringTagBit);
 
 // For strings, bit 3 indicates whether the string consists of two-byte
 // characters or one-byte characters.
@@ -266,6 +273,7 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
   TORQUE_INSTANCE_CHECKERS_RANGE_ONLY_DECLARED(V)
 
 #define INSTANCE_TYPE_CHECKERS_CUSTOM(V) \
+  V(AbstractCode)                        \
   V(FreeSpaceOrFiller)                   \
   V(ExternalString)                      \
   V(InternalizedString)
@@ -285,6 +293,8 @@ INSTANCE_TYPE_CHECKERS(IS_TYPE_FUNCTION_DECL)
   IS_TYPE_FUNCTION_DECL(Fixed##Type##Array)
 TYPED_ARRAYS(TYPED_ARRAY_IS_TYPE_FUNCTION_DECL)
 #undef TYPED_ARRAY_IS_TYPE_FUNCTION_DECL
+
+IS_TYPE_FUNCTION_DECL(CodeT)
 
 #undef IS_TYPE_FUNCTION_DECL
 }  // namespace InstanceTypeChecker

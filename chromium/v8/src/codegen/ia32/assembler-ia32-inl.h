@@ -37,10 +37,10 @@
 #ifndef V8_CODEGEN_IA32_ASSEMBLER_IA32_INL_H_
 #define V8_CODEGEN_IA32_ASSEMBLER_IA32_INL_H_
 
-#include "src/codegen/ia32/assembler-ia32.h"
-
 #include "src/base/memory.h"
 #include "src/codegen/assembler.h"
+#include "src/codegen/flush-instruction-cache.h"
+#include "src/codegen/ia32/assembler-ia32.h"
 #include "src/debug/debug.h"
 #include "src/objects/objects-inl.h"
 
@@ -101,9 +101,8 @@ void RelocInfo::set_target_object(Heap* heap, HeapObject target,
   if (icache_flush_mode != SKIP_ICACHE_FLUSH) {
     FlushInstructionCache(pc_, sizeof(Address));
   }
-  if (write_barrier_mode == UPDATE_WRITE_BARRIER && !host().is_null() &&
-      !FLAG_disable_write_barriers) {
-    WriteBarrierForCode(host(), this, target);
+  if (!host().is_null() && !FLAG_disable_write_barriers) {
+    WriteBarrierForCode(host(), this, target, write_barrier_mode);
   }
 }
 

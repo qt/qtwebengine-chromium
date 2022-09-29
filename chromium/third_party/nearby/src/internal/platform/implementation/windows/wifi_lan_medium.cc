@@ -30,15 +30,20 @@
 #include "internal/platform/cancellation_flag_listener.h"
 #include "internal/platform/implementation/windows/utils.h"
 #include "internal/platform/logging.h"
-#include "internal/platform/mutex_lock.h"
 
 namespace location {
 namespace nearby {
 namespace windows {
 
-bool WifiLanMedium::StartAdvertising(const NsdServiceInfo& nsd_service_info) {
-  absl::MutexLock lock(&mutex_);
+bool WifiLanMedium::IsNetworkConnected() const {
+  // connection_profile will be null when there's no network adapter or
+  // connection to a network. For example, WiFi isn't connected to an AP/hotspot
+  // and ethernet isn't connected to a router/hub/switch.
+  auto connection_profile = NetworkInformation::GetInternetConnectionProfile();
+  return connection_profile != nullptr;
+}
 
+bool WifiLanMedium::StartAdvertising(const NsdServiceInfo& nsd_service_info) {
   if (!IsAccepting()) {
     NEARBY_LOGS(WARNING)
         << "cannot start advertising without accepting connetions.";
@@ -321,8 +326,6 @@ std::unique_ptr<api::WifiLanSocket> WifiLanMedium::ConnectToService(
 
 std::unique_ptr<api::WifiLanServerSocket> WifiLanMedium::ListenForService(
     int port) {
-  absl::MutexLock lock(&mutex_);
-
   // check current status
   if (IsAccepting()) {
     NEARBY_LOGS(WARNING) << "accepting connections already started on port "
@@ -335,7 +338,6 @@ std::unique_ptr<api::WifiLanServerSocket> WifiLanMedium::ListenForService(
   server_socket_ptr_ = server_socket.get();
 
   server_socket->SetCloseNotifier([this]() {
-    absl::MutexLock lock(&mutex_);
     NEARBY_LOGS(INFO) << "server socket was closed on port "
                       << server_socket_ptr_->GetPort();
     medium_status_ &= (~MEDIUM_STATUS_ACCEPTING);

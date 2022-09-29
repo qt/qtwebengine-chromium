@@ -12,6 +12,7 @@ syntax = "proto3";
 option optimize_for = LITE_RUNTIME;
 
 package user_data_auth;
+option go_package = "chromiumos/system_api/user_data_auth_proto";
 
 // Enum to define all the available types of AuthFactor. This would be used for
 // identification of a given AuthFactor.
@@ -20,12 +21,19 @@ enum AuthFactorType {
   AUTH_FACTOR_TYPE_PASSWORD = 1;
   AUTH_FACTOR_TYPE_PIN = 2;
   AUTH_FACTOR_TYPE_CRYPTOHOME_RECOVERY = 3;
+  AUTH_FACTOR_TYPE_KIOSK = 4;
+  AUTH_FACTOR_TYPE_SMART_CARD = 5;
 }
 
-// AuthFactorIdentifier provides some identificaiton information for a given
-// AuthFactor. This information would be used by the client to authenticate a
-// particular AuthFactor.
-message AuthFactorIdentifier {}
+// Cryptographic signature algorithm type for smart card requests. Used with
+// SmartCardAuthInput.
+enum SmartCardSignatureAlgorithm {
+  CHALLENGE_NOT_SPECIFIED = 0;
+  CHALLENGE_RSASSA_PKCS1_V1_5_SHA1 = 1;
+  CHALLENGE_RSASSA_PKCS1_V1_5_SHA256 = 2;
+  CHALLENGE_RSASSA_PKCS1_V1_5_SHA384 = 3;
+  CHALLENGE_RSASSA_PKCS1_V1_5_SHA512 = 4;
+}
 
 // Password AuthFactor requires a secret to be passed for derivation and
 // creation of key.
@@ -55,6 +63,22 @@ message CryptohomeRecoveryAuthInput {
   bytes recovery_response = 3;
 }
 
+// Kiosk AuthFactor requires no secret to be passed for derivation and
+// creation of key.
+message KioskAuthInput {}
+
+// Smartcard AuthFactor requires no secret to be passed for derivation
+// and creation of key.
+message SmartCardAuthInput {
+  // Specifies the signature algorithms that are supported by an individual
+  // smart card.
+  repeated SmartCardSignatureAlgorithm signature_algorithms = 1;
+  // Parameters for connecting and making requests to a key delegate service:
+  // |dbus_service_name|, the D-Bus service name of the key delegate service
+  // that exports the key delegate object.
+  string key_delegate_dbus_service_name = 2;
+}
+
 // AuthInput is a wrapper around any secret or input data that is required to
 // authenticate or create an AuthFactor on disk.
 message AuthInput {
@@ -65,6 +89,8 @@ message AuthInput {
     PasswordAuthInput password_input = 1;
     PinAuthInput pin_input = 2;
     CryptohomeRecoveryAuthInput cryptohome_recovery_input = 3;
+    KioskAuthInput kiosk_input = 4;
+    SmartCardAuthInput smart_card_input = 5;
   }
 }
 
@@ -83,6 +109,14 @@ message PinMetadata {
 }
 
 message CryptohomeRecoveryMetadata {}
+
+message KioskMetadata {}
+
+message SmartCardMetadata {
+  // Specifies the key which is asked to sign the data. Contains the DER-encoded
+  // blob of the X.509 Subject Public Key Info.
+  bytes public_key_spki_der = 1;
+}
 
 // AuthFactor is a backing store for any secret stored on Chrome OS in the USS
 // World. This proto definition is used to communicate with the client side.
@@ -111,5 +145,7 @@ message AuthFactor {
     PasswordMetadata password_metadata = 4;
     PinMetadata pin_metadata = 5;
     CryptohomeRecoveryMetadata cryptohome_recovery_metadata = 6;
+    KioskMetadata kiosk_metadata = 7;
+    SmartCardMetadata smart_card_metadata = 8;
   }
 }

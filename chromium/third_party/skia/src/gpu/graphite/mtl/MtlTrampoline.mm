@@ -7,11 +7,32 @@
 
 #include "src/gpu/graphite/mtl/MtlTrampoline.h"
 
-#include "src/gpu/graphite/mtl/MtlGpu.h"
+#include "src/gpu/graphite/GlobalCache.h"
+#include "src/gpu/graphite/mtl/MtlQueueManager.h"
+#include "src/gpu/graphite/mtl/MtlResourceProvider.h"
+#include "src/gpu/graphite/mtl/MtlSharedContext.h"
 
 namespace skgpu::graphite {
-sk_sp<skgpu::graphite::Gpu> MtlTrampoline::MakeGpu(const MtlBackendContext& backendContext) {
-    return MtlGpu::Make(backendContext);
+sk_sp<SharedContext> MtlTrampoline::MakeSharedContext(const MtlBackendContext& backendContext,
+                                                      const ContextOptions& options) {
+    return MtlSharedContext::Make(backendContext, options);
+}
+
+std::unique_ptr<QueueManager> MtlTrampoline::MakeQueueManager(
+        const MtlBackendContext& backendContext, const SharedContext* sharedContext) {
+
+    sk_cfp<id<MTLCommandQueue>> queue =
+            sk_ret_cfp((id<MTLCommandQueue>)(backendContext.fQueue.get()));
+    return std::make_unique<MtlQueueManager>(std::move(queue), sharedContext);
+}
+
+std::unique_ptr<ResourceProvider> MtlTrampoline::MakeResourceProvider(
+        const SharedContext* sharedContext,
+        sk_sp<GlobalCache> globalCache,
+        SingleOwner* singleOwner) {
+    return std::make_unique<MtlResourceProvider>(sharedContext,
+                                                 std::move(globalCache),
+                                                 singleOwner);
 }
 
 }  // namespace skgpu::graphite

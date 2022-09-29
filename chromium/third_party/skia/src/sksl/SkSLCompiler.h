@@ -19,9 +19,10 @@
 #include "src/sksl/SkSLMangler.h"
 #include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLParsedModule.h"
-#include "src/sksl/ir/SkSLProgram.h"
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -37,6 +38,7 @@
 #define SK_SECONDARYFRAGCOLOR_BUILTIN  10012
 #define SK_FRAGCOORD_BUILTIN              15
 #define SK_CLOCKWISE_BUILTIN              17
+#define SK_THREADPOSITION                 28
 #define SK_VERTEXID_BUILTIN               42
 #define SK_INSTANCEID_BUILTIN             43
 #define SK_POSITION_BUILTIN                0
@@ -54,10 +56,11 @@ class Context;
 class Expression;
 class IRNode;
 class OutputStream;
-class SymbolTable;
-class Variable;
-
+struct Program;
+struct ProgramSettings;
+class ProgramUsage;
 struct ShaderCaps;
+class SymbolTable;
 
 struct LoadedModule {
     ProgramKind                                  fKind;
@@ -146,15 +149,11 @@ public:
      * table of the Program, but ownership is *not* transferred. It is up to the caller to keep them
      * alive.
      */
-    std::unique_ptr<Program> convertProgram(
-            ProgramKind kind,
-            std::string text,
-            Program::Settings settings);
+    std::unique_ptr<Program> convertProgram(ProgramKind kind,
+                                            std::string text,
+                                            ProgramSettings settings);
 
     std::unique_ptr<Expression> convertIdentifier(Position pos, std::string_view name);
-
-    /** Updates the Program's Inputs when a builtin variable is referenced. */
-    void updateInputsForBuiltinVariable(const Variable& var);
 
     bool toSPIRV(Program& program, OutputStream& out);
 
@@ -233,17 +232,9 @@ private:
         Compiler& fCompiler;
     };
 
-    const ParsedModule& loadGPUModule();
-    const ParsedModule& loadFragmentModule();
-    const ParsedModule& loadVertexModule();
-    const ParsedModule& loadGraphiteFragmentModule();
-    const ParsedModule& loadGraphiteVertexModule();
-    const ParsedModule& loadPublicModule();
-    const ParsedModule& loadPrivateRTShaderModule();
 
-    std::shared_ptr<SymbolTable> makeRootSymbolTable() const;
-    std::shared_ptr<SymbolTable> makeGLSLRootSymbolTable() const;
-    std::shared_ptr<SymbolTable> makePrivateSymbolTable(std::shared_ptr<SymbolTable> parent);
+    std::shared_ptr<SymbolTable> makeRootSymbolTable();
+    std::shared_ptr<SymbolTable> makeRootSymbolTableWithPublicTypes();
 
     /** Optimize every function in the program. */
     bool optimize(Program& program);
@@ -262,19 +253,31 @@ private:
                     std::shared_ptr<SymbolTable> symbols,
                     ProgramUsage* usage);
 
+    const ParsedModule& loadSharedModule();
+    const ParsedModule& loadGPUModule();
+    const ParsedModule& loadVertexModule();
+    const ParsedModule& loadFragmentModule();
+    const ParsedModule& loadComputeModule();
+    const ParsedModule& loadGraphiteVertexModule();
+    const ParsedModule& loadGraphiteFragmentModule();
+
+    const ParsedModule& loadPublicModule();
+    const ParsedModule& loadPrivateRTShaderModule();
+
     CompilerErrorReporter fErrorReporter;
     std::shared_ptr<Context> fContext;
 
-    ParsedModule fRootModule;                // Core types
+    ParsedModule fRootModule;                // Core public and private types
 
-    ParsedModule fPrivateModule;             // [Root] + Internal types
-    ParsedModule fGPUModule;                 // [Private] + GPU intrinsics, helper functions
+    ParsedModule fSharedModule;              // [Root] + Public intrinsics
+    ParsedModule fGPUModule;                 // [Shared] + Non-public intrinsics/helper functions
     ParsedModule fVertexModule;              // [GPU] + Vertex stage decls
     ParsedModule fFragmentModule;            // [GPU] + Fragment stage decls
+    ParsedModule fComputeModule;             // [GPU] + Compute stage decls
     ParsedModule fGraphiteVertexModule;      // [Vert] + Graphite vertex helpers
     ParsedModule fGraphiteFragmentModule;    // [Frag] + Graphite fragment helpers
 
-    ParsedModule fPublicModule;              // [Root] + Public features
+    ParsedModule fPublicModule;              // [Shared] + Runtime effect intrinsics - Private types
     ParsedModule fRuntimeShaderModule;       // [Public] + Runtime shader decls
 
     // holds ModifiersPools belonging to the core includes for lifetime purposes

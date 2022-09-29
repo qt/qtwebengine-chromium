@@ -31,6 +31,7 @@
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/SkSLUtil.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -68,6 +69,7 @@
 
 #include <cmath>
 #include <set>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -761,7 +763,7 @@ SpvId SPIRVCodeGenerator::writeOpCompositeConstruct(const Type& type,
     // If this is a vector composed entirely of literals, write a constant-composite instead.
     if (type.isVector()) {
         SkSTArray<4, SpvId> constants;
-        if (this->toConstants(SkMakeSpan(values), &constants)) {
+        if (this->toConstants(SkSpan(values), &constants)) {
             // Create a vector from literals.
             return this->writeOpConstantComposite(type, constants);
         }
@@ -770,7 +772,7 @@ SpvId SPIRVCodeGenerator::writeOpCompositeConstruct(const Type& type,
     // If this is a matrix composed entirely of literals, constant-composite them instead.
     if (type.isMatrix()) {
         SkSTArray<16, SpvId> constants;
-        if (this->toConstants(SkMakeSpan(values), &constants)) {
+        if (this->toConstants(SkSpan(values), &constants)) {
             // Create each matrix column.
             SkASSERT(type.isMatrix());
             const Type& vecType = type.componentType().toCompound(fContext,
@@ -3654,9 +3656,9 @@ void SPIRVCodeGenerator::writeDoStatement(const DoStatement& d, OutputStream& ou
     this->writeStatement(*d.statement(), out);
     if (fCurrentBlock) {
         this->writeInstruction(SpvOpBranch, next, out);
+        this->writeLabel(next, kBranchIsOnPreviousLine, out);
+        this->writeInstruction(SpvOpBranch, continueTarget, out);
     }
-    this->writeLabel(next, kBranchIsOnPreviousLine, out);
-    this->writeInstruction(SpvOpBranch, continueTarget, out);
     this->writeLabel(continueTarget, kBranchIsAbove, conditionalOps, out);
     SpvId test = this->writeExpression(*d.test(), out);
     this->writeInstruction(SpvOpBranchConditional, test, header, end, out);
@@ -3825,8 +3827,8 @@ void SPIRVCodeGenerator::writeUniformBuffer(std::shared_ptr<SymbolTable> topLeve
 
     fUniformBuffer.fInnerVariable = std::make_unique<Variable>(
             /*pos=*/Position(), /*modifiersPosition=*/Position(),
-            fProgram.fModifiers->add(modifiers), kUniformBufferName, fUniformBuffer.fStruct.get(),
-            /*builtin=*/false, Variable::Storage::kGlobal);
+            fContext.fModifiersPool->add(modifiers), kUniformBufferName,
+            fUniformBuffer.fStruct.get(), /*builtin=*/false, Variable::Storage::kGlobal);
 
     // Create an interface block object for this global variable.
     fUniformBuffer.fInterfaceBlock = std::make_unique<InterfaceBlock>(
@@ -3890,7 +3892,7 @@ void SPIRVCodeGenerator::addRTFlipUniform(Position pos) {
                                    /*builtin=*/-1,
                                    /*inputAttachmentIndex=*/-1),
                             Modifiers::kUniform_Flag);
-        modsPtr = fProgram.fModifiers->add(modifiers);
+        modsPtr = fContext.fModifiersPool->add(modifiers);
     }
     const Variable* intfVar = fSynthetics.takeOwnershipOfSymbol(
             std::make_unique<Variable>(/*pos=*/Position(),
@@ -3910,7 +3912,7 @@ void SPIRVCodeGenerator::addRTFlipUniform(Position pos) {
                         name,
                         /*instanceName=*/"",
                         /*arraySize=*/0,
-                        std::make_shared<SymbolTable>(fContext, /*builtin=*/false));
+                        std::make_shared<SymbolTable>(/*builtin=*/false));
 
     this->writeInterfaceBlock(intf, false);
 }

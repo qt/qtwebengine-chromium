@@ -10,8 +10,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <fp16/bitcasts.h>
-
 #include <xnnpack/math.h>
 #include <xnnpack/requantization-stubs.h>
 
@@ -29,7 +27,7 @@ void xnn_qs8_requantize_rndnu__scalar(
   assert(scale < 1.0f);
   assert(scale >= 0x1.0p-32f);
 
-  const uint32_t scale_bits = fp32_to_bits(scale);
+  const uint32_t scale_bits = float_as_uint32(scale);
   const int32_t multiplier = ((int32_t) scale_bits & INT32_C(0x007FFFFF)) | INT32_C(0x00800000);
   const uint32_t shift = 127 + 23 - (scale_bits >> 23);
   assert(shift >= 24);
@@ -59,10 +57,10 @@ void xnn_qs8_requantize_rndnu__scalar(
     // Note that although rounding is precomputed, it is dependent on shift value, and on processors with 64-bit
     // "right shift with rounding" instruction each line below can be represented by just one such instruction
     // (e.g. VRSHL.S64 on ARM NEON, SRSHL in ARM64 Advanced SIMD).
-    const int32_t x_scaled = (int32_t) asr_s64(x_product + rounding, shift);
-    const int32_t y_scaled = (int32_t) asr_s64(y_product + rounding, shift);
-    const int32_t z_scaled = (int32_t) asr_s64(z_product + rounding, shift);
-    const int32_t w_scaled = (int32_t) asr_s64(w_product + rounding, shift);
+    const int32_t x_scaled = (int32_t) math_asr_s64(x_product + rounding, shift);
+    const int32_t y_scaled = (int32_t) math_asr_s64(y_product + rounding, shift);
+    const int32_t z_scaled = (int32_t) math_asr_s64(z_product + rounding, shift);
+    const int32_t w_scaled = (int32_t) math_asr_s64(w_product + rounding, shift);
 
     // Clamp scaled value with zero point between (qmin - zero point) and (qmax - zero point).
     const int32_t x_clamped = math_min_s32(math_max_s32(x_scaled, smin), smax);

@@ -220,7 +220,7 @@ ExternalReference ExternalReference::handle_scope_implementer_address(
   return ExternalReference(isolate->handle_scope_implementer_address());
 }
 
-#ifdef V8_SANDBOXED_POINTERS
+#ifdef V8_ENABLE_SANDBOX
 ExternalReference ExternalReference::sandbox_base_address() {
   return ExternalReference(GetProcessWideSandbox()->base_address());
 }
@@ -234,14 +234,19 @@ ExternalReference ExternalReference::empty_backing_store_buffer() {
                                ->constants()
                                .empty_backing_store_buffer_address());
 }
-#endif  // V8_SANDBOXED_POINTERS
 
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
 ExternalReference ExternalReference::external_pointer_table_address(
     Isolate* isolate) {
   return ExternalReference(isolate->external_pointer_table_address());
 }
-#endif  // V8_SANDBOXED_EXTERNAL_POINTERS
+
+ExternalReference
+ExternalReference::shared_external_pointer_table_address_address(
+    Isolate* isolate) {
+  return ExternalReference(
+      isolate->shared_external_pointer_table_address_address());
+}
+#endif  // V8_ENABLE_SANDBOX
 
 ExternalReference ExternalReference::interpreter_dispatch_table_address(
     Isolate* isolate) {
@@ -332,6 +337,9 @@ struct IsValidExternalReferenceType<Result (Class::*)(Args...)> {
 
 FUNCTION_REFERENCE(write_barrier_marking_from_code_function,
                    WriteBarrier::MarkingFromCode)
+
+FUNCTION_REFERENCE(shared_barrier_from_code_function,
+                   WriteBarrier::SharedFromCode)
 
 FUNCTION_REFERENCE(insert_remembered_set_function,
                    Heap::InsertIntoRememberedSetFromCode)
@@ -752,7 +760,7 @@ ExternalReference ExternalReference::invoke_accessor_getter_callback() {
 #define re_stack_check_func RegExpMacroAssemblerLOONG64::CheckStackGuardState
 #elif V8_TARGET_ARCH_S390
 #define re_stack_check_func RegExpMacroAssemblerS390::CheckStackGuardState
-#elif V8_TARGET_ARCH_RISCV64
+#elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 #define re_stack_check_func RegExpMacroAssemblerRISCV::CheckStackGuardState
 #else
 UNREACHABLE();
@@ -1025,6 +1033,9 @@ FUNCTION_REFERENCE(mutable_big_int_absolute_compare_function,
 
 FUNCTION_REFERENCE(mutable_big_int_absolute_sub_and_canonicalize_function,
                    MutableBigInt_AbsoluteSubAndCanonicalize)
+
+FUNCTION_REFERENCE(mutable_big_int_absolute_mul_and_canonicalize_function,
+                   MutableBigInt_AbsoluteMulAndCanonicalize)
 
 FUNCTION_REFERENCE(check_object_type, CheckObjectType)
 
@@ -1392,11 +1403,6 @@ FUNCTION_REFERENCE(call_enter_context_function, EnterMicrotaskContextWrapper)
 FUNCTION_REFERENCE(
     js_finalization_registry_remove_cell_from_unregister_token_map,
     JSFinalizationRegistry::RemoveCellFromUnregisterTokenMap)
-
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
-FUNCTION_REFERENCE(external_pointer_table_allocate_entry,
-                   ExternalPointerTable::AllocateEntry)
-#endif
 
 bool operator==(ExternalReference lhs, ExternalReference rhs) {
   return lhs.address() == rhs.address();

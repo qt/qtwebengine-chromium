@@ -22,6 +22,7 @@
 
 class GrOpFlushState;
 class TestingUploadTarget;
+namespace skgpu::graphite { class AtlasManager; }
 
 /**
  * This file includes internal types that are used by all of our gpu backends for atlases.
@@ -205,12 +206,13 @@ private:
     // Only these classes get to increment the token counters
     friend class ::GrOpFlushState;
     friend class ::TestingUploadTarget;
+    friend class skgpu::graphite::AtlasManager;
 
     /** Issues the next token for a draw. */
     DrawToken issueDrawToken() { return ++fLastIssuedToken; }
 
     /** Advances the last flushed token by one. */
-    DrawToken flushToken() { return ++fLastFlushedToken; }
+    DrawToken issueFlushToken() { return ++fLastFlushedToken; }
 
     DrawToken fLastIssuedToken = DrawToken::AlreadyFlushedToken();
     DrawToken fLastFlushedToken = DrawToken::AlreadyFlushedToken();
@@ -454,6 +456,7 @@ public:
     void resetFlushesSinceLastUsed() { fFlushesSinceLastUse = 0; }
     void incFlushesSinceLastUsed() { fFlushesSinceLastUse++; }
 
+    bool needsUpload() { return !fDirtyRect.isEmpty(); }
     std::pair<const void*, SkIRect> prepareForUpload();
     void resetRects();
 

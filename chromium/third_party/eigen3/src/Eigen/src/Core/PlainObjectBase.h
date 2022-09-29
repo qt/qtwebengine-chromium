@@ -638,7 +638,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type
       *
       * \see class Map
       */
-    //@{
+    ///@{
     static inline ConstMapType Map(const Scalar* data)
     { return ConstMapType(data); }
     static inline MapType Map(Scalar* data)
@@ -702,7 +702,7 @@ class PlainObjectBase : public internal::dense_xpr_base<Derived>::type
     template<int Outer, int Inner>
     static inline typename StridedAlignedMapType<Stride<Outer, Inner> >::type MapAligned(Scalar* data, Index rows, Index cols, const Stride<Outer, Inner>& stride)
     { return typename StridedAlignedMapType<Stride<Outer, Inner> >::type(data, rows, cols, stride); }
-    //@}
+    ///@}
 
     using Base::setConstant;
     EIGEN_DEVICE_FUNC Derived& setConstant(Index size, const Scalar& val);

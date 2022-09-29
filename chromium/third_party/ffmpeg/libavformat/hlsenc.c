@@ -1550,7 +1550,11 @@ static int hls_window(AVFormatContext *s, int last, VariantStream *vs)
     double *prog_date_time_p = (hls->flags & HLS_PROGRAM_DATE_TIME) ? &prog_date_time : NULL;
     int byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
 
-    hls->version = 3;
+    hls->version = 2;
+    if (!(hls->flags & HLS_ROUND_DURATIONS)) {
+        hls->version = 3;
+    }
+
     if (byterange_mode) {
         hls->version = 4;
         sequence = 0;
@@ -2631,6 +2635,9 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
             vs->start_pos += vs->size;
             if (hls->key_info_file || hls->encrypt)
                 ret = hls_start(s, vs);
+            if (hls->segment_type == SEGMENT_TYPE_MPEGTS && oc->oformat->priv_class && oc->priv_data) {
+                av_opt_set(oc->priv_data, "mpegts_flags", "resend_headers", 0);
+            }
         } else if (hls->max_seg_size > 0) {
             if (vs->size + vs->start_pos >= hls->max_seg_size) {
                 vs->sequence++;

@@ -53,7 +53,7 @@ struct GpuVuidsCmdDrawIndirect : GpuVuid {
     GpuVuidsCmdDrawIndirect() : GpuVuid() {
         uniform_access_oob = "VUID-vkCmdDrawIndirect-None-02705";
         storage_access_oob = "VUID-vkCmdDrawIndirect-None-02706";
-        first_instance_not_zero = "VUID-vkCmdDrawIndirect-firstInstance-00478";
+        first_instance_not_zero = "VUID-VkDrawIndirectCommand-firstInstance-00501";
     }
 };
 
@@ -61,7 +61,7 @@ struct GpuVuidsCmdDrawIndexedIndirect : GpuVuid {
     GpuVuidsCmdDrawIndexedIndirect() : GpuVuid() {
         uniform_access_oob = "VUID-vkCmdDrawIndexedIndirect-None-02705";
         storage_access_oob = "VUID-vkCmdDrawIndexedIndirect-None-02706";
-        first_instance_not_zero = "VUID-vkCmdDrawIndexedIndirect-firstInstance-00530";
+        first_instance_not_zero = "VUID-VkDrawIndexedIndirectCommand-firstInstance-00554";
     }
 };
 
@@ -76,6 +76,10 @@ struct GpuVuidsCmdDispatchIndirect : GpuVuid {
     GpuVuidsCmdDispatchIndirect() : GpuVuid() {
         uniform_access_oob = "VUID-vkCmdDispatchIndirect-None-02705";
         storage_access_oob = "VUID-vkCmdDispatchIndirect-None-02706";
+        group_exceeds_device_limit_x = "VUID-VkDispatchIndirectCommand-x-00417";
+        group_exceeds_device_limit_y = "VUID-VkDispatchIndirectCommand-y-00418";
+        group_exceeds_device_limit_z = "VUID-VkDispatchIndirectCommand-z-00419";
+
     }
 };
 

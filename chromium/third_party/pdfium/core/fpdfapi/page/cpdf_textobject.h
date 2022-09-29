@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobject.h"
+#include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/retain_ptr.h"
 
@@ -75,6 +76,8 @@ class CPDF_TextObject final : public CPDF_PageObject {
   CFX_PointF CalcPositionData(float horz_scale);
 
  private:
+  float CalcPositionDataInternal(const RetainPtr<CPDF_Font>& pFont);
+
   CFX_PointF m_Pos;
   std::vector<uint32_t> m_CharCodes;
   std::vector<float> m_CharPos;

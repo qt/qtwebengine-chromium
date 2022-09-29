@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "core/fpdfapi/page/cpdf_dib.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
@@ -57,7 +58,8 @@ bool IsImageValueTooBig(int val) {
 
 }  // namespace
 
-CPDF_ImageRenderer::CPDF_ImageRenderer() = default;
+CPDF_ImageRenderer::CPDF_ImageRenderer(CPDF_RenderStatus* pStatus)
+    : m_pRenderStatus(pStatus) {}
 
 CPDF_ImageRenderer::~CPDF_ImageRenderer() = default;
 
@@ -142,10 +144,11 @@ bool CPDF_ImageRenderer::StartRenderDIBBase() {
   } else {
     pDocument = m_pImageObject->GetImage()->GetDocument();
   }
-  CPDF_Dictionary* pPageResources = pPage ? pPage->GetPageResources() : nullptr;
-  CPDF_Object* pCSObj =
-      m_pImageObject->GetImage()->GetStream()->GetDict()->GetDirectObjectFor(
-          "ColorSpace");
+  const CPDF_Dictionary* pPageResources =
+      pPage ? pPage->GetPageResources() : nullptr;
+  const CPDF_Dictionary* pStreamDict =
+      m_pImageObject->GetImage()->GetStream()->GetDict();
+  const CPDF_Object* pCSObj = pStreamDict->GetDirectObjectFor("ColorSpace");
   auto* pData = CPDF_DocPageData::FromDocument(pDocument);
   RetainPtr<CPDF_ColorSpace> pColorSpace =
       pData->GetColorSpace(pCSObj, pPageResources);
@@ -160,13 +163,11 @@ bool CPDF_ImageRenderer::StartRenderDIBBase() {
   return StartDIBBase();
 }
 
-bool CPDF_ImageRenderer::Start(CPDF_RenderStatus* pStatus,
-                               CPDF_ImageObject* pImageObject,
+bool CPDF_ImageRenderer::Start(CPDF_ImageObject* pImageObject,
                                const CFX_Matrix& mtObj2Device,
                                bool bStdCS,
                                BlendMode blendType) {
   DCHECK(pImageObject);
-  m_pRenderStatus = pStatus;
   m_bStdCS = bStdCS;
   m_pImageObject = pImageObject;
   m_BlendType = blendType;
@@ -182,14 +183,12 @@ bool CPDF_ImageRenderer::Start(CPDF_RenderStatus* pStatus,
   return StartRenderDIBBase();
 }
 
-bool CPDF_ImageRenderer::Start(CPDF_RenderStatus* pStatus,
-                               const RetainPtr<CFX_DIBBase>& pDIBBase,
+bool CPDF_ImageRenderer::Start(RetainPtr<CFX_DIBBase> pDIBBase,
                                FX_ARGB bitmap_argb,
                                const CFX_Matrix& mtImage2Device,
                                const FXDIB_ResampleOptions& options,
                                bool bStdCS) {
-  m_pRenderStatus = pStatus;
-  m_pDIBBase = pDIBBase;
+  m_pDIBBase = std::move(pDIBBase);
   m_FillArgb = bitmap_argb;
   m_BitmapAlpha = 255;
   m_ImageMatrix = mtImage2Device;
@@ -220,7 +219,7 @@ CFX_Matrix CPDF_ImageRenderer::GetDrawMatrix(const FX_RECT& rect) const {
 void CPDF_ImageRenderer::CalculateDrawImage(
     CFX_DefaultRenderDevice* pBitmapDevice1,
     CFX_DefaultRenderDevice* pBitmapDevice2,
-    const RetainPtr<CFX_DIBBase>& pDIBBase,
+    RetainPtr<CFX_DIBBase> pDIBBase,
     const CFX_Matrix& mtNewMatrix,
     const FX_RECT& rect) const {
   CPDF_RenderStatus bitmap_render(m_pRenderStatus->GetContext(),
@@ -229,8 +228,8 @@ void CPDF_ImageRenderer::CalculateDrawImage(
   bitmap_render.SetStdCS(true);
   bitmap_render.Initialize(nullptr, nullptr);
 
-  CPDF_ImageRenderer image_render;
-  if (image_render.Start(&bitmap_render, pDIBBase, 0xffffffff, mtNewMatrix,
+  CPDF_ImageRenderer image_render(&bitmap_render);
+  if (image_render.Start(std::move(pDIBBase), 0xffffffff, mtNewMatrix,
                          m_ResampleOptions, true)) {
     image_render.Continue(nullptr);
   }
@@ -344,9 +343,8 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   bitmap_render.SetDropObjects(m_pRenderStatus->GetDropObjects());
   bitmap_render.SetStdCS(true);
   bitmap_render.Initialize(nullptr, nullptr);
-  CPDF_ImageRenderer image_render;
-  if (image_render.Start(&bitmap_render, m_pDIBBase, 0, new_matrix,
-                         m_ResampleOptions, true)) {
+  CPDF_ImageRenderer image_render(&bitmap_render);
+  if (image_render.Start(m_pDIBBase, 0, new_matrix, m_ResampleOptions, true)) {
     image_render.Continue(nullptr);
   }
   CFX_DefaultRenderDevice bitmap_device2;

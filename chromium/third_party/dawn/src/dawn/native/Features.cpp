@@ -26,7 +26,6 @@ namespace {
 struct FeatureEnumAndInfo {
     Feature feature;
     FeatureInfo info;
-    bool WGPUDeviceProperties::*memberInWGPUDeviceProperties;
 };
 
 using FeatureEnumAndInfoList =
@@ -35,69 +34,52 @@ using FeatureEnumAndInfoList =
 static constexpr FeatureEnumAndInfoList kFeatureNameAndInfoList = {{
     {Feature::TextureCompressionBC,
      {"texture-compression-bc", "Support Block Compressed (BC) texture formats",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=42"},
-     &WGPUDeviceProperties::textureCompressionBC},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=42"}},
     {Feature::TextureCompressionETC2,
      {"texture-compression-etc2",
       "Support Ericsson Texture Compressed (ETC2/EAC) texture "
       "formats",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=955"},
-     &WGPUDeviceProperties::textureCompressionETC2},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=955"}},
     {Feature::TextureCompressionASTC,
      {"texture-compression-astc",
       "Support Adaptable Scalable Texture Compressed (ASTC) "
       "texture formats",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=955"},
-     &WGPUDeviceProperties::textureCompressionASTC},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=955"}},
     {Feature::ShaderFloat16,
      {"shader-float16",
       "Support 16bit float arithmetic and declarations in uniform and storage buffers",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=426"},
-     &WGPUDeviceProperties::shaderFloat16},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=426"}},
     {Feature::PipelineStatisticsQuery,
      {"pipeline-statistics-query", "Support Pipeline Statistics Query",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=434"},
-     &WGPUDeviceProperties::pipelineStatisticsQuery},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=434"}},
     {Feature::TimestampQuery,
      {"timestamp-query", "Support Timestamp Query",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=434"},
-     &WGPUDeviceProperties::timestampQuery},
-    {Feature::DepthClamping,
-     {"depth-clamping", "Clamp depth to [0, 1] in NDC space instead of clipping",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=716"},
-     &WGPUDeviceProperties::depthClamping},
-    {Feature::Depth24UnormStencil8,
-     {"depth24unorm-stencil8", "Support depth24unorm-stencil8 texture format",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=690"},
-     &WGPUDeviceProperties::depth24UnormStencil8},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=434"}},
+    {Feature::DepthClipControl,
+     {"depth-clip-control", "Disable depth clipping of primitives to the clip volume",
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1178"}},
     {Feature::Depth32FloatStencil8,
      {"depth32float-stencil8", "Support depth32float-stencil8 texture format",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=690"},
-     &WGPUDeviceProperties::depth32FloatStencil8},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=690"}},
     {Feature::ChromiumExperimentalDp4a,
      {"chromium-experimental-dp4a", "Support experimental DP4a instructions in WGSL",
-      "https://bugs.chromium.org/p/tint/issues/detail?id=1497"},
-     &WGPUDeviceProperties::chromiumExperimentalDp4a},
+      "https://bugs.chromium.org/p/tint/issues/detail?id=1497"}},
     {Feature::IndirectFirstInstance,
      {"indirect-first-instance", "Support non-zero first instance values on indirect draw calls",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=1197"},
-     &WGPUDeviceProperties::indirectFirstInstance},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=1197"}},
     {Feature::DawnInternalUsages,
      {"dawn-internal-usages",
       "Add internal usages to resources to affect how the texture is allocated, but not "
       "frontend validation. Other internal commands may access this usage.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
-      "dawn_internal_usages.md"},
-     &WGPUDeviceProperties::dawnInternalUsages},
+      "dawn_internal_usages.md"}},
     {Feature::MultiPlanarFormats,
      {"multiplanar-formats", "Import and use multi-planar texture formats with per plane views",
-      "https://bugs.chromium.org/p/dawn/issues/detail?id=551"},
-     &WGPUDeviceProperties::multiPlanarFormats},
+      "https://bugs.chromium.org/p/dawn/issues/detail?id=551"}},
     {Feature::DawnNative,
      {"dawn-native", "WebGPU is running on top of dawn_native.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
-      "dawn_native.md"},
-     &WGPUDeviceProperties::dawnNative},
+      "dawn_native.md"}},
 }};
 
 Feature FromAPIFeature(wgpu::FeatureName feature) {
@@ -115,10 +97,8 @@ Feature FromAPIFeature(wgpu::FeatureName feature) {
             return Feature::TextureCompressionETC2;
         case wgpu::FeatureName::TextureCompressionASTC:
             return Feature::TextureCompressionASTC;
-        case wgpu::FeatureName::DepthClamping:
-            return Feature::DepthClamping;
-        case wgpu::FeatureName::Depth24UnormStencil8:
-            return Feature::Depth24UnormStencil8;
+        case wgpu::FeatureName::DepthClipControl:
+            return Feature::DepthClipControl;
         case wgpu::FeatureName::Depth32FloatStencil8:
             return Feature::Depth32FloatStencil8;
         case wgpu::FeatureName::IndirectFirstInstance:
@@ -149,10 +129,8 @@ wgpu::FeatureName ToAPIFeature(Feature feature) {
             return wgpu::FeatureName::PipelineStatisticsQuery;
         case Feature::TimestampQuery:
             return wgpu::FeatureName::TimestampQuery;
-        case Feature::DepthClamping:
-            return wgpu::FeatureName::DepthClamping;
-        case Feature::Depth24UnormStencil8:
-            return wgpu::FeatureName::Depth24UnormStencil8;
+        case Feature::DepthClipControl:
+            return wgpu::FeatureName::DepthClipControl;
         case Feature::Depth32FloatStencil8:
             return wgpu::FeatureName::Depth32FloatStencil8;
         case Feature::IndirectFirstInstance:
@@ -223,14 +201,6 @@ std::vector<const char*> FeaturesSet::GetEnabledFeatureNames() const {
         ++index;
     }
     return enabledFeatureNames;
-}
-
-void FeaturesSet::InitializeDeviceProperties(WGPUDeviceProperties* properties) const {
-    ASSERT(properties != nullptr);
-
-    for (uint32_t i : IterateBitSet(featuresBitSet)) {
-        properties->*(kFeatureNameAndInfoList[i].memberInWGPUDeviceProperties) = true;
-    }
 }
 
 wgpu::FeatureName FeatureEnumToAPIFeature(Feature feature) {

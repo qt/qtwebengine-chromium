@@ -15,6 +15,7 @@
 #ifndef PLATFORM_API_BLE_V2_H_
 #define PLATFORM_API_BLE_V2_H_
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -113,14 +114,24 @@ struct GattCharacteristic {
 
   Uuid uuid;
   Uuid service_uuid;
+  std::vector<Permission> permissions;
+  std::vector<Property> properties;
 
   // Hashable
   template <typename H>
   friend H AbslHashValue(H h, const GattCharacteristic& s) {
-    return H::combine(std::move(h), s.uuid, s.service_uuid);
+    return H::combine(std::move(h), s.uuid, s.service_uuid, s.permissions,
+                      s.properties);
   }
   bool operator==(const GattCharacteristic& rhs) const {
-    return this->uuid == rhs.uuid && this->service_uuid == rhs.service_uuid;
+    bool has_equal_permissions =
+        std::is_permutation(this->permissions.begin(), this->permissions.end(),
+                            rhs.permissions.begin(), rhs.permissions.end());
+    bool has_equal_properties =
+        std::is_permutation(this->properties.begin(), this->properties.end(),
+                            rhs.properties.begin(), rhs.properties.end());
+    return this->uuid == rhs.uuid && this->service_uuid == rhs.service_uuid &&
+           has_equal_permissions && has_equal_properties;
   }
 };
 
@@ -137,15 +148,17 @@ class GattClient {
   // Returns whether or not discovery finished successfully.
   //
   // This function should block until discovery has finished.
-  virtual bool DiscoverService(const Uuid& service_uuid) = 0;
+  virtual bool DiscoverServiceAndCharacteristics(
+      const Uuid& service_uuid,
+      const std::vector<Uuid>& characteristic_uuids) = 0;
 
   // https://developer.android.com/reference/android/bluetooth/BluetoothGatt.html#getService(java.util.UUID)
   // https://developer.android.com/reference/android/bluetooth/BluetoothGattService.html#getCharacteristic(java.util.UUID)
   //
   // Retrieves a GATT characteristic. On error, does not return a value.
   //
-  // DiscoverServices() should be called before this method to fetch all
-  // available services and characteristics first.
+  // DiscoverServiceAndCharacteristics() should be called before this method to
+  // fetch all available services and characteristics first.
   //
   // It is okay for duplicate services to exist, as long as the specified
   // characteristic UUID is unique among all services of the same UUID.

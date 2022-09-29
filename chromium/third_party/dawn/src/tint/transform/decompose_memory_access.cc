@@ -73,7 +73,7 @@ struct OffsetExpr : Offset {
 
 /// OffsetLiteral is an implementation of Offset that constructs a u32 literal
 /// value.
-struct OffsetLiteral : Castable<OffsetLiteral, Offset> {
+struct OffsetLiteral final : Castable<OffsetLiteral, Offset> {
     uint32_t const literal = 0;
 
     explicit OffsetLiteral(uint32_t lit) : literal(lit) {}
@@ -98,29 +98,32 @@ struct OffsetBinOp : Offset {
 /// LoadStoreKey is the unordered map key to a load or store intrinsic.
 struct LoadStoreKey {
     ast::StorageClass const storage_class;  // buffer storage class
+    ast::Access const access;               // buffer access
     sem::Type const* buf_ty = nullptr;      // buffer type
     sem::Type const* el_ty = nullptr;       // element type
     bool operator==(const LoadStoreKey& rhs) const {
-        return storage_class == rhs.storage_class && buf_ty == rhs.buf_ty && el_ty == rhs.el_ty;
+        return storage_class == rhs.storage_class && access == rhs.access && buf_ty == rhs.buf_ty &&
+               el_ty == rhs.el_ty;
     }
     struct Hasher {
         inline std::size_t operator()(const LoadStoreKey& u) const {
-            return utils::Hash(u.storage_class, u.buf_ty, u.el_ty);
+            return utils::Hash(u.storage_class, u.access, u.buf_ty, u.el_ty);
         }
     };
 };
 
 /// AtomicKey is the unordered map key to an atomic intrinsic.
 struct AtomicKey {
+    ast::Access const access;           // buffer access
     sem::Type const* buf_ty = nullptr;  // buffer type
     sem::Type const* el_ty = nullptr;   // element type
     sem::BuiltinType const op;          // atomic op
     bool operator==(const AtomicKey& rhs) const {
-        return buf_ty == rhs.buf_ty && el_ty == rhs.el_ty && op == rhs.op;
+        return access == rhs.access && buf_ty == rhs.buf_ty && el_ty == rhs.el_ty && op == rhs.op;
     }
     struct Hasher {
         inline std::size_t operator()(const AtomicKey& u) const {
-            return utils::Hash(u.buf_ty, u.el_ty, u.op);
+            return utils::Hash(u.access, u.buf_ty, u.el_ty, u.op);
         }
     };
 };
@@ -199,7 +202,8 @@ DecomposeMemoryAccess::Intrinsic* IntrinsicLoadFor(ProgramBuilder* builder,
         return nullptr;
     }
     return builder->ASTNodes().Create<DecomposeMemoryAccess::Intrinsic>(
-        builder->ID(), DecomposeMemoryAccess::Intrinsic::Op::kLoad, storage_class, type);
+        builder->ID(), builder->AllocateNodeID(), DecomposeMemoryAccess::Intrinsic::Op::kLoad,
+        storage_class, type);
 }
 
 /// @returns a DecomposeMemoryAccess::Intrinsic attribute that can be applied
@@ -212,7 +216,8 @@ DecomposeMemoryAccess::Intrinsic* IntrinsicStoreFor(ProgramBuilder* builder,
         return nullptr;
     }
     return builder->ASTNodes().Create<DecomposeMemoryAccess::Intrinsic>(
-        builder->ID(), DecomposeMemoryAccess::Intrinsic::Op::kStore, storage_class, type);
+        builder->ID(), builder->AllocateNodeID(), DecomposeMemoryAccess::Intrinsic::Op::kStore,
+        storage_class, type);
 }
 
 /// @returns a DecomposeMemoryAccess::Intrinsic attribute that can be applied
@@ -267,7 +272,7 @@ DecomposeMemoryAccess::Intrinsic* IntrinsicAtomicFor(ProgramBuilder* builder,
         return nullptr;
     }
     return builder->ASTNodes().Create<DecomposeMemoryAccess::Intrinsic>(
-        builder->ID(), op, ast::StorageClass::kStorage, type);
+        builder->ID(), builder->AllocateNodeID(), op, ast::StorageClass::kStorage, type);
 }
 
 /// BufferAccess describes a single storage or uniform buffer access
@@ -323,7 +328,7 @@ struct DecomposeMemoryAccess::State {
     /// @returns an Offset for the given ast::Expression
     const Offset* ToOffset(const ast::Expression* expr) {
         if (auto* lit = expr->As<ast::IntLiteralExpression>()) {
-            if (lit->value > 0) {
+            if (lit->value >= 0) {
                 return offsets_.Create<OffsetLiteral>(static_cast<uint32_t>(lit->value));
             }
         }
@@ -374,10 +379,10 @@ struct DecomposeMemoryAccess::State {
         auto* lhs_lit = tint::As<OffsetLiteral>(lhs);
         auto* rhs_lit = tint::As<OffsetLiteral>(rhs);
         if (lhs_lit && lhs_lit->literal == 0) {
-            return offsets_.Create<OffsetLiteral>(0);
+            return offsets_.Create<OffsetLiteral>(0u);
         }
         if (rhs_lit && rhs_lit->literal == 0) {
-            return offsets_.Create<OffsetLiteral>(0);
+            return offsets_.Create<OffsetLiteral>(0u);
         }
         if (lhs_lit && lhs_lit->literal == 1) {
             return rhs;
@@ -420,10 +425,10 @@ struct DecomposeMemoryAccess::State {
         return access;
     }
 
-    /// LoadFunc() returns a symbol to an intrinsic function that loads an element
-    /// of type `el_ty` from a storage or uniform buffer of type `buf_ty`.
+    /// LoadFunc() returns a symbol to an intrinsic function that loads an element of type `el_ty`
+    /// from a storage or uniform buffer of type `buf_ty`.
     /// The emitted function has the signature:
-    ///   `fn load(buf : buf_ty, offset : u32) -> el_ty`
+    ///   `fn load(buf : ptr<SC, buf_ty, A>, offset : u32) -> el_ty`
     /// @param buf_ty the storage or uniform buffer type
     /// @param el_ty the storage or uniform buffer element type
     /// @param var_user the variable user
@@ -432,89 +437,84 @@ struct DecomposeMemoryAccess::State {
                     const sem::Type* el_ty,
                     const sem::VariableUser* var_user) {
         auto storage_class = var_user->Variable()->StorageClass();
-        return utils::GetOrCreate(load_funcs, LoadStoreKey{storage_class, buf_ty, el_ty}, [&] {
-            auto* buf_ast_ty = CreateASTTypeFor(ctx, buf_ty);
-            auto* disable_validation =
-                b.Disable(ast::DisabledValidation::kIgnoreConstructibleFunctionParameter);
+        auto access = var_user->Variable()->Access();
+        return utils::GetOrCreate(
+            load_funcs, LoadStoreKey{storage_class, access, buf_ty, el_ty}, [&] {
+                utils::Vector params{
+                    b.Param("buffer",
+                            b.ty.pointer(CreateASTTypeFor(ctx, buf_ty), storage_class, access),
+                            utils::Vector{b.Disable(ast::DisabledValidation::kFunctionParameter)}),
+                    b.Param("offset", b.ty.u32()),
+                };
 
-            ast::VariableList params = {
-                // Note: The buffer parameter requires the StorageClass in
-                // order for HLSL to emit this as a ByteAddressBuffer or cbuffer
-                // array.
-                b.create<ast::Variable>(b.Sym("buffer"), storage_class,
-                                        var_user->Variable()->Access(), buf_ast_ty, true, false,
-                                        nullptr, ast::AttributeList{disable_validation}),
-                b.Param("offset", b.ty.u32()),
-            };
+                auto name = b.Sym();
 
-            auto name = b.Sym();
+                if (auto* intrinsic = IntrinsicLoadFor(ctx.dst, storage_class, el_ty)) {
+                    auto* el_ast_ty = CreateASTTypeFor(ctx, el_ty);
+                    auto* func = b.create<ast::Function>(
+                        name, params, el_ast_ty, nullptr,
+                        utils::Vector{
+                            intrinsic,
+                            b.Disable(ast::DisabledValidation::kFunctionHasNoBody),
+                        },
+                        utils::Empty);
+                    b.AST().AddFunction(func);
+                } else if (auto* arr_ty = el_ty->As<sem::Array>()) {
+                    // fn load_func(buffer : buf_ty, offset : u32) -> array<T, N> {
+                    //   var arr : array<T, N>;
+                    //   for (var i = 0u; i < array_count; i = i + 1) {
+                    //     arr[i] = el_load_func(buffer, offset + i * array_stride)
+                    //   }
+                    //   return arr;
+                    // }
+                    auto load = LoadFunc(buf_ty, arr_ty->ElemType()->UnwrapRef(), var_user);
+                    auto* arr = b.Var(b.Symbols().New("arr"), CreateASTTypeFor(ctx, arr_ty));
+                    auto* i = b.Var(b.Symbols().New("i"), nullptr, b.Expr(0_u));
+                    auto* for_init = b.Decl(i);
+                    auto* for_cond = b.create<ast::BinaryExpression>(
+                        ast::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_ty->Count())));
+                    auto* for_cont = b.Assign(i, b.Add(i, 1_u));
+                    auto* arr_el = b.IndexAccessor(arr, i);
+                    auto* el_offset = b.Add(b.Expr("offset"), b.Mul(i, u32(arr_ty->Stride())));
+                    auto* el_val = b.Call(load, "buffer", el_offset);
+                    auto* for_loop =
+                        b.For(for_init, for_cond, for_cont, b.Block(b.Assign(arr_el, el_val)));
 
-            if (auto* intrinsic = IntrinsicLoadFor(ctx.dst, storage_class, el_ty)) {
-                auto* el_ast_ty = CreateASTTypeFor(ctx, el_ty);
-                auto* func = b.create<ast::Function>(
-                    name, params, el_ast_ty, nullptr,
-                    ast::AttributeList{
-                        intrinsic,
-                        b.Disable(ast::DisabledValidation::kFunctionHasNoBody),
-                    },
-                    ast::AttributeList{});
-                b.AST().AddFunction(func);
-            } else if (auto* arr_ty = el_ty->As<sem::Array>()) {
-                // fn load_func(buf : buf_ty, offset : u32) -> array<T, N> {
-                //   var arr : array<T, N>;
-                //   for (var i = 0u; i < array_count; i = i + 1) {
-                //     arr[i] = el_load_func(buf, offset + i * array_stride)
-                //   }
-                //   return arr;
-                // }
-                auto load = LoadFunc(buf_ty, arr_ty->ElemType()->UnwrapRef(), var_user);
-                auto* arr = b.Var(b.Symbols().New("arr"), CreateASTTypeFor(ctx, arr_ty));
-                auto* i = b.Var(b.Symbols().New("i"), nullptr, b.Expr(0_u));
-                auto* for_init = b.Decl(i);
-                auto* for_cond = b.create<ast::BinaryExpression>(
-                    ast::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_ty->Count())));
-                auto* for_cont = b.Assign(i, b.Add(i, 1_u));
-                auto* arr_el = b.IndexAccessor(arr, i);
-                auto* el_offset = b.Add(b.Expr("offset"), b.Mul(i, u32(arr_ty->Stride())));
-                auto* el_val = b.Call(load, "buffer", el_offset);
-                auto* for_loop =
-                    b.For(for_init, for_cond, for_cont, b.Block(b.Assign(arr_el, el_val)));
-
-                b.Func(name, params, CreateASTTypeFor(ctx, arr_ty),
-                       {
-                           b.Decl(arr),
-                           for_loop,
-                           b.Return(arr),
-                       });
-            } else {
-                ast::ExpressionList values;
-                if (auto* mat_ty = el_ty->As<sem::Matrix>()) {
-                    auto* vec_ty = mat_ty->ColumnType();
-                    Symbol load = LoadFunc(buf_ty, vec_ty, var_user);
-                    for (uint32_t i = 0; i < mat_ty->columns(); i++) {
-                        auto* offset = b.Add("offset", u32(i * mat_ty->ColumnStride()));
-                        values.emplace_back(b.Call(load, "buffer", offset));
+                    b.Func(name, params, CreateASTTypeFor(ctx, arr_ty),
+                           utils::Vector{
+                               b.Decl(arr),
+                               for_loop,
+                               b.Return(arr),
+                           });
+                } else {
+                    utils::Vector<const ast::Expression*, 8> values;
+                    if (auto* mat_ty = el_ty->As<sem::Matrix>()) {
+                        auto* vec_ty = mat_ty->ColumnType();
+                        Symbol load = LoadFunc(buf_ty, vec_ty, var_user);
+                        for (uint32_t i = 0; i < mat_ty->columns(); i++) {
+                            auto* offset = b.Add("offset", u32(i * mat_ty->ColumnStride()));
+                            values.Push(b.Call(load, "buffer", offset));
+                        }
+                    } else if (auto* str = el_ty->As<sem::Struct>()) {
+                        for (auto* member : str->Members()) {
+                            auto* offset = b.Add("offset", u32(member->Offset()));
+                            Symbol load = LoadFunc(buf_ty, member->Type()->UnwrapRef(), var_user);
+                            values.Push(b.Call(load, "buffer", offset));
+                        }
                     }
-                } else if (auto* str = el_ty->As<sem::Struct>()) {
-                    for (auto* member : str->Members()) {
-                        auto* offset = b.Add("offset", u32(member->Offset()));
-                        Symbol load = LoadFunc(buf_ty, member->Type()->UnwrapRef(), var_user);
-                        values.emplace_back(b.Call(load, "buffer", offset));
-                    }
+                    b.Func(name, params, CreateASTTypeFor(ctx, el_ty),
+                           utils::Vector{
+                               b.Return(b.Construct(CreateASTTypeFor(ctx, el_ty), values)),
+                           });
                 }
-                b.Func(name, params, CreateASTTypeFor(ctx, el_ty),
-                       {
-                           b.Return(b.Construct(CreateASTTypeFor(ctx, el_ty), values)),
-                       });
-            }
-            return name;
-        });
+                return name;
+            });
     }
 
     /// StoreFunc() returns a symbol to an intrinsic function that stores an
     /// element of type `el_ty` to a storage buffer of type `buf_ty`.
     /// The function has the signature:
-    ///   `fn store(buf : buf_ty, offset : u32, value : el_ty)`
+    ///   `fn store(buf : ptr<SC, buf_ty, A>, offset : u32, value : el_ty)`
     /// @param buf_ty the storage buffer type
     /// @param el_ty the storage buffer element type
     /// @param var_user the variable user
@@ -523,87 +523,95 @@ struct DecomposeMemoryAccess::State {
                      const sem::Type* el_ty,
                      const sem::VariableUser* var_user) {
         auto storage_class = var_user->Variable()->StorageClass();
-        return utils::GetOrCreate(store_funcs, LoadStoreKey{storage_class, buf_ty, el_ty}, [&] {
-            auto* buf_ast_ty = CreateASTTypeFor(ctx, buf_ty);
-            auto* el_ast_ty = CreateASTTypeFor(ctx, el_ty);
-            auto* disable_validation =
-                b.Disable(ast::DisabledValidation::kIgnoreConstructibleFunctionParameter);
-            ast::VariableList params{
-                // Note: The buffer parameter requires the StorageClass in
-                // order for HLSL to emit this as a ByteAddressBuffer.
+        auto access = var_user->Variable()->Access();
+        return utils::GetOrCreate(
+            store_funcs, LoadStoreKey{storage_class, access, buf_ty, el_ty}, [&] {
+                utils::Vector params{
+                    b.Param("buffer",
+                            b.ty.pointer(CreateASTTypeFor(ctx, buf_ty), storage_class, access),
+                            utils::Vector{b.Disable(ast::DisabledValidation::kFunctionParameter)}),
+                    b.Param("offset", b.ty.u32()),
+                    b.Param("value", CreateASTTypeFor(ctx, el_ty)),
+                };
 
-                b.create<ast::Variable>(b.Sym("buffer"), storage_class,
-                                        var_user->Variable()->Access(), buf_ast_ty, true, false,
-                                        nullptr, ast::AttributeList{disable_validation}),
-                b.Param("offset", b.ty.u32()),
-                b.Param("value", el_ast_ty),
-            };
+                auto name = b.Sym();
 
-            auto name = b.Sym();
+                if (auto* intrinsic = IntrinsicStoreFor(ctx.dst, storage_class, el_ty)) {
+                    auto* func = b.create<ast::Function>(
+                        name, params, b.ty.void_(), nullptr,
+                        utils::Vector{
+                            intrinsic,
+                            b.Disable(ast::DisabledValidation::kFunctionHasNoBody),
+                        },
+                        utils::Empty);
+                    b.AST().AddFunction(func);
+                } else {
+                    auto body = Switch<utils::Vector<const ast::Statement*, 8>>(
+                        el_ty,  //
+                        [&](const sem::Array* arr_ty) {
+                            // fn store_func(buffer : buf_ty, offset : u32, value : el_ty) {
+                            //   var array = value; // No dynamic indexing on constant arrays
+                            //   for (var i = 0u; i < array_count; i = i + 1) {
+                            //     arr[i] = el_store_func(buffer, offset + i * array_stride,
+                            //     value[i])
+                            //   }
+                            //   return arr;
+                            // }
+                            auto* array = b.Var(b.Symbols().New("array"), nullptr, b.Expr("value"));
+                            auto store =
+                                StoreFunc(buf_ty, arr_ty->ElemType()->UnwrapRef(), var_user);
+                            auto* i = b.Var(b.Symbols().New("i"), nullptr, b.Expr(0_u));
+                            auto* for_init = b.Decl(i);
+                            auto* for_cond = b.create<ast::BinaryExpression>(
+                                ast::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_ty->Count())));
+                            auto* for_cont = b.Assign(i, b.Add(i, 1_u));
+                            auto* arr_el = b.IndexAccessor(array, i);
+                            auto* el_offset =
+                                b.Add(b.Expr("offset"), b.Mul(i, u32(arr_ty->Stride())));
+                            auto* store_stmt =
+                                b.CallStmt(b.Call(store, "buffer", el_offset, arr_el));
+                            auto* for_loop =
+                                b.For(for_init, for_cond, for_cont, b.Block(store_stmt));
 
-            if (auto* intrinsic = IntrinsicStoreFor(ctx.dst, storage_class, el_ty)) {
-                auto* func = b.create<ast::Function>(
-                    name, params, b.ty.void_(), nullptr,
-                    ast::AttributeList{
-                        intrinsic,
-                        b.Disable(ast::DisabledValidation::kFunctionHasNoBody),
-                    },
-                    ast::AttributeList{});
-                b.AST().AddFunction(func);
-            } else {
-                ast::StatementList body;
-                if (auto* arr_ty = el_ty->As<sem::Array>()) {
-                    // fn store_func(buf : buf_ty, offset : u32, value : el_ty) {
-                    //   var array = value; // No dynamic indexing on constant arrays
-                    //   for (var i = 0u; i < array_count; i = i + 1) {
-                    //     arr[i] = el_store_func(buf, offset + i * array_stride,
-                    //                            value[i])
-                    //   }
-                    //   return arr;
-                    // }
-                    auto* array = b.Var(b.Symbols().New("array"), nullptr, b.Expr("value"));
-                    auto store = StoreFunc(buf_ty, arr_ty->ElemType()->UnwrapRef(), var_user);
-                    auto* i = b.Var(b.Symbols().New("i"), nullptr, b.Expr(0_u));
-                    auto* for_init = b.Decl(i);
-                    auto* for_cond = b.create<ast::BinaryExpression>(
-                        ast::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_ty->Count())));
-                    auto* for_cont = b.Assign(i, b.Add(i, 1_u));
-                    auto* arr_el = b.IndexAccessor(array, i);
-                    auto* el_offset = b.Add(b.Expr("offset"), b.Mul(i, u32(arr_ty->Stride())));
-                    auto* store_stmt = b.CallStmt(b.Call(store, "buffer", el_offset, arr_el));
-                    auto* for_loop = b.For(for_init, for_cond, for_cont, b.Block(store_stmt));
+                            return utils::Vector{b.Decl(array), for_loop};
+                        },
+                        [&](const sem::Matrix* mat_ty) {
+                            auto* vec_ty = mat_ty->ColumnType();
+                            Symbol store = StoreFunc(buf_ty, vec_ty, var_user);
+                            utils::Vector<const ast::Statement*, 4> stmts;
+                            for (uint32_t i = 0; i < mat_ty->columns(); i++) {
+                                auto* offset = b.Add("offset", u32(i * mat_ty->ColumnStride()));
+                                auto* element = b.IndexAccessor("value", u32(i));
+                                auto* call = b.Call(store, "buffer", offset, element);
+                                stmts.Push(b.CallStmt(call));
+                            }
+                            return stmts;
+                        },
+                        [&](const sem::Struct* str) {
+                            utils::Vector<const ast::Statement*, 8> stmts;
+                            for (auto* member : str->Members()) {
+                                auto* offset = b.Add("offset", u32(member->Offset()));
+                                auto* element = b.MemberAccessor(
+                                    "value", ctx.Clone(member->Declaration()->symbol));
+                                Symbol store =
+                                    StoreFunc(buf_ty, member->Type()->UnwrapRef(), var_user);
+                                auto* call = b.Call(store, "buffer", offset, element);
+                                stmts.Push(b.CallStmt(call));
+                            }
+                            return stmts;
+                        });
 
-                    body = {b.Decl(array), for_loop};
-                } else if (auto* mat_ty = el_ty->As<sem::Matrix>()) {
-                    auto* vec_ty = mat_ty->ColumnType();
-                    Symbol store = StoreFunc(buf_ty, vec_ty, var_user);
-                    for (uint32_t i = 0; i < mat_ty->columns(); i++) {
-                        auto* offset = b.Add("offset", u32(i * mat_ty->ColumnStride()));
-                        auto* access = b.IndexAccessor("value", u32(i));
-                        auto* call = b.Call(store, "buffer", offset, access);
-                        body.emplace_back(b.CallStmt(call));
-                    }
-                } else if (auto* str = el_ty->As<sem::Struct>()) {
-                    for (auto* member : str->Members()) {
-                        auto* offset = b.Add("offset", u32(member->Offset()));
-                        auto* access =
-                            b.MemberAccessor("value", ctx.Clone(member->Declaration()->symbol));
-                        Symbol store = StoreFunc(buf_ty, member->Type()->UnwrapRef(), var_user);
-                        auto* call = b.Call(store, "buffer", offset, access);
-                        body.emplace_back(b.CallStmt(call));
-                    }
+                    b.Func(name, params, b.ty.void_(), body);
                 }
-                b.Func(name, params, b.ty.void_(), body);
-            }
 
-            return name;
-        });
+                return name;
+            });
     }
 
     /// AtomicFunc() returns a symbol to an intrinsic function that performs an
     /// atomic operation from a storage buffer of type `buf_ty`. The function has
     /// the signature:
-    // `fn atomic_op(buf : buf_ty, offset : u32, ...) -> T`
+    // `fn atomic_op(buf : ptr<storage, buf_ty, A>, offset : u32, ...) -> T`
     /// @param buf_ty the storage buffer type
     /// @param el_ty the storage buffer element type
     /// @param intrinsic the atomic intrinsic
@@ -614,27 +622,23 @@ struct DecomposeMemoryAccess::State {
                       const sem::Builtin* intrinsic,
                       const sem::VariableUser* var_user) {
         auto op = intrinsic->Type();
-        return utils::GetOrCreate(atomic_funcs, AtomicKey{buf_ty, el_ty, op}, [&] {
-            auto* buf_ast_ty = CreateASTTypeFor(ctx, buf_ty);
-            auto* disable_validation =
-                b.Disable(ast::DisabledValidation::kIgnoreConstructibleFunctionParameter);
+        auto access = var_user->Variable()->Access();
+        return utils::GetOrCreate(atomic_funcs, AtomicKey{access, buf_ty, el_ty, op}, [&] {
             // The first parameter to all WGSL atomics is the expression to the
             // atomic. This is replaced with two parameters: the buffer and offset.
-
-            ast::VariableList params = {
-                // Note: The buffer parameter requires the kStorage StorageClass in
-                // order for HLSL to emit this as a ByteAddressBuffer.
-                b.create<ast::Variable>(b.Sym("buffer"), ast::StorageClass::kStorage,
-                                        var_user->Variable()->Access(), buf_ast_ty, true, false,
-                                        nullptr, ast::AttributeList{disable_validation}),
+            utils::Vector params{
+                b.Param("buffer",
+                        b.ty.pointer(CreateASTTypeFor(ctx, buf_ty), ast::StorageClass::kStorage,
+                                     access),
+                        utils::Vector{b.Disable(ast::DisabledValidation::kFunctionParameter)}),
                 b.Param("offset", b.ty.u32()),
             };
 
             // Other parameters are copied as-is:
-            for (size_t i = 1; i < intrinsic->Parameters().size(); i++) {
+            for (size_t i = 1; i < intrinsic->Parameters().Length(); i++) {
                 auto* param = intrinsic->Parameters()[i];
                 auto* ty = CreateASTTypeFor(ctx, param->Type());
-                params.emplace_back(b.Param("param_" + std::to_string(i), ty));
+                params.Push(b.Param("param_" + std::to_string(i), ty));
             }
 
             auto* atomic = IntrinsicAtomicFor(ctx.dst, op, el_ty);
@@ -651,10 +655,10 @@ struct DecomposeMemoryAccess::State {
                 auto* str = intrinsic->ReturnType()->As<sem::Struct>();
                 TINT_ASSERT(Transform, str && str->Declaration() == nullptr);
 
-                ast::StructMemberList ast_members;
-                ast_members.reserve(str->Members().size());
+                utils::Vector<const ast::StructMember*, 8> ast_members;
+                ast_members.Reserve(str->Members().size());
                 for (auto& m : str->Members()) {
-                    ast_members.push_back(
+                    ast_members.Push(
                         b.Member(ctx.Clone(m->Name()), CreateASTTypeFor(ctx, m->Type())));
                 }
 
@@ -667,11 +671,11 @@ struct DecomposeMemoryAccess::State {
 
             auto* func = b.create<ast::Function>(
                 b.Symbols().New(std::string{"tint_"} + intrinsic->str()), params, ret_ty, nullptr,
-                ast::AttributeList{
+                utils::Vector{
                     atomic,
                     b.Disable(ast::DisabledValidation::kFunctionHasNoBody),
                 },
-                ast::AttributeList{});
+                utils::Empty);
 
             b.AST().AddFunction(func);
             return func->symbol;
@@ -679,8 +683,12 @@ struct DecomposeMemoryAccess::State {
     }
 };
 
-DecomposeMemoryAccess::Intrinsic::Intrinsic(ProgramID pid, Op o, ast::StorageClass sc, DataType ty)
-    : Base(pid), op(o), storage_class(sc), type(ty) {}
+DecomposeMemoryAccess::Intrinsic::Intrinsic(ProgramID pid,
+                                            ast::NodeID nid,
+                                            Op o,
+                                            ast::StorageClass sc,
+                                            DataType ty)
+    : Base(pid, nid), op(o), storage_class(sc), type(ty) {}
 DecomposeMemoryAccess::Intrinsic::~Intrinsic() = default;
 std::string DecomposeMemoryAccess::Intrinsic::InternalName() const {
     std::stringstream ss;
@@ -769,8 +777,8 @@ std::string DecomposeMemoryAccess::Intrinsic::InternalName() const {
 
 const DecomposeMemoryAccess::Intrinsic* DecomposeMemoryAccess::Intrinsic::Clone(
     CloneContext* ctx) const {
-    return ctx->dst->ASTNodes().Create<DecomposeMemoryAccess::Intrinsic>(ctx->dst->ID(), op,
-                                                                         storage_class, type);
+    return ctx->dst->ASTNodes().Create<DecomposeMemoryAccess::Intrinsic>(
+        ctx->dst->ID(), ctx->dst->AllocateNodeID(), op, storage_class, type);
 }
 
 bool DecomposeMemoryAccess::Intrinsic::IsAtomic() const {
@@ -826,10 +834,10 @@ void DecomposeMemoryAccess::Run(CloneContext& ctx, const DataMap&, DataMap&) con
             // X.Y
             auto* accessor_sem = sem.Get(accessor);
             if (auto* swizzle = accessor_sem->As<sem::Swizzle>()) {
-                if (swizzle->Indices().size() == 1) {
+                if (swizzle->Indices().Length() == 1) {
                     if (auto access = state.TakeAccess(accessor->structure)) {
                         auto* vec_ty = access.type->As<sem::Vector>();
-                        auto* offset = state.Mul(vec_ty->type()->Size(), swizzle->Indices()[0]);
+                        auto* offset = state.Mul(vec_ty->type()->Size(), swizzle->Indices()[0u]);
                         state.AddAccess(accessor, {
                                                       access.var,
                                                       state.Add(access.offset, offset),
@@ -910,8 +918,7 @@ void DecomposeMemoryAccess::Run(CloneContext& ctx, const DataMap&, DataMap&) con
             if (auto* builtin = call->Target()->As<sem::Builtin>()) {
                 if (builtin->Type() == sem::BuiltinType::kArrayLength) {
                     // arrayLength(X)
-                    // Don't convert X into a load, this builtin actually requires the
-                    // real pointer.
+                    // Don't convert X into a load, this builtin actually requires the real pointer.
                     state.TakeAccess(call_expr->args[0]);
                     continue;
                 }
@@ -926,10 +933,11 @@ void DecomposeMemoryAccess::Run(CloneContext& ctx, const DataMap&, DataMap&) con
                             Symbol func = state.AtomicFunc(buf_ty, el_ty, builtin,
                                                            access.var->As<sem::VariableUser>());
 
-                            ast::ExpressionList args{ctx.Clone(buf), offset};
-                            for (size_t i = 1; i < call_expr->args.size(); i++) {
+                            utils::Vector<const ast::Expression*, 8> args{
+                                ctx.dst->AddressOf(ctx.Clone(buf)), offset};
+                            for (size_t i = 1; i < call_expr->args.Length(); i++) {
                                 auto* arg = call_expr->args[i];
-                                args.emplace_back(ctx.Clone(arg));
+                                args.Push(ctx.Clone(arg));
                             }
                             return ctx.dst->Call(func, args);
                         });
@@ -948,26 +956,26 @@ void DecomposeMemoryAccess::Run(CloneContext& ctx, const DataMap&, DataMap&) con
         }
         BufferAccess access = access_it->second;
         ctx.Replace(expr, [=, &ctx, &state] {
-            auto* buf = access.var->Declaration();
+            auto* buf = ctx.dst->AddressOf(ctx.CloneWithoutTransform(access.var->Declaration()));
             auto* offset = access.offset->Build(ctx);
             auto* buf_ty = access.var->Type()->UnwrapRef();
             auto* el_ty = access.type->UnwrapRef();
             Symbol func = state.LoadFunc(buf_ty, el_ty, access.var->As<sem::VariableUser>());
-            return ctx.dst->Call(func, ctx.CloneWithoutTransform(buf), offset);
+            return ctx.dst->Call(func, buf, offset);
         });
     }
 
     // And replace all storage and uniform buffer assignments with stores
     for (auto store : state.stores) {
         ctx.Replace(store.assignment, [=, &ctx, &state] {
-            auto* buf = store.target.var->Declaration();
+            auto* buf =
+                ctx.dst->AddressOf(ctx.CloneWithoutTransform((store.target.var->Declaration())));
             auto* offset = store.target.offset->Build(ctx);
             auto* buf_ty = store.target.var->Type()->UnwrapRef();
             auto* el_ty = store.target.type->UnwrapRef();
             auto* value = store.assignment->rhs;
             Symbol func = state.StoreFunc(buf_ty, el_ty, store.target.var->As<sem::VariableUser>());
-            auto* call =
-                ctx.dst->Call(func, ctx.CloneWithoutTransform(buf), offset, ctx.Clone(value));
+            auto* call = ctx.dst->Call(func, buf, offset, ctx.Clone(value));
             return ctx.dst->CallStmt(call);
         });
     }

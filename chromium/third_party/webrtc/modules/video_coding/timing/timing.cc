@@ -23,7 +23,8 @@ namespace {
 
 // Default pacing that is used for the low-latency renderer path.
 constexpr TimeDelta kZeroPlayoutDelayDefaultMinPacing = TimeDelta::Millis(8);
-constexpr TimeDelta kLowLatencyRendererMaxPlayoutDelay = TimeDelta::Millis(500);
+constexpr TimeDelta kLowLatencyStreamMaxPlayoutDelayThreshold =
+    TimeDelta::Millis(500);
 
 void CheckDelaysValid(TimeDelta min_delay, TimeDelta max_delay) {
   if (min_delay > max_delay) {
@@ -156,7 +157,9 @@ void VCMTiming::UpdateCurrentDelay(Timestamp render_time,
   TimeDelta target_delay = TargetDelayInternal();
   TimeDelta delayed =
       (actual_decode_time - render_time) + RequiredDecodeTime() + render_delay_;
-  if (delayed < TimeDelta::Zero()) {
+
+  // Only consider `delayed` as negative by more than a few microseconds.
+  if (delayed.ms() < 0) {
     return;
   }
   if (current_delay_ + delayed <= target_delay) {
@@ -191,9 +194,7 @@ void VCMTiming::SetLastDecodeScheduledTimestamp(
 
 Timestamp VCMTiming::RenderTimeInternal(uint32_t frame_timestamp,
                                         Timestamp now) const {
-  if (min_playout_delay_.IsZero() &&
-      (max_playout_delay_.IsZero() ||
-       max_playout_delay_ <= kLowLatencyRendererMaxPlayoutDelay)) {
+  if (UseLowLatencyRendering()) {
     // Render as soon as possible or with low-latency renderer algorithm.
     return Timestamp::Zero();
   }
@@ -250,6 +251,21 @@ TimeDelta VCMTiming::TargetDelayInternal() const {
                   jitter_delay_ + RequiredDecodeTime() + render_delay_);
 }
 
+VideoFrame::RenderParameters VCMTiming::RenderParameters() const {
+  MutexLock lock(&mutex_);
+  return {.use_low_latency_rendering = UseLowLatencyRendering(),
+          .max_composition_delay_in_frames = max_composition_delay_in_frames_};
+}
+
+bool VCMTiming::UseLowLatencyRendering() const {
+  // min_playout_delay_==0,
+  // max_playout_delay_<=kLowLatencyStreamMaxPlayoutDelayThreshold indicates
+  // that the low-latency path should be used, which means that frames should be
+  // decoded and rendered as soon as possible.
+  return min_playout_delay_.IsZero() &&
+         max_playout_delay_ <= kLowLatencyStreamMaxPlayoutDelayThreshold;
+}
+
 VCMTiming::VideoDelayTimings VCMTiming::GetTimings() const {
   MutexLock lock(&mutex_);
   return VideoDelayTimings{.max_decode_duration = RequiredDecodeTime(),
@@ -276,11 +292,6 @@ void VCMTiming::SetMaxCompositionDelayInFrames(
     absl::optional<int> max_composition_delay_in_frames) {
   MutexLock lock(&mutex_);
   max_composition_delay_in_frames_ = max_composition_delay_in_frames;
-}
-
-absl::optional<int> VCMTiming::MaxCompositionDelayInFrames() const {
-  MutexLock lock(&mutex_);
-  return max_composition_delay_in_frames_;
 }
 
 }  // namespace webrtc

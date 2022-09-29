@@ -197,10 +197,10 @@ template <typename IsolateT>
 AbstractCode SharedFunctionInfo::abstract_code(IsolateT* isolate) {
   // TODO(v8:11429): Decide if this return bytecode or baseline code, when the
   // latter is present.
-  if (HasBytecodeArray()) {
+  if (HasBytecodeArray(isolate)) {
     return AbstractCode::cast(GetBytecodeArray(isolate));
   } else {
-    return AbstractCode::cast(FromCodeT(GetCode()));
+    return ToAbstractCode(GetCode());
   }
 }
 
@@ -266,6 +266,9 @@ BIT_FIELD_ACCESSORS(SharedFunctionInfo, flags2, is_sparkplug_compiling,
 
 BIT_FIELD_ACCESSORS(SharedFunctionInfo, flags2, maglev_compilation_failed,
                     SharedFunctionInfo::MaglevCompilationFailedBit)
+
+BIT_FIELD_ACCESSORS(SharedFunctionInfo, flags2, sparkplug_compiled,
+                    SharedFunctionInfo::SparkplugCompiledBit)
 
 BIT_FIELD_ACCESSORS(SharedFunctionInfo, relaxed_flags, syntax_kind,
                     SharedFunctionInfo::FunctionSyntaxKindBits)
@@ -549,13 +552,19 @@ FunctionTemplateInfo SharedFunctionInfo::get_api_func_data() const {
   return FunctionTemplateInfo::cast(function_data(kAcquireLoad));
 }
 
-bool SharedFunctionInfo::HasBytecodeArray() const {
-  Object data = function_data(kAcquireLoad);
-  return data.IsBytecodeArray() || data.IsInterpreterData() || data.IsCodeT();
+DEF_GETTER(SharedFunctionInfo, HasBytecodeArray, bool) {
+  Object data = function_data(cage_base, kAcquireLoad);
+  if (!data.IsHeapObject()) return false;
+  InstanceType instance_type =
+      HeapObject::cast(data).map(cage_base).instance_type();
+  return InstanceTypeChecker::IsBytecodeArray(instance_type) ||
+         InstanceTypeChecker::IsInterpreterData(instance_type) ||
+         InstanceTypeChecker::IsCodeT(instance_type);
 }
 
 template <typename IsolateT>
 BytecodeArray SharedFunctionInfo::GetBytecodeArray(IsolateT* isolate) const {
+  // TODO(ishell): access shared_function_info_access() via IsolateT.
   SharedMutexGuardIfOffThread<IsolateT, base::kShared> mutex_guard(
       GetIsolate()->shared_function_info_access(), isolate);
 
@@ -635,28 +644,28 @@ bool SharedFunctionInfo::ShouldFlushCode(
   return bytecode.IsOld();
 }
 
-CodeT SharedFunctionInfo::InterpreterTrampoline() const {
-  DCHECK(HasInterpreterData());
-  return interpreter_data().interpreter_trampoline();
+DEF_GETTER(SharedFunctionInfo, InterpreterTrampoline, CodeT) {
+  DCHECK(HasInterpreterData(cage_base));
+  return interpreter_data(cage_base).interpreter_trampoline(cage_base);
 }
 
-bool SharedFunctionInfo::HasInterpreterData() const {
-  Object data = function_data(kAcquireLoad);
-  if (data.IsCodeT()) {
+DEF_GETTER(SharedFunctionInfo, HasInterpreterData, bool) {
+  Object data = function_data(cage_base, kAcquireLoad);
+  if (data.IsCodeT(cage_base)) {
     CodeT baseline_code = CodeT::cast(data);
     DCHECK_EQ(baseline_code.kind(), CodeKind::BASELINE);
-    data = baseline_code.bytecode_or_interpreter_data();
+    data = baseline_code.bytecode_or_interpreter_data(cage_base);
   }
-  return data.IsInterpreterData();
+  return data.IsInterpreterData(cage_base);
 }
 
-InterpreterData SharedFunctionInfo::interpreter_data() const {
-  DCHECK(HasInterpreterData());
-  Object data = function_data(kAcquireLoad);
-  if (data.IsCodeT()) {
+DEF_GETTER(SharedFunctionInfo, interpreter_data, InterpreterData) {
+  DCHECK(HasInterpreterData(cage_base));
+  Object data = function_data(cage_base, kAcquireLoad);
+  if (data.IsCodeT(cage_base)) {
     CodeT baseline_code = CodeT::cast(data);
     DCHECK_EQ(baseline_code.kind(), CodeKind::BASELINE);
-    data = baseline_code.bytecode_or_interpreter_data();
+    data = baseline_code.bytecode_or_interpreter_data(cage_base);
   }
   return InterpreterData::cast(data);
 }
@@ -668,24 +677,25 @@ void SharedFunctionInfo::set_interpreter_data(
   set_function_data(interpreter_data, kReleaseStore);
 }
 
-bool SharedFunctionInfo::HasBaselineCode() const {
-  Object data = function_data(kAcquireLoad);
-  if (data.IsCodeT()) {
+DEF_GETTER(SharedFunctionInfo, HasBaselineCode, bool) {
+  Object data = function_data(cage_base, kAcquireLoad);
+  if (data.IsCodeT(cage_base)) {
     DCHECK_EQ(CodeT::cast(data).kind(), CodeKind::BASELINE);
     return true;
   }
   return false;
 }
 
-CodeT SharedFunctionInfo::baseline_code(AcquireLoadTag) const {
-  DCHECK(HasBaselineCode());
-  return CodeT::cast(function_data(kAcquireLoad));
+DEF_ACQUIRE_GETTER(SharedFunctionInfo, baseline_code, CodeT) {
+  DCHECK(HasBaselineCode(cage_base));
+  return CodeT::cast(function_data(cage_base, kAcquireLoad));
 }
 
 void SharedFunctionInfo::set_baseline_code(CodeT baseline_code,
-                                           ReleaseStoreTag) {
+                                           ReleaseStoreTag tag,
+                                           WriteBarrierMode mode) {
   DCHECK_EQ(baseline_code.kind(), CodeKind::BASELINE);
-  set_function_data(baseline_code, kReleaseStore);
+  set_function_data(baseline_code, tag, mode);
 }
 
 void SharedFunctionInfo::FlushBaselineCode() {
@@ -711,8 +721,8 @@ bool SharedFunctionInfo::HasWasmCapiFunctionData() const {
   return function_data(kAcquireLoad).IsWasmCapiFunctionData();
 }
 
-bool SharedFunctionInfo::HasWasmOnFulfilledData() const {
-  return function_data(kAcquireLoad).IsWasmOnFulfilledData();
+bool SharedFunctionInfo::HasWasmResumeData() const {
+  return function_data(kAcquireLoad).IsWasmResumeData();
 }
 
 AsmWasmData SharedFunctionInfo::asm_wasm_data() const {
@@ -870,13 +880,13 @@ bool SharedFunctionInfo::is_repl_mode() const {
   return script().IsScript() && Script::cast(script()).is_repl_mode();
 }
 
-bool SharedFunctionInfo::HasDebugInfo() const {
-  return script_or_debug_info(kAcquireLoad).IsDebugInfo();
+DEF_GETTER(SharedFunctionInfo, HasDebugInfo, bool) {
+  return script_or_debug_info(cage_base, kAcquireLoad).IsDebugInfo(cage_base);
 }
 
-DebugInfo SharedFunctionInfo::GetDebugInfo() const {
-  auto debug_info = script_or_debug_info(kAcquireLoad);
-  DCHECK(debug_info.IsDebugInfo());
+DEF_GETTER(SharedFunctionInfo, GetDebugInfo, DebugInfo) {
+  auto debug_info = script_or_debug_info(cage_base, kAcquireLoad);
+  DCHECK(debug_info.IsDebugInfo(cage_base));
   return DebugInfo::cast(debug_info);
 }
 

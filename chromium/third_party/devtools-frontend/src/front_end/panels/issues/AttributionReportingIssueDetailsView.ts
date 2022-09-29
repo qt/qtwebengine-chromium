@@ -15,11 +15,6 @@ const UIStrings = {
    */
   nViolations: '{n, plural, =1 {# violation} other {# violations}}',
   /**
-   * @description Noun, label for the column showing the associated frame in the issue details table.
-   * The associated frame can either be the "main frame" (or main window), or an HTML iframe.
-   */
-  frame: 'Frame',
-  /**
    * @description Noun, label for the column showing the associated HTML element in the issue details table.
    */
   element: 'Element',
@@ -27,6 +22,10 @@ const UIStrings = {
    * @description Noun, label for the column showing the invalid header value in the issue details table.
    */
   invalidHeaderValue: 'Invalid Header Value',
+  /**
+   * @description Noun, label for the column showing the maximum concurrent registrations header value in the issue details table.
+   */
+  maximumConcurrentRegistrations: 'Maximum Concurrent Registrations',
   /**
    * @description Noun, label for the column showing the associated network request in the issue details table.
    */
@@ -60,32 +59,29 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
       issues: Iterable<IssuesManager.AttributionReportingIssue.AttributionReportingIssue>): void {
     const header = document.createElement('tr');
     switch (issueCode) {
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionUntrustworthyFrameOrigin:
-        this.appendColumnTitle(header, i18nString(UIStrings.frame));
-        this.appendColumnTitle(header, i18nString(UIStrings.request));
-        this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionUntrustworthyOrigin:
-        this.appendColumnTitle(header, i18nString(UIStrings.request));
-        this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionSourceUntrustworthyFrameOrigin:
-        this.appendColumnTitle(header, i18nString(UIStrings.frame));
-        this.appendColumnTitle(header, i18nString(UIStrings.element));
-        this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionSourceUntrustworthyOrigin:
-        this.appendColumnTitle(header, i18nString(UIStrings.element));
-        this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidHeader:
-        this.appendColumnTitle(header, i18nString(UIStrings.frame));
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterSourceHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterTriggerHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidEligibleHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.SourceIgnored:
+      case IssuesManager.AttributionReportingIssue.IssueCode.TriggerIgnored:
         this.appendColumnTitle(header, i18nString(UIStrings.request));
         this.appendColumnTitle(header, i18nString(UIStrings.invalidHeaderValue));
         break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyDisabled:
-        this.appendColumnTitle(header, i18nString(UIStrings.frame));
+      case IssuesManager.AttributionReportingIssue.IssueCode.InsecureContext:
+      case IssuesManager.AttributionReportingIssue.IssueCode.UntrustworthyReportingOrigin:
         this.appendColumnTitle(header, i18nString(UIStrings.element));
+        this.appendColumnTitle(header, i18nString(UIStrings.request));
+        this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyDisabled:
+        this.appendColumnTitle(header, i18nString(UIStrings.element));
+        this.appendColumnTitle(header, i18nString(UIStrings.request));
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.TooManyConcurrentRequests:
+        this.appendColumnTitle(header, i18nString(UIStrings.element));
+        this.appendColumnTitle(header, i18nString(UIStrings.maximumConcurrentRegistrations));
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.SourceAndTriggerHeaders:
         this.appendColumnTitle(header, i18nString(UIStrings.request));
         break;
     }
@@ -108,37 +104,34 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
     const details = issue.issueDetails;
 
     switch (issueCode) {
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionSourceUntrustworthyOrigin:
-        await this.#appendElementOrEmptyCell(element, issue);
-        this.appendIssueDetailCell(element, details.invalidParameter || '');
-        break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionUntrustworthyOrigin:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterSourceHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidRegisterTriggerHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidEligibleHeader:
+      case IssuesManager.AttributionReportingIssue.IssueCode.SourceIgnored:
+      case IssuesManager.AttributionReportingIssue.IssueCode.TriggerIgnored:
         this.#appendRequestOrEmptyCell(element, details.request);
         this.appendIssueDetailCell(element, details.invalidParameter || '');
         break;
-      case IssuesManager.AttributionReportingIssue.IssueCode.InvalidHeader:
-        this.#appendFrameOrEmptyCell(element, issue);
+      case IssuesManager.AttributionReportingIssue.IssueCode.InsecureContext:
+      case IssuesManager.AttributionReportingIssue.IssueCode.UntrustworthyReportingOrigin:
+        await this.#appendElementOrEmptyCell(element, issue);
         this.#appendRequestOrEmptyCell(element, details.request);
         this.appendIssueDetailCell(element, details.invalidParameter || '');
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.PermissionPolicyDisabled:
-        this.#appendFrameOrEmptyCell(element, issue);
         await this.#appendElementOrEmptyCell(element, issue);
+        this.#appendRequestOrEmptyCell(element, details.request);
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.TooManyConcurrentRequests:
+        await this.#appendElementOrEmptyCell(element, issue);
+        this.appendIssueDetailCell(element, details.invalidParameter || '');
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.SourceAndTriggerHeaders:
         this.#appendRequestOrEmptyCell(element, details.request);
         break;
     }
 
     this.affectedResources.appendChild(element);
-  }
-
-  #appendFrameOrEmptyCell(
-      parent: HTMLElement, issue: IssuesManager.AttributionReportingIssue.AttributionReportingIssue): void {
-    const details = issue.issueDetails;
-    if (details.frame) {
-      parent.appendChild(this.createFrameCell(details.frame.frameId, issue.getCategory()));
-    } else {
-      this.appendIssueDetailCell(parent, '');
-    }
   }
 
   async #appendElementOrEmptyCell(

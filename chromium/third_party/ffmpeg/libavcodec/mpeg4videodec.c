@@ -3588,7 +3588,7 @@ static av_cold void mpeg4_init_static(void)
                                  0, 0, 528);
 
     for (unsigned i = 0, offset = 0; i < 12; i++) {
-        static VLC_TYPE vlc_buf[6498][2];
+        static VLCElem vlc_buf[6498];
 
         studio_intra_tab[i].table           = &vlc_buf[offset];
         studio_intra_tab[i].table_allocated = FF_ARRAY_ELEMS(vlc_buf) - offset;
@@ -3676,8 +3676,7 @@ const FFCodec ff_mpeg4_decoder = {
                              AV_CODEC_CAP_TRUNCATED |
 #endif
                              AV_CODEC_CAP_DELAY | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE |
-                             FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM |
+    .caps_internal         = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS,
     .flush                 = ff_mpeg_flush,
     .p.max_lowres          = 3,

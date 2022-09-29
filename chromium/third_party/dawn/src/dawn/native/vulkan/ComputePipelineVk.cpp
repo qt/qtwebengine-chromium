@@ -41,7 +41,7 @@ MaybeError ComputePipeline::Initialize() {
     const PipelineLayout* layout = ToBackend(GetLayout());
 
     // Vulkan devices need cache UUID field to be serialized into pipeline cache keys.
-    mCacheKey.Record(device->GetDeviceInfo().properties.pipelineCacheUUID);
+    StreamIn(&mCacheKey, device->GetDeviceInfo().properties.pipelineCacheUUID);
 
     VkComputePipelineCreateInfo createInfo;
     createInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -58,13 +58,15 @@ MaybeError ComputePipeline::Initialize() {
     // Generate a new VkShaderModule with BindingRemapper tint transform for each pipeline
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
     ShaderModule* module = ToBackend(computeStage.module.Get());
-    const ShaderModule::Spirv* spirv;
-    DAWN_TRY_ASSIGN((std::tie(createInfo.stage.module, spirv)),
+
+    ShaderModule::ModuleAndSpirv moduleAndSpirv;
+    DAWN_TRY_ASSIGN(moduleAndSpirv,
                     module->GetHandleAndSpirv(computeStage.entryPoint.c_str(), layout));
 
+    createInfo.stage.module = moduleAndSpirv.module;
     createInfo.stage.pName = computeStage.entryPoint.c_str();
 
-    std::vector<OverridableConstantScalar> specializationDataEntries;
+    std::vector<OverrideScalar> specializationDataEntries;
     std::vector<VkSpecializationMapEntry> specializationMapEntries;
     VkSpecializationInfo specializationInfo{};
     createInfo.stage.pSpecializationInfo = GetVkSpecializationInfo(
@@ -83,7 +85,8 @@ MaybeError ComputePipeline::Initialize() {
     }
 
     // Record cache key information now since the createInfo is not stored.
-    mCacheKey.Record(createInfo, layout).RecordIterable(*spirv);
+    StreamIn(&mCacheKey, createInfo, layout,
+             stream::Iterable(moduleAndSpirv.spirv, moduleAndSpirv.wordCount));
 
     // Try to see if we have anything in the blob cache.
     Ref<PipelineCache> cache = ToBackend(GetDevice()->GetOrCreatePipelineCache(GetCacheKey()));

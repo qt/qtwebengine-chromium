@@ -693,6 +693,8 @@ if (is_linux || is_chromeos || is_win) {
       "../api:scoped_refptr",
       "../api/audio:audio_mixer_api",
       "../api/audio_codecs:audio_codecs_api",
+      "../api/task_queue:pending_task_safety_flag",
+      "../api/units:time_delta",
       "../api/video:video_frame",
       "../api/video:video_rtp_headers",
       "../api/video_codecs:video_codecs_api",
@@ -800,6 +802,7 @@ if (is_linux || is_chromeos || is_win) {
       "../rtc_base:socket_address",
       "../rtc_base:socket_server",
       "../rtc_base:threading",
+      "//third_party/abseil-cpp/absl/strings:strings",
     ]
   }
   rtc_executable("stunserver") {
@@ -904,7 +907,7 @@ if (is_android) {
     ]
   }
 
-  junit_binary("android_examples_junit_tests") {
+  robolectric_binary("android_examples_junit_tests") {
     sources = [
       "androidjunit/src/org/appspot/apprtc/BluetoothManagerTest.java",
       "androidjunit/src/org/appspot/apprtc/DirectRTCClientTest.java",

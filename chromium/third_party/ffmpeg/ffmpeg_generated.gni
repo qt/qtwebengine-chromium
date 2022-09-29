@@ -160,6 +160,7 @@ if ((is_android && current_cpu == "arm" && arm_use_neon) || (is_android && curre
     "libavutil/channel_layout.c",
     "libavutil/color_utils.c",
     "libavutil/crc.c",
+    "libavutil/csp.c",
     "libavutil/detection_bbox.c",
     "libavutil/dict.c",
     "libavutil/display.c",
@@ -205,6 +206,7 @@ if ((is_android && current_cpu == "arm" && arm_use_neon) || (is_android && curre
     "libavutil/tx.c",
     "libavutil/tx_double.c",
     "libavutil/tx_int32.c",
+    "libavutil/uuid.c",
     "libavutil/video_enc_params.c",
   ]
 }
@@ -554,6 +556,20 @@ if (use_linux_config && current_cpu == "arm" && arm_use_neon && ffmpeg_branding 
   ]
 }
 
+if (use_linux_config && current_cpu == "arm64" && ffmpeg_branding == "ChromeOS") {
+  ffmpeg_c_sources += [
+    "libavcodec/aarch64/idctdsp_init_aarch64.c",
+    "libavcodec/aarch64/me_cmp_init_aarch64.c",
+    "libavcodec/aarch64/pixblockdsp_init_aarch64.c",
+  ]
+  ffmpeg_gas_sources += [
+    "libavcodec/aarch64/idctdsp_neon.S",
+    "libavcodec/aarch64/me_cmp_neon.S",
+    "libavcodec/aarch64/pixblockdsp_neon.S",
+    "libavcodec/aarch64/simple_idct_neon.S",
+  ]
+}
+
 if ((is_android && current_cpu == "arm" && arm_use_neon) || (use_linux_config && current_cpu == "arm" && arm_use_neon)) {
   ffmpeg_c_sources += [
     "libavutil/arm/float_dsp_init_neon.c",
@@ -577,18 +593,6 @@ if (use_linux_config && current_cpu == "arm" && arm_use_neon) {
     "libavcodec/arm/hpeldsp_neon.S",
     "libavcodec/arm/vp3dsp_neon.S",
     "libavcodec/arm/vp8dsp_neon.S",
-  ]
-}
-
-if (use_linux_config && current_cpu == "arm64" && ffmpeg_branding == "ChromeOS") {
-  ffmpeg_c_sources += [
-    "libavcodec/aarch64/idctdsp_init_aarch64.c",
-    "libavcodec/aarch64/pixblockdsp_init_aarch64.c",
-  ]
-  ffmpeg_gas_sources += [
-    "libavcodec/aarch64/idctdsp_neon.S",
-    "libavcodec/aarch64/pixblockdsp_neon.S",
-    "libavcodec/aarch64/simple_idct_neon.S",
   ]
 }
 
@@ -650,6 +654,12 @@ if ((is_android && current_cpu == "arm" && arm_use_neon && ffmpeg_branding == "C
   ffmpeg_gas_sources += [
     "libavcodec/arm/aacpsdsp_neon.S",
     "libavcodec/arm/sbrdsp_neon.S",
+  ]
+}
+
+if ((is_android && current_cpu == "arm" && arm_use_neon) || (is_android && current_cpu == "arm64") || (is_android && current_cpu == "x64") || (is_android && current_cpu == "x86") || (is_mac) || (is_win && current_cpu == "arm64") || (is_win && current_cpu == "x86") || (use_linux_config)) {
+  ffmpeg_c_sources += [
+    "libavutil/hwcontext_stub.c",
   ]
 }
 

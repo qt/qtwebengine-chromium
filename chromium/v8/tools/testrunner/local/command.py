@@ -11,9 +11,9 @@ import sys
 import threading
 import time
 
-from ..local.android import (
-    android_driver, CommandFailedException, TimeoutException)
+from ..local.android import (Driver, CommandFailedException, TimeoutException)
 from ..objects import output
+from ..local.pool import AbortException
 
 BASE_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..' , '..', '..'))
@@ -28,12 +28,6 @@ def setup_testing():
   in the main thread, so we disable it for testing.
   """
   signal.signal = lambda *_: None
-
-
-class AbortException(Exception):
-  """Indicates early abort on SIGINT, SIGTERM or internal hard timeout."""
-  pass
-
 
 @contextmanager
 def handle_sigterm(process, abort_fun, enabled):
@@ -205,6 +199,11 @@ class PosixCommand(BaseCommand):
 
   def _kill_process(self, process):
     # Kill the whole process group (PID == GPID after setsid).
+    # First try a soft term to allow some feedback
+    os.killpg(process.pid, signal.SIGTERM)
+    # Give the process some time to cleanly terminate.
+    time.sleep(0.1)
+    # Forcefully kill processes.
     os.killpg(process.pid, signal.SIGKILL)
 
 
@@ -325,19 +324,23 @@ class AndroidCommand(BaseCommand):
         duration,
     )
 
-
 Command = None
+
+
+# Deprecated : use context.os_context
 def setup(target_os, device):
   """Set the Command class to the OS-specific version."""
   global Command
   if target_os == 'android':
-    AndroidCommand.driver = android_driver(device)
+    AndroidCommand.driver = Driver.instance(device)
     Command = AndroidCommand
   elif target_os == 'windows':
     Command = WindowsCommand
   else:
     Command = PosixCommand
 
+
+# Deprecated : use context.os_context
 def tear_down():
   """Clean up after using commands."""
   if Command == AndroidCommand:

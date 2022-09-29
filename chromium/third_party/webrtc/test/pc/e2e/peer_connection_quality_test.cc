@@ -28,11 +28,13 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "system_wrappers/include/cpu_info.h"
 #include "system_wrappers/include/field_trial.h"
 #include "test/field_trial.h"
 #include "test/pc/e2e/analyzer/audio/default_audio_quality_analyzer.h"
 #include "test/pc/e2e/analyzer/video/default_video_quality_analyzer.h"
+#include "test/pc/e2e/analyzer/video/video_frame_tracking_id_injector.h"
 #include "test/pc/e2e/analyzer/video/video_quality_metrics_reporter.h"
 #include "test/pc/e2e/cross_media_metrics_reporter.h"
 #include "test/pc/e2e/stats_poller.h"
@@ -138,11 +140,16 @@ PeerConnectionE2EQualityTest::PeerConnectionE2EQualityTest(
     video_quality_analyzer = std::make_unique<DefaultVideoQualityAnalyzer>(
         time_controller_.GetClock());
   }
-  encoded_image_data_propagator_ =
-      std::make_unique<SingleProcessEncodedImageDataInjector>();
+  if (field_trial::IsEnabled("WebRTC-VideoFrameTrackingIdAdvertised")) {
+    encoded_image_data_propagator_ =
+        std::make_unique<VideoFrameTrackingIdInjector>();
+  } else {
+    encoded_image_data_propagator_ =
+        std::make_unique<SingleProcessEncodedImageDataInjector>();
+  }
   video_quality_analyzer_injection_helper_ =
       std::make_unique<VideoQualityAnalyzerInjectionHelper>(
-          std::move(video_quality_analyzer),
+          time_controller_.GetClock(), std::move(video_quality_analyzer),
           encoded_image_data_propagator_.get(),
           encoded_image_data_propagator_.get());
 
@@ -329,26 +336,27 @@ void PeerConnectionE2EQualityTest::Run(RunParams run_params) {
   for (auto& reporter : quality_metrics_reporters_) {
     observers.push_back(reporter.get());
   }
-  StatsPoller stats_poller(observers, {{*alice_->params().name, alice_.get()},
-                                       {*bob_->params().name, bob_.get()}});
+  StatsPoller stats_poller(observers,
+                           std::map<std::string, StatsProvider*>{
+                               {*alice_->params().name, alice_.get()},
+                               {*bob_->params().name, bob_.get()}});
   executor_->ScheduleActivity(TimeDelta::Zero(), kStatsUpdateInterval,
                               [&stats_poller](TimeDelta) {
                                 stats_poller.PollStatsAndNotifyObservers();
                               });
 
   // Setup call.
-  signaling_thread->Invoke<void>(RTC_FROM_HERE, [this, &run_params] {
-    SetupCallOnSignalingThread(run_params);
-  });
+  SendTask(signaling_thread.get(),
+           [this, &run_params] { SetupCallOnSignalingThread(run_params); });
   std::unique_ptr<SignalingInterceptor> signaling_interceptor =
       CreateSignalingInterceptor(run_params);
   // Connect peers.
-  signaling_thread->Invoke<void>(RTC_FROM_HERE, [this, &signaling_interceptor] {
+  SendTask(signaling_thread.get(), [this, &signaling_interceptor] {
     ExchangeOfferAnswer(signaling_interceptor.get());
   });
   WaitUntilIceCandidatesGathered(signaling_thread.get());
 
-  signaling_thread->Invoke<void>(RTC_FROM_HERE, [this, &signaling_interceptor] {
+  SendTask(signaling_thread.get(), [this, &signaling_interceptor] {
     ExchangeIceCandidates(signaling_interceptor.get());
   });
   WaitUntilPeersAreConnected(signaling_thread.get());
@@ -371,19 +379,16 @@ void PeerConnectionE2EQualityTest::Run(RunParams run_params) {
   // There is no guarantee, that last stats collection will happen at the end
   // of the call, so we force it after executor, which is among others is doing
   // stats collection, was stopped.
-  task_queue_->SendTask(
-      [&stats_poller]() {
-        // Get final end-of-call stats.
-        stats_poller.PollStatsAndNotifyObservers();
-      },
-      RTC_FROM_HERE);
+  task_queue_->SendTask([&stats_poller]() {
+    // Get final end-of-call stats.
+    stats_poller.PollStatsAndNotifyObservers();
+  });
   // We need to detach AEC dumping from peers, because dump uses `task_queue_`
   // inside.
   alice_->DetachAecDump();
   bob_->DetachAecDump();
   // Tear down the call.
-  signaling_thread->Invoke<void>(RTC_FROM_HERE,
-                                 [this] { TearDownCallOnSignalingThread(); });
+  SendTask(signaling_thread.get(), [this] { TearDownCallOnSignalingThread(); });
 
   Timestamp end_time = Now();
   RTC_LOG(LS_INFO) << "All peers are disconnected.";
@@ -591,9 +596,11 @@ void PeerConnectionE2EQualityTest::WaitUntilIceCandidatesGathered(
     rtc::Thread* signaling_thread) {
   ASSERT_TRUE(time_controller_.Wait(
       [&]() {
-        return signaling_thread->Invoke<bool>(RTC_FROM_HERE, [&]() {
-          return alice_->IsIceGatheringDone() && bob_->IsIceGatheringDone();
+        bool result;
+        SendTask(signaling_thread, [&]() {
+          result = alice_->IsIceGatheringDone() && bob_->IsIceGatheringDone();
         });
+        return result;
       },
       2 * kDefaultTimeout));
 }
@@ -603,14 +610,16 @@ void PeerConnectionE2EQualityTest::WaitUntilPeersAreConnected(
   // This means that ICE and DTLS are connected.
   alice_connected_ = time_controller_.Wait(
       [&]() {
-        return signaling_thread->Invoke<bool>(
-            RTC_FROM_HERE, [&]() { return alice_->IsIceConnected(); });
+        bool result;
+        SendTask(signaling_thread, [&] { result = alice_->IsIceConnected(); });
+        return result;
       },
       kDefaultTimeout);
   bob_connected_ = time_controller_.Wait(
       [&]() {
-        return signaling_thread->Invoke<bool>(
-            RTC_FROM_HERE, [&]() { return bob_->IsIceConnected(); });
+        bool result;
+        SendTask(signaling_thread, [&] { result = bob_->IsIceConnected(); });
+        return result;
       },
       kDefaultTimeout);
 }

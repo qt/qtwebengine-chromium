@@ -9,8 +9,6 @@
 
 #ifdef PDF_ENABLE_V8
 #include "testing/v8_test_environment.h"
-#include "v8/include/v8-platform.h"
-#include "v8/include/v8.h"
 #ifdef PDF_ENABLE_XFA
 #include "testing/xfa_test_environment.h"
 #endif  // PDF_ENABLE_XFA
@@ -19,7 +17,7 @@
 // Can't use gtest-provided main since we need to initialize partition
 // alloc before invoking any test, and add test environments.
 int main(int argc, char** argv) {
-  FXMEM_InitializePartitionAlloc();
+  FX_InitializeMemoryAllocators();
 
   // PDF test environment will be deleted by gtest.
   AddGlobalTestEnvironment(new PDFTestEnvironment());

@@ -135,6 +135,7 @@ hb_script_get_horizontal_direction
 hb_language_from_string
 hb_language_to_string
 hb_language_get_default
+hb_language_matches
 hb_feature_from_string
 hb_feature_to_string
 hb_variation_from_string
@@ -255,8 +256,6 @@ hb_coretext_font_get_ct_font
 <FILE>hb-directwrite</FILE>
 hb_directwrite_face_create
 hb_directwrite_face_get_font_face
-<SUBSECTION Private>
-hb_directwrite_shape_experimental_width
 </SECTION>
 
 <SECTION>
@@ -402,9 +401,6 @@ hb_font_get_h_extents
 hb_font_get_v_extents
 hb_font_extents_t
 hb_glyph_extents_t
-<SUBSECTION Private>
-hb_font_get_var_coords_design
-hb_font_draw_glyph
 </SECTION>
 
 <SECTION>
@@ -421,6 +417,7 @@ hb_ft_font_unlock_face
 hb_ft_font_set_load_flags
 hb_ft_font_get_load_flags
 hb_ft_font_set_funcs
+hb_ft_hb_font_changed
 </SECTION>
 
 <SECTION>

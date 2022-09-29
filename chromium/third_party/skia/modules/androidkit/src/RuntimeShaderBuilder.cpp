@@ -36,20 +36,20 @@ static void ShaderBuilder_Release(JNIEnv* env, jobject, jlong native_instance) {
 
 static void ShaderBuilder_SetUniformFloat(JNIEnv* env, jobject, jlong native_instance, jstring jname, float val) {
     if (auto* builder = reinterpret_cast<SkRuntimeShaderBuilder*>(native_instance)) {
-        builder->uniform(androidkit::utils::CString(env, jname)) = val;
+        builder->uniform(androidkit::utils::CString(env, jname).str()) = val;
     }
 }
 
 static void ShaderBuilder_SetUniformFloat3(JNIEnv* env, jobject, jlong native_instance, jstring jname, float valX, float valY, float valZ) {
     if (auto* builder = reinterpret_cast<SkRuntimeShaderBuilder*>(native_instance)) {
-        builder->uniform(androidkit::utils::CString(env, jname)) = SkV3{valX, valY, valZ};
+        builder->uniform(androidkit::utils::CString(env, jname).str()) = SkV3{valX, valY, valZ};
     }
 }
 
 static void ShaderBuilder_SetUniformMatrix(JNIEnv* env, jobject, jlong native_instance, jstring jname, jlong native_matrix) {
     if (auto* builder = reinterpret_cast<SkRuntimeShaderBuilder*>(native_instance)) {
         if (auto* matrix = reinterpret_cast<SkM44*>(native_matrix)) {
-            builder->uniform(androidkit::utils::CString(env, jname)) = *matrix;
+            builder->uniform(androidkit::utils::CString(env, jname).str()) = *matrix;
         }
     }
 }
@@ -78,6 +78,6 @@ int register_androidkit_RuntimeShaderBuilder(JNIEnv* env) {
 
     const auto clazz = env->FindClass("org/skia/androidkit/RuntimeShaderBuilder");
     return clazz
-        ? env->RegisterNatives(clazz, methods, SK_ARRAY_COUNT(methods))
+        ? env->RegisterNatives(clazz, methods, std::size(methods))
         : JNI_ERR;
 }

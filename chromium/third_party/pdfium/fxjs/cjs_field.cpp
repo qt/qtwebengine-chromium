@@ -13,11 +13,11 @@
 #include "constants/access_permissions.h"
 #include "constants/annotation_flags.h"
 #include "constants/form_flags.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
-#include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
@@ -61,24 +61,21 @@ void UpdateFormField(CPDFSDK_FormFillEnvironment* pFormFillEnv,
                      bool bResetAP) {
   CPDFSDK_InteractiveForm* pForm = pFormFillEnv->GetInteractiveForm();
   if (bResetAP) {
-    std::vector<ObservedPtr<CPDFSDK_Annot>> widgets;
+    std::vector<ObservedPtr<CPDFSDK_Widget>> widgets;
     pForm->GetWidgets(pFormField, &widgets);
 
     if (IsComboBoxOrTextField(pFormField)) {
-      for (auto& pObserved : widgets) {
-        if (pObserved) {
-          absl::optional<WideString> sValue =
-              ToCPDFSDKWidget(pObserved.Get())->OnFormat();
-          if (pObserved) {  // Not redundant, may be clobbered by OnFormat.
-            auto* pWidget = ToCPDFSDKWidget(pObserved.Get());
+      for (auto& pWidget : widgets) {
+        if (pWidget) {
+          absl::optional<WideString> sValue = pWidget->OnFormat();
+          if (pWidget) {  // Not redundant, may be clobbered by OnFormat.
             pWidget->ResetAppearance(sValue, CPDFSDK_Widget::kValueUnchanged);
           }
         }
       }
     } else {
-      for (auto& pObserved : widgets) {
-        if (pObserved) {
-          auto* pWidget = ToCPDFSDKWidget(pObserved.Get());
+      for (auto& pWidget : widgets) {
+        if (pWidget) {
           pWidget->ResetAppearance(absl::nullopt,
                                    CPDFSDK_Widget::kValueUnchanged);
         }
@@ -89,19 +86,12 @@ void UpdateFormField(CPDFSDK_FormFillEnvironment* pFormFillEnv,
   // Refresh the widget list. The calls in |bResetAP| may have caused widgets
   // to be removed from the list. We need to call |GetWidgets| again to be
   // sure none of the widgets have been deleted.
-  std::vector<ObservedPtr<CPDFSDK_Annot>> widgets;
+  std::vector<ObservedPtr<CPDFSDK_Widget>> widgets;
   pForm->GetWidgets(pFormField, &widgets);
-
-  // TODO(dsinclair): Determine if all widgets share the same
-  // CPDFSDK_InteractiveForm. If that's the case, we can move the code to
-  // |GetFormFillEnv| out of the loop.
-  for (auto& pObserved : widgets) {
-    if (pObserved) {
-      CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pObserved.Get());
-      pWidget->GetInteractiveForm()->GetFormFillEnv()->UpdateAllViews(pWidget);
-    }
+  for (auto& pWidget : widgets) {
+    if (pWidget)
+      pFormFillEnv->UpdateAllViews(pWidget.Get());
   }
-
   pFormFillEnv->SetChangeMark();
 }
 
@@ -128,8 +118,7 @@ void UpdateFormControl(CPDFSDK_FormFillEnvironment* pFormFillEnv,
       if (!observed_widget)
         return;
     }
-    CPDFSDK_InteractiveForm* pWidgetForm = pWidget->GetInteractiveForm();
-    pWidgetForm->GetFormFillEnv()->UpdateAllViews(pWidget);
+    pFormFillEnv->UpdateAllViews(pWidget);
   }
   pFormFillEnv->SetChangeMark();
 }
@@ -1515,18 +1504,17 @@ CJS_Result CJS_Field::get_page(CJS_Runtime* pRuntime) {
   if (!pFormField)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  std::vector<ObservedPtr<CPDFSDK_Annot>> widgets;
+  std::vector<ObservedPtr<CPDFSDK_Widget>> widgets;
   m_pFormFillEnv->GetInteractiveForm()->GetWidgets(pFormField, &widgets);
   if (widgets.empty())
     return CJS_Result::Success(pRuntime->NewNumber(-1));
 
   v8::Local<v8::Array> PageArray = pRuntime->NewArray();
   int i = 0;
-  for (const auto& pObserved : widgets) {
-    if (!pObserved)
+  for (const auto& pWidget : widgets) {
+    if (!pWidget)
       return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-    auto* pWidget = ToCPDFSDKWidget(pObserved.Get());
     pRuntime->PutArrayElement(
         PageArray, i,
         pRuntime->NewNumber(pWidget->GetPageView()->GetPageIndex()));
@@ -2490,7 +2478,7 @@ CJS_Result CJS_Field::setFocus(
   if (nCount == 1) {
     pWidget = pForm->GetWidget(pFormField->GetControl(0));
   } else {
-    IPDF_Page* pPage = IPDFPageFromFPDFPage(m_pFormFillEnv->GetCurrentPage());
+    IPDF_Page* pPage = m_pFormFillEnv->GetCurrentPage();
     if (!pPage)
       return CJS_Result::Failure(JSMessage::kBadObjectError);
     CPDFSDK_PageView* pCurPageView = m_pFormFillEnv->GetOrCreatePageView(pPage);

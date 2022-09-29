@@ -33,24 +33,24 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 
-import type {ActionDelegate as ActionDelegateInterface} from './ActionRegistration.js';
-import type {Context} from './Context.js';
-import type {ContextMenu} from './ContextMenu.js';
+import {type ActionDelegate as ActionDelegateInterface} from './ActionRegistration.js';
+import {type Context} from './Context.js';
+import {type ContextMenu} from './ContextMenu.js';
 import {Dialog} from './Dialog.js';
 import {DockController, DockState} from './DockController.js';
 import {GlassPane} from './GlassPane.js';
-import type {Icon} from './Icon.js';
+import {type Icon} from './Icon.js';
 import {Infobar, Type as InfobarType} from './Infobar.js';
 import {KeyboardShortcut} from './KeyboardShortcut.js';
-import type {Panel} from './Panel.js';
+import {type Panel} from './Panel.js';
 import {SplitWidget} from './SplitWidget.js';
-import {Events as TabbedPaneEvents} from './TabbedPane.js';
-import type {EventData, TabbedPane, TabbedPaneTabDelegate} from './TabbedPane.js';
+import {Events as TabbedPaneEvents, type EventData, type TabbedPane, type TabbedPaneTabDelegate} from './TabbedPane.js';
+
 import {ToolbarButton} from './Toolbar.js';
-import type {TabbedViewLocation, View, ViewLocation, ViewLocationResolver} from './View.js';
+import {type TabbedViewLocation, type View, type ViewLocation, type ViewLocationResolver} from './View.js';
 import {ViewManager} from './ViewManager.js';
-import type {Widget} from './Widget.js';
-import {VBox, WidgetFocusRestorer} from './Widget.js';
+
+import {VBox, WidgetFocusRestorer, type Widget} from './Widget.js';
 import * as ARIAUtils from './ARIAUtils.js';
 import inspectorViewTabbedPaneStyles from './inspectorViewTabbedPane.css.legacy.js';
 
@@ -186,6 +186,12 @@ export class InspectorView extends VBox implements ViewLocationResolver {
 
     this.tabbedPane = this.tabbedLocation.tabbedPane();
     this.tabbedPane.element.classList.add('main-tabbed-pane');
+    // The 'Inspect element' and 'Device mode' buttons in the tabs toolbar takes longer to load than
+    // the tabs themselves, so a space equal to the buttons' total width is preemptively allocated
+    // to prevent to prevent a shift in the tab layout. Note that when DevTools cannot be docked,
+    // the Device mode button is not added and so the allocated space is smaller.
+    const allocatedSpace = Root.Runtime.Runtime.queryParam(Root.Runtime.ConditionName.CAN_DOCK) ? '69px' : '41px';
+    this.tabbedPane.leftToolbar().element.style.minWidth = allocatedSpace;
     this.tabbedPane.registerRequiredCSS(inspectorViewTabbedPaneStyles);
     this.tabbedPane.addEventListener(TabbedPaneEvents.TabSelected, this.tabSelected, this);
     this.tabbedPane.setAccessibleName(i18nString(UIStrings.panels));

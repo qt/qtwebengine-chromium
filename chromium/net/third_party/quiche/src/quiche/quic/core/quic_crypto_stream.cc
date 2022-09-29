@@ -10,7 +10,6 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "quiche/quic/core/crypto/crypto_handshake.h"
-#include "quiche/quic/core/crypto/crypto_utils.h"
 #include "quiche/quic/core/frames/quic_crypto_frame.h"
 #include "quiche/quic/core/quic_connection.h"
 #include "quiche/quic/core/quic_error_codes.h"
@@ -50,13 +49,13 @@ QuicByteCount QuicCryptoStream::CryptoMessageFramingOverhead(
     QuicTransportVersion version, QuicConnectionId connection_id) {
   QUICHE_DCHECK(
       QuicUtils::IsConnectionIdValidForVersion(connection_id, version));
-  QuicVariableLengthIntegerLength retry_token_length_length =
-      VARIABLE_LENGTH_INTEGER_LENGTH_1;
-  QuicVariableLengthIntegerLength length_length =
-      VARIABLE_LENGTH_INTEGER_LENGTH_2;
+  quiche::QuicheVariableLengthIntegerLength retry_token_length_length =
+      quiche::VARIABLE_LENGTH_INTEGER_LENGTH_1;
+  quiche::QuicheVariableLengthIntegerLength length_length =
+      quiche::VARIABLE_LENGTH_INTEGER_LENGTH_2;
   if (!QuicVersionHasLongHeaderLengths(version)) {
-    retry_token_length_length = VARIABLE_LENGTH_INTEGER_LENGTH_0;
-    length_length = VARIABLE_LENGTH_INTEGER_LENGTH_0;
+    retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_0;
+    length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_0;
   }
   return QuicPacketCreator::StreamFramePacketOverhead(
       version, static_cast<QuicConnectionIdLength>(connection_id.length()),
@@ -166,7 +165,8 @@ void QuicCryptoStream::WriteCryptoData(EncryptionLevel level,
             << absl::StrCat("Too much data for crypto send buffer with level: ",
                             EncryptionLevelToString(level),
                             ", current_buffer_size: ", current_buffer_size,
-                            ", data length: ", data.length());
+                            ", data length: ", data.length(),
+                            ", SNI: ", crypto_negotiated_params().sni);
         OnUnrecoverableError(QUIC_INTERNAL_ERROR,
                              "Too much data for crypto send buffer");
         return;
@@ -383,6 +383,11 @@ uint64_t QuicCryptoStream::crypto_bytes_read() const {
 uint64_t QuicCryptoStream::BytesReadOnLevel(EncryptionLevel level) const {
   return substreams_[QuicUtils::GetPacketNumberSpace(level)]
       .sequencer.NumBytesConsumed();
+}
+
+uint64_t QuicCryptoStream::BytesSentOnLevel(EncryptionLevel level) const {
+  return substreams_[QuicUtils::GetPacketNumberSpace(level)]
+      .send_buffer.stream_bytes_written();
 }
 
 bool QuicCryptoStream::WriteCryptoFrame(EncryptionLevel level,

@@ -31,6 +31,11 @@
 #include <cmath>
 #include <cstring>
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "include/gpu/graphite/ImageProvider.h"
+#include <unordered_map>
+#endif
+
 #if defined(SK_ENABLE_SVG)
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGNode.h"
@@ -544,7 +549,7 @@ sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
 
         return orig->makeTextureImage(dContext);
     }
-#if SK_GRAPHITE_ENABLED
+#if defined(SK_GRAPHITE_ENABLED)
     else if (canvas->recorder()) {
         return orig->makeTextureImage(canvas->recorder());
     }
@@ -553,5 +558,147 @@ sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
     return orig;
 }
 #endif
+
+VariationSliders::VariationSliders(SkTypeface* typeface,
+                                   SkFontArguments::VariationPosition variationPosition) {
+    if (!typeface) {
+        return;
+    }
+
+    int numAxes = typeface->getVariationDesignParameters(nullptr, 0);
+    if (numAxes < 0) {
+        return;
+    }
+
+    std::unique_ptr<SkFontParameters::Variation::Axis[]> copiedAxes =
+            std::make_unique<SkFontParameters::Variation::Axis[]>(numAxes);
+
+    numAxes = typeface->getVariationDesignParameters(copiedAxes.get(), numAxes);
+    if (numAxes < 0) {
+        return;
+    }
+
+    auto argVariationPositionOrDefault = [&variationPosition](SkFourByteTag tag,
+                                                              SkScalar defaultValue) -> SkScalar {
+        for (int i = 0; i < variationPosition.coordinateCount; ++i) {
+            if (variationPosition.coordinates[i].axis == tag) {
+                return variationPosition.coordinates[i].value;
+            }
+        }
+        return defaultValue;
+    };
+
+    fAxisSliders.resize(numAxes);
+    fCoords = std::make_unique<SkFontArguments::VariationPosition::Coordinate[]>(numAxes);
+    for (int i = 0; i < numAxes; ++i) {
+        fAxisSliders[i].axis = copiedAxes[i];
+        fAxisSliders[i].current =
+                argVariationPositionOrDefault(copiedAxes[i].tag, copiedAxes[i].def);
+        fAxisSliders[i].name = tagToString(fAxisSliders[i].axis.tag);
+        fCoords[i] = { fAxisSliders[i].axis.tag, fAxisSliders[i].current };
+    }
+}
+
+/* static */
+SkString VariationSliders::tagToString(SkFourByteTag tag) {
+    char tagAsString[5];
+    tagAsString[4] = 0;
+    tagAsString[0] = (char)(uint8_t)(tag >> 24);
+    tagAsString[1] = (char)(uint8_t)(tag >> 16);
+    tagAsString[2] = (char)(uint8_t)(tag >> 8);
+    tagAsString[3] = (char)(uint8_t)(tag >> 0);
+    return SkString(tagAsString);
+}
+
+bool VariationSliders::writeControls(SkMetaData* controls) {
+    for (size_t i = 0; i < fAxisSliders.size(); ++i) {
+        SkScalar axisVars[kAxisVarsSize];
+
+        axisVars[0] = fAxisSliders[i].current;
+        axisVars[1] = fAxisSliders[i].axis.min;
+        axisVars[2] = fAxisSliders[i].axis.max;
+        controls->setScalars(fAxisSliders[i].name.c_str(), kAxisVarsSize, axisVars);
+    }
+    return true;
+}
+
+void VariationSliders::readControls(const SkMetaData& controls, bool* changed) {
+    for (size_t i = 0; i < fAxisSliders.size(); ++i) {
+        SkScalar axisVars[kAxisVarsSize] = {0};
+        int resultAxisVarsSize = 0;
+        SkASSERT_RELEASE(controls.findScalars(
+                tagToString(fAxisSliders[i].axis.tag).c_str(), &resultAxisVarsSize, axisVars));
+        SkASSERT_RELEASE(resultAxisVarsSize == kAxisVarsSize);
+        if (changed) {
+            *changed |= fAxisSliders[i].current != axisVars[0];
+        }
+        fAxisSliders[i].current = axisVars[0];
+        fCoords[i] = { fAxisSliders[i].axis.tag, fAxisSliders[i].current };
+    }
+}
+
+SkSpan<const SkFontArguments::VariationPosition::Coordinate> VariationSliders::getCoordinates() {
+    return SkSpan<const SkFontArguments::VariationPosition::Coordinate>{fCoords.get(),
+                                                                        fAxisSliders.size()};
+}
+
+#ifdef SK_GRAPHITE_ENABLED
+
+// Currently, we give each new Recorder its own ImageProvider. This means we don't have to deal
+// w/ any threading issues.
+// TODO: We should probably have this class generate and report some cache stats
+// TODO: Hook up to listener system?
+// TODO: add testing of a single ImageProvider passed to multiple recorders
+class TestingImageProvider : public skgpu::graphite::ImageProvider {
+public:
+    ~TestingImageProvider() override {}
+
+    sk_sp<SkImage> findOrCreate(skgpu::graphite::Recorder* recorder,
+                                const SkImage* image,
+                                SkImage::RequiredImageProperties requiredProps) override {
+        if (requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kNo) {
+            // If no mipmaps are required, check to see if we have a mipmapped version anyway -
+            // since it can be used in that case.
+            // TODO: we could get fancy and, if ever a mipmapped key eclipsed a non-mipmapped
+            // key, we could remove the hidden non-mipmapped key/image from the cache.
+            uint64_t mipMappedKey = ((uint64_t)image->uniqueID() << 32) | 0x1;
+            auto result = fCache.find(mipMappedKey);
+            if (result != fCache.end()) {
+                return result->second;
+            }
+        }
+
+        uint64_t key = ((uint64_t)image->uniqueID() << 32) |
+                       (requiredProps.fMipmapped == skgpu::graphite::Mipmapped::kYes ? 0x1 : 0x0);
+
+        auto result = fCache.find(key);
+        if (result != fCache.end()) {
+            return result->second;
+        }
+
+        sk_sp<SkImage> newImage = image->makeTextureImage(recorder, requiredProps);
+        if (!newImage) {
+            return nullptr;
+        }
+
+        auto [iter, success] = fCache.insert({ key, newImage });
+        SkASSERT(success);
+
+        return iter->second;
+    }
+
+private:
+    std::unordered_map<uint64_t, sk_sp<SkImage>> fCache;
+};
+
+skgpu::graphite::RecorderOptions CreateTestingRecorderOptions() {
+    skgpu::graphite::RecorderOptions options;
+
+    options.fImageProvider.reset(new TestingImageProvider);
+
+    return options;
+}
+
+#endif // SK_GRAPHITE_ENABLED
 
 }  // namespace ToolUtils

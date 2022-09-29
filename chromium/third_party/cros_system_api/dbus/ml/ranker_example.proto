@@ -11,6 +11,7 @@ syntax = "proto2";
 option optimize_for = LITE_RUNTIME;
 
 package assist_ranker;
+option go_package = "chromiumos/system_api/ml_proto";
 
 message StringList {
   repeated bytes string_value = 1;

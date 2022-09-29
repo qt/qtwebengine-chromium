@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import type {Target} from './Target.js';
-import {Capability} from './Target.js';
+import {Capability, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 
 export class SecurityOriginManager extends SDKModel<EventTypes> {
@@ -81,5 +80,5 @@ export type EventTypes = {
   [Events.MainSecurityOriginChanged]: MainSecurityOriginChangedEvent,
 };
 
-// TODO(jarhar): this is the only usage of Capability.None. Do something about it!
+// TODO(jarhar): this is the one of the two usages of Capability.None. Do something about it!
 SDKModel.register(SecurityOriginManager, {capabilities: Capability.None, autostart: false});

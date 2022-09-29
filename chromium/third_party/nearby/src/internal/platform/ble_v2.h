@@ -57,7 +57,7 @@ class BleV2Socket final {
   // the BleSocket object is destroyed.
   OutputStream& GetOutputStream() { return impl_->GetOutputStream(); }
 
-  // Sets the close notifier by cient side.
+  // Sets the close notifier by client side.
   void SetCloseNotifier(std::function<void()> notifier) {
     close_notifier_ = std::move(notifier);
   }
@@ -168,7 +168,7 @@ class GattServer final {
     return impl_->UpdateCharacteristic(characteristic, value);
   }
 
-  void Stop() { return impl_->Stop(); }
+  void Stop() { if (impl_) return impl_->Stop(); }
 
   // Returns true if a gatt_server is usable. If this method returns false,
   // it is not safe to call any other method.
@@ -192,8 +192,11 @@ class GattClient final {
       std::unique_ptr<api::ble_v2::GattClient> client_gatt_connection)
       : impl_(std::move(client_gatt_connection)) {}
 
-  bool DiscoverService(const Uuid& service_uuid) {
-    return impl_->DiscoverService(service_uuid);
+  bool DiscoverServiceAndCharacteristics(
+      const Uuid& service_uuid,
+      const std::vector<Uuid>& characteristic_uuids) {
+    return impl_->DiscoverServiceAndCharacteristics(service_uuid,
+                                                    characteristic_uuids);
   }
 
   // NOLINTNEXTLINE(google3-legacy-absl-backports)

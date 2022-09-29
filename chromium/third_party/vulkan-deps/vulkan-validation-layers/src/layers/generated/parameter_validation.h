@@ -2277,6 +2277,11 @@ bool PreCallValidateGetPrivateDataEXT(
     uint64_t                                    objectHandle,
     VkPrivateDataSlot                           privateDataSlot,
     uint64_t*                                   pData) const override;
+#ifdef VK_USE_PLATFORM_METAL_EXT
+bool PreCallValidateExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) const override;
+#endif
 bool PreCallValidateCmdSetFragmentShadingRateEnumNV(
     VkCommandBuffer                             commandBuffer,
     VkFragmentShadingRateNV                     shadingRate,
@@ -2448,6 +2453,23 @@ bool PreCallValidateGetDescriptorSetHostMappingVALVE(
     VkDevice                                    device,
     VkDescriptorSet                             descriptorSet,
     void**                                      ppData) const override;
+bool PreCallValidateGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) const override;
+bool PreCallValidateGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) const override;
+bool PreCallValidateGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties) const override;
+bool PreCallValidateGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties) const override;
 bool PreCallValidateCreateAccelerationStructureKHR(
     VkDevice                                    device,
     const VkAccelerationStructureCreateInfoKHR* pCreateInfo,

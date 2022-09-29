@@ -10,14 +10,13 @@
 
 void* xnn_get_pointer_to_write_weights(
   xnn_operator_t op,
-  xnn_caches_t caches,
   size_t aligned_weights_size,
   int padding_byte)
 {
   assert(aligned_weights_size % XNN_ALLOCATION_ALIGNMENT == 0);
   void* weights_ptr = NULL;
-  if (use_weights_cache(caches)) {
-    weights_ptr = xnn_reserve_space_in_weights_cache(caches->weights_cache, aligned_weights_size);
+  if (use_weights_cache(op)) {
+    weights_ptr = xnn_reserve_space_in_weights_cache(op->weights_cache, aligned_weights_size);
     if (weights_ptr == NULL) {
       return NULL;
     }
@@ -30,6 +29,40 @@ void* xnn_get_pointer_to_write_weights(
   }
   memset(weights_ptr, padding_byte, aligned_weights_size);
   return weights_ptr;
+}
+
+size_t xnn_compute_convolution_output_dimension(
+  size_t padded_input_dimension,
+  size_t kernel_dimension,
+  size_t dilation_dimension,
+  size_t subsampling_dimension)
+{
+  const size_t effective_kernel_dimension = (kernel_dimension - 1) * dilation_dimension + 1;
+  return doz(padded_input_dimension, effective_kernel_dimension) / subsampling_dimension + 1;
+}
+
+size_t xnn_compute_deconvolution_output_dimension(
+  size_t input_dimension,
+  size_t output_padding_dimension,
+  size_t adjustment_dimension,
+  size_t kernel_dimension,
+  size_t dilation_dimension,
+  size_t stride_dimension)
+{
+  const size_t effective_kernel_dimension = (kernel_dimension - 1) * dilation_dimension + 1;
+  return doz(
+    stride_dimension * (input_dimension - 1) + adjustment_dimension + effective_kernel_dimension,
+    output_padding_dimension);
+}
+
+size_t xnn_compute_unpooling_output_dimension(
+    size_t input_dimension,
+    size_t input_padding_dimension,
+    size_t kernel_dimension)
+{
+  return xnn_compute_deconvolution_output_dimension(
+      input_dimension, input_padding_dimension, /*adjustment_dimension=*/0,
+      kernel_dimension, /*dilation_dimension=*/1, /*stride_dimension=*/kernel_dimension);
 }
 
 // Calculate how much work a microkernel does.

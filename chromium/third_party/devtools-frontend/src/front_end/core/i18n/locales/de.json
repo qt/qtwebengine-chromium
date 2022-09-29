@@ -380,6 +380,9 @@
   "core/sdk/DebuggerModel.ts | block": {
     "message": "Block"
   },
+  "core/sdk/DebuggerModel.ts | catchBlock": {
+    "message": "Catch-Block"
+  },
   "core/sdk/DebuggerModel.ts | closure": {
     "message": "Abschluss"
   },
@@ -1005,7 +1008,7 @@
     "message": "Rendering anzeigen"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | toggleCssPrefersColorSchemeMedia": {
-    "message": "Toggle forces CSS prefers-color-scheme color"
+    "message": "CSS-Medienfunktion „prefers-color-scheme“ wechseln"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | visionDeficiency": {
     "message": "Sehschwäche"
@@ -1238,6 +1241,9 @@
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Unbekannter Fehler beim Laden der Datei"
   },
+  "models/bindings/DebuggerLanguagePlugins.ts | debugSymbolsIncomplete": {
+    "message": "Die Informationen zur Fehlerbehebung für die Funktion „{PH1}“ sind unvollständig"
+  },
   "models/bindings/DebuggerLanguagePlugins.ts | errorInDebuggerLanguagePlugin": {
     "message": "Fehler im Debugger für das Sprachen-Plug-in: {PH1}"
   },
@@ -1245,7 +1251,7 @@
     "message": "[{PH1}] Fehler beim Laden der Debug-Symbole für {PH2} ({PH3})"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | failedToLoadDebugSymbolsForFunction": {
-    "message": "Fehlerbehebungssymbole für Funktion „{PH1}“ fehlen"
+    "message": "Keine Informationen zur Fehlerbehebung für die Funktion „{PH1}“"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadedDebugSymbolsForButDidnt": {
     "message": "[{PH1}] Debug-Symbole für {PH2} geladen, aber keine Quelldateien gefunden"
@@ -1258,9 +1264,6 @@
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadingDebugSymbolsForVia": {
     "message": "[{PH1}] Fehlerbehebungssymbole für {PH2} werden über {PH3} geladen..."
-  },
-  "models/bindings/DebuggerLanguagePlugins.ts | symbolFileNotFound": {
-    "message": "Symboldatei „{PH1}“ wurde nicht gefunden"
   },
   "models/bindings/ResourceScriptMapping.ts | liveEditCompileFailed": {
     "message": "LiveEdit-Kompilierung fehlgeschlagen: {PH1}"
@@ -1356,151 +1359,142 @@
     "message": "Same-Site und Same-Origin"
   },
   "models/issues_manager/DeprecationIssue.ts | authorizationCoveredByWildcard": {
-    "message": "Authorization will not be covered by the wildcard symbol (*) in CORS Access-Control-Allow-Headers handling."
+    "message": "Die Autorisierung wird vom Platzhaltersymbol (*) bei der Access-Control-Allow-Headers-Verarbeitung durch CORS nicht abgedeckt."
   },
   "models/issues_manager/DeprecationIssue.ts | canRequestURLHTTPContainingNewline": {
-    "message": "Resource requests whose URLs contained both removed whitespace \\(n|r|t) characters and less-than characters (<) are blocked. Please remove newlines and encode less-than characters from places like element attribute values in order to load these resources."
+    "message": "Ressourcenanforderungen, deren URLs sowohl entfernte Leerzeichen (\\(n|r|t)) als auch Kleiner-als-Zeichen (<) enthielten, wurden blockiert. Bitte entferne neue Zeilen und codiere Kleiner-als-Zeichen an Stellen wie in Elementattributwerten, um diese Ressourcen zu laden."
   },
   "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesConnectionInfo": {
-    "message": "chrome.loadTimes() is deprecated, instead use standardized API: Navigation Timing 2."
+    "message": "chrome.loadTimes() wurde verworfen. Bitte verwende stattdessen die standardisierte API: Navigation Timing 2."
   },
   "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesFirstPaintAfterLoadTime": {
-    "message": "chrome.loadTimes() is deprecated, instead use standardized API: Paint Timing."
+    "message": "chrome.loadTimes() wurde verworfen. Bitte verwende stattdessen die standardisierte API: Paint Timing."
   },
   "models/issues_manager/DeprecationIssue.ts | chromeLoadTimesWasAlternateProtocolAvailable": {
-    "message": "chrome.loadTimes() is deprecated, instead use standardized API: nextHopProtocol in Navigation Timing 2."
+    "message": "chrome.loadTimes() wurde verworfen. Bitte verwende stattdessen die standardisierte API: nextHopProtocol in Navigation Timing 2."
   },
   "models/issues_manager/DeprecationIssue.ts | cookieWithTruncatingChar": {
-    "message": "Cookies containing a \\(0|r|n) character will be rejected instead of truncated."
+    "message": "Cookies, die ein \\(0|r|n)-Zeichen enthalten, werden abgelehnt und nicht abgeschnitten."
   },
   "models/issues_manager/DeprecationIssue.ts | crossOriginAccessBasedOnDocumentDomain": {
-    "message": "Relaxing the same-origin policy by setting document.domain is deprecated, and will be disabled by default. This deprecation warning is for a cross-origin access that was enabled by setting document.domain."
+    "message": "Das Abschwächen der Richtlinie für denselben Ursprung durch das Festlegen von document.domain wurde verworfen und wird standardmäßig deaktiviert. Diese Warnung zum Status als verworfen gilt für einen ursprungsübergreifenden Zugriff, der durch das Festlegen von document.domain aktiviert wurde."
   },
   "models/issues_manager/DeprecationIssue.ts | crossOriginWindowApi": {
-    "message": "Triggering {PH1} from cross origin iframes has been deprecated and will be removed in the future."
+    "message": "Das Auslösen von {PH1} über ursprungsübergreifende iFrames wurde verworfen und wird in Zukunft entfernt."
   },
   "models/issues_manager/DeprecationIssue.ts | cssSelectorInternalMediaControlsOverlayCastButton": {
-    "message": "The disableRemotePlayback attribute should be used in order to disable the default Cast integration instead of using -internal-media-controls-overlay-cast-button selector."
-  },
-  "models/issues_manager/DeprecationIssue.ts | customCursorIntersectsViewport": {
-    "message": "Custom cursors with size greater than 32x32 DIP intersecting native UI is deprecated and will be removed."
+    "message": "Zum Deaktivieren der standardmäßigen Cast-Integration sollte statt der -internal-media-controls-overlay-cast-button-Auswahl das Attribut disableRemotePlayback verwendet werden."
   },
   "models/issues_manager/DeprecationIssue.ts | deprecatedWithReplacement": {
-    "message": "{PH1} is deprecated. Please use {PH2} instead."
+    "message": "{PH1} wurde verworfen. Bitte verwende stattdessen die Richtlinie {PH2}."
   },
   "models/issues_manager/DeprecationIssue.ts | deprecationExample": {
     "message": "Dies ist ein Beispiel für eine übersetzte Meldung zu einem Problem aufgrund einer eingestellten Funktion."
   },
   "models/issues_manager/DeprecationIssue.ts | documentDomainSettingWithoutOriginAgentClusterHeader": {
-    "message": "Relaxing the same-origin policy by setting document.domain is deprecated, and will be disabled by default. To continue using this feature, please opt-out of origin-keyed agent clusters by sending an Origin-Agent-Cluster: ?0 header along with the HTTP response for the document and frames. See https://developer.chrome.com/blog/immutable-document-domain/ for more details."
+    "message": "Das Abschwächen der Richtlinie für denselben Ursprung durch das Festlegen von document.domain wurde verworfen und wird standardmäßig deaktiviert. Wenn du diese Funktion weiter verwenden möchtest, deaktiviere das an Ursprünge gebundene Agent-Clustering, indem du einen Origin-Agent-Cluster: ?0-Header zusammen mit der HTTP-Antwort für das Dokument und Frames sendest. Weitere Informationen findest du unter https://developer.chrome.com/blog/immutable-document-domain/."
   },
   "models/issues_manager/DeprecationIssue.ts | eventPath": {
-    "message": "Event.path is deprecated and will be removed. Please use Event.composedPath() instead."
+    "message": "Event.path wurde verworfen und wird entfernt. Bitte verwende stattdessen Event.composedPath()."
   },
   "models/issues_manager/DeprecationIssue.ts | feature": {
     "message": "Weitere Details findest du auf der Funktionsstatus-Seite."
   },
   "models/issues_manager/DeprecationIssue.ts | geolocationInsecureOrigin": {
-    "message": "getCurrentPosition() and watchPosition() no longer work on insecure origins. To use this feature, you should consider switching your application to a secure origin, such as HTTPS. See https://goo.gle/chrome-insecure-origins for more details."
+    "message": "getCurrentPosition() und watchPosition() funktionieren nicht mehr bei unsicheren Ursprüngen. Damit du diese Funktion nutzen kannst, solltest du deine App auf einen sicheren Ursprung umstellen, z. B. HTTPS. Weitere Informationen findest du unter https://goo.gle/chrome-insecure-origins."
   },
   "models/issues_manager/DeprecationIssue.ts | geolocationInsecureOriginDeprecatedNotRemoved": {
-    "message": "getCurrentPosition() and watchPosition() are deprecated on insecure origins. To use this feature, you should consider switching your application to a secure origin, such as HTTPS. See https://goo.gle/chrome-insecure-origins for more details."
+    "message": "getCurrentPosition() und watchPosition() für unsichere Ursprünge wurden verworfen. Damit du diese Funktion nutzen kannst, solltest du deine App auf einen sicheren Ursprung umstellen, z. B. HTTPS. Weitere Informationen findest du unter https://goo.gle/chrome-insecure-origins."
   },
   "models/issues_manager/DeprecationIssue.ts | getUserMediaInsecureOrigin": {
-    "message": "getUserMedia() no longer works on insecure origins. To use this feature, you should consider switching your application to a secure origin, such as HTTPS. See https://goo.gle/chrome-insecure-origins for more details."
+    "message": "getUserMedia() funktioniert nicht mehr bei unsicheren Ursprüngen. Damit du diese Funktion nutzen kannst, solltest du deine App auf einen sicheren Ursprung umstellen, z. B. HTTPS. Weitere Informationen findest du unter https://goo.gle/chrome-insecure-origins."
   },
   "models/issues_manager/DeprecationIssue.ts | hostCandidateAttributeGetter": {
-    "message": "RTCPeerConnectionIceErrorEvent.hostCandidate is deprecated. Please use RTCPeerConnectionIceErrorEvent.address or RTCPeerConnectionIceErrorEvent.port instead."
+    "message": "RTCPeerConnectionIceErrorEvent.hostCandidate wurde verworfen. Bitte verwende stattdessen RTCPeerConnectionIceErrorEvent.address oder RTCPeerConnectionIceErrorEvent.port."
+  },
+  "models/issues_manager/DeprecationIssue.ts | identityInCanMakePaymentEvent": {
+    "message": "Der Händlerursprung und beliebige Daten aus dem Service-Worker-Ereignis canmakepayment wurden verworfen und werden entfernt: topOrigin, paymentRequestOrigin, methodData, modifiers."
   },
   "models/issues_manager/DeprecationIssue.ts | insecurePrivateNetworkSubresourceRequest": {
-    "message": "The website requested a subresource from a network that it could only access because of its users' privileged network position. These requests expose non-public devices and servers to the internet, increasing the risk of a cross-site request forgery (CSRF) attack, and/or information leakage. To mitigate these risks, Chrome deprecates requests to non-public subresources when initiated from non-secure contexts, and will start blocking them."
+    "message": "Die Website hat eine Unterressource von einem Netzwerk angefordert, auf das sie nur aufgrund der privilegierten Netzwerkposition ihrer Nutzer zugreifen konnte. Durch solche Anforderungen werden nicht öffentliche Geräte und Server im Internet preisgegeben, was das Risiko von CSRF-Angriffen (Cross-Site Request Forgery) und/oder Datenlecks erhöht. Um diesen Risiken entgegenzuwirken, werden in Chrome Anforderungen an nicht öffentliche Unterressourcen verworfen, die über nicht sichere Kontexte initiiert werden, und es wird damit begonnen, diese zu blockieren."
   },
   "models/issues_manager/DeprecationIssue.ts | legacyConstraintGoogIPv6": {
-    "message": "IPv6 is enabled-by-default and the ability to disable it using googIPv6 will soon be removed. Please stop using this legacy constraint."
+    "message": "IPv6 ist standardmäßig aktiviert und die Möglichkeit, das Protokoll mithilfe von googIPv6 zu deaktivieren, wird voraussichtlich in M108 entfernt. Danach wird die API ignoriert. Wir empfehlen dringend, diese alte Einschränkung nicht weiter zu nutzen."
   },
   "models/issues_manager/DeprecationIssue.ts | localCSSFileExtensionRejected": {
-    "message": "CSS cannot be loaded from file: URLs unless they end in a .css file extension."
-  },
-  "models/issues_manager/DeprecationIssue.ts | mediaElementAudioSourceNode": {
-    "message": "Creating a MediaElementAudioSourceNode on an OfflineAudioContext is deprecated and will be removed."
+    "message": "CSS kann nur von file:-URLs geladen werden, wenn sie die Dateiendung .css haben."
   },
   "models/issues_manager/DeprecationIssue.ts | mediaSourceAbortRemove": {
-    "message": "Using SourceBuffer.abort() to abort remove()'s asynchronous range removal is deprecated due to specification change. Support will be removed in the future. You should instead await updateend. abort() is intended to only abort an asynchronous media append or reset parser state."
+    "message": "Der Einsatz von SourceBuffer.abort() zum Abbrechen der asynchronen Bereichsentfernung von remove() wurde aufgrund einer Änderung der Spezifikation verworfen. Die Unterstützung wird in Zukunft eingestellt. Wir empfehlen, stattdessen das Ereignis updateend zu beobachten. abort() ist nur dazu vorgesehen, ein asynchrones Anfügen von Medien abzubrechen oder den Zustand des Parsers zurückzusetzen."
   },
   "models/issues_manager/DeprecationIssue.ts | mediaSourceDurationTruncatingBuffered": {
-    "message": "Setting MediaSource.duration below the highest presentation timestamp of any buffered coded frames is deprecated due to specification change. Support for implicit removal of truncated buffered media will be removed in the future. You should instead perform explicit remove(newDuration, oldDuration) on all sourceBuffers, where newDuration < oldDuration."
+    "message": "Das Festlegen von MediaSource.duration auf einen Wert unter dem höchsten Präsentationszeitstempel beliebiger zwischengespeicherter codierter Frames wurde aufgrund einer Änderung der Spezifikation verworfen. Die Unterstützung für die implizite Entfernung abgeschnittener zwischengespeicherter Medien wird in Zukunft entfernt. Führe stattdessen remove(newDuration, oldDuration) für alle sourceBuffers, für die newDuration < oldDuration gilt, explizit aus."
   },
   "models/issues_manager/DeprecationIssue.ts | milestone": {
     "message": "Diese Änderung wird im Rahmen von Meilenstein {milestone} angewandt."
   },
   "models/issues_manager/DeprecationIssue.ts | noSysexWebMIDIWithoutPermission": {
-    "message": "Web MIDI will ask a permission to use even if the sysex is not specified in the MIDIOptions."
+    "message": "Web MIDI fordert eine Berechtigung zur Nutzung an, auch dann, wenn die Systemexklusivität (SysEx) nicht in MIDIOptions angegeben ist."
   },
   "models/issues_manager/DeprecationIssue.ts | notificationInsecureOrigin": {
-    "message": "The Notification API may no longer be used from insecure origins. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gle/chrome-insecure-origins for more details."
+    "message": "Die Notification API darf nicht mehr über unsichere Ursprünge verwendet werden. Wir empfehlen dir, deine App auf einen sicheren Ursprung umzustellen, z. B. HTTPS. Weitere Informationen findest du unter https://goo.gle/chrome-insecure-origins."
   },
   "models/issues_manager/DeprecationIssue.ts | notificationPermissionRequestedIframe": {
-    "message": "Permission for the Notification API may no longer be requested from a cross-origin iframe. You should consider requesting permission from a top-level frame or opening a new window instead."
+    "message": "Die Berechtigung für die Notification API darf nicht mehr über einen ursprungsübergreifenden iFrame angefordert werden. Stattdessen sollte sie über einen Frame auf höchster Ebene angefordert oder ein neues Fenster geöffnet werden."
   },
   "models/issues_manager/DeprecationIssue.ts | obsoleteWebRtcCipherSuite": {
-    "message": "Your partner is negotiating an obsolete (D)TLS version. Please check with your partner to have this fixed."
+    "message": "Dein Partner handelt eine veraltete (D)TLS-Version aus. Bitte wende dich an den Partner, um dieses Problem zu beheben."
   },
-  "models/issues_manager/DeprecationIssue.ts | paymentRequestBasicCard": {
-    "message": "The basic-card payment method is deprecated and will be removed."
-  },
-  "models/issues_manager/DeprecationIssue.ts | paymentRequestShowWithoutGesture": {
-    "message": "Calling PaymentRequest.show() without user activation is deprecated and will be removed."
+  "models/issues_manager/DeprecationIssue.ts | openWebDatabaseInsecureContext": {
+    "message": "WebSQL in nicht sicheren Kontexten wurde verworfen und wird in M107 entfernt. Bitte verwende Web Storage oder IndexedDB."
   },
   "models/issues_manager/DeprecationIssue.ts | pictureSourceSrc": {
-    "message": "<source src> with a <picture> parent is invalid and therefore ignored. Please use <source srcset> instead."
+    "message": "<source src> mit einem übergeordneten <picture>-Element ist ungültig und wird deshalb ignoriert. Bitte verwende stattdessen <source srcset>."
   },
   "models/issues_manager/DeprecationIssue.ts | prefixedStorageInfo": {
-    "message": "window.webkitStorageInfo is deprecated. Please use navigator.webkitTemporaryStorage or navigator.webkitPersistentStorage instead."
+    "message": "window.webkitStorageInfo wurde verworfen. Verwende stattdessen die standardisierte Methode navigator.storage."
   },
   "models/issues_manager/DeprecationIssue.ts | requestedSubresourceWithEmbeddedCredentials": {
-    "message": "Subresource requests whose URLs contain embedded credentials (e.g. https://user:pass@host/) are blocked."
+    "message": "Anforderungen von Unterressourcen, deren URLs eingebettete Anmeldedaten enthalten (z. B. https://user:pass@host/), werden blockiert."
   },
   "models/issues_manager/DeprecationIssue.ts | rtcConstraintEnableDtlsSrtpFalse": {
-    "message": "The constraint DtlsSrtpKeyAgreement is removed. You have specified a false value for this constraint, which is interpreted as an attempt to use the removed SDES key negotiation method. This functionality is removed; use a service that supports DTLS key negotiation instead."
+    "message": "Die Einschränkung DtlsSrtpKeyAgreement wird entfernt. Du hast den Wert false für diese Einschränkung angegeben, was als Versuch interpretiert wird, die entfernte SDES key negotiation-Methode zu verwenden. Diese Funktion wird entfernt. Verwende stattdessen einen Dienst, der DTLS key negotiation unterstützt."
   },
   "models/issues_manager/DeprecationIssue.ts | rtcConstraintEnableDtlsSrtpTrue": {
-    "message": "The constraint DtlsSrtpKeyAgreement is removed. You have specified a true value for this constraint, which had no effect, but you can remove this constraint for tidiness."
+    "message": "Die Einschränkung DtlsSrtpKeyAgreement wird entfernt. Du hast den Wert true für diese Einschränkung angegeben, was keine Auswirkungen hatte, aber du kannst diese Einschränkung für mehr Übersichtlichkeit entfernen."
   },
   "models/issues_manager/DeprecationIssue.ts | rtcPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics": {
-    "message": "Complex Plan B SDP detected. This dialect of the Session Description Protocol is no longer supported. Please use Unified Plan SDP instead."
+    "message": "Complex Plan B SDP erkannt. Dieser Dialekt des Session Description Protocol wird nicht mehr unterstützt. Bitte verwende stattdessen das Unified Plan SDP."
   },
   "models/issues_manager/DeprecationIssue.ts | rtcPeerConnectionSdpSemanticsPlanB": {
-    "message": "Plan B SDP semantics, which is used when constructing an RTCPeerConnection with {sdpSemantics:'plan-b'}, is a legacy non-standard version of the Session Description Protocol that has been permanently deleted from the Web Platform. It is still available when building with IS_FUCHSIA, but we intend to delete it as soon as possible. Stop depending on it. See https://crbug.com/1302249 for status."
+    "message": "Plan B SDP semantics, die beim Konstruieren einer RTCPeerConnection mit {sdpSemantics:'plan-b'} verwendet wird, ist eine alte, nicht standardisierte Version des Session Description Protocol, die dauerhaft von der Webplattform gelöscht wurde. Für die Entwicklung mit IS_FUCHSIA ist sie weiterhin verfügbar, wir haben jedoch vor, sie so schnell wie möglich zu löschen. Aus diesem Grund solltest du sie nicht mehr einsetzen. Weitere Informationen zum Status findest du unter https://crbug.com/1302249."
   },
   "models/issues_manager/DeprecationIssue.ts | rtcpMuxPolicyNegotiate": {
-    "message": "The rtcpMuxPolicy option is deprecated and will be removed."
-  },
-  "models/issues_manager/DeprecationIssue.ts | rtpDataChannel": {
-    "message": "RTP data channels are no longer supported. The RtpDataChannels constraint is currently ignored, and may cause an error at a later date."
+    "message": "Die Option rtcpMuxPolicy wurde verworfen und wird entfernt."
   },
   "models/issues_manager/DeprecationIssue.ts | sharedArrayBufferConstructedWithoutIsolation": {
-    "message": "SharedArrayBuffer will require cross-origin isolation. See https://developer.chrome.com/blog/enabling-shared-array-buffer/ for more details."
+    "message": "SharedArrayBuffer setzt ursprungsübergreifende Isolierung voraus. Weitere Informationen findest du unter https://developer.chrome.com/blog/enabling-shared-array-buffer/."
   },
   "models/issues_manager/DeprecationIssue.ts | textToSpeech_DisallowedByAutoplay": {
-    "message": "speechSynthesis.speak() without user activation is deprecated and will be removed."
+    "message": "speechSynthesis.speak() ohne Nutzeraktivierung wurde verworfen und wird entfernt."
   },
   "models/issues_manager/DeprecationIssue.ts | title": {
     "message": "Eingestellte Funktion verwendet"
   },
   "models/issues_manager/DeprecationIssue.ts | v8SharedArrayBufferConstructedInExtensionWithoutIsolation": {
-    "message": "Extensions should opt into cross-origin isolation to continue using SharedArrayBuffer. See https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/."
+    "message": "Erweiterungen müssen die ursprungsübergreifende Isolierung implementieren, um SharedArrayBuffer weiter zu nutzen. Weitere Informationen findest du unter https://developer.chrome.com/docs/extensions/mv3/cross-origin-isolation/."
   },
   "models/issues_manager/DeprecationIssue.ts | vendorSpecificApi": {
-    "message": "{PH1} is vendor-specific. Please use the standard {PH2} instead."
+    "message": "{PH1} ist anbieterspezifisch. Bitte verwende stattdessen den standardmäßigen {PH2}."
   },
   "models/issues_manager/DeprecationIssue.ts | xhrJSONEncodingDetection": {
-    "message": "UTF-16 is not supported by response json in XMLHttpRequest"
+    "message": "UTF-16 wird von Antwort-JSON in einer XMLHttpRequest nicht unterstützt"
   },
   "models/issues_manager/DeprecationIssue.ts | xmlHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
-    "message": "Synchronous XMLHttpRequest on the main thread is deprecated because of its detrimental effects to the end user’s experience. For more help, check https://xhr.spec.whatwg.org/."
+    "message": "Die synchrone XMLHttpRequest im Haupt-Thread wurde verworfen, da sie negative Auswirkungen auf die Nutzung beim Endnutzer hat. Weitere Informationen findest du unter https://xhr.spec.whatwg.org/."
   },
   "models/issues_manager/DeprecationIssue.ts | xrSupportsSession": {
-    "message": "supportsSession() is deprecated. Please use isSessionSupported() and check the resolved boolean value instead."
+    "message": "supportsSession() wurde verworfen. Bitte verwende stattdessen isSessionSupported() und prüfe den aufgelösten booleschen Wert."
   },
   "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
     "message": "Federated Credential Management API"
@@ -1685,17 +1679,41 @@
   "models/timeline_model/TimelineJSProfile.ts | threadS": {
     "message": "Thread {PH1}"
   },
+  "models/timeline_model/TimelineModel.ts | bidderWorklet": {
+    "message": "Bieter-Worklet"
+  },
+  "models/timeline_model/TimelineModel.ts | bidderWorkletS": {
+    "message": "Bieter-Worklet — {PH1}"
+  },
   "models/timeline_model/TimelineModel.ts | dedicatedWorker": {
     "message": "Dediziert Worker"
   },
+  "models/timeline_model/TimelineModel.ts | sellerWorklet": {
+    "message": "Verkäufer-Worklet"
+  },
+  "models/timeline_model/TimelineModel.ts | sellerWorkletS": {
+    "message": "Verkäufer-Worklet – {PH1}"
+  },
   "models/timeline_model/TimelineModel.ts | threadS": {
     "message": "Thread {PH1}"
+  },
+  "models/timeline_model/TimelineModel.ts | unknownWorklet": {
+    "message": "Auktions-Worklet"
+  },
+  "models/timeline_model/TimelineModel.ts | unknownWorkletS": {
+    "message": "Auktions-Worklet – {PH1}"
   },
   "models/timeline_model/TimelineModel.ts | workerS": {
     "message": "Worker — {PH1}"
   },
   "models/timeline_model/TimelineModel.ts | workerSS": {
     "message": "Worker: {PH1} – {PH2}"
+  },
+  "models/timeline_model/TimelineModel.ts | workletService": {
+    "message": "Auktions-Worklet-Dienst"
+  },
+  "models/timeline_model/TimelineModel.ts | workletServiceS": {
+    "message": "Auktions-Worklet-Dienst – {PH1}"
   },
   "models/workspace/UISourceCode.ts | index": {
     "message": "(Index)"
@@ -2280,7 +2298,7 @@
     "message": "Name"
   },
   "panels/application/AppManifestView.ts | needHelpReadOurS": {
-    "message": "Brauchst du Hilfe? Lies {PH1}."
+    "message": "Brauchst du Hilfe? Weitere Informationen findest du hier: {PH1}."
   },
   "panels/application/AppManifestView.ts | newNoteUrl": {
     "message": "URL für neue Notiz"
@@ -2332,6 +2350,9 @@
   },
   "panels/application/AppManifestView.ts | primaryManifestIconFromS": {
     "message": "Primäres Manifestsymbol von {PH1}"
+  },
+  "panels/application/AppManifestView.ts | protocolHandlers": {
+    "message": "Protokoll-Handler"
   },
   "panels/application/AppManifestView.ts | sSDoesNotSpecifyItsSizeInThe": {
     "message": "{PH1} {PH2} gibt seine Größe im Manifest nicht an"
@@ -2417,6 +2438,9 @@
   "panels/application/ApplicationPanelSidebar.ts | backgroundServices": {
     "message": "Hintergrunddienste"
   },
+  "panels/application/ApplicationPanelSidebar.ts | beforeInvokeAlert": {
+    "message": "{PH1}: Aufrufen, um zu diesem Abschnitt im Manifest zu scrollen"
+  },
   "panels/application/ApplicationPanelSidebar.ts | cache": {
     "message": "Cache"
   },
@@ -2449,6 +2473,12 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | manifest": {
     "message": "Manifest"
+  },
+  "panels/application/ApplicationPanelSidebar.ts | onInvokeAlert": {
+    "message": "Zu {PH1} gescrollt"
+  },
+  "panels/application/ApplicationPanelSidebar.ts | onInvokeManifestAlert": {
+    "message": "Manifest: Aufrufen, um im Manifest ganz nach oben zu scrollen"
   },
   "panels/application/ApplicationPanelSidebar.ts | openedWindows": {
     "message": "Geöffnete Fenster"
@@ -2587,6 +2617,9 @@
   },
   "panels/application/DOMStorageItemsView.ts | domStorageItems": {
     "message": "DOM-Speicherelemente"
+  },
+  "panels/application/DOMStorageItemsView.ts | domStorageItemsCleared": {
+    "message": "DOM-Speicherelemente gelöscht"
   },
   "panels/application/DOMStorageItemsView.ts | domStorageNumberEntries": {
     "message": "Anzahl der in der Tabelle angezeigten Einträge: {PH1}"
@@ -3422,6 +3455,9 @@
   "panels/application/components/BackForwardCacheView.ts | mainFrame": {
     "message": "Hauptframe"
   },
+  "panels/application/components/BackForwardCacheView.ts | neverUseUnload": {
+    "message": "Weitere Informationen: Nie den Unload-Handler verwenden"
+  },
   "panels/application/components/BackForwardCacheView.ts | normalNavigation": {
     "message": "Nicht aus dem Back-Forward-Cache geladen: Um die Seite automatisch zu verlassen und zu ihr zurückzukehren, verwende die Schaltflächen „Zurück“ und „Weiter“ in Chrome oder die Testschaltfläche unten."
   },
@@ -3509,6 +3545,9 @@
   "panels/application/components/FrameDetailsView.ts | creationStackTraceExplanation": {
     "message": "Dieser Frame wurde programmatisch erstellt. stack trace zeigt, wo er im Code erstellt wurde."
   },
+  "panels/application/components/FrameDetailsView.ts | creatorAdScript": {
+    "message": "Skript für Anzeigenerstellung"
+  },
   "panels/application/components/FrameDetailsView.ts | crossoriginIsolated": {
     "message": "Ursprungsübergreifend isoliert"
   },
@@ -3541,6 +3580,12 @@
   },
   "panels/application/components/FrameDetailsView.ts | parentIsAdExplanation": {
     "message": "Dieser Frame wird als Anzeigen-Frame betrachtet, da der übergeordnete Frame ein Anzeigen-Frame ist."
+  },
+  "panels/application/components/FrameDetailsView.ts | prerendering": {
+    "message": "Pre-Rendering"
+  },
+  "panels/application/components/FrameDetailsView.ts | prerenderingStatus": {
+    "message": "Pre-Rendering-Status"
   },
   "panels/application/components/FrameDetailsView.ts | refresh": {
     "message": "Aktualisieren"
@@ -3674,6 +3719,129 @@
   "panels/application/components/PermissionsPolicySection.ts | showDetails": {
     "message": "Mehr anzeigen"
   },
+  "panels/application/components/Prerender2.ts | Activated": {
+    "message": "Aktiviert."
+  },
+  "panels/application/components/Prerender2.ts | AudioOutputDeviceRequested": {
+    "message": "Das Pre-Rendering hat die AudioContext API noch nicht unterstützt."
+  },
+  "panels/application/components/Prerender2.ts | BlockedByClient": {
+    "message": "Die Ressourcenauslastung wird vom Client blockiert."
+  },
+  "panels/application/components/Prerender2.ts | CancelAllHostsForTesting": {
+    "message": "CancelAllHostsForTesting."
+  },
+  "panels/application/components/Prerender2.ts | ClientCertRequested": {
+    "message": "Von der Seite wird ein Clientzertifikat angefordert, was für eine verborgene Seite wie die Pre-Rendering-Seite nicht vorgesehen ist."
+  },
+  "panels/application/components/Prerender2.ts | CrossOriginNavigation": {
+    "message": "Nach dem Laden wurde über die vorab gerenderte Seite eine ursprungsübergreifende URL aufgerufen. Derzeit ist das Pre-Rendering von ursprungsübergreifenden Seiten nicht zulässig."
+  },
+  "panels/application/components/Prerender2.ts | CrossOriginRedirect": {
+    "message": "Es wurde versucht, eine URL vorab zu rendern, die zu einer ursprungsübergreifenden URL weiterleitet. Derzeit ist das Pre-Rendering von ursprungsübergreifenden Seiten nicht zulässig."
+  },
+  "panels/application/components/Prerender2.ts | Destroyed": {
+    "message": "Eine vorab gerenderte Seite wurde aus unbekannten Gründen gelöscht."
+  },
+  "panels/application/components/Prerender2.ts | DidFailLoad": {
+    "message": "Beim Pre-Rendering ist der Fehler DidFailLoadWithError aufgetreten."
+  },
+  "panels/application/components/Prerender2.ts | Download": {
+    "message": "Ein Download ist beim Pre-Rendering nicht möglich."
+  },
+  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndCrossOriginRedirected": {
+    "message": "Das Chrome-intern ausgelöste Pre-Rendering (z. B. Omnibox-Pre-Rendering) wird abgebrochen, da die Navigation auf eine andere ursprungsübergreifende Seite weitergeleitet wird."
+  },
+  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndDestroyed": {
+    "message": "Das Chrome-intern ausgelöste Pre-Rendering (z. B. Omnibox-Pre-Rendering) wird im Destruktor gelöscht."
+  },
+  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndSameOriginRedirected": {
+    "message": "Das Chrome-intern ausgelöste Pre-Rendering (z. B. Omnibox-Pre-Rendering) wird abgebrochen, da die Navigation auf eine andere Seite mit demselben Ursprung weitergeleitet wird."
+  },
+  "panels/application/components/Prerender2.ts | InProgressNavigation": {
+    "message": "InProgressNavigation."
+  },
+  "panels/application/components/Prerender2.ts | InvalidSchemeNavigation": {
+    "message": "Für das Pre-Rendering ist nur HTTP(S)-Navigation zulässig."
+  },
+  "panels/application/components/Prerender2.ts | InvalidSchemeRedirect": {
+    "message": "Es wurde versucht, eine URL vorab zu rendern, die zu einer Nicht-HTTP(S)-URL weiterleitet. Nur HTTP(S)-Seiten können vorab gerendert werden."
+  },
+  "panels/application/components/Prerender2.ts | LoginAuthRequested": {
+    "message": "Das Pre-Rendering unterstützt keine Authentifizierungsanfragen über die UI."
+  },
+  "panels/application/components/Prerender2.ts | LowEndDevice": {
+    "message": "Das Pre-Rendering wird auf Geräten mit wenig Arbeitsspeicher nicht unterstützt."
+  },
+  "panels/application/components/Prerender2.ts | MainFrameNavigation": {
+    "message": "Navigationsaktionen nach der ersten Pre-Rendering-Navigation sind nicht zulässig"
+  },
+  "panels/application/components/Prerender2.ts | MaxNumOfRunningPrerendersExceeded": {
+    "message": "Maximale Anzahl an Pre-Renderings überschritten."
+  },
+  "panels/application/components/Prerender2.ts | MixedContent": {
+    "message": "Das Pre-Rendering wird durch einen Frame mit gemischten Inhalten abgebrochen."
+  },
+  "panels/application/components/Prerender2.ts | MojoBinderPolicy": {
+    "message": "Eine unzulässige API wurde von der vorab gerenderten Seite verwendet"
+  },
+  "panels/application/components/Prerender2.ts | NavigationBadHttpStatus": {
+    "message": "Die anfängliche Pre-Rendering-Navigation war nicht erfolgreich, weil der Server einen von 200, 204 oder 205 abweichenden Statuscode zurückgegeben hat."
+  },
+  "panels/application/components/Prerender2.ts | NavigationNotCommitted": {
+    "message": "Für die Pre-Rendering-Seite erfolgt am Ende kein Commit."
+  },
+  "panels/application/components/Prerender2.ts | NavigationRequestBlockedByCsp": {
+    "message": "Die Navigationsanfrage wird von der CSP blockiert."
+  },
+  "panels/application/components/Prerender2.ts | NavigationRequestNetworkError": {
+    "message": "Beim Pre-Rendering ist ein Netzwerkfehler aufgetreten."
+  },
+  "panels/application/components/Prerender2.ts | RendererProcessCrashed": {
+    "message": "Die vorab gerenderte Seite ist abgestürzt."
+  },
+  "panels/application/components/Prerender2.ts | RendererProcessKilled": {
+    "message": "Der Renderingvorgang für die Pre-Rendering-Seite wurde beendet."
+  },
+  "panels/application/components/Prerender2.ts | SslCertificateError": {
+    "message": "SSL-Zertifikatfehler."
+  },
+  "panels/application/components/Prerender2.ts | Stop": {
+    "message": "Der Tab wird angehalten."
+  },
+  "panels/application/components/Prerender2.ts | TriggerBackgrounded": {
+    "message": "Der Tab wird im Hintergrund ausgeführt"
+  },
+  "panels/application/components/Prerender2.ts | TriggerDestroyed": {
+    "message": "Das Pre-Rendering wird mit dem Auslöser nicht aktiviert und gelöscht."
+  },
+  "panels/application/components/Prerender2.ts | UaChangeRequiresReload": {
+    "message": "Nach UserAgentOverride muss eine Aktualisierung erfolgen."
+  },
+  "panels/application/components/ProtocolHandlersView.ts | dropdownLabel": {
+    "message": "Protokoll-Handler auswählen"
+  },
+  "panels/application/components/ProtocolHandlersView.ts | manifest": {
+    "message": "Manifest"
+  },
+  "panels/application/components/ProtocolHandlersView.ts | needHelpReadOur": {
+    "message": "Brauchst du Hilfe? Weitere Informationen findest du hier: {PH1}."
+  },
+  "panels/application/components/ProtocolHandlersView.ts | protocolDetected": {
+    "message": "In {PH1} wurde eine gültige Protokoll-Handler-Registrierung gefunden. Installiere die App und teste die registrierten Protokolle."
+  },
+  "panels/application/components/ProtocolHandlersView.ts | protocolHandlerRegistrations": {
+    "message": "Registrierung der URL-Protokoll-Handler für PWAs"
+  },
+  "panels/application/components/ProtocolHandlersView.ts | protocolNotDetected": {
+    "message": "Definiere Protokoll-Handler in {PH1}, um deine App als Handler für benutzerdefinierte Protokolle zu registrieren, wenn deine App installiert wird."
+  },
+  "panels/application/components/ProtocolHandlersView.ts | testProtocol": {
+    "message": "Protokoll testen"
+  },
+  "panels/application/components/ProtocolHandlersView.ts | textboxLabel": {
+    "message": "Abfrageparameter oder Endpunkt für Protokoll-Handler"
+  },
   "panels/application/components/ReportsGrid.ts | destination": {
     "message": "Ziel"
   },
@@ -3751,6 +3919,9 @@
   },
   "panels/browser_debugger/DOMBreakpointsSidebarPane.ts | sS": {
     "message": "{PH1}: {PH2}"
+  },
+  "panels/browser_debugger/DOMBreakpointsSidebarPane.ts | sSS": {
+    "message": "{PH1}: {PH2}, {PH3}"
   },
   "panels/browser_debugger/DOMBreakpointsSidebarPane.ts | subtreeModified": {
     "message": "Unterstruktur geändert"
@@ -4559,6 +4730,24 @@
   "panels/developer_resources/developer_resources-meta.ts | showDeveloperResources": {
     "message": "Ressourcen für Entwickler anzeigen"
   },
+  "panels/elements/CSSRuleValidator.ts | deprecatedPropertyHintPrefix": {
+    "message": "Verworfenes Attribut"
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleValidationHintPrefix": {
+    "message": "Inaktive Regel"
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
+    "message": "Ändere die übergeordneten Elemente von {EXISTING_PARENT_ELEMENT_RULE} zu {TARGET_PARENT_ELEMENT_RULE}, um dieses Problem zu beheben."
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleReason": {
+    "message": "Für das übergeordnete Element gilt die Regel {REASON_RULE_CODE}, weshalb die {AFFECTED_RULE_CODE}-Regel dieses Elements keine Auswirkungen hat."
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleFix": {
+    "message": "Damit diese Property funktioniert, muss der Wert von {REASON_RULE_CODE} entfernt oder geändert werden"
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
+    "message": "Für dieses Element gilt die Regel {REASON_RULE_CODE}, weshalb {AFFECTED_RULE_CODE} keine Auswirkungen hat."
+  },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Neue Klasse hinzufügen"
   },
@@ -4713,7 +4902,7 @@
     "message": "Scroll-Snap-Overlay deaktivieren"
   },
   "panels/elements/ElementsTreeElement.ts | duplicateElement": {
-    "message": "Element doppelt vorhanden"
+    "message": "Element duplizieren"
   },
   "panels/elements/ElementsTreeElement.ts | editAsHtml": {
     "message": "Als HTML bearbeiten"
@@ -4732,12 +4921,6 @@
   },
   "panels/elements/ElementsTreeElement.ts | enableScrollSnap": {
     "message": "Scroll-Snap-Overlay aktivieren"
-  },
-  "panels/elements/ElementsTreeElement.ts | enterIsolationMode": {
-    "message": "Isolierungsmodus starten"
-  },
-  "panels/elements/ElementsTreeElement.ts | exitIsolationMode": {
-    "message": "Isolierungsmodus beenden"
   },
   "panels/elements/ElementsTreeElement.ts | expandRecursively": {
     "message": "Wiederkehrend maximieren"
@@ -5000,6 +5183,9 @@
   "panels/elements/StylesSidebarPane.ts | unknownPropertyName": {
     "message": "Unbekannter Property-Name"
   },
+  "panels/elements/TopLayerContainer.ts | topLayer": {
+    "message": "oberste Ebene"
+  },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ignoriert"
   },
@@ -5008,6 +5194,9 @@
   },
   "panels/elements/components/AdornerSettingsPane.ts | settingsTitle": {
     "message": "Kennzeichen anzeigen"
+  },
+  "panels/elements/components/CSSHintDetailsView.ts | learnMore": {
+    "message": "Weitere Informationen"
   },
   "panels/elements/components/ElementsBreadcrumbs.ts | breadcrumbs": {
     "message": "DOM-Baum-Navigationspfad"
@@ -5061,7 +5250,7 @@
     "message": "DOM-Zeilenumbruch deaktivieren"
   },
   "panels/elements/elements-meta.ts | duplicateElement": {
-    "message": "Element doppelt vorhanden"
+    "message": "Element duplizieren"
   },
   "panels/elements/elements-meta.ts | editAsHtml": {
     "message": "Als HTML bearbeiten"
@@ -5514,7 +5703,7 @@
     "message": "Frame"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidHeaderValue": {
-    "message": "Invalid Header Value"
+    "message": "Ungültiger Headerwert"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n,plural, =1{# Verstoß}other{# Verstöße}}"
@@ -5945,6 +6134,9 @@
   "panels/lighthouse/LighthouseController.ts | desktop": {
     "message": "Computer"
   },
+  "panels/lighthouse/LighthouseController.ts | devtoolsThrottling": {
+    "message": "Drosselung über Entwicklertools (erweitert)"
+  },
   "panels/lighthouse/LighthouseController.ts | doesThisPageFollowBestPractices": {
     "message": "Entspricht diese Seite den Best Practices für moderne Webentwicklung?"
   },
@@ -5967,7 +6159,7 @@
     "message": "Kann diese Seite von Nutzern mit Behinderungen oder Einschränkungen verwendet werden?"
   },
   "panels/lighthouse/LighthouseController.ts | javaScriptDisabled": {
-    "message": "JavaScript is disabled. You need to enable JavaScript to audit this page. Open the Command Menu and run the Enable JavaScript command to enable JavaScript."
+    "message": "JavaScript ist deaktiviert. Du musst JavaScript aktivieren, um diese Seite zu prüfen. Öffne dazu das Befehlsmenü und führe den entsprechenden Befehl aus."
   },
   "panels/lighthouse/LighthouseController.ts | legacyNavigation": {
     "message": "Alte Navigation"
@@ -5985,10 +6177,10 @@
     "message": "Mehrere Tabs werden von demselben service worker gesteuert. Schließe andere Tabs derselben Quelle, um diese Seite zu prüfen."
   },
   "panels/lighthouse/LighthouseController.ts | navigation": {
-    "message": "Navigation (Default)"
+    "message": "Navigation (Standard)"
   },
   "panels/lighthouse/LighthouseController.ts | navigationTooltip": {
-    "message": "Navigation mode analyzes a page load, exactly like the original Lighthouse reports."
+    "message": "Mit dem Navigationsmodus wird der Aufbau einer Seite analysiert, genau wie mit den ursprünglichen Lighthouse-Berichten."
   },
   "panels/lighthouse/LighthouseController.ts | performance": {
     "message": "Leistung"
@@ -6009,16 +6201,16 @@
     "message": "SEO"
   },
   "panels/lighthouse/LighthouseController.ts | simulateASlowerPageLoadBasedOn": {
-    "message": "Langsameren Seitenaufbau simulieren, basierend auf Daten eines ursprünglich nicht gedrosselten Aufbaus. Wenn diese Einstellung deaktiviert ist, wird die Seite durch Drosselung verlangsamt."
+    "message": "Bei der simulierten Drosselung wird auf Grundlage der Daten vom ersten nicht gedrosselten Aufbau ein langsamerer Seitenaufbau simuliert. Die Drosselung über die Entwicklertools verlangsamt die Seite."
   },
   "panels/lighthouse/LighthouseController.ts | simulatedThrottling": {
-    "message": "Simulierte Drosselung"
+    "message": "Simulierte Drosselung (Standard)"
   },
   "panels/lighthouse/LighthouseController.ts | snapshot": {
     "message": "Snapshot"
   },
   "panels/lighthouse/LighthouseController.ts | snapshotTooltip": {
-    "message": "Snapshot mode analyzes the page in a particular state, typically after user interactions."
+    "message": "Mit dem Snapshot-Modus werden Seiten in einem bestimmten Zustand analysiert, in der Regel nach Nutzerinteraktionen."
   },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingLoadingPlural": {
     "message": "Gespeicherte Daten haben möglicherweise die Ladeleistungen an diesen Orten beeinflusst: {PH1}. Teste diese Seite in einem Inkognitofenster, um zu verhindern, dass sich diese Ressourcen auf deine Ergebnisse auswirken."
@@ -6026,11 +6218,14 @@
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "Gespeicherte Daten haben möglicherweise die Ladeleistung an diesem Ort beeinflusst: {PH1}. Teste diese Seite in einem Inkognitofenster, um zu verhindern, dass sich die Ressourcen auf deine Ergebnisse auswirken."
   },
+  "panels/lighthouse/LighthouseController.ts | throttlingMethod": {
+    "message": "Drosselungsmethode"
+  },
   "panels/lighthouse/LighthouseController.ts | timespan": {
     "message": "Zeitspanne"
   },
   "panels/lighthouse/LighthouseController.ts | timespanTooltip": {
-    "message": "Timespan mode analyzes an arbitrary period of time, typically containing user interactions."
+    "message": "Mit dem Zeitspannenmodus wird ein beliebiger Zeitraum analysiert, normalerweise einer, der Nutzerinteraktionen enthält."
   },
   "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
     "message": "Seite im Navigationsmodus mithilfe der klassischen Lighthouse-Version analysieren."
@@ -6075,7 +6270,7 @@
     "message": "Berichte"
   },
   "panels/lighthouse/LighthouseStartView.ts | categories": {
-    "message": "Categories"
+    "message": "Kategorien"
   },
   "panels/lighthouse/LighthouseStartView.ts | communityPluginsBeta": {
     "message": "Community-Plug-ins (Beta)"
@@ -6093,22 +6288,22 @@
     "message": "Weitere Informationen"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
-    "message": "Analyze page load"
+    "message": "Seitenaufbau analysieren"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
-    "message": "Analyze page state"
+    "message": "Zustand der Seite analysieren"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | categories": {
-    "message": "Categories"
+    "message": "Kategorien"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | generateLighthouseReport": {
-    "message": "Generate a Lighthouse report"
+    "message": "Lighthouse-Bericht erstellen"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
     "message": "Modus"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | plugins": {
-    "message": "Plugins"
+    "message": "Plug-ins"
   },
   "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
     "message": "Zeitspanne starten"
@@ -6284,6 +6479,21 @@
   "panels/media/PlayerMessagesView.ts | error": {
     "message": "Fehler"
   },
+  "panels/media/PlayerMessagesView.ts | errorCauseLabel": {
+    "message": "Ursache:"
+  },
+  "panels/media/PlayerMessagesView.ts | errorCodeLabel": {
+    "message": "Fehlercode:"
+  },
+  "panels/media/PlayerMessagesView.ts | errorDataLabel": {
+    "message": "Daten:"
+  },
+  "panels/media/PlayerMessagesView.ts | errorGroupLabel": {
+    "message": "Fehlergruppe:"
+  },
+  "panels/media/PlayerMessagesView.ts | errorStackLabel": {
+    "message": "Stacktrace:"
+  },
   "panels/media/PlayerMessagesView.ts | filterLogMessages": {
     "message": "Logeinträge filtern"
   },
@@ -6434,14 +6644,29 @@
   "panels/mobile_throttling/ThrottlingManager.ts | dSlowdown": {
     "message": "Verlangsamen: {PH1} ×"
   },
+  "panels/mobile_throttling/ThrottlingManager.ts | excessConcurrency": {
+    "message": "Das Überschreiten des Standardwerts kann die Systemleistung beeinträchtigen."
+  },
   "panels/mobile_throttling/ThrottlingManager.ts | forceDisconnectedFromNetwork": {
     "message": "Trennung vom Netzwerk erzwingen"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | hardwareConcurrency": {
+    "message": "Hardware-Nebenläufigkeit"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | hardwareConcurrencyIsEnabled": {
+    "message": "Überschreibung der Hardware-Nebenläufigkeit ist aktiviert"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | hardwareConcurrencyValue": {
+    "message": "Wert von navigator.hardwareConcurrency"
   },
   "panels/mobile_throttling/ThrottlingManager.ts | noThrottling": {
     "message": "Keine Drosselung"
   },
   "panels/mobile_throttling/ThrottlingManager.ts | offline": {
     "message": "Offline"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | resetConcurrency": {
+    "message": "Auf Standardwert zurücksetzen"
   },
   "panels/mobile_throttling/ThrottlingManager.ts | sS": {
     "message": "{PH1}: {PH2}"
@@ -6899,6 +7124,9 @@
   "panels/network/NetworkLogView.ts | copyStacktrace": {
     "message": "Stacktrace kopieren"
   },
+  "panels/network/NetworkLogView.ts | createResponseHeaderOverride": {
+    "message": "Überschreibung für Antwortheader erstellen"
+  },
   "panels/network/NetworkLogView.ts | domcontentloadedS": {
     "message": "DOMContentLoaded: {PH1}"
   },
@@ -7230,10 +7458,10 @@
     "message": "Dekodiert:"
   },
   "panels/network/RequestHeadersView.ts | fromDiskCache": {
-    "message": "(vom Datenträgercache)"
+    "message": "(von Datenträgercache)"
   },
   "panels/network/RequestHeadersView.ts | fromMemoryCache": {
-    "message": "(aus Arbeitsspeicher-Cache)"
+    "message": "(von Arbeitsspeicher-Cache)"
   },
   "panels/network/RequestHeadersView.ts | fromPrefetchCache": {
     "message": "(aus dem Prefetch-Cache)"
@@ -7242,7 +7470,7 @@
     "message": "(von service worker)"
   },
   "panels/network/RequestHeadersView.ts | fromSignedexchange": {
-    "message": "(von Signed-Exchange)"
+    "message": "(von Signed Exchange)"
   },
   "panels/network/RequestHeadersView.ts | fromWebBundle": {
     "message": "(von Web Bundle)"
@@ -7257,22 +7485,19 @@
     "message": "Weitere Informationen"
   },
   "panels/network/RequestHeadersView.ts | learnMoreInTheIssuesTab": {
-    "message": "Weitere Informationen findest du im Tab für Probleme"
+    "message": "Weitere Informationen findest du auf dem Tab „Probleme“"
   },
   "panels/network/RequestHeadersView.ts | onlyChooseThisOptionIfAn": {
     "message": "Wähle diese Option nur aus, wenn beliebige Websites mit dieser Ressource kein Sicherheitsrisiko darstellen."
   },
   "panels/network/RequestHeadersView.ts | onlyProvisionalHeadersAre": {
-    "message": "Es sind nur vorübergehende Header verfügbar, da diese Anfrage nicht über das Netzwerk gesendet wurde. Stattdessen wurde sie über einen lokalen Cache ausgeliefert, der die originalen Anfrageheader nicht speichert. Deaktiviere den Cache, um die vollständigen Anfrageheader anzuzeigen."
+    "message": "Es sind nur vorläufige Header verfügbar, da diese Anfrage nicht über das Netzwerk gesendet wurde. Stattdessen wurde sie über einen lokalen Cache bereitgestellt, der die originalen Anfrageheader nicht speichert. Deaktiviere den Cache, um die vollständigen Anfrageheader zu sehen."
   },
   "panels/network/RequestHeadersView.ts | provisionalHeadersAreShown": {
     "message": "Vorübergehende Header werden angezeigt"
   },
   "panels/network/RequestHeadersView.ts | provisionalHeadersAreShownS": {
-    "message": "Vorläufige Header werden angezeigt. Deaktiviere den Cache, um die vollständigen Header anzuzeigen."
-  },
-  "panels/network/RequestHeadersView.ts | recordedAttribution": {
-    "message": "Erfasste Attribution mit trigger-data: {PH1}"
+    "message": "Vorläufige Header werden angezeigt. Deaktiviere den Cache, um die vollständigen Header zu sehen."
   },
   "panels/network/RequestHeadersView.ts | referrerPolicy": {
     "message": "Richtlinien für Verweis-URL"
@@ -7302,7 +7527,7 @@
     "message": "Das Laden dieses Dokuments in einem iframe mit einem sandbox-Attribut wurde blockiert, da dieses Dokument eine herkunftsübergreifende Richtlinie für die Ursprungsseite festgelegt hat."
   },
   "panels/network/RequestHeadersView.ts | toEmbedThisFrameInYourDocument": {
-    "message": "Um diesen Frame in dein Dokument einzubetten, muss die Antwort die ursprungsübergreifende Einbettungs-Richtlinie aktivieren, indem sie den folgenden Antwortheader angibt:"
+    "message": "Um diesen Frame in dein Dokument einzubetten, muss die Antwort die ursprungsübergreifende Einbettungsrichtlinie aktivieren, indem sie den folgenden Antwortheader angibt:"
   },
   "panels/network/RequestHeadersView.ts | toUseThisResourceFromADifferent": {
     "message": "Um diese Ressource aus einem anderen Ursprung zu verwenden, muss der Server in den Antwortheadern eine ursprungsübergreifende Ressourcenrichtlinie festlegen:"
@@ -7506,7 +7731,7 @@
     "message": "Unbekannt"
   },
   "panels/network/RequestTimingView.ts | waitingTtfb": {
-    "message": "Waiting for server response"
+    "message": "Warten auf Serverantwort"
   },
   "panels/network/RequestTimingView.ts | waterfall": {
     "message": "Wasserfall"
@@ -7642,6 +7867,90 @@
   },
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Zertifikat ansehen"
+  },
+  "panels/network/components/RequestHeadersView.ts | chooseThisOptionIfTheResourceAnd": {
+    "message": "Wähle diese Option, wenn die Ressource und das Dokument von der gleichen Website bereitgestellt werden."
+  },
+  "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
+    "message": "(von Datenträgercache)"
+  },
+  "panels/network/components/RequestHeadersView.ts | fromMemoryCache": {
+    "message": "(von Arbeitsspeicher-Cache)"
+  },
+  "panels/network/components/RequestHeadersView.ts | fromPrefetchCache": {
+    "message": "(aus dem Prefetch-Cache)"
+  },
+  "panels/network/components/RequestHeadersView.ts | fromServiceWorker": {
+    "message": "(von service worker)"
+  },
+  "panels/network/components/RequestHeadersView.ts | fromSignedexchange": {
+    "message": "(von Signed Exchange)"
+  },
+  "panels/network/components/RequestHeadersView.ts | fromWebBundle": {
+    "message": "(von Web Bundle)"
+  },
+  "panels/network/components/RequestHeadersView.ts | general": {
+    "message": "Allgemein"
+  },
+  "panels/network/components/RequestHeadersView.ts | learnMore": {
+    "message": "Weitere Informationen"
+  },
+  "panels/network/components/RequestHeadersView.ts | learnMoreInTheIssuesTab": {
+    "message": "Weitere Informationen findest du auf dem Tab „Probleme“"
+  },
+  "panels/network/components/RequestHeadersView.ts | onlyChooseThisOptionIfAn": {
+    "message": "Wähle diese Option nur aus, wenn beliebige Websites mit dieser Ressource kein Sicherheitsrisiko darstellen."
+  },
+  "panels/network/components/RequestHeadersView.ts | onlyProvisionalHeadersAre": {
+    "message": "Es sind nur vorläufige Header verfügbar, da diese Anfrage nicht über das Netzwerk gesendet wurde. Stattdessen wurde sie über einen lokalen Cache bereitgestellt, der die originalen Anfrageheader nicht speichert. Deaktiviere den Cache, um die vollständigen Anfrageheader zu sehen."
+  },
+  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShown": {
+    "message": "Vorläufige Header werden angezeigt."
+  },
+  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShownDisableCache": {
+    "message": "Vorläufige Header werden angezeigt. Deaktiviere den Cache, um die vollständigen Header zu sehen."
+  },
+  "panels/network/components/RequestHeadersView.ts | raw": {
+    "message": "Rohdaten"
+  },
+  "panels/network/components/RequestHeadersView.ts | referrerPolicy": {
+    "message": "Richtlinien für Verweis-URL"
+  },
+  "panels/network/components/RequestHeadersView.ts | remoteAddress": {
+    "message": "Remote-Adresse"
+  },
+  "panels/network/components/RequestHeadersView.ts | requestHeaders": {
+    "message": "Anfrageheader"
+  },
+  "panels/network/components/RequestHeadersView.ts | requestMethod": {
+    "message": "Anfragemethode"
+  },
+  "panels/network/components/RequestHeadersView.ts | requestUrl": {
+    "message": "Anfrage-URL"
+  },
+  "panels/network/components/RequestHeadersView.ts | responseHeaders": {
+    "message": "Antwortheader"
+  },
+  "panels/network/components/RequestHeadersView.ts | showMore": {
+    "message": "Mehr anzeigen"
+  },
+  "panels/network/components/RequestHeadersView.ts | statusCode": {
+    "message": "Statuscode"
+  },
+  "panels/network/components/RequestHeadersView.ts | thisDocumentWasBlockedFrom": {
+    "message": "Das Laden dieses Dokuments in einem iframe mit einem sandbox-Attribut wurde blockiert, da dieses Dokument eine herkunftsübergreifende Richtlinie für die Ursprungsseite festgelegt hat."
+  },
+  "panels/network/components/RequestHeadersView.ts | toEmbedThisFrameInYourDocument": {
+    "message": "Um diesen Frame in dein Dokument einzubetten, muss die Antwort die ursprungsübergreifende Einbettungsrichtlinie aktivieren, indem sie den folgenden Antwortheader angibt:"
+  },
+  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferent": {
+    "message": "Um diese Ressource aus einem anderen Ursprung zu verwenden, muss der Server in den Antwortheadern eine ursprungsübergreifende Ressourcenrichtlinie festlegen:"
+  },
+  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentOrigin": {
+    "message": "Um diese Ressource aus einem anderen Ursprung zu verwenden, kann der Server Einschränkungen für den Antwortheader der ursprungsübergreifenden Ressourcenrichtlinie aufheben:"
+  },
+  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentSite": {
+    "message": "Um diese Ressource aus einer anderen Website zu verwenden, kann der Server Einschränkungen für den Antwortheader der ursprungsübergreifenden Ressourcenrichtlinie aufheben:"
   },
   "panels/network/components/RequestTrustTokensView.ts | aClientprovidedArgumentWas": {
     "message": "Ein vom Client bereitgestelltes Argument war fehlerhaft oder anderweitig ungültig."
@@ -8069,6 +8378,9 @@
   "panels/profiler/HeapSnapshotView.ts | containment": {
     "message": "Eingrenzung"
   },
+  "panels/profiler/HeapSnapshotView.ts | exposeInternals": {
+    "message": "Interne Informationen offenlegen (enthalten zusätzliche implementierungsspezifische Details)"
+  },
   "panels/profiler/HeapSnapshotView.ts | filter": {
     "message": "Filtern"
   },
@@ -8155,9 +8467,6 @@
   },
   "panels/profiler/HeapSnapshotView.ts | takeHeapSnapshot": {
     "message": "Heap-Snapshot erstellen"
-  },
-  "panels/profiler/HeapSnapshotView.ts | treatGlobalObjectsAsRoots": {
-    "message": "Globale Objekte als Roots behandeln (das Deaktivieren legt interne Knoten offen und führt übermäßig viele Details ein, es kann aber die Fehlerbehebung für Zyklen in Beibehaltungspfaden unterstützen)"
   },
   "panels/profiler/HeapSnapshotView.ts | typedArrays": {
     "message": "Eingegebene Arrays"
@@ -8612,6 +8921,12 @@
   "panels/security/SecurityPanel.ts | contentWithCertificateErrors": {
     "message": "Inhalt mit Zertifikatfehlern"
   },
+  "panels/security/SecurityPanel.ts | enabled": {
+    "message": "aktiviert"
+  },
+  "panels/security/SecurityPanel.ts | encryptedClientHello": {
+    "message": "Verschlüsseltes ClientHello"
+  },
   "panels/security/SecurityPanel.ts | flaggedByGoogleSafeBrowsing": {
     "message": "Von Google-Nutzern gemeldet"
   },
@@ -8622,10 +8937,10 @@
     "message": "Vollständige Details ausblenden"
   },
   "panels/security/SecurityPanel.ts | ifYouBelieveThisIsShownIn": {
-    "message": "If you believe this is shown in error please visit https://g.co/chrome/lookalike-warnings."
+    "message": "Wenn dies deiner Meinung nach fälschlicherweise angezeigt wird, gehe bitte auf https://g.co/chrome/lookalike-warnings."
   },
   "panels/security/SecurityPanel.ts | ifYouBelieveThisIsShownInErrorSafety": {
-    "message": "If you believe this is shown in error please visit https://g.co/chrome/lookalike-warnings."
+    "message": "Wenn dies deiner Meinung nach fälschlicherweise angezeigt wird, gehe bitte auf https://g.co/chrome/lookalike-warnings."
   },
   "panels/security/SecurityPanel.ts | info": {
     "message": "Info"
@@ -8641,9 +8956,6 @@
   },
   "panels/security/SecurityPanel.ts | keyExchange": {
     "message": "Schlüsselaustausch"
-  },
-  "panels/security/SecurityPanel.ts | keyExchangeGroup": {
-    "message": "Schlüsselaustauschgruppe"
   },
   "panels/security/SecurityPanel.ts | logId": {
     "message": "Protokoll-ID"
@@ -8744,6 +9056,9 @@
   "panels/security/SecurityPanel.ts | securityOverview": {
     "message": "Übersicht zur Sicherheit"
   },
+  "panels/security/SecurityPanel.ts | serverSignature": {
+    "message": "Serversignatur"
+  },
   "panels/security/SecurityPanel.ts | showFullDetails": {
     "message": "Vollständige Details anzeigen"
   },
@@ -8839,6 +9154,9 @@
   },
   "panels/security/SecurityPanel.ts | unknownCanceled": {
     "message": "Unbekannt/abgebrochen"
+  },
+  "panels/security/SecurityPanel.ts | unknownField": {
+    "message": "unbekannt"
   },
   "panels/security/SecurityPanel.ts | validAndTrusted": {
     "message": "gültig und vertrauenswürdig"
@@ -9097,6 +9415,12 @@
   },
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | addPattern": {
     "message": "Muster hinzufügen..."
+  },
+  "panels/settings/FrameworkIgnoreListSettingsTab.ts | automaticallyIgnoreListKnownThirdPartyScripts": {
+    "message": "Bekannte Drittanbieterskripts automatisch der Ignorieren-Liste hinzufügen"
+  },
+  "panels/settings/FrameworkIgnoreListSettingsTab.ts | automaticallyIgnoreListKnownThirdPartyScriptsTooltip": {
+    "message": "Quellen aus dem Feld x_google_ignoreList von Quellzuordnungen der Ignorieren-Liste hinzufügen"
   },
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | behavior": {
     "message": "Verhalten"
@@ -9398,6 +9722,9 @@
   "panels/sources/AddSourceMapURLDialog.ts | add": {
     "message": "Hinzufügen"
   },
+  "panels/sources/AddSourceMapURLDialog.ts | debugInfoUrl": {
+    "message": "URL für DWARF-Symbole: "
+  },
   "panels/sources/AddSourceMapURLDialog.ts | sourceMapUrl": {
     "message": "URL der Quellzuordnung: "
   },
@@ -9446,6 +9773,9 @@
   "panels/sources/CallStackSidebarPane.ts | copyStackTrace": {
     "message": "Stacktrace kopieren"
   },
+  "panels/sources/CallStackSidebarPane.ts | debugFileNotFound": {
+    "message": "Fehlerbehebungsdatei „{PH1}“ konnte nicht geladen werden."
+  },
   "panels/sources/CallStackSidebarPane.ts | notPaused": {
     "message": "Nicht pausiert"
   },
@@ -9457,6 +9787,9 @@
   },
   "panels/sources/CallStackSidebarPane.ts | removeFromIgnoreList": {
     "message": "Aus der Ignorieren-Liste löschen"
+  },
+  "panels/sources/CallStackSidebarPane.ts | restartFrame": {
+    "message": "Frame neu starten"
   },
   "panels/sources/CallStackSidebarPane.ts | showIgnorelistedFrames": {
     "message": "Frames auf der Ignorieren-Liste anzeigen"
@@ -9545,6 +9878,9 @@
   "panels/sources/DebuggerPlugin.ts | addSourceMap": {
     "message": "Quellzuordnung hinzufügen…"
   },
+  "panels/sources/DebuggerPlugin.ts | addWasmDebugInfo": {
+    "message": "DWARF-Debugging-Informationen hinzufügen…"
+  },
   "panels/sources/DebuggerPlugin.ts | associatedFilesAreAvailable": {
     "message": "Zugehörige Dateien sind über den Dateibaum oder {PH1} verfügbar."
   },
@@ -9553,6 +9889,12 @@
   },
   "panels/sources/DebuggerPlugin.ts | configure": {
     "message": "Konfigurieren"
+  },
+  "panels/sources/DebuggerPlugin.ts | debugFileNotFound": {
+    "message": "Fehlerbehebungsdatei „{PH1}“ konnte nicht geladen werden."
+  },
+  "panels/sources/DebuggerPlugin.ts | debugInfoNotFound": {
+    "message": "Fehler beim Laden der Informationen zur Fehlerbehebung für {PH1}."
   },
   "panels/sources/DebuggerPlugin.ts | disableBreakpoint": {
     "message": "{n,plural, =1{Haltepunkt deaktivieren}other{Alle Haltepunkte in der Zeile deaktivieren}}"
@@ -9686,11 +10028,23 @@
   "panels/sources/NavigatorView.ts | areYouSureYouWantToRemoveThis": {
     "message": "Ordner wirklich entfernen?"
   },
+  "panels/sources/NavigatorView.ts | authored": {
+    "message": "Erstellt"
+  },
+  "panels/sources/NavigatorView.ts | authoredTooltip": {
+    "message": "Enthält Originalquellen"
+  },
   "panels/sources/NavigatorView.ts | delete": {
     "message": "Löschen"
   },
   "panels/sources/NavigatorView.ts | deleteAllOverrides": {
     "message": "Alle Überschreibungen löschen"
+  },
+  "panels/sources/NavigatorView.ts | deployed": {
+    "message": "Bereitgestellt"
+  },
+  "panels/sources/NavigatorView.ts | deployedTooltip": {
+    "message": "Enthält die letzten Quellen, die der Browser sieht"
   },
   "panels/sources/NavigatorView.ts | excludeFolder": {
     "message": "Ordner ausschließen"
@@ -9746,9 +10100,6 @@
   "panels/sources/ScopeChainSidebarPane.ts | closureS": {
     "message": "Abschluss ({PH1})"
   },
-  "panels/sources/ScopeChainSidebarPane.ts | couldNotOpenLinearMemory": {
-    "message": "Inspector des linearen Arbeitsspeichers konnte nicht geöffnet werden: Puffer wurde nicht gefunden."
-  },
   "panels/sources/ScopeChainSidebarPane.ts | exception": {
     "message": "Ausnahme"
   },
@@ -9784,6 +10135,9 @@
   },
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘ + Eingabetaste"
+  },
+  "panels/sources/SourcesNavigator.ts | authoredDescription": {
+    "message": "Dateien nach „Erstellt“/„Bereitgestellt“ gruppieren"
   },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Konfiguration löschen"
@@ -9853,6 +10207,9 @@
   },
   "panels/sources/SourcesPanel.ts | dropWorkspaceFolderHere": {
     "message": "Ordner „Arbeitsbereich“ hier ablegen"
+  },
+  "panels/sources/SourcesPanel.ts | groupByAuthored": {
+    "message": "Nach „Erstellt“/„Bereitgestellt“ gruppieren"
   },
   "panels/sources/SourcesPanel.ts | groupByFolder": {
     "message": "Nach Ordner gruppieren"
@@ -10224,10 +10581,10 @@
     "message": "Haltepunkt-Eingabefenster öffnen/schließen"
   },
   "panels/sources/sources-meta.ts | toggleDebuggerSidebar": {
-    "message": "Toggle debugger sidebar"
+    "message": "Debugger-Seitenleiste ein-/ausblenden"
   },
   "panels/sources/sources-meta.ts | toggleNavigatorSidebar": {
-    "message": "Toggle navigator sidebar"
+    "message": "Navigator-Seitenleiste ein-/ausblenden"
   },
   "panels/sources/sources-meta.ts | trailing": {
     "message": "Nachgestellt"
@@ -10346,9 +10703,6 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | idleFrame": {
     "message": "Inaktiver Frame"
   },
-  "panels/timeline/TimelineFlameChartDataProvider.ts | interactions": {
-    "message": "Interaktionen"
-  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | longFrame": {
     "message": "Langer Frame"
   },
@@ -10435,6 +10789,9 @@
   },
   "panels/timeline/TimelinePanel.ts | CpuThrottlingIsEnabled": {
     "message": "- CPU-Drosselung ist aktiviert"
+  },
+  "panels/timeline/TimelinePanel.ts | HardwareConcurrencyIsEnabled": {
+    "message": "– Überschreibung der Hardware-Nebenläufigkeit ist aktiviert"
   },
   "panels/timeline/TimelinePanel.ts | JavascriptSamplingIsDisabled": {
     "message": "– JavaScript-Sampling ist deaktiviert"
@@ -11670,7 +12027,7 @@
     "message": "Anzahl der Signaturen"
   },
   "panels/webauthn/WebauthnPane.ts | supportsLargeBlob": {
-    "message": "Supports large blob"
+    "message": "Unterstützt große BLOBs"
   },
   "panels/webauthn/WebauthnPane.ts | supportsResidentKeys": {
     "message": "Unterstützt residente Schlüssel"
@@ -11741,6 +12098,9 @@
   "ui/components/linear_memory_inspector/LinearMemoryInspector.ts | addressHasToBeANumberBetweenSAnd": {
     "message": "Die Adresse muss eine Zahl zwischen {PH1} und {PH2} sein"
   },
+  "ui/components/linear_memory_inspector/LinearMemoryInspectorController.ts | couldNotOpenLinearMemory": {
+    "message": "Inspector des linearen Arbeitsspeichers konnte nicht geöffnet werden: Puffer wurde nicht gefunden."
+  },
   "ui/components/linear_memory_inspector/LinearMemoryInspectorPane.ts | noOpenInspections": {
     "message": "Keine offenen Prüfungen"
   },
@@ -11810,8 +12170,14 @@
   "ui/components/panel_feedback/PanelFeedback.ts | videoAndDocumentation": {
     "message": "Video und Dokumentation"
   },
+  "ui/components/panel_feedback/PreviewToggle.ts | learnMoreLink": {
+    "message": "Weitere Informationen"
+  },
   "ui/components/panel_feedback/PreviewToggle.ts | previewTextFeedbackLink": {
     "message": "Sende uns dein Feedback."
+  },
+  "ui/components/panel_feedback/PreviewToggle.ts | shortFeedbackLink": {
+    "message": "Feedback geben"
   },
   "ui/components/request_link_icon/RequestLinkIcon.ts | clickToShowRequestInTheNetwork": {
     "message": "Klicken, um den Netzwerkbereich zu öffnen und die Anfrage für die folgende URL anzuzeigen: {url}"
@@ -11856,7 +12222,7 @@
     "message": "Alles"
   },
   "ui/legacy/FilterBar.ts | clearFilter": {
-    "message": "Clear input"
+    "message": "Eingabe löschen"
   },
   "ui/legacy/FilterBar.ts | egSmalldUrlacomb": {
     "message": "Beispiel: /small[d]+/ url:a.com/b"
@@ -11908,6 +12274,12 @@
   },
   "ui/legacy/InspectorView.ts | reloadDevtools": {
     "message": "Entwicklertools neu laden"
+  },
+  "ui/legacy/InspectorView.ts | selectFolder": {
+    "message": "Ordner auswählen"
+  },
+  "ui/legacy/InspectorView.ts | selectOverrideFolder": {
+    "message": "Wähle einen Ordner aus, in dem überschriebene Dateien gespeichert werden sollen."
   },
   "ui/legacy/InspectorView.ts | setToBrowserLanguage": {
     "message": "Immer der Sprache von Chrome anpassen"
@@ -12027,7 +12399,7 @@
     "message": "Sobald die Seite neu geladen ist, verbinden sich die Entwicklertools automatisch wieder."
   },
   "ui/legacy/Toolbar.ts | clearInput": {
-    "message": "Clear input"
+    "message": "Eingabe löschen"
   },
   "ui/legacy/Toolbar.ts | notPressed": {
     "message": "Nicht gedrückt"
@@ -12371,9 +12743,6 @@
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | noProperties": {
     "message": "Keine Properties"
   },
-  "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | noPropertyGetter": {
-    "message": "Kein Property Getter"
-  },
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | showAllD": {
     "message": "Alle {PH1} anzeigen"
   },
@@ -12386,8 +12755,11 @@
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | unknown": {
     "message": "Unbekannt"
   },
-  "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | unreadable": {
-    "message": "<unreadable>"
+  "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | valueNotAccessibleToTheDebugger": {
+    "message": "Debugger kann nicht auf den Wert zugreifen"
+  },
+  "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | valueUnavailable": {
+    "message": "<Wert nicht verfügbar>"
   },
   "ui/legacy/components/object_ui/RemoteObjectPreviewFormatter.ts | empty": {
     "message": "leer"

@@ -7,6 +7,8 @@ import("../../../../../third_party/typescript/typescript.gni")
 ts_library("network") {
   testonly = true
   sources = [
+    "NetworkItemView_test.ts",
+    "NetworkLogView_test.ts",
     "RequestHeadersView_test.ts",
     "RequestPreviewView_test.ts",
   ]

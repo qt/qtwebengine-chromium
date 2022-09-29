@@ -85,7 +85,7 @@ private:
             }
             if (mgp.fUniforms) {
                 pdman.setRuntimeEffectUniforms(mgp.fSpec->uniforms(),
-                                               SkMakeSpan(fSpecUniformHandles),
+                                               SkSpan(fSpecUniformHandles),
                                                mgp.fUniforms->data());
             }
         }
@@ -125,7 +125,7 @@ private:
                 auto it = std::find_if(uniforms.begin(),
                                        uniforms.end(),
                                        [&name](SkMeshSpecification::Uniform uniform) {
-                    return uniform.name == name;
+                    return uniform.name == std::string_view(name.c_str(), name.size());
                 });
                 SkASSERT(it != uniforms.end());
 
@@ -463,7 +463,7 @@ private:
     class Mesh {
     public:
         Mesh() = delete;
-        Mesh(const SkMesh& mesh);
+        explicit Mesh(const SkMesh& mesh);
         Mesh(sk_sp<SkVertices>, const SkMatrix& viewMatrix);
         Mesh(const Mesh&) = delete;
         Mesh(Mesh&& m);
@@ -504,11 +504,11 @@ private:
             if (!fMeshData.ib) {
                 return nullptr;
             }
-            auto data = fMeshData.ib->asData();
+            auto data = fMeshData.ib->peek();
             if (!data) {
                 return nullptr;
             }
-            return SkTAddOffset<const uint16_t>(data->data(), fMeshData.ioffset);
+            return SkTAddOffset<const uint16_t>(data, fMeshData.ioffset);
         }
 
         int indexCount() const {
@@ -562,6 +562,21 @@ MeshOp::Mesh::Mesh(const SkMesh& mesh) {
     fMeshData.voffset = mesh.vertexOffset();
     fMeshData.icount  = mesh.indexCount();
     fMeshData.ioffset = mesh.indexOffset();
+
+    // The caller could modify CPU buffers after the draw so we must copy the data.
+    if (fMeshData.vb->peek()) {
+        auto data = SkTAddOffset<const void>(fMeshData.vb->peek(), fMeshData.voffset);
+        size_t size = fMeshData.vcount*mesh.spec()->stride();
+        fMeshData.vb = SkMeshPriv::CpuVertexBuffer::Make(data, size);
+        fMeshData.voffset = 0;
+    }
+
+    if (fMeshData.ib && fMeshData.ib->peek()) {
+        auto data = SkTAddOffset<const void>(fMeshData.ib->peek(), fMeshData.ioffset);
+        size_t size = fMeshData.icount*sizeof(uint16_t);
+        fMeshData.ib = SkMeshPriv::CpuIndexBuffer::Make(data, size);
+        fMeshData.ioffset = 0;
+    }
 }
 
 MeshOp::Mesh::Mesh(sk_sp<SkVertices> vertices, const SkMatrix& viewMatrix)
@@ -609,9 +624,9 @@ void MeshOp::Mesh::writeVertices(skgpu::VertexWriter& writer,
             }
         }
     } else {
-        sk_sp<const SkData> data = fMeshData.vb->asData();
+        const void* data = fMeshData.vb->peek();
         if (data) {
-            auto vdata = static_cast<const char*>(data->data()) + fMeshData.voffset;
+            auto vdata = SkTAddOffset<const char>(data, fMeshData.voffset);
             writer << skgpu::VertexWriter::Array(vdata, spec.stride()*fMeshData.vcount);
         }
     }
@@ -682,9 +697,9 @@ static sk_sp<SkMeshSpecification> make_vertices_spec(bool hasColors, bool hasTex
     vs += "return a.pos;\n}";
     fs += "}";
     auto [spec, error] = SkMeshSpecification::Make(
-            SkMakeSpan(attributes),
+            SkSpan(attributes),
             size,
-            SkMakeSpan(varyings),
+            SkSpan(varyings),
             vs,
             fs);
     SkASSERT(spec);
@@ -904,6 +919,9 @@ void MeshOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {
 
 GrOp::CombineResult MeshOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) {
     auto that = t->cast<MeshOp>();
+    if (!fMeshes[0].isFromVertices() || !that->fMeshes[0].isFromVertices()) {
+        return GrOp::CombineResult::kCannotCombine;
+    }
 
     // Check for a combinable primitive type.
     if (!(fPrimitiveType == GrPrimitiveType::kTriangles ||

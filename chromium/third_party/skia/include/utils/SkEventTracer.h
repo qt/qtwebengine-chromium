@@ -18,6 +18,8 @@
 
 #include "include/core/SkTypes.h"
 
+#include <cstdint>
+
 class SK_API SkEventTracer {
 public:
 
@@ -75,6 +77,9 @@ public:
         updateTraceEventDuration(const uint8_t* categoryEnabledFlag,
                                  const char* name,
                                  SkEventTracer::Handle handle) = 0;
+
+    // Optional method that can be implemented to allow splitting up traces into different sections.
+    virtual void newTracingSection(const char*) {}
 
 protected:
     SkEventTracer() = default;

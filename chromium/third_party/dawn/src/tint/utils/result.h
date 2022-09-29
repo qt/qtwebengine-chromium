@@ -16,8 +16,7 @@
 #define SRC_TINT_UTILS_RESULT_H_
 
 #include <ostream>
-// TODO(https://crbug.com/dawn/1379) Update cpplint and remove NOLINT
-#include <variant>  // NOLINT(build/include_order)
+#include <variant>
 
 namespace tint::utils {
 
@@ -33,7 +32,7 @@ static constexpr const FailureType Failure;
 ///         information about the failure, except that something failed. Must not be the same type
 ///         as SUCCESS_TYPE.
 template <typename SUCCESS_TYPE, typename FAILURE_TYPE = FailureType>
-struct Result {
+struct [[nodiscard]] Result {
     static_assert(!std::is_same_v<SUCCESS_TYPE, FAILURE_TYPE>,
                   "Result must not have the same type for SUCCESS_TYPE and FAILURE_TYPE");
 

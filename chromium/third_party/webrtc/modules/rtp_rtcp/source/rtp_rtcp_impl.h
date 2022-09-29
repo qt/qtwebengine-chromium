@@ -24,7 +24,6 @@
 #include "api/rtp_headers.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "modules/include/module_fec_types.h"
-#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"  // RTCPPacketType
 #include "modules/rtp_rtcp/source/deprecated/deprecated_rtp_sender_egress.h"
@@ -50,10 +49,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
   explicit ModuleRtpRtcpImpl(
       const RtpRtcpInterface::Configuration& configuration);
   ~ModuleRtpRtcpImpl() override;
-
-  // Returns the number of milliseconds until the module want a worker thread to
-  // call Process.
-  int64_t TimeUntilNextProcess() override;
 
   // Process any pending tasks such as timeouts.
   void Process() override;
@@ -309,14 +304,11 @@ class ModuleRtpRtcpImpl : public RtpRtcp, public RTCPReceiver::ModuleRtpRtcp {
 
   int64_t last_bitrate_process_time_;
   int64_t last_rtt_process_time_;
-  int64_t next_process_time_;
   uint16_t packet_overhead_;
 
   // Send side
   int64_t nack_last_time_sent_full_ms_;
   uint16_t nack_last_seq_number_sent_;
-
-  RemoteBitrateEstimator* const remote_bitrate_;
 
   RtcpRttStats* const rtt_stats_;
 

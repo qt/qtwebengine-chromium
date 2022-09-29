@@ -1171,6 +1171,24 @@ StatusCode DecoderImpl::CopyFrameToOutputBuffer(
   buffer_.spatial_id = frame->spatial_id();
   buffer_.temporal_id = frame->temporal_id();
   buffer_.buffer_private_data = frame->buffer_private_data();
+  if (frame->hdr_cll_set()) {
+    buffer_.has_hdr_cll = 1;
+    buffer_.hdr_cll = frame->hdr_cll();
+  } else {
+    buffer_.has_hdr_cll = 0;
+  }
+  if (frame->hdr_mdcv_set()) {
+    buffer_.has_hdr_mdcv = 1;
+    buffer_.hdr_mdcv = frame->hdr_mdcv();
+  } else {
+    buffer_.has_hdr_mdcv = 0;
+  }
+  if (frame->itut_t35_set()) {
+    buffer_.has_itut_t35 = 1;
+    buffer_.itut_t35 = frame->itut_t35();
+  } else {
+    buffer_.has_itut_t35 = 0;
+  }
   output_frame_ = frame;
   return kStatusOk;
 }

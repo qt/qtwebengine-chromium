@@ -330,24 +330,12 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_RELAXED_BLOCK_LAYOUT_EXTENSION_NAME, VK_KHR_RELAXED_BLOCK_LAYOUT_SPEC_VERSION } },
 	{ { VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME, VK_KHR_SAMPLER_YCBCR_CONVERSION_SPEC_VERSION } },
 	{ { VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_EXTENSION_NAME, VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_SPEC_VERSION } },
-	{ { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION } },
-	{ { VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION } },
-	{ { VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME, VK_EXT_LOAD_STORE_OP_NONE_SPEC_VERSION } },
 	// Only 1.1 core version of this is supported. The extension has additional requirements
 	//{{ VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME, VK_KHR_SHADER_DRAW_PARAMETERS_SPEC_VERSION }},
 	{ { VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_EXTENSION_NAME, VK_KHR_STORAGE_BUFFER_STORAGE_CLASS_SPEC_VERSION } },
 	// Only 1.1 core version of this is supported. The extension has additional requirements
 	//{{ VK_KHR_VARIABLE_POINTERS_EXTENSION_NAME, VK_KHR_VARIABLE_POINTERS_SPEC_VERSION }},
 	{ { VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME, VK_EXT_QUEUE_FAMILY_FOREIGN_SPEC_VERSION } },
-	// The following extension is only used to add support for Bresenham lines
-	{ { VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME, VK_EXT_LINE_RASTERIZATION_SPEC_VERSION } },
-	// The following extension is used by ANGLE to emulate blitting the stencil buffer
-	{ { VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, VK_EXT_SHADER_STENCIL_EXPORT_SPEC_VERSION } },
-	{ { VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_IMAGE_ROBUSTNESS_SPEC_VERSION } },
-	// Useful for D3D emulation
-	{ { VK_EXT_4444_FORMATS_EXTENSION_NAME, VK_EXT_4444_FORMATS_SPEC_VERSION } },
-	// Used by ANGLE to support GL_KHR_blend_equation_advanced
-	{ { VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, VK_EXT_BLEND_OPERATION_ADVANCED_SPEC_VERSION } },
 #ifndef __ANDROID__
 	// We fully support the KHR_swapchain v70 additions, so just track the spec version.
 	{ { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION } },
@@ -368,9 +356,9 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 #if SWIFTSHADER_EXTERNAL_MEMORY_OPAQUE_FD
 	{ { VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_FD_SPEC_VERSION } },
 #endif
-
+#if !defined(__APPLE__)
 	{ { VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME, VK_EXT_EXTERNAL_MEMORY_HOST_SPEC_VERSION } },
-
+#endif
 #if VK_USE_PLATFORM_FUCHSIA
 	{ { VK_FUCHSIA_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_FUCHSIA_EXTERNAL_SEMAPHORE_SPEC_VERSION } },
 	{ { VK_FUCHSIA_EXTERNAL_MEMORY_EXTENSION_NAME, VK_FUCHSIA_EXTERNAL_MEMORY_SPEC_VERSION } },
@@ -420,6 +408,20 @@ static const ExtensionProperties deviceExtensionProperties[] = {
 	{ { VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME, VK_KHR_VULKAN_MEMORY_MODEL_SPEC_VERSION } },
 	{ { VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_SPEC_VERSION } },
 	{ { VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME, VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_SPEC_VERSION } },
+	{ { VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION } },
+	{ { VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION } },
+	{ { VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME, VK_EXT_LOAD_STORE_OP_NONE_SPEC_VERSION } },
+	// The following extension is only used to add support for Bresenham lines
+	{ { VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME, VK_EXT_LINE_RASTERIZATION_SPEC_VERSION } },
+	// The following extension is used by ANGLE to emulate blitting the stencil buffer
+	{ { VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, VK_EXT_SHADER_STENCIL_EXPORT_SPEC_VERSION } },
+	{ { VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_IMAGE_ROBUSTNESS_SPEC_VERSION } },
+	// Useful for D3D emulation
+	{ { VK_EXT_4444_FORMATS_EXTENSION_NAME, VK_EXT_4444_FORMATS_SPEC_VERSION } },
+	// Used by ANGLE to support GL_KHR_blend_equation_advanced
+	{ { VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, VK_EXT_BLEND_OPERATION_ADVANCED_SPEC_VERSION } },
+	// Used by ANGLE to implement triangle/etc list restarts as possible in OpenGL
+	{ { VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME, VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_SPEC_VERSION } },
 };
 
 static uint32_t numSupportedExtensions(const ExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
@@ -502,9 +504,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 
 	initializeLibrary();
 
-	if(pCreateInfo->flags != 0)
+	if(pCreateInfo->flags != 0 &&
+	   pCreateInfo->flags != VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR)  // TODO(https://github.com/KhronosGroup/Vulkan-Loader/issues/992)
 	{
-		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+		// Vulkan 1.3: "flags is reserved for future use." "flags must be 0"
 		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));
 	}
 
@@ -1038,12 +1041,32 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				}
 			}
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT:
+			{
+				const auto *primitiveTopologyListRestartFeatures = reinterpret_cast<const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *>(extensionCreateInfo);
+				bool hasFeatures = vk::Cast(physicalDevice)->hasExtendedFeatures(primitiveTopologyListRestartFeatures);
+				if(!hasFeatures)
+				{
+					return VK_ERROR_FEATURE_NOT_PRESENT;
+				}
+			}
+			break;
 		// These structs are supported, but no behavior changes based on their feature bools
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES:
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT:
+			// Workaround for a test bug (see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3564)
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_2_PLANE_444_FORMATS_FEATURES_EXT:
+			// TODO(b/223499383): The format enums of VK_EXT_ycbcr_2plane_444_formats were promoted to Vulkan 1.3, but not this feature struct.
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT:
+			// TODO(b/204502923): VK_EXT_extended_dynamic_state2 was partially promoted to Vulkan 1.3, but not this feature struct.
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
@@ -1795,24 +1818,27 @@ VKAPI_ATTR uint64_t VKAPI_CALL vkGetBufferDeviceAddress(VkDevice device, const V
 {
 	TRACE("(VkDevice device = %p, const VkBufferDeviceAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	// This function must return VkBufferDeviceAddressCreateInfoEXT::deviceAddress if provided
+	ASSERT(!vk::Cast(device)->hasExtension(VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME));
+
+	return vk::Cast(pInfo->buffer)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL vkGetBufferOpaqueCaptureAddress(VkDevice device, const VkBufferDeviceAddressInfo *pInfo)
 {
 	TRACE("(VkDevice device = %p, const VkBufferDeviceAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	return vk::Cast(pInfo->buffer)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL vkGetDeviceMemoryOpaqueCaptureAddress(VkDevice device, const VkDeviceMemoryOpaqueCaptureAddressInfo *pInfo)
 {
 	TRACE("(VkDevice device = %p, const VkDeviceMemoryOpaqueCaptureAddressInfo* pInfo = %p)",
 	      device, pInfo);
-	UNSUPPORTED("VK_KHR_buffer_device_address");
-	return 0;
+
+	return vk::Cast(pInfo->memory)->getOpaqueCaptureAddress();
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkBufferView *pView)
@@ -3633,6 +3659,10 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 				auto properties = reinterpret_cast<VkPhysicalDeviceShaderIntegerDotProductProperties *>(extensionProperties);
 				vk::Cast(physicalDevice)->getProperties(properties);
 			}
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES:
+			// TODO(b/240270223) : This structure shouldn't be used here.
+			// Remove this when https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3872 is fixed.
 			break;
 		default:
 			// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"

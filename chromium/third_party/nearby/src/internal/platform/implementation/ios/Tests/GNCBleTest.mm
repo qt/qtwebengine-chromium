@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #import <XCTest/XCTest.h>
+#include "internal/platform/implementation/ios/bluetooth_adapter.h"
 
 #include <string>
 #include <utility>
@@ -28,7 +29,9 @@ using ::location::nearby::api::BluetoothAdapter;
 using ::location::nearby::api::ImplementationPlatform;
 using ::location::nearby::api::ble_v2::BleAdvertisementData;
 using ::location::nearby::api::ble_v2::BleMedium;
+using ::location::nearby::api::ble_v2::GattCharacteristic;
 using ::location::nearby::api::ble_v2::TxPowerLevel;
+using IOSBluetoothAdapter = ::location::nearby::ios::BluetoothAdapter;
 
 static const char *const kAdvertisementString = "\x0a\x0b\x0c\x0d";
 static const TxPowerLevel kTxPowerLevel = TxPowerLevel::kHigh;
@@ -36,6 +39,7 @@ static const TxPowerLevel kTxPowerLevel = TxPowerLevel::kHigh;
 @interface GNCBleTest : XCTestCase
 @end
 
+// TODO(b/222392304): More tests on GNCBleTest.
 @implementation GNCBleTest {
   std::unique_ptr<BluetoothAdapter> _adapter;
   std::unique_ptr<BleMedium> _ble;
@@ -57,7 +61,10 @@ static const TxPowerLevel kTxPowerLevel = TxPowerLevel::kHigh;
   advertising_data.service_data = {{service_uuid, advertisement_bytes}};
 
   XCTAssertTrue(_ble->StartAdvertising(advertising_data,
-                                      {.tx_power_level = kTxPowerLevel, .is_connectable = true}));
+                                       {.tx_power_level = kTxPowerLevel, .is_connectable = true}));
+
+  [NSThread sleepForTimeInterval:0.1];
+
   XCTAssertTrue(_ble->StopAdvertising());
 }
 
@@ -66,7 +73,39 @@ static const TxPowerLevel kTxPowerLevel = TxPowerLevel::kHigh;
 
   XCTAssertTrue(_ble->StartScanning(service_uuid, kTxPowerLevel, {}));
 
+  [NSThread sleepForTimeInterval:0.1];
+
   XCTAssertTrue(_ble->StopScanning());
+}
+
+- (void)testGattServerWorking {
+  // Test creating gatt_server.
+  auto gatt_server = _ble->StartGattServer(/*ServerGattConnectionCallback=*/{});
+  XCTAssert(gatt_server != nullptr);
+
+  // Test creating characteristic.
+  Uuid service_uuid(1234, 5678);
+  Uuid characteristic_uuid(5678, 1234);
+  std::vector<GattCharacteristic::Permission> permissions = {GattCharacteristic::Permission::kRead};
+  std::vector<GattCharacteristic::Property> properties = {GattCharacteristic::Property::kRead};
+
+  // NOLINTNEXTLINE
+  absl::optional<GattCharacteristic> gatt_characteristic =
+      gatt_server->CreateCharacteristic(service_uuid, characteristic_uuid, permissions, properties);
+  XCTAssertTrue(gatt_characteristic.has_value());
+
+  // Test updating characteristic.
+  ByteArray any_byte("any");
+  XCTAssertTrue(gatt_server->UpdateCharacteristic(gatt_characteristic.value(), any_byte));
+
+  gatt_server->Stop();
+}
+
+- (void)testCreateGattClient {
+  IOSBluetoothAdapter *adapter = static_cast<IOSBluetoothAdapter *>(_adapter.get());
+  auto gatt_client = _ble->ConnectToGattServer(adapter->GetPeripheral(), kTxPowerLevel, {});
+
+  XCTAssert(gatt_client != nullptr);
 }
 
 @end

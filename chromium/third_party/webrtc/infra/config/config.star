@@ -660,7 +660,7 @@ mac_builder, mac_try_job = normal_builder_factory(
 )
 
 ios_builder, ios_try_job = normal_builder_factory(
-    dimensions = {"os": "Mac-11"},
+    dimensions = {"os": "Mac"},
     properties = {"xcode_build_version": WEBRTC_XCODE13},
     caches = [swarming.cache(
         name = "xcode_ios_" + WEBRTC_XCODE13,
@@ -763,8 +763,8 @@ mac_builder("Mac Asan", "Mac|x64|asan")
 mac_try_job("mac_asan")
 mac_try_job("mac_chromium_compile", recipe = "chromium_trybot", branch_cq = False)
 mac_builder("MacARM64 M1 Release", "Mac|arm64M1|rel", cpu = "arm64-64-Apple_M1")
-mac_try_job("mac_rel_m1", try_cat = None, cq = None)
-mac_try_job("mac_dbg_m1", try_cat = None, cq = None)
+mac_try_job("mac_rel_m1")
+mac_try_job("mac_dbg_m1")
 
 win_builder("Win32 Debug (Clang)", "Win Clang|x86|dbg")
 win_try_job("win_x86_clang_dbg", cq = None)

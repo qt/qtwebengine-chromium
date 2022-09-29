@@ -6,6 +6,8 @@
 
 export LD_LIBRARY_PATH="external/clang_linux_amd64/usr/lib/x86_64-linux-gnu:external/clang_linux_amd64/usr/lib/llvm-13/lib"
 
+set -e
+
 # We only want to run include-what-you-use if DSKIA_ENFORCE_IWYU is in the arguments
 # passed in (i.e. the "skia_enforce_iwyu" feature is enabled) and we are not linking
 # (as detected by the presence of -fuse-ld).
@@ -16,6 +18,9 @@ fi
 
 supported_files_or_dirs=(
   "experimental/bazel_test/"
+  "modules/skunicode/"
+  "src/codec/"
+  "src/images/"
   "src/sksl/"
   "src/svg/"
   "src/utils/"
@@ -58,6 +63,7 @@ else
   # not consistent with detecting that.
   external/clang_linux_amd64/usr/bin/include-what-you-use \
       -Xiwyu --keep="include/core/SkTypes.h" \
+      -Xiwyu --no_default_mappings \
       -Xiwyu --mapping_file=$MAPPING_FILE $@ 2>/dev/null
   # IWYU returns 2 if everything looks good. It returns some other non-zero exit code otherwise.
   if [ $? -eq 2 ]; then
@@ -68,6 +74,7 @@ else
     # analysis. If we aren't sure why IWYU wants to include something, try changing verbose to 3.
     external/clang_linux_amd64/usr/bin/include-what-you-use \
         -Xiwyu --keep="include/core/SkTypes.h" \
+        -Xiwyu --no_default_mappings \
         -Xiwyu --mapping_file=$MAPPING_FILE -Xiwyu --no_comments \
         -Xiwyu --quoted_includes_first -Xiwyu --verbose=3 $@
     exit 1 # fail the build

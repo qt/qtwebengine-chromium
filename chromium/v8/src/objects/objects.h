@@ -95,6 +95,7 @@
 //         - JSSegments            // If V8_INTL_SUPPORT enabled.
 //         - JSSegmentIterator     // If V8_INTL_SUPPORT enabled.
 //         - JSV8BreakIterator     // If V8_INTL_SUPPORT enabled.
+//         - WasmExceptionPackage
 //         - WasmTagObject
 //         - WasmGlobalObject
 //         - WasmInstanceObject
@@ -381,7 +382,8 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline bool HasValidElements();
 
   // ECMA-262 9.2.
-  V8_EXPORT_PRIVATE bool BooleanValue(Isolate* isolate);
+  template <typename IsolateT>
+  V8_EXPORT_PRIVATE bool BooleanValue(IsolateT* isolate);
   Object ToBoolean(Isolate* isolate);
 
   // ES6 section 7.2.11 Abstract Relational Comparison
@@ -545,7 +547,7 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
       Maybe<ShouldThrow> should_throw);
   V8_WARN_UNUSED_RESULT static Maybe<bool> SetDataProperty(
       LookupIterator* it, Handle<Object> value);
-  V8_WARN_UNUSED_RESULT static Maybe<bool> AddDataProperty(
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT static Maybe<bool> AddDataProperty(
       LookupIterator* it, Handle<Object> value, PropertyAttributes attributes,
       Maybe<ShouldThrow> should_throw, StoreOrigin store_origin,
       EnforceDefineSemantics semantics = EnforceDefineSemantics::kSet);
@@ -730,14 +732,15 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   //
   // ExternalPointer_t field accessors.
   //
+  template <ExternalPointerTag tag>
   inline void InitExternalPointerField(size_t offset, Isolate* isolate,
-                                       ExternalPointerTag tag);
-  inline void InitExternalPointerField(size_t offset, Isolate* isolate,
-                                       Address value, ExternalPointerTag tag);
-  inline Address ReadExternalPointerField(size_t offset, Isolate* isolate,
-                                          ExternalPointerTag tag) const;
+                                       Address value);
+  template <ExternalPointerTag tag>
+  inline Address ReadExternalPointerField(size_t offset,
+                                          Isolate* isolate) const;
+  template <ExternalPointerTag tag>
   inline void WriteExternalPointerField(size_t offset, Isolate* isolate,
-                                        Address value, ExternalPointerTag tag);
+                                        Address value);
 
   // If the receiver is the JSGlobalObject, the store was contextual. In case
   // the property did not exist yet on the global object itself, we have to
@@ -755,6 +758,7 @@ class Object : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   // - HeapNumbers in the shared old space
   // - Strings for which String::IsShared() is true
   // - JSSharedStructs
+  // - JSSharedArrays
   inline bool IsShared() const;
 
   // Returns an equivalent value that's safe to share across Isolates if

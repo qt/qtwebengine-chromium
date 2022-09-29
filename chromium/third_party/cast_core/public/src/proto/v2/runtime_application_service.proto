@@ -16,6 +16,7 @@ syntax = "proto3";
 
 package cast.v2;
 
+import "proto/common/application_state.proto";
 import "proto/v2/url_rewrite.proto";
 
 option optimize_for = LITE_RUNTIME;
@@ -25,17 +26,44 @@ option optimize_for = LITE_RUNTIME;
 // This service is implemented by the Runtime and represents services
 // specific to a Cast application.
 service RuntimeApplicationService {
-  // Set the URL rewrite rules that the Runtime will use to contact the MSP
+  // Sets the URL rewrite rules that the Runtime will use to contact the MSP
   // This is called when the rewrite rules are changed
   // A non streaming API for simplicity
   rpc SetUrlRewriteRules(SetUrlRewriteRulesRequest)
       returns (SetUrlRewriteRulesResponse);
+
+  // Sets application media state. Runtime must support this API if application
+  // preloading is supported.
+  rpc SetMediaState(SetMediaStateRequest) returns (SetMediaStateResponse);
+
+  // Sets application visibility. Runtime must support this API if application
+  // preloading is supported.
+  rpc SetVisibility(SetVisibilityRequest) returns (SetVisibilityResponse);
+
+  // Sets application touch input capability.
+  rpc SetTouchInput(SetTouchInputRequest) returns (SetTouchInputResponse);
 }
 
-// Request to set the URL rewrite rules on the runtime application.
 message SetUrlRewriteRulesRequest {
-  // URL rewrite rules.
   UrlRequestRewriteRules rules = 1;
 }
 
 message SetUrlRewriteRulesResponse {}
+
+message SetMediaStateRequest {
+  cast.common.MediaState.Type media_state = 1;
+}
+
+message SetMediaStateResponse {}
+
+message SetVisibilityRequest {
+  cast.common.Visibility.Type visibility = 1;
+}
+
+message SetVisibilityResponse {}
+
+message SetTouchInputRequest {
+  cast.common.TouchInput.Type touch_input = 1;
+}
+
+message SetTouchInputResponse {}

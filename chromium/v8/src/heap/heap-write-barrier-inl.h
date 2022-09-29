@@ -32,12 +32,11 @@ V8_EXPORT_PRIVATE void Heap_WriteBarrierForCodeSlow(Code host);
 V8_EXPORT_PRIVATE void Heap_GenerationalBarrierForCodeSlow(Code host,
                                                            RelocInfo* rinfo,
                                                            HeapObject object);
-V8_EXPORT_PRIVATE void Heap_SharedHeapBarrierForCodeSlow(Code host,
-                                                         RelocInfo* rinfo,
-                                                         HeapObject object);
 
 V8_EXPORT_PRIVATE void Heap_GenerationalEphemeronKeyBarrierSlow(
     Heap* heap, HeapObject table, Address slot);
+
+inline bool IsCodeSpaceObject(HeapObject object);
 
 // Do not use these internal details anywhere outside of this file. These
 // internals are only intended to shortcut write barrier checks.
@@ -46,12 +45,12 @@ namespace heap_internals {
 struct MemoryChunk {
   static constexpr uintptr_t kFlagsOffset = kSizetSize;
   static constexpr uintptr_t kHeapOffset = kSizetSize + kUIntptrSize;
-  static constexpr uintptr_t kIsExecutableBit = uintptr_t{1} << 0;
-  static constexpr uintptr_t kMarkingBit = uintptr_t{1} << 17;
+  static constexpr uintptr_t kInSharedHeapBit = uintptr_t{1} << 0;
   static constexpr uintptr_t kFromPageBit = uintptr_t{1} << 3;
   static constexpr uintptr_t kToPageBit = uintptr_t{1} << 4;
-  static constexpr uintptr_t kReadOnlySpaceBit = uintptr_t{1} << 20;
-  static constexpr uintptr_t kInSharedHeapBit = uintptr_t{1} << 22;
+  static constexpr uintptr_t kMarkingBit = uintptr_t{1} << 5;
+  static constexpr uintptr_t kReadOnlySpaceBit = uintptr_t{1} << 6;
+  static constexpr uintptr_t kIsExecutableBit = uintptr_t{1} << 21;
 
   V8_INLINE static heap_internals::MemoryChunk* FromHeapObject(
       HeapObject object) {
@@ -117,6 +116,15 @@ inline void CombinedWriteBarrierInternal(HeapObject host, HeapObjectSlot slot,
 
   // Marking barrier: mark value & record slots when marking is on.
   if (is_marking) {
+#ifdef V8_EXTERNAL_CODE_SPACE
+    // CodePageHeaderModificationScope is not required because the only case
+    // when a Code value is stored somewhere is during creation of a new Code
+    // object which is then stored to CodeDataContainer's code field and this
+    // case is already guarded by CodePageMemoryModificationScope.
+#else
+    CodePageHeaderModificationScope rwx_write_scope(
+        "Marking a Code object requires write access to the Code page header");
+#endif
     WriteBarrier::MarkingSlow(host_chunk->GetHeap(), host, HeapObjectSlot(slot),
                               value);
   }
@@ -124,15 +132,23 @@ inline void CombinedWriteBarrierInternal(HeapObject host, HeapObjectSlot slot,
 
 }  // namespace heap_internals
 
-inline void WriteBarrierForCode(Code host, RelocInfo* rinfo, Object value) {
+inline void WriteBarrierForCode(Code host, RelocInfo* rinfo, Object value,
+                                WriteBarrierMode mode) {
   DCHECK(!HasWeakHeapObjectTag(value));
   if (!value.IsHeapObject()) return;
   WriteBarrierForCode(host, rinfo, HeapObject::cast(value));
 }
 
-inline void WriteBarrierForCode(Code host, RelocInfo* rinfo, HeapObject value) {
+inline void WriteBarrierForCode(Code host, RelocInfo* rinfo, HeapObject value,
+                                WriteBarrierMode mode) {
+  if (mode == SKIP_WRITE_BARRIER) {
+    SLOW_DCHECK(!WriteBarrier::IsRequired(host, value));
+    return;
+  }
+
+  DCHECK_EQ(mode, UPDATE_WRITE_BARRIER);
   GenerationalBarrierForCode(host, rinfo, value);
-  SharedHeapBarrierForCode(host, rinfo, value);
+  WriteBarrier::Shared(host, rinfo, value);
   WriteBarrier::Marking(host, rinfo, value);
 }
 
@@ -193,6 +209,9 @@ inline void CombinedEphemeronWriteBarrier(EphemeronHashTable host,
 
   // Marking barrier: mark value & record slots when marking is on.
   if (is_marking) {
+    // Currently Code values are never stored in EphemeronTables. If this ever
+    // changes then the CodePageHeaderModificationScope might be required here.
+    DCHECK(!IsCodeSpaceObject(heap_object_value));
     WriteBarrier::MarkingSlow(host_chunk->GetHeap(), host, HeapObjectSlot(slot),
                               heap_object_value);
   }
@@ -205,15 +224,6 @@ inline void GenerationalBarrierForCode(Code host, RelocInfo* rinfo,
       heap_internals::MemoryChunk::FromHeapObject(object);
   if (!object_chunk->InYoungGeneration()) return;
   Heap_GenerationalBarrierForCodeSlow(host, rinfo, object);
-}
-
-inline void SharedHeapBarrierForCode(Code host, RelocInfo* rinfo,
-                                     HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
-  heap_internals::MemoryChunk* object_chunk =
-      heap_internals::MemoryChunk::FromHeapObject(object);
-  if (!object_chunk->InSharedHeap()) return;
-  Heap_SharedHeapBarrierForCodeSlow(host, rinfo, object);
 }
 
 inline WriteBarrierMode GetWriteBarrierModeForObject(
@@ -257,24 +267,37 @@ base::Optional<Heap*> WriteBarrier::GetHeapIfMarking(HeapObject object) {
   return chunk->GetHeap();
 }
 
+Heap* WriteBarrier::GetHeap(HeapObject object) {
+  DCHECK(!V8_ENABLE_THIRD_PARTY_HEAP_BOOL);
+  heap_internals::MemoryChunk* chunk =
+      heap_internals::MemoryChunk::FromHeapObject(object);
+  DCHECK(!chunk->InReadOnlySpace());
+  return chunk->GetHeap();
+}
+
 void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Object value) {
   DCHECK(!HasWeakHeapObjectTag(value));
   if (!value.IsHeapObject()) return;
-  Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
-}
-
-void WriteBarrier::Marking(HeapObject host, ObjectSlot slot, Code value) {
-  DCHECK(!HasWeakHeapObjectTag(value));
-  if (!value.IsHeapObject()) return;
-  CodePageHeaderModificationScope rwx_write_scope(
-      "Marking a Code object requires write access to the Code page header");
-  Marking(host, HeapObjectSlot(slot), HeapObject::cast(value));
+  HeapObject value_heap_object = HeapObject::cast(value);
+  // Currently this marking barrier is never used for Code values. If this ever
+  // changes then the CodePageHeaderModificationScope might be required here.
+  DCHECK(!IsCodeSpaceObject(value_heap_object));
+  Marking(host, HeapObjectSlot(slot), value_heap_object);
 }
 
 void WriteBarrier::Marking(HeapObject host, MaybeObjectSlot slot,
                            MaybeObject value) {
   HeapObject value_heap_object;
   if (!value->GetHeapObject(&value_heap_object)) return;
+#ifdef V8_EXTERNAL_CODE_SPACE
+  // This barrier is called from generated code and from C++ code.
+  // There must be no stores of Code values from generated code and all stores
+  // of Code values in C++ must be handled by CombinedWriteBarrierInternal().
+  DCHECK(!IsCodeSpaceObject(value_heap_object));
+#else
+  CodePageHeaderModificationScope rwx_write_scope(
+      "Marking a Code object requires write access to the Code page header");
+#endif
   Marking(host, HeapObjectSlot(slot), value_heap_object);
 }
 
@@ -289,6 +312,18 @@ void WriteBarrier::Marking(Code host, RelocInfo* reloc_info, HeapObject value) {
   auto heap = GetHeapIfMarking(host);
   if (!heap) return;
   MarkingSlow(*heap, host, reloc_info, value);
+}
+
+void WriteBarrier::Shared(Code host, RelocInfo* reloc_info, HeapObject value) {
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return;
+
+  heap_internals::MemoryChunk* value_chunk =
+      heap_internals::MemoryChunk::FromHeapObject(value);
+  if (!value_chunk->InSharedHeap()) return;
+
+  Heap* heap = GetHeap(host);
+  DCHECK_NOT_NULL(heap);
+  SharedSlow(heap, host, reloc_info, value);
 }
 
 void WriteBarrier::Marking(JSArrayBuffer host,

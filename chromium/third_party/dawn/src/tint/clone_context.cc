@@ -23,6 +23,10 @@ TINT_INSTANTIATE_TYPEINFO(tint::Cloneable);
 
 namespace tint {
 
+Cloneable::Cloneable() = default;
+Cloneable::Cloneable(Cloneable&&) = default;
+Cloneable::~Cloneable() = default;
+
 CloneContext::ListTransforms::ListTransforms() = default;
 CloneContext::ListTransforms::~ListTransforms() = default;
 
@@ -58,7 +62,7 @@ void CloneContext::Clone() {
 
 ast::FunctionList CloneContext::Clone(const ast::FunctionList& v) {
     ast::FunctionList out;
-    out.reserve(v.size());
+    out.Reserve(v.Length());
     for (const ast::Function* el : v) {
         out.Add(Clone(el));
     }

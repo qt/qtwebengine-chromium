@@ -12,7 +12,6 @@
 #include "include/private/SkTDArray.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkBigPicture.h"
-#include "src/core/SkMiniRecorder.h"
 #include "src/core/SkRecord.h"
 #include "src/core/SkRecords.h"
 
@@ -41,10 +40,10 @@ private:
 class SkRecorder final : public SkCanvasVirtualEnforcer<SkNoDrawCanvas> {
 public:
     // Does not take ownership of the SkRecord.
-    SkRecorder(SkRecord*, int width, int height, SkMiniRecorder* = nullptr);   // TODO: remove
-    SkRecorder(SkRecord*, const SkRect& bounds, SkMiniRecorder* = nullptr);
+    SkRecorder(SkRecord*, int width, int height);   // TODO: remove
+    SkRecorder(SkRecord*, const SkRect& bounds);
 
-    void reset(SkRecord*, const SkRect& bounds, SkMiniRecorder* = nullptr);
+    void reset(SkRecord*, const SkRect& bounds);
 
     size_t approxBytesUsedBySubPictures() const { return fApproxBytesUsedBySubPictures; }
 
@@ -76,7 +75,8 @@ public:
 #if SK_SUPPORT_GPU
     void onDrawSlug(const sktext::gpu::Slug* slug) override;
 #endif
-    void onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) override;
+    void onDrawGlyphRunList(
+            const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) override;
     void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                      const SkPoint texCoords[4], SkBlendMode,
                      const SkPaint& paint) override;
@@ -122,8 +122,6 @@ public:
 
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&, const SkSurfaceProps&) override;
 
-    void flushMiniRecorder();
-
 private:
     template <typename T>
     T* copy(const T*);
@@ -137,8 +135,6 @@ private:
     size_t fApproxBytesUsedBySubPictures;
     SkRecord* fRecord;
     std::unique_ptr<SkDrawableList> fDrawableList;
-
-    SkMiniRecorder* fMiniRecorder;
 };
 
 #endif//SkRecorder_DEFINED

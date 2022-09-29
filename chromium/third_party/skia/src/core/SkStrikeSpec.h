@@ -10,13 +10,15 @@
 
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkSpan.h"
 #include "src/core/SkDescriptor.h"
-#include "src/core/SkStrikeForGPU.h"
+#include "src/text/StrikeForGPU.h"
 
 #include <tuple>
 
 #if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 #include "src/text/gpu/SDFTControl.h"
+
 namespace sktext::gpu {
 class StrikeCache;
 class TextStrike;
@@ -25,6 +27,7 @@ class TextStrike;
 
 class SkFont;
 class SkPaint;
+class SkStrike;
 class SkStrikeCache;
 class SkSurfaceProps;
 
@@ -47,19 +50,21 @@ public:
             SkScalerContextFlags scalerContextFlags,
             const SkMatrix& deviceMatrix);
 
+    // A strike for finding the max size for transforming masks. This is used to calculate the
+    // maximum dimension of a SubRun of text.
+    static SkStrikeSpec MakeTransformMask(
+            const SkFont& font,
+            const SkPaint& paint,
+            const SkSurfaceProps& surfaceProps,
+            SkScalerContextFlags scalerContextFlags,
+            const SkMatrix& deviceMatrix);
+
     // Create a strike spec for path style cache entries.
     static std::tuple<SkStrikeSpec, SkScalar> MakePath(
             const SkFont& font,
             const SkPaint& paint,
             const SkSurfaceProps& surfaceProps,
             SkScalerContextFlags scalerContextFlags);
-
-    static std::tuple<SkStrikeSpec, SkScalar> MakeSourceFallback(
-            const SkFont& font,
-            const SkPaint& paint,
-            const SkSurfaceProps& surfaceProps,
-            SkScalerContextFlags scalerContextFlags,
-            SkScalar maxSourceGlyphDimension);
 
     // Create a canonical strike spec for device-less measurements.
     static std::tuple<SkStrikeSpec, SkScalar> MakeCanonicalized(
@@ -83,7 +88,8 @@ public:
     sk_sp<sktext::gpu::TextStrike> findOrCreateTextStrike(sktext::gpu::StrikeCache* cache) const;
 #endif
 
-    SkScopedStrikeForGPU findOrCreateScopedStrike(SkStrikeForGPUCacheInterface* cache) const;
+    sktext::ScopedStrikeForGPU findOrCreateScopedStrike(
+            sktext::StrikeForGPUCacheInterface* cache) const;
 
     sk_sp<SkStrike> findOrCreateStrike() const;
 

@@ -45,12 +45,16 @@ struct Token {
         TK_INLINE,
         TK_NOINLINE,
         TK_HASSIDEEFFECTS,
+        TK_READONLY,
+        TK_WRITEONLY,
+        TK_BUFFER,
         TK_STRUCT,
         TK_LAYOUT,
         TK_HIGHP,
         TK_MEDIUMP,
         TK_LOWP,
         TK_ES3,
+        TK_THREADGROUP,
         TK_RESERVED,
         TK_IDENTIFIER,
         TK_DIRECTIVE,
@@ -108,7 +112,9 @@ struct Token {
 
     Token() {}
     Token(Kind kind, int32_t offset, int32_t length)
-            : fKind(kind), fOffset(offset), fLength(length) {}
+            : fKind(kind)
+            , fOffset(offset)
+            , fLength(length) {}
 
     Kind fKind = Kind::TK_NONE;
     int32_t fOffset = -1;

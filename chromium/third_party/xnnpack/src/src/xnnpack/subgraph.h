@@ -31,6 +31,9 @@
 
 #define XNN_MAX_OPERATOR_OBJECTS 4
 
+/// Disable fusion of nodes in subgraph. Fusion is enabled by default, set this flag to turn it off.
+#define XNN_FLAG_NO_OPERATOR_FUSION 0x80000000
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -106,12 +109,22 @@ struct xnn_value {
   uint32_t fp32_id;
 };
 
+enum xnn_allocation_type {
+  xnn_allocation_type_invalid = 0,
+  /// Static data that is provided by caller, needs to outlive the xnn_runtime.
+  xnn_allocation_type_static,
+  /// Lives in XNNPACK-managed internal workspace.
+  xnn_allocation_type_workspace,
+  /// Non-static data that is external to the runtime, provided by caller, specified in xnn_setup_runtime.
+  xnn_allocation_type_external,
+};
+
 struct xnn_blob {
   /// Size in bytes.
   size_t size;
   /// Data pointer.
   void* data;
-  bool external;
+  enum xnn_allocation_type allocation_type;
 };
 
 struct xnn_node;
@@ -321,7 +334,8 @@ struct xnn_runtime {
   struct xnn_blob* blobs;
   size_t num_blobs;
 
-  void* workspace;
+  struct xnn_workspace* workspace;
+  struct xnn_runtime* next_workspace_user;
 
 #if XNN_PLATFORM_JIT
   struct xnn_code_cache code_cache;
@@ -348,6 +362,10 @@ size_t xnn_tensor_get_size(
 size_t xnn_shape_multiply_all_dims(
   const struct xnn_shape shape[1]);
 
+// Product of all shape dimensions, except for the specified number of the last dimensions
+size_t xnn_shape_multiply_batch_dims(
+  const struct xnn_shape shape[1], size_t num_nonbatch_dims);
+
 // Product of all shape dimensions, except for the last (channel) one
 size_t xnn_shape_multiply_non_channel_dims(
   const struct xnn_shape shape[1]);
@@ -367,6 +385,14 @@ void xnn_init_convert_node(
   uint32_t input_id,
   uint32_t output_id,
   uint32_t flags);
+
+struct xnn_workspace {
+  void* data;
+  size_t size;
+  struct xnn_runtime* first_user;
+  // Workspace will be destroyed in xnn_delete_runtime or xnn_delete_workspace if num_users reaches 0.
+  size_t ref_count;
+};
 
 #ifdef __cplusplus
 }  // extern "C"

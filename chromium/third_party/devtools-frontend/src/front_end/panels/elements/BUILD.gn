@@ -10,6 +10,7 @@ import("../visibility.gni")
 
 generate_css("css_files") {
   sources = [
+    "accessibilityTreeView.css",
     "classesPaneWidget.css",
     "computedStyleSidebarPane.css",
     "domLinkifier.css",
@@ -31,6 +32,8 @@ devtools_module("elements") {
   sources = [
     "AccessibilityTreeUtils.ts",
     "AccessibilityTreeView.ts",
+    "CSSRuleValidator.ts",
+    "CSSRuleValidatorHelper.ts",
     "ClassesPaneWidget.ts",
     "ColorSwatchPopoverIcon.ts",
     "ComputedStyleModel.ts",
@@ -60,10 +63,12 @@ devtools_module("elements") {
     "StylePropertyTreeElement.ts",
     "StylePropertyUtils.ts",
     "StylesSidebarPane.ts",
+    "TopLayerContainer.ts",
   ]
 
   deps = [
     "../../core/common:bundle",
+    "../../core/host:bundle",
     "../../core/i18n:bundle",
     "../../core/platform:bundle",
     "../../core/protocol_client:bundle",

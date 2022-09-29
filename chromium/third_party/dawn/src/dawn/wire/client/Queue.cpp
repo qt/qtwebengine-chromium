@@ -19,8 +19,6 @@
 
 namespace dawn::wire::client {
 
-Queue::Queue(Client* c, uint32_t r, uint32_t i) : ObjectBase(c, r, i) {}
-
 Queue::~Queue() {
     ClearAllCallbacks(WGPUQueueWorkDoneStatus_Unknown);
 }
@@ -38,6 +36,7 @@ bool Queue::OnWorkDoneCallback(uint64_t requestSerial, WGPUQueueWorkDoneStatus s
 void Queue::OnSubmittedWorkDone(uint64_t signalValue,
                                 WGPUQueueWorkDoneCallback callback,
                                 void* userdata) {
+    Client* client = GetClient();
     if (client->IsDisconnected()) {
         callback(WGPUQueueWorkDoneStatus_DeviceLost, userdata);
         return;
@@ -46,7 +45,7 @@ void Queue::OnSubmittedWorkDone(uint64_t signalValue,
     uint64_t serial = mOnWorkDoneRequests.Add({callback, userdata});
 
     QueueOnSubmittedWorkDoneCmd cmd;
-    cmd.queueId = this->id;
+    cmd.queueId = GetWireId();
     cmd.signalValue = signalValue;
     cmd.requestSerial = serial;
 
@@ -57,13 +56,13 @@ void Queue::WriteBuffer(WGPUBuffer cBuffer, uint64_t bufferOffset, const void* d
     Buffer* buffer = FromAPI(cBuffer);
 
     QueueWriteBufferCmd cmd;
-    cmd.queueId = id;
-    cmd.bufferId = buffer->id;
+    cmd.queueId = GetWireId();
+    cmd.bufferId = buffer->GetWireId();
     cmd.bufferOffset = bufferOffset;
     cmd.data = static_cast<const uint8_t*>(data);
     cmd.size = size;
 
-    client->SerializeCommand(cmd);
+    GetClient()->SerializeCommand(cmd);
 }
 
 void Queue::WriteTexture(const WGPUImageCopyTexture* destination,
@@ -72,14 +71,14 @@ void Queue::WriteTexture(const WGPUImageCopyTexture* destination,
                          const WGPUTextureDataLayout* dataLayout,
                          const WGPUExtent3D* writeSize) {
     QueueWriteTextureCmd cmd;
-    cmd.queueId = id;
+    cmd.queueId = GetWireId();
     cmd.destination = destination;
     cmd.data = static_cast<const uint8_t*>(data);
     cmd.dataSize = dataSize;
     cmd.dataLayout = dataLayout;
     cmd.writeSize = writeSize;
 
-    client->SerializeCommand(cmd);
+    GetClient()->SerializeCommand(cmd);
 }
 
 void Queue::CancelCallbacksForDisconnect() {

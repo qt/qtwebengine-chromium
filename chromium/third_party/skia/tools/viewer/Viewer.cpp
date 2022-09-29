@@ -19,7 +19,6 @@
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkColorSpacePriv.h"
-#include "src/core/SkGlyphRun.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
@@ -36,6 +35,7 @@
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/text/GlyphRun.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
 #include "src/utils/SkShaderUtils.h"
@@ -79,7 +79,7 @@
 #include "tools/viewer/RiveSlide.h"
 
 #if defined(SK_ENABLE_SVG)
-    #include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
+#include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
 #endif
 
 class CapturingShaderErrorHandler : public GrContextOptions::ShaderErrorHandler {
@@ -332,6 +332,8 @@ extern bool gUseSkVMBlitter;
 extern bool gSkVMAllowJIT;
 extern bool gSkVMJITViaDylib;
 
+static bool ColrV1VariationsEnabledForTest() { return true; }
+
 Viewer::Viewer(int argc, char** argv, void* platformData)
     : fCurrentSlide(-1)
     , fRefresh(false)
@@ -365,6 +367,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
+    SkGraphics::SetVariableColrV1EnabledFunc(ColrV1VariationsEnabledForTest);
 
     gPathRendererNames[GpuPathRenderers::kDefault] = "Default Path Renderers";
     gPathRendererNames[GpuPathRenderers::kAtlas] = "Atlas (tessellation)";
@@ -405,6 +408,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
             GrContextOptions::ShaderCacheStrategy::kSkSL;
     displayParams.fGrContextOptions.fShaderErrorHandler = &gShaderErrorHandler;
     displayParams.fGrContextOptions.fSuppressPrints = true;
+    displayParams.fGrContextOptions.fSupportBilerpFromGlyphAtlas = true;
     if (FLAGS_dmsaa) {
         displayParams.fSurfaceProps = SkSurfaceProps(
                 displayParams.fSurfaceProps.flags() | SkSurfaceProps::kDynamicMSAA_Flag,
@@ -1075,7 +1079,7 @@ void Viewer::updateTitle() {
 
     if (ColorMode::kLegacy != fColorMode) {
         int curPrimaries = -1;
-        for (size_t i = 0; i < SK_ARRAY_COUNT(gNamedPrimaries); ++i) {
+        for (size_t i = 0; i < std::size(gNamedPrimaries); ++i) {
             if (primaries_equal(*gNamedPrimaries[i].fPrimaries, fColorSpacePrimaries)) {
                 curPrimaries = i;
                 break;
@@ -1390,7 +1394,8 @@ public:
             this->filterTextBlob(paint, blob, &cache), x, y, paint);
     }
 
-    void onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) override {
+    void onDrawGlyphRunList(
+            const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) override {
         sk_sp<SkTextBlob> cache;
         sk_sp<SkTextBlob> blob = glyphRunList.makeBlob();
         this->filterTextBlob(paint, blob.get(), &cache);
@@ -1398,8 +1403,9 @@ public:
             this->SkPaintFilterCanvas::onDrawGlyphRunList(glyphRunList, paint);
             return;
         }
-        SkGlyphRunBuilder builder;
-        const SkGlyphRunList& filtered = builder.blobToGlyphRunList(*cache, glyphRunList.origin());
+        sktext::GlyphRunBuilder builder;
+        const sktext::GlyphRunList& filtered =
+                builder.blobToGlyphRunList(*cache, glyphRunList.origin());
         this->SkPaintFilterCanvas::onDrawGlyphRunList(filtered, paint);
     }
 
@@ -2465,7 +2471,7 @@ void Viewer::drawImGui() {
 
                 // Pick from common gamuts:
                 int primariesIdx = 4; // Default: Custom
-                for (size_t i = 0; i < SK_ARRAY_COUNT(gNamedPrimaries); ++i) {
+                for (size_t i = 0; i < std::size(gNamedPrimaries); ++i) {
                     if (primaries_equal(*gNamedPrimaries[i].fPrimaries, fColorSpacePrimaries)) {
                         primariesIdx = i;
                         break;
@@ -2955,8 +2961,8 @@ static void WriteStateObject(SkJSONWriter& writer, const char* name, const char*
                              OptionsFunc&& optionsFunc) {
     writer.beginObject();
     {
-        writer.appendString(kName , name);
-        writer.appendString(kValue, value);
+        writer.appendCString(kName , name);
+        writer.appendCString(kValue, value);
 
         writer.beginArray(kOptions);
         {
@@ -2984,7 +2990,7 @@ void Viewer::updateUIState() {
     WriteStateObject(writer, kSlideStateName, fSlides[fCurrentSlide]->getName().c_str(),
         [this](SkJSONWriter& writer) {
             for(const auto& slide : fSlides) {
-                writer.appendString(slide->getName().c_str());
+                writer.appendString(slide->getName());
             }
         });
 
@@ -2992,7 +2998,7 @@ void Viewer::updateUIState() {
     WriteStateObject(writer, kBackendStateName, kBackendTypeStrings[fBackendType],
         [](SkJSONWriter& writer) {
             for (const auto& str : kBackendTypeStrings) {
-                writer.appendString(str);
+                writer.appendCString(str);
             }
         });
 
@@ -3017,36 +3023,34 @@ void Viewer::updateUIState() {
         [this](SkJSONWriter& writer) {
             auto ctx = fWindow->directContext();
             if (!ctx) {
-                writer.appendString("Software");
+                writer.appendNString("Software");
             } else {
-                writer.appendString(gPathRendererNames[GpuPathRenderers::kDefault].c_str());
+                writer.appendString(gPathRendererNames[GpuPathRenderers::kDefault]);
 #if SK_GPU_V1
                 if (fWindow->sampleCount() > 1 || FLAGS_dmsaa) {
                     const auto* caps = ctx->priv().caps();
                     if (skgpu::v1::AtlasPathRenderer::IsSupported(ctx)) {
-                        writer.appendString(
-                                gPathRendererNames[GpuPathRenderers::kAtlas].c_str());
+                        writer.appendString(gPathRendererNames[GpuPathRenderers::kAtlas]);
                     }
                     if (skgpu::v1::TessellationPathRenderer::IsSupported(*caps)) {
-                        writer.appendString(
-                                gPathRendererNames[GpuPathRenderers::kTessellation].c_str());
+                        writer.appendString(gPathRendererNames[GpuPathRenderers::kTessellation]);
                     }
                 }
 #endif
                 if (1 == fWindow->sampleCount()) {
-                    writer.appendString(gPathRendererNames[GpuPathRenderers::kSmall].c_str());
+                    writer.appendString(gPathRendererNames[GpuPathRenderers::kSmall]);
                 }
-                writer.appendString(gPathRendererNames[GpuPathRenderers::kTriangulating].c_str());
-                writer.appendString(gPathRendererNames[GpuPathRenderers::kNone].c_str());
+                writer.appendString(gPathRendererNames[GpuPathRenderers::kTriangulating]);
+                writer.appendString(gPathRendererNames[GpuPathRenderers::kNone]);
             }
         });
 
     // Softkey state
     WriteStateObject(writer, kSoftkeyStateName, kSoftkeyHint,
         [this](SkJSONWriter& writer) {
-            writer.appendString(kSoftkeyHint);
+            writer.appendNString(kSoftkeyHint);
             for (const auto& softkey : fCommands.getCommandsAsSoftkeys()) {
-                writer.appendString(softkey.c_str());
+                writer.appendString(softkey);
             }
         });
 

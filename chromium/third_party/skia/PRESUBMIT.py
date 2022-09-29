@@ -121,7 +121,9 @@ def _CopyrightChecks(input_api, output_api, source_file_filter=None):
   for affected_file in input_api.AffectedSourceFiles(source_file_filter):
     if ('third_party/' in affected_file.LocalPath() or
         'tests/sksl/' in affected_file.LocalPath() or
-        'bazel/rbe/' in affected_file.LocalPath()):
+        'bazel/rbe/' in affected_file.LocalPath() or
+        'bazel/external/' in affected_file.LocalPath() or
+        'bazel/exporter/interfaces/mocks/' in affected_file.LocalPath()):
       continue
     contents = input_api.ReadFile(affected_file, 'rb')
     if not re.search(copyright_pattern, contents):
@@ -217,24 +219,6 @@ class _WarningsAsErrors():
     self.output_api.PresubmitPromptWarning = self.old_warning
 
 
-def _CheckDEPSValid(input_api, output_api):
-  """Ensure that DEPS contains valid entries."""
-  results = []
-  script = os.path.join('infra', 'bots', 'check_deps.py')
-  relevant_files = ('DEPS', script)
-  for f in input_api.AffectedFiles():
-    if f.LocalPath() in relevant_files:
-      break
-  else:
-    return results
-  cmd = ['python3', script]
-  try:
-    subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-  except subprocess.CalledProcessError as e:
-    results.append(output_api.PresubmitError(e.output))
-  return results
-
-
 def _RegenerateAllExamplesCPP(input_api, output_api):
   """Regenerates all_examples.cpp if an example was added or deleted."""
   if not any(f.LocalPath().startswith('docs/examples/')
@@ -266,7 +250,7 @@ def _CheckBazelBUILDFiles(input_api, output_api):
     is_bazel = affected_file_path.endswith('BUILD.bazel')
     # This list lines up with the one in autoroller_lib.py (see G3).
     excluded_paths = ["infra/", "bazel/rbe/", "bazel/external/", "bazel/common_config_settings/",
-                      "modules/canvaskit/go/", "experimental/"]
+                      "modules/canvaskit/go/", "experimental/", "bazel/platform", "third_party/"]
     is_excluded = any(affected_file_path.startswith(n) for n in excluded_paths)
     if is_bazel and not is_excluded:
       with open(affected_file_path, 'r') as file:
@@ -282,11 +266,11 @@ def _CheckBazelBUILDFiles(input_api, output_api):
             ('%s needs to have\nlicenses(["notice"])\nimmediately after ' +
              'the load() calls to comply with G3 policies.') % affected_file_path
           ))
-        if 'cc_library(' in contents and '"cc_library"' not in contents:
+        if 'cc_library(' in contents and '"skia_cc_library"' not in contents:
           results.append(output_api.PresubmitError(
-            ('%s needs load cc_library from macros.bzl instead of using the ' +
+            ('%s needs to load skia_cc_library from macros.bzl instead of using the ' +
              'native one. This allows us to build differently for G3.\n' +
-             'Add "cc_library" to load("//bazel:macros.bzl", ...)')
+             'Add "skia_cc_library" to load("//bazel:macros.bzl", ...)')
             % affected_file_path
           ))
   return results
@@ -356,7 +340,7 @@ def _CheckBuildifier(input_api, output_api):
   for affected_file in input_api.AffectedFiles(include_deletes=False):
     affected_file_path = affected_file.LocalPath()
     if affected_file_path.endswith('BUILD.bazel') or affected_file_path.endswith('.bzl'):
-      if not affected_file_path.endswith('public.bzl'):
+      if not affected_file_path.endswith('public.bzl') and not affected_file_path.endswith('go_repositories.bzl'):
         files.append(affected_file_path)
   if not files:
     return []
@@ -399,7 +383,6 @@ def _CommonChecks(input_api, output_api):
   results.extend(_IfDefChecks(input_api, output_api))
   results.extend(_CopyrightChecks(input_api, output_api,
                                   source_file_filter=sources))
-  results.extend(_CheckDEPSValid(input_api, output_api))
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
   results.extend(_CheckGitConflictMarkers(input_api, output_api))

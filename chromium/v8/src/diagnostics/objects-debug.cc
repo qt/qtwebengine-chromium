@@ -63,6 +63,7 @@
 #include "src/objects/js-segmenter-inl.h"
 #include "src/objects/js-segments-inl.h"
 #endif  // V8_INTL_SUPPORT
+#include "src/objects/js-shared-array-inl.h"
 #include "src/objects/js-struct-inl.h"
 #include "src/objects/js-temporal-objects-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
@@ -178,6 +179,8 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
   VerifyPointer(isolate, map(cage_base));
   CHECK(map(cage_base).IsMap(cage_base));
 
+  CHECK(CheckRequiredAlignment(isolate));
+
   switch (map(cage_base).instance_type()) {
 #define STRING_TYPE_CASE(TYPE, size, name, CamelName) case TYPE:
     STRING_TYPE_LIST(STRING_TYPE_CASE)
@@ -263,6 +266,9 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
     case WASM_VALUE_OBJECT_TYPE:
       WasmValueObject::cast(*this).WasmValueObjectVerify(isolate);
       break;
+    case WASM_EXCEPTION_PACKAGE_TYPE:
+      WasmExceptionPackage::cast(*this).WasmExceptionPackageVerify(isolate);
+      break;
 #endif  // V8_ENABLE_WEBASSEMBLY
     case JS_SET_KEY_VALUE_ITERATOR_TYPE:
     case JS_SET_VALUE_ITERATOR_TYPE:
@@ -323,6 +329,8 @@ void HeapObject::HeapObjectVerify(Isolate* isolate) {
 // static
 void HeapObject::VerifyHeapPointer(Isolate* isolate, Object p) {
   CHECK(p.IsHeapObject());
+  // If you crashed here and {isolate->is_shared()}, there is a bug causing the
+  // host of {p} to point to a non-shared object.
   CHECK(IsValidHeapObject(isolate->heap(), HeapObject::cast(p)));
   CHECK_IMPLIES(V8_EXTERNAL_CODE_SPACE_BOOL, !p.IsCode());
 }
@@ -542,6 +550,20 @@ void Map::MapVerify(Isolate* isolate) {
     CHECK_EQ(header_end_offset +
                  JSObject::GetEmbedderFieldCount(*this) * kEmbedderDataSlotSize,
              inobject_fields_start_offset);
+
+    if (IsJSSharedStructMap() || IsJSSharedArrayMap() || IsJSAtomicsMutex() ||
+        IsJSAtomicsCondition()) {
+      CHECK(InSharedHeap());
+      CHECK(GetBackPointer().IsUndefined(isolate));
+      Object maybe_cell = prototype_validity_cell();
+      if (maybe_cell.IsCell()) CHECK(maybe_cell.InSharedHeap());
+      CHECK(!is_extensible());
+      CHECK(!is_prototype_map());
+      CHECK(instance_descriptors(isolate).InSharedHeap());
+      if (IsJSSharedArrayMap()) {
+        CHECK(has_shared_array_elements());
+      }
+    }
   }
 
   if (!may_have_interesting_symbols()) {
@@ -559,7 +581,8 @@ void Map::MapVerify(Isolate* isolate) {
   CHECK_IMPLIES(IsJSObjectMap() && !CanHaveFastTransitionableElementsKind(),
                 IsDictionaryElementsKind(elements_kind()) ||
                     IsTerminalElementsKind(elements_kind()) ||
-                    IsAnyHoleyNonextensibleElementsKind(elements_kind()));
+                    IsAnyHoleyNonextensibleElementsKind(elements_kind()) ||
+                    IsSharedArrayElementsKind(elements_kind()));
   CHECK_IMPLIES(is_deprecated(), !is_stable());
   if (is_prototype_map()) {
     DCHECK(prototype_info() == Smi::zero() ||
@@ -836,6 +859,7 @@ void String::StringVerify(Isolate* isolate) {
   CHECK(length() >= 0 && length() <= Smi::kMaxValue);
   CHECK_IMPLIES(length() == 0, *this == ReadOnlyRoots(isolate).empty_string());
   if (IsInternalizedString()) {
+    CHECK(HasHashCode());
     CHECK(!ObjectInYoungGeneration(*this));
   }
 }
@@ -854,6 +878,7 @@ void ConsString::ConsStringVerify(Isolate* isolate) {
 
 void ThinString::ThinStringVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::ThinStringVerify(*this, isolate);
+  CHECK(!HasForwardingIndex(kAcquireLoad));
   CHECK(actual().IsInternalizedString());
   CHECK(actual().IsSeqString() || actual().IsExternalString());
 }
@@ -930,7 +955,7 @@ void SharedFunctionInfo::SharedFunctionInfoVerify(ReadOnlyRoots roots) {
 #if V8_ENABLE_WEBASSEMBLY
   bool is_wasm = HasWasmExportedFunctionData() || HasAsmWasmData() ||
                  HasWasmJSFunctionData() || HasWasmCapiFunctionData() ||
-                 HasWasmOnFulfilledData();
+                 HasWasmResumeData();
 #else
   bool is_wasm = false;
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -1066,19 +1091,27 @@ void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
   CHECK(next_code_link().IsCodeT() || next_code_link().IsUndefined(isolate));
   if (V8_EXTERNAL_CODE_SPACE_BOOL) {
     if (raw_code() != Smi::zero()) {
+      Code code = this->code();
 #ifdef V8_EXTERNAL_CODE_SPACE
-      // kind and builtin_id() getters are not available on CodeDataContainer
+      // kind() and builtin_id() getters are not available on CodeDataContainer
       // when external code space is not enabled.
-      CHECK_EQ(code().kind(), kind());
-      CHECK_EQ(code().builtin_id(), builtin_id());
+      CHECK_EQ(code.kind(), kind());
+      CHECK_EQ(code.builtin_id(), builtin_id());
+      if (V8_REMOVE_BUILTINS_CODE_OBJECTS) {
+        // When FLAG_interpreted_frames_native_stack is enabled each interpreted
+        // function gets its own copy of the InterpreterEntryTrampoline.
+        // Thus, there could be Code'ful builtins.
+        CHECK_IMPLIES(isolate->embedded_blob_code() && is_off_heap_trampoline(),
+                      builtin_id() == Builtin::kInterpreterEntryTrampoline);
+      }
 #endif  // V8_EXTERNAL_CODE_SPACE
-      CHECK_EQ(code().code_data_container(kAcquireLoad), *this);
+      CHECK_EQ(code.code_data_container(kAcquireLoad), *this);
 
       // Ensure the cached code entry point corresponds to the Code object
       // associated with this CodeDataContainer.
 #ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
       if (V8_SHORT_BUILTIN_CALLS_BOOL) {
-        if (code().InstructionStart() == code_entry_point()) {
+        if (code.InstructionStart() == code_entry_point()) {
           // Most common case, all good.
         } else {
           // When shared pointer compression cage is enabled and it has the
@@ -1093,13 +1126,13 @@ void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
               isolate->heap()->GcSafeFindCodeForInnerPointer(
                   code_entry_point());
           CHECK(lookup_result.IsFound());
-          CHECK_EQ(lookup_result.ToCode(), code());
+          CHECK_EQ(lookup_result.ToCode(), code);
         }
       } else {
-        CHECK_EQ(code().InstructionStart(), code_entry_point());
+        CHECK_EQ(code.InstructionStart(), code_entry_point());
       }
 #else
-      CHECK_EQ(code().InstructionStart(), code_entry_point());
+      CHECK_EQ(code.InstructionStart(), code_entry_point());
 #endif  // V8_COMPRESS_POINTERS_IN_SHARED_CAGE
     }
   }
@@ -1218,40 +1251,49 @@ USE_TORQUE_VERIFIER(JSWrappedFunction)
 
 void JSSharedStruct::JSSharedStructVerify(Isolate* isolate) {
   CHECK(IsJSSharedStruct());
+  CHECK(InSharedWritableHeap());
   JSObjectVerify(isolate);
   CHECK(HasFastProperties());
   // Shared structs can only point to primitives or other shared HeapObjects,
   // even internally.
-  // TODO(v8:12547): Generalize shared -> shared pointer verification.
   Map struct_map = map();
-  CHECK(struct_map.InSharedHeap());
-  CHECK(struct_map.GetBackPointer().IsUndefined(isolate));
-  Object maybe_cell = struct_map.prototype_validity_cell();
-  if (maybe_cell.IsCell()) CHECK(maybe_cell.InSharedHeap());
-  CHECK(!struct_map.is_extensible());
-  CHECK(!struct_map.is_prototype_map());
   CHECK(property_array().InSharedHeap());
   DescriptorArray descriptors = struct_map.instance_descriptors(isolate);
-  CHECK(descriptors.InSharedHeap());
   for (InternalIndex i : struct_map.IterateOwnDescriptors()) {
     PropertyDetails details = descriptors.GetDetails(i);
     CHECK_EQ(PropertyKind::kData, details.kind());
     CHECK_EQ(PropertyLocation::kField, details.location());
     CHECK(details.representation().IsTagged());
-    CHECK(
-        RawFastPropertyAt(FieldIndex::ForDescriptor(struct_map, i)).IsShared());
+    FieldIndex field_index = FieldIndex::ForDescriptor(struct_map, i);
+    CHECK(RawFastPropertyAt(field_index).IsShared());
+    CHECK(field_index.is_inobject());
   }
 }
 
 void JSAtomicsMutex::JSAtomicsMutexVerify(Isolate* isolate) {
   CHECK(IsJSAtomicsMutex());
+  CHECK(InSharedWritableHeap());
+  JSObjectVerify(isolate);
+}
+
+void JSAtomicsCondition::JSAtomicsConditionVerify(Isolate* isolate) {
+  CHECK(IsJSAtomicsCondition());
   CHECK(InSharedHeap());
   JSObjectVerify(isolate);
-  Map mutex_map = map();
-  CHECK(mutex_map.InSharedHeap());
-  CHECK(mutex_map.GetBackPointer().IsUndefined(isolate));
-  CHECK(!mutex_map.is_extensible());
-  CHECK(!mutex_map.is_prototype_map());
+}
+
+void JSSharedArray::JSSharedArrayVerify(Isolate* isolate) {
+  CHECK(IsJSSharedArray());
+  JSObjectVerify(isolate);
+  CHECK(HasFastProperties());
+  // Shared arrays can only point to primitives or other shared HeapObjects,
+  // even internally.
+  FixedArray storage = FixedArray::cast(elements());
+  uint32_t length = storage.length();
+  for (uint32_t j = 0; j < length; j++) {
+    Object element_value = storage.get(j);
+    CHECK(element_value.IsShared());
+  }
 }
 
 void WeakCell::WeakCellVerify(Isolate* isolate) {
@@ -1516,7 +1558,7 @@ void JSRegExp::JSRegExpVerify(Isolate* isolate) {
 
       bool is_compiled = latin1_code.IsCodeT();
       if (is_compiled) {
-        CHECK_EQ(FromCodeT(CodeT::cast(latin1_code)).builtin_id(),
+        CHECK_EQ(CodeT::cast(latin1_code).builtin_id(),
                  Builtin::kRegExpExperimentalTrampoline);
         CHECK_EQ(uc16_code, latin1_code);
 
@@ -1793,6 +1835,11 @@ void WasmValueObject::WasmValueObjectVerify(Isolate* isolate) {
   CHECK(IsWasmValueObject());
 }
 
+void WasmExceptionPackage::WasmExceptionPackageVerify(Isolate* isolate) {
+  JSObjectVerify(isolate);
+  CHECK(IsWasmExceptionPackage());
+}
+
 void WasmExportedFunctionData::WasmExportedFunctionDataVerify(
     Isolate* isolate) {
   TorqueGeneratedClassVerifiers::WasmExportedFunctionDataVerify(*this, isolate);
@@ -2011,7 +2058,8 @@ void JSObject::IncrementSpillStatistics(Isolate* isolate,
     case PACKED_FROZEN_ELEMENTS:
     case PACKED_SEALED_ELEMENTS:
     case PACKED_NONEXTENSIBLE_ELEMENTS:
-    case FAST_STRING_WRAPPER_ELEMENTS: {
+    case FAST_STRING_WRAPPER_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS: {
       info->number_of_objects_with_fast_elements_++;
       int holes = 0;
       FixedArray e = FixedArray::cast(elements());

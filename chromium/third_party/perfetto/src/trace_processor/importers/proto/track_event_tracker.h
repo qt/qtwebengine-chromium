@@ -17,6 +17,7 @@
 #ifndef SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_TRACK_EVENT_TRACKER_H_
 #define SRC_TRACE_PROCESSOR_IMPORTERS_PROTO_TRACK_EVENT_TRACKER_H_
 
+#include "src/trace_processor/importers/common/args_tracker.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/types/trace_processor_context.h"
 
@@ -199,7 +200,7 @@ class TrackEventTracker {
   base::Optional<ResolvedDescriptorTrack> ResolveDescriptorTrack(
       uint64_t uuid,
       std::vector<uint64_t>* descendent_uuids);
-  ResolvedDescriptorTrack ResolveDescriptorTrackImpl(
+  base::Optional<ResolvedDescriptorTrack> ResolveDescriptorTrackImpl(
       uint64_t uuid,
       const DescriptorTrackReservation&,
       std::vector<uint64_t>* descendent_uuids);

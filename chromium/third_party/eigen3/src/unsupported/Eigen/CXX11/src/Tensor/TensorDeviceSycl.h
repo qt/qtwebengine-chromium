@@ -136,6 +136,15 @@ class QueueInterface {
                          this->exception_caught_ = this->sycl_async_handler(l);
                        },
                        num_threads) {}
+  
+  explicit QueueInterface(
+      const cl::sycl::queue& q, unsigned num_threads = std::thread::hardware_concurrency())
+      : m_queue(q),
+#ifdef EIGEN_SYCL_USE_PROGRAM_CLASS
+        m_prog(m_queue.get_context(), get_sycl_supported_devices()),
+#endif
+        m_thread_pool(num_threads),
+        m_device_info(m_queue) {}
 
 #ifdef EIGEN_SYCL_USE_PROGRAM_CLASS
   EIGEN_STRONG_INLINE cl::sycl::program &program() const { return m_prog; }

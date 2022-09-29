@@ -765,7 +765,7 @@ bool BestPractices::PreCallValidateBindBufferMemory2(VkDevice device, uint32_t b
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
-        sprintf(api_name, "vkBindBufferMemory2() pBindInfos[%u]", i);
+        snprintf(api_name, sizeof(api_name), "vkBindBufferMemory2() pBindInfos[%u]", i);
         skip |= ValidateBindBufferMemory(pBindInfos[i].buffer, pBindInfos[i].memory, api_name);
     }
 
@@ -778,7 +778,7 @@ bool BestPractices::PreCallValidateBindBufferMemory2KHR(VkDevice device, uint32_
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
-        sprintf(api_name, "vkBindBufferMemory2KHR() pBindInfos[%u]", i);
+        snprintf(api_name, sizeof(api_name), "vkBindBufferMemory2KHR() pBindInfos[%u]", i);
         skip |= ValidateBindBufferMemory(pBindInfos[i].buffer, pBindInfos[i].memory, api_name);
     }
 
@@ -861,7 +861,7 @@ bool BestPractices::PreCallValidateBindImageMemory2(VkDevice device, uint32_t bi
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
-        sprintf(api_name, "vkBindImageMemory2() pBindInfos[%u]", i);
+        snprintf(api_name, sizeof(api_name), "vkBindImageMemory2() pBindInfos[%u]", i);
         if (!LvlFindInChain<VkBindImageMemorySwapchainInfoKHR>(pBindInfos[i].pNext)) {
             skip |= ValidateBindImageMemory(pBindInfos[i].image, pBindInfos[i].memory, api_name);
         }
@@ -876,7 +876,7 @@ bool BestPractices::PreCallValidateBindImageMemory2KHR(VkDevice device, uint32_t
     bool skip = false;
 
     for (uint32_t i = 0; i < bindInfoCount; i++) {
-        sprintf(api_name, "vkBindImageMemory2KHR() pBindInfos[%u]", i);
+        snprintf(api_name, sizeof(api_name), "vkBindImageMemory2KHR() pBindInfos[%u]", i);
         skip |= ValidateBindImageMemory(pBindInfos[i].image, pBindInfos[i].memory, api_name);
     }
 
@@ -968,7 +968,7 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
     for (uint32_t i = 0; i < createInfoCount; i++) {
         const auto& create_info = pCreateInfos[i];
 
-        if (!(cgpl_state->pipe_state[i]->active_shaders & VK_SHADER_STAGE_MESH_BIT_NV)) {
+        if (!(cgpl_state->pipe_state[i]->active_shaders & VK_SHADER_STAGE_MESH_BIT_NV) && create_info.pVertexInputState) {
             const auto& vertex_input = *create_info.pVertexInputState;
             uint32_t count = 0;
             for (uint32_t j = 0; j < vertex_input.vertexBindingDescriptionCount; j++) {
@@ -1035,7 +1035,7 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
 static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(const safe_VkGraphicsPipelineCreateInfo& create_info,
                                                                  std::shared_ptr<const RENDER_PASS_STATE>& rp) {
     std::vector<bp_state::AttachmentInfo> result;
-    if (!rp || rp->use_dynamic_rendering || rp->use_dynamic_rendering_inherited) {
+    if (!rp || rp->UsesDynamicRendering()) {
         return result;
     }
 
@@ -1697,6 +1697,40 @@ bool BestPractices::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, Re
                                           pRenderPassBegin->renderArea.extent.width, pRenderPassBegin->renderArea.extent.height);
             }
         }
+
+        // Check if renderpass has at least one VK_ATTACHMENT_LOAD_OP_CLEAR
+
+        bool clearing = false;
+
+        for (uint32_t att = 0; att < rp_state->createInfo.attachmentCount; att++) {
+            const auto& attachment = rp_state->createInfo.pAttachments[att];
+
+            if (attachment.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+                clearing = true;
+                break;
+            }
+        }
+
+        // Check if there are ClearValues passed to BeginRenderPass even though no attachments will be cleared
+        if (!clearing && pRenderPassBegin->clearValueCount > 0) {
+            // Flag as warning because nothing will happen per spec, and pClearValues will be ignored
+            skip |= LogWarning(
+                device, kVUID_BestPractices_ClearValueWithoutLoadOpClear,
+                "This render pass does not have VkRenderPassCreateInfo.pAttachments->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR "
+                "but VkRenderPassBeginInfo.clearValueCount > 0. VkRenderPassBeginInfo.pClearValues will be ignored and no "
+                "attachments will be cleared.");
+        }
+
+        // Check if there are more clearValues than attachments
+        if(pRenderPassBegin->clearValueCount > rp_state->createInfo.attachmentCount) {
+            // Flag as warning because the overflowing clearValues will be ignored and could even be undefined on certain platforms.
+            // This could signal a bug and there seems to be no reason for this to happen on purpose.
+            skip |= LogWarning(
+                device, kVUID_BestPractices_ClearValueCountHigherThanAttachmentCount,
+                "This render pass has VkRenderPassBeginInfo.clearValueCount > VkRenderPassCreateInfo.attachmentCount "
+                "(%" PRIu32 " > %" PRIu32 ") and as such the clearValues that do not have a corresponding attachment will be ignored.",
+                pRenderPassBegin->clearValueCount, rp_state->createInfo.attachmentCount);
+        }
     }
 
     return skip;
@@ -1739,16 +1773,13 @@ void BestPractices::QueueValidateImage(QueueCallbacks& funcs, const char* functi
     }
 }
 
-void BestPractices::QueueValidateImage(QueueCallbacks &funcs, const char* function_name,
-                                       std::shared_ptr<bp_state::Image> &state, IMAGE_SUBRESOURCE_USAGE_BP usage,
-                                       uint32_t array_layer, uint32_t mip_level) {
-    if (VendorCheckEnabled(kBPVendorArm)) {
-        funcs.push_back([this, function_name, state, usage, array_layer, mip_level](
-                            const ValidationStateTracker&, const QUEUE_STATE&, const CMD_BUFFER_STATE&) -> bool {
-            ValidateImageInQueue(function_name, *state, usage, array_layer, mip_level);
-            return false;
-        });
-    }
+void BestPractices::QueueValidateImage(QueueCallbacks& funcs, const char* function_name, std::shared_ptr<bp_state::Image>& state,
+                                       IMAGE_SUBRESOURCE_USAGE_BP usage, uint32_t array_layer, uint32_t mip_level) {
+    funcs.push_back([this, function_name, state, usage, array_layer, mip_level](const ValidationStateTracker&, const QUEUE_STATE&,
+                                                                                const CMD_BUFFER_STATE&) -> bool {
+        ValidateImageInQueue(function_name, *state, usage, array_layer, mip_level);
+        return false;
+    });
 }
 
 void BestPractices::ValidateImageInQueueArmImg(const char* function_name, const bp_state::Image& image,
@@ -1828,6 +1859,15 @@ void BestPractices::ValidateImageInQueueArmImg(const char* function_name, const 
 void BestPractices::ValidateImageInQueue(const char* function_name, bp_state::Image& state, IMAGE_SUBRESOURCE_USAGE_BP usage,
                                          uint32_t array_layer, uint32_t mip_level) {
     auto last_usage = state.UpdateUsage(array_layer, mip_level, usage);
+
+    // When image was discarded with StoreOpDontCare but is now being read with LoadOpLoad
+    if (last_usage == IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_DISCARDED &&
+        usage == IMAGE_SUBRESOURCE_USAGE_BP::RENDER_PASS_READ_TO_TILE) {
+        LogWarning(device, kVUID_BestPractices_StoreOpDontCareThenLoadOpLoad,
+                   "Trying to load an attachment with LOAD_OP_LOAD that was previously stored with STORE_OP_DONT_CARE. This may "
+                   "result in undefined behaviour.");
+    }
+
     if (VendorCheckEnabled(kBPVendorArm) || VendorCheckEnabled(kBPVendorIMG)) {
         ValidateImageInQueueArmImg(function_name, state, last_usage, usage, array_layer, mip_level);
     }
@@ -1988,7 +2028,8 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, Rend
                                              const VkRenderPassBeginInfo* pRenderPassBegin) {
     // Reset the renderpass state
     auto cb = GetWrite<bp_state::CommandBuffer>(commandBuffer);
-    cb->hasDrawCmd = false;
+    // TODO - move this logic to the Render Pass state as cb->has_draw_cmd should stay true for lifetime of command buffer
+    cb->has_draw_cmd = false;
     assert(cb);
     auto& render_pass_state = cb->render_pass_state;
     render_pass_state.touchesAttachments.clear();
@@ -2371,10 +2412,6 @@ void BestPractices::PreCallRecordCmdExecuteCommands(VkCommandBuffer commandBuffe
 
         primary->render_pass_state.numDrawCallsDepthEqualCompare += secondary->render_pass_state.numDrawCallsDepthEqualCompare;
         primary->render_pass_state.numDrawCallsDepthOnly += secondary->render_pass_state.numDrawCallsDepthOnly;
-
-        if (secondary->hasDrawCmd) {
-            primary->hasDrawCmd = true;
-        }
     }
 
 }
@@ -2444,7 +2481,7 @@ void BestPractices::PreCallRecordCmdClearAttachments(VkCommandBuffer commandBuff
     // If we have a rect which covers the entire frame buffer, we have a LOAD_OP_CLEAR-like command.
     bool full_clear = ClearAttachmentsIsFullClear(*cmd_state, rectCount, pRects);
 
-    if (!rp_state->use_dynamic_rendering && !rp_state->use_dynamic_rendering_inherited) {
+    if (!rp_state->UsesDynamicRendering()) {
         auto& subpass = rp_state->createInfo.pSubpasses[cmd_state->activeSubpass];
         for (uint32_t i = 0; i < attachmentCount; i++) {
             auto& attachment = pClearAttachments[i];
@@ -2547,23 +2584,19 @@ void BestPractices::PostCallRecordCmdDrawIndexedIndirect(VkCommandBuffer command
 
 void BestPractices::ValidateBoundDescriptorSets(bp_state::CommandBuffer& cb_state, const char* function_name) {
     for (auto descriptor_set : cb_state.validated_descriptor_sets) {
-        const auto& layout = *descriptor_set->GetLayout();
-
-        for (uint32_t index = 0; index < descriptor_set->GetBindingCount(); ++index) {
+        for (const auto& binding : *descriptor_set) {
             // For bindless scenarios, we should not attempt to track descriptor set state.
             // It is highly uncertain which resources are actually bound.
             // Resources which are written to such a descriptor should be marked as indeterminate w.r.t. state.
-            VkDescriptorBindingFlags flags = layout.GetDescriptorBindingFlagsFromIndex(index);
-            if (flags & (VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
-                         VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT)) {
+            if (binding->binding_flags & (VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |
+                                          VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT)) {
                 continue;
             }
 
-            auto index_range = layout.GetGlobalIndexRangeFromIndex(index);
-            for (uint32_t i = index_range.start; i < index_range.end; ++i) {
+            for (uint32_t i = 0; i < binding->count; ++i) {
                 VkImageView image_view{VK_NULL_HANDLE};
 
-                auto descriptor = descriptor_set->GetDescriptorFromGlobalIndex(i);
+                auto descriptor = binding->GetDescriptor(i);
                 if (!descriptor) {
                     continue;
                 }
@@ -3080,7 +3113,7 @@ bool BestPractices::ValidateClearAttachment(const bp_state::CommandBuffer& cmd, 
     }
 
     // Warn if this is issued prior to Draw Cmd and clearing the entire attachment
-    if (!cmd.hasDrawCmd) {
+    if (!cmd.has_draw_cmd) {
         skip |= LogPerformanceWarning(
             cmd.Handle(), kVUID_BestPractices_DrawState_ClearCmdBeforeDraw,
             "vkCmdClearAttachments() issued on %s prior to any Draw Cmds in current render pass. It is recommended you "

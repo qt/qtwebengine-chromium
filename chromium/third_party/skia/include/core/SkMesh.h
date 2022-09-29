@@ -141,7 +141,7 @@ public:
                        sk_sp<SkColorSpace>     cs,
                        SkAlphaType             at);
 
-    SkSpan<const Attribute> attributes() const { return SkMakeSpan(fAttributes); }
+    SkSpan<const Attribute> attributes() const { return SkSpan(fAttributes); }
 
     /**
      * Combined size of all 'uniform' variables. When creating a SkMesh with this specification
@@ -154,10 +154,10 @@ public:
      * Provides info about individual uniforms including the offset into an SkData where each
      * uniform value should be placed.
      */
-    SkSpan<const Uniform> uniforms() const { return SkMakeSpan(fUniforms); }
+    SkSpan<const Uniform> uniforms() const { return SkSpan(fUniforms); }
 
     /** Returns pointer to the named uniform variable's description, or nullptr if not found. */
-    const Uniform* findUniform(const char* name) const;
+    const Uniform* findUniform(std::string_view name) const;
 
     size_t stride() const { return fStride; }
 
@@ -231,8 +231,39 @@ private:
  */
 class SkMesh {
 public:
-    class IndexBuffer  : public SkRefCnt {};
-    class VertexBuffer : public SkRefCnt {};
+    class IndexBuffer  : public SkRefCnt {
+    public:
+        virtual size_t size() const = 0;
+
+        /**
+         * Modifies the data in the IndexBuffer by copying size bytes from data into the buffer
+         * at offset. Fails if offset + size > this->size() or if either offset or size is not
+         * aligned to 4 bytes. The GrDirectContext* must match that used to create the buffer. We
+         * take it as a parameter to emphasize that the context must be used to update the data and
+         * thus the context must be valid for the current thread.
+         */
+        bool update(GrDirectContext*, const void* data, size_t offset, size_t size);
+
+    private:
+        virtual bool onUpdate(GrDirectContext*, const void* data, size_t offset, size_t size) = 0;
+    };
+
+    class VertexBuffer : public SkRefCnt {
+    public:
+        virtual size_t size() const = 0;
+
+        /**
+         * Modifies the data in the IndexBuffer by copying size bytes from data into the buffer
+         * at offset. Fails if offset + size > this->size() or if either offset or size is not
+         * aligned to 4 bytes. The GrDirectContext* must match that used to create the buffer. We
+         * take it as a parameter to emphasize that the context must be used to update the data and
+         * thus the context must be valid for the current thread.
+         */
+        bool update(GrDirectContext*, const void* data, size_t offset, size_t size);
+
+    private:
+        virtual bool onUpdate(GrDirectContext*, const void* data, size_t offset, size_t size) = 0;
+    };
 
     SkMesh();
     ~SkMesh();
@@ -244,29 +275,39 @@ public:
     SkMesh& operator=(SkMesh&&);
 
     /**
-     * Makes an index buffer to be used with SkMeshes. The SkData is used to determine the
-     * size and contents of the buffer. The buffer may be CPU- or GPU-backed depending on whether
-     * GrDirectContext* is nullptr.
+     * Makes an index buffer to be used with SkMeshes. The buffer may be CPU- or GPU-backed
+     * depending on whether GrDirectContext* is nullptr.
      *
-     * @param  GrDirectContext*   If nullptr a CPU-backed object is returned that owns the SkData.
-     *                            Otherwise, the data is uploaded to the GPU and a GPU-backed buffer
-     *                            is returned. It may only be used to draw into SkSurfaces that
-     *                            are backed by the passed GrDirectContext.
-     * @param  sk_sp<SkData>      required. The data used to populate the buffer.
+     * @param  GrDirectContext*  If nullptr a CPU-backed object is returned. Otherwise, the data is
+     *                           uploaded to the GPU and a GPU-backed buffer is returned. It may
+     *                           only be used to draw into SkSurfaces that are backed by the passed
+     *                           GrDirectContext.
+     * @param  data              The data used to populate the buffer, or nullptr to create an
+     *                           uninitialized buffer.
+     * @param  size              Both the size of the data in 'data' and the size of the resulting
+     *                           buffer.
      */
+    static sk_sp<IndexBuffer> MakeIndexBuffer(GrDirectContext*, const void* data, size_t size);
+
+    /** Deprecated in favor of const void* and size_t version above. */
     static sk_sp<IndexBuffer> MakeIndexBuffer(GrDirectContext*, sk_sp<const SkData>);
 
     /**
-     * Makes a vertex buffer to be used with SkMeshes. The SkData is used to determine the
-     * size and contents of the buffer.The buffer may be CPU- or GPU-backed depending on whether
-     * GrDirectContext* is nullptr.
+     * Makes a vertex buffer to be used with SkMeshes. The buffer may be CPU- or GPU-backed
+     * depending on whether GrDirectContext* is nullptr.
      *
-     * @param  GrDirectContext*   If nullptr a CPU-backed object is returned that owns the SkData.
-     *                            Otherwise, the data is uploaded to the GPU and a GPU-backed buffer
-     *                            is returned. It may only be used to draw into SkSurfaces that
-     *                            are backed by the passed GrDirectContext.
-     * @param  sk_sp<SkData>      required. The data used to populate the buffer.
+     * @param  GrDirectContext*  If nullptr a CPU-backed object is returned. Otherwise, the data is
+     *                           uploaded to the GPU and a GPU-backed buffer is returned. It may
+     *                           only be used to draw into SkSurfaces that are backed by the passed
+     *                           GrDirectContext.
+     * @param  data              The data used to populate the buffer, or nullptr to create an
+     *                           uninitialized buffer.
+     * @param  size              Both the size of the data in 'data' and the size of the resulting
+     *                           buffer.
      */
+    static sk_sp<VertexBuffer> MakeVertexBuffer(GrDirectContext*, const void*, size_t size);
+
+    /** Deprecated in favor of const void* and size_t version above. */
     static sk_sp<VertexBuffer> MakeVertexBuffer(GrDirectContext*, sk_sp<const SkData>);
 
     enum class Mode { kTriangles, kTriangleStrip };

@@ -15,11 +15,18 @@
 #ifndef SRC_DAWN_NATIVE_TINTUTILS_H_
 #define SRC_DAWN_NATIVE_TINTUTILS_H_
 
+#include <functional>
+
 #include "dawn/common/NonCopyable.h"
+#include "dawn/native/IntegerTypes.h"
+
+#include "tint/tint.h"
 
 namespace dawn::native {
 
 class DeviceBase;
+class PipelineLayoutBase;
+class RenderPipelineBase;
 
 // Indicates that for the lifetime of this object tint internal compiler errors should be
 // reported to the given device.
@@ -32,6 +39,21 @@ class ScopedTintICEHandler : public NonCopyable {
     ScopedTintICEHandler(ScopedTintICEHandler&&) = delete;
 };
 
+tint::transform::MultiplanarExternalTexture::BindingsMap BuildExternalTextureTransformBindings(
+    const PipelineLayoutBase* layout);
+
+tint::transform::VertexPulling::Config BuildVertexPullingTransformConfig(
+    const RenderPipelineBase& renderPipeline,
+    const std::string_view& entryPoint,
+    BindGroupIndex pullingBufferBindingSet);
+
 }  // namespace dawn::native
+
+namespace tint::sem {
+
+// Defin operator< for std::map containing BindingPoint
+bool operator<(const BindingPoint& a, const BindingPoint& b);
+
+}  // namespace tint::sem
 
 #endif  // SRC_DAWN_NATIVE_TINTUTILS_H_

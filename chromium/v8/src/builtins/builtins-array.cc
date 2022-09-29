@@ -7,6 +7,7 @@
 #include "src/builtins/builtins.h"
 #include "src/codegen/code-factory.h"
 #include "src/common/assert-scope.h"
+#include "src/common/globals.h"
 #include "src/debug/debug.h"
 #include "src/execution/isolate.h"
 #include "src/execution/protectors-inl.h"
@@ -603,7 +604,8 @@ BUILTIN(ArrayShift) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
 
-  if (CanUseFastArrayShift(isolate, receiver)) {
+  if (!V8_COMPRESS_POINTERS_8GB_BOOL &&
+      CanUseFastArrayShift(isolate, receiver)) {
     Handle<JSArray> array = Handle<JSArray>::cast(receiver);
     RETURN_RESULT_OR_FAILURE(isolate,
                              array->GetElementsAccessor()->Shift(array));
@@ -905,6 +907,7 @@ uint32_t EstimateElementCount(Isolate* isolate, Handle<JSArray> array) {
     case FAST_STRING_WRAPPER_ELEMENTS:
     case SLOW_STRING_WRAPPER_ELEMENTS:
     case WASM_ARRAY_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS:
       UNREACHABLE();
   }
   // As an estimate, we assume that the prototype doesn't contain any
@@ -1028,6 +1031,8 @@ void CollectElementIndices(Isolate* isolate, Handle<JSObject> object,
     case WASM_ARRAY_ELEMENTS:
       // TODO(ishell): implement
       UNIMPLEMENTED();
+    case SHARED_ARRAY_ELEMENTS:
+      UNREACHABLE();
     case NO_ELEMENTS:
       break;
   }
@@ -1228,6 +1233,7 @@ bool IterateElements(Isolate* isolate, Handle<JSReceiver> receiver,
 #undef TYPED_ARRAY_CASE
     case FAST_STRING_WRAPPER_ELEMENTS:
     case SLOW_STRING_WRAPPER_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS:
       // |array| is guaranteed to be an array or typed array.
       UNREACHABLE();
   }
@@ -1586,10 +1592,10 @@ inline bool CheckArrayMapNotModified(Handle<JSArray> array,
   return Protectors::IsNoElementsIntact(array->GetIsolate());
 }
 
-enum class GroupByMode { kToObject, kToMap };
+enum class ArrayGroupMode { kToObject, kToMap };
 
-template <GroupByMode mode>
-inline MaybeHandle<OrderedHashMap> GenericArrayGroupBy(
+template <ArrayGroupMode mode>
+inline MaybeHandle<OrderedHashMap> GenericArrayGroup(
     Isolate* isolate, Handle<JSReceiver> O, Handle<Object> callbackfn,
     Handle<OrderedHashMap> groups, double initialK, double len) {
   // 6. Repeat, while k < len
@@ -1605,7 +1611,7 @@ inline MaybeHandle<OrderedHashMap> GenericArrayGroupBy(
                                Object::GetPropertyOrElement(isolate, O, Pk),
                                OrderedHashMap);
 
-    // Common steps for ArrayPrototypeGroupBy and ArrayPrototypeGroupByToMap
+    // Common steps for ArrayPrototypeGroup and ArrayPrototypeGroupToMap
     // 6c. Let key be ? Call(callbackfn, thisArg, « kValue, 𝔽(k), O »).
     Handle<Object> propertyKey;
     Handle<Object> argv[] = {kValue, isolate->factory()->NewNumber(k), O};
@@ -1613,7 +1619,7 @@ inline MaybeHandle<OrderedHashMap> GenericArrayGroupBy(
                                Execution::Call(isolate, callbackfn, O, 3, argv),
                                OrderedHashMap);
 
-    if (mode == GroupByMode::kToMap) {
+    if (mode == ArrayGroupMode::kToMap) {
       // 6d. If key is -0𝔽, set key to +0𝔽.
       if (propertyKey->IsMinusZero()) {
         propertyKey = Handle<Smi>(Smi::FromInt(0), isolate);
@@ -1638,8 +1644,8 @@ inline MaybeHandle<OrderedHashMap> GenericArrayGroupBy(
   return groups;
 }
 
-template <GroupByMode mode>
-inline MaybeHandle<OrderedHashMap> FastArrayGroupBy(
+template <ArrayGroupMode mode>
+inline MaybeHandle<OrderedHashMap> FastArrayGroup(
     Isolate* isolate, Handle<JSArray> array, Handle<Object> callbackfn,
     Handle<OrderedHashMap> groups, double len,
     ElementsKind* result_elements_kind) {
@@ -1654,8 +1660,8 @@ inline MaybeHandle<OrderedHashMap> FastArrayGroupBy(
   for (InternalIndex k : InternalIndex::Range(uint_len)) {
     if (!CheckArrayMapNotModified(array, original_map) ||
         k.as_uint32() >= static_cast<uint32_t>(array->length().Number())) {
-      return GenericArrayGroupBy<mode>(isolate, array, callbackfn, groups,
-                                       k.as_uint32(), len);
+      return GenericArrayGroup<mode>(isolate, array, callbackfn, groups,
+                                     k.as_uint32(), len);
     }
     // 6a. Let Pk be ! ToString(𝔽(k)).
     // 6b. Let kValue be ? Get(O, Pk).
@@ -1664,7 +1670,7 @@ inline MaybeHandle<OrderedHashMap> FastArrayGroupBy(
       kValue = isolate->factory()->undefined_value();
     }
 
-    // Common steps for ArrayPrototypeGroupBy and ArrayPrototypeGroupByToMap
+    // Common steps for ArrayPrototypeGroup and ArrayPrototypeGroupToMap
     // 6c. Let key be ? Call(callbackfn, thisArg, « kValue, 𝔽(k), O »).
     Handle<Object> propertyKey;
     Handle<Object> argv[] = {
@@ -1673,7 +1679,7 @@ inline MaybeHandle<OrderedHashMap> FastArrayGroupBy(
         isolate, propertyKey,
         Execution::Call(isolate, callbackfn, array, 3, argv), OrderedHashMap);
 
-    if (mode == GroupByMode::kToMap) {
+    if (mode == ArrayGroupMode::kToMap) {
       // 6d. If key is -0𝔽, set key to +0𝔽.
       if (propertyKey->IsMinusZero()) {
         propertyKey = Handle<Smi>(Smi::FromInt(0), isolate);
@@ -1712,8 +1718,8 @@ inline MaybeHandle<OrderedHashMap> FastArrayGroupBy(
 }  // namespace
 
 // https://tc39.es/proposal-array-grouping/#sec-array.prototype.groupby
-BUILTIN(ArrayPrototypeGroupBy) {
-  const char* const kMethodName = "Array.prototype.groupBy";
+BUILTIN(ArrayPrototypeGroup) {
+  const char* const kMethodName = "Array.prototype.group";
   HandleScope scope(isolate);
 
   Handle<JSReceiver> O;
@@ -1740,14 +1746,14 @@ BUILTIN(ArrayPrototypeGroupBy) {
     Handle<JSArray> array = Handle<JSArray>::cast(O);
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, groups,
-        FastArrayGroupBy<GroupByMode::kToObject>(
+        FastArrayGroup<ArrayGroupMode::kToObject>(
             isolate, array, callbackfn, groups, len, &result_elements_kind));
   } else {
     // 4. Let k be 0.
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, groups,
-        GenericArrayGroupBy<GroupByMode::kToObject>(isolate, O, callbackfn,
-                                                    groups, 0, len));
+        GenericArrayGroup<ArrayGroupMode::kToObject>(isolate, O, callbackfn,
+                                                     groups, 0, len));
   }
 
   // 7. Let obj be ! OrdinaryObjectCreate(null).
@@ -1774,8 +1780,8 @@ BUILTIN(ArrayPrototypeGroupBy) {
 }
 
 // https://tc39.es/proposal-array-grouping/#sec-array.prototype.groupbymap
-BUILTIN(ArrayPrototypeGroupByToMap) {
-  const char* const kMethodName = "Array.prototype.groupByToMap";
+BUILTIN(ArrayPrototypeGroupToMap) {
+  const char* const kMethodName = "Array.prototype.groupToMap";
   HandleScope scope(isolate);
 
   Handle<JSReceiver> O;
@@ -1802,14 +1808,14 @@ BUILTIN(ArrayPrototypeGroupByToMap) {
     Handle<JSArray> array = Handle<JSArray>::cast(O);
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, groups,
-        FastArrayGroupBy<GroupByMode::kToMap>(
+        FastArrayGroup<ArrayGroupMode::kToMap>(
             isolate, array, callbackfn, groups, len, &result_elements_kind));
   } else {
     // 4. Let k be 0.
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
         isolate, groups,
-        GenericArrayGroupBy<GroupByMode::kToMap>(isolate, O, callbackfn, groups,
-                                                 0, len));
+        GenericArrayGroup<ArrayGroupMode::kToMap>(isolate, O, callbackfn,
+                                                  groups, 0, len));
   }
 
   // 7. Let map be ! Construct(%Map%).

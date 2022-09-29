@@ -33,8 +33,8 @@ import * as Platform from '../../core/platform/platform.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
 import {Constraints} from './Geometry.js';
-import type {ResizeUpdatePositionEvent} from './ResizerWidget.js';
-import {Events as ResizerWidgetEvents, SimpleResizerWidget} from './ResizerWidget.js';
+
+import {Events as ResizerWidgetEvents, SimpleResizerWidget, type ResizeUpdatePositionEvent} from './ResizerWidget.js';
 import {ToolbarButton} from './Toolbar.js';
 import {Widget} from './Widget.js';
 import {Events as ZoomManagerEvents, ZoomManager} from './ZoomManager.js';
@@ -532,6 +532,7 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     // This order of things is important.
     // 1. Resize main element early and force layout.
     this.contentElement.style.setProperty(animatedMarginPropertyName, marginFrom);
+    this.contentElement.style.setProperty('overflow', 'hidden');
     if (!reverse) {
       suppressUnused(this.mainElement.offsetWidth);
       suppressUnused(this.sidebarElementInternal.offsetWidth);
@@ -579,6 +580,7 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     this.contentElement.style.removeProperty('margin-bottom');
     this.contentElement.style.removeProperty('margin-left');
     this.contentElement.style.removeProperty('transition');
+    this.contentElement.style.removeProperty('overflow');
 
     if (this.animationFrameHandle) {
       this.contentElement.window().cancelAnimationFrame(this.animationFrameHandle);
@@ -719,6 +721,7 @@ export class SplitWidget extends Common.ObjectWrapper.eventMixin<EventTypes, typ
   }
 
   hideDefaultResizer(noSplitter?: boolean): void {
+    this.resizerElementInternal.classList.toggle('hidden', Boolean(noSplitter));
     this.uninstallResizer(this.resizerElementInternal);
     this.sidebarElementInternal.classList.toggle('no-default-splitter', Boolean(noSplitter));
   }

@@ -8,6 +8,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -36,6 +37,7 @@
 #include "quiche/quic/core/quic_packet_writer.h"
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_path_validator.h"
+#include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
@@ -175,6 +177,9 @@ class DiscardZeroRttDecryptionKeysAlarmDelegate
     QUICHE_DCHECK(connection_->connected());
     QUIC_DLOG(INFO) << "0-RTT discard alarm fired";
     connection_->RemoveDecrypter(ENCRYPTION_ZERO_RTT);
+    if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
+      connection_->RetireOriginalDestinationConnectionId();
+    }
   }
 };
 
@@ -321,7 +326,7 @@ QuicConnection::QuicConnection(
       blackhole_detector_(this, &arena_, alarm_factory_, &context_),
       idle_network_detector_(this, clock_->ApproximateNow(), &arena_,
                              alarm_factory_, &context_),
-      path_validator_(alarm_factory_, &arena_, this, random_generator_,
+      path_validator_(alarm_factory_, &arena_, this, random_generator_, clock_,
                       &context_),
       ping_manager_(perspective, this, &arena_, alarm_factory_, &context_) {
   QUICHE_DCHECK(perspective_ == Perspective::IS_CLIENT ||
@@ -519,9 +524,6 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
   } else {
     SetNetworkTimeouts(config.max_time_before_crypto_handshake(),
                        config.max_idle_time_before_crypto_handshake());
-    if (config.HasClientRequestedIndependentOption(kNCHP, perspective_)) {
-      packet_creator_.set_chaos_protection_enabled(false);
-    }
   }
 
   if (version().HasIetfQuicFrames() &&
@@ -562,21 +564,23 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
     if (config.HasClientSentConnectionOption(kNBHD, perspective_)) {
       blackhole_detection_disabled_ = true;
     }
-    if (config.HasClientSentConnectionOption(k2RTO, perspective_)) {
-      QUIC_CODE_COUNT(quic_2rto_blackhole_detection);
-      num_rtos_for_blackhole_detection_ = 2;
-    }
-    if (config.HasClientSentConnectionOption(k3RTO, perspective_)) {
-      QUIC_CODE_COUNT(quic_3rto_blackhole_detection);
-      num_rtos_for_blackhole_detection_ = 3;
-    }
-    if (config.HasClientSentConnectionOption(k4RTO, perspective_)) {
-      QUIC_CODE_COUNT(quic_4rto_blackhole_detection);
-      num_rtos_for_blackhole_detection_ = 4;
-    }
-    if (config.HasClientSentConnectionOption(k6RTO, perspective_)) {
-      QUIC_CODE_COUNT(quic_6rto_blackhole_detection);
-      num_rtos_for_blackhole_detection_ = 6;
+    if (!sent_packet_manager_.remove_blackhole_detection_experiments()) {
+      if (config.HasClientSentConnectionOption(k2RTO, perspective_)) {
+        QUIC_CODE_COUNT(quic_2rto_blackhole_detection);
+        num_rtos_for_blackhole_detection_ = 2;
+      }
+      if (config.HasClientSentConnectionOption(k3RTO, perspective_)) {
+        QUIC_CODE_COUNT(quic_3rto_blackhole_detection);
+        num_rtos_for_blackhole_detection_ = 3;
+      }
+      if (config.HasClientSentConnectionOption(k4RTO, perspective_)) {
+        QUIC_CODE_COUNT(quic_4rto_blackhole_detection);
+        num_rtos_for_blackhole_detection_ = 4;
+      }
+      if (config.HasClientSentConnectionOption(k6RTO, perspective_)) {
+        QUIC_CODE_COUNT(quic_6rto_blackhole_detection);
+        num_rtos_for_blackhole_detection_ = 6;
+      }
     }
   }
 
@@ -965,11 +969,19 @@ void QuicConnection::SetOriginalDestinationConnectionId(
       default_path_.server_connection_id;
 }
 
-QuicConnectionId QuicConnection::GetOriginalDestinationConnectionId() {
+QuicConnectionId QuicConnection::GetOriginalDestinationConnectionId() const {
   if (original_destination_connection_id_.has_value()) {
     return original_destination_connection_id_.value();
   }
   return default_path_.server_connection_id;
+}
+
+void QuicConnection::RetireOriginalDestinationConnectionId() {
+  if (original_destination_connection_id_.has_value()) {
+    visitor_->OnServerConnectionIdRetired(*original_destination_connection_id_);
+    QUIC_RESTART_FLAG_COUNT_N(quic_map_original_connection_ids2, 3, 4);
+    original_destination_connection_id_.reset();
+  }
 }
 
 bool QuicConnection::ValidateServerConnectionId(
@@ -1035,10 +1047,14 @@ bool QuicConnection::OnUnauthenticatedPublicHeader(
     if (debug_visitor_ != nullptr) {
       debug_visitor_->OnIncorrectConnectionId(server_connection_id);
     }
-    // If this is a server, the dispatcher routes each packet to the
-    // QuicConnection responsible for the packet's connection ID.  So if control
-    // arrives here and this is a server, the dispatcher must be malfunctioning.
-    QUICHE_DCHECK_NE(Perspective::IS_SERVER, perspective_);
+    // The only way for a connection to get a packet with an invalid connection
+    // ID is if quic_map_original_connection_ids2 is false and a packet
+    // arrives with a connection ID that is deterministically replaced with one
+    // that the connection owns, but is different from
+    // original_destination_connection_id_.
+    if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
+      QUICHE_DCHECK_NE(Perspective::IS_SERVER, perspective_);
+    }
     return false;
   }
 
@@ -3235,7 +3251,7 @@ bool QuicConnection::CanWrite(HasRetransmittableData retransmittable) {
     return true;
   }
 
-  if (LimitedByAmplificationFactor()) {
+  if (LimitedByAmplificationFactor(packet_creator_.max_packet_length())) {
     // Server is constrained by the amplification restriction.
     QUIC_CODE_COUNT(quic_throttled_by_amplification_limit);
     QUIC_DVLOG(1) << ENDPOINT
@@ -3655,10 +3671,24 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
       sent_packet_manager_.GetLeastPacketAwaitedByPeer(encryption_level_),
       sent_packet_manager_.EstimateMaxPacketsInFlight(max_packet_length()));
 
-  stats_.bytes_sent += result.bytes_written;
+  stats_.bytes_sent += encrypted_length;
   ++stats_.packets_sent;
+
+  QuicByteCount bytes_not_retransmitted =
+      packet->bytes_not_retransmitted.value_or(0);
   if (packet->transmission_type != NOT_RETRANSMISSION) {
-    stats_.bytes_retransmitted += result.bytes_written;
+    if (static_cast<uint64_t>(encrypted_length) < bytes_not_retransmitted) {
+      QUIC_BUG(quic_packet_bytes_written_lt_bytes_not_retransmitted)
+          << "Total bytes written to the packet should be larger than the "
+             "bytes in not-retransmitted frames. Bytes written: "
+          << encrypted_length
+          << ", bytes not retransmitted: " << bytes_not_retransmitted;
+    } else {
+      // bytes_retransmitted includes packet's headers and encryption
+      // overhead.
+      stats_.bytes_retransmitted +=
+          (encrypted_length - bytes_not_retransmitted);
+    }
     ++stats_.packets_retransmitted;
   }
 
@@ -4722,7 +4752,7 @@ void QuicConnection::SetRetransmissionAlarm() {
     pending_retransmission_alarm_ = true;
     return;
   }
-  if (LimitedByAmplificationFactor()) {
+  if (LimitedByAmplificationFactor(packet_creator_.max_packet_length())) {
     // Do not set retransmission timer if connection is anti-amplification limit
     // throttled. Otherwise, nothing can be sent when timer fires.
     retransmission_alarm_->Cancel();
@@ -4827,6 +4857,14 @@ QuicConnection::ScopedPacketFlusher::~ScopedPacketFlusher() {
       connection_->FlushCoalescedPacket();
     }
     connection_->FlushPackets();
+    if (GetQuicReloadableFlag(
+            quic_packet_flusher_check_connected_after_flush_packets)) {
+      QUIC_RELOADABLE_FLAG_COUNT(
+          quic_packet_flusher_check_connected_after_flush_packets);
+      if (!connection_->connected()) {
+        return;
+      }
+    }
     if (!handshake_packet_sent_ && connection_->handshake_packet_sent_) {
       // This would cause INITIAL key to be dropped. Drop keys here to avoid
       // missing the write keys in the middle of writing.
@@ -5829,7 +5867,9 @@ void QuicConnection::SendAllPendingAcks() {
     if (!flushed) {
       // Connection is write blocked.
       QUIC_BUG_IF(quic_bug_12714_33,
-                  !writer_->IsWriteBlocked() && !LimitedByAmplificationFactor())
+                  !writer_->IsWriteBlocked() &&
+                      !LimitedByAmplificationFactor(
+                          packet_creator_.max_packet_length()))
           << "Writer not blocked and not throttled by amplification factor, "
              "but ACK not flushed for packet space:"
           << i;
@@ -5946,36 +5986,48 @@ bool QuicConnection::FlushCoalescedPacket() {
   }
   QUIC_DVLOG(1) << ENDPOINT << "Sending coalesced packet "
                 << coalesced_packet_.ToString(length);
-
-  if (!buffered_packets_.empty() || HandleWriteBlocked()) {
+  if (GetQuicReloadableFlag(
+          quic_fix_bytes_accounting_for_buffered_coalesced_packets)) {
+    QUIC_RELOADABLE_FLAG_COUNT(
+        quic_fix_bytes_accounting_for_buffered_coalesced_packets);
+  }
+  const size_t padding_size =
+      length - std::min<size_t>(length, coalesced_packet_.length());
+  // Buffer coalesced packet if padding + bytes_sent exceeds amplifcation limit.
+  if (!buffered_packets_.empty() || HandleWriteBlocked() ||
+      (enforce_strict_amplification_factor_ &&
+       LimitedByAmplificationFactor(padding_size))) {
     QUIC_DVLOG(1) << ENDPOINT
                   << "Buffering coalesced packet of len: " << length;
     buffered_packets_.emplace_back(
         buffer, static_cast<QuicPacketLength>(length),
         coalesced_packet_.self_address(), coalesced_packet_.peer_address());
-    return true;
-  }
-
-  WriteResult result = writer_->WritePacket(
-      buffer, length, coalesced_packet_.self_address().host(),
-      coalesced_packet_.peer_address(), per_packet_options_);
-  if (IsWriteError(result.status)) {
-    OnWriteError(result.error_code);
-    return false;
-  }
-  if (IsWriteBlockedStatus(result.status)) {
-    visitor_->OnWriteBlocked();
-    if (result.status != WRITE_STATUS_BLOCKED_DATA_BUFFERED) {
-      QUIC_DVLOG(1) << ENDPOINT
-                    << "Buffering coalesced packet of len: " << length;
-      buffered_packets_.emplace_back(
-          buffer, static_cast<QuicPacketLength>(length),
-          coalesced_packet_.self_address(), coalesced_packet_.peer_address());
+    if (!GetQuicReloadableFlag(
+            quic_fix_bytes_accounting_for_buffered_coalesced_packets) &&
+        !enforce_strict_amplification_factor_) {
+      return true;
+    }
+  } else {
+    WriteResult result = writer_->WritePacket(
+        buffer, length, coalesced_packet_.self_address().host(),
+        coalesced_packet_.peer_address(), per_packet_options_);
+    if (IsWriteError(result.status)) {
+      OnWriteError(result.error_code);
+      return false;
+    }
+    if (IsWriteBlockedStatus(result.status)) {
+      visitor_->OnWriteBlocked();
+      if (result.status != WRITE_STATUS_BLOCKED_DATA_BUFFERED) {
+        QUIC_DVLOG(1) << ENDPOINT
+                      << "Buffering coalesced packet of len: " << length;
+        buffered_packets_.emplace_back(
+            buffer, static_cast<QuicPacketLength>(length),
+            coalesced_packet_.self_address(), coalesced_packet_.peer_address());
+      }
     }
   }
   // Account for added padding.
   if (length > coalesced_packet_.length()) {
-    size_t padding_size = length - coalesced_packet_.length();
     if (IsDefaultPath(coalesced_packet_.self_address(),
                       coalesced_packet_.peer_address())) {
       if (EnforceAntiAmplificationLimit()) {
@@ -6076,9 +6128,10 @@ bool QuicConnection::EnforceAntiAmplificationLimit() const {
 
 // TODO(danzh) Pass in path object or its reference of some sort to use this
 // method to check anti-amplification limit on non-default path.
-bool QuicConnection::LimitedByAmplificationFactor() const {
+bool QuicConnection::LimitedByAmplificationFactor(QuicByteCount bytes) const {
   return EnforceAntiAmplificationLimit() &&
-         default_path_.bytes_sent_before_address_validation >=
+         (default_path_.bytes_sent_before_address_validation +
+          (enforce_strict_amplification_factor_ ? bytes : 0)) >=
              anti_amplification_factor_ *
                  default_path_.bytes_received_before_address_validation;
 }
@@ -6373,11 +6426,12 @@ bool QuicConnection::SendNewConnectionId(
   return connected_;
 }
 
-void QuicConnection::OnNewConnectionIdIssued(
+bool QuicConnection::MaybeReserveConnectionId(
     const QuicConnectionId& connection_id) {
   if (perspective_ == Perspective::IS_SERVER) {
-    visitor_->OnServerConnectionIdIssued(connection_id);
+    return visitor_->MaybeReserveConnectionId(connection_id);
   }
+  return true;
 }
 
 void QuicConnection::OnSelfIssuedConnectionIdRetired(
@@ -6424,9 +6478,33 @@ QuicTime QuicConnection::GetNetworkBlackholeDeadline() const {
     return QuicTime::Zero();
   }
   QUICHE_DCHECK_LT(0u, num_rtos_for_blackhole_detection_);
+  if (sent_packet_manager_.remove_blackhole_detection_experiments()) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_remove_blackhole_detection_experiments);
+    const QuicTime::Delta blackhole_delay =
+        sent_packet_manager_.GetNetworkBlackholeDelay(
+            num_rtos_for_blackhole_detection_);
+    if (!ShouldDetectPathDegrading()) {
+      return clock_->ApproximateNow() + blackhole_delay;
+    }
+    return clock_->ApproximateNow() +
+           CalculateNetworkBlackholeDelay(
+               blackhole_delay, sent_packet_manager_.GetPathDegradingDelay(),
+               sent_packet_manager_.GetPtoDelay());
+  }
   return clock_->ApproximateNow() +
          sent_packet_manager_.GetNetworkBlackholeDelay(
              num_rtos_for_blackhole_detection_);
+}
+
+// static
+QuicTime::Delta QuicConnection::CalculateNetworkBlackholeDelay(
+    QuicTime::Delta blackhole_delay, QuicTime::Delta path_degrading_delay,
+    QuicTime::Delta pto_delay) {
+  const QuicTime::Delta min_delay = path_degrading_delay + pto_delay * 2;
+  if (blackhole_delay < min_delay) {
+    QUIC_CODE_COUNT(quic_extending_short_blackhole_delay);
+  }
+  return std::max(min_delay, blackhole_delay);
 }
 
 bool QuicConnection::ShouldDetectBlackhole() const {
@@ -6840,27 +6918,28 @@ std::vector<QuicConnectionId> QuicConnection::GetActiveServerConnectionIds()
     QUICHE_DCHECK(version().HasIetfQuicFrames());
     result = self_issued_cid_manager_->GetUnretiredConnectionIds();
   }
-  if (GetQuicReloadableFlag(
-          quic_consider_original_connection_id_as_active_pre_handshake)) {
-    QUIC_RELOADABLE_FLAG_COUNT(
-        quic_consider_original_connection_id_as_active_pre_handshake);
-    if (!IsHandshakeComplete() &&
-        original_destination_connection_id_.has_value()) {
-      // Consider original_destination_connection_id_ as active before handshake
-      // completes.
-      if (std::find(result.begin(), result.end(),
-                    original_destination_connection_id_.value()) !=
-          result.end()) {
-        QUIC_BUG(quic_unexpected_original_destination_connection_id)
-            << "original_destination_connection_id: "
-            << original_destination_connection_id_.value()
-            << " is unexpectedly in active "
-               "list";
-      } else {
-        result.insert(result.end(),
-                      original_destination_connection_id_.value());
-      }
-      QUIC_CODE_COUNT(quic_active_original_connection_id_pre_handshake);
+  if (!original_destination_connection_id_.has_value()) {
+    return result;
+  }
+  bool add_original_connection_id = false;
+  if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
+    QUIC_RESTART_FLAG_COUNT_N(quic_map_original_connection_ids2, 4, 4);
+    add_original_connection_id = true;
+  } else if (!IsHandshakeComplete()) {
+    QUIC_CODE_COUNT(quic_active_original_connection_id_pre_handshake);
+    add_original_connection_id = true;
+  }
+  if (add_original_connection_id) {
+    if (std::find(result.begin(), result.end(),
+                  original_destination_connection_id_.value()) !=
+        result.end()) {
+      QUIC_BUG(quic_unexpected_original_destination_connection_id)
+          << "original_destination_connection_id: "
+          << original_destination_connection_id_.value()
+          << " is unexpectedly in active "
+             "list";
+    } else {
+      result.insert(result.end(), original_destination_connection_id_.value());
     }
   }
   return result;
@@ -6887,7 +6966,7 @@ void QuicConnection::CreateConnectionIdManager() {
 
 void QuicConnection::QuicBugIfHasPendingFrames(QuicStreamId id) const {
   QUIC_BUG_IF(quic_has_pending_frames_unexpectedly,
-              packet_creator_.HasPendingStreamFramesOfStream(id))
+              connected_ && packet_creator_.HasPendingStreamFramesOfStream(id))
       << "Stream " << id
       << " has pending frames unexpectedly. Received packet info: "
       << last_received_packet_info_;
@@ -7039,9 +7118,10 @@ QuicConnection::ReversePathValidationResultDelegate::
           connection_->active_effective_peer_migration_type_) {}
 
 void QuicConnection::ReversePathValidationResultDelegate::
-    OnPathValidationSuccess(
-        std::unique_ptr<QuicPathValidationContext> context) {
-  QUIC_DLOG(INFO) << "Successfully validated new path " << *context;
+    OnPathValidationSuccess(std::unique_ptr<QuicPathValidationContext> context,
+                            QuicTime start_time) {
+  QUIC_DLOG(INFO) << "Successfully validated new path " << *context
+                  << ", validation started at " << start_time;
   if (connection_->IsDefaultPath(context->self_address(),
                                  context->peer_address())) {
     QUIC_CODE_COUNT_N(quic_kick_off_client_address_validation, 3, 6);

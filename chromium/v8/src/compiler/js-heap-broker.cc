@@ -8,21 +8,15 @@
 #include <algorithm>
 #endif
 
-#include "src/codegen/code-factory.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/handles/handles-inl.h"
 #include "src/heap/heap-inl.h"
-#include "src/ic/handler-configuration-inl.h"
-#include "src/init/bootstrapper.h"
 #include "src/objects/allocation-site-inl.h"
-#include "src/objects/data-handler-inl.h"
-#include "src/objects/feedback-cell.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/megadom-handler-inl.h"
 #include "src/objects/objects-inl.h"
-#include "src/objects/oddball.h"
 #include "src/objects/property-cell.h"
 
 namespace v8 {
@@ -30,14 +24,6 @@ namespace internal {
 namespace compiler {
 
 #define TRACE(broker, x) TRACE_BROKER(broker, x)
-
-#ifdef V8_STATIC_CONSTEXPR_VARIABLES_NEED_DEFINITIONS
-// These definitions are here in order to please the linker, which in debug mode
-// sometimes requires static constants to be defined in .cc files.
-// This is, however, deprecated (and unnecessary) in C++17.
-const uint32_t JSHeapBroker::kMinimalRefsBucketCount;
-const uint32_t JSHeapBroker::kInitialRefsBucketCount;
-#endif
 
 void JSHeapBroker::IncrementTracingIndentation() { ++trace_indentation_; }
 

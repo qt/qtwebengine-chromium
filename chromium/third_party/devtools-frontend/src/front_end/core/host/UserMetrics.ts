@@ -270,6 +270,18 @@ export class UserMetrics {
     InspectorFrontendHostInstance.recordEnumeratedHistogram(
         EnumeratedHistogram.StyleTextCopied, value, StyleTextCopied.MaxValue);
   }
+
+  manifestSectionSelected(sectionTitle: string): void {
+    const code =
+        ManifestSectionCodes[sectionTitle as keyof typeof ManifestSectionCodes] || ManifestSectionCodes.OtherSection;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.ManifestSectionSelected, code, ManifestSectionCodes.MaxValue);
+  }
+
+  cssHintShown(type: CSSHintType): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.CSSHintShown, type, CSSHintType.MaxValue);
+  }
 }
 
 /**
@@ -345,7 +357,8 @@ export enum Action {
   PerfPanelTraceImported = 54,
   PerfPanelTraceExported = 55,
   StackFrameRestarted = 56,
-  MaxValue = 57,
+  CaptureTestProtocolClicked = 57,
+  MaxValue = 58,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */
@@ -628,8 +641,11 @@ export enum DevtoolsExperiments {
   'instrumentationBreakpoints' = 61,
   'cssAuthoringHints' = 62,
   'authoredDeployedGrouping' = 63,
+  'importantDOMProperties' = 64,
+  'justMyCode' = 65,
+  'breakpointView' = 66,
   // Increment this when new experiments are added.
-  'MaxValue' = 64,
+  'MaxValue' = 67,
 }
 /* eslint-enable @typescript-eslint/naming-convention */
 
@@ -968,6 +984,35 @@ export enum StyleTextCopied {
   AllDeclarationsViaContextMenu = 8,
   AllDeclarationsAsJSViaContextMenu = 9,
   SelectorViaContextMenu = 10,
+  MaxValue = 11,
+}
+
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum ManifestSectionCodes {
+  OtherSection = 0,
+  'Identity' = 1,
+  'Presentation' = 2,
+  'Protocol Handlers' = 3,
+  'Icons' = 4,
+  MaxValue = 5,
+}
+
+// The names here match the CSSRuleValidator names in CSSRuleValidator.ts.
+// TODO(crbug.com/1167717): Make this a const enum again
+// eslint-disable-next-line rulesdir/const_enum
+export enum CSSHintType {
+  Other = 0,
+  AlignContent = 1,
+  FlexItem = 2,
+  FlexContainer = 3,
+  GridContainer = 4,
+  GridItem = 5,
+  FlexGrid = 6,
+  MulticolFlexGrid = 7,
+  Padding = 8,
+  Position = 9,
+  ZIndex = 10,
   MaxValue = 11,
 }
 

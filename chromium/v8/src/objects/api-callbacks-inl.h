@@ -28,26 +28,16 @@ TQ_OBJECT_CONSTRUCTORS_IMPL(InterceptorInfo)
 
 TQ_OBJECT_CONSTRUCTORS_IMPL(CallHandlerInfo)
 
-ACCESSORS_CHECKED2(AccessorInfo, getter, Object, kGetterOffset, true,
-                   Foreign::IsNormalized(value))
-ACCESSORS_CHECKED2(AccessorInfo, setter, Object, kSetterOffset, true,
-                   Foreign::IsNormalized(value))
+EXTERNAL_POINTER_ACCESSORS(AccessorInfo, getter, Address, kGetterOffset,
+                           kAccessorInfoGetterTag)
+EXTERNAL_POINTER_ACCESSORS(AccessorInfo, js_getter, Address, kJsGetterOffset,
+                           kAccessorInfoJsGetterTag)
+EXTERNAL_POINTER_ACCESSORS(AccessorInfo, setter, Address, kSetterOffset,
+                           kAccessorInfoSetterTag)
 
-bool AccessorInfo::has_getter() {
-  bool result = getter() != Smi::zero();
-  DCHECK_EQ(result,
-            getter() != Smi::zero() &&
-                Foreign::cast(getter()).foreign_address() != kNullAddress);
-  return result;
-}
+bool AccessorInfo::has_getter() { return getter() != kNullAddress; }
 
-bool AccessorInfo::has_setter() {
-  bool result = setter() != Smi::zero();
-  DCHECK_EQ(result,
-            setter() != Smi::zero() &&
-                Foreign::cast(setter()).foreign_address() != kNullAddress);
-  return result;
-}
+bool AccessorInfo::has_setter() { return setter() != kNullAddress; }
 
 BIT_FIELD_ACCESSORS(AccessorInfo, flags, all_can_read,
                     AccessorInfo::AllCanReadBit)
@@ -76,6 +66,12 @@ void AccessorInfo::set_setter_side_effect_type(SideEffectType value) {
 
 BIT_FIELD_ACCESSORS(AccessorInfo, flags, initial_property_attributes,
                     AccessorInfo::InitialAttributesBits)
+
+void AccessorInfo::clear_padding() {
+  if (FIELD_SIZE(kOptionalPaddingOffset) == 0) return;
+  memset(reinterpret_cast<void*>(address() + kOptionalPaddingOffset), 0,
+         FIELD_SIZE(kOptionalPaddingOffset));
+}
 
 BOOL_ACCESSORS(InterceptorInfo, flags, can_intercept_symbols,
                CanInterceptSymbolsBit::kShift)
@@ -114,6 +110,12 @@ bool CallHandlerInfo::NextCallHasNoSideEffect() {
   }
   return false;
 }
+
+EXTERNAL_POINTER_ACCESSORS(CallHandlerInfo, callback, Address, kCallbackOffset,
+                           kCallHandlerInfoCallbackTag)
+
+EXTERNAL_POINTER_ACCESSORS(CallHandlerInfo, js_callback, Address,
+                           kJsCallbackOffset, kCallHandlerInfoJsCallbackTag)
 
 }  // namespace internal
 }  // namespace v8

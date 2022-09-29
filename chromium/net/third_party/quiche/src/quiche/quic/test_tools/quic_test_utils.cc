@@ -455,6 +455,8 @@ MockQuicConnectionHelper::~MockQuicConnectionHelper() {}
 
 const QuicClock* MockQuicConnectionHelper::GetClock() const { return &clock_; }
 
+QuicClock* MockQuicConnectionHelper::GetClock() { return &clock_; }
+
 QuicRandom* MockQuicConnectionHelper::GetRandomGenerator() {
   return &random_generator_;
 }
@@ -483,8 +485,8 @@ void MockQuicConnectionHelper::AdvanceTime(QuicTime::Delta delta) {
   clock_.AdvanceTime(delta);
 }
 
-MockQuicConnection::MockQuicConnection(MockQuicConnectionHelper* helper,
-                                       MockAlarmFactory* alarm_factory,
+MockQuicConnection::MockQuicConnection(QuicConnectionHelperInterface* helper,
+                                       QuicAlarmFactory* alarm_factory,
                                        Perspective perspective)
     : MockQuicConnection(TestConnectionId(),
                          QuicSocketAddress(TestPeerIPAddress(), kTestPort),
@@ -492,16 +494,16 @@ MockQuicConnection::MockQuicConnection(MockQuicConnectionHelper* helper,
                          ParsedVersionOfIndex(CurrentSupportedVersions(), 0)) {}
 
 MockQuicConnection::MockQuicConnection(QuicSocketAddress address,
-                                       MockQuicConnectionHelper* helper,
-                                       MockAlarmFactory* alarm_factory,
+                                       QuicConnectionHelperInterface* helper,
+                                       QuicAlarmFactory* alarm_factory,
                                        Perspective perspective)
     : MockQuicConnection(TestConnectionId(), address, helper, alarm_factory,
                          perspective,
                          ParsedVersionOfIndex(CurrentSupportedVersions(), 0)) {}
 
 MockQuicConnection::MockQuicConnection(QuicConnectionId connection_id,
-                                       MockQuicConnectionHelper* helper,
-                                       MockAlarmFactory* alarm_factory,
+                                       QuicConnectionHelperInterface* helper,
+                                       QuicAlarmFactory* alarm_factory,
                                        Perspective perspective)
     : MockQuicConnection(connection_id,
                          QuicSocketAddress(TestPeerIPAddress(), kTestPort),
@@ -509,7 +511,7 @@ MockQuicConnection::MockQuicConnection(QuicConnectionId connection_id,
                          ParsedVersionOfIndex(CurrentSupportedVersions(), 0)) {}
 
 MockQuicConnection::MockQuicConnection(
-    MockQuicConnectionHelper* helper, MockAlarmFactory* alarm_factory,
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     Perspective perspective, const ParsedQuicVersionVector& supported_versions)
     : MockQuicConnection(
           TestConnectionId(), QuicSocketAddress(TestPeerIPAddress(), kTestPort),
@@ -517,7 +519,7 @@ MockQuicConnection::MockQuicConnection(
 
 MockQuicConnection::MockQuicConnection(
     QuicConnectionId connection_id, QuicSocketAddress initial_peer_address,
-    MockQuicConnectionHelper* helper, MockAlarmFactory* alarm_factory,
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     Perspective perspective, const ParsedQuicVersionVector& supported_versions)
     : QuicConnection(
           connection_id,
@@ -546,18 +548,23 @@ bool MockQuicConnection::OnProtocolVersionMismatch(
   return false;
 }
 
-PacketSavingConnection::PacketSavingConnection(MockQuicConnectionHelper* helper,
-                                               MockAlarmFactory* alarm_factory,
-                                               Perspective perspective)
+PacketSavingConnection::PacketSavingConnection(
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
+    Perspective perspective)
     : MockQuicConnection(helper, alarm_factory, perspective) {}
 
 PacketSavingConnection::PacketSavingConnection(
-    MockQuicConnectionHelper* helper, MockAlarmFactory* alarm_factory,
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     Perspective perspective, const ParsedQuicVersionVector& supported_versions)
     : MockQuicConnection(helper, alarm_factory, perspective,
                          supported_versions) {}
 
 PacketSavingConnection::~PacketSavingConnection() {}
+
+SerializedPacketFate PacketSavingConnection::GetSerializedPacketFate(
+    bool /*is_mtu_discovery*/, EncryptionLevel /*encryption_level*/) {
+  return SEND_TO_WRITER;
+}
 
 void PacketSavingConnection::SendOrQueuePacket(SerializedPacket packet) {
   encrypted_packets_.push_back(std::make_unique<QuicEncryptedPacket>(
@@ -766,9 +773,9 @@ TestPushPromiseDelegate::TestPushPromiseDelegate(bool match)
     : match_(match), rendezvous_fired_(false), rendezvous_stream_(nullptr) {}
 
 bool TestPushPromiseDelegate::CheckVary(
-    const spdy::SpdyHeaderBlock& /*client_request*/,
-    const spdy::SpdyHeaderBlock& /*promise_request*/,
-    const spdy::SpdyHeaderBlock& /*promise_response*/) {
+    const spdy::Http2HeaderBlock& /*client_request*/,
+    const spdy::Http2HeaderBlock& /*promise_request*/,
+    const spdy::Http2HeaderBlock& /*promise_response*/) {
   QUIC_DVLOG(1) << "match " << match_;
   return match_;
 }
@@ -903,8 +910,8 @@ QuicEncryptedPacket* ConstructEncryptedPacket(
   ParsedQuicVersion version = (*versions)[0];
   if (QuicVersionHasLongHeaderLengths(version.transport_version) &&
       version_flag) {
-    header.retry_token_length_length = VARIABLE_LENGTH_INTEGER_LENGTH_1;
-    header.length_length = VARIABLE_LENGTH_INTEGER_LENGTH_2;
+    header.retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_1;
+    header.length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_2;
   }
 
   QuicFrames frames;
@@ -968,8 +975,8 @@ std::unique_ptr<QuicEncryptedPacket> GetUndecryptableEarlyPacket(
   header.packet_number = QuicPacketNumber(33);
   header.long_packet_type = ZERO_RTT_PROTECTED;
   if (version.HasLongHeaderLengths()) {
-    header.retry_token_length_length = VARIABLE_LENGTH_INTEGER_LENGTH_1;
-    header.length_length = VARIABLE_LENGTH_INTEGER_LENGTH_2;
+    header.retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_1;
+    header.length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_2;
   }
 
   QuicFrames frames;
@@ -1022,8 +1029,8 @@ QuicEncryptedPacket* ConstructMisFramedEncryptedPacket(
   header.packet_number = QuicPacketNumber(packet_number);
   if (QuicVersionHasLongHeaderLengths(version.transport_version) &&
       version_flag) {
-    header.retry_token_length_length = VARIABLE_LENGTH_INTEGER_LENGTH_1;
-    header.length_length = VARIABLE_LENGTH_INTEGER_LENGTH_2;
+    header.retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_1;
+    header.length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_2;
   }
   QuicFrame frame(QuicStreamFrame(1, false, 0, absl::string_view(data)));
   QuicFrames frames;
@@ -1120,7 +1127,7 @@ QuicCryptoClientStreamPeer::GetHandshaker(QuicCryptoClientStream* stream) {
 void CreateClientSessionForTest(
     QuicServerId server_id, QuicTime::Delta connection_start_time,
     const ParsedQuicVersionVector& supported_versions,
-    MockQuicConnectionHelper* helper, MockAlarmFactory* alarm_factory,
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     QuicCryptoClientConfig* crypto_client_config,
     PacketSavingConnection** client_connection,
     TestQuicSpdyClientSession** client_session) {
@@ -1143,7 +1150,7 @@ void CreateClientSessionForTest(
 void CreateServerSessionForTest(
     QuicServerId /*server_id*/, QuicTime::Delta connection_start_time,
     ParsedQuicVersionVector supported_versions,
-    MockQuicConnectionHelper* helper, MockAlarmFactory* alarm_factory,
+    QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     QuicCryptoServerConfig* server_crypto_config,
     QuicCompressedCertsCache* compressed_certs_cache,
     PacketSavingConnection** server_connection,
@@ -1363,6 +1370,7 @@ WriteResult TestPacketWriter::WritePacket(const char* buffer, size_t buf_len,
   }
 
   last_packet_size_ = packet.length();
+  total_bytes_written_ += packet.length();
   last_packet_header_ = framer_.header();
   if (!framer_.connection_close_frames().empty()) {
     ++connection_close_packets_;

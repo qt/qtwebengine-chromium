@@ -116,6 +116,10 @@ class QuicClientBase {
   // Returns true if there are any outstanding requests.
   bool WaitForEvents();
 
+  // Performs the part of WaitForEvents() that is done after the actual event
+  // loop call.
+  bool WaitForEventsPostprocessing();
+
   // Migrate to a new socket (new_host) during an active connection.
   bool MigrateSocket(const QuicIpAddress& new_host);
 
@@ -246,6 +250,14 @@ class QuicClientBase {
       QuicConnectionDebugVisitor* connection_debug_visitor) {
     connection_debug_visitor_ = connection_debug_visitor;
   }
+
+  // Sets the interface name to bind. If empty, will not attempt to bind the
+  // socket to that interface. Defaults to empty string.
+  void set_interface_name(std::string interface_name) {
+    interface_name_ = interface_name;
+  }
+
+  std::string interface_name() { return interface_name_; }
 
   void set_server_connection_id_length(uint8_t server_connection_id_length) {
     server_connection_id_length_ = server_connection_id_length;
@@ -400,6 +412,10 @@ class QuicClientBase {
 
   // Stores validated paths.
   std::vector<std::unique_ptr<QuicPathValidationContext>> validated_paths_;
+
+  // Stores the interface name to bind. If empty, will not attempt to bind the
+  // socket to that interface. Defaults to empty string.
+  std::string interface_name_;
 };
 
 }  // namespace quic

@@ -12,7 +12,7 @@
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 
-using spdy::SpdyHeaderBlock;
+using spdy::Http2HeaderBlock;
 
 namespace quic {
 
@@ -38,7 +38,7 @@ void QuicSpdyClientSessionBase::OnConfigNegotiated() {
 }
 
 void QuicSpdyClientSessionBase::OnInitialHeadersComplete(
-    QuicStreamId stream_id, const SpdyHeaderBlock& response_headers) {
+    QuicStreamId stream_id, const Http2HeaderBlock& response_headers) {
   // Note that the strong ordering of the headers stream means that
   // QuicSpdyClientStream::OnPromiseHeadersComplete must have already
   // been called (on the associated stream) if this is a promised
@@ -100,9 +100,9 @@ void QuicSpdyClientSessionBase::OnPromiseHeaderList(
   stream->OnPromiseHeaderList(promised_stream_id, frame_len, header_list);
 }
 
-bool QuicSpdyClientSessionBase::HandlePromised(QuicStreamId /* associated_id */,
-                                               QuicStreamId promised_id,
-                                               const SpdyHeaderBlock& headers) {
+bool QuicSpdyClientSessionBase::HandlePromised(
+    QuicStreamId /* associated_id */, QuicStreamId promised_id,
+    const Http2HeaderBlock& headers) {
   // TODO(b/136295430): Do not treat |promised_id| as a stream ID when using
   // IETF QUIC.
   // Due to pathalogical packet re-ordering, it is possible that
@@ -259,11 +259,9 @@ bool QuicSpdyClientSessionBase::OnSettingsFrame(const SettingsFrame& frame) {
   if (!QuicSpdySession::OnSettingsFrame(frame)) {
     return false;
   }
-  std::unique_ptr<char[]> buffer;
-  QuicByteCount frame_length =
-      HttpEncoder::SerializeSettingsFrame(frame, &buffer);
+  std::string settings_frame = HttpEncoder::SerializeSettingsFrame(frame);
   auto serialized_data = std::make_unique<ApplicationState>(
-      buffer.get(), buffer.get() + frame_length);
+      settings_frame.data(), settings_frame.data() + settings_frame.length());
   GetMutableCryptoStream()->SetServerApplicationStateForResumption(
       std::move(serialized_data));
   return true;

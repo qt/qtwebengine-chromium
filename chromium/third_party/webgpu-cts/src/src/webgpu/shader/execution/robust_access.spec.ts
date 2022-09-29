@@ -49,7 +49,7 @@ function runShaderTest(
     struct Result {
       value: u32
     };
-    @group(1) @binding(1) var<storage, write> result: Result;
+    @group(1) @binding(1) var<storage, read_write> result: Result;
 
     ${testSource}
 
@@ -127,7 +127,6 @@ g.test('linear_memory')
     u
       .combineWithParams([
         { storageClass: 'storage', storageMode: 'read', access: 'read', dynamicOffset: false },
-        { storageClass: 'storage', storageMode: 'write', access: 'write', dynamicOffset: false },
         {
           storageClass: 'storage',
           storageMode: 'read_write',
@@ -141,7 +140,6 @@ g.test('linear_memory')
           dynamicOffset: false,
         },
         { storageClass: 'storage', storageMode: 'read', access: 'read', dynamicOffset: true },
-        { storageClass: 'storage', storageMode: 'write', access: 'write', dynamicOffset: true },
         { storageClass: 'storage', storageMode: 'read_write', access: 'read', dynamicOffset: true },
         {
           storageClass: 'storage',

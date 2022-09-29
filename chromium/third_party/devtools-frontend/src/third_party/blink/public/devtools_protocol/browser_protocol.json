@@ -1,4 +1,8 @@
 {
+    "version": {
+        "major": "1",
+        "minor": "3"
+    },
     "domains": [
         {
             "domain": "Accessibility",
@@ -274,6 +278,12 @@
                         {
                             "name": "role",
                             "description": "This `Node`'s role, whether explicit or implicit.",
+                            "optional": true,
+                            "$ref": "AXValue"
+                        },
+                        {
+                            "name": "chromeRole",
+                            "description": "This `Node`'s Chrome raw role.",
                             "optional": true,
                             "$ref": "AXValue"
                         },
@@ -981,7 +991,8 @@
                         "ExcludeSameSiteLax",
                         "ExcludeSameSiteStrict",
                         "ExcludeInvalidSameParty",
-                        "ExcludeSamePartyCrossPartyContext"
+                        "ExcludeSamePartyCrossPartyContext",
+                        "ExcludeDomainNonASCII"
                     ]
                 },
                 {
@@ -996,7 +1007,8 @@
                         "WarnSameSiteStrictCrossDowngradeLax",
                         "WarnSameSiteLaxCrossDowngradeStrict",
                         "WarnSameSiteLaxCrossDowngradeLax",
-                        "WarnAttributeValueExceedsMaxSize"
+                        "WarnAttributeValueExceedsMaxSize",
+                        "WarnDomainNonASCII"
                     ]
                 },
                 {
@@ -1436,9 +1448,15 @@
                     "type": "string",
                     "enum": [
                         "PermissionPolicyDisabled",
-                        "AttributionSourceUntrustworthyOrigin",
-                        "AttributionUntrustworthyOrigin",
-                        "InvalidHeader"
+                        "UntrustworthyReportingOrigin",
+                        "InsecureContext",
+                        "InvalidHeader",
+                        "InvalidRegisterTriggerHeader",
+                        "InvalidEligibleHeader",
+                        "TooManyConcurrentRequests",
+                        "SourceAndTriggerHeaders",
+                        "SourceIgnored",
+                        "TriggerIgnored"
                     ]
                 },
                 {
@@ -1449,11 +1467,6 @@
                         {
                             "name": "violationType",
                             "$ref": "AttributionReportingIssueType"
-                        },
-                        {
-                            "name": "frame",
-                            "optional": true,
-                            "$ref": "AffectedFrame"
                         },
                         {
                             "name": "request",
@@ -1556,19 +1569,26 @@
                         "DeprecationExample",
                         "DocumentDomainSettingWithoutOriginAgentClusterHeader",
                         "EventPath",
+                        "ExpectCTHeader",
                         "GeolocationInsecureOrigin",
                         "GeolocationInsecureOriginDeprecatedNotRemoved",
                         "GetUserMediaInsecureOrigin",
                         "HostCandidateAttributeGetter",
+                        "IdentityInCanMakePaymentEvent",
                         "InsecurePrivateNetworkSubresourceRequest",
                         "LegacyConstraintGoogIPv6",
                         "LocalCSSFileExtensionRejected",
                         "MediaSourceAbortRemove",
                         "MediaSourceDurationTruncatingBuffered",
+                        "NavigateEventRestoreScroll",
+                        "NavigateEventTransitionWhile",
                         "NoSysexWebMIDIWithoutPermission",
                         "NotificationInsecureOrigin",
                         "NotificationPermissionRequestedIframe",
                         "ObsoleteWebRtcCipherSuite",
+                        "OpenWebDatabaseInsecureContext",
+                        "OverflowVisibleOnReplacedElement",
+                        "PersistentQuotaType",
                         "PictureSourceSrc",
                         "PrefixedCancelAnimationFrame",
                         "PrefixedRequestAnimationFrame",
@@ -1650,7 +1670,6 @@
                         "ClientMetadataHttpNotFound",
                         "ClientMetadataNoResponse",
                         "ClientMetadataInvalidResponse",
-                        "ClientMetadataMissingPrivacyPolicyUrl",
                         "DisabledInSettings",
                         "ErrorFetchingSignin",
                         "InvalidSigninResponse",
@@ -2684,6 +2703,12 @@
                             "$ref": "DOM.PseudoType"
                         },
                         {
+                            "name": "pseudoIdentifier",
+                            "description": "Pseudo element custom ident.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
                             "name": "matches",
                             "description": "Matches of CSS rules applicable to the pseudo style.",
                             "type": "array",
@@ -2946,6 +2971,16 @@
                             "items": {
                                 "$ref": "CSSLayer"
                             }
+                        },
+                        {
+                            "name": "scopes",
+                            "description": "@scope CSS at-rule array.\nThe array enumerates @scope at-rules starting with the innermost one, going outwards.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "array",
+                            "items": {
+                                "$ref": "CSSScope"
+                            }
                         }
                     ]
                 },
@@ -3132,6 +3167,16 @@
                             "description": "The entire property range in the enclosing style declaration (if available).",
                             "optional": true,
                             "$ref": "SourceRange"
+                        },
+                        {
+                            "name": "longhandProperties",
+                            "description": "Parsed longhand components of this property if it is a shorthand.\nThis field will be empty if the given property is not a shorthand.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "array",
+                            "items": {
+                                "$ref": "CSSProperty"
+                            }
                         }
                     ]
                 },
@@ -3285,6 +3330,31 @@
                             "name": "active",
                             "description": "Whether the supports condition is satisfied.",
                             "type": "boolean"
+                        },
+                        {
+                            "name": "range",
+                            "description": "The associated rule header range in the enclosing stylesheet (if\navailable).",
+                            "optional": true,
+                            "$ref": "SourceRange"
+                        },
+                        {
+                            "name": "styleSheetId",
+                            "description": "Identifier of the stylesheet containing this object (if exists).",
+                            "optional": true,
+                            "$ref": "StyleSheetId"
+                        }
+                    ]
+                },
+                {
+                    "id": "CSSScope",
+                    "description": "CSS Scope at-rule descriptor.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "text",
+                            "description": "Scope rule text.",
+                            "type": "string"
                         },
                         {
                             "name": "range",
@@ -3775,6 +3845,13 @@
                             "items": {
                                 "$ref": "CSSKeyframesRule"
                             }
+                        },
+                        {
+                            "name": "parentLayoutNodeId",
+                            "description": "Id of the first parent element that does not have display: contents.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "DOM.NodeId"
                         }
                     ]
                 },
@@ -3992,6 +4069,32 @@
                             "name": "supports",
                             "description": "The resulting CSS Supports rule after modification.",
                             "$ref": "CSSSupports"
+                        }
+                    ]
+                },
+                {
+                    "name": "setScopeText",
+                    "description": "Modifies the expression of a scope at-rule.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "styleSheetId",
+                            "$ref": "StyleSheetId"
+                        },
+                        {
+                            "name": "range",
+                            "$ref": "SourceRange"
+                        },
+                        {
+                            "name": "text",
+                            "type": "string"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "scope",
+                            "description": "The resulting CSS Scope rule after modification.",
+                            "$ref": "CSSScope"
                         }
                     ]
                 },
@@ -4731,6 +4834,12 @@
                             "description": "Pseudo element type for this node.",
                             "optional": true,
                             "$ref": "PseudoType"
+                        },
+                        {
+                            "name": "pseudoIdentifier",
+                            "description": "Pseudo element identifier for this node. Only present if there is a\nvalid pseudoType.",
+                            "optional": true,
+                            "type": "string"
                         },
                         {
                             "name": "shadowRootType",
@@ -5621,6 +5730,21 @@
                     ]
                 },
                 {
+                    "name": "getTopLayerElements",
+                    "description": "Returns NodeIds of current top layer elements.\nTop layer is rendered closest to the user within a viewport, therefore its elements always\nappear on top of all other content.",
+                    "experimental": true,
+                    "returns": [
+                        {
+                            "name": "nodeIds",
+                            "description": "NodeIds of top layer elements",
+                            "type": "array",
+                            "items": {
+                                "$ref": "NodeId"
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "redo",
                     "description": "Re-does the last undone action.",
                     "experimental": true
@@ -6160,6 +6284,11 @@
                             "$ref": "Node"
                         }
                     ]
+                },
+                {
+                    "name": "topLayerElementsUpdated",
+                    "description": "Called when top layer elements are changed.",
+                    "experimental": true
                 },
                 {
                     "name": "pseudoElementRemoved",
@@ -7072,6 +7201,12 @@
                         {
                             "name": "pseudoType",
                             "description": "Type of a pseudo element node.",
+                            "optional": true,
+                            "$ref": "RareStringData"
+                        },
+                        {
+                            "name": "pseudoIdentifier",
+                            "description": "Pseudo element identifier for this node. Only present if there is a\nvalid pseudoType.",
                             "optional": true,
                             "$ref": "RareStringData"
                         },
@@ -8775,7 +8910,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8796,7 +8938,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8812,6 +8961,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8843,7 +9000,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8900,7 +9064,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8933,7 +9104,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         },
                         {
@@ -8956,7 +9134,14 @@
                     "parameters": [
                         {
                             "name": "securityOrigin",
-                            "description": "Security origin.",
+                            "description": "At least and at most one of securityOrigin, storageKey must be specified.\nSecurity origin.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "optional": true,
                             "type": "string"
                         }
                     ],
@@ -10562,6 +10747,7 @@
                         "TextTrack",
                         "XHR",
                         "Fetch",
+                        "Prefetch",
                         "EventSource",
                         "WebSocket",
                         "Manifest",
@@ -11018,6 +11204,17 @@
                             "name": "certificateTransparencyCompliance",
                             "description": "Whether the request complied with Certificate Transparency policy",
                             "$ref": "CertificateTransparencyCompliance"
+                        },
+                        {
+                            "name": "serverSignatureAlgorithm",
+                            "description": "The signature algorithm used by the server in the TLS server signature,\nrepresented as a TLS SignatureScheme code point. Omitted if not\napplicable or not known.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "encryptedClientHello",
+                            "description": "Whether the connection used Encrypted ClientHello",
+                            "type": "boolean"
                         }
                     ]
                 },
@@ -15058,6 +15255,7 @@
                         "encrypted-media",
                         "execution-while-out-of-viewport",
                         "execution-while-not-rendered",
+                        "federated-credentials",
                         "focus-without-user-activation",
                         "fullscreen",
                         "frobulate",
@@ -15081,9 +15279,11 @@
                         "screen-wake-lock",
                         "serial",
                         "shared-autofill",
+                        "shared-storage",
                         "storage-access-api",
                         "sync-xhr",
                         "trust-token-redemption",
+                        "unload",
                         "usb",
                         "vertical-scroll",
                         "web-share",
@@ -15099,7 +15299,8 @@
                     "enum": [
                         "Header",
                         "IframeAttribute",
-                        "InFencedFrameTree"
+                        "InFencedFrameTree",
+                        "InIsolatedApp"
                     ]
                 },
                 {
@@ -16127,7 +16328,9 @@
                         "TriggerBackgrounded",
                         "EmbedderTriggeredAndSameOriginRedirected",
                         "EmbedderTriggeredAndCrossOriginRedirected",
-                        "EmbedderTriggeredAndDestroyed"
+                        "MemoryLimitExceeded",
+                        "FailToGetMemoryUsage",
+                        "DataSaverEnabled"
                     ]
                 }
             ],
@@ -17317,12 +17520,6 @@
                             "$ref": "FrameId"
                         },
                         {
-                            "name": "backendNodeId",
-                            "description": "Input node id.",
-                            "experimental": true,
-                            "$ref": "DOM.BackendNodeId"
-                        },
-                        {
                             "name": "mode",
                             "description": "Input mode.",
                             "type": "string",
@@ -17330,6 +17527,13 @@
                                 "selectSingle",
                                 "selectMultiple"
                             ]
+                        },
+                        {
+                            "name": "backendNodeId",
+                            "description": "Input node id. Only present for file choosers opened via an <input type=\"file\"> element.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "DOM.BackendNodeId"
                         }
                     ]
                 },
@@ -17679,6 +17883,7 @@
                 {
                     "name": "prerenderAttemptCompleted",
                     "description": "Fired when a prerender attempt is completed.",
+                    "experimental": true,
                     "parameters": [
                         {
                             "name": "initiatingFrameId",
@@ -17692,6 +17897,12 @@
                         {
                             "name": "finalStatus",
                             "$ref": "PrerenderFinalStatus"
+                        },
+                        {
+                            "name": "reasonDetails",
+                            "description": "This is used to give users more information about the cancellation details,\nand this will be formatted for display.",
+                            "optional": true,
+                            "type": "string"
                         }
                     ]
                 },
@@ -18985,6 +19196,22 @@
                     ]
                 },
                 {
+                    "name": "clearDataForStorageKey",
+                    "description": "Clears storage for storage key.",
+                    "parameters": [
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageTypes",
+                            "description": "Comma separated list of StorageType to clear.",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
                     "name": "getCookies",
                     "description": "Returns all browser cookies.",
                     "parameters": [
@@ -19115,6 +19342,17 @@
                     ]
                 },
                 {
+                    "name": "trackIndexedDBForStorageKey",
+                    "description": "Registers storage key to be notified when an update occurs to its IndexedDB.",
+                    "parameters": [
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
                     "name": "untrackCacheStorageForOrigin",
                     "description": "Unregisters origin from receiving notifications for cache storage.",
                     "parameters": [
@@ -19132,6 +19370,17 @@
                         {
                             "name": "origin",
                             "description": "Security origin.",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "name": "untrackIndexedDBForStorageKey",
+                    "description": "Unregisters storage key from receiving notifications for IndexedDB.",
+                    "parameters": [
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key.",
                             "type": "string"
                         }
                     ]
@@ -19239,6 +19488,11 @@
                             "type": "string"
                         },
                         {
+                            "name": "storageKey",
+                            "description": "Storage key to update.",
+                            "type": "string"
+                        },
+                        {
                             "name": "databaseName",
                             "description": "Database to update.",
                             "type": "string"
@@ -19257,6 +19511,11 @@
                         {
                             "name": "origin",
                             "description": "Origin to update.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Storage key to update.",
                             "type": "string"
                         }
                     ]
@@ -19645,6 +19904,35 @@
                     ]
                 },
                 {
+                    "id": "FilterEntry",
+                    "description": "A filter used by target query/discovery/auto-attach operations.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "exclude",
+                            "description": "If set, causes exclusion of mathcing targets from the list.",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "type",
+                            "description": "If not present, matches any type.",
+                            "optional": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "id": "TargetFilter",
+                    "description": "The entries in TargetFilter are matched sequentially against targets and\nthe first entry that matches determines if the target is included or not,\ndepending on the value of `exclude` field in the entry.\nIf filter is not specified, the one assumed is\n[{type: \"browser\", exclude: true}, {type: \"tab\", exclude: true}, {}]\n(i.e. include everything but `browser` and `tab`).",
+                    "experimental": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "FilterEntry"
+                    }
+                },
+                {
                     "id": "RemoteLocation",
                     "experimental": true,
                     "type": "object",
@@ -19904,6 +20192,15 @@
                 {
                     "name": "getTargets",
                     "description": "Retrieves a list of available targets.",
+                    "parameters": [
+                        {
+                            "name": "filter",
+                            "description": "Only targets matching filter will be reported. If filter is not specified\nand target discovery is currently enabled, a filter used for target discovery\nis used for consistency.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "TargetFilter"
+                        }
+                    ],
                     "returns": [
                         {
                             "name": "targetInfos",
@@ -19959,6 +20256,13 @@
                             "description": "Enables \"flat\" access to the session via specifying sessionId attribute in the commands.\nWe plan to make this the default, deprecate non-flattened mode,\nand eventually retire it. See crbug.com/991325.",
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "filter",
+                            "description": "Only targets matching filter will be attached.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "TargetFilter"
                         }
                     ]
                 },
@@ -19975,6 +20279,13 @@
                             "name": "waitForDebuggerOnStart",
                             "description": "Whether to pause new targets when attaching to them. Use `Runtime.runIfWaitingForDebugger`\nto run paused targets.",
                             "type": "boolean"
+                        },
+                        {
+                            "name": "filter",
+                            "description": "Only targets matching filter will be attached.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "TargetFilter"
                         }
                     ]
                 },
@@ -19986,6 +20297,13 @@
                             "name": "discover",
                             "description": "Whether to discover available targets.",
                             "type": "boolean"
+                        },
+                        {
+                            "name": "filter",
+                            "description": "Only targets matching filter will be attached. If `discover` is false,\n`filter` must be omitted or empty.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "TargetFilter"
                         }
                     ]
                 },
@@ -20193,6 +20511,12 @@
                                 "recordAsMuchAsPossible",
                                 "echoToConsole"
                             ]
+                        },
+                        {
+                            "name": "traceBufferSizeInKb",
+                            "description": "Size of the trace buffer in kilobytes. If not specified or zero is passed, a default value\nof 200 MB would be used.",
+                            "optional": true,
+                            "type": "number"
                         },
                         {
                             "name": "enableSampling",
@@ -22219,6 +22543,29 @@
                     ]
                 },
                 {
+                    "id": "WasmDisassemblyChunk",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "lines",
+                            "description": "The next chunk of disassembled lines.",
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        {
+                            "name": "bytecodeOffsets",
+                            "description": "The bytecode offsets describing the start of each line.",
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        }
+                    ]
+                },
+                {
                     "id": "ScriptLanguage",
                     "description": "Enum of possible script languages.",
                     "type": "string",
@@ -22425,6 +22772,61 @@
                             "description": "Wasm bytecode.",
                             "optional": true,
                             "type": "binary"
+                        }
+                    ]
+                },
+                {
+                    "name": "disassembleWasmModule",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "scriptId",
+                            "description": "Id of the script to disassemble",
+                            "$ref": "Runtime.ScriptId"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "streamId",
+                            "description": "For large modules, return a stream from which additional chunks of\ndisassembly can be read successively.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "totalNumberOfLines",
+                            "description": "The total number of lines in the disassembly text.",
+                            "type": "integer"
+                        },
+                        {
+                            "name": "functionBodyOffsets",
+                            "description": "The offsets of all function bodies, in the format [start1, end1,\nstart2, end2, ...] where all ends are exclusive.",
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        },
+                        {
+                            "name": "chunk",
+                            "description": "The first chunk of disassembly.",
+                            "$ref": "WasmDisassemblyChunk"
+                        }
+                    ]
+                },
+                {
+                    "name": "nextWasmDisassemblyChunk",
+                    "description": "Disassemble the next chunk of lines for the module corresponding to the\nstream. If disassembly is complete, this API will invalidate the streamId\nand return an empty chunk. Any subsequent calls for the now invalid stream\nwill return errors.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "streamId",
+                            "type": "string"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "chunk",
+                            "description": "The next chunk of disassembly.",
+                            "$ref": "WasmDisassemblyChunk"
                         }
                     ]
                 },
@@ -22804,7 +23206,7 @@
                 },
                 {
                     "name": "setScriptSource",
-                    "description": "Edits JavaScript source live.",
+                    "description": "Edits JavaScript source live.\n\nIn general, functions that are currently on the stack can not be edited with\na single exception: If the edited function is the top-most stack frame and\nthat is the only activation of that function on the stack. In this case\nthe live edit will be successful and a `Debugger.restartFrame` for the\ntop-most function is automatically triggered.",
                     "parameters": [
                         {
                             "name": "scriptId",
@@ -22821,12 +23223,20 @@
                             "description": "If true the change will not actually be applied. Dry run may be used to get result\ndescription without actually modifying the code.",
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "allowTopFrameEditing",
+                            "description": "If true, then `scriptSource` is allowed to change the function on top of the stack\nas long as the top-most stack frame is the only activation of that function.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "boolean"
                         }
                     ],
                     "returns": [
                         {
                             "name": "callFrames",
                             "description": "New stack trace in case editing has happened while VM was stopped.",
+                            "deprecated": true,
                             "optional": true,
                             "type": "array",
                             "items": {
@@ -22836,25 +23246,39 @@
                         {
                             "name": "stackChanged",
                             "description": "Whether current call stack  was modified after applying the changes.",
+                            "deprecated": true,
                             "optional": true,
                             "type": "boolean"
                         },
                         {
                             "name": "asyncStackTrace",
                             "description": "Async stack trace, if any.",
+                            "deprecated": true,
                             "optional": true,
                             "$ref": "Runtime.StackTrace"
                         },
                         {
                             "name": "asyncStackTraceId",
                             "description": "Async stack trace, if any.",
-                            "experimental": true,
+                            "deprecated": true,
                             "optional": true,
                             "$ref": "Runtime.StackTraceId"
                         },
                         {
+                            "name": "status",
+                            "description": "Whether the operation was successful or not. Only `Ok` denotes a\nsuccessful live edit while the other enum variants denote why\nthe live edit failed.",
+                            "experimental": true,
+                            "type": "string",
+                            "enum": [
+                                "Ok",
+                                "CompileError",
+                                "BlockedByActiveGenerator",
+                                "BlockedByActiveFunction"
+                            ]
+                        },
+                        {
                             "name": "exceptionDetails",
-                            "description": "Exception details if any.",
+                            "description": "Exception details if any. Only present when `status` is `CompileError`.",
                             "optional": true,
                             "$ref": "Runtime.ExceptionDetails"
                         }
@@ -25536,9 +25960,5 @@
                 }
             ]
         }
-    ],
-    "version": {
-        "major": "1",
-        "minor": "3"
-    }
+    ]
 }

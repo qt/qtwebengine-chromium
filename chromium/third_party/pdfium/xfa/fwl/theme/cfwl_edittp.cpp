@@ -18,22 +18,20 @@ CFWL_EditTP::CFWL_EditTP() = default;
 CFWL_EditTP::~CFWL_EditTP() = default;
 
 void CFWL_EditTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
-  switch (pParams.m_iPart) {
+  switch (pParams.GetPart()) {
     case CFWL_ThemePart::Part::kBorder: {
       DrawBorder(pParams.GetGraphics(), pParams.m_PartRect, pParams.m_matrix);
       break;
     }
     case CFWL_ThemePart::Part::kBackground: {
-      if (pParams.m_pPath) {
-        CFGAS_GEGraphics* pGraphics = pParams.GetGraphics();
-        pGraphics->SaveGraphState();
+      CFGAS_GEGraphics* pGraphics = pParams.GetGraphics();
+      CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
+      const CFGAS_GEPath* pParamsPath = pParams.GetPath();
+      if (pParamsPath) {
         pGraphics->SetFillColor(CFGAS_GEColor(FWLTHEME_COLOR_BKSelected));
-        if (pParams.m_pPath) {
-          pGraphics->FillPath(*pParams.m_pPath,
-                              CFX_FillRenderOptions::FillType::kWinding,
-                              pParams.m_matrix);
-        }
-        pGraphics->RestoreGraphState();
+        pGraphics->FillPath(*pParamsPath,
+                            CFX_FillRenderOptions::FillType::kWinding,
+                            pParams.m_matrix);
       } else {
         CFGAS_GEPath path;
         path.AddRectangle(pParams.m_PartRect.left, pParams.m_PartRect.top,
@@ -47,11 +45,9 @@ void CFWL_EditTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
           else
             cr = CFGAS_GEColor(0xFFFFFFFF);
         }
-        pParams.GetGraphics()->SaveGraphState();
-        pParams.GetGraphics()->SetFillColor(cr);
-        pParams.GetGraphics()->FillPath(
-            path, CFX_FillRenderOptions::FillType::kWinding, pParams.m_matrix);
-        pParams.GetGraphics()->RestoreGraphState();
+        pGraphics->SetFillColor(cr);
+        pGraphics->FillPath(path, CFX_FillRenderOptions::FillType::kWinding,
+                            pParams.m_matrix);
       }
       break;
     }
@@ -63,8 +59,9 @@ void CFWL_EditTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
       pWidget->GetBorderColorAndThickness(&cr, &fWidth);
       pParams.GetGraphics()->SetStrokeColor(CFGAS_GEColor(cr));
       pParams.GetGraphics()->SetLineWidth(fWidth);
-      if (pParams.m_pPath)
-        pParams.GetGraphics()->StrokePath(*pParams.m_pPath, pParams.m_matrix);
+      const CFGAS_GEPath* pParamsPath = pParams.GetPath();
+      if (pParamsPath)
+        pParams.GetGraphics()->StrokePath(*pParamsPath, pParams.m_matrix);
       break;
     }
     default:

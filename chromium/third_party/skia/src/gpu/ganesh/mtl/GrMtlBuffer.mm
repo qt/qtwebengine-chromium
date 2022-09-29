@@ -35,14 +35,15 @@ NSString* kBufferTypeNames[kGrGpuBufferTypeCount] = {
 };
 #endif
 
-sk_sp<GrMtlBuffer> GrMtlBuffer::Make(GrMtlGpu* gpu, size_t size, GrGpuBufferType intendedType,
-                                     GrAccessPattern accessPattern, const void* data) {
-    sk_sp<GrMtlBuffer> buffer(new GrMtlBuffer(gpu, size, intendedType, accessPattern,
+sk_sp<GrMtlBuffer> GrMtlBuffer::Make(GrMtlGpu* gpu,
+                                     size_t size,
+                                     GrGpuBufferType intendedType,
+                                     GrAccessPattern accessPattern) {
+    return sk_sp<GrMtlBuffer>(new GrMtlBuffer(gpu,
+                                              size,
+                                              intendedType,
+                                              accessPattern,
                                               /*label=*/"MakeMtlBuffer"));
-    if (data && !buffer->onUpdateData(data, size)) {
-        return nullptr;
-    }
-    return buffer;
 }
 
 GrMtlBuffer::GrMtlBuffer(GrMtlGpu* gpu, size_t size, GrGpuBufferType intendedType,
@@ -82,46 +83,47 @@ GrMtlBuffer::~GrMtlBuffer() {
     SkASSERT(!fMapPtr);
 }
 
-bool GrMtlBuffer::onUpdateData(const void* src, size_t sizeInBytes) {
-    if (this->wasDestroyed()) {
-        return false;
-    }
-
-    if (sizeInBytes > this->size()) {
-        return false;
-    }
-
+bool GrMtlBuffer::onUpdateData(const void *src, size_t offset, size_t size, bool preserve) {
     if (fIsDynamic) {
-        this->internalMap(sizeInBytes);
+        this->internalMap();
         if (!fMapPtr) {
             return false;
         }
-        memcpy(fMapPtr, src, sizeInBytes);
-        this->internalUnmap(sizeInBytes);
-    } else {
-        // copy data to gpu buffer
-        GrStagingBufferManager::Slice slice;
-        slice = this->mtlGpu()->stagingBufferManager()->allocateStagingBufferSlice(
-                sizeInBytes, this->mtlGpu()->mtlCaps().getMinBufferAlignment());
-        if (!slice.fBuffer) {
-            return false;
-        }
-        memcpy(slice.fOffsetMapPtr, src, sizeInBytes);
-
-        GrMtlCommandBuffer* cmdBuffer = this->mtlGpu()->commandBuffer();
-        id<MTLBlitCommandEncoder> GR_NORETAIN blitCmdEncoder = cmdBuffer->getBlitCommandEncoder();
-        if (!blitCmdEncoder) {
-            return false;
-        }
-        GrMtlBuffer* mtlBuffer = static_cast<GrMtlBuffer*>(slice.fBuffer);
-        id<MTLBuffer> transferBuffer = mtlBuffer->mtlBuffer();
-        [blitCmdEncoder copyFromBuffer: transferBuffer
-                          sourceOffset: slice.fOffset
-                              toBuffer: fMtlBuffer
-                     destinationOffset: 0
-                                  size: sizeInBytes];
+        memcpy(SkTAddOffset<void>(fMapPtr, offset), src, size);
+        this->internalUnmap(offset, size);
+        return true;
     }
+    // Update via transfer buffer.
 
+    // We have to respect the transfer alignment. So we may transfer some extra bytes before and
+    // after the region to be updated.
+    size_t transferAlignment = this->getGpu()->caps()->transferFromBufferToBufferAlignment();
+    size_t r = offset%transferAlignment;
+    SkASSERT(!preserve || r == 0);  // We can't push extra bytes when preserving.
+
+    offset -= r;
+    size_t transferSize = SkAlignTo(size + r, transferAlignment);
+
+    GrStagingBufferManager::Slice slice;
+    slice = this->mtlGpu()->stagingBufferManager()->allocateStagingBufferSlice(
+            transferSize, this->mtlGpu()->mtlCaps().getMinBufferAlignment());
+    if (!slice.fBuffer) {
+        return false;
+    }
+    memcpy(SkTAddOffset<void>(slice.fOffsetMapPtr, r), src, size);
+
+    GrMtlCommandBuffer* cmdBuffer = this->mtlGpu()->commandBuffer();
+    id<MTLBlitCommandEncoder> GR_NORETAIN blitCmdEncoder = cmdBuffer->getBlitCommandEncoder();
+    if (!blitCmdEncoder) {
+        return false;
+    }
+    GrMtlBuffer* mtlBuffer = static_cast<GrMtlBuffer*>(slice.fBuffer);
+    id<MTLBuffer> transferBuffer = mtlBuffer->mtlBuffer();
+    [blitCmdEncoder copyFromBuffer: transferBuffer
+                      sourceOffset: slice.fOffset
+                          toBuffer: fMtlBuffer
+                 destinationOffset: offset
+                              size: transferSize];
     return true;
 }
 
@@ -147,41 +149,38 @@ void GrMtlBuffer::onRelease() {
     INHERITED::onRelease();
 }
 
-void GrMtlBuffer::internalMap(size_t sizeInBytes) {
+void GrMtlBuffer::internalMap() {
     if (fIsDynamic) {
         VALIDATE();
-        SkASSERT(sizeInBytes <= this->size());
         SkASSERT(!this->isMapped());
         fMapPtr = static_cast<char*>(fMtlBuffer.contents);
         VALIDATE();
     }
 }
 
-void GrMtlBuffer::internalUnmap(size_t sizeInBytes) {
+void GrMtlBuffer::internalUnmap(size_t writtenOffset, size_t writtenSize) {
     SkASSERT(fMtlBuffer);
     if (fIsDynamic) {
         VALIDATE();
-        SkASSERT(sizeInBytes <= this->size());
+        SkASSERT(writtenOffset + writtenSize <= this->size());
         SkASSERT(this->isMapped());
 #ifdef SK_BUILD_FOR_MAC
-        if (this->mtlGpu()->mtlCaps().isMac()) {
-            [fMtlBuffer didModifyRange: NSMakeRange(0, sizeInBytes)];
+        if (this->mtlGpu()->mtlCaps().isMac() && writtenSize) {
+            // We should never write to this type of buffer on the CPU.
+            SkASSERT(this->intendedType() != GrGpuBufferType::kXferGpuToCpu);
+            [fMtlBuffer didModifyRange: NSMakeRange(writtenOffset, writtenSize)];
         }
 #endif
         fMapPtr = nullptr;
     }
 }
 
-void GrMtlBuffer::onMap() {
-    if (!this->wasDestroyed()) {
-        this->internalMap(this->size());
-    }
+void GrMtlBuffer::onMap(MapType) {
+    this->internalMap();
 }
 
-void GrMtlBuffer::onUnmap() {
-    if (!this->wasDestroyed()) {
-        this->internalUnmap(this->size());
-    }
+void GrMtlBuffer::onUnmap(MapType type) {
+    this->internalUnmap(0, type == MapType::kWriteDiscard ? this-> size() : 0);
 }
 
 #ifdef SK_DEBUG
@@ -196,5 +195,13 @@ void GrMtlBuffer::validate() const {
     SkASSERT((fMapPtr && fMtlBuffer) || !fMapPtr);
 }
 #endif
+
+void GrMtlBuffer::onSetLabel() {
+    SkASSERT(fMtlBuffer);
+    if (!this->getLabel().empty()) {
+        NSString* labelStr = @(this->getLabel().c_str());
+        fMtlBuffer.label = [@"_Skia_" stringByAppendingString:labelStr];
+    }
+}
 
 GR_NORETAIN_END

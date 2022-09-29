@@ -6,8 +6,8 @@ import type * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
-import type {ItemsReplacedEvent, ListModel} from './ListModel.js';
-import {Events as ListModelEvents} from './ListModel.js';
+
+import {Events as ListModelEvents, type ItemsReplacedEvent, type ListModel} from './ListModel.js';
 import {measurePreferredSize} from './UIUtils.js';
 
 export interface ListDelegate<T> {
@@ -428,6 +428,10 @@ export class ListControl<T> {
       }
       if (newElement) {
         ARIAUtils.setSelected(newElement, true);
+        const text = newElement.textContent;
+        if (text) {
+          ARIAUtils.alert(text);
+        }
       }
       ARIAUtils.setActiveDescendant(this.element, newElement);
     }

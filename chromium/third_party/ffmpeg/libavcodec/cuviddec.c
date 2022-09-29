@@ -624,7 +624,7 @@ static int cuvid_output_frame(AVCodecContext *avctx, AVFrame *frame)
          * So set pkt_pts and clear all the other pkt_ fields.
          */
         frame->pkt_pos = -1;
-        frame->pkt_duration = 0;
+        frame->duration = 0;
         frame->pkt_size = -1;
 
         frame->interlaced_frame = !parsed_frame.is_deinterlacing && !parsed_frame.dispinfo.progressive_frame;
@@ -655,21 +655,23 @@ error:
 static av_cold int cuvid_decode_end(AVCodecContext *avctx)
 {
     CuvidContext *ctx = avctx->priv_data;
-    AVHWDeviceContext *device_ctx = (AVHWDeviceContext *)ctx->hwdevice->data;
-    AVCUDADeviceContext *device_hwctx = device_ctx->hwctx;
-    CUcontext dummy, cuda_ctx = device_hwctx->cuda_ctx;
+    AVHWDeviceContext *device_ctx = ctx->hwdevice ? (AVHWDeviceContext *)ctx->hwdevice->data : NULL;
+    AVCUDADeviceContext *device_hwctx = device_ctx ? device_ctx->hwctx : NULL;
+    CUcontext dummy, cuda_ctx = device_hwctx ? device_hwctx->cuda_ctx : NULL;
 
     av_fifo_freep2(&ctx->frame_queue);
 
-    ctx->cudl->cuCtxPushCurrent(cuda_ctx);
+    if (cuda_ctx) {
+        ctx->cudl->cuCtxPushCurrent(cuda_ctx);
 
-    if (ctx->cuparser)
-        ctx->cvdl->cuvidDestroyVideoParser(ctx->cuparser);
+        if (ctx->cuparser)
+            ctx->cvdl->cuvidDestroyVideoParser(ctx->cuparser);
 
-    if (ctx->cudecoder)
-        ctx->cvdl->cuvidDestroyDecoder(ctx->cudecoder);
+        if (ctx->cudecoder)
+            ctx->cvdl->cuvidDestroyDecoder(ctx->cudecoder);
 
-    ctx->cudl->cuCtxPopCurrent(&dummy);
+        ctx->cudl->cuCtxPopCurrent(&dummy);
+    }
 
     ctx->cudl = NULL;
 
@@ -953,6 +955,16 @@ static av_cold int cuvid_decode_init(AVCodecContext *avctx)
         extradata_size = avctx->extradata_size;
     }
 
+    // Check first bit to determine whether it's AV1CodecConfigurationRecord.
+    // Skip first 4 bytes of AV1CodecConfigurationRecord to keep configOBUs
+    // only, otherwise cuvidParseVideoData report unknown error.
+    if (avctx->codec->id == AV_CODEC_ID_AV1 &&
+            extradata_size > 4 &&
+            extradata[0] & 0x80) {
+        extradata += 4;
+        extradata_size -= 4;
+    }
+
     ctx->cuparse_ext = av_mallocz(sizeof(*ctx->cuparse_ext)
             + FFMAX(extradata_size - (int)sizeof(ctx->cuparse_ext->raw_seqhdr_data), 0));
     if (!ctx->cuparse_ext) {
@@ -1117,7 +1129,8 @@ static const AVCodecHWConfigInternal *const cuvid_hw_configs[] = {
         .flush          = cuvid_flush, \
         .bsfs           = bsf_name, \
         .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING | AV_CODEC_CAP_HARDWARE, \
-        .caps_internal  = FF_CODEC_CAP_SETS_FRAME_PROPS, \
+        .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE | \
+                          FF_CODEC_CAP_SETS_FRAME_PROPS, \
         .p.pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_CUDA, \
                                                         AV_PIX_FMT_NV12, \
                                                         AV_PIX_FMT_P010, \

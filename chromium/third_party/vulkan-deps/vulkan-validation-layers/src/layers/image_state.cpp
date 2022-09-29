@@ -89,7 +89,8 @@ VkImageSubresourceRange NormalizeSubresourceRange(const VkImageCreateInfo &image
 }
 
 static bool IsDepthSliced(const VkImageCreateInfo &image_create_info, const VkImageViewCreateInfo &create_info) {
-    return ((image_create_info.flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) != 0) &&
+    auto kDepthSlicedFlags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT | VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT_EXT;
+    return ((image_create_info.flags & kDepthSlicedFlags) != 0) &&
            (create_info.viewType == VK_IMAGE_VIEW_TYPE_2D || create_info.viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY);
 }
 
@@ -196,6 +197,20 @@ static bool SparseMetaDataRequired(const IMAGE_STATE::SparseReqs &sparse_reqs) {
     }
     return result;
 }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+static bool GetMetalExport(const VkImageCreateInfo *info, VkExportMetalObjectTypeFlagBitsEXT object_type_required) {
+    bool retval = false;
+    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    while (export_metal_object_info) {
+        if (export_metal_object_info->exportObjectType == object_type_required) {
+            retval = true;
+            break;
+        }
+        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+    }
+    return retval;
+}
+#endif  // VK_USE_PLATFORM_METAL_EXT
 
 IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
                          VkFormatFeatureFlags2KHR ff)
@@ -208,6 +223,7 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       ahb_format(GetExternalFormat(pCreateInfo)),
       full_range{MakeImageFullRange(*pCreateInfo)},
       create_from_swapchain(GetSwapchain(pCreateInfo)),
+      owned_by_swapchain(false),
       swapchain_image_index(0),
       format_features(ff),
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
@@ -217,6 +233,10 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       sparse_metadata_required(SparseMetaDataRequired(sparse_requirements)),
       get_sparse_reqs_called(false),
       sparse_metadata_bound(false),
+#ifdef VK_USE_PLATFORM_METAL_EXT
+      metal_image_export(GetMetalExport(pCreateInfo, VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT)),
+      metal_io_surface_export(GetMetalExport(pCreateInfo, VK_EXPORT_METAL_OBJECT_TYPE_METAL_IOSURFACE_BIT_EXT)),
+#endif  // VK_USE_PLATFORM_METAL_EXT
       subresource_encoder(full_range),
       fragment_encoder(nullptr),
       store_device_as_workaround(dev_data->device) {}  // TODO REMOVE WHEN encoder can be const
@@ -232,6 +252,7 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       ahb_format(GetExternalFormat(pCreateInfo)),
       full_range{MakeImageFullRange(*pCreateInfo)},
       create_from_swapchain(swapchain),
+      owned_by_swapchain(true),
       swapchain_image_index(swapchain_index),
       format_features(ff),
       disjoint((pCreateInfo->flags & VK_IMAGE_CREATE_DISJOINT_BIT) != 0),
@@ -241,6 +262,10 @@ IMAGE_STATE::IMAGE_STATE(const ValidationStateTracker *dev_data, VkImage img, co
       sparse_metadata_required(false),
       get_sparse_reqs_called(false),
       sparse_metadata_bound(false),
+#ifdef VK_USE_PLATFORM_METAL_EXT
+      metal_image_export(GetMetalExport(pCreateInfo, VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT)),
+      metal_io_surface_export(GetMetalExport(pCreateInfo, VK_EXPORT_METAL_OBJECT_TYPE_METAL_IOSURFACE_BIT_EXT)),
+#endif  // VK_USE_PLATFORM_METAL_EXT
       subresource_encoder(full_range),
       fragment_encoder(nullptr),
       store_device_as_workaround(dev_data->device) {  // TODO REMOVE WHEN encoder can be const
@@ -440,6 +465,21 @@ static float GetImageViewMinLod(const VkImageViewCreateInfo* ci) {
     return (image_view_min_lod) ? image_view_min_lod->minLod : 0.0f;
 }
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+static bool GetMetalExport(const VkImageViewCreateInfo *info) {
+    bool retval = false;
+    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    while (export_metal_object_info) {
+        if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT) {
+            retval = true;
+            break;
+        }
+        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+    }
+    return retval;
+}
+#endif  // VK_USE_PLATFORM_METAL_EXT
+
 IMAGE_VIEW_STATE::IMAGE_VIEW_STATE(const std::shared_ptr<IMAGE_STATE> &im, VkImageView iv, const VkImageViewCreateInfo *ci,
                                    VkFormatFeatureFlags2KHR ff, const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props)
     : BASE_NODE(iv, kVulkanObjectTypeImageView),
@@ -458,6 +498,9 @@ IMAGE_VIEW_STATE::IMAGE_VIEW_STATE(const std::shared_ptr<IMAGE_STATE> &im, VkIma
       min_lod(GetImageViewMinLod(ci)),
       format_features(ff),
       inherited_usage(GetInheritedUsage(ci, *im)),
+#ifdef VK_USE_PLATFORM_METAL_EXT
+      metal_imageview_export(GetMetalExport(ci)),
+#endif
       image_state(im) {}
 
 void IMAGE_VIEW_STATE::Destroy() {

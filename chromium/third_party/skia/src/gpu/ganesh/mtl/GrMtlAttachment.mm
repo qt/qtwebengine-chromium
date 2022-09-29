@@ -151,11 +151,11 @@ sk_sp<GrMtlAttachment> GrMtlAttachment::MakeWrapped(
         SkISize dimensions,
         id<MTLTexture> texture,
         UsageFlags attachmentUsages,
-        GrWrapCacheable cacheable) {
+        GrWrapCacheable cacheable,
+        std::string_view label) {
 
     return sk_sp<GrMtlAttachment>(new GrMtlAttachment(gpu, dimensions, attachmentUsages, texture,
-                                                      cacheable,
-                                                      /*label=*/"MtlAttachment_MakeWrapped"));
+                                                      cacheable, label));
 }
 
 GrMtlAttachment::~GrMtlAttachment() {
@@ -178,4 +178,11 @@ GrMtlGpu* GrMtlAttachment::getMtlGpu() const {
     return static_cast<GrMtlGpu*>(this->getGpu());
 }
 
+void GrMtlAttachment::onSetLabel() {
+    SkASSERT(fTexture);
+    if (!this->getLabel().empty()) {
+        NSString* labelStr = @(this->getLabel().c_str());
+        fTexture.label = [@"_Skia_" stringByAppendingString:labelStr];
+    }
+}
 GR_NORETAIN_END

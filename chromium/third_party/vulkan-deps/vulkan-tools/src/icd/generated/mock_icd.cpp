@@ -4234,6 +4234,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateViSurfaceNN(
 
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdBeginConditionalRenderingEXT(
     VkCommandBuffer                             commandBuffer,
     const VkConditionalRenderingBeginInfoEXT*   pConditionalRenderingBegin)
@@ -5357,6 +5358,16 @@ static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(
 
 
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+
+static VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo)
+{
+//Not a CREATE or DESTROY function
+}
+#endif /* VK_USE_PLATFORM_METAL_EXT */
+
 
 
 
@@ -5382,6 +5393,7 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2EXT(
 {
 //Not a CREATE or DESTROY function
 }
+
 
 
 
@@ -5581,6 +5593,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPipelinePropertiesEXT(
 }
 
 
+
 static VKAPI_ATTR void VKAPI_CALL CmdSetPatchControlPointsEXT(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    patchControlPoints)
@@ -5707,6 +5720,46 @@ static VKAPI_ATTR void VKAPI_CALL GetDescriptorSetHostMappingVALVE(
 
 
 
+
+
+
+
+
+static VKAPI_ATTR void VKAPI_CALL GetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier)
+{
+//Not a CREATE or DESTROY function
+}
+
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
 
 
 

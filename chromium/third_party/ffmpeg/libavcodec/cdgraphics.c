@@ -240,7 +240,7 @@ static void cdg_scroll(CDGraphicsContext *cc, uint8_t *data,
     for (y = FFMAX(0, vinc); y < FFMIN(CDG_FULL_HEIGHT + vinc, CDG_FULL_HEIGHT); y++)
         memcpy(out + FFMAX(0, hinc) + stride * y,
                in + FFMAX(0, hinc) - hinc + (y - vinc) * stride,
-               FFMIN(stride + hinc, stride));
+               FFABS(stride) - FFABS(hinc));
 
     if (vinc > 0)
         cdg_fill_wrapper(0, 0, out,
@@ -398,5 +398,4 @@ const FFCodec ff_cdgraphics_decoder = {
     FF_CODEC_DECODE_CB(cdg_decode_frame),
     .flush          = cdg_decode_flush,
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

@@ -5,29 +5,27 @@
 #include "src/compiler/bytecode-graph-builder.h"
 
 #include "src/ast/ast.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/source-position-table.h"
 #include "src/codegen/tick-counter.h"
 #include "src/common/assert-scope.h"
-#include "src/compiler/access-builder.h"
 #include "src/compiler/bytecode-analysis.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/compiler-source-position-table.h"
 #include "src/compiler/js-heap-broker.h"
+#include "src/compiler/js-type-hint-lowering.h"
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-observer.h"
+#include "src/compiler/node-origin-table.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/state-values-utils.h"
 #include "src/interpreter/bytecode-array-iterator.h"
 #include "src/interpreter/bytecode-flags.h"
 #include "src/interpreter/bytecodes.h"
-#include "src/objects/js-array-inl.h"
 #include "src/objects/js-generator.h"
 #include "src/objects/literal-objects-inl.h"
-#include "src/objects/objects-inl.h"
-#include "src/objects/smi.h"
+#include "src/objects/scope-info.h"
 #include "src/objects/template-objects-inl.h"
 
 namespace v8 {
@@ -42,7 +40,8 @@ class BytecodeGraphBuilder {
                        FeedbackCellRef const& feedback_cell,
                        BytecodeOffset osr_offset, JSGraph* jsgraph,
                        CallFrequency const& invocation_frequency,
-                       SourcePositionTable* source_positions, int inlining_id,
+                       SourcePositionTable* source_positions,
+                       NodeOriginTable* node_origins, int inlining_id,
                        CodeKind code_kind, BytecodeGraphBuilderFlags flags,
                        TickCounter* tick_counter,
                        ObserveNodeInfo const& observe_node_info);
@@ -56,6 +55,7 @@ class BytecodeGraphBuilder {
  private:
   class Environment;
   class OsrIteratorState;
+  class BytecodePositionDecorator;
   struct SubEnvironment;
 
   void RemoveMergeEnvironmentsBeforeOffset(int limit_offset);
@@ -67,6 +67,9 @@ class BytecodeGraphBuilder {
 
   void VisitSingleBytecode();
   void VisitBytecodes();
+
+  void AddBytecodePositionDecorator();
+  void RemoveBytecodePositionDecorator();
 
   // Get or create the node that represents the outer function closure.
   Node* GetFunctionClosure();
@@ -356,9 +359,9 @@ class BytecodeGraphBuilder {
   // Simulates entry and exit of exception handlers.
   void ExitThenEnterExceptionHandlers(int current_offset);
 
-  // Update the current position of the {SourcePositionTable} to that of the
-  // bytecode at {offset}, if any.
-  void UpdateSourcePosition(int offset);
+  // Update the current position of {SourcePositionTable} and
+  // {NodeOriginTable} to that bytecode at {offset}, if any.
+  void UpdateSourceAndBytecodePosition(int offset);
 
   // Growth increment for the temporary buffer used to construct input lists to
   // new nodes.
@@ -461,6 +464,7 @@ class BytecodeGraphBuilder {
   interpreter::BytecodeArrayIterator bytecode_iterator_;
   BytecodeAnalysis const bytecode_analysis_;
   Environment* environment_;
+  BytecodePositionDecorator* decorator_;
   bool const osr_;
   int currently_peeled_loop_offset_;
 
@@ -506,6 +510,9 @@ class BytecodeGraphBuilder {
   ZoneVector<Node*> exit_controls_;
 
   StateValuesCache state_values_cache_;
+
+  // The node origins table, to store bytecode origins.
+  NodeOriginTable* const node_origins_;
 
   // The source position table, to be populated.
   SourcePositionTable* const source_positions_;
@@ -1017,15 +1024,30 @@ Node* BytecodeGraphBuilder::Environment::Checkpoint(
   return result;
 }
 
+class BytecodeGraphBuilder::BytecodePositionDecorator final :
+public GraphDecorator {
+ public:
+  explicit BytecodePositionDecorator(NodeOriginTable* node_origins)
+      :  node_origins_(node_origins) {}
+
+  void Decorate(Node* node) final {
+    node_origins_->SetNodeOrigin(node->id(), NodeOrigin::kJSBytecode,
+                                 node_origins_->GetCurrentBytecodePosition());
+  }
+
+ private:
+  NodeOriginTable* node_origins_;
+};
+
 BytecodeGraphBuilder::BytecodeGraphBuilder(
     JSHeapBroker* broker, Zone* local_zone,
     NativeContextRef const& native_context,
     SharedFunctionInfoRef const& shared_info,
     FeedbackCellRef const& feedback_cell, BytecodeOffset osr_offset,
     JSGraph* jsgraph, CallFrequency const& invocation_frequency,
-    SourcePositionTable* source_positions, int inlining_id, CodeKind code_kind,
-    BytecodeGraphBuilderFlags flags, TickCounter* tick_counter,
-    ObserveNodeInfo const& observe_node_info)
+    SourcePositionTable* source_positions, NodeOriginTable* node_origins,
+    int inlining_id, CodeKind code_kind, BytecodeGraphBuilderFlags flags,
+    TickCounter* tick_counter, ObserveNodeInfo const& observe_node_info)
     : broker_(broker),
       local_isolate_(broker_->local_isolate()
                          ? broker_->local_isolate()
@@ -1054,6 +1076,7 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
           bytecode_array().object(), local_zone, osr_offset,
           flags & BytecodeGraphBuilderFlag::kAnalyzeEnvironmentLiveness),
       environment_(nullptr),
+      decorator_(nullptr),
       osr_(!osr_offset.IsNone()),
       currently_peeled_loop_offset_(-1),
       skip_first_stack_and_tierup_check_(
@@ -1071,6 +1094,7 @@ BytecodeGraphBuilder::BytecodeGraphBuilder(
       needs_eager_checkpoint_(true),
       exit_controls_(local_zone),
       state_values_cache_(jsgraph),
+      node_origins_(node_origins),
       source_positions_(source_positions),
       start_position_(shared_info.StartPosition(), inlining_id),
       tick_counter_(tick_counter),
@@ -1135,7 +1159,9 @@ FeedbackSource BytecodeGraphBuilder::CreateFeedbackSource(FeedbackSlot slot) {
 
 void BytecodeGraphBuilder::CreateGraph() {
   SourcePositionTable::Scope pos_scope(source_positions_, start_position_);
-
+  if (node_origins_) {
+    AddBytecodePositionDecorator();
+  }
   // Set up the basic structure of the graph. Outputs for {Start} are the formal
   // parameters (including the receiver) plus new target, number of arguments,
   // context and closure.
@@ -1160,6 +1186,9 @@ void BytecodeGraphBuilder::CreateGraph() {
   Node** const inputs = &exit_controls_.front();
   Node* end = graph()->NewNode(common()->End(input_count), input_count, inputs);
   graph()->SetEnd(end);
+  if (node_origins_) {
+    RemoveBytecodePositionDecorator();
+  }
 }
 
 void BytecodeGraphBuilder::PrepareEagerCheckpoint() {
@@ -1216,7 +1245,8 @@ void BytecodeGraphBuilder::PrepareFrameState(
 void BytecodeGraphBuilder::AdvanceIteratorsTo(int bytecode_offset) {
   for (; bytecode_iterator().current_offset() != bytecode_offset;
        bytecode_iterator().Advance()) {
-    UpdateSourcePosition(bytecode_iterator().current_offset());
+    int current_offset = bytecode_iterator().current_offset();
+    UpdateSourceAndBytecodePosition(current_offset);
   }
 }
 
@@ -1419,7 +1449,7 @@ void BytecodeGraphBuilder::AdvanceToOsrEntryAndPeelLoops() {
 void BytecodeGraphBuilder::VisitSingleBytecode() {
   tick_counter_->TickAndMaybeEnterSafepoint();
   int current_offset = bytecode_iterator().current_offset();
-  UpdateSourcePosition(current_offset);
+  UpdateSourceAndBytecodePosition(current_offset);
   ExitThenEnterExceptionHandlers(current_offset);
   DCHECK_GE(exception_handlers_.empty() ? current_offset
                                         : exception_handlers_.top().end_offset_,
@@ -1461,6 +1491,18 @@ void BytecodeGraphBuilder::VisitBytecodes() {
   }
 
   DCHECK(exception_handlers_.empty());
+}
+
+void BytecodeGraphBuilder::AddBytecodePositionDecorator() {
+  DCHECK_NULL(decorator_);
+  decorator_ = graph_zone()->New<BytecodePositionDecorator>(node_origins_);
+  graph()->AddDecorator(decorator_);
+}
+
+void BytecodeGraphBuilder::RemoveBytecodePositionDecorator() {
+  DCHECK_NOT_NULL(decorator_);
+  graph()->RemoveDecorator(decorator_);
+  decorator_ = nullptr;
 }
 
 void BytecodeGraphBuilder::VisitLdaZero() {
@@ -4394,7 +4436,10 @@ Node* BytecodeGraphBuilder::MergeValue(Node* value, Node* other,
   return value;
 }
 
-void BytecodeGraphBuilder::UpdateSourcePosition(int offset) {
+void BytecodeGraphBuilder::UpdateSourceAndBytecodePosition(int offset) {
+  if (node_origins_) {
+    node_origins_->SetCurrentBytecodePosition(offset);
+  }
   if (source_position_iterator().done()) return;
   if (source_position_iterator().code_offset() == offset) {
     source_positions_->SetCurrentPosition(SourcePosition(
@@ -4412,15 +4457,15 @@ void BuildGraphFromBytecode(JSHeapBroker* broker, Zone* local_zone,
                             BytecodeOffset osr_offset, JSGraph* jsgraph,
                             CallFrequency const& invocation_frequency,
                             SourcePositionTable* source_positions,
-                            int inlining_id, CodeKind code_kind,
-                            BytecodeGraphBuilderFlags flags,
+                            NodeOriginTable* node_origins, int inlining_id,
+                            CodeKind code_kind, BytecodeGraphBuilderFlags flags,
                             TickCounter* tick_counter,
                             ObserveNodeInfo const& observe_node_info) {
   BytecodeGraphBuilder builder(
       broker, local_zone, broker->target_native_context(), shared_info,
       feedback_cell, osr_offset, jsgraph, invocation_frequency,
-      source_positions, inlining_id, code_kind, flags, tick_counter,
-      observe_node_info);
+      source_positions, node_origins, inlining_id, code_kind, flags,
+      tick_counter, observe_node_info);
   builder.CreateGraph();
 }
 

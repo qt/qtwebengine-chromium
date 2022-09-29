@@ -84,7 +84,6 @@
 
     table->max_elems = count;
     table->init      = 0xDEADBEEFUL;
-    table->num_elems = 0;
     table->block     = NULL;
     table->capacity  = 0;
     table->cursor    = 0;
@@ -235,7 +234,7 @@
     FT_Memory  memory = table->memory;
 
 
-    if ( (FT_ULong)table->init == 0xDEADBEEFUL )
+    if ( table->init == 0xDEADBEEFUL )
     {
       FT_FREE( table->block );
       FT_FREE( table->elements );

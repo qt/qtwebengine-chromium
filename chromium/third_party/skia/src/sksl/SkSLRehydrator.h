@@ -15,6 +15,8 @@
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string_view>
 #include <string>
@@ -39,7 +41,7 @@ struct Program;
  */
 class Rehydrator {
 public:
-    static constexpr uint16_t kVersion = 11;
+    static constexpr uint16_t kVersion = 14;
 
     // see binary_format.md for a description of the command data
     enum Command {
@@ -97,7 +99,6 @@ public:
         kSymbolRef_Command,
         kSymbolTable_Command,
         kTernary_Command,
-        kUnresolvedFunction_Command,
         kVariable_Command,
         kVarDeclaration_Command,
         kVariableReference_Command,
@@ -105,8 +106,10 @@ public:
     };
 
     // src must remain in memory as long as the objects created from it do
+    Rehydrator(Compiler& compiler, const uint8_t* src, size_t length);
+
     Rehydrator(Compiler& compiler, const uint8_t* src, size_t length,
-            std::shared_ptr<SymbolTable> base = nullptr);
+               std::shared_ptr<SymbolTable> base);
 
 #ifdef SK_DEBUG
     ~Rehydrator();
@@ -167,7 +170,7 @@ private:
         return std::string_view(chars, length);
     }
 
-    void addSymbol(int id, const Symbol* symbol) {
+    void addSymbol(int id, Symbol* symbol) {
         while ((size_t) id >= fSymbols.size()) {
             fSymbols.push_back(nullptr);
         }
@@ -179,7 +182,7 @@ private:
         uint16_t result = this->readU16();
         SkASSERTF(result != kBuiltin_Symbol, "use possiblyBuiltinSymbolRef() instead");
         SkASSERT(fSymbols.size() > result);
-        return (T*) fSymbols[result];
+        return static_cast<T*>(fSymbols[result]);
     }
 
     /**
@@ -204,7 +207,7 @@ private:
 
     Modifiers modifiers();
 
-    const Symbol* symbol();
+    Symbol* symbol();
 
     std::unique_ptr<ProgramElement> element();
 
@@ -224,7 +227,7 @@ private:
 
     Compiler& fCompiler;
     std::shared_ptr<SymbolTable> fSymbolTable;
-    std::vector<const Symbol*> fSymbols;
+    std::vector<Symbol*> fSymbols;
 
     const uint8_t* fStringStart;
     const uint8_t* fIP;

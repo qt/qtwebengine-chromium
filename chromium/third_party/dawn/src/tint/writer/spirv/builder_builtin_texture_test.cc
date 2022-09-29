@@ -2683,7 +2683,7 @@ OpCapability SampledCubeArray
 %26 = OpConstantComposite %14 %23 %24 %25
 %28 = OpTypeInt 32 1
 %27 = OpTypeVector %28 3
-%29 = OpConstant %28 0
+%29 = OpConstantNull %28
 %30 = OpConstant %28 1
 %31 = OpConstant %28 2
 %32 = OpConstantComposite %27 %29 %30 %31
@@ -3684,7 +3684,10 @@ TEST_P(BuiltinTextureTest, Call) {
 
     auto* call = Call(param.function, param.args(this));
     auto* stmt = CallStmt(call);
-    Func("func", {}, ty.void_(), {stmt}, {Stage(ast::PipelineStage::kFragment)});
+    Func("func", utils::Empty, ty.void_(), utils::Vector{stmt},
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     spirv::Builder& b = Build();
 
@@ -3710,7 +3713,10 @@ TEST_P(BuiltinTextureTest, ValidateSPIRV) {
     auto* call = Call(param.function, param.args(this));
 
     auto* stmt = CallStmt(call);
-    Func("main", {}, ty.void_(), {stmt}, {Stage(ast::PipelineStage::kFragment)});
+    Func("main", utils::Empty, ty.void_(), utils::Vector{stmt},
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     spirv::Builder& b = Build();
 
@@ -3730,8 +3736,10 @@ TEST_P(BuiltinTextureTest, OutsideFunction_IsError) {
 
     auto* call = Call(param.function, param.args(this));
     auto* stmt = CallStmt(call);
-    Func("func", {}, ty.void_(), {stmt},
-         {create<ast::StageAttribute>(ast::PipelineStage::kFragment)});
+    Func("func", utils::Empty, ty.void_(), utils::Vector{stmt},
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     spirv::Builder& b = Build();
 

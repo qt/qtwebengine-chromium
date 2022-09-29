@@ -138,7 +138,7 @@ static av_cold int svc_encode_init(AVCodecContext *avctx)
     AVCPBProperties *props;
 
     if ((err = ff_libopenh264_check_version(avctx)) < 0)
-        return err;
+        return AVERROR_ENCODER_NOT_FOUND;
 
     if (WelsCreateSVCEncoder(&s->encoder)) {
         av_log(avctx, AV_LOG_ERROR, "Unable to create encoder\n");
@@ -461,7 +461,7 @@ const FFCodec ff_libopenh264_encoder = {
     .init           = svc_encode_init,
     FF_CODEC_ENCODE_CB(svc_encode_frame),
     .close          = svc_encode_close,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP |
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP |
                       FF_CODEC_CAP_AUTO_THREADS,
     .p.pix_fmts     = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P,
                                                     AV_PIX_FMT_NONE },

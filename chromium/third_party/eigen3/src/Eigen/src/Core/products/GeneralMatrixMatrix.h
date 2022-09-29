@@ -287,7 +287,6 @@ class gemm_blocking_space<StorageOrder,LhsScalar_,RhsScalar_,MaxRows, MaxCols, M
     };
     typedef std::conditional_t<Transpose,RhsScalar_,LhsScalar_> LhsScalar;
     typedef std::conditional_t<Transpose,LhsScalar_,RhsScalar_> RhsScalar;
-    typedef gebp_traits<LhsScalar,RhsScalar> Traits;
     enum {
       SizeA = ActualRows * MaxDepth,
       SizeB = ActualCols * MaxDepth
@@ -336,7 +335,6 @@ class gemm_blocking_space<StorageOrder,LhsScalar_,RhsScalar_,MaxRows, MaxCols, M
     };
     typedef std::conditional_t<Transpose,RhsScalar_,LhsScalar_> LhsScalar;
     typedef std::conditional_t<Transpose,LhsScalar_,RhsScalar_> RhsScalar;
-    typedef gebp_traits<LhsScalar,RhsScalar> Traits;
 
     Index m_sizeA;
     Index m_sizeB;

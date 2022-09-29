@@ -42,16 +42,16 @@ class CPDF_Array final : public CPDF_Object {
   bool IsEmpty() const { return m_Objects.empty(); }
   size_t size() const { return m_Objects.size(); }
 
-  // The GetObjectAt() methods tolerate out-of-bounds indices and return
+  // The Get*ObjectAt() methods tolerate out-of-bounds indices and return
   // nullptr in those cases. Otherwise, for in-bound indices, the result
   // is never nullptr.
-  CPDF_Object* GetObjectAt(size_t index);
+  RetainPtr<CPDF_Object> GetMutableObjectAt(size_t index);
   const CPDF_Object* GetObjectAt(size_t index) const;
 
-  // The GetDirectObjectAt() methods tolerate out-of-bounds indices and
+  // The Get*DirectObjectAt() methods tolerate out-of-bounds indices and
   // return nullptr in those cases. Furthermore, for reference objects that
   // do not correspond to a valid indirect object, nullptr is returned.
-  CPDF_Object* GetDirectObjectAt(size_t index);
+  RetainPtr<CPDF_Object> GetMutableDirectObjectAt(size_t index);
   const CPDF_Object* GetDirectObjectAt(size_t index) const;
 
   // The Get*At() methods tolerate out-of-bounds indices and return nullptr
@@ -63,11 +63,10 @@ class CPDF_Array final : public CPDF_Object {
   int GetIntegerAt(size_t index) const;
   float GetNumberAt(size_t index) const;
   RetainPtr<CPDF_Dictionary> GetMutableDictAt(size_t index);
-  CPDF_Dictionary* GetDictAt(size_t index);  // prefer previous form.
   const CPDF_Dictionary* GetDictAt(size_t index) const;
-  CPDF_Stream* GetStreamAt(size_t index);
+  RetainPtr<CPDF_Stream> GetMutableStreamAt(size_t index);
   const CPDF_Stream* GetStreamAt(size_t index) const;
-  CPDF_Array* GetArrayAt(size_t index);
+  RetainPtr<CPDF_Array> GetMutableArrayAt(size_t index);
   const CPDF_Array* GetArrayAt(size_t index) const;
 
   CFX_FloatRect GetRect() const;
@@ -192,6 +191,10 @@ inline const CPDF_Array* ToArray(const CPDF_Object* obj) {
 
 inline RetainPtr<CPDF_Array> ToArray(RetainPtr<CPDF_Object> obj) {
   return RetainPtr<CPDF_Array>(ToArray(obj.Get()));
+}
+
+inline RetainPtr<const CPDF_Array> ToArray(RetainPtr<const CPDF_Object> obj) {
+  return RetainPtr<const CPDF_Array>(ToArray(obj.Get()));
 }
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_ARRAY_H_

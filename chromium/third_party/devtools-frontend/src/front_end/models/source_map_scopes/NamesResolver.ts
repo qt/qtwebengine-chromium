@@ -17,14 +17,17 @@ interface CachedScopeMap {
 const scopeToCachedIdentifiersMap = new WeakMap<SDK.DebuggerModel.ScopeChainEntry, CachedScopeMap>();
 const cachedMapByCallFrame = new WeakMap<SDK.DebuggerModel.CallFrame, Map<string, string>>();
 
-export class Identifier {
+export class IdentifierPositions {
   name: string;
-  lineNumber: number;
-  columnNumber: number;
-  constructor(name: string, lineNumber: number, columnNumber: number) {
+  positions: {lineNumber: number, columnNumber: number}[];
+
+  constructor(name: string, positions: {lineNumber: number, columnNumber: number}[] = []) {
     this.name = name;
-    this.lineNumber = lineNumber;
-    this.columnNumber = columnNumber;
+    this.positions = positions;
+  }
+
+  addPosition(lineNumber: number, columnNumber: number): void {
+    this.positions.push({lineNumber, columnNumber});
   }
 }
 
@@ -51,12 +54,19 @@ const computeScopeTree = async function(functionScope: SDK.DebuggerModel.ScopeCh
       functionEndLocation.columnNumber);
   const scopeText = text.extract(scopeRange);
   const scopeStart = text.toSourceRange(scopeRange).offset;
-  let prefix = 'function fui';
-  let scopeTree = await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText);
+  // We wrap the scope in a class constructor. This handles the case where the
+  // scope is a (non-arrow) function and the case where it is a constructor
+  // (so that parsing 'super' calls succeeds).
+  let prefix = 'class DummyClass extends DummyBase { constructor';
+  let suffix = '}';
+  let scopeTree =
+      await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText + suffix);
   if (!scopeTree) {
     // Try to parse the function as an arrow function.
-    prefix = 'let fui = ';
-    scopeTree = await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText);
+    prefix = '';
+    suffix = '';
+    scopeTree =
+        await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptScopeTree(prefix + scopeText + suffix);
   }
   if (!scopeTree) {
     return null;
@@ -66,7 +76,7 @@ const computeScopeTree = async function(functionScope: SDK.DebuggerModel.ScopeCh
 
 export const scopeIdentifiers = async function(
     functionScope: SDK.DebuggerModel.ScopeChainEntry|null, scope: SDK.DebuggerModel.ScopeChainEntry): Promise<{
-  freeVariables: Identifier[], boundVariables: Identifier[],
+  freeVariables: IdentifierPositions[], boundVariables: IdentifierPositions[],
 }|null> {
   if (!functionScope) {
     return null;
@@ -132,23 +142,32 @@ export const scopeIdentifiers = async function(
       continue;
     }
 
+    const identifier = new IdentifierPositions(variable.name);
     for (const offset of variable.offsets) {
       const start = offset + slide;
       cursor.resetTo(start);
-      boundVariables.push(new Identifier(variable.name, cursor.lineNumber(), cursor.columnNumber()));
+      identifier.addPosition(cursor.lineNumber(), cursor.columnNumber());
     }
+    boundVariables.push(identifier);
   }
 
   // Compute free variables by collecting all the ancestor variables that are used in |containingScope|.
   const freeVariables = [];
   for (const ancestor of ancestorScopes) {
     for (const ancestorVariable of ancestor.variables) {
+      let identifier = null;
       for (const offset of ancestorVariable.offsets) {
         if (offset >= containingScope.start && offset < containingScope.end) {
+          if (!identifier) {
+            identifier = new IdentifierPositions(ancestorVariable.name);
+          }
           const start = offset + slide;
           cursor.resetTo(start);
-          freeVariables.push(new Identifier(ancestorVariable.name, cursor.lineNumber(), cursor.columnNumber()));
+          identifier.addPosition(cursor.lineNumber(), cursor.columnNumber());
         }
+      }
+      if (identifier) {
+        freeVariables.push(identifier);
       }
     }
   }
@@ -162,6 +181,16 @@ export const scopeIdentifiers = async function(
   }
 };
 
+const identifierAndPunctuationRegExp = /^\s*([A-Za-z_$][A-Za-z_$0-9]*)\s*([.;,=]?)\s*$/;
+
+const enum Punctuation {
+  None = 'none',
+  Comma = 'comma',
+  Dot = 'dot',
+  Semicolon = 'semicolon',
+  Equals = 'equals',
+}
+
 const resolveScope =
     async(scope: SDK.DebuggerModel
               .ScopeChainEntry): Promise<{variableMapping: Map<string, string>, thisMapping: string | null}> => {
@@ -170,8 +199,6 @@ const resolveScope =
   const sourceMap = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script);
 
   if (!cachedScopeMap || cachedScopeMap.sourceMap !== sourceMap) {
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const identifiersPromise =
@@ -187,17 +214,33 @@ const resolveScope =
           // missing identifier names from SourceMap ranges.
           const promises: Promise<void>[] = [];
 
-          const resolveEntry = (id: Identifier, handler: (sourceName: string) => void): void => {
-            const entry = sourceMap.findEntry(id.lineNumber, id.columnNumber);
-            if (entry && entry.name) {
-              handler(entry.name);
-            } else {
-              promises.push(resolveSourceName(script, sourceMap, id, textCache).then(sourceName => {
+          const resolveEntry = (id: IdentifierPositions, handler: (sourceName: string) => void): void => {
+            // First see if we have a source map entry with a name for the identifier.
+            for (const position of id.positions) {
+              const entry = sourceMap.findEntry(position.lineNumber, position.columnNumber);
+              if (entry && entry.name) {
+                handler(entry.name);
+                return;
+              }
+            }
+            // If there is no entry with the name field, try to infer the name from the source positions.
+            async function resolvePosition(): Promise<void> {
+              if (!sourceMap) {
+                return;
+              }
+              // Let us find the first non-empty mapping of |id| and return that. Ideally, we would
+              // try to compute all the mappings and only use the mapping if all the non-empty
+              // mappings agree. However, that can be expensive for identifiers with many uses,
+              // so we iterate sequentially, stopping at the first non-empty mapping.
+              for (const position of id.positions) {
+                const sourceName = await resolveSourceName(script, sourceMap, id.name, position, textCache);
                 if (sourceName) {
                   handler(sourceName);
+                  return;
                 }
-              }));
+              }
             }
+            promises.push(resolvePosition());
           };
 
           const functionScope = findFunctionScope();
@@ -229,35 +272,101 @@ const resolveScope =
   return await cachedScopeMap.mappingPromise;
 
   async function resolveSourceName(
-      script: SDK.Script.Script, sourceMap: SDK.SourceMap.SourceMap, id: Identifier,
+      script: SDK.Script.Script, sourceMap: SDK.SourceMap.SourceMap, name: string,
+      position: {lineNumber: number, columnNumber: number},
       textCache: Map<string, TextUtils.Text.Text>): Promise<string|null> {
-    const startEntry = sourceMap.findEntry(id.lineNumber, id.columnNumber);
-    const endEntry = sourceMap.findEntry(id.lineNumber, id.columnNumber + id.name.length);
-    if (!startEntry || !endEntry || !startEntry.sourceURL || startEntry.sourceURL !== endEntry.sourceURL ||
-        !startEntry.sourceLineNumber || !startEntry.sourceColumnNumber || !endEntry.sourceLineNumber ||
-        !endEntry.sourceColumnNumber) {
+    const ranges = sourceMap.findEntryRanges(position.lineNumber, position.columnNumber);
+    if (!ranges) {
       return null;
     }
-    const sourceTextRange = new TextUtils.TextRange.TextRange(
-        startEntry.sourceLineNumber, startEntry.sourceColumnNumber, endEntry.sourceLineNumber,
-        endEntry.sourceColumnNumber);
+    // Extract the underlying text from the compiled code's range and make sure that
+    // it starts with the identifier |name|.
     const uiSourceCode =
         Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().uiSourceCodeForSourceMapSourceURL(
-            script.debuggerModel, startEntry.sourceURL, script.isContentScript());
+            script.debuggerModel, ranges.sourceURL, script.isContentScript());
     if (!uiSourceCode) {
       return null;
     }
-    const {content} = await uiSourceCode.requestContent();
-    if (!content) {
+    const compiledText = getTextFor((await script.requestContent()).content);
+    if (!compiledText) {
       return null;
     }
-    let text = textCache.get(content);
-    if (!text) {
-      text = new TextUtils.Text.Text(content);
-      textCache.set(content, text);
+    const compiledToken = compiledText.extract(ranges.range);
+    const parsedCompiledToken = extractIdentifier(compiledToken);
+    if (!parsedCompiledToken) {
+      return null;
     }
-    const originalIdentifier = text.extract(sourceTextRange).trim();
-    return /[a-zA-Z0-9_$]+/.test(originalIdentifier) ? originalIdentifier : null;
+    const {name: compiledName, punctuation: compiledPunctuation} = parsedCompiledToken;
+    if (compiledName !== name) {
+      return null;
+    }
+
+    // Extract the mapped name from the source code range and ensure that the punctuation
+    // matches the one from the compiled code.
+    const sourceText = getTextFor((await uiSourceCode.requestContent()).content);
+    if (!sourceText) {
+      return null;
+    }
+    const sourceToken = sourceText.extract(ranges.sourceRange);
+    const parsedSourceToken = extractIdentifier(sourceToken);
+    if (!parsedSourceToken) {
+      return null;
+    }
+    const {name: sourceName, punctuation: sourcePunctuation} = parsedSourceToken;
+    // Accept the source name if it is followed by the same punctuation.
+    if (compiledPunctuation === sourcePunctuation) {
+      return sourceName;
+    }
+    // Let us also allow semicolons into commas since that it is a common transformation.
+    if (compiledPunctuation === Punctuation.Comma && sourcePunctuation === Punctuation.Semicolon) {
+      return sourceName;
+    }
+
+    return null;
+
+    function extractIdentifier(token: string): {name: string, punctuation: Punctuation}|null {
+      const match = token.match(identifierAndPunctuationRegExp);
+      if (!match) {
+        return null;
+      }
+
+      const name = match[1];
+      let punctuation: Punctuation|null = null;
+      switch (match[2]) {
+        case '.':
+          punctuation = Punctuation.Dot;
+          break;
+        case ',':
+          punctuation = Punctuation.Comma;
+          break;
+        case ';':
+          punctuation = Punctuation.Semicolon;
+          break;
+        case '=':
+          punctuation = Punctuation.Equals;
+          break;
+        case '':
+          punctuation = Punctuation.None;
+          break;
+        default:
+          console.error(`Name token parsing error: unexpected token "${match[2]}"`);
+          return null;
+      }
+
+      return {name, punctuation};
+    }
+
+    function getTextFor(content: string|null): TextUtils.Text.Text|null {
+      if (!content) {
+        return null;
+      }
+      let text = textCache.get(content);
+      if (!text) {
+        text = new TextUtils.Text.Text(content);
+        textCache.set(content, text);
+      }
+      return text;
+    }
   }
 
   function findFunctionScope(): SDK.DebuggerModel.ScopeChainEntry|null {
@@ -530,6 +639,40 @@ export class RemoteObject extends SDK.RemoteObject.RemoteObject {
   isNode(): boolean {
     return this.object.isNode();
   }
+}
+
+// Resolve the frame's function name using the name associated with the opening
+// paren that starts the scope. If there is no name associated with the scope
+// start or if the function scope does not start with a left paren (e.g., arrow
+// function with one parameter), the resolution returns null.
+export async function resolveFrameFunctionName(frame: SDK.DebuggerModel.CallFrame): Promise<string|null> {
+  const script = frame.script;
+  const scope = frame.localScope();
+  if (!scope || !script) {
+    return null;
+  }
+  const startLocation = scope.startLocation();
+  if (!startLocation) {
+    return null;
+  }
+  const {content} = await script.requestContent();
+  if (!content) {
+    return null;
+  }
+
+  const text = new TextUtils.Text.Text(content);
+  const openRange = new TextUtils.TextRange.TextRange(
+      startLocation.lineNumber, startLocation.columnNumber, startLocation.lineNumber, startLocation.columnNumber + 1);
+  if (text.extract(openRange) !== '(') {
+    return null;
+  }
+
+  const sourceMap = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().sourceMapForScript(script);
+  if (!sourceMap) {
+    return null;
+  }
+  const entry = sourceMap.findEntry(startLocation.lineNumber, startLocation.columnNumber);
+  return entry?.name ?? null;
 }
 
 // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)

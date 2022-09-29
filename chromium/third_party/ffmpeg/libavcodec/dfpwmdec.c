@@ -38,7 +38,8 @@ typedef struct {
 // DFPWM codec from https://github.com/ChenThread/dfpwm/blob/master/1a/
 // Licensed in the public domain
 
-static void au_decompress(DFPWMState *state, int fs, int len, uint8_t *outbuf, uint8_t *inbuf)
+static void au_decompress(DFPWMState *state, int fs, int len,
+                          uint8_t *outbuf, const uint8_t *inbuf)
 {
     unsigned d;
     for (int i = 0; i < len; i++) {
@@ -133,5 +134,4 @@ const FFCodec ff_dfpwm_decoder = {
     .init           = dfpwm_dec_init,
     FF_CODEC_DECODE_CB(dfpwm_dec_frame),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

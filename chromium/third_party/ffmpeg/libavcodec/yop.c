@@ -40,9 +40,9 @@ typedef struct YopDecContext {
     int first_color[2];
     int frame_data_length;
 
-    uint8_t *low_nibble;
-    uint8_t *srcptr;
-    uint8_t *src_end;
+    const uint8_t *low_nibble;
+    const uint8_t *srcptr;
+    const uint8_t *src_end;
     uint8_t *dstptr;
     uint8_t *dstbuf;
 } YopDecContext;
@@ -275,5 +275,4 @@ const FFCodec ff_yop_decoder = {
     .init           = yop_decode_init,
     .close          = yop_decode_close,
     FF_CODEC_DECODE_CB(yop_decode_frame),
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

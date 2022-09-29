@@ -16,14 +16,15 @@ filegroup(
         "//include/encode:public_hdrs",
         "//include/pathops:public_hdrs",
         "//include/ports:public_hdrs",
-        "//include/svg:public_hdrs",
-        "//include/third_party/skcms:public_hdrs",
         "//include/utils:public_hdrs",
     ] + select({
-        "//bazel/common_config_settings:needs_sksl": ["//include/sksl:public_hdrs"],
+        "//src/sksl:needs_sksl": ["//include/sksl:public_hdrs"],
         "//conditions:default": [],
     }) + select({
-        "//bazel/common_config_settings:has_gpu_backend": ["//include/gpu:public_hdrs"],
+        "//src/gpu:has_gpu_backend": ["//include/gpu:public_hdrs"],
+        "//conditions:default": [],
+    }) + select({
+        "//src/svg:enable_svg_canvas_true": ["//include/svg:public_hdrs"],
         "//conditions:default": [],
     }),
     visibility = ["//:__pkg__"],

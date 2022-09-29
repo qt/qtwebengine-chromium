@@ -40,7 +40,7 @@ TEST_F(MslGeneratorImplTest, Emit_Loop) {
 }
 
 TEST_F(MslGeneratorImplTest, Emit_LoopWithContinuing) {
-    Func("a_statement", {}, ty.void_(), {});
+    Func("a_statement", {}, ty.void_(), utils::Empty);
 
     auto* body = Block(create<ast::DiscardStatement>());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -62,10 +62,10 @@ TEST_F(MslGeneratorImplTest, Emit_LoopWithContinuing) {
 }
 
 TEST_F(MslGeneratorImplTest, Emit_LoopNestedWithContinuing) {
-    Func("a_statement", {}, ty.void_(), {});
+    Func("a_statement", {}, ty.void_(), utils::Empty);
 
-    Global("lhs", ty.f32(), ast::StorageClass::kPrivate);
-    Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("lhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
     auto* body = Block(create<ast::DiscardStatement>());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -107,7 +107,7 @@ TEST_F(MslGeneratorImplTest, Emit_LoopWithVarUsedInContinuing) {
     // }
     //
 
-    Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
     auto* body = Block(Decl(Var("lhs", ty.f32(), Expr(2.4_f))),  //
                        Decl(Var("other", ty.f32())),             //
@@ -181,10 +181,10 @@ TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtInit) {
     //   return;
     // }
 
-    Func("f", {Param("i", ty.i32())}, ty.void_(), {});
+    Func("f", utils::Vector{Param("i", ty.i32())}, ty.void_(), utils::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt = Block(f(1_i), f(2_i));
     auto* loop = For(multi_stmt, nullptr, nullptr,  //
                      Block(Return()));
@@ -257,10 +257,10 @@ TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtCont) {
     //   return;
     // }
 
-    Func("f", {Param("i", ty.i32())}, ty.void_(), {});
+    Func("f", utils::Vector{Param("i", ty.i32())}, ty.void_(), utils::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt = Block(f(1_i), f(2_i));
     auto* loop = For(nullptr, nullptr, multi_stmt,  //
                      Block(Return()));
@@ -286,7 +286,7 @@ TEST_F(MslGeneratorImplTest, Emit_ForLoopWithSimpleInitCondCont) {
     //   return;
     // }
 
-    Func("a_statement", {}, ty.void_(), {});
+    Func("a_statement", {}, ty.void_(), utils::Empty);
 
     auto* f = For(Decl(Var("i", ty.i32())), true, Assign("i", Add("i", 1_i)),
                   Block(CallStmt(Call("a_statement"))));
@@ -312,10 +312,10 @@ TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtInitCondCont) {
     //   return;
     // }
 
-    Func("f", {Param("i", ty.i32())}, ty.void_(), {});
+    Func("f", utils::Vector{Param("i", ty.i32())}, ty.void_(), utils::Empty);
     auto f = [&](auto&& expr) { return CallStmt(Call("f", expr)); };
 
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt_a = Block(f(1_i), f(2_i));
     auto* multi_stmt_b = Block(f(3_i), f(4_i));
     auto* loop = For(multi_stmt_a, Expr(true), multi_stmt_b,  //
@@ -340,6 +340,65 @@ TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtInitCondCont) {
         f(4);
       }
     }
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_While) {
+    // while(true) {
+    //   return;
+    // }
+
+    auto* f = While(Expr(true), Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while(true) {
+    return;
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_While_WithContinue) {
+    // while(true) {
+    //   continue;
+    // }
+
+    auto* f = While(Expr(true), Block(Continue()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while(true) {
+    continue;
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_WhileWithMultiCond) {
+    // while(true && false) {
+    //   return;
+    // }
+
+    auto* multi_stmt =
+        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
+    auto* f = While(multi_stmt, Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while((true && false)) {
+    return;
   }
 )");
 }

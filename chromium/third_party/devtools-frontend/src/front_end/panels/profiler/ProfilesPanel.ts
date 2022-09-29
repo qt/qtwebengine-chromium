@@ -39,8 +39,12 @@ import heapProfilerStyles from './heapProfiler.css.js';
 import profilesPanelStyles from './profilesPanel.css.js';
 import profilesSidebarTreeStyles from './profilesSidebarTree.css.js';
 
-import type {DataDisplayDelegate, ProfileHeader, ProfileType} from './ProfileHeader.js';
-import {ProfileEvents as ProfileTypeEvents} from './ProfileHeader.js';
+import {
+  ProfileEvents as ProfileTypeEvents,
+  type DataDisplayDelegate,
+  type ProfileHeader,
+  type ProfileType,
+} from './ProfileHeader.js';
 import {Events as ProfileLauncherEvents, ProfileLauncherView} from './ProfileLauncherView.js';
 import {ProfileSidebarTreeElement, setSharedFileSelectorElement} from './ProfileSidebarTreeElement.js';
 import {instance} from './ProfileTypeRegistry.js';
@@ -675,6 +679,7 @@ export class JSProfilerPanel extends ProfilesPanel implements UI.ActionRegistrat
   constructor() {
     const registry = instance;
     super('js_profiler', [registry.cpuProfileType], 'profiler.js-toggle-recording');
+    this.splitWidget().mainWidget()?.setMinimumSize(350, 0);
   }
 
   static instance(opts: {

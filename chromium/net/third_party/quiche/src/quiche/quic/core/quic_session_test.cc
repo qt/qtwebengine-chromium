@@ -3055,6 +3055,79 @@ TEST_P(QuicSessionTestServer, IncomingStreamWithServerInitiatedStreamId) {
   session_.OnStreamFrame(frame);
 }
 
+// Regression test for b/235204908.
+TEST_P(QuicSessionTestServer, BlockedFrameCausesWriteError) {
+  CompleteHandshake();
+  MockPacketWriter* writer = static_cast<MockPacketWriter*>(
+      QuicConnectionPeer::GetWriter(session_.connection()));
+  EXPECT_CALL(*writer, WritePacket(_, _, _, _, _))
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
+  // Set a small connection level flow control limit.
+  const uint64_t kWindow = 36;
+  QuicFlowControllerPeer::SetSendWindowOffset(session_.flow_controller(),
+                                              kWindow);
+  auto stream =
+      session_.GetOrCreateStream(GetNthClientInitiatedBidirectionalId(0));
+  // Try to send more data than the flow control limit allows.
+  const uint64_t kOverflow = 15;
+  std::string body(kWindow + kOverflow, 'a');
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(testing::InvokeWithoutArgs([this]() {
+        connection_->ReallyCloseConnection(
+            QUIC_PACKET_WRITE_ERROR, "write error",
+            ConnectionCloseBehavior::SILENT_CLOSE);
+        return false;
+      }));
+  std::string msg =
+      absl::StrCat("Marking unknown stream ", stream->id(), " blocked.");
+  if (GetQuicReloadableFlag(
+          quic_donot_mark_stream_write_blocked_if_write_side_closed)) {
+    stream->WriteOrBufferData(body, false, nullptr);
+  } else {
+    EXPECT_QUIC_BUG(stream->WriteOrBufferData(body, false, nullptr), msg);
+  }
+}
+
+TEST_P(QuicSessionTestServer, BufferedCryptoFrameCausesWriteError) {
+  if (!VersionHasIetfQuicFrames(transport_version())) {
+    return;
+  }
+  std::string data(1350, 'a');
+  TestCryptoStream* crypto_stream = session_.GetMutableCryptoStream();
+  // Only consumed 1000 bytes.
+  EXPECT_CALL(*connection_, SendCryptoData(ENCRYPTION_FORWARD_SECURE, 1350, 0))
+      .WillOnce(Return(1000));
+  crypto_stream->WriteCryptoData(ENCRYPTION_FORWARD_SECURE, data);
+  EXPECT_TRUE(session_.HasPendingHandshake());
+  EXPECT_TRUE(session_.WillingAndAbleToWrite());
+
+  EXPECT_CALL(*connection_,
+              SendCryptoData(ENCRYPTION_FORWARD_SECURE, 350, 1000))
+      .WillOnce(Return(0));
+  // Buffer the HANDSHAKE_DONE frame.
+  EXPECT_CALL(*connection_, SendControlFrame(_)).WillOnce(Return(false));
+  CryptoHandshakeMessage msg;
+  session_.GetMutableCryptoStream()->OnHandshakeMessage(msg);
+
+  // Flush both frames.
+  EXPECT_CALL(*connection_,
+              SendCryptoData(ENCRYPTION_FORWARD_SECURE, 350, 1000))
+      .WillOnce(testing::InvokeWithoutArgs([this]() {
+        connection_->ReallyCloseConnection(
+            QUIC_PACKET_WRITE_ERROR, "write error",
+            ConnectionCloseBehavior::SILENT_CLOSE);
+        return 350;
+      }));
+  if (!GetQuicReloadableFlag(
+          quic_no_write_control_frame_upon_connection_close)) {
+    EXPECT_CALL(*connection_, SendControlFrame(_)).WillOnce(Return(false));
+    EXPECT_QUIC_BUG(session_.OnCanWrite(),
+                    "Try to write control frames when connection is closed");
+  } else {
+    session_.OnCanWrite();
+  }
+}
+
 // A client test class that can be used when the automatic configuration is not
 // desired.
 class QuicSessionTestClientUnconfigured : public QuicSessionTestBase {

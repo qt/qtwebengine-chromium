@@ -85,9 +85,9 @@
     /* GL_EXT_base_instance */                                                                     \
     void drawArraysInstancedBaseInstance(PrimitiveMode modePacked, GLint first, GLsizei count,     \
                                          GLsizei instancecount, GLuint baseinstance);              \
-    void drawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type,                \
-                                           const void *indices, GLsizei instancecount,             \
-                                           GLuint baseinstance);                                   \
+    void drawElementsInstancedBaseInstance(PrimitiveMode modePacked, GLsizei count,                \
+                                           DrawElementsType typePacked, const void *indices,       \
+                                           GLsizei instancecount, GLuint baseinstance);            \
     void drawElementsInstancedBaseVertexBaseInstance(                                              \
         PrimitiveMode modePacked, GLsizei count, DrawElementsType typePacked, const void *indices, \
         GLsizei instancecount, GLint basevertex, GLuint baseinstance);                             \
@@ -263,6 +263,7 @@
     /* GL_NV_pack_subimage */                                                                      \
     /* GL_NV_pixel_buffer_object */                                                                \
     /* GL_NV_read_depth */                                                                         \
+    /* GL_NV_read_depth_stencil */                                                                 \
     /* GL_NV_read_stencil */                                                                       \
     /* GL_NV_robustness_video_memory_purge */                                                      \
     /* GL_NV_shader_noperspective_interpolation */                                                 \
@@ -561,6 +562,8 @@
     /* GL_ANGLE_semaphore_fuchsia */                                                               \
     void importSemaphoreZirconHandle(SemaphoreID semaphorePacked, HandleType handleTypePacked,     \
                                      GLuint handle);                                               \
+    /* GL_ANGLE_shader_pixel_local_storage */                                                      \
+    /* GL_ANGLE_shader_pixel_local_storage_coherent */                                             \
     /* GL_ANGLE_texture_compression_dxt3 */                                                        \
     /* GL_ANGLE_texture_compression_dxt5 */                                                        \
     /* GL_ANGLE_texture_external_update */                                                         \

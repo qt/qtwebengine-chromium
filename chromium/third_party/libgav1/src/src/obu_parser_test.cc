@@ -31,6 +31,7 @@
 #include "src/gav1/status_code.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
+#include "src/utils/dynamic_buffer.h"
 #include "src/utils/segmentation.h"
 #include "src/utils/types.h"
 #include "src/utils/vector.h"
@@ -780,39 +781,38 @@ class ObuParserTest : public testing::Test {
     OBU_TEST_COMPARE(film_grain_params_present);
   }
 
-  void VerifyMetadata(MetadataType type, const ObuMetadata& expected) {
-    const ObuMetadata& actual = obu_->metadata();
-    switch (type) {
-      case kMetadataTypeHdrContentLightLevel:
-        OBU_TEST_COMPARE(max_cll);
-        OBU_TEST_COMPARE(max_fall);
-        break;
-      case kMetadataTypeHdrMasteringDisplayColorVolume:
-        for (int i = 0; i < 3; ++i) {
-          OBU_TEST_COMPARE(primary_chromaticity_x[i]);
-          OBU_TEST_COMPARE(primary_chromaticity_y[i]);
-        }
-        OBU_TEST_COMPARE(white_point_chromaticity_x);
-        OBU_TEST_COMPARE(white_point_chromaticity_y);
-        OBU_TEST_COMPARE(luminance_max);
-        OBU_TEST_COMPARE(luminance_min);
-        break;
-      case kMetadataTypeScalability:
-        break;
-      case kMetadataTypeItutT35:
-        OBU_TEST_COMPARE(itu_t_t35_country_code);
-        OBU_TEST_COMPARE(itu_t_t35_country_code_extension_byte);
-        ASSERT_EQ(expected.itu_t_t35_payload_size,
-                  actual.itu_t_t35_payload_size);
-        if (actual.itu_t_t35_payload_size != 0) {
-          EXPECT_EQ(memcmp(expected.itu_t_t35_payload_bytes.get(),
-                           actual.itu_t_t35_payload_bytes.get(),
-                           actual.itu_t_t35_payload_size),
-                    0);
-        }
-        break;
-      case kMetadataTypeTimecode:
-        break;
+  void VerifyMetadataHdrCll(const ObuMetadataHdrCll& expected) {
+    EXPECT_TRUE(obu_->current_frame_->hdr_cll_set());
+    const ObuMetadataHdrCll& actual = obu_->current_frame_->hdr_cll();
+    OBU_TEST_COMPARE(max_cll);
+    OBU_TEST_COMPARE(max_fall);
+  }
+
+  void VerifyMetadataHdrMdcv(const ObuMetadataHdrMdcv& expected) {
+    EXPECT_TRUE(obu_->current_frame_->hdr_mdcv_set());
+    const ObuMetadataHdrMdcv& actual = obu_->current_frame_->hdr_mdcv();
+    for (int i = 0; i < 3; ++i) {
+      OBU_TEST_COMPARE(primary_chromaticity_x[i]);
+      OBU_TEST_COMPARE(primary_chromaticity_y[i]);
+    }
+    OBU_TEST_COMPARE(white_point_chromaticity_x);
+    OBU_TEST_COMPARE(white_point_chromaticity_y);
+    OBU_TEST_COMPARE(luminance_max);
+    OBU_TEST_COMPARE(luminance_min);
+  }
+
+  void VerifyMetadataItutT35(const ObuMetadataItutT35& expected) {
+    EXPECT_TRUE(obu_->current_frame_->itut_t35_set());
+    const ObuMetadataItutT35& actual = obu_->current_frame_->itut_t35();
+    OBU_TEST_COMPARE(country_code);
+    if (actual.country_code == 0xFF) {
+      OBU_TEST_COMPARE(country_code_extension_byte);
+    }
+    ASSERT_EQ(expected.payload_size, actual.payload_size);
+    if (actual.payload_size != 0) {
+      EXPECT_EQ(memcmp(expected.payload_bytes, actual.payload_bytes,
+                       actual.payload_size),
+                0);
     }
   }
 
@@ -2521,9 +2521,9 @@ TEST_F(ObuParserTest, MetadataUnknownType) {
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
 }
 
-TEST_F(ObuParserTest, MetadataCll) {
+TEST_F(ObuParserTest, MetadataHdrCll) {
   BytesAndBits data;
-  ObuMetadata gold;
+  ObuMetadataHdrCll gold;
   gold.max_cll = 25;
   gold.max_fall = 100;
 
@@ -2532,12 +2532,12 @@ TEST_F(ObuParserTest, MetadataCll) {
   data.AppendLiteral(16, gold.max_fall);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadata(kMetadataTypeHdrContentLightLevel, gold);
+  VerifyMetadataHdrCll(gold);
 }
 
-TEST_F(ObuParserTest, MetadataMdcv) {
+TEST_F(ObuParserTest, MetadataHdrMdcv) {
   BytesAndBits data;
-  ObuMetadata gold;
+  ObuMetadataHdrMdcv gold;
   for (int i = 0; i < 3; ++i) {
     gold.primary_chromaticity_x[i] = 0;
     gold.primary_chromaticity_y[i] = 0;
@@ -2558,34 +2558,32 @@ TEST_F(ObuParserTest, MetadataMdcv) {
   data.AppendLiteral(32, gold.luminance_min);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadata(kMetadataTypeHdrMasteringDisplayColorVolume, gold);
+  VerifyMetadataHdrMdcv(gold);
 }
 
 TEST_F(ObuParserTest, MetadataScalability) {
   BytesAndBits data;
-  ObuMetadata gold;
 
   data.AppendLiteral(8, kMetadataTypeScalability);
   data.AppendLiteral(8, 0);  // scalability_mode_idc
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadata(kMetadataTypeScalability, gold);
 }
 
 TEST_F(ObuParserTest, MetadataItutT35) {
   BytesAndBits data;
-  ObuMetadata gold;
-  gold.itu_t_t35_country_code = 0xA6;  // 1 0 1 0 0 1 1 0 Switzerland
-  gold.itu_t_t35_country_code_extension_byte = 0;
-  gold.itu_t_t35_payload_bytes.reset(new (std::nothrow) uint8_t[10]);
-  ASSERT_NE(gold.itu_t_t35_payload_bytes, nullptr);
+  ObuMetadataItutT35 gold;
+  gold.country_code = 0xA6;  // 1 0 1 0 0 1 1 0 Switzerland
+  DynamicBuffer<uint8_t> payload_bytes;
+  ASSERT_TRUE(payload_bytes.Resize(10));
+  gold.payload_bytes = payload_bytes.get();
   for (int i = 0; i < 10; ++i) {
-    gold.itu_t_t35_payload_bytes[i] = 9 - i;
+    gold.payload_bytes[i] = 9 - i;
   }
-  gold.itu_t_t35_payload_size = 10;
+  gold.payload_size = 10;
 
   data.AppendLiteral(8, kMetadataTypeItutT35);
-  data.AppendLiteral(8, gold.itu_t_t35_country_code);
+  data.AppendLiteral(8, gold.country_code);
   for (int i = 0; i < 10; ++i) {
     data.AppendLiteral(8, 9 - i);
   }
@@ -2596,12 +2594,20 @@ TEST_F(ObuParserTest, MetadataItutT35) {
   data.AppendLiteral(8, 0x00);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadata(kMetadataTypeItutT35, gold);
+  VerifyMetadataItutT35(gold);
+
+  gold.country_code = 0xFF;
+  gold.country_code_extension_byte = 10;
+
+  data.SetLiteral(8, 8, gold.country_code);
+  data.InsertLiteral(16, 8, gold.country_code_extension_byte);
+
+  ASSERT_TRUE(ParseMetadata(data.GenerateData()));
+  VerifyMetadataItutT35(gold);
 }
 
 TEST_F(ObuParserTest, MetadataTimecode) {
   BytesAndBits data;
-  ObuMetadata gold;
 
   data.AppendLiteral(8, kMetadataTypeTimecode);
   data.AppendLiteral(5, 0);   // counting_type
@@ -2615,12 +2621,10 @@ TEST_F(ObuParserTest, MetadataTimecode) {
   data.AppendLiteral(5, 0);   // time_offset_length
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
-  VerifyMetadata(kMetadataTypeTimecode, gold);
 }
 
 TEST_F(ObuParserTest, MetadataTimecodeInvalidSecondsValue) {
   BytesAndBits data;
-  ObuMetadata gold;
 
   data.AppendLiteral(8, kMetadataTypeTimecode);
   data.AppendLiteral(5, 0);   // counting_type
@@ -2638,7 +2642,6 @@ TEST_F(ObuParserTest, MetadataTimecodeInvalidSecondsValue) {
 
 TEST_F(ObuParserTest, MetadataTimecodeInvalidMinutesValue) {
   BytesAndBits data;
-  ObuMetadata gold;
 
   data.AppendLiteral(8, kMetadataTypeTimecode);
   data.AppendLiteral(5, 0);   // counting_type
@@ -2656,7 +2659,6 @@ TEST_F(ObuParserTest, MetadataTimecodeInvalidMinutesValue) {
 
 TEST_F(ObuParserTest, MetadataTimecodeInvalidHoursValue) {
   BytesAndBits data;
-  ObuMetadata gold;
 
   data.AppendLiteral(8, kMetadataTypeTimecode);
   data.AppendLiteral(5, 0);   // counting_type

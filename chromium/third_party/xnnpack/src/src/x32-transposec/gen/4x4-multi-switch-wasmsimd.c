@@ -21,7 +21,7 @@ void xnn_x32_transposec_ukernel__4x4_multi_switch_wasmsimd(
     size_t input_stride,
     size_t output_stride,
     size_t block_width,
-    size_t block_height)
+    size_t block_height) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(uint32_t));
   assert(input_stride >= block_width * sizeof(uint32_t));
@@ -142,7 +142,6 @@ void xnn_x32_transposec_ukernel__4x4_multi_switch_wasmsimd(
             *((float*) oN) = wasm_f32x4_extract_lane(v0_1, 0);
           case 0:
             *((float*) o) = wasm_f32x4_extract_lane(v0_0, 0);
-            o += 1;
             break;
           default:
             XNN_UNREACHABLE;

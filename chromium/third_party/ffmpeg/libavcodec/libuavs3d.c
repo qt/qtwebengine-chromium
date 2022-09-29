@@ -84,12 +84,12 @@ static void uavs3d_output_callback(uavs3d_io_frm_t *dec_frame) {
     frm->coded_picture_number   = dec_frame->dtr;
     frm->display_picture_number = dec_frame->ptr;
 
-    if (dec_frame->type < 0 || dec_frame->type >= 4) {
+    if (dec_frame->type < 0 || dec_frame->type >= FF_ARRAY_ELEMS(ff_avs3_image_type)) {
         av_log(NULL, AV_LOG_WARNING, "Error frame type in uavs3d: %d.\n", dec_frame->type);
+    } else {
+        frm->pict_type = ff_avs3_image_type[dec_frame->type];
+        frm->key_frame = (frm->pict_type == AV_PICTURE_TYPE_I);
     }
-
-    frm->pict_type = ff_avs3_image_type[dec_frame->type];
-    frm->key_frame = (frm->pict_type == AV_PICTURE_TYPE_I);
 
     for (i = 0; i < 3; i++) {
         frm_out.width [i] = dec_frame->width[i];
@@ -149,7 +149,7 @@ static int libuavs3d_decode_frame(AVCodecContext *avctx, AVFrame *frm,
     const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     const uint8_t *buf_end;
-    const uint8_t *buf_ptr;
+    const uint8_t *buf_ptr = buf;
     int left_bytes;
     int ret, finish = 0;
 
@@ -170,7 +170,6 @@ static int libuavs3d_decode_frame(AVCodecContext *avctx, AVFrame *frm,
     } else {
         uavs3d_io_frm_t *frm_dec = &h->dec_frame;
 
-        buf_ptr = buf;
         buf_end = buf + buf_size;
         frm_dec->pkt_pos  = avpkt->pos;
         frm_dec->pkt_size = avpkt->size;
@@ -207,7 +206,7 @@ static int libuavs3d_decode_frame(AVCodecContext *avctx, AVFrame *frm,
                     avctx->framerate.num = ff_avs3_frame_rate_tab[seqh->frame_rate_code].num;
                     avctx->framerate.den = ff_avs3_frame_rate_tab[seqh->frame_rate_code].den;
                 }
-                avctx->has_b_frames  = !seqh->low_delay;
+                avctx->has_b_frames = seqh->output_reorder_delay;
                 avctx->pix_fmt = seqh->bit_depth_internal == 8 ? AV_PIX_FMT_YUV420P : AV_PIX_FMT_YUV420P10LE;
                 ret = ff_set_dimensions(avctx, seqh->horizontal_size, seqh->vertical_size);
                 if (ret < 0)
@@ -257,7 +256,8 @@ const FFCodec ff_libuavs3d_decoder = {
     .close          = libuavs3d_end,
     FF_CODEC_DECODE_CB(libuavs3d_decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS,
-    .caps_internal  = FF_CODEC_CAP_AUTO_THREADS,
+    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE |
+                      FF_CODEC_CAP_AUTO_THREADS,
     .flush          = libuavs3d_flush,
     .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_YUV420P10LE,

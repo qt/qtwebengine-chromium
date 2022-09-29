@@ -43,10 +43,10 @@ import * as Protocol from '../../generated/protocol.js';
 import {CSSModel} from './CSSModel.js';
 import {FrameManager} from './FrameManager.js';
 import {OverlayModel} from './OverlayModel.js';
-import type {RemoteObject} from './RemoteObject.js';
+import {type RemoteObject} from './RemoteObject.js';
 import {RuntimeModel} from './RuntimeModel.js';
-import type {Target} from './Target.js';
-import {Capability} from './Target.js';
+
+import {Capability, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import {TargetManager} from './TargetManager.js';
 import {ResourceTreeModel} from './ResourceTreeModel.js';
@@ -64,6 +64,7 @@ export class DOMNode {
   #localNameInternal!: string;
   nodeValueInternal!: string;
   #pseudoTypeInternal!: Protocol.DOM.PseudoType|undefined;
+  #pseudoIdentifier?: string;
   #shadowRootTypeInternal!: Protocol.DOM.ShadowRootType|undefined;
   #frameOwnerFrameIdInternal!: Protocol.Page.FrameId|null;
   #xmlVersion!: string|undefined;
@@ -135,6 +136,7 @@ export class DOMNode {
     this.#localNameInternal = payload.localName;
     this.nodeValueInternal = payload.nodeValue;
     this.#pseudoTypeInternal = payload.pseudoType;
+    this.#pseudoIdentifier = payload.pseudoIdentifier;
     this.#shadowRootTypeInternal = payload.shadowRootType;
     this.#frameOwnerFrameIdInternal = payload.frameId || null;
     this.#xmlVersion = payload.xmlVersion;
@@ -318,6 +320,10 @@ export class DOMNode {
     return this.#pseudoTypeInternal;
   }
 
+  pseudoIdentifier(): string|undefined {
+    return this.#pseudoIdentifier;
+  }
+
   hasPseudoElements(): boolean {
     return this.#pseudoElements.size > 0;
   }
@@ -336,6 +342,10 @@ export class DOMNode {
 
   markerPseudoElement(): DOMNode|undefined {
     return this.#pseudoElements.get(DOMNode.PseudoElementNames.Marker)?.at(-1);
+  }
+
+  backdropPseudoElement(): DOMNode|undefined {
+    return this.#pseudoElements.get(DOMNode.PseudoElementNames.Backdrop)?.at(-1);
   }
 
   pageTransitionPseudoElements(): DOMNode[] {
@@ -976,6 +986,7 @@ export namespace DOMNode {
     PageTransitionImageWrapper = 'page-transition-image-wrapper',
     PageTransitionOutgoingImage = 'page-transition-outgoing-image',
     PageTransitionIncomingImage = 'page-transition-incoming-image',
+    Backdrop = 'backdrop',
   }
 
   // TODO(crbug.com/1167717): Make this a const enum again
@@ -1404,6 +1415,10 @@ export class DOMModel extends SDKModel<EventTypes> {
     this.scheduleMutationEvent(node);
   }
 
+  topLayerElementsUpdated(): void {
+    this.dispatchEventToListeners(Events.TopLayerElementsChanged);
+  }
+
   pseudoElementRemoved(parentId: Protocol.DOM.NodeId, pseudoElementId: Protocol.DOM.NodeId): void {
     const parent = this.idToDOMNode.get(parentId);
     if (!parent) {
@@ -1505,6 +1520,10 @@ export class DOMModel extends SDKModel<EventTypes> {
     return this.agent.invoke_querySelectorAll({nodeId, selector}).then(({nodeIds}) => nodeIds);
   }
 
+  getTopLayerElements(): Promise<Protocol.DOM.NodeId[]|null> {
+    return this.agent.invoke_getTopLayerElements().then(({nodeIds}) => nodeIds);
+  }
+
   markUndoableState(minorChange?: boolean): void {
     void DOMModelUndoStack.instance().markUndoableState(this, minorChange || false);
   }
@@ -1568,6 +1587,7 @@ export enum Events {
   ChildNodeCountUpdated = 'ChildNodeCountUpdated',
   DistributedNodesChanged = 'DistributedNodesChanged',
   MarkersChanged = 'MarkersChanged',
+  TopLayerElementsChanged = 'TopLayerElementsChanged',
 }
 
 export type EventTypes = {
@@ -1581,6 +1601,7 @@ export type EventTypes = {
   [Events.ChildNodeCountUpdated]: DOMNode,
   [Events.DistributedNodesChanged]: DOMNode,
   [Events.MarkersChanged]: DOMNode,
+  [Events.TopLayerElementsChanged]: void,
 };
 
 class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
@@ -1643,6 +1664,10 @@ class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
 
   distributedNodesUpdated({insertionPointId, distributedNodes}: Protocol.DOM.DistributedNodesUpdatedEvent): void {
     this.#domModel.distributedNodesUpdated(insertionPointId, distributedNodes);
+  }
+
+  topLayerElementsUpdated(): void {
+    this.#domModel.topLayerElementsUpdated();
   }
 }
 

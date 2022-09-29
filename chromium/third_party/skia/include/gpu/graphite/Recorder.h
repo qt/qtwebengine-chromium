@@ -9,33 +9,56 @@
 #define skgpu_graphite_Recorder_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/private/SingleOwner.h"
+#include "include/private/SkTHash.h"
 
 #include <vector>
 
+class SkRuntimeEffect;
 class SkTextureDataBlock;
 class SkUniformDataBlock;
 class SkUniformDataBlockPassThrough;  // TODO: remove
 
+namespace skgpu { class TokenTracker; }
+
+namespace sktext::gpu {
+class StrikeCache;
+class TextBlobRedrawCoordinator;
+}
+
 namespace skgpu::graphite {
 
+class AtlasManager;
+class BackendTexture;
 class Caps;
 class Device;
 class DrawBufferManager;
 class GlobalCache;
-class Gpu;
+class ImageProvider;
 class RecorderPriv;
 class Recording;
 class ResourceProvider;
+class SharedContext;
 class Task;
 class TaskGraph;
+class TextureInfo;
 class UploadBufferManager;
 
 template<typename StorageT, typename BaseT> class PipelineDataCache;
 using UniformDataCache = PipelineDataCache<SkUniformDataBlockPassThrough, SkUniformDataBlock>;
 using TextureDataCache = PipelineDataCache<std::unique_ptr<SkTextureDataBlock>, SkTextureDataBlock>;
 
-class Recorder final {
+struct SK_API RecorderOptions final {
+    RecorderOptions() = default;
+    RecorderOptions(const RecorderOptions&) = default;
+    ~RecorderOptions();
+
+    sk_sp<ImageProvider> fImageProvider;
+};
+
+class SK_API Recorder final {
 public:
     Recorder(const Recorder&) = delete;
     Recorder(Recorder&&) = delete;
@@ -45,6 +68,34 @@ public:
     ~Recorder();
 
     std::unique_ptr<Recording> snap();
+
+    ImageProvider* clientImageProvider() const {
+        return fClientImageProvider.get();
+    }
+
+    /**
+     * Creates a new backend gpu texture matching the dimensions and TextureInfo. If an invalid
+     * TextureInfo or a TextureInfo Skia can't support is passed in, this will return an invalid
+     * BackendTexture. Thus the client should check isValid on the returned BackendTexture to know
+     * if it succeeded or not.
+     *
+     * If this does return a valid BackendTexture, the caller is required to use
+     * Recorder::deleteBackendTexture or Context::deleteBAckendTexture to delete the texture. It is
+     * safe to use the Context that created this Recorder or any other Recorder created from the
+     * same Context to call deleteBackendTexture.
+     */
+    BackendTexture createBackendTexture(SkISize dimensions, const TextureInfo&);
+
+    /**
+     * Called to delete the passed in BackendTexture. This should only be called if the
+     * BackendTexture was created by calling Recorder::createBackendTexture on a Recorder that is
+     * associated with the same Context. If the BackendTexture is not valid or does not match the
+     * BackendApi of the Recorder then nothing happens.
+     *
+     * Otherwise this will delete/release the backend object that is wrapped in the BackendTexture.
+     * The BackendTexture will be reset to an invalid state and should not be used again.
+     */
+    void deleteBackendTexture(BackendTexture&);
 
     // Provides access to functions that aren't part of the public API.
     RecorderPriv priv();
@@ -59,9 +110,11 @@ private:
     friend class Device; // For registering and deregistering Devices;
     friend class RecorderPriv; // for ctor and hidden methods
 
-    Recorder(sk_sp<Gpu>, sk_sp<GlobalCache>);
+    Recorder(sk_sp<SharedContext>, sk_sp<GlobalCache>, const RecorderOptions&);
 
     SingleOwner* singleOwner() const { return &fSingleOwner; }
+
+    BackendApi backend() const;
 
     // We keep track of all Devices that are connected to a Recorder. This allows the client to
     // safely delete an SkSurface or a Recorder in any order. If the client deletes the Recorder
@@ -83,7 +136,7 @@ private:
     void registerDevice(Device*);
     void deregisterDevice(const Device*);
 
-    sk_sp<Gpu> fGpu;
+    sk_sp<SharedContext> fSharedContext;
     std::unique_ptr<ResourceProvider> fResourceProvider;
 
     std::unique_ptr<TaskGraph> fGraph;
@@ -92,6 +145,13 @@ private:
     std::unique_ptr<DrawBufferManager> fDrawBufferManager;
     std::unique_ptr<UploadBufferManager> fUploadBufferManager;
     std::vector<Device*> fTrackedDevices;
+
+    uint32_t fRecorderID;  // Needed for MessageBox handling for text
+    std::unique_ptr<AtlasManager> fAtlasManager;
+    std::unique_ptr<TokenTracker> fTokenTracker;
+    std::unique_ptr<sktext::gpu::StrikeCache> fStrikeCache;
+    std::unique_ptr<sktext::gpu::TextBlobRedrawCoordinator> fTextBlobCache;
+    sk_sp<ImageProvider> fClientImageProvider;
 
     // In debug builds we guard against improper thread handling
     // This guard is passed to the ResourceCache.

@@ -136,8 +136,6 @@ struct xnn_operator {
   size_t group_output_channels;
   size_t channels;
 
-  size_t pad_before_channels;
-  size_t pad_after_channels;
   uint32_t pad_value;
 
   size_t input_height;
@@ -170,9 +168,6 @@ struct xnn_operator {
   float input_scale;
   float output_scale;
   int32_t input_zero_point;
-  uint8_t output_zero_point;
-  uint8_t output_min;
-  uint8_t output_max;
 
   size_t valid_batch_size;
   size_t last_input_height;
@@ -194,6 +189,7 @@ struct xnn_operator {
     union xnn_f16_abs_params f16_abs;
     union xnn_f16_f32_cvt_params f16_f32_cvt;
     union xnn_f16_hswish_params f16_hswish;
+    union xnn_f16_elu_params f16_elu;
     union xnn_f16_lrelu_params f16_lrelu;
     union xnn_f16_neg_params f16_neg;
     union xnn_f16_sigmoid_params f16_sigmoid;
@@ -224,7 +220,9 @@ struct xnn_operator {
     union xnn_f32_f16_cvt_params f32_f16_cvt;
     union xnn_f32_qs8_cvt_params f32_qs8_cvt;
     union xnn_f32_qu8_cvt_params f32_qu8_cvt;
+    union xnn_qs8_cvt_params qs8_cvt;
     union xnn_qs8_f32_cvt_params qs8_f32_cvt;
+    union xnn_qu8_cvt_params qu8_cvt;
     union xnn_qu8_f32_cvt_params qu8_f32_cvt;
     union xnn_qs8_conv_minmax_params qs8_conv_minmax;
     // Average Pooling normally use qs8_avgpool_params, but also initialize qs8_gavgpool_params in case it needs to switch
@@ -235,16 +233,16 @@ struct xnn_operator {
     };
     // Quantized Add parameters are sensitive to order of inputs, so we initialize an extra copy with the reversed order.
     struct {
-      union xnn_qs8_addsub_minmax_params qs8_addsub;
-      union xnn_qs8_addsub_minmax_params qs8_raddsub;
+      union xnn_qs8_add_minmax_params qs8_addsub;
+      union xnn_qs8_add_minmax_params qs8_raddsub;
     };
     struct {
       union xnn_qs8_mul_minmax_params qs8_mul;
       union xnn_qs8_mul_minmax_params qs8_rmul;
     };
     struct {
-      union xnn_qu8_addsub_minmax_params qu8_addsub;
-      union xnn_qu8_addsub_minmax_params qu8_raddsub;
+      union xnn_qu8_add_minmax_params qu8_addsub;
+      union xnn_qu8_add_minmax_params qu8_raddsub;
     };
     struct {
       union xnn_qu8_mul_minmax_params qu8_mul;
@@ -257,6 +255,8 @@ struct xnn_operator {
       union xnn_qu8_avgpool_minmax_params qu8_avgpool;
       union xnn_qu8_avgpool_minmax_params qu8_gavgpool;
     };
+    union xnn_qs8_lrelu_params qs8_lrelu;
+    union xnn_qu8_lrelu_params qu8_lrelu;
     union xnn_s8_minmax_params s8_minmax;
     union xnn_u8_minmax_params u8_minmax;
   } params;
@@ -312,26 +312,45 @@ static inline void* packed_weights(struct xnn_operator* op) {
   }
 }
 
-static inline bool use_weights_cache(xnn_caches_t caches) {
-  return caches != NULL && caches->weights_cache != NULL;
+static inline bool use_weights_cache(struct xnn_operator* op) {
+  return op->weights_cache != NULL;
 }
 
 // Get a pointer to a region to pack weights into. If weights cache is available, use it, returning to a pointer to the
 // cache's buffer, otherwise, allocate and return a pointer to a new region. Returns NULL on error.
 XNN_INTERNAL void* xnn_get_pointer_to_write_weights(
   xnn_operator_t op,
-  xnn_caches_t caches,
   size_t aligned_weights_size,
   int padding_byte);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+XNN_INTERNAL size_t xnn_compute_convolution_output_dimension(
+  size_t padded_input_dimension,
+  size_t kernel_dimension,
+  size_t dilation_dimension,
+  size_t subsampling_dimension);
+
+XNN_INTERNAL size_t xnn_compute_deconvolution_output_dimension(
+  size_t input_dimension,
+  size_t output_padding_dimension,
+  size_t adjustment_dimension,
+  size_t kernel_dimension,
+  size_t dilation_dimension,
+  size_t stride_dimension);
+
+XNN_INTERNAL size_t xnn_compute_unpooling_output_dimension(
+  size_t input_dimension,
+  size_t input_padding_dimension,
+  size_t kernel_dimension);
+
 XNN_INTERNAL uint32_t xnn_get_heuristic_mr_gemm(
   size_t batch_size,
   uint32_t max_mr,
   uint32_t nr,
   struct xnn_hmp_gemm_ukernel *gemm_cases);
+
 XNN_INTERNAL uint32_t xnn_get_heuristic_mr_igemm(
   size_t batch_size,
   uint32_t max_mr,

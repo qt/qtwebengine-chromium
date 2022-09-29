@@ -21,13 +21,12 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkBitmapProcShader.h"
-#include "src/shaders/SkEmptyShader.h"
 #include "src/shaders/SkTransformShader.h"
 
 #ifdef SK_ENABLE_SKSL
 
 #ifdef SK_GRAPHITE_ENABLED
-#include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/ImageUtils.h"
 #endif
 
 #include "src/core/SkKeyContext.h"
@@ -79,7 +78,7 @@ static SkTileMode optimize(SkTileMode tm, int dimension) {
 // TODO: currently this only *always* used in asFragmentProcessor(), which is excluded on no-gpu
 // builds. No-gpu builds only use needs_subset() in asserts, so release+no-gpu doesn't use it, which
 // can cause builds to fail if unused warnings are treated as errors.
-SK_MAYBE_UNUSED static bool needs_subset(SkImage* img, const SkRect& subset) {
+[[maybe_unused]] static bool needs_subset(SkImage* img, const SkRect& subset) {
     return subset != SkRect::Make(img->dimensions());
 }
 
@@ -301,7 +300,7 @@ sk_sp<SkShader> SkImageShader::MakeRaw(sk_sp<SkImage> image,
         return nullptr;
     }
     if (!image) {
-        return sk_make_sp<SkEmptyShader>();
+        return SkShaders::Empty();
     }
     return sk_sp<SkShader>{new SkImageShader(
             image, SkRect::Make(image->dimensions()), tmx, tmy, options, localMatrix,
@@ -323,7 +322,7 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
         }
     }
     if (!image || subset.isEmpty()) {
-        return sk_make_sp<SkEmptyShader>();
+        return SkShaders::Empty();
     }
 
     // Validate subset and check if we can drop it
@@ -387,12 +386,17 @@ void SkImageShader::addToKey(const SkKeyContext& keyContext,
                                         this->getLocalMatrix());
 
 #ifdef SK_GRAPHITE_ENABLED
-    if (as_IB(fImage)->isGraphiteBacked()) {
-        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(fImage.get());
+    auto [ imageToDraw, newSampling ] = skgpu::graphite::GetGraphiteBacked(keyContext.recorder(),
+                                                                           fImage.get(),
+                                                                           fSampling);
 
-        auto mipmapped = (fSampling.mipmap != SkMipmapMode::kNone) ?
-                skgpu::graphite::Mipmapped::kYes : skgpu::graphite::Mipmapped::kNo;
-        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped);
+    if (imageToDraw) {
+        imgData.fSampling = newSampling;
+        skgpu::graphite::Mipmapped mipmapped = (newSampling.mipmap != SkMipmapMode::kNone)
+                                                   ? skgpu::graphite::Mipmapped::kYes
+                                                   : skgpu::graphite::Mipmapped::kNo;
+
+        auto [view, _] = as_IB(imageToDraw)->asView(keyContext.recorder(), mipmapped);
         imgData.fTextureProxy = view.refProxy();
     }
 #endif

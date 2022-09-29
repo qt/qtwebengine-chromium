@@ -105,7 +105,8 @@ sk_sp<GrMtlTexture> GrMtlTexture::MakeWrappedTexture(GrMtlGpu* gpu,
     }
     sk_sp<GrMtlAttachment> attachment =
             GrMtlAttachment::MakeWrapped(gpu, dimensions, texture,
-                                         GrAttachment::UsageFlags::kTexture, cacheable);
+                                         GrAttachment::UsageFlags::kTexture, cacheable,
+                                         /*label=*/"MtlAttachment_MakeWrapped");
     if (!attachment) {
         return nullptr;
     }
@@ -136,6 +137,14 @@ GrBackendTexture GrMtlTexture::getBackendTexture() const {
 
 GrBackendFormat GrMtlTexture::backendFormat() const {
     return GrBackendFormat::MakeMtl(fTexture->mtlFormat());
+}
+
+void GrMtlTexture::onSetLabel() {
+    SkASSERT(fTexture);
+    if (!this->getLabel().empty()) {
+        NSString* labelStr = @(this->getLabel().c_str());
+        fTexture->mtlTexture().label = [@"_Skia_" stringByAppendingString:labelStr];
+    }
 }
 
 GR_NORETAIN_END

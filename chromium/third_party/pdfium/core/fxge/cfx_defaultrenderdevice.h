@@ -18,14 +18,17 @@ class CFX_DefaultRenderDevice final : public CFX_RenderDevice {
   CFX_DefaultRenderDevice();
   ~CFX_DefaultRenderDevice() override;
 
-  bool Attach(const RetainPtr<CFX_DIBitmap>& pBitmap,
-              bool bRgbByteOrder,
-              const RetainPtr<CFX_DIBitmap>& pBackdropBitmap,
-              bool bGroupKnockout);
+  bool Attach(RetainPtr<CFX_DIBitmap> pBitmap);
+  bool AttachWithRgbByteOrder(RetainPtr<CFX_DIBitmap> pBitmap,
+                              bool bRgbByteOrder);
+  bool AttachWithBackdropAndGroupKnockout(
+      RetainPtr<CFX_DIBitmap> pBitmap,
+      RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+      bool bGroupKnockout);
   bool Create(int width,
               int height,
               FXDIB_Format format,
-              const RetainPtr<CFX_DIBitmap>& pBackdropBitmap);
+              RetainPtr<CFX_DIBitmap> pBackdropBitmap);
 
 #if defined(_SKIA_SUPPORT_)
   bool AttachRecorder(SkPictureRecorder* recorder);
@@ -39,6 +42,12 @@ class CFX_DefaultRenderDevice final : public CFX_RenderDevice {
                        int bitmap_alpha,
                        BlendMode blend_type) override;
 #endif
+
+ private:
+  bool AttachImpl(RetainPtr<CFX_DIBitmap> pBitmap,
+                  bool bRgbByteOrder,
+                  RetainPtr<CFX_DIBitmap> pBackdropBitmap,
+                  bool bGroupKnockout);
 };
 
 #endif  // CORE_FXGE_CFX_DEFAULTRENDERDEVICE_H_

@@ -23,6 +23,8 @@ enum Operation {
   ATTEMPTING_ROLLBACK = 8;
   DISABLED = 9;
   NEED_PERMISSION_TO_UPDATE = 10;
+  CLEANUP_PREVIOUS_UPDATE = 11;
+  UPDATED_BUT_DEFERRED = 12;
 
   // ERROR is only used by Chrome and update_engine doesn't really use/set this
   // value as it is not the proper way to propagate errors. DO NOT use this

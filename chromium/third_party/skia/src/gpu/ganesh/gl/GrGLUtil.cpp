@@ -163,7 +163,7 @@ static GrGLVendor get_vendor(const char* vendorString) {
 static GrGLRenderer get_renderer(const char* rendererString, const GrGLExtensions& extensions) {
     SkASSERT(rendererString);
     static const char kTegraStr[] = "NVIDIA Tegra";
-    if (0 == strncmp(rendererString, kTegraStr, SK_ARRAY_COUNT(kTegraStr) - 1)) {
+    if (0 == strncmp(rendererString, kTegraStr, std::size(kTegraStr) - 1)) {
         // Tegra strings are not very descriptive. We distinguish between the modern and legacy
         // architectures by the presence of NV_path_rendering.
         return extensions.has("GL_NV_path_rendering") ? GrGLRenderer::kTegra
@@ -178,17 +178,17 @@ static GrGLRenderer get_renderer(const char* rendererString, const GrGLExtension
     static const char kAppleA4Str[] = "Apple A4";
     static const char kAppleA5Str[] = "Apple A5";
     static const char kAppleA6Str[] = "Apple A6";
-    if (0 == strncmp(rendererString, kAppleA4Str, SK_ARRAY_COUNT(kAppleA4Str) - 1) ||
-        0 == strncmp(rendererString, kAppleA5Str, SK_ARRAY_COUNT(kAppleA5Str) - 1) ||
-        0 == strncmp(rendererString, kAppleA6Str, SK_ARRAY_COUNT(kAppleA6Str) - 1)) {
+    if (0 == strncmp(rendererString, kAppleA4Str, std::size(kAppleA4Str) - 1) ||
+        0 == strncmp(rendererString, kAppleA5Str, std::size(kAppleA5Str) - 1) ||
+        0 == strncmp(rendererString, kAppleA6Str, std::size(kAppleA6Str) - 1)) {
         return GrGLRenderer::kPowerVR54x;
     }
     static const char kPowerVRRogueStr[] = "PowerVR Rogue";
     static const char kAppleA7Str[] = "Apple A7";
     static const char kAppleA8Str[] = "Apple A8";
-    if (0 == strncmp(rendererString, kPowerVRRogueStr, SK_ARRAY_COUNT(kPowerVRRogueStr) - 1) ||
-        0 == strncmp(rendererString, kAppleA7Str, SK_ARRAY_COUNT(kAppleA7Str) - 1) ||
-        0 == strncmp(rendererString, kAppleA8Str, SK_ARRAY_COUNT(kAppleA8Str) - 1)) {
+    if (0 == strncmp(rendererString, kPowerVRRogueStr, std::size(kPowerVRRogueStr) - 1) ||
+        0 == strncmp(rendererString, kAppleA7Str, std::size(kAppleA7Str) - 1) ||
+        0 == strncmp(rendererString, kAppleA8Str, std::size(kAppleA8Str) - 1)) {
         return GrGLRenderer::kPowerVRRogue;
     }
     int adrenoNumber;
@@ -363,15 +363,12 @@ static GrGLRenderer get_renderer(const char* rendererString, const GrGLExtension
     if (strstr(rendererString, "llvmpipe")) {
         return GrGLRenderer::kGalliumLLVM;
     }
-    if (strstr(rendererString, "virgl")) {
-        return GrGLRenderer::kVirgl;
-    }
     static const char kMaliGStr[] = "Mali-G";
-    if (0 == strncmp(rendererString, kMaliGStr, SK_ARRAY_COUNT(kMaliGStr) - 1)) {
+    if (0 == strncmp(rendererString, kMaliGStr, std::size(kMaliGStr) - 1)) {
         return GrGLRenderer::kMaliG;
     }
     static const char kMaliTStr[] = "Mali-T";
-    if (0 == strncmp(rendererString, kMaliTStr, SK_ARRAY_COUNT(kMaliTStr) - 1)) {
+    if (0 == strncmp(rendererString, kMaliTStr, std::size(kMaliTStr) - 1)) {
         return GrGLRenderer::kMaliT;
     }
     int mali400Num;
@@ -388,10 +385,14 @@ static bool is_commamd_buffer(const char* rendererString, const char* versionStr
 
     int major, minor;
     static const char kChromium[] = "Chromium";
-    char suffix[SK_ARRAY_COUNT(kChromium)] = {0};
+    char suffix[std::size(kChromium)] = {0};
     return (0 == strcmp(rendererString, kChromium) ||
            (3 == sscanf(versionString, "OpenGL ES %d.%d %8s", &major, &minor, suffix) &&
             0 == strcmp(kChromium, suffix)));
+}
+
+static bool is_virgl(const char* rendererString) {
+    return !!strstr(rendererString, "virgl");
 }
 
 static std::tuple<GrGLDriver, GrGLDriverVersion> get_driver_and_version(GrGLStandard standard,
@@ -578,7 +579,7 @@ static std::tuple<GrGLANGLEBackend, SkString> get_angle_backend(const char* rend
     // crbug.com/1203705 ANGLE renderer will be "ANGLE (<gl-vendor>, <gl-renderer>, <gl-version>)"
     // on ANGLE's GL backend with related substitutions for the inner strings on other backends.
     static constexpr char kHeader[] = "ANGLE (";
-    static constexpr size_t kHeaderLength = SK_ARRAY_COUNT(kHeader) - 1;
+    static constexpr size_t kHeaderLength = std::size(kHeader) - 1;
     int rendererLength = strlen(rendererString);
     if (!strncmp(rendererString, kHeader, kHeaderLength) &&
         rendererString[rendererLength - 1] == ')') {
@@ -588,6 +589,8 @@ static std::tuple<GrGLANGLEBackend, SkString> get_angle_backend(const char* rend
             return {GrGLANGLEBackend::kD3D11, std::move(innerString)};
         } else if (strstr(rendererString, "Direct3D9")) {
             return {GrGLANGLEBackend::kD3D9, std::move(innerString)};
+        } else if (strstr(rendererString, "Metal")) {
+            return {GrGLANGLEBackend::kMetal, std::move(innerString)};
         } else if (strstr(rendererString, "OpenGL")) {
             return {GrGLANGLEBackend::kOpenGL, std::move(innerString)};
         }
@@ -729,6 +732,8 @@ GrGLDriverInfo GrGLGetDriverInfo(const GrGLInterface* interface) {
     }
 
     info.fIsOverCommandBuffer = is_commamd_buffer(renderer, version);
+
+    info.fIsRunningOverVirgl = is_virgl(renderer);
 
     return info;
 }

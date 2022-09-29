@@ -100,6 +100,12 @@ class Float;
 class Float2;
 class Float4;
 
+namespace SIMD {
+class Int;
+class UInt;
+class Float;
+}  // namespace SIMD
+
 template<>
 struct Scalar<Float4>
 {
@@ -114,6 +120,24 @@ struct Scalar<Int4>
 
 template<>
 struct Scalar<UInt4>
+{
+	using Type = UInt;
+};
+
+template<>
+struct Scalar<SIMD::Float>
+{
+	using Type = Float;
+};
+
+template<>
+struct Scalar<SIMD::Int>
+{
+	using Type = Int;
+};
+
+template<>
+struct Scalar<SIMD::UInt>
 {
 	using Type = UInt;
 };
@@ -315,6 +339,24 @@ struct BroadcastLiteral<Float4>
 	using Type = float;
 };
 
+template<>
+struct BroadcastLiteral<SIMD::Int>
+{
+	using Type = int;
+};
+
+template<>
+struct BroadcastLiteral<SIMD::UInt>
+{
+	using Type = unsigned int;
+};
+
+template<>
+struct BroadcastLiteral<SIMD::Float>
+{
+	using Type = float;
+};
+
 template<class T>
 class RValue
 {
@@ -336,6 +378,8 @@ public:
 	RValue<T> &operator=(const RValue<T> &) = delete;
 
 	Value *value() const { return val; }
+
+	static int element_count() { return T::element_count(); }
 
 private:
 	Value *const val;
@@ -626,6 +670,7 @@ public:
 	//	RValue<Byte4> operator=(const Reference<Byte4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<Byte4> Insert(RValue<Byte4> val, RValue<Byte> element, int i);
@@ -672,6 +717,7 @@ public:
 	//	RValue<SByte4> operator=(const Reference<SByte4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 //	RValue<SByte4> operator+(RValue<SByte4> lhs, RValue<SByte4> rhs);
@@ -716,6 +762,7 @@ public:
 	RValue<Byte8> operator=(const Reference<Byte8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<Byte8> operator+(RValue<Byte8> lhs, RValue<Byte8> rhs);
@@ -771,6 +818,7 @@ public:
 	RValue<SByte8> operator=(const Reference<SByte8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<SByte8> operator+(RValue<SByte8> lhs, RValue<SByte8> rhs);
@@ -822,6 +870,7 @@ public:
 	RValue<Byte16> operator=(const Reference<Byte16> &rhs);
 
 	static Type *type();
+	static int element_count() { return 16; }
 };
 
 //	RValue<Byte16> operator+(RValue<Byte16> lhs, RValue<Byte16> rhs);
@@ -867,6 +916,7 @@ public:
 	//	RValue<SByte16> operator=(const Reference<SByte16> &rhs);
 
 	static Type *type();
+	static int element_count() { return 16; }
 };
 
 //	RValue<SByte16> operator+(RValue<SByte16> lhs, RValue<SByte16> rhs);
@@ -903,6 +953,7 @@ public:
 	explicit Short2(RValue<Short4> cast);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 class UShort2 : public LValue<UShort2>
@@ -911,6 +962,7 @@ public:
 	explicit UShort2(RValue<UShort4> cast);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 class Short4 : public LValue<Short4>
@@ -940,6 +992,7 @@ public:
 	RValue<Short4> operator=(const Reference<UShort4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<Short4> operator+(RValue<Short4> lhs, RValue<Short4> rhs);
@@ -1018,6 +1071,7 @@ public:
 	RValue<UShort4> operator=(const Reference<Short4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 };
 
 RValue<UShort4> operator+(RValue<UShort4> lhs, RValue<UShort4> rhs);
@@ -1072,6 +1126,7 @@ public:
 	RValue<Short8> operator=(const Reference<Short8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<Short8> operator+(RValue<Short8> lhs, RValue<Short8> rhs);
@@ -1112,7 +1167,6 @@ RValue<Short8> operator>>(RValue<Short8> lhs, unsigned char rhs);
 
 RValue<Short8> MulHigh(RValue<Short8> x, RValue<Short8> y);
 RValue<Int4> MulAdd(RValue<Short8> x, RValue<Short8> y);
-RValue<Int4> Abs(RValue<Int4> x);
 
 class UShort8 : public LValue<UShort8>
 {
@@ -1130,6 +1184,7 @@ public:
 	RValue<UShort8> operator=(const Reference<UShort8> &rhs);
 
 	static Type *type();
+	static int element_count() { return 8; }
 };
 
 RValue<UShort8> operator+(RValue<UShort8> lhs, RValue<UShort8> rhs);
@@ -1417,6 +1472,7 @@ public:
 	RValue<Int2> operator=(const Reference<Int2> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 RValue<Int2> operator+(RValue<Int2> lhs, RValue<Int2> rhs);
@@ -1473,6 +1529,7 @@ public:
 	RValue<UInt2> operator=(const Reference<UInt2> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 RValue<UInt2> operator+(RValue<UInt2> lhs, RValue<UInt2> rhs);
@@ -1538,12 +1595,16 @@ public:
 	Int4(const Int &rhs);
 	Int4(const Reference<Int> &rhs);
 
+	template<int T>
+	Int4(const SwizzleMask1<Int4, T> &rhs);
+
 	RValue<Int4> operator=(int broadcast);
 	RValue<Int4> operator=(RValue<Int4> rhs);
 	RValue<Int4> operator=(const Int4 &rhs);
 	RValue<Int4> operator=(const Reference<Int4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(int x, int y, int z, int w);
@@ -1599,6 +1660,7 @@ inline RValue<Int4> CmpGE(RValue<Int4> x, RValue<Int4> y)
 {
 	return CmpNLT(x, y);
 }
+RValue<Int4> Abs(RValue<Int4> x);
 RValue<Int4> Max(RValue<Int4> x, RValue<Int4> y);
 RValue<Int4> Min(RValue<Int4> x, RValue<Int4> y);
 // Convert to nearest integer. If a converted value is outside of the integer
@@ -1644,6 +1706,7 @@ public:
 	RValue<UInt4> operator=(const Reference<UInt4> &rhs);
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(int x, int y, int z, int w);
@@ -1836,6 +1899,7 @@ public:
 	//	RValue<Float2> operator=(const SwizzleMask1<T> &rhs);
 
 	static Type *type();
+	static int element_count() { return 2; }
 };
 
 //	RValue<Float2> operator+(RValue<Float2> lhs, RValue<Float2> rhs);
@@ -1909,6 +1973,7 @@ public:
 	static Float4 infinity();
 
 	static Type *type();
+	static int element_count() { return 4; }
 
 private:
 	void constant(float x, float y, float z, float w);
@@ -2010,6 +2075,84 @@ RValue<Float4> Exp(RValue<Float4> x);
 RValue<Float4> Log(RValue<Float4> x);
 RValue<Float4> Exp2(RValue<Float4> x);
 RValue<Float4> Log2(RValue<Float4> x);
+
+// Call a unary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i)), i);
+	}
+
+	return result;
+}
+
+// Call a binary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x, const RValue<T> &y)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i), Extract(y, i)), i);
+	}
+
+	return result;
+}
+
+// Call a ternary C function on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> ScalarizeCall(Func func, const RValue<T> &x, const RValue<T> &y, const RValue<T> &z)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, Call(func, Extract(x, i), Extract(y, i), Extract(z, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a unary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a binary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x, const RValue<T> &y)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i), Extract(y, i)), i);
+	}
+
+	return result;
+}
+
+// Invoke a ternary lambda expression on each element of a vector type.
+template<typename Func, typename T>
+inline RValue<T> Scalarize(Func func, const RValue<T> &x, const RValue<T> &y, const RValue<T> &z)
+{
+	T result;
+	for(int i = 0; i < T::element_count(); i++)
+	{
+		result = Insert(result, func(Extract(x, i), Extract(y, i), Extract(z, i)), i);
+	}
+
+	return result;
+}
 
 // Bit Manipulation functions.
 // TODO: Currently unimplemented for Subzero.
@@ -2117,11 +2260,6 @@ RValue<T> Load(Pointer<T> pointer, unsigned int alignment, bool atomic, std::mem
 [[deprecated]] void MaskedStore(RValue<Pointer<Float4>> base, RValue<Float4> val, RValue<Int4> mask, unsigned int alignment);
 [[deprecated]] void MaskedStore(RValue<Pointer<Int4>> base, RValue<Int4> val, RValue<Int4> mask, unsigned int alignment);
 
-RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
-RValue<Int4> Gather(RValue<Pointer<Int>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes = false);
-void Scatter(RValue<Pointer<Float>> base, RValue<Float4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment);
-void Scatter(RValue<Pointer<Int>> base, RValue<Int4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment);
-
 template<typename T>
 void Store(RValue<T> value, RValue<Pointer<T>> pointer, unsigned int alignment, bool atomic, std::memory_order memoryOrder)
 {
@@ -2146,106 +2284,6 @@ enum class OutOfBoundsBehavior
 	RobustBufferAccess,  // As defined by the Vulkan spec (in short: access anywhere within bounds, or zeroing).
 	UndefinedValue,      // Only for load operations. Not secure. No program termination.
 	UndefinedBehavior,   // Program may terminate.
-};
-
-struct Pointer4
-{
-	Pointer4(Pointer<Byte> base, Int limit);
-	Pointer4(Pointer<Byte> base, unsigned int limit);
-	Pointer4(Pointer<Byte> base, Int limit, Int4 offset);
-	Pointer4(Pointer<Byte> base, unsigned int limit, Int4 offset);
-	Pointer4(Pointer<Byte> p0, Pointer<Byte> p1, Pointer<Byte> p2, Pointer<Byte> p3);
-	Pointer4(std::array<Pointer<Byte>, 4> pointers);
-
-	Pointer4 &operator+=(Int4 i);
-	Pointer4 &operator*=(Int4 i);
-
-	Pointer4 operator+(Int4 i);
-	Pointer4 operator*(Int4 i);
-
-	Pointer4 &operator+=(int i);
-	Pointer4 &operator*=(int i);
-
-	Pointer4 operator+(int i);
-	Pointer4 operator*(int i);
-
-	Int4 offsets() const;
-
-	Int4 isInBounds(unsigned int accessSize, OutOfBoundsBehavior robustness) const;
-
-	bool isStaticallyInBounds(unsigned int accessSize, OutOfBoundsBehavior robustness) const;
-
-	Int limit() const;
-
-	// Returns true if all offsets are sequential
-	// (N+0*step, N+1*step, N+2*step, N+3*step)
-	Bool hasSequentialOffsets(unsigned int step) const;
-
-	// Returns true if all offsets are are compile-time static and
-	// sequential (N+0*step, N+1*step, N+2*step, N+3*step)
-	bool hasStaticSequentialOffsets(unsigned int step) const;
-
-	// Returns true if all offsets are equal (N, N, N, N)
-	Bool hasEqualOffsets() const;
-
-	// Returns true if all offsets are compile-time static and are equal
-	// (N, N, N, N)
-	bool hasStaticEqualOffsets() const;
-
-	template<typename T>
-	inline T Load(OutOfBoundsBehavior robustness, Int4 mask, bool atomic = false, std::memory_order order = std::memory_order_relaxed, int alignment = sizeof(float));
-
-	template<typename T>
-	inline void Store(T val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic = false, std::memory_order order = std::memory_order_relaxed);
-
-	template<typename T>
-	inline void Store(RValue<T> val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic = false, std::memory_order order = std::memory_order_relaxed);
-
-	Pointer<Byte> getUniformPointer() const;
-	Pointer<Byte> getPointerForLane(int lane) const;
-	static Pointer4 IfThenElse(Int4 condition, const Pointer4 &lhs, const Pointer4 &rhs);
-
-#ifdef ENABLE_RR_PRINT
-	std::vector<rr::Value *> getPrintValues() const;
-#endif
-
-private:
-	// Base address for the pointer, common across all lanes.
-	Pointer<Byte> base;
-	// Per-lane address for dealing with non-uniform data
-	std::array<Pointer<Byte>, 4> pointers;
-
-public:
-	// Upper (non-inclusive) limit for offsets from base.
-	Int dynamicLimit;  // If hasDynamicLimit is false, dynamicLimit is zero.
-	unsigned int staticLimit;
-
-	// Per lane offsets from base.
-	Int4 dynamicOffsets;  // If hasDynamicOffsets is false, all dynamicOffsets are zero.
-	std::array<int32_t, 4> staticOffsets;
-
-	bool hasDynamicLimit;    // True if dynamicLimit is non-zero.
-	bool hasDynamicOffsets;  // True if any dynamicOffsets are non-zero.
-	bool isBasePlusOffset;   // True if this uses base+offset. False if this is a collection of Pointers
-};
-
-template<typename T>
-struct Element
-{};
-template<>
-struct Element<Float4>
-{
-	using type = Float;
-};
-template<>
-struct Element<Int4>
-{
-	using type = Int;
-};
-template<>
-struct Element<UInt4>
-{
-	using type = UInt;
 };
 
 RValue<Bool> AnyTrue(const RValue<Int4> &bools);
@@ -2489,44 +2527,38 @@ inline RValue<Float>::RValue(float f)
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
 
-inline Value *broadcastInt4(int i)
+inline Value *broadcast(int i, Type *type)
 {
-	int64_t constantVector[4] = { i, i, i, i };
-	return Nucleus::createConstantVector(constantVector, Int4::type());
+	std::vector<int64_t> constantVector = { i };
+	return Nucleus::createConstantVector(constantVector, type);
 }
 
 template<>
 inline RValue<Int4>::RValue(int i)
-    : val(broadcastInt4(i))
+    : val(broadcast(i, Int4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
-}
-
-inline Value *broadcastUInt4(unsigned int i)
-{
-	int64_t constantVector[4] = { i, i, i, i };
-	return Nucleus::createConstantVector(constantVector, UInt4::type());
 }
 
 template<>
 inline RValue<UInt4>::RValue(unsigned int i)
-    : val(broadcastInt4(i))
+    : val(broadcast(int(i), UInt4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
 
-inline Value *broadcastFloat4(float f)
+inline Value *broadcast(float f, Type *type)
 {
 	// See Float(float) constructor for the rationale behind this assert.
 	assert(std::isfinite(f));
 
-	double constantVector[4] = { f, f, f, f };
-	return Nucleus::createConstantVector(constantVector, Float4::type());
+	std::vector<double> constantVector = { f };
+	return Nucleus::createConstantVector(constantVector, type);
 }
 
 template<>
 inline RValue<Float4>::RValue(float f)
-    : val(broadcastFloat4(f))
+    : val(broadcast(f, Float4::type()))
 {
 	RR_DEBUG_INFO_EMIT_VAR(val);
 }
@@ -2654,6 +2686,13 @@ template<int T>
 RValue<Float> Float::operator=(const SwizzleMask1<Float4, T> &rhs)
 {
 	return *this = rhs.operator RValue<Float>();
+}
+
+template<int T>
+Int4::Int4(const SwizzleMask1<Int4, T> &rhs)
+    : XYZW(this)
+{
+	*this = rhs.operator RValue<Int4>();
 }
 
 template<int T>
@@ -3077,7 +3116,7 @@ inline ReactorTypeT<T> CastToReactor(const T &v)
 
 // Calls the static function pointer fptr with the given arguments args.
 template<typename Return, typename... CArgs, typename... RArgs>
-inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&... args)
+inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&...args)
 {
 	return CallHelper<Return(CArgs...)>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3085,7 +3124,7 @@ inline CToReactorT<Return> Call(Return(fptr)(CArgs...), RArgs &&... args)
 // Calls the static function pointer fptr with the given arguments args.
 // Overload for calling functions with void return type.
 template<typename... CArgs, typename... RArgs>
-inline void Call(void(fptr)(CArgs...), RArgs &&... args)
+inline void Call(void(fptr)(CArgs...), RArgs &&...args)
 {
 	CallHelper<void(CArgs...)>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3093,7 +3132,7 @@ inline void Call(void(fptr)(CArgs...), RArgs &&... args)
 // Calls the member function pointer fptr with the given arguments args.
 // object can be a Class*, or a Pointer<Byte>.
 template<typename Return, typename Class, typename C, typename... CArgs, typename... RArgs>
-inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RArgs &&... args)
+inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RArgs &&...args)
 {
 	using Helper = CallHelper<Return(Class *, void *, CArgs...)>;
 	using fptrTy = decltype(fptr);
@@ -3117,7 +3156,7 @@ inline CToReactorT<Return> Call(Return (Class::*fptr)(CArgs...), C &&object, RAr
 // Overload for calling functions with void return type.
 // object can be a Class*, or a Pointer<Byte>.
 template<typename Class, typename C, typename... CArgs, typename... RArgs>
-inline void Call(void (Class::*fptr)(CArgs...), C &&object, RArgs &&... args)
+inline void Call(void (Class::*fptr)(CArgs...), C &&object, RArgs &&...args)
 {
 	using Helper = CallHelper<void(Class *, void *, CArgs...)>;
 	using fptrTy = decltype(fptr);
@@ -3174,7 +3213,7 @@ using VoidFunctionReturnType = typename VoidFunction<F>::ReturnType;
 // Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
 // Overload for calling functions with non-void return type.
 template<typename FUNCTION_SIGNATURE, typename... RArgs>
-inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<Byte> fptr, RArgs &&... args)
+inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<Byte> fptr, RArgs &&...args)
 {
 	return CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3182,7 +3221,7 @@ inline CToReactorT<NonVoidFunctionReturnType<FUNCTION_SIGNATURE>> Call(Pointer<B
 // Calls the Reactor function pointer fptr with the signature FUNCTION_SIGNATURE and arguments.
 // Overload for calling functions with void return type.
 template<typename FUNCTION_SIGNATURE, typename... RArgs>
-inline VoidFunctionReturnType<FUNCTION_SIGNATURE> Call(Pointer<Byte> fptr, RArgs &&... args)
+inline VoidFunctionReturnType<FUNCTION_SIGNATURE> Call(Pointer<Byte> fptr, RArgs &&...args)
 {
 	CallHelper<FUNCTION_SIGNATURE>::Call(fptr, CastToReactor(std::forward<RArgs>(args))...);
 }
@@ -3339,218 +3378,6 @@ enum
 // We cast the address '32' and subtract it again, because null-dereference is undefined behavior.
 #define OFFSET(s, m) ((int)(size_t) & reinterpret_cast<const volatile char &>((((s *)32)->m)) - 32)
 
-template<typename T>
-inline T Pointer4::Load(OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */, int alignment /* = sizeof(float) */)
-{
-	using EL = typename Element<T>::type;
-
-	if(!isBasePlusOffset)
-	{
-		T out = T(0);
-		for(int i = 0; i < 4; i++)
-		{
-			If(Extract(mask, i) != 0)
-			{
-				auto el = rr::Load(Pointer<EL>(pointers[i]), alignment, atomic, order);
-				out = Insert(out, el, i);
-			}
-		}
-		return out;
-	}
-
-	if(isStaticallyInBounds(sizeof(float), robustness))
-	{
-		// All elements are statically known to be in-bounds.
-		// We can avoid costly conditional on masks.
-
-		if(hasStaticSequentialOffsets(sizeof(float)))
-		{
-			// Offsets are sequential. Perform regular load.
-			return rr::Load(Pointer<T>(base + staticOffsets[0]), alignment, atomic, order);
-		}
-
-		if(hasStaticEqualOffsets())
-		{
-			// Load one, replicate.
-			return T(*Pointer<EL>(base + staticOffsets[0], alignment));
-		}
-	}
-	else
-	{
-		switch(robustness)
-		{
-		case OutOfBoundsBehavior::Nullify:
-		case OutOfBoundsBehavior::RobustBufferAccess:
-		case OutOfBoundsBehavior::UndefinedValue:
-			mask &= isInBounds(sizeof(float), robustness);  // Disable out-of-bounds reads.
-			break;
-		case OutOfBoundsBehavior::UndefinedBehavior:
-			// Nothing to do. Application/compiler must guarantee no out-of-bounds accesses.
-			break;
-		}
-	}
-
-	auto offs = offsets();
-
-	if(!atomic && order == std::memory_order_relaxed)
-	{
-		if(hasStaticEqualOffsets())
-		{
-			// Load one, replicate.
-			// Be careful of the case where the post-bounds-check mask
-			// is 0, in which case we must not load.
-			T out = T(0);
-			If(AnyTrue(mask))
-			{
-				EL el = *Pointer<EL>(base + staticOffsets[0], alignment);
-				out = T(el);
-			}
-			return out;
-		}
-
-		bool zeroMaskedLanes = true;
-		switch(robustness)
-		{
-		case OutOfBoundsBehavior::Nullify:
-		case OutOfBoundsBehavior::RobustBufferAccess:  // Must either return an in-bounds value, or zero.
-			zeroMaskedLanes = true;
-			break;
-		case OutOfBoundsBehavior::UndefinedValue:
-		case OutOfBoundsBehavior::UndefinedBehavior:
-			zeroMaskedLanes = false;
-			break;
-		}
-
-		// TODO(b/195446858): Optimize static sequential offsets case by using masked load.
-
-		return Gather(Pointer<EL>(base), offs, mask, alignment, zeroMaskedLanes);
-	}
-	else
-	{
-		T out;
-		auto anyLanesDisabled = AnyFalse(mask);
-		If(hasEqualOffsets() && !anyLanesDisabled)
-		{
-			// Load one, replicate.
-			auto offset = Extract(offs, 0);
-			out = T(rr::Load(Pointer<EL>(&base[offset]), alignment, atomic, order));
-		}
-		Else If(hasSequentialOffsets(sizeof(float)) && !anyLanesDisabled)
-		{
-			// Load all elements in a single SIMD instruction.
-			auto offset = Extract(offs, 0);
-			out = rr::Load(Pointer<T>(&base[offset]), alignment, atomic, order);
-		}
-		Else
-		{
-			// Divergent offsets or masked lanes.
-			out = T(0);
-			for(int i = 0; i < 4; i++)
-			{
-				If(Extract(mask, i) != 0)
-				{
-					auto offset = Extract(offs, i);
-					auto el = rr::Load(Pointer<EL>(&base[offset]), alignment, atomic, order);
-					out = Insert(out, el, i);
-				}
-			}
-		}
-		return out;
-	}
-}
-
-template<typename T>
-inline void Pointer4::Store(T val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */)
-{
-	using EL = typename Element<T>::type;
-	constexpr size_t alignment = sizeof(float);
-
-	if(!isBasePlusOffset)
-	{
-		for(int i = 0; i < 4; i++)
-		{
-			If(Extract(mask, i) != 0)
-			{
-				rr::Store(Extract(val, i), Pointer<EL>(pointers[i]), alignment, atomic, order);
-			}
-		}
-		return;
-	}
-
-	auto offs = offsets();
-	switch(robustness)
-	{
-	case OutOfBoundsBehavior::Nullify:
-	case OutOfBoundsBehavior::RobustBufferAccess:       // TODO: Allows writing anywhere within bounds. Could be faster than masking.
-	case OutOfBoundsBehavior::UndefinedValue:           // Should not be used for store operations. Treat as robust buffer access.
-		mask &= isInBounds(sizeof(float), robustness);  // Disable out-of-bounds writes.
-		break;
-	case OutOfBoundsBehavior::UndefinedBehavior:
-		// Nothing to do. Application/compiler must guarantee no out-of-bounds accesses.
-		break;
-	}
-
-	if(!atomic && order == std::memory_order_relaxed)
-	{
-		if(hasStaticEqualOffsets())
-		{
-			If(AnyTrue(mask))
-			{
-				// All equal. One of these writes will win -- elect the winning lane.
-				auto v0111 = Int4(0, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF);
-				auto elect = mask & ~(v0111 & (mask.xxyz | mask.xxxy | mask.xxxx));
-				auto maskedVal = As<Int4>(val) & elect;
-				auto scalarVal = Extract(maskedVal, 0) |
-				                 Extract(maskedVal, 1) |
-				                 Extract(maskedVal, 2) |
-				                 Extract(maskedVal, 3);
-				*Pointer<EL>(base + staticOffsets[0], alignment) = As<EL>(scalarVal);
-			}
-		}
-		else if(hasStaticSequentialOffsets(sizeof(float)) &&
-		        isStaticallyInBounds(sizeof(float), robustness))
-		{
-			// TODO(b/195446858): Optimize using masked store.
-			// Pointer has no elements OOB, and the store is not atomic.
-			// Perform a read-modify-write.
-			auto p = Pointer<Int4>(base + staticOffsets[0], alignment);
-			auto prev = *p;
-			*p = (prev & ~mask) | (As<Int4>(val) & mask);
-		}
-		else
-		{
-			Scatter(Pointer<EL>(base), val, offs, mask, alignment);
-		}
-	}
-	else
-	{
-		auto anyLanesDisabled = AnyFalse(mask);
-		If(hasSequentialOffsets(sizeof(float)) && !anyLanesDisabled)
-		{
-			// Store all elements in a single SIMD instruction.
-			auto offset = Extract(offs, 0);
-			rr::Store(val, Pointer<T>(&base[offset]), alignment, atomic, order);
-		}
-		Else
-		{
-			// Divergent offsets or masked lanes.
-			for(int i = 0; i < 4; i++)
-			{
-				If(Extract(mask, i) != 0)
-				{
-					auto offset = Extract(offs, i);
-					rr::Store(Extract(val, i), Pointer<EL>(&base[offset]), alignment, atomic, order);
-				}
-			}
-		}
-	}
-}
-
-template<typename T>
-inline void Pointer4::Store(RValue<T> val, OutOfBoundsBehavior robustness, Int4 mask, bool atomic /* = false */, std::memory_order order /* = std::memory_order_relaxed */)
-{
-	Store(T(val), robustness, mask, atomic, order);
-}
 }  // namespace rr
 
 #include "Traits.inl"

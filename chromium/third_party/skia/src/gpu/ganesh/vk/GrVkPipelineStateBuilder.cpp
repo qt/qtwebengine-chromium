@@ -75,7 +75,7 @@ bool GrVkPipelineStateBuilder::createVkShaderModule(VkShaderStageFlagBits stage,
                                                     const std::string& sksl,
                                                     VkShaderModule* shaderModule,
                                                     VkPipelineShaderStageCreateInfo* stageInfo,
-                                                    const SkSL::Program::Settings& settings,
+                                                    const SkSL::ProgramSettings& settings,
                                                     std::string* outSPIRV,
                                                     SkSL::Program::Inputs* outInputs) {
     if (!GrCompileVkShaderModule(fGpu, sksl, stage, shaderModule,
@@ -186,7 +186,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
     bool usePushConstants = fUniformHandler.usePushConstants();
     VkPipelineShaderStageCreateInfo shaderStageInfo[3];
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     settings.fRTFlipBinding = this->gpu()->vkCaps().getFragmentUniformBinding();
     settings.fRTFlipSet = this->gpu()->vkCaps().getFragmentUniformSet();
     settings.fSharpenTextures = true;
@@ -279,6 +279,10 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
         }
     }
 
+    // The vulkan spec says that if a subpass has an input attachment, then the input attachment
+    // descriptor set must be bound to all pipelines in that subpass. This includes pipelines that
+    // don't actually use the input attachment. Thus we look at the renderPassBarriers and not just
+    // the DstProxyView barrier flags to determine if we use the input attachment.
     bool usesInput = SkToBool(fProgramInfo.renderPassBarriers() & GrXferBarrierFlags::kTexture);
     uint32_t layoutCount =
         usesInput ? GrVkUniformHandler::kDescSetCount : (GrVkUniformHandler::kDescSetCount - 1);

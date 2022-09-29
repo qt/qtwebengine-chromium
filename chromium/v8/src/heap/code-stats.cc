@@ -31,7 +31,7 @@ void CodeStatistics::RecordCodeAndMetadataStatistics(HeapObject object,
   } else if (object.IsAbstractCode(cage_base)) {
     // Record code+metadata statistics.
     AbstractCode abstract_code = AbstractCode::cast(object);
-    int size = abstract_code.SizeIncludingMetadata();
+    int size = abstract_code.SizeIncludingMetadata(cage_base);
     if (abstract_code.IsCode(cage_base)) {
       size += isolate->code_and_metadata_size();
       isolate->set_code_and_metadata_size(size);
@@ -42,9 +42,10 @@ void CodeStatistics::RecordCodeAndMetadataStatistics(HeapObject object,
 
 #ifdef DEBUG
     // Record code kind and code comment statistics.
-    isolate->code_kind_statistics()[static_cast<int>(abstract_code.kind())] +=
+    CodeKind code_kind = abstract_code.kind(cage_base);
+    isolate->code_kind_statistics()[static_cast<int>(code_kind)] +=
         abstract_code.Size(cage_base);
-    CodeStatistics::CollectCodeCommentStatistics(object, isolate);
+    CodeStatistics::CollectCodeCommentStatistics(abstract_code, isolate);
 #endif
   }
 }
@@ -196,14 +197,14 @@ void CodeStatistics::CollectCommentStatistics(Isolate* isolate,
 }
 
 // Collects code comment statistics.
-void CodeStatistics::CollectCodeCommentStatistics(HeapObject obj,
+void CodeStatistics::CollectCodeCommentStatistics(AbstractCode obj,
                                                   Isolate* isolate) {
-  // Bytecode objects do not contain RelocInfo. Only process code objects
-  // for code comment statistics.
-  if (!obj.IsCode()) {
-    DCHECK(obj.IsBytecodeArray());
-    return;
-  }
+  // Bytecode objects do not contain RelocInfo. Off-heap builtins might contain
+  // comments but they are a part of binary so it doesn't make sense to account
+  // them in the stats.
+  // Only process code objects for code comment statistics.
+  PtrComprCageBase cage_base(isolate);
+  if (!obj.IsCode(cage_base)) return;
 
   Code code = Code::cast(obj);
   CodeCommentsIterator cit(code.code_comments(), code.code_comments_size());

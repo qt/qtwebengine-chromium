@@ -218,6 +218,9 @@ class WifiLanMedium : public api::WifiLanMedium {
  public:
   ~WifiLanMedium() override = default;
 
+  // Check if a network connection to a primary router exist.
+  bool IsNetworkConnected() const override;
+
   // Starts to advertising
   bool StartAdvertising(const NsdServiceInfo& nsd_service_info) override;
 
@@ -332,14 +335,11 @@ class WifiLanMedium : public api::WifiLanMedium {
   // callback for discovery
   api::WifiLanMedium::DiscoveredServiceCallback discovered_service_callback_;
 
-  // Protects to access some members
-  absl::Mutex mutex_;
-
   // Medium Status
   int medium_status_ = MEDIUM_STATUS_IDLE;
 
   // Keep the server socket listener pointer
-  WifiLanServerSocket* server_socket_ptr_ ABSL_GUARDED_BY(mutex_) = nullptr;
+  WifiLanServerSocket* server_socket_ptr_ = nullptr;
 };
 
 }  // namespace windows

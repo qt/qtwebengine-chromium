@@ -35,8 +35,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as TextUtils from '../text_utils/text_utils.js';
 
-import type {Project} from './WorkspaceImpl.js';
-import {Events as WorkspaceImplEvents} from './WorkspaceImpl.js';
+import {Events as WorkspaceImplEvents, type Project} from './WorkspaceImpl.js';
 
 const UIStrings = {
   /**
@@ -72,6 +71,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   private workingCopyGetter: (() => string)|null;
   private disableEditInternal: boolean;
   private contentEncodedInternal?: boolean;
+  private isKnownThirdPartyInternal: boolean;
 
   constructor(project: Project, url: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType) {
     super();
@@ -109,6 +109,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     this.workingCopyInternal = null;
     this.workingCopyGetter = null;
     this.disableEditInternal = false;
+    this.isKnownThirdPartyInternal = false;
   }
 
   requestMetadata(): Promise<UISourceCodeMetadata|null> {
@@ -131,7 +132,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   // DevTools UI to be the same script. For now this is just the url but this
   // is likely to change in the future.
   canononicalScriptId(): string {
-    return this.urlInternal;
+    return `${this.contentTypeInternal.name()},${this.urlInternal}`;
   }
 
   parentURL(): Platform.DevToolsPath.UrlString {
@@ -206,11 +207,6 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
 
   contentType(): Common.ResourceType.ResourceType {
     return this.contentTypeInternal;
-  }
-
-  async contentEncoded(): Promise<boolean> {
-    await this.requestContent();
-    return this.contentEncodedInternal || false;
   }
 
   project(): Project {
@@ -400,6 +396,14 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
 
   isDirty(): boolean {
     return this.workingCopyInternal !== null || this.workingCopyGetter !== null;
+  }
+
+  isKnownThirdParty(): boolean {
+    return this.isKnownThirdPartyInternal;
+  }
+
+  markKnownThirdParty(): void {
+    this.isKnownThirdPartyInternal = true;
   }
 
   extension(): string {

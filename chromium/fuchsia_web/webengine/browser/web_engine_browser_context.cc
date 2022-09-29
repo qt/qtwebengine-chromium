@@ -171,6 +171,12 @@ WebEngineBrowserContext::GetBrowsingDataRemoverDelegate() {
   return nullptr;
 }
 
+content::ReduceAcceptLanguageControllerDelegate*
+WebEngineBrowserContext::GetReduceAcceptLanguageControllerDelegate() {
+  // There is no delegate since WebEngine doesn't support persistence.
+  return nullptr;
+}
+
 std::unique_ptr<media::VideoDecodePerfHistory>
 WebEngineBrowserContext::CreateVideoDecodePerfHistory() {
   if (!IsOffTheRecord()) {

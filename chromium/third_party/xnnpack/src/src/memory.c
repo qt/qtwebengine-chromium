@@ -7,9 +7,16 @@
 #include "xnnpack/common.h"
 
 #if XNN_PLATFORM_WINDOWS
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #else
+// This define needs to come first because errno include features.h and would have defined macros that lead to
+// sys/mman.h not having mremap.
+#if !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <errno.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -62,6 +69,40 @@ static enum xnn_status release_memory(void* start, size_t capacity) {
   }
 #endif
   return xnn_status_success;
+}
+
+// Resize a buffer at old_pointer of size old_bytes to new_size. The actual new size of the resized buffer is written to
+// new_capacity_out, which can be >= new_size due to page alignment requirements.
+// Returns a pointer to a buffer which might be the same as old_pointer if we can remap virtual memory, otherwise we
+// allocate a new buffer and copy contents of old_buffer over.
+static void* resize_buffer(
+  void* old_pointer, size_t old_size, size_t old_capacity, size_t new_size, size_t* new_capacity_out)
+{
+  size_t new_capacity = round_up_po2(new_size, xnn_params.page_size);
+#if XNN_PLATFORM_LINUX
+  void* new_pointer = mremap(old_pointer, old_size, new_capacity, MREMAP_MAYMOVE, NULL);
+  if (new_pointer == MAP_FAILED) {
+    xnn_log_error("mremap failed with errno: %d", errno);
+    return NULL;
+  }
+  xnn_log_debug("resize_buffer: remap, old capacity %zu to new capacity %zu", old_capacity, new_capacity);
+#else
+  void* new_pointer = allocate_buffer(new_capacity);
+  if (new_pointer == NULL) {
+    xnn_log_error("allocate_buffer failed");
+    return NULL;
+  }
+  memcpy(new_pointer, old_pointer, old_size);
+  // Release old code_buffer.
+  enum xnn_status status = release_memory(old_pointer, old_capacity);
+  if (status != xnn_status_success) {
+    xnn_log_error("releasing old buffer failed, this could be a leak of %zu bytes", old_capacity);
+    // Log but proceed as per normal since we successfully allocated a new memory that can be used by the caller.
+  }
+  xnn_log_debug("resize_buffer: allocate memory, old capacity %zu to new capacity %zu", old_capacity, new_capacity);
+#endif
+  *new_capacity_out = new_capacity;
+  return new_pointer;
 }
 
 enum xnn_status xnn_allocate_code_memory(struct xnn_code_buffer* buf, size_t size) {
@@ -219,23 +260,14 @@ enum xnn_status xnn_reserve_code_memory(struct xnn_code_buffer* buf, size_t n) {
   }
   xnn_log_debug("reserving code memory of size %zu", n);
 
-  // TODO(zhin): use mremap
-  size_t size = buf->size;
-  struct xnn_code_buffer new_code_buffer;
-  enum xnn_status status = xnn_allocate_code_memory(&new_code_buffer, buf->size + n);
-  if (status != xnn_status_success) {
-    return status;
+  size_t new_capacity = 0;
+  void* new_start = resize_buffer(buf->start, buf->size, buf->capacity, buf->size + n, &new_capacity);
+  if (new_start == NULL) {
+    xnn_log_error("failed to reserve code memory");
+    return xnn_status_out_of_memory;
   }
-  memcpy(new_code_buffer.start, buf->start, size);
-  new_code_buffer.size = size;
-
-  // Release old code_buffer.
-  status = xnn_release_code_memory(buf);
-  if (status != xnn_status_success) {
-    return status;
-  }
-  // Copy over all the new code_buffer information.
-  memcpy(buf, &new_code_buffer, sizeof(struct xnn_code_buffer));
+  buf->start = new_start;
+  buf->capacity = new_capacity;
   return xnn_status_success;
 }
 
@@ -266,27 +298,19 @@ enum xnn_status xnn_release_weights_memory(struct xnn_weights_buffer* buf) {
 
 enum xnn_status xnn_reserve_weights_memory(struct xnn_weights_buffer* buf, size_t n) {
   if (buf->size + n <= buf->capacity) {
+    xnn_log_debug("reserving weights memory of size %zu without growing buffer", n);
     return xnn_status_success;
   }
 
-  xnn_log_debug("reserving weights memory of size %zu", n);
-  // TODO(zhin): use mremap
-  size_t size = buf->size;
-  struct xnn_weights_buffer new_weights_buffer;
-  enum xnn_status status = xnn_allocate_weights_memory(&new_weights_buffer, buf->size + n);
-  if (status != xnn_status_success) {
-    return status;
+  size_t new_capacity = 0;
+  void* new_start = resize_buffer(buf->start, buf->size, buf->capacity, buf->size + n, &new_capacity);
+  if (new_start == NULL) {
+    xnn_log_error("failed to reserve weights memory");
+    return xnn_status_out_of_memory;
   }
-  memcpy(new_weights_buffer.start, buf->start, size);
-  new_weights_buffer.size = size;
+  buf->start = new_start;
+  buf->capacity = new_capacity;
 
-  // Release old weights_buffer.
-  status = xnn_release_weights_memory(buf);
-  if (status != xnn_status_success) {
-    return status;
-  }
-  // Copy over all the new weights_buffer information.
-  memcpy(buf, &new_weights_buffer, sizeof(struct xnn_weights_buffer));
   return xnn_status_success;
 }
 

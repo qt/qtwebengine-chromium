@@ -7,6 +7,7 @@
 #ifndef XFA_FWL_CFWL_THEMETEXT_H_
 #define XFA_FWL_CFWL_THEMETEXT_H_
 
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 #include "xfa/fde/cfde_data.h"
@@ -16,7 +17,9 @@ class CFGAS_GEGraphics;
 
 class CFWL_ThemeText final : public CFWL_ThemePart {
  public:
-  CFWL_ThemeText(CFWL_Widget* pWidget, CFGAS_GEGraphics* pGraphics);
+  FX_STACK_ALLOCATED();
+
+  CFWL_ThemeText(Part iPart, CFWL_Widget* pWidget, CFGAS_GEGraphics* pGraphics);
   ~CFWL_ThemeText();
 
   CFGAS_GEGraphics* GetGraphics() const { return m_pGraphics.Get(); }

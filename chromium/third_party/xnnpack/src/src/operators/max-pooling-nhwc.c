@@ -23,19 +23,9 @@
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
 #include <xnnpack/operator.h>
-#include <xnnpack/params-init.h>
+#include <xnnpack/microparams-init.h>
 #include <xnnpack/params.h>
 
-
-static inline size_t compute_output_dimension(
-    size_t padded_input_dimension,
-    size_t kernel_dimension,
-    size_t dilation_dimension,
-    size_t stride_dimension)
-{
-  const size_t effective_kernel_dimension = (kernel_dimension - 1) * dilation_dimension + 1;
-  return (padded_input_dimension - effective_kernel_dimension) / stride_dimension + 1;
-}
 
 static inline size_t compute_output_dimension_with_tf_same_padding(
     size_t input_dimension,
@@ -114,6 +104,20 @@ static enum xnn_status create_max_pooling2d_nhwc(
       "failed to create %s operator with %" PRIu32 "x%" PRIu32 " dilation: dilation dimensions must be non-zero",
       xnn_operator_type_to_string(operator_type), dilation_width, dilation_height);
     goto error;
+  }
+
+  if (stride_height > pooling_height) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride height: must be less than pooling height %" PRIu32,
+      xnn_operator_type_to_string(operator_type), stride_height, pooling_height);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (stride_width > pooling_width) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride width: must be less than pooling width %" PRIu32,
+      xnn_operator_type_to_string(operator_type), stride_width, pooling_width);
+    return xnn_status_invalid_parameter;
   }
 
   if (channels == 0) {
@@ -253,12 +257,12 @@ static enum xnn_status setup_max_pooling2d_nhwc(
     max_pooling_op->padding_bottom = total_padding_height - max_pooling_op->padding_top;
     max_pooling_op->padding_right = total_padding_width - max_pooling_op->padding_left;
   } else {
-    max_pooling_op->output_height = compute_output_dimension(
+    max_pooling_op->output_height = xnn_compute_convolution_output_dimension(
         max_pooling_op->padding_top + input_height + max_pooling_op->padding_bottom,
         max_pooling_op->kernel_height,
         max_pooling_op->dilation_height,
         max_pooling_op->stride_height);
-    max_pooling_op->output_width = compute_output_dimension(
+    max_pooling_op->output_width = xnn_compute_convolution_output_dimension(
         max_pooling_op->padding_left + input_width + max_pooling_op->padding_right,
         max_pooling_op->kernel_width,
         max_pooling_op->dilation_width,

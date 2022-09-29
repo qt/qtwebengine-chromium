@@ -6,6 +6,8 @@
 
 #include "fxjs/cjs_document.h"
 
+#include <stdint.h>
+
 #include <utility>
 
 #include "constants/access_permissions.h"
@@ -18,7 +20,6 @@
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
 #include "fpdfsdk/cpdfsdk_annotiteration.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
@@ -345,8 +346,8 @@ CJS_Result CJS_Document::mailDoc(
     cMsg = pRuntime->ToWideString(newParams[5]);
 
   pRuntime->BeginBlock();
-  m_pFormFillEnv->JS_docmailForm(pdfium::span<uint8_t>(), bUI, cTo, cSubject,
-                                 cCc, cBcc, cMsg);
+  m_pFormFillEnv->JS_docmailForm(pdfium::span<const uint8_t>(), bUI, cTo,
+                                 cSubject, cCc, cBcc, cMsg);
   pRuntime->EndBlock();
   return CJS_Result::Success();
 }
@@ -396,11 +397,9 @@ CJS_Result CJS_Document::mailForm(
   if (IsExpandedParamKnown(newParams[5]))
     cMsg = pRuntime->ToWideString(newParams[5]);
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> mutable_buf(sTextBuf.begin(),
-                                                              sTextBuf.end());
   pRuntime->BeginBlock();
-  m_pFormFillEnv->JS_docmailForm(mutable_buf, bUI, cTo, cSubject, cCc, cBcc,
-                                 cMsg);
+  m_pFormFillEnv->JS_docmailForm(sTextBuf.raw_span(), bUI, cTo, cSubject, cCc,
+                                 cBcc, cMsg);
   pRuntime->EndBlock();
   return CJS_Result::Success();
 }
@@ -475,13 +474,12 @@ CJS_Result CJS_Document::removeField(
 
   WideString sFieldName = pRuntime->ToWideString(params[0]);
   CPDFSDK_InteractiveForm* pInteractiveForm = GetSDKInteractiveForm();
-  std::vector<ObservedPtr<CPDFSDK_Annot>> widgets;
+  std::vector<ObservedPtr<CPDFSDK_Widget>> widgets;
   pInteractiveForm->GetWidgets(sFieldName, &widgets);
   if (widgets.empty())
     return CJS_Result::Success();
 
-  for (const auto& pAnnot : widgets) {
-    CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot.Get());
+  for (const auto& pWidget : widgets) {
     if (!pWidget)
       continue;
 
@@ -1241,11 +1239,12 @@ CJS_Result CJS_Document::getPageNthWord(
   if (nPageNo < 0 || nPageNo >= pDocument->GetPageCount())
     return CJS_Result::Failure(JSMessage::kValueError);
 
-  CPDF_Dictionary* pPageDict = pDocument->GetPageDictionary(nPageNo);
+  RetainPtr<CPDF_Dictionary> pPageDict =
+      pDocument->GetMutablePageDictionary(nPageNo);
   if (!pPageDict)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  auto page = pdfium::MakeRetain<CPDF_Page>(pDocument, pPageDict);
+  auto page = pdfium::MakeRetain<CPDF_Page>(pDocument, std::move(pPageDict));
   page->SetRenderCache(std::make_unique<CPDF_PageRenderCache>(page.Get()));
   page->ParseContent();
 
@@ -1296,11 +1295,12 @@ CJS_Result CJS_Document::getPageNumWords(
   if (nPageNo < 0 || nPageNo >= pDocument->GetPageCount())
     return CJS_Result::Failure(JSMessage::kValueError);
 
-  CPDF_Dictionary* pPageDict = pDocument->GetPageDictionary(nPageNo);
+  RetainPtr<CPDF_Dictionary> pPageDict =
+      pDocument->GetMutablePageDictionary(nPageNo);
   if (!pPageDict)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  auto page = pdfium::MakeRetain<CPDF_Page>(pDocument, pPageDict);
+  auto page = pdfium::MakeRetain<CPDF_Page>(pDocument, std::move(pPageDict));
   page->SetRenderCache(std::make_unique<CPDF_PageRenderCache>(page.Get()));
   page->ParseContent();
 
@@ -1381,12 +1381,13 @@ CJS_Result CJS_Document::gotoNamedDest(
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
   CPDF_Document* pDocument = m_pFormFillEnv->GetPDFDocument();
-  CPDF_Array* dest_array = CPDF_NameTree::LookupNamedDest(
+  RetainPtr<const CPDF_Array> dest_array = CPDF_NameTree::LookupNamedDest(
       pDocument, pRuntime->ToByteString(params[0]));
   if (!dest_array)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  CPDF_Dest dest(dest_array);
+  // TODO(tsepez): make CPDF_Dest constructor take retained argument.
+  CPDF_Dest dest(dest_array.Get());
   const CPDF_Array* arrayObject = dest.GetArray();
   std::vector<float> scrollPositionArray;
   if (arrayObject) {

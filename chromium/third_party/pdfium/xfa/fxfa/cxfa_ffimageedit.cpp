@@ -6,6 +6,8 @@
 
 #include "xfa/fxfa/cxfa_ffimageedit.h"
 
+#include <utility>
+
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "third_party/base/check.h"
 #include "v8/include/cppgc/visitor.h"
@@ -28,7 +30,7 @@ CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_Node* pNode) : CXFA_FFField(pNode) {}
 CXFA_FFImageEdit::~CXFA_FFImageEdit() = default;
 
 void CXFA_FFImageEdit::PreFinalize() {
-  m_pNode->SetImageEditImage(nullptr);
+  m_pNode->SetEditImage(nullptr);
 }
 
 void CXFA_FFImageEdit::Trace(cppgc::Visitor* visitor) const {
@@ -50,7 +52,7 @@ bool CXFA_FFImageEdit::LoadWidget() {
   pPictureBox->SetDelegate(this);
 
   CXFA_FFField::LoadWidget();
-  if (!m_pNode->GetImageEditImage())
+  if (!m_pNode->GetEditImage())
     UpdateFWLData();
 
   return true;
@@ -68,7 +70,7 @@ void CXFA_FFImageEdit::RenderWidget(CFGAS_GEGraphics* pGS,
   CXFA_FFWidget::RenderWidget(pGS, mtRotate, highlight);
   DrawBorder(pGS, m_pNode->GetUIBorder(), m_UIRect, mtRotate);
   RenderCaption(pGS, mtRotate);
-  RetainPtr<CFX_DIBitmap> pDIBitmap = m_pNode->GetImageEditImage();
+  RetainPtr<CFX_DIBitmap> pDIBitmap = m_pNode->GetEditImage();
   if (!pDIBitmap)
     return;
 
@@ -89,8 +91,8 @@ void CXFA_FFImageEdit::RenderWidget(CFGAS_GEGraphics* pGS,
       iAspect = image->GetAspect();
   }
 
-  XFA_DrawImage(pGS, rtImage, mtRotate, pDIBitmap, iAspect,
-                m_pNode->GetImageEditDpi(), iHorzAlign, iVertAlign);
+  XFA_DrawImage(pGS, rtImage, mtRotate, std::move(pDIBitmap), iAspect,
+                m_pNode->GetEditImageDpi(), iHorzAlign, iVertAlign);
 }
 
 bool CXFA_FFImageEdit::AcceptsFocusOnButtonDown(
@@ -134,8 +136,8 @@ bool CXFA_FFImageEdit::CommitData() {
 }
 
 bool CXFA_FFImageEdit::UpdateFWLData() {
-  m_pNode->SetImageEditImage(nullptr);
-  m_pNode->LoadImageEditImage(GetDoc());
+  m_pNode->SetEditImage(nullptr);
+  m_pNode->LoadEditImage(GetDoc());
   return true;
 }
 

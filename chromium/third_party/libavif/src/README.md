@@ -36,7 +36,7 @@ These libraries (in their C API form) must be externally available
 a child CMake project, the appropriate CMake target must already exist
 by the time libavif's CMake scripts are executed.
 
-## Local / Static Builds
+### Local / Static Builds
 
 The `ext/` subdirectory contains a handful of basic scripts which each pull
 down a known-good copy of an AV1 codec and make a local static library build.
@@ -49,9 +49,18 @@ If you want to build/install shared libraries for AV1 codecs, you can still
 peek inside of each script to see where the current known-good SHA is for each
 codec.
 
+### Tests
+
+A few tests written in C can be built by enabling the `AVIF_BUILD_TESTS` CMake
+option.
+
+The remaining tests can be built by enabling the `AVIF_BUILD_TESTS` and
+`AVIF_ENABLE_GTEST` CMake options. They require GoogleTest to be built locally
+with ext/googletest.cmd or installed on the system.
+
 ## Prebuilt Library (Windows)
 
-If you're building on Windows with Visual Studio 2019 and want to try out
+If you're building on Windows with Visual Studio 2022 and want to try out
 libavif without going through the build process, static library builds for both
 Debug and Release are available on
 [AppVeyor](https://ci.appveyor.com/project/louquillio/libavif).
@@ -66,9 +75,10 @@ Use [clang-format](https://clang.llvm.org/docs/ClangFormat.html) to format the C
 sources from the top-level folder:
 
 ```sh
-clang-format -i apps/*.c apps/shared/avifjpeg.* apps/shared/avifpng.* \
-                apps/shared/avifutil.* apps/shared/y4m.* \
-                examples/*.c include/avif/*.h src/*.c tests/*.h tests/*.c
+clang-format -style=file -i \
+  apps/*.c apps/shared/avifjpeg.* apps/shared/avifpng.* \
+  apps/shared/avifutil.* apps/shared/y4m.* examples/*.c \
+  include/avif/*.h src/*.c tests/*.c tests/gtest/*.h tests/gtest/*.cc
 ```
 
 Use [cmake-format](https://github.com/cheshirekow/cmake_format) to format the

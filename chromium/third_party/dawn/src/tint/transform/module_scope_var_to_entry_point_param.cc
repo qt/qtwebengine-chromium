@@ -23,13 +23,21 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/function.h"
+#include "src/tint/sem/module.h"
 #include "src/tint/sem/statement.h"
 #include "src/tint/sem/variable.h"
+#include "src/tint/utils/string.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::transform::ModuleScopeVarToEntryPointParam);
 
 namespace tint::transform {
 namespace {
+
+using WorkgroupParameterMemberList = utils::Vector<const ast::StructMember*, 8>;
+
+// The name of the struct member for arrays that are wrapped in structures.
+const char* kWrappedArrayMemberName = "arr";
+
 // Returns `true` if `type` is or contains a matrix type.
 bool ContainsMatrix(const sem::Type* type) {
     type = type->UnwrapRef();
@@ -83,17 +91,222 @@ struct ModuleScopeVarToEntryPointParam::State {
         }
     }
 
+    /// Process a variable `var` that is referenced in the entry point function `func`.
+    /// This will redeclare the variable as a function parameter, possibly as a pointer.
+    /// Some workgroup variables will be redeclared as a member inside a workgroup structure.
+    /// @param func the entry point function
+    /// @param var the variable
+    /// @param new_var_symbol the symbol to use for the replacement
+    /// @param workgroup_param helper function to get a symbol to a workgroup struct parameter
+    /// @param workgroup_parameter_members reference to a list of a workgroup struct members
+    /// @param is_pointer output signalling whether the replacement is a pointer
+    /// @param is_wrapped output signalling whether the replacement is wrapped in a struct
+    void ProcessVariableInEntryPoint(const ast::Function* func,
+                                     const sem::Variable* var,
+                                     Symbol new_var_symbol,
+                                     std::function<Symbol()> workgroup_param,
+                                     WorkgroupParameterMemberList& workgroup_parameter_members,
+                                     bool& is_pointer,
+                                     bool& is_wrapped) {
+        auto* var_ast = var->Declaration()->As<ast::Var>();
+        auto* ty = var->Type()->UnwrapRef();
+
+        // Helper to create an AST node for the store type of the variable.
+        auto store_type = [&]() { return CreateASTTypeFor(ctx, ty); };
+
+        ast::StorageClass sc = var->StorageClass();
+        switch (sc) {
+            case ast::StorageClass::kHandle: {
+                // For a texture or sampler variable, redeclare it as an entry point parameter.
+                // Disable entry point parameter validation.
+                auto* disable_validation =
+                    ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter);
+                auto attrs = ctx.Clone(var->Declaration()->attributes);
+                attrs.Push(disable_validation);
+                auto* param = ctx.dst->Param(new_var_symbol, store_type(), attrs);
+                ctx.InsertFront(func->params, param);
+
+                break;
+            }
+            case ast::StorageClass::kStorage:
+            case ast::StorageClass::kUniform: {
+                // Variables into the Storage and Uniform storage classes are redeclared as entry
+                // point parameters with a pointer type.
+                auto attributes = ctx.Clone(var->Declaration()->attributes);
+                attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter));
+                attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
+
+                auto* param_type = store_type();
+                if (auto* arr = ty->As<sem::Array>(); arr && arr->IsRuntimeSized()) {
+                    // Wrap runtime-sized arrays in structures, so that we can declare pointers to
+                    // them. Ideally we'd just emit the array itself as a pointer, but this is not
+                    // representable in Tint's AST.
+                    CloneStructTypes(ty);
+                    auto* wrapper = ctx.dst->Structure(
+                        ctx.dst->Sym(), utils::Vector{
+                                            ctx.dst->Member(kWrappedArrayMemberName, param_type),
+                                        });
+                    param_type = ctx.dst->ty.Of(wrapper);
+                    is_wrapped = true;
+                }
+
+                param_type = ctx.dst->ty.pointer(param_type, sc, var_ast->declared_access);
+                auto* param = ctx.dst->Param(new_var_symbol, param_type, attributes);
+                ctx.InsertFront(func->params, param);
+                is_pointer = true;
+
+                break;
+            }
+            case ast::StorageClass::kWorkgroup: {
+                if (ContainsMatrix(var->Type())) {
+                    // Due to a bug in the MSL compiler, we use a threadgroup memory argument for
+                    // any workgroup allocation that contains a matrix. See crbug.com/tint/938.
+                    // TODO(jrprice): Do this for all other workgroup variables too.
+
+                    // Create a member in the workgroup parameter struct.
+                    auto member = ctx.Clone(var->Declaration()->symbol);
+                    workgroup_parameter_members.Push(ctx.dst->Member(member, store_type()));
+                    CloneStructTypes(var->Type()->UnwrapRef());
+
+                    // Create a function-scope variable that is a pointer to the member.
+                    auto* member_ptr = ctx.dst->AddressOf(
+                        ctx.dst->MemberAccessor(ctx.dst->Deref(workgroup_param()), member));
+                    auto* local_var = ctx.dst->Let(
+                        new_var_symbol,
+                        ctx.dst->ty.pointer(store_type(), ast::StorageClass::kWorkgroup),
+                        member_ptr);
+                    ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
+                    is_pointer = true;
+
+                    break;
+                }
+                [[fallthrough]];
+            }
+            case ast::StorageClass::kPrivate: {
+                // Variables in the Private and Workgroup storage classes are redeclared at function
+                // scope. Disable storage class validation on this variable.
+                auto* disable_validation =
+                    ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass);
+                auto* constructor = ctx.Clone(var->Declaration()->constructor);
+                auto* local_var = ctx.dst->Var(new_var_symbol, store_type(), sc, constructor,
+                                               utils::Vector{disable_validation});
+                ctx.InsertFront(func->body->statements, ctx.dst->Decl(local_var));
+
+                break;
+            }
+            case ast::StorageClass::kPushConstant: {
+                ctx.dst->Diagnostics().add_error(
+                    diag::System::Transform,
+                    "unhandled module-scope storage class (" + utils::ToString(sc) + ")");
+                break;
+            }
+            default: {
+                TINT_ICE(Transform, ctx.dst->Diagnostics())
+                    << "unhandled module-scope storage class (" << sc << ")";
+                break;
+            }
+        }
+    }
+
+    /// Process a variable `var` that is referenced in the user-defined function `func`.
+    /// This will redeclare the variable as a function parameter, possibly as a pointer.
+    /// @param func the user-defined function
+    /// @param var the variable
+    /// @param new_var_symbol the symbol to use for the replacement
+    /// @param is_pointer output signalling whether the replacement is a pointer or not
+    void ProcessVariableInUserFunction(const ast::Function* func,
+                                       const sem::Variable* var,
+                                       Symbol new_var_symbol,
+                                       bool& is_pointer) {
+        auto* var_ast = var->Declaration()->As<ast::Var>();
+        auto* ty = var->Type()->UnwrapRef();
+        auto* param_type = CreateASTTypeFor(ctx, ty);
+        auto sc = var->StorageClass();
+        switch (sc) {
+            case ast::StorageClass::kPrivate:
+            case ast::StorageClass::kStorage:
+            case ast::StorageClass::kUniform:
+            case ast::StorageClass::kHandle:
+            case ast::StorageClass::kWorkgroup:
+                break;
+            case ast::StorageClass::kPushConstant: {
+                ctx.dst->Diagnostics().add_error(
+                    diag::System::Transform,
+                    "unhandled module-scope storage class (" + utils::ToString(sc) + ")");
+                break;
+            }
+            default: {
+                TINT_ICE(Transform, ctx.dst->Diagnostics())
+                    << "unhandled module-scope storage class (" << sc << ")";
+            }
+        }
+
+        // Use a pointer for non-handle types.
+        utils::Vector<const ast::Attribute*, 2> attributes;
+        if (!ty->is_handle()) {
+            param_type = ctx.dst->ty.pointer(param_type, sc, var_ast->declared_access);
+            is_pointer = true;
+
+            // Disable validation of the parameter's storage class and of arguments passed to it.
+            attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
+            attributes.Push(
+                ctx.dst->Disable(ast::DisabledValidation::kIgnoreInvalidPointerArgument));
+        }
+
+        // Redeclare the variable as a parameter.
+        ctx.InsertBack(func->params,
+                       ctx.dst->Param(new_var_symbol, param_type, std::move(attributes)));
+    }
+
+    /// Replace all uses of `var` in `func` with references to `new_var`.
+    /// @param func the function
+    /// @param var the variable to replace
+    /// @param new_var the symbol to use for replacement
+    /// @param is_pointer true if `new_var` is a pointer to the new variable
+    /// @param is_wrapped true if `new_var` is an array wrapped in a structure
+    void ReplaceUsesInFunction(const ast::Function* func,
+                               const sem::Variable* var,
+                               Symbol new_var,
+                               bool is_pointer,
+                               bool is_wrapped) {
+        for (auto* user : var->Users()) {
+            if (user->Stmt()->Function()->Declaration() == func) {
+                const ast::Expression* expr = ctx.dst->Expr(new_var);
+                if (is_pointer) {
+                    // If this identifier is used by an address-of operator, just remove the
+                    // address-of instead of adding a deref, since we already have a pointer.
+                    auto* ident = user->Declaration()->As<ast::IdentifierExpression>();
+                    if (ident_to_address_of_.count(ident)) {
+                        ctx.Replace(ident_to_address_of_[ident], expr);
+                        continue;
+                    }
+
+                    expr = ctx.dst->Deref(expr);
+                }
+                if (is_wrapped) {
+                    // Get the member from the wrapper structure.
+                    expr = ctx.dst->MemberAccessor(expr, kWrappedArrayMemberName);
+                }
+                ctx.Replace(user->Declaration(), expr);
+            }
+        }
+    }
+
     /// Process the module.
     void Process() {
         // Predetermine the list of function calls that need to be replaced.
-        using CallList = std::vector<const ast::CallExpression*>;
+        using CallList = utils::Vector<const ast::CallExpression*, 8>;
         std::unordered_map<const ast::Function*, CallList> calls_to_replace;
 
-        std::vector<const ast::Function*> functions_to_process;
+        utils::Vector<const ast::Function*, 8> functions_to_process;
 
-        // Build a list of functions that transitively reference any module-scope
-        // variables.
-        for (auto* func_ast : ctx.src->AST().Functions()) {
+        // Build a list of functions that transitively reference any module-scope variables.
+        for (auto* decl : ctx.src->Sem().Module()->DependencyOrderedDeclarations()) {
+            auto* func_ast = decl->As<ast::Function>();
+            if (!func_ast) {
+                continue;
+            }
+
             auto* func_sem = ctx.src->Sem().Get(func_ast);
 
             bool needs_processing = false;
@@ -104,30 +317,28 @@ struct ModuleScopeVarToEntryPointParam::State {
                 }
             }
             if (needs_processing) {
-                functions_to_process.push_back(func_ast);
+                functions_to_process.Push(func_ast);
 
                 // Find all of the calls to this function that will need to be replaced.
                 for (auto* call : func_sem->CallSites()) {
-                    calls_to_replace[call->Stmt()->Function()->Declaration()].push_back(
+                    calls_to_replace[call->Stmt()->Function()->Declaration()].Push(
                         call->Declaration());
                 }
             }
         }
 
-        // Build a list of `&ident` expressions. We'll use this later to avoid
-        // generating expressions of the form `&*ident`, which break WGSL validation
-        // rules when this expression is passed to a function.
-        // TODO(jrprice): We should add support for bidirectional SEM tree traversal
-        // so that we can do this on the fly instead.
-        std::unordered_map<const ast::IdentifierExpression*, const ast::UnaryOpExpression*>
-            ident_to_address_of;
+        // Build a list of `&ident` expressions. We'll use this later to avoid generating
+        // expressions of the form `&*ident`, which break WGSL validation rules when this expression
+        // is passed to a function.
+        // TODO(jrprice): We should add support for bidirectional SEM tree traversal so that we can
+        // do this on the fly instead.
         for (auto* node : ctx.src->ASTNodes().Objects()) {
             auto* address_of = node->As<ast::UnaryOpExpression>();
             if (!address_of || address_of->op != ast::UnaryOp::kAddressOf) {
                 continue;
             }
             if (auto* ident = address_of->expr->As<ast::IdentifierExpression>()) {
-                ident_to_address_of[ident] = address_of;
+                ident_to_address_of_[ident] = address_of;
             }
         }
 
@@ -141,13 +352,12 @@ struct ModuleScopeVarToEntryPointParam::State {
                 bool is_pointer;
                 bool is_wrapped;
             };
-            const char* kWrappedArrayMemberName = "arr";
             std::unordered_map<const sem::Variable*, NewVar> var_to_newvar;
 
-            // We aggregate all workgroup variables into a struct to avoid hitting
-            // MSL's limit for threadgroup memory arguments.
+            // We aggregate all workgroup variables into a struct to avoid hitting MSL's limit for
+            // threadgroup memory arguments.
             Symbol workgroup_parameter_symbol;
-            ast::StructMemberList workgroup_parameter_members;
+            WorkgroupParameterMemberList workgroup_parameter_members;
             auto workgroup_param = [&]() {
                 if (!workgroup_parameter_symbol.IsValid()) {
                     workgroup_parameter_symbol = ctx.dst->Sym();
@@ -155,25 +365,17 @@ struct ModuleScopeVarToEntryPointParam::State {
                 return workgroup_parameter_symbol;
             };
 
+            // Process and redeclare all variables referenced by the function.
             for (auto* var : func_sem->TransitivelyReferencedGlobals()) {
-                auto sc = var->StorageClass();
-                auto* ty = var->Type()->UnwrapRef();
-                if (sc == ast::StorageClass::kNone) {
+                if (var->StorageClass() == ast::StorageClass::kNone) {
                     continue;
                 }
-                if (sc != ast::StorageClass::kPrivate && sc != ast::StorageClass::kStorage &&
-                    sc != ast::StorageClass::kUniform && sc != ast::StorageClass::kHandle &&
-                    sc != ast::StorageClass::kWorkgroup) {
-                    TINT_ICE(Transform, ctx.dst->Diagnostics())
-                        << "unhandled module-scope storage class (" << sc << ")";
+                if (local_private_vars_.count(var)) {
+                    continue;
                 }
 
-                // This is the symbol for the variable that replaces the module-scope
-                // var.
+                // This is the symbol for the variable that replaces the module-scope var.
                 auto new_var_symbol = ctx.dst->Sym();
-
-                // Helper to create an AST node for the store type of the variable.
-                auto store_type = [&]() { return CreateASTTypeFor(ctx, ty); };
 
                 // Track whether the new variable is a pointer or not.
                 bool is_pointer = false;
@@ -181,137 +383,59 @@ struct ModuleScopeVarToEntryPointParam::State {
                 // Track whether the new variable was wrapped in a struct or not.
                 bool is_wrapped = false;
 
-                if (is_entry_point) {
-                    if (var->Type()->UnwrapRef()->is_handle()) {
-                        // For a texture or sampler variable, redeclare it as an entry point
-                        // parameter. Disable entry point parameter validation.
-                        auto* disable_validation =
-                            ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter);
-                        auto attrs = ctx.Clone(var->Declaration()->attributes);
-                        attrs.push_back(disable_validation);
-                        auto* param = ctx.dst->Param(new_var_symbol, store_type(), attrs);
-                        ctx.InsertFront(func_ast->params, param);
-                    } else if (sc == ast::StorageClass::kStorage ||
-                               sc == ast::StorageClass::kUniform) {
-                        // Variables into the Storage and Uniform storage classes are
-                        // redeclared as entry point parameters with a pointer type.
-                        auto attributes = ctx.Clone(var->Declaration()->attributes);
-                        attributes.push_back(
-                            ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter));
-                        attributes.push_back(
-                            ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
-
-                        auto* param_type = store_type();
-                        if (auto* arr = ty->As<sem::Array>(); arr && arr->IsRuntimeSized()) {
-                            // Wrap runtime-sized arrays in structures, so that we can declare
-                            // pointers to them. Ideally we'd just emit the array itself as a
-                            // pointer, but this is not representable in Tint's AST.
-                            CloneStructTypes(ty);
-                            auto* wrapper = ctx.dst->Structure(
-                                ctx.dst->Sym(),
-                                {ctx.dst->Member(kWrappedArrayMemberName, param_type)});
-                            param_type = ctx.dst->ty.Of(wrapper);
-                            is_wrapped = true;
+                // Check if this is a private variable that is only referenced by this function.
+                bool local_private = false;
+                if (var->StorageClass() == ast::StorageClass::kPrivate) {
+                    local_private = true;
+                    for (auto* user : var->Users()) {
+                        auto* stmt = user->Stmt();
+                        if (!stmt || stmt->Function() != func_sem) {
+                            local_private = false;
+                            break;
                         }
-
-                        param_type = ctx.dst->ty.pointer(param_type, sc,
-                                                         var->Declaration()->declared_access);
-                        auto* param = ctx.dst->Param(new_var_symbol, param_type, attributes);
-                        ctx.InsertFront(func_ast->params, param);
-                        is_pointer = true;
-                    } else if (sc == ast::StorageClass::kWorkgroup && ContainsMatrix(var->Type())) {
-                        // Due to a bug in the MSL compiler, we use a threadgroup memory
-                        // argument for any workgroup allocation that contains a matrix.
-                        // See crbug.com/tint/938.
-                        // TODO(jrprice): Do this for all other workgroup variables too.
-
-                        // Create a member in the workgroup parameter struct.
-                        auto member = ctx.Clone(var->Declaration()->symbol);
-                        workgroup_parameter_members.push_back(
-                            ctx.dst->Member(member, store_type()));
-                        CloneStructTypes(var->Type()->UnwrapRef());
-
-                        // Create a function-scope variable that is a pointer to the member.
-                        auto* member_ptr = ctx.dst->AddressOf(
-                            ctx.dst->MemberAccessor(ctx.dst->Deref(workgroup_param()), member));
-                        auto* local_var = ctx.dst->Let(
-                            new_var_symbol,
-                            ctx.dst->ty.pointer(store_type(), ast::StorageClass::kWorkgroup),
-                            member_ptr);
-                        ctx.InsertFront(func_ast->body->statements, ctx.dst->Decl(local_var));
-                        is_pointer = true;
-                    } else {
-                        // Variables in the Private and Workgroup storage classes are
-                        // redeclared at function scope. Disable storage class validation on
-                        // this variable.
-                        auto* disable_validation =
-                            ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass);
-                        auto* constructor = ctx.Clone(var->Declaration()->constructor);
-                        auto* local_var =
-                            ctx.dst->Var(new_var_symbol, store_type(), sc, constructor,
-                                         ast::AttributeList{disable_validation});
-                        ctx.InsertFront(func_ast->body->statements, ctx.dst->Decl(local_var));
                     }
+                }
+
+                if (local_private) {
+                    // Redeclare the variable at function scope.
+                    auto* disable_validation =
+                        ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass);
+                    auto* constructor = ctx.Clone(var->Declaration()->constructor);
+                    auto* local_var = ctx.dst->Var(new_var_symbol,
+                                                   CreateASTTypeFor(ctx, var->Type()->UnwrapRef()),
+                                                   ast::StorageClass::kPrivate, constructor,
+                                                   utils::Vector{disable_validation});
+                    ctx.InsertFront(func_ast->body->statements, ctx.dst->Decl(local_var));
+                    local_private_vars_.insert(var);
                 } else {
-                    // For a regular function, redeclare the variable as a parameter.
-                    // Use a pointer for non-handle types.
-                    auto* param_type = store_type();
-                    ast::AttributeList attributes;
-                    if (!var->Type()->UnwrapRef()->is_handle()) {
-                        param_type = ctx.dst->ty.pointer(param_type, sc,
-                                                         var->Declaration()->declared_access);
-                        is_pointer = true;
-
-                        // Disable validation of the parameter's storage class and of
-                        // arguments passed it.
-                        attributes.push_back(
-                            ctx.dst->Disable(ast::DisabledValidation::kIgnoreStorageClass));
-                        attributes.push_back(ctx.dst->Disable(
-                            ast::DisabledValidation::kIgnoreInvalidPointerArgument));
+                    // Process the variable to redeclare it as a parameter or local variable.
+                    if (is_entry_point) {
+                        ProcessVariableInEntryPoint(func_ast, var, new_var_symbol, workgroup_param,
+                                                    workgroup_parameter_members, is_pointer,
+                                                    is_wrapped);
+                    } else {
+                        ProcessVariableInUserFunction(func_ast, var, new_var_symbol, is_pointer);
                     }
-                    ctx.InsertBack(func_ast->params,
-                                   ctx.dst->Param(new_var_symbol, param_type, attributes));
+
+                    // Record the replacement symbol.
+                    var_to_newvar[var] = {new_var_symbol, is_pointer, is_wrapped};
                 }
 
                 // Replace all uses of the module-scope variable.
-                // For non-entry points, dereference non-handle pointer parameters.
-                for (auto* user : var->Users()) {
-                    if (user->Stmt()->Function()->Declaration() == func_ast) {
-                        const ast::Expression* expr = ctx.dst->Expr(new_var_symbol);
-                        if (is_pointer) {
-                            // If this identifier is used by an address-of operator, just
-                            // remove the address-of instead of adding a deref, since we
-                            // already have a pointer.
-                            auto* ident = user->Declaration()->As<ast::IdentifierExpression>();
-                            if (ident_to_address_of.count(ident)) {
-                                ctx.Replace(ident_to_address_of[ident], expr);
-                                continue;
-                            }
-
-                            expr = ctx.dst->Deref(expr);
-                        }
-                        if (is_wrapped) {
-                            // Get the member from the wrapper structure.
-                            expr = ctx.dst->MemberAccessor(expr, kWrappedArrayMemberName);
-                        }
-                        ctx.Replace(user->Declaration(), expr);
-                    }
-                }
-
-                var_to_newvar[var] = {new_var_symbol, is_pointer, is_wrapped};
+                ReplaceUsesInFunction(func_ast, var, new_var_symbol, is_pointer, is_wrapped);
             }
 
-            if (!workgroup_parameter_members.empty()) {
+            if (!workgroup_parameter_members.IsEmpty()) {
                 // Create the workgroup memory parameter.
-                // The parameter is a struct that contains members for each workgroup
-                // variable.
+                // The parameter is a struct that contains members for each workgroup variable.
                 auto* str =
                     ctx.dst->Structure(ctx.dst->Sym(), std::move(workgroup_parameter_members));
                 auto* param_type =
                     ctx.dst->ty.pointer(ctx.dst->ty.Of(str), ast::StorageClass::kWorkgroup);
                 auto* disable_validation =
                     ctx.dst->Disable(ast::DisabledValidation::kEntryPointParameter);
-                auto* param = ctx.dst->Param(workgroup_param(), param_type, {disable_validation});
+                auto* param = ctx.dst->Param(workgroup_param(), param_type,
+                                             utils::Vector{disable_validation});
                 ctx.InsertFront(func_ast->params, param);
             }
 
@@ -328,12 +452,18 @@ struct ModuleScopeVarToEntryPointParam::State {
                         continue;
                     }
 
-                    auto new_var = var_to_newvar[target_var];
+                    auto it = var_to_newvar.find(target_var);
+                    if (it == var_to_newvar.end()) {
+                        // No replacement was created for this function.
+                        continue;
+                    }
+
+                    auto new_var = it->second;
                     bool is_handle = target_var->Type()->UnwrapRef()->is_handle();
                     const ast::Expression* arg = ctx.dst->Expr(new_var.symbol);
                     if (new_var.is_wrapped) {
-                        // The variable is wrapped in a struct, so we need to pass a pointer
-                        // to the struct member instead.
+                        // The variable is wrapped in a struct, so we need to pass a pointer to the
+                        // struct member instead.
                         arg = ctx.dst->AddressOf(
                             ctx.dst->MemberAccessor(ctx.dst->Deref(arg), kWrappedArrayMemberName));
                     } else if (is_entry_point && !is_handle && !new_var.is_pointer) {
@@ -356,7 +486,15 @@ struct ModuleScopeVarToEntryPointParam::State {
     }
 
   private:
+    // The structures that have already been cloned by this transform.
     std::unordered_set<const sem::Struct*> cloned_structs_;
+
+    // Set of a private variables that are local to a single function.
+    std::unordered_set<const sem::Variable*> local_private_vars_;
+
+    // Map from identifier expression to the address-of expression that uses it.
+    std::unordered_map<const ast::IdentifierExpression*, const ast::UnaryOpExpression*>
+        ident_to_address_of_;
 };
 
 ModuleScopeVarToEntryPointParam::ModuleScopeVarToEntryPointParam() = default;

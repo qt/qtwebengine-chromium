@@ -35,9 +35,11 @@ Program::Program() = default;
 
 Program::Program(Program&& program)
     : id_(std::move(program.id_)),
+      highest_node_id_(std::move(program.highest_node_id_)),
       types_(std::move(program.types_)),
       ast_nodes_(std::move(program.ast_nodes_)),
       sem_nodes_(std::move(program.sem_nodes_)),
+      constant_nodes_(std::move(program.constant_nodes_)),
       ast_(std::move(program.ast_)),
       sem_(std::move(program.sem_)),
       symbols_(std::move(program.symbols_)),
@@ -49,6 +51,7 @@ Program::Program(Program&& program)
 
 Program::Program(ProgramBuilder&& builder) {
     id_ = builder.ID();
+    highest_node_id_ = builder.LastAllocatedNodeID();
 
     is_valid_ = builder.IsValid();
     if (builder.ResolveOnBuild() && builder.IsValid()) {
@@ -62,6 +65,7 @@ Program::Program(ProgramBuilder&& builder) {
     types_ = std::move(builder.Types());
     ast_nodes_ = std::move(builder.ASTNodes());
     sem_nodes_ = std::move(builder.SemNodes());
+    constant_nodes_ = std::move(builder.ConstantNodes());
     ast_ = &builder.AST();  // ast::Module is actually a heap allocation.
     sem_ = std::move(builder.Sem());
     symbols_ = std::move(builder.Symbols());
@@ -83,9 +87,11 @@ Program& Program::operator=(Program&& program) {
     program.moved_ = true;
     moved_ = false;
     id_ = std::move(program.id_);
+    highest_node_id_ = std::move(program.highest_node_id_);
     types_ = std::move(program.types_);
     ast_nodes_ = std::move(program.ast_nodes_);
     sem_nodes_ = std::move(program.sem_nodes_);
+    constant_nodes_ = std::move(program.constant_nodes_);
     ast_ = std::move(program.ast_);
     sem_ = std::move(program.sem_);
     symbols_ = std::move(program.symbols_);

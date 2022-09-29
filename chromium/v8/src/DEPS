@@ -34,6 +34,7 @@ include_rules = [
   # TODO(v8:10496): Don't expose memory chunk outside of heap/.
   "+src/heap/memory-chunk.h",
   "+src/heap/memory-chunk-inl.h",
+  "+src/heap/paged-spaces-inl.h",
   "+src/heap/parked-scope.h",
   "+src/heap/read-only-heap-inl.h",
   "+src/heap/read-only-heap.h",
@@ -89,7 +90,10 @@ specific_include_rules = {
   "builtins-trace\.cc": [
     "+protos/perfetto",
   ],
-  "system-jit-win\.cc": [
+  "etw-jit-win\.cc": [
     "+src/libplatform/tracing/recorder.h",
   ],
+  "etw-jit-metadata-win\.h": [
+    "+src/libplatform/etw/etw-provider-win.h",
+  ]
 }

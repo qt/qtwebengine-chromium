@@ -24,10 +24,12 @@ import { ValidationTest } from './validation_test.js';
 
 export const g = makeTestGroup(ValidationTest);
 
-g.test('zero_size')
+g.test('zero_size_and_usage')
   .desc(
     `Test texture creation with zero or nonzero size of
-    width, height, depthOrArrayLayers and mipLevelCount for every dimension, and representative formats.`
+    width, height, depthOrArrayLayers and mipLevelCount, usage for every dimension, and
+    representative formats.
+  `
   )
   .params(u =>
     u
@@ -45,6 +47,7 @@ g.test('zero_size')
         'height',
         'depthOrArrayLayers',
         'mipLevelCount',
+        'usage',
       ] as const)
       // Filter out incompatible dimension type and format combinations.
       .filter(({ dimension, format }) => textureDimensionAndFormatCompatible(dimension, format))
@@ -60,6 +63,7 @@ g.test('zero_size')
 
     const size = [info.blockWidth, info.blockHeight, 1];
     let mipLevelCount = 1;
+    let usage = GPUTextureUsage.TEXTURE_BINDING;
 
     switch (zeroArgument) {
       case 'width':
@@ -74,6 +78,9 @@ g.test('zero_size')
       case 'mipLevelCount':
         mipLevelCount = 0;
         break;
+      case 'usage':
+        usage = 0;
+        break;
       default:
         break;
     }
@@ -83,7 +90,7 @@ g.test('zero_size')
       mipLevelCount,
       dimension,
       format,
-      usage: GPUTextureUsage.TEXTURE_BINDING,
+      usage,
     };
 
     const success = zeroArgument === 'none';
@@ -301,9 +308,14 @@ g.test('sampleCount,various_sampleCount_with_all_formats')
 
 g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
   .desc(
-    `Test texture creation with valid sample count when dimensions, arrayLayerCount, mipLevelCount, format, and usage varies.
-     Texture can be single sample (sampleCount is 1) or multi-sample (sampleCount is 4).
-     Multisample texture requires that 1) its dimension is 2d or undefined, 2) its format supports multisample, 3) its mipLevelCount and arrayLayerCount are 1, 4) its usage doesn't include STORAGE_BINDING.`
+    `Test texture creation with valid sample count when dimensions, arrayLayerCount, mipLevelCount,
+     format, and usage varies. Texture can be single sample (sampleCount is 1) or multi-sample
+     (sampleCount is 4). Multisample texture requires that
+     1) its dimension is 2d or undefined,
+     2) its format supports multisample,
+     3) its mipLevelCount and arrayLayerCount are 1,
+     4) its usage doesn't include STORAGE_BINDING,
+     5) its usage includes RENDER_ATTACHMENT.`
   )
   .params(u =>
     u
@@ -317,24 +329,24 @@ g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
           arrayLayerCount === 2 && dimension !== '2d' && dimension !== undefined
       )
       .combine('mipLevelCount', [1, 2])
-      .combine('usage', kTextureUsages)
+      .expand('usage', p => {
+        const usageSet = new Set<number>();
+        for (const usage0 of kTextureUsages) {
+          for (const usage1 of kTextureUsages) {
+            usageSet.add(usage0 | usage1);
+          }
+        }
+        return usageSet;
+      })
       // Filter out incompatible dimension type and format combinations.
       .filter(({ dimension, format }) => textureDimensionAndFormatCompatible(dimension, format))
-      .unless(({ sampleCount, usage, format, mipLevelCount, dimension }) => {
+      .unless(({ usage, format, mipLevelCount, dimension }) => {
         const info = kTextureFormatInfo[format];
         return (
           ((usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 &&
             (!info.renderable || dimension !== '2d')) ||
           ((usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.storage) ||
-          (mipLevelCount !== 1 && dimension === '1d') ||
-          // MAINTENANCE_TODO: test that it is not allowed to create a multisampled texture without
-          // RENDER_ATTACHMENT usage.
-          (sampleCount > 1 &&
-            (!info.multisample ||
-              (usage &
-                (GPUConst.TextureUsage.STORAGE_BINDING |
-                  GPUConst.TextureUsage.RENDER_ATTACHMENT)) ===
-                0))
+          (mipLevelCount !== 1 && dimension === '1d')
         );
       })
   )
@@ -369,6 +381,7 @@ g.test('sampleCount,valid_sampleCount_with_other_parameter_varies')
         kTextureFormatInfo[format].multisample &&
         mipLevelCount === 1 &&
         arrayLayerCount === 1 &&
+        (usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 &&
         (usage & GPUConst.TextureUsage.STORAGE_BINDING) === 0);
 
     t.expectValidationError(() => {

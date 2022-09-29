@@ -58,6 +58,9 @@ namespace internal {
 #if (V8_TARGET_ARCH_RISCV64 && !V8_HOST_ARCH_RISCV64)
 #define USE_SIMULATOR 1
 #endif
+#if (V8_TARGET_ARCH_RISCV32 && !V8_HOST_ARCH_RISCV32)
+#define USE_SIMULATOR 1
+#endif
 #if (V8_TARGET_ARCH_LOONG64 && !V8_HOST_ARCH_LOONG64)
 #define USE_SIMULATOR 1
 #endif
@@ -145,10 +148,15 @@ const size_t kShortBuiltinCallsOldSpaceSizeThreshold = size_t{2} * GB;
 
 #ifdef V8_EXTERNAL_CODE_SPACE
 #define V8_EXTERNAL_CODE_SPACE_BOOL true
+// This flag enables the mode when V8 does not create trampoline Code objects
+// for builtins. It should be enough to have only CodeDataContainer objects.
+// TODO(v8:11880): remove the flag one the Code-less builtins mode works.
+#define V8_REMOVE_BUILTINS_CODE_OBJECTS false
 class CodeDataContainer;
 using CodeT = CodeDataContainer;
 #else
 #define V8_EXTERNAL_CODE_SPACE_BOOL false
+#define V8_REMOVE_BUILTINS_CODE_OBJECTS false
 class Code;
 using CodeT = Code;
 #endif
@@ -330,7 +338,7 @@ constexpr bool kPlatformRequiresCodeRange = false;
 constexpr size_t kMaximalCodeRangeSize = 0 * MB;
 constexpr size_t kMinimumCodeRangeSize = 0 * MB;
 constexpr size_t kMinExpectedOSPageSize = 64 * KB;  // OS page on PPC Linux
-#elif V8_TARGET_ARCH_MIPS
+#elif V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_RISCV32
 constexpr bool kPlatformRequiresCodeRange = false;
 constexpr size_t kMaximalCodeRangeSize = 2048LL * MB;
 constexpr size_t kMinimumCodeRangeSize = 0 * MB;
@@ -397,13 +405,20 @@ constexpr int kPointerSizeLog2 = kSystemPointerSizeLog2;
 static_assert(kPointerSize == (1 << kPointerSizeLog2));
 #endif
 
+#ifdef V8_COMPRESS_POINTERS_8GB
+// To support 8GB heaps, all alocations are aligned to at least 8 bytes.
+#define V8_COMPRESS_POINTERS_8GB_BOOL true
+#else
+#define V8_COMPRESS_POINTERS_8GB_BOOL false
+#endif
+
 // This type defines raw storage type for external (or off-V8 heap) pointers
 // stored on V8 heap.
-constexpr int kExternalPointerSize = sizeof(ExternalPointer_t);
+constexpr int kExternalPointerSlotSize = sizeof(ExternalPointer_t);
 #ifdef V8_SANDBOXED_EXTERNAL_POINTERS
-static_assert(kExternalPointerSize == kTaggedSize);
+static_assert(kExternalPointerSlotSize == kTaggedSize);
 #else
-static_assert(kExternalPointerSize == kSystemPointerSize);
+static_assert(kExternalPointerSlotSize == kSystemPointerSize);
 #endif
 
 constexpr int kEmbedderDataSlotSize = kSystemPointerSize;
@@ -637,6 +652,18 @@ constexpr intptr_t kSmiSignMask = static_cast<intptr_t>(
 constexpr int kObjectAlignmentBits = kTaggedSizeLog2;
 constexpr intptr_t kObjectAlignment = 1 << kObjectAlignmentBits;
 constexpr intptr_t kObjectAlignmentMask = kObjectAlignment - 1;
+
+// Object alignment for 8GB pointer compressed heap.
+constexpr intptr_t kObjectAlignment8GbHeap = 8;
+constexpr intptr_t kObjectAlignment8GbHeapMask = kObjectAlignment8GbHeap - 1;
+
+#ifdef V8_COMPRESS_POINTERS_8GB
+static_assert(
+    kObjectAlignment8GbHeap == 2 * kTaggedSize,
+    "When the 8GB heap is enabled, all allocations should be aligned to twice "
+    "the size of a tagged value. This enables aligning allocations by just "
+    "adding kTaggedSize to an unaligned address.");
+#endif
 
 // Desired alignment for system pointers.
 constexpr intptr_t kPointerAlignment = (1 << kSystemPointerSizeLog2);
@@ -932,17 +959,11 @@ enum AllocationAlignment {
   kDoubleUnaligned
 };
 
-#ifdef V8_HOST_ARCH_32_BIT
-#define USE_ALLOCATION_ALIGNMENT_BOOL true
-#else
-#ifdef V8_COMPRESS_POINTERS
 // TODO(ishell, v8:8875): Consider using aligned allocations once the
 // allocation alignment inconsistency is fixed. For now we keep using
-// unaligned access since both x64 and arm64 architectures (where pointer
-// compression is supported) allow unaligned access to doubles and full words.
-#endif  // V8_COMPRESS_POINTERS
+// tagged aligned (not double aligned) access since all our supported platforms
+// allow tagged-aligned access to doubles and full words.
 #define USE_ALLOCATION_ALIGNMENT_BOOL false
-#endif  // V8_HOST_ARCH_32_BIT
 
 enum class AccessMode { ATOMIC, NON_ATOMIC };
 
@@ -1800,7 +1821,7 @@ enum IsolateAddressId {
   V(TrapFloatUnrepresentable)      \
   V(TrapFuncSigMismatch)           \
   V(TrapDataSegmentOutOfBounds)    \
-  V(TrapElemSegmentDropped)        \
+  V(TrapElementSegmentOutOfBounds) \
   V(TrapTableOutOfBounds)          \
   V(TrapRethrowNull)               \
   V(TrapNullDereference)           \

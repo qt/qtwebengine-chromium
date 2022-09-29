@@ -416,6 +416,7 @@ class TensorContractionSubMapper {
   typedef BaseTensorContractionMapper<Scalar, Index, side, Tensor, nocontract_t, contract_t, packet_size, inner_dim_contiguous, inner_dim_reordered, Alignment, MakePointer_> ParentMapper;
   typedef TensorContractionSubMapper<Scalar, Index, side, Tensor, nocontract_t, contract_t, packet_size, inner_dim_contiguous, inner_dim_reordered, Alignment, MakePointer_> Self;
   typedef Self LinearMapper;
+  typedef Self SubMapper;
 
   enum {
     // We can use direct offsets iff the parent mapper supports then and we can compute the strides.
@@ -485,6 +486,13 @@ class TensorContractionSubMapper {
     return LinearMapper(m_base_mapper, i + m_vert_offset, j + m_horiz_offset);
   }
 
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE SubMapper getSubMapper(Index i, Index j) const {
+    if (UseDirectOffsets) {
+      return SubMapper(m_base_mapper, i, j);
+    }
+    return SubMapper(m_base_mapper, i + m_vert_offset, j + m_horiz_offset);
+  }
+
   template <typename PacketT, int AlignmentType>
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketT load(Index i) const {
     EIGEN_STATIC_ASSERT((internal::is_same<PacketT, PacketT>::value), YOU_MADE_A_PROGRAMMING_MISTAKE);
@@ -531,6 +539,7 @@ class TensorContractionInputMapper
   typedef BaseTensorContractionMapper<Scalar, Index, side, Tensor, nocontract_t, contract_t, packet_size, inner_dim_contiguous, inner_dim_reordered, Alignment, MakePointer_> Base;
   typedef TensorContractionSubMapper<Scalar, Index, side, Tensor, nocontract_t, contract_t, packet_size, inner_dim_contiguous, inner_dim_reordered, Alignment, MakePointer_> SubMapper;
   typedef SubMapper VectorMapper;
+  typedef SubMapper LinearMapper;
 
   EIGEN_DEVICE_FUNC TensorContractionInputMapper(const Tensor& tensor,
                                const nocontract_t& nocontract_strides,
@@ -542,6 +551,10 @@ class TensorContractionInputMapper
   EIGEN_DEVICE_FUNC
   EIGEN_STRONG_INLINE SubMapper getSubMapper(Index i, Index j) const {
     return SubMapper(*this, i, j);
+  }
+
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE LinearMapper getLinearMapper(Index i, Index j) const {
+    return LinearMapper(*this, i, j);
   }
 
   EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE VectorMapper getVectorMapper(Index i, Index j) const {

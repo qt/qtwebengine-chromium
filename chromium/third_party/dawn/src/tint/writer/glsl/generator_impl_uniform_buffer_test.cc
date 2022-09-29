@@ -23,8 +23,8 @@ namespace {
 using GlslGeneratorImplTest_UniformBuffer = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_UniformBuffer, Simple) {
-    auto* simple = Structure("Simple", {Member("member", ty.f32())});
-    Global("simple", ty.Of(simple), ast::StorageClass::kUniform, GroupAndBinding(0, 0));
+    auto* simple = Structure("Simple", utils::Vector{Member("member", ty.f32())});
+    GlobalVar("simple", ty.Of(simple), ast::StorageClass::kUniform, GroupAndBinding(0, 0));
 
     GeneratorImpl& gen = Build();
 
@@ -43,8 +43,8 @@ layout(binding = 0) uniform Simple_1 {
 }
 
 TEST_F(GlslGeneratorImplTest_UniformBuffer, Simple_Desktop) {
-    auto* simple = Structure("Simple", {Member("member", ty.f32())});
-    Global("simple", ty.Of(simple), ast::StorageClass::kUniform, GroupAndBinding(0, 0));
+    auto* simple = Structure("Simple", utils::Vector{Member("member", ty.f32())});
+    GlobalVar("simple", ty.Of(simple), ast::StorageClass::kUniform, GroupAndBinding(0, 0));
 
     GeneratorImpl& gen = Build(Version(Version::Standard::kDesktop, 4, 4));
 

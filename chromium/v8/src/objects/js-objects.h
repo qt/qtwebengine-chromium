@@ -162,9 +162,10 @@ class JSReceiver : public TorqueGeneratedJSReceiver<JSReceiver, HeapObject> {
       PropertyDescriptor* desc, Maybe<ShouldThrow> should_throw);
 
   // Check if private name property can be store on the object. It will return
-  // false with an error when it cannot.
-  V8_WARN_UNUSED_RESULT static bool CheckPrivateNameStore(LookupIterator* it,
-                                                          bool is_define);
+  // false with an error when it cannot but didn't throw, or a Nothing if
+  // it throws.
+  V8_WARN_UNUSED_RESULT static Maybe<bool> CheckPrivateNameStore(
+      LookupIterator* it, bool is_define);
 
   // Check if a data property can be created on the object. It will fail with
   // an error when it cannot.
@@ -382,6 +383,7 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   DECL_GETTER(HasPackedElements, bool)
   DECL_GETTER(HasAnyNonextensibleElements, bool)
   DECL_GETTER(HasSealedElements, bool)
+  DECL_GETTER(HasSharedArrayElements, bool)
   DECL_GETTER(HasNonextensibleElements, bool)
 
   DECL_GETTER(HasTypedArrayOrRabGsabTypedArrayElements, bool)
@@ -649,7 +651,15 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
   // an initial capacity for holding these properties.
   V8_EXPORT_PRIVATE static void NormalizeProperties(
       Isolate* isolate, Handle<JSObject> object, PropertyNormalizationMode mode,
-      int expected_additional_properties, const char* reason);
+      int expected_additional_properties, bool use_cache, const char* reason);
+
+  V8_EXPORT_PRIVATE static void NormalizeProperties(
+      Isolate* isolate, Handle<JSObject> object, PropertyNormalizationMode mode,
+      int expected_additional_properties, const char* reason) {
+    const bool kUseCache = true;
+    NormalizeProperties(isolate, object, mode, expected_additional_properties,
+                        kUseCache, reason);
+  }
 
   // Convert and update the elements backing store to be a
   // NumberDictionary dictionary.  Returns the backing after conversion.
@@ -901,14 +911,12 @@ class JSObject : public TorqueGeneratedJSObject<JSObject, JSReceiver> {
 class JSExternalObject
     : public TorqueGeneratedJSExternalObject<JSExternalObject, JSObject> {
  public:
-  inline void AllocateExternalPointerEntries(Isolate* isolate);
-
   // [value]: field containing the pointer value.
-  DECL_GETTER(value, void*)
-
-  inline void set_value(Isolate* isolate, void* value);
+  DECL_EXTERNAL_POINTER_ACCESSORS(value, void*)
 
   static constexpr int kEndOfTaggedFieldsOffset = JSObject::kHeaderSize;
+
+  DECL_PRINTER(JSExternalObject)
 
   class BodyDescriptor;
 

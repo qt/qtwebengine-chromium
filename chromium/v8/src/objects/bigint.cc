@@ -339,6 +339,8 @@ void MutableBigInt::Canonicalize(MutableBigInt result) {
   }
   DCHECK_IMPLIES(result.length() > 0,
                  result.digit(result.length() - 1) != 0);  // MSD is non-zero.
+  // Callers that don't require trimming must ensure this themselves.
+  DCHECK_IMPLIES(result.length() == 0, result.sign() == false);
 }
 
 template <typename IsolateT>
@@ -1373,6 +1375,8 @@ MaybeHandle<BigInt> BigInt::FromSerializedDigits(
   DCHECK(digits_storage.length() == bytelength);
   bool sign = SignBits::decode(bitfield);
   int length = (bytelength + kDigitSize - 1) / kDigitSize;  // Round up.
+  // There is no -0n. Reject corrupted serialized data.
+  if (length == 0 && sign == true) return {};
   Handle<MutableBigInt> result =
       MutableBigInt::Cast(isolate->factory()->NewBigInt(length));
   result->initialize_bitfield(sign, length);
@@ -1621,6 +1625,30 @@ void MutableBigInt_AbsoluteSubAndCanonicalize(Address result_addr,
 
   bigint::Subtract(GetRWDigits(result), GetDigits(x), GetDigits(y));
   MutableBigInt::Canonicalize(result);
+}
+
+// Returns true if it succeeded to obtain the result of multiplication.
+// Returns false if the computation is interrupted.
+bool MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
+                                              Address x_addr, Address y_addr) {
+  BigInt x = BigInt::cast(Object(x_addr));
+  BigInt y = BigInt::cast(Object(y_addr));
+  MutableBigInt result = MutableBigInt::cast(Object(result_addr));
+
+  Isolate* isolate;
+  if (!GetIsolateFromHeapObject(x, &isolate)) {
+    // We should always get the isolate from the BigInt.
+    UNREACHABLE();
+  }
+
+  bigint::Status status = isolate->bigint_processor()->Multiply(
+      GetRWDigits(result), GetDigits(x), GetDigits(y));
+  if (status == bigint::Status::kInterrupted) {
+    return false;
+  }
+
+  MutableBigInt::Canonicalize(result);
+  return true;
 }
 
 }  // namespace internal

@@ -26,6 +26,7 @@
 #include "api/media_stream_interface.h"
 #include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/rtp/rtp_source.h"
 #include "api/units/time_delta.h"
@@ -52,7 +53,6 @@
 #include "rtc_base/socket.h"
 #include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/task_utils/pending_task_safety_flag.h"
 
 namespace rtc {
 class Timing;
@@ -404,6 +404,7 @@ struct MediaSenderInfo {
   // this list, the ReportBlockData::RTCPReportBlock::source_ssrc(), which is
   // the SSRC of the corresponding outbound RTP stream, is unique.
   std::vector<webrtc::ReportBlockData> report_block_datas;
+  absl::optional<bool> active;
 };
 
 struct MediaReceiverInfo {
@@ -450,6 +451,16 @@ struct MediaReceiverInfo {
   // Jitter (network-related) latency (cumulative).
   // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbufferdelay
   double jitter_buffer_delay_seconds = 0.0;
+  // Target delay for the jitter buffer (cumulative).
+  // TODO(crbug.com/webrtc/14244): This metric is only implemented for
+  // audio, it should be implemented for video as well.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbuffertargetdelay
+  absl::optional<double> jitter_buffer_target_delay_seconds;
+  // Minimum obtainable delay for the jitter buffer (cumulative).
+  // TODO(crbug.com/webrtc/14244): This metric is only implemented for
+  // audio, it should be implemented for video as well.
+  // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbufferminimumdelay
+  absl::optional<double> jitter_buffer_minimum_delay_seconds;
   // Number of observations for cumulative jitter latency.
   // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-jitterbufferemittedcount
   uint64_t jitter_buffer_emitted_count = 0;
@@ -495,7 +506,6 @@ struct VoiceReceiverInfo : public MediaReceiverInfo {
   uint64_t concealed_samples = 0;
   uint64_t silent_concealed_samples = 0;
   uint64_t concealment_events = 0;
-  double jitter_buffer_target_delay_seconds = 0.0;
   uint64_t inserted_samples_for_deceleration = 0;
   uint64_t removed_samples_for_acceleration = 0;
   uint64_t fec_packets_received = 0;
@@ -620,10 +630,10 @@ struct VideoReceiverInfo : public MediaReceiverInfo {
   uint32_t frames_rendered = 0;
   absl::optional<uint64_t> qp_sum;
   // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-totaldecodetime
-  uint64_t total_decode_time_ms = 0;
+  webrtc::TimeDelta total_decode_time = webrtc::TimeDelta::Zero();
   // https://w3c.github.io/webrtc-stats/#dom-rtcinboundrtpstreamstats-totalprocessingdelay
-  webrtc::TimeDelta total_processing_delay = webrtc::TimeDelta::Millis(0);
-  webrtc::TimeDelta total_assembly_time = webrtc::TimeDelta::Millis(0);
+  webrtc::TimeDelta total_processing_delay = webrtc::TimeDelta::Zero();
+  webrtc::TimeDelta total_assembly_time = webrtc::TimeDelta::Zero();
   uint32_t frames_assembled_from_multiple_packets = 0;
   double total_inter_frame_delay = 0;
   double total_squared_inter_frame_delay = 0;

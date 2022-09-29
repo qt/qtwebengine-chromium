@@ -7,7 +7,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Workspace from '../workspace/workspace.js';
 
-import type {DebuggerWorkspaceBinding} from './DebuggerWorkspaceBinding.js';
+import {type DebuggerWorkspaceBinding} from './DebuggerWorkspaceBinding.js';
 
 let ignoreListManagerInstance: IgnoreListManager;
 
@@ -27,6 +27,9 @@ export class IgnoreListManager implements SDK.TargetManager.SDKModelObserver<SDK
         .addChangeListener(this.patternChanged.bind(this));
     Common.Settings.Settings.instance()
         .moduleSetting('skipContentScripts')
+        .addChangeListener(this.patternChanged.bind(this));
+    Common.Settings.Settings.instance()
+        .moduleSetting('automaticallyIgnoreListKnownThirdPartyScripts')
         .addChangeListener(this.patternChanged.bind(this));
 
     this.#listeners = new Set();
@@ -97,21 +100,31 @@ export class IgnoreListManager implements SDK.TargetManager.SDKModelObserver<SDK
     return debuggerModel.setBlackboxPatterns(patterns);
   }
 
-  isIgnoreListedUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
+  isUserOrSourceMapIgnoreListedUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
     const projectType = uiSourceCode.project().type();
     const isContentScript = projectType === Workspace.Workspace.projectTypes.ContentScripts;
-    if (isContentScript && Common.Settings.Settings.instance().moduleSetting('skipContentScripts').get()) {
+    if (this.skipContentScripts && isContentScript) {
       return true;
     }
     const url = this.uiSourceCodeURL(uiSourceCode);
-    return url ? this.isIgnoreListedURL(url) : false;
+    return url ? this.isUserOrSourceMapIgnoreListedURL(url, uiSourceCode.isKnownThirdParty()) : false;
   }
 
-  isIgnoreListedURL(url: Platform.DevToolsPath.UrlString, isContentScript?: boolean): boolean {
+  isUserOrSourceMapIgnoreListedURL(url: Platform.DevToolsPath.UrlString, isKnownThirdParty: boolean): boolean {
+    if (this.isUserIgnoreListedURL(url)) {
+      return true;
+    }
+    if (this.automaticallyIgnoreListKnownThirdPartyScripts && isKnownThirdParty) {
+      return true;
+    }
+    return false;
+  }
+
+  isUserIgnoreListedURL(url: Platform.DevToolsPath.UrlString, isContentScript?: boolean): boolean {
     if (this.#isIgnoreListedURLCache.has(url)) {
       return Boolean(this.#isIgnoreListedURLCache.get(url));
     }
-    if (isContentScript && Common.Settings.Settings.instance().moduleSetting('skipContentScripts').get()) {
+    if (isContentScript && this.skipContentScripts) {
       return true;
     }
     const regex = this.getSkipStackFramesPatternSetting().asRegExp();
@@ -137,8 +150,11 @@ export class IgnoreListManager implements SDK.TargetManager.SDKModelObserver<SDK
 
   private async updateScriptRanges(script: SDK.Script.Script, sourceMap: SDK.SourceMap.SourceMap|null): Promise<void> {
     let hasIgnoreListedMappings = false;
-    if (!IgnoreListManager.instance().isIgnoreListedURL(script.sourceURL, script.isContentScript())) {
-      hasIgnoreListedMappings = sourceMap ? sourceMap.sourceURLs().some(url => this.isIgnoreListedURL(url)) : false;
+    if (!IgnoreListManager.instance().isUserIgnoreListedURL(script.sourceURL, script.isContentScript())) {
+      hasIgnoreListedMappings =
+          sourceMap?.sourceURLs().some(
+              url => this.isUserOrSourceMapIgnoreListedURL(url, sourceMap.hasIgnoreListHint(url))) ??
+          false;
     }
     if (!hasIgnoreListedMappings) {
       if (scriptToRange.get(script) && await script.setBlackboxedRanges([])) {
@@ -152,21 +168,12 @@ export class IgnoreListManager implements SDK.TargetManager.SDKModelObserver<SDK
       return;
     }
 
-    const mappings = sourceMap.mappings();
-    const newRanges: SourceRange[] = [];
-    if (mappings.length > 0) {
-      let currentIgnoreListed = false;
-      if (mappings[0].lineNumber !== 0 || mappings[0].columnNumber !== 0) {
-        newRanges.push({lineNumber: 0, columnNumber: 0});
-        currentIgnoreListed = true;
-      }
-      for (const mapping of mappings) {
-        if (mapping.sourceURL && currentIgnoreListed !== this.isIgnoreListedURL(mapping.sourceURL)) {
-          newRanges.push({lineNumber: mapping.lineNumber, columnNumber: mapping.columnNumber});
-          currentIgnoreListed = !currentIgnoreListed;
-        }
-      }
-    }
+    const newRanges =
+        sourceMap
+            .findRanges(
+                srcURL => this.isUserOrSourceMapIgnoreListedURL(srcURL, sourceMap.hasIgnoreListHint(srcURL)),
+                {isStartMatching: true})
+            .flatMap(range => [range.start, range.end]);
 
     const oldRanges = scriptToRange.get(script) || [];
     if (!isEqual(oldRanges, newRanges) && await script.setBlackboxedRanges(newRanges)) {
@@ -208,6 +215,14 @@ export class IgnoreListManager implements SDK.TargetManager.SDKModelObserver<SDK
     if (url) {
       this.unIgnoreListURL(url);
     }
+  }
+
+  get skipContentScripts(): boolean {
+    return Common.Settings.Settings.instance().moduleSetting('skipContentScripts').get();
+  }
+
+  get automaticallyIgnoreListKnownThirdPartyScripts(): boolean {
+    return Common.Settings.Settings.instance().moduleSetting('automaticallyIgnoreListKnownThirdPartyScripts').get();
   }
 
   ignoreListContentScripts(): void {

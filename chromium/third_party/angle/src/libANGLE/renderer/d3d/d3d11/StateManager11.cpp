@@ -2879,7 +2879,11 @@ angle::Result StateManager11::setTextureForImage(const gl::Context *context,
         return angle::Result::Continue;
     }
 
-    textureImpl                = GetImplAs<TextureD3D>(imageUnit.texture.get());
+    textureImpl = GetImplAs<TextureD3D>(imageUnit.texture.get());
+
+    // Ensure that texture has unordered access; convert it if not.
+    ANGLE_TRY(textureImpl->ensureUnorderedAccess(context));
+
     TextureStorage *texStorage = nullptr;
     ANGLE_TRY(textureImpl->getNativeTexture(context, &texStorage));
     // Texture should be complete and have a storage
@@ -2912,7 +2916,11 @@ angle::Result StateManager11::getUAVForRWImage(const gl::Context *context,
         return angle::Result::Continue;
     }
 
-    textureImpl                = GetImplAs<TextureD3D>(imageUnit.texture.get());
+    textureImpl = GetImplAs<TextureD3D>(imageUnit.texture.get());
+
+    // Ensure that texture has unordered access; convert it if not.
+    ANGLE_TRY(textureImpl->ensureUnorderedAccess(context));
+
     TextureStorage *texStorage = nullptr;
     ANGLE_TRY(textureImpl->getNativeTexture(context, &texStorage));
     // Texture should be complete and have a storage
@@ -3005,8 +3013,8 @@ angle::Result StateManager11::syncProgramForCompute(const gl::Context *context)
     ASSERT(mProgramD3D->hasComputeExecutableForCachedImage2DBindLayout());
 
     ShaderExecutableD3D *computeExe = nullptr;
-    ANGLE_TRY(
-        mProgramD3D->getComputeExecutableForImage2DBindLayout(context11, &computeExe, nullptr));
+    ANGLE_TRY(mProgramD3D->getComputeExecutableForImage2DBindLayout(context, context11, &computeExe,
+                                                                    nullptr));
 
     const d3d11::ComputeShader *computeShader =
         (computeExe ? &GetAs<ShaderExecutable11>(computeExe)->getComputeShader() : nullptr);

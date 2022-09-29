@@ -617,6 +617,26 @@ TEST_F(Bbr2DefaultTopologyTest, SimpleTransferBBR5) {
   EXPECT_APPROX_EQ(params.RTT(), rtt_stats()->min_rtt(), 0.2f);
 }
 
+TEST_F(Bbr2DefaultTopologyTest, SimpleTransferBBQ1) {
+  SetQuicReloadableFlag(quic_bbr2_support_new_startup_pacing_gain, true);
+  SetConnectionOption(kBBQ1);
+  DefaultTopologyParams params;
+  CreateNetwork(params);
+
+  // Transfer 12MB.
+  DoSimpleTransfer(12 * 1024 * 1024, QuicTime::Delta::FromSeconds(35));
+  EXPECT_TRUE(Bbr2ModeIsOneOf({Bbr2Mode::PROBE_BW, Bbr2Mode::PROBE_RTT}));
+
+  EXPECT_APPROX_EQ(params.BottleneckBandwidth(),
+                   sender_->ExportDebugState().bandwidth_hi, 0.01f);
+
+  EXPECT_LE(sender_loss_rate_in_packets(), 0.05);
+  // The margin here is high, because the aggregation greatly increases
+  // smoothed rtt.
+  EXPECT_GE(params.RTT() * 4, rtt_stats()->smoothed_rtt());
+  EXPECT_APPROX_EQ(params.RTT(), rtt_stats()->min_rtt(), 0.2f);
+}
+
 TEST_F(Bbr2DefaultTopologyTest, SimpleTransferSmallBuffer) {
   DefaultTopologyParams params;
   params.switch_queue_capacity_in_bdp = 0.5;
@@ -776,8 +796,6 @@ TEST_F(Bbr2DefaultTopologyTest, QUIC_SLOW_TEST(BandwidthIncrease)) {
 
 // Test Bbr2's reaction to a 100x bandwidth increase during a transfer with BBQ0
 TEST_F(Bbr2DefaultTopologyTest, QUIC_SLOW_TEST(BandwidthIncreaseBBQ0)) {
-  SetQuicReloadableFlag(quic_bbr2_add_bytes_acked_after_inflight_hi_limited,
-                        true);
   SetConnectionOption(kBBQ0);
   DefaultTopologyParams params;
   params.local_link.bandwidth = QuicBandwidth::FromKBitsPerSecond(15000);
@@ -811,8 +829,6 @@ TEST_F(Bbr2DefaultTopologyTest, QUIC_SLOW_TEST(BandwidthIncreaseBBQ0)) {
 // in the presence of ACK aggregation.
 TEST_F(Bbr2DefaultTopologyTest,
        QUIC_SLOW_TEST(BandwidthIncreaseBBQ0Aggregation)) {
-  SetQuicReloadableFlag(quic_bbr2_add_bytes_acked_after_inflight_hi_limited,
-                        true);
   SetConnectionOption(kBBQ0);
   DefaultTopologyParams params;
   params.local_link.bandwidth = QuicBandwidth::FromKBitsPerSecond(15000);

@@ -68,7 +68,7 @@ TEST_F(WgslGeneratorImplTest, Emit_ForLoopWithMultiStmtInit) {
     // for({ignore(1i); ignore(2i);}; ; ) {
     //   return;
     // }
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt = Block(Ignore(1_i), Ignore(2_i));
     auto* f = For(multi_stmt, nullptr, nullptr, Block(Return()));
     WrapInFunction(f);
@@ -132,7 +132,7 @@ TEST_F(WgslGeneratorImplTest, Emit_ForLoopWithMultiStmtCont) {
     //   return;
     // }
 
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt = Block(Ignore(1_i), Ignore(2_i));
     auto* f = For(nullptr, nullptr, multi_stmt, Block(Return()));
     WrapInFunction(f);
@@ -175,7 +175,7 @@ TEST_F(WgslGeneratorImplTest, Emit_ForLoopWithMultiStmtInitCondCont) {
     // for({ ignore(1i); ignore(2i); }; true; { ignore(3i); ignore(4i); }) {
     //   return;
     // }
-    Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
     auto* multi_stmt_a = Block(Ignore(1_i), Ignore(2_i));
     auto* multi_stmt_b = Block(Ignore(3_i), Ignore(4_i));
     auto* f = For(multi_stmt_a, Expr(true), multi_stmt_b, Block(Return()));
@@ -193,6 +193,65 @@ TEST_F(WgslGeneratorImplTest, Emit_ForLoopWithMultiStmtInitCondCont) {
     _ = 3i;
     _ = 4i;
   }) {
+    return;
+  }
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, Emit_While) {
+    // while(true) {
+    //   return;
+    // }
+
+    auto* f = While(Expr(true), Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while(true) {
+    return;
+  }
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, Emit_While_WithContinue) {
+    // while(true) {
+    //   continue;
+    // }
+
+    auto* f = While(Expr(true), Block(Continue()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while(true) {
+    continue;
+  }
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, Emit_WhileMultiCond) {
+    // while(true && false) {
+    //   return;
+    // }
+
+    auto* multi_stmt =
+        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
+    auto* f = While(multi_stmt, Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  while((true && false)) {
     return;
   }
 )");

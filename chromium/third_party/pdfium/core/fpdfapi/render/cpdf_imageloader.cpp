@@ -6,11 +6,12 @@
 
 #include "core/fpdfapi/render/cpdf_imageloader.h"
 
+#include <utility>
+
 #include "core/fpdfapi/page/cpdf_dib.h"
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_imageobject.h"
 #include "core/fpdfapi/page/cpdf_transferfunc.h"
-#include "core/fpdfapi/render/cpdf_imagecacheentry.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
@@ -50,11 +51,10 @@ bool CPDF_ImageLoader::Continue(PauseIndicatorIface* pPause,
 }
 
 RetainPtr<CFX_DIBBase> CPDF_ImageLoader::TranslateImage(
-    const RetainPtr<CPDF_TransferFunc>& pTransferFunc) {
+    RetainPtr<CPDF_TransferFunc> pTransferFunc) {
   DCHECK(pTransferFunc);
   DCHECK(!pTransferFunc->GetIdentity());
-
-  m_pBitmap = pTransferFunc->TranslateImage(m_pBitmap);
+  m_pBitmap = pTransferFunc->TranslateImage(std::move(m_pBitmap));
   if (m_bCached && m_pMask)
     m_pMask = m_pMask->Realize();
   m_bCached = false;
@@ -63,11 +63,10 @@ RetainPtr<CFX_DIBBase> CPDF_ImageLoader::TranslateImage(
 
 void CPDF_ImageLoader::HandleFailure() {
   if (m_pCache) {
-    CPDF_ImageCacheEntry* entry = m_pCache->GetCurImageCacheEntry();
     m_bCached = true;
-    m_pBitmap = entry->DetachBitmap();
-    m_pMask = entry->DetachMask();
-    m_MatteColor = entry->GetMatteColor();
+    m_pBitmap = m_pCache->DetachCurBitmap();
+    m_pMask = m_pCache->DetachCurMask();
+    m_MatteColor = m_pCache->GetCurMatteColor();
     return;
   }
   RetainPtr<CPDF_Image> pImage = m_pImageObject->GetImage();

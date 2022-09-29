@@ -38,22 +38,24 @@ import * as Platform from '../platform/platform.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
-import type {DeferredDOMNode, DOMNode} from './DOMModel.js';
-import {DOMModel} from './DOMModel.js';
-import type {RequestUpdateDroppedEventData} from './NetworkManager.js';
-import {Events as NetworkManagerEvents, NetworkManager} from './NetworkManager.js';
-import type {NetworkRequest} from './NetworkRequest.js';
+import {DOMModel, type DeferredDOMNode, type DOMNode} from './DOMModel.js';
+
+import {Events as NetworkManagerEvents, NetworkManager, type RequestUpdateDroppedEventData} from './NetworkManager.js';
+import {type NetworkRequest} from './NetworkRequest.js';
 import {Resource} from './Resource.js';
 import {ExecutionContext, RuntimeModel} from './RuntimeModel.js';
-import type {Target} from './Target.js';
-import {Capability} from './Target.js';
+
+import {Capability, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import {TargetManager} from './TargetManager.js';
 import {SecurityOriginManager} from './SecurityOriginManager.js';
+import {StorageKeyManager} from './StorageKeyManager.js';
 
 export class ResourceTreeModel extends SDKModel<EventTypes> {
   readonly agent: ProtocolProxyApi.PageApi;
+  readonly storageAgent: ProtocolProxyApi.StorageApi;
   readonly #securityOriginManager: SecurityOriginManager;
+  readonly #storageKeyManager: StorageKeyManager;
   readonly framesInternal: Map<string, ResourceTreeFrame>;
   #cachedResourcesProcessed: boolean;
   #pendingReloadOptions: {
@@ -75,8 +77,10 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       networkManager.addEventListener(NetworkManagerEvents.RequestUpdateDropped, this.onRequestUpdateDropped, this);
     }
     this.agent = target.pageAgent();
+    this.storageAgent = target.storageAgent();
     void this.agent.invoke_enable();
     this.#securityOriginManager = (target.model(SecurityOriginManager) as SecurityOriginManager);
+    this.#storageKeyManager = (target.model(StorageKeyManager) as StorageKeyManager);
     this.#pendingBackForwardCacheNotUsedEvents = new Set<Protocol.Page.BackForwardCacheNotUsedEvent>();
     this.#pendingPrerenderAttemptCompletedEvents = new Set<Protocol.Page.PrerenderAttemptCompletedEvent>();
     target.registerPageDispatcher(new PageDispatcher(this));
@@ -129,6 +133,14 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     }
   }
 
+  async storageKeyForFrame(frameId: Protocol.Page.FrameId): Promise<string|null> {
+    const response = await this.storageAgent.invoke_getStorageKeyForFrame({frameId: frameId});
+    if (response.getError() === 'Frame tree node for given frame not found') {
+      return null;
+    }
+    return response.storageKey;
+  }
+
   domModel(): DOMModel {
     return this.target().model(DOMModel) as DOMModel;
   }
@@ -164,11 +176,12 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     }
     this.dispatchEventToListeners(Events.FrameAdded, frame);
     this.updateSecurityOrigins();
+    void this.updateStorageKeys();
   }
 
   frameAttached(
       frameId: Protocol.Page.FrameId, parentFrameId: Protocol.Page.FrameId|null,
-      stackTrace?: Protocol.Runtime.StackTrace): ResourceTreeFrame|null {
+      stackTrace?: Protocol.Runtime.StackTrace, adScriptId?: Protocol.Page.AdScriptId): ResourceTreeFrame|null {
     const sameTargetParentFrame = parentFrameId ? (this.framesInternal.get(parentFrameId) || null) : null;
     // Do nothing unless cached resource tree is processed - it will overwrite everything.
     if (!this.#cachedResourcesProcessed && sameTargetParentFrame) {
@@ -178,7 +191,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       return null;
     }
 
-    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, frameId, null, stackTrace || null);
+    const frame =
+        new ResourceTreeFrame(this, sameTargetParentFrame, frameId, null, stackTrace || null, adScriptId || null);
     if (parentFrameId && !sameTargetParentFrame) {
       frame.crossTargetParentFrameId = parentFrameId;
     }
@@ -218,7 +232,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       this.processPendingEvents(frame);
       this.dispatchEventToListeners(Events.MainFrameNavigated, frame);
       const networkManager = this.target().model(NetworkManager);
-      if (networkManager) {
+      if (networkManager && frame.isTopFrame()) {
         networkManager.clearRequests();
       }
     }
@@ -233,6 +247,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       this.target().setInspectedURL(frame.url);
     }
     this.updateSecurityOrigins();
+    void this.updateStorageKeys();
   }
 
   documentOpened(framePayload: Protocol.Page.Frame): void {
@@ -265,6 +280,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       frame.remove(isSwap);
     }
     this.updateSecurityOrigins();
+    void this.updateStorageKeys();
   }
 
   private onRequestFinished(event: Common.EventTarget.EventTargetEvent<NetworkRequest>): void {
@@ -332,7 +348,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   private addFramesRecursively(
       sameTargetParentFrame: ResourceTreeFrame|null, frameTreePayload: Protocol.Page.FrameResourceTree): void {
     const framePayload = frameTreePayload.frame;
-    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null);
+    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null, null);
     if (!sameTargetParentFrame && framePayload.parentId) {
       frame.crossTargetParentFrameId = framePayload.parentId;
     }
@@ -520,11 +536,41 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     };
   }
 
+  private async getStorageKeyData(): Promise<StorageKeyData> {
+    const storageKeys = new Set<string>();
+    let mainStorageKey: string|null = null;
+
+    for (const {isMainFrame, storageKey} of await Promise.all(
+             [...this.framesInternal.values()].map(async f => f.storageKey.then(k => ({
+                                                                                  isMainFrame: f.isMainFrame(),
+                                                                                  storageKey: k,
+                                                                                }))))) {
+      if (isMainFrame) {
+        mainStorageKey = storageKey;
+      }
+      if (storageKey) {
+        storageKeys.add(storageKey);
+      }
+    }
+
+    return {storageKeys: storageKeys, mainStorageKey: mainStorageKey};
+  }
+
   private updateSecurityOrigins(): void {
     const data = this.getSecurityOriginData();
     this.#securityOriginManager.setMainSecurityOrigin(
         data.mainSecurityOrigin || '', data.unreachableMainSecurityOrigin || '');
     this.#securityOriginManager.updateSecurityOrigins(data.securityOrigins);
+  }
+
+  private async updateStorageKeys(): Promise<void> {
+    const data = await this.getStorageKeyData();
+    this.#storageKeyManager.setMainStorageKey(data.mainStorageKey || '');
+    this.#storageKeyManager.updateStorageKeys(data.storageKeys);
+  }
+
+  async getMainStorageKey(): Promise<string|null> {
+    return this.mainFrame ? this.mainFrame.storageKey : null;
   }
 
   getMainSecurityOrigin(): string|null {
@@ -626,6 +672,7 @@ export class ResourceTreeFrame {
   #urlInternal: Platform.DevToolsPath.UrlString;
   #domainAndRegistryInternal: string;
   #securityOriginInternal: string|null;
+  #storageKeyInternal?: Promise<string|null>;
   #unreachableUrlInternal: Platform.DevToolsPath.UrlString;
   #adFrameStatusInternal?: Protocol.Page.AdFrameStatus;
   #secureContextType: Protocol.Page.SecureContextType|null;
@@ -634,6 +681,8 @@ export class ResourceTreeFrame {
   #creationStackTrace: Protocol.Runtime.StackTrace|null;
   #creationStackTraceTarget: Target|null;
   #childFramesInternal: Set<ResourceTreeFrame>;
+  #adScriptId: Protocol.Runtime.ScriptId|null;
+  #debuggerId: Protocol.Runtime.UniqueDebuggerId|null;
   resourcesMap: Map<Platform.DevToolsPath.UrlString, Resource>;
   backForwardCacheDetails: {
     restoredFromCache: boolean|undefined,
@@ -648,7 +697,8 @@ export class ResourceTreeFrame {
 
   constructor(
       model: ResourceTreeModel, parentFrame: ResourceTreeFrame|null, frameId: Protocol.Page.FrameId,
-      payload: Protocol.Page.Frame|null, creationStackTrace: Protocol.Runtime.StackTrace|null) {
+      payload: Protocol.Page.Frame|null, creationStackTrace: Protocol.Runtime.StackTrace|null,
+      adScriptId: Protocol.Page.AdScriptId|null) {
     this.#model = model;
     this.#sameTargetParentFrameInternal = parentFrame;
     this.#idInternal = frameId;
@@ -669,6 +719,9 @@ export class ResourceTreeFrame {
 
     this.#creationStackTrace = creationStackTrace;
     this.#creationStackTraceTarget = null;
+
+    this.#adScriptId = adScriptId?.scriptId || null;
+    this.#debuggerId = adScriptId?.debuggerId || null;
 
     this.#childFramesInternal = new Set();
 
@@ -754,8 +807,31 @@ export class ResourceTreeFrame {
     return this.#domainAndRegistryInternal;
   }
 
+  getAdScriptId(): Protocol.Runtime.ScriptId|null {
+    return this.#adScriptId;
+  }
+
+  setAdScriptId(adScriptId: Protocol.Runtime.ScriptId|null): void {
+    this.#adScriptId = adScriptId;
+  }
+
+  getDebuggerId(): Protocol.Runtime.UniqueDebuggerId|null {
+    return this.#debuggerId;
+  }
+
+  setDebuggerId(debuggerId: Protocol.Runtime.UniqueDebuggerId|null): void {
+    this.#debuggerId = debuggerId;
+  }
+
   get securityOrigin(): string|null {
     return this.#securityOriginInternal;
+  }
+
+  get storageKey(): Promise<string|null> {
+    if (!this.#storageKeyInternal) {
+      this.#storageKeyInternal = this.#model.storageKeyForFrame(this.#idInternal);
+    }
+    return this.#storageKeyInternal;
   }
 
   unreachableUrl(): Platform.DevToolsPath.UrlString {
@@ -1033,8 +1109,8 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
     this.#resourceTreeModel.dispatchEventToListeners(Events.LifecycleEvent, {frameId, name});
   }
 
-  frameAttached({frameId, parentFrameId, stack}: Protocol.Page.FrameAttachedEvent): void {
-    this.#resourceTreeModel.frameAttached(frameId, parentFrameId, stack);
+  frameAttached({frameId, parentFrameId, stack, adScriptId}: Protocol.Page.FrameAttachedEvent): void {
+    this.#resourceTreeModel.frameAttached(frameId, parentFrameId, stack, adScriptId);
   }
 
   frameNavigated({frame, type}: Protocol.Page.FrameNavigatedEvent): void {
@@ -1121,4 +1197,9 @@ export interface SecurityOriginData {
   securityOrigins: Set<string>;
   mainSecurityOrigin: string|null;
   unreachableMainSecurityOrigin: string|null;
+}
+
+export interface StorageKeyData {
+  storageKeys: Set<string>;
+  mainStorageKey: string|null;
 }

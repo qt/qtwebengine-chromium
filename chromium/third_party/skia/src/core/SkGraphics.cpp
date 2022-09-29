@@ -80,7 +80,7 @@ void SkGraphics::SetFlags(const char* flags) {
             paramEnd = nextSemi;
         }
         size_t paramLen = paramEnd - flags;
-        for (int i = 0; i < (int)SK_ARRAY_COUNT(gFlags); ++i) {
+        for (int i = 0; i < (int)std::size(gFlags); ++i) {
             if (paramLen != gFlags[i].fLen) {
                 continue;
             }
@@ -137,6 +137,21 @@ SkGraphics::SetOpenTypeSVGDecoderFactory(OpenTypeSVGDecoderFactory svgDecoderFac
 
 SkGraphics::OpenTypeSVGDecoderFactory SkGraphics::GetOpenTypeSVGDecoderFactory() {
     return gSVGDecoderFactory;
+}
+
+static SkGraphics::VariableColrV1EnabledFunc gVariableCOLRv1EnabledFunc = nullptr;
+
+/* static */
+SkGraphics::VariableColrV1EnabledFunc SkGraphics::SetVariableColrV1EnabledFunc(
+        VariableColrV1EnabledFunc variableCOLRV1EnabledFunc) {
+    VariableColrV1EnabledFunc old = gVariableCOLRv1EnabledFunc;
+    gVariableCOLRv1EnabledFunc = variableCOLRV1EnabledFunc;
+    return old;
+}
+
+/* static */
+bool SkGraphics::GetVariableColrV1Enabled() {
+    return gVariableCOLRv1EnabledFunc ? gVariableCOLRv1EnabledFunc() : false;
 }
 
 extern bool gSkVMAllowJIT;

@@ -5,6 +5,7 @@
 #include "discovery/mdns/mdns_records.h"
 
 #include <limits>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -53,7 +54,9 @@ TEST(MdnsDomainNameTest, Construct) {
   EXPECT_EQ(name2.labels()[0], "MyDevice");
   EXPECT_EQ(name2.labels()[1], "_mYSERvice");
   EXPECT_EQ(name2.labels()[2], "local");
-  EXPECT_EQ(name2.ToString(), "MyDevice._mYSERvice.local");
+  std::stringstream name2_stream;
+  name2_stream << name2;
+  EXPECT_EQ(name2_stream.str(), "MyDevice._mYSERvice.local");
 
   std::vector<absl::string_view> labels{"OtherDevice", "_MYservice", "LOcal"};
   DomainName name3(labels);
@@ -63,7 +66,9 @@ TEST(MdnsDomainNameTest, Construct) {
   EXPECT_EQ(name3.labels()[0], "OtherDevice");
   EXPECT_EQ(name3.labels()[1], "_MYservice");
   EXPECT_EQ(name3.labels()[2], "LOcal");
-  EXPECT_EQ(name3.ToString(), "OtherDevice._MYservice.LOcal");
+  std::stringstream name3_stream;
+  name3_stream << name3;
+  EXPECT_EQ(name3_stream.str(), "OtherDevice._MYservice.LOcal");
 }
 
 TEST(MdnsDomainNameTest, Compare) {

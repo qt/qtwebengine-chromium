@@ -12,7 +12,6 @@
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
 #include "src/objects/objects.h"
-#include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
@@ -328,7 +327,8 @@ class JsonParser final {
 
   static const int kInitialSpecialStringLength = 32;
 
-  static void UpdatePointersCallback(void* parser) {
+  static void UpdatePointersCallback(LocalIsolate*, GCType, GCCallbackFlags,
+                                     void* parser) {
     reinterpret_cast<JsonParser<Char>*>(parser)->UpdatePointers();
   }
 

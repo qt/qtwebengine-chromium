@@ -13,7 +13,9 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_folderfontinfo.h"
 #include "core/fxge/cfx_gemodule.h"
+#include "third_party/base/check.h"
 #include "third_party/base/numerics/safe_conversions.h"
+#include "third_party/base/span.h"
 #include "third_party/base/win/scoped_select_object.h"
 #include "third_party/base/win/win_util.h"
 
@@ -72,6 +74,17 @@ bool GetSubFontName(ByteString* name) {
   return false;
 }
 
+// Wraps CreateFontA() so callers don't have to specify all the arguments.
+HFONT Win32CreateFont(int weight,
+                      bool italic,
+                      FX_Charset charset,
+                      int pitch_family,
+                      const char* face) {
+  return ::CreateFontA(-10, 0, 0, 0, weight, italic, 0, 0,
+                       static_cast<int>(charset), OUT_TT_ONLY_PRECIS, 0, 0,
+                       pitch_family, face);
+}
+
 class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
  public:
   CFX_Win32FallbackFontInfo() = default;
@@ -112,6 +125,11 @@ class CFX_Win32FontInfo final : public SystemFontInfoIface {
   void GetGBPreference(ByteString& face, int weight, int pitch_family);
   void GetJapanesePreference(ByteString& face, int weight, int pitch_family);
   ByteString FindFont(const ByteString& name);
+  void* GetFontFromList(int weight,
+                        bool italic,
+                        FX_Charset charset,
+                        int pitch_family,
+                        pdfium::span<const char* const> font_faces);
 
   const HDC m_hDC;
   UnownedPtr<CFX_FontMapper> m_pMapper;
@@ -201,6 +219,26 @@ ByteString CFX_Win32FontInfo::FindFont(const ByteString& name) {
     return maybe_localized.value();
 
   return ByteString();
+}
+
+void* CFX_Win32FontInfo::GetFontFromList(
+    int weight,
+    bool italic,
+    FX_Charset charset,
+    int pitch_family,
+    pdfium::span<const char* const> font_faces) {
+  DCHECK(!font_faces.empty());
+
+  // Initialization not needed because of DCHECK() above and the assignment in
+  // the for-loop below.
+  HFONT font;
+  for (const char* face : font_faces) {
+    font = Win32CreateFont(weight, italic, charset, pitch_family, face);
+    ByteString actual_face;
+    if (GetFaceName(font, &actual_face) && actual_face.EqualNoCase(face))
+      break;
+  }
+  return font;
 }
 
 void* CFX_Win32FallbackFontInfo::MapFont(int weight,
@@ -321,24 +359,21 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       subst_pitch_family = 0;
       break;
   }
-  HFONT hFont = ::CreateFontA(-10, 0, 0, 0, weight, bItalic, 0, 0,
-                              static_cast<int>(charset), OUT_TT_ONLY_PRECIS, 0,
-                              0, subst_pitch_family, new_face.c_str());
-  char facebuf[100];
-  {
-    ScopedSelectObject select_object(m_hDC, hFont);
-    ::GetTextFaceA(m_hDC, std::size(facebuf), facebuf);
-  }
-  if (new_face.EqualNoCase(facebuf))
+  HFONT hFont = Win32CreateFont(weight, bItalic, charset, subst_pitch_family,
+                                new_face.c_str());
+  ByteString actual_new_face;
+  if (GetFaceName(hFont, &actual_new_face) &&
+      new_face.EqualNoCase(actual_new_face.AsStringView())) {
     return hFont;
+  }
 
-  WideString wsFace = WideString::FromDefANSI(facebuf);
-  for (size_t i = 0; i < std::size(kVariantNames); ++i) {
-    if (new_face != kVariantNames[i].m_pFaceName)
+  WideString wsFace = WideString::FromDefANSI(actual_new_face.AsStringView());
+  for (const Variant& variant : kVariantNames) {
+    if (new_face != variant.m_pFaceName)
       continue;
 
-    const unsigned short* pName = reinterpret_cast<const unsigned short*>(
-        kVariantNames[i].m_pVariantName);
+    const auto* pName =
+        reinterpret_cast<const unsigned short*>(variant.m_pVariantName);
     size_t len = WideString::WStringLength(pName);
     WideString wsName = WideString::FromUTF16LE(pName, len);
     if (wsFace == wsName)
@@ -359,17 +394,17 @@ void* CFX_Win32FontInfo::MapFont(int weight,
       new_face = "Gulim";
       break;
     case FX_Charset::kChineseTraditional:
-      if (new_face.Contains("MSung")) {
-        new_face = "MingLiU";
-      } else {
-        new_face = "PMingLiU";
-      }
-      break;
+      static const char* const kMonospaceFonts[] = {"Microsoft YaHei",
+                                                    "MingLiU"};
+      static const char* const kProportionalFonts[] = {"Microsoft JHengHei",
+                                                       "PMingLiU"};
+      pdfium::span<const char* const> candidate_fonts =
+          new_face.Contains("MSung") ? kMonospaceFonts : kProportionalFonts;
+      return GetFontFromList(weight, bItalic, charset, subst_pitch_family,
+                             candidate_fonts);
   }
-  hFont = ::CreateFontA(-10, 0, 0, 0, weight, bItalic, 0, 0,
-                        static_cast<int>(charset), OUT_TT_ONLY_PRECIS, 0, 0,
-                        subst_pitch_family, new_face.c_str());
-  return hFont;
+  return Win32CreateFont(weight, bItalic, charset, subst_pitch_family,
+                         new_face.c_str());
 }
 
 void CFX_Win32FontInfo::DeleteFont(void* hFont) {
@@ -389,7 +424,7 @@ size_t CFX_Win32FontInfo::GetFontData(void* hFont,
 bool CFX_Win32FontInfo::GetFaceName(void* hFont, ByteString* name) {
   ScopedSelectObject select_object(m_hDC, static_cast<HFONT>(hFont));
   char facebuf[100];
-  if (::GetTextFaceA(m_hDC, 100, facebuf) == 0)
+  if (::GetTextFaceA(m_hDC, std::size(facebuf), facebuf) == 0)
     return false;
 
   *name = facebuf;

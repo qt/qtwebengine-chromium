@@ -22,8 +22,8 @@
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tools/Resources.h"
 #include "tools/gpu/TestOps.h"
 
@@ -96,7 +96,8 @@ protected:
         if (mipmapped == GrMipmapped::kYes && !rContext->priv().caps()->mipmapSupport()) {
             return DrawResult::kSkip;
         }
-        auto view = std::get<0>(GrMakeCachedBitmapProxyView(rContext, fBitmap, mipmapped));
+        auto view = std::get<0>(GrMakeCachedBitmapProxyView(
+                rContext, fBitmap, /*label=*/"DrawResult_Draw_BitMap", mipmapped));
         if (!view) {
             *errorMsg = "Failed to create proxy.";
             return DrawResult::kFail;
@@ -129,7 +130,8 @@ protected:
         SkBitmap subsetBmp;
         fBitmap.extractSubset(&subsetBmp, texelSubset);
         subsetBmp.setImmutable();
-        auto subsetView = std::get<0>(GrMakeCachedBitmapProxyView(rContext, subsetBmp, mipmapped));
+        auto subsetView = std::get<0>(GrMakeCachedBitmapProxyView(
+                rContext, subsetBmp, /*label=*/"DrawResult_Draw_SubsetBitMap", mipmapped));
 
         SkRect localRect = SkRect::Make(fBitmap.bounds()).makeOutset(kDrawPad, kDrawPad);
 

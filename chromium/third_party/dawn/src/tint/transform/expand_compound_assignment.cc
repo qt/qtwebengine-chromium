@@ -44,6 +44,8 @@ bool ExpandCompoundAssignment::ShouldRun(const Program* program, const DataMap&)
     return false;
 }
 
+namespace {
+
 /// Internal class used to collect statement expansions during the transform.
 class State {
   private:
@@ -163,6 +165,8 @@ class State {
     }
 };
 
+}  // namespace
+
 void ExpandCompoundAssignment::Run(CloneContext& ctx, const DataMap&, DataMap&) const {
     State state(ctx);
     for (auto* node : ctx.src->ASTNodes().Objects()) {
@@ -170,14 +174,8 @@ void ExpandCompoundAssignment::Run(CloneContext& ctx, const DataMap&, DataMap&) 
             state.Expand(assign, assign->lhs, ctx.Clone(assign->rhs), assign->op);
         } else if (auto* inc_dec = node->As<ast::IncrementDecrementStatement>()) {
             // For increment/decrement statements, `i++` becomes `i = i + 1`.
-            // TODO(jrprice): Simplify this when we have untyped literals.
-            auto* sem_lhs = ctx.src->Sem().Get(inc_dec->lhs);
-            const ast::IntLiteralExpression* one =
-                sem_lhs->Type()->UnwrapRef()->is_signed_integer_scalar()
-                    ? ctx.dst->Expr(1_i)->As<ast::IntLiteralExpression>()
-                    : ctx.dst->Expr(1_u)->As<ast::IntLiteralExpression>();
             auto op = inc_dec->increment ? ast::BinaryOp::kAdd : ast::BinaryOp::kSubtract;
-            state.Expand(inc_dec, inc_dec->lhs, one, op);
+            state.Expand(inc_dec, inc_dec->lhs, ctx.dst->Expr(1_a), op);
         }
     }
     state.Finalize();

@@ -207,12 +207,8 @@ EIGEN_ALWAYS_INLINE void storeMaddData(ResScalar* res, ResScalar& alpha, ResScal
     } \
   }
 
-#if EIGEN_COMP_LLVM
-#define GEMV_LOADPAIR2_COL_MMA(iter1, iter2)
-#else
 #define GEMV_LOADPAIR2_COL_MMA(iter1, iter2) \
   b##iter1 = *reinterpret_cast<__vector_pair *>(res + i + ((iter2) * ResPacketSize));
-#endif
 
 #define GEMV_LOAD2_COL_MMA(iter1, iter2, iter3, N) \
   if (GEMV_GETN(N) > iter1) { \
@@ -231,8 +227,9 @@ EIGEN_ALWAYS_INLINE void storeMaddData(ResScalar* res, ResScalar& alpha, ResScal
 #if EIGEN_COMP_LLVM
 #define GEMV_WORKPAIR2_COL_MMA(iter2, iter3, iter4) \
   ResPacket f##iter2[2]; \
-  f##iter2[0] = pmadd(result##iter2.packet[0], palpha, ploadu<ResPacket>(res + i + ((iter4) * ResPacketSize))); \
-  f##iter2[1] = pmadd(result##iter3.packet[(iter2 == iter3) ? 2 : 0], palpha, ploadu<ResPacket>(res + i + (((iter4) + 1) * ResPacketSize))); \
+  __builtin_vsx_disassemble_pair(reinterpret_cast<void*>(f##iter2), &b##iter2); \
+  f##iter2[0] = pmadd(result##iter2.packet[0], palpha, f##iter2[0]); \
+  f##iter2[1] = pmadd(result##iter3.packet[(iter2 == iter3) ? 2 : 0], palpha, f##iter2[1]); \
   GEMV_BUILDPAIR_MMA(b##iter2, f##iter2[0], f##iter2[1]);
 #else
 #define GEMV_WORKPAIR2_COL_MMA(iter2, iter3, iter4) \
@@ -375,7 +372,7 @@ EIGEN_ALWAYS_INLINE void pger_vecMMA_acc(__vector_quad* acc, __vector_pair& a, c
 }
 #endif
 
-template<typename Index, typename LhsScalar, typename LhsMapper, typename RhsScalar, typename RhsMapper, typename ResScalar>
+template<typename LhsScalar, typename LhsMapper, typename RhsScalar, typename RhsMapper, typename ResScalar>
 EIGEN_STRONG_INLINE void gemv_col(
     Index rows, Index cols,
     const LhsMapper& alhs,
@@ -927,12 +924,12 @@ EIGEN_ALWAYS_INLINE void pstoreu_pmadd_complex(PResPacket& c0, AlphaData& b0, Re
     }
 }
 
-template<typename Index, typename ScalarPacket, typename PResPacket, typename ResPacket, typename ResScalar, typename AlphaData, Index ResPacketSize, Index iter2>
+template<typename ScalarPacket, typename PResPacket, typename ResPacket, typename ResScalar, typename AlphaData, Index ResPacketSize, Index iter2>
 EIGEN_ALWAYS_INLINE void pstoreu_pmadd_complex(PResPacket& c0, PResPacket& c1, AlphaData& b0, ResScalar* res)
 {
     PResPacket c2 = pcplxflipconj(c0);
     PResPacket c3 = pcplxflipconj(c1);
-#if EIGEN_COMP_LLVM || !defined(_ARCH_PWR10)
+#if !defined(_ARCH_PWR10)
     ScalarPacket c4 = pload_complex<ResPacket>(res + (iter2 * ResPacketSize));
     ScalarPacket c5 = pload_complex<ResPacket>(res + ((iter2 + 1) * ResPacketSize));
     PResPacket c6 = PResPacket(pmadd_complex<ScalarPacket, AlphaData>(c0.v, c2.v, c4, b0));
@@ -941,6 +938,13 @@ EIGEN_ALWAYS_INLINE void pstoreu_pmadd_complex(PResPacket& c0, PResPacket& c1, A
     pstoreu(res + ((iter2 + 1) * ResPacketSize), c7);
 #else
     __vector_pair a = *reinterpret_cast<__vector_pair *>(res + (iter2 * ResPacketSize));
+#if EIGEN_COMP_LLVM
+    PResPacket c6[2];
+    __builtin_vsx_disassemble_pair(reinterpret_cast<void*>(c6), &a);
+    c6[0] = PResPacket(pmadd_complex<ScalarPacket, AlphaData>(c0.v, c2.v, c6[0].v, b0));
+    c6[1] = PResPacket(pmadd_complex<ScalarPacket, AlphaData>(c1.v, c3.v, c6[1].v, b0));
+    GEMV_BUILDPAIR_MMA(a, c6[0].v, c6[1].v);
+#else
     if (GEMV_IS_COMPLEX_FLOAT) {
         __asm__ ("xvmaddasp %L0,%x1,%x2\n\txvmaddasp %0,%x1,%x3" : "+&d" (a) : "wa" (b0.separate.r.v), "wa" (c0.v), "wa" (c1.v));
         __asm__ ("xvmaddasp %L0,%x1,%x2\n\txvmaddasp %0,%x1,%x3" : "+&d" (a) : "wa" (b0.separate.i.v), "wa" (c2.v), "wa" (c3.v));
@@ -948,12 +952,13 @@ EIGEN_ALWAYS_INLINE void pstoreu_pmadd_complex(PResPacket& c0, PResPacket& c1, A
         __asm__ ("xvmaddadp %L0,%x1,%x2\n\txvmaddadp %0,%x1,%x3" : "+&d" (a) : "wa" (b0.separate.r.v), "wa" (c0.v), "wa" (c1.v));
         __asm__ ("xvmaddadp %L0,%x1,%x2\n\txvmaddadp %0,%x1,%x3" : "+&d" (a) : "wa" (b0.separate.i.v), "wa" (c2.v), "wa" (c3.v));
     }
+#endif
     *reinterpret_cast<__vector_pair *>(res + (iter2 * ResPacketSize)) = a;
 #endif
 }
 
 /** \internal load lhs packet */
-template<typename Scalar, typename LhsScalar, typename LhsMapper, typename LhsPacket, typename Index>
+template<typename Scalar, typename LhsScalar, typename LhsMapper, typename LhsPacket>
 EIGEN_ALWAYS_INLINE LhsPacket loadLhsPacket(LhsMapper& lhs, Index i, Index j)
 {
     if (sizeof(Scalar) == sizeof(LhsScalar)) {
@@ -1337,17 +1342,17 @@ EIGEN_ALWAYS_INLINE void disassembleResults2(__vector_quad* c0, PacketBlock<Scal
             result0.packet[0] = tmp0;
 
             if (ConjugateLhs) {
-                result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
-                result0.packet[2] = convertReal(pconj2(convertComplex(result0.packet[2])));
+                result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
+                result0.packet[2] = pconj2(convertComplex(result0.packet[2])).v;
             } else if (ConjugateRhs) {
-                result0.packet[1] = convertReal(pconj2(convertComplex(result0.packet[1])));
-                result0.packet[3] = convertReal(pconj2(convertComplex(result0.packet[3])));
+                result0.packet[1] = pconj2(convertComplex(result0.packet[1])).v;
+                result0.packet[3] = pconj2(convertComplex(result0.packet[3])).v;
             } else {
-                result0.packet[1] = convertReal(pconjinv(convertComplex(result0.packet[1])));
-                result0.packet[3] = convertReal(pconjinv(convertComplex(result0.packet[3])));
-           }
-           result0.packet[0] = vec_add(result0.packet[0], result0.packet[1]);
-           result0.packet[2] = vec_add(result0.packet[2], result0.packet[3]);
+                result0.packet[1] = pconjinv(convertComplex(result0.packet[1])).v;
+                result0.packet[3] = pconjinv(convertComplex(result0.packet[3])).v;
+            }
+            result0.packet[0] = vec_add(result0.packet[0], result0.packet[1]);
+            result0.packet[2] = vec_add(result0.packet[2], result0.packet[3]);
         } else {
             result0.packet[0][1] = result0.packet[1][1];
             result0.packet[2][1] = result0.packet[3][1];
@@ -1361,19 +1366,19 @@ EIGEN_ALWAYS_INLINE void disassembleResults4(__vector_quad* c0, PacketBlock<Scal
     __builtin_mma_disassemble_acc(&result0.packet, c0);
     if (GEMV_IS_COMPLEX_COMPLEX) {
         if (ConjugateLhs) {
-            result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
-            result0.packet[1] = convertReal(pcplxflip2(convertComplex(result0.packet[1])));
+            result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
+            result0.packet[1] = pcplxflip2(convertComplex(result0.packet[1])).v;
         } else {
             if (ConjugateRhs) {
-                result0.packet[1] = convertReal(pcplxconjflip(convertComplex(result0.packet[1])));
+                result0.packet[1] = pcplxconjflip(convertComplex(result0.packet[1])).v;
             } else {
-                result0.packet[1] = convertReal(pcplxflipconj(convertComplex(result0.packet[1])));
+                result0.packet[1] = pcplxflipconj(convertComplex(result0.packet[1])).v;
             }
         }
         result0.packet[0] = vec_add(result0.packet[0], result0.packet[1]);
     } else if (sizeof(LhsPacket) == sizeof(std::complex<float>)) {
         if (ConjugateLhs) {
-            result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
+            result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
         }
     } else {
         result0.packet[0] = vec_mergee(result0.packet[0], result0.packet[1]);
@@ -1394,7 +1399,7 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
 #define GEMV_GETN_COMPLEX(N) (((N) * ResPacketSize) >> 1)
 
 #define GEMV_LOADPACKET_COL_COMPLEX(iter) \
-  loadLhsPacket<Scalar, LhsScalar, LhsMapper, PLhsPacket, Index>(lhs, i + ((iter) * ResPacketSize), j)
+  loadLhsPacket<Scalar, LhsScalar, LhsMapper, PLhsPacket>(lhs, i + ((iter) * ResPacketSize), j)
 
 #define GEMV_LOADPACKET_COL_COMPLEX_DATA(iter) \
   convertReal(GEMV_LOADPACKET_COL_COMPLEX(iter))
@@ -1444,7 +1449,7 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
   }
 
 #define GEMV_LOADPAIR2_COL_COMPLEX_MMA(iter1, iter2) \
-  GEMV_BUILDPAIR_MMA(a##iter1, GEMV_LOADPACKET_COL_COMPLEX_DATA(iter2), GEMV_LOADPACKET_COL_COMPLEX_DATA((iter2) + 1)); \
+  GEMV_BUILDPAIR_MMA(a##iter1, GEMV_LOADPACKET_COL_COMPLEX_DATA(iter2), GEMV_LOADPACKET_COL_COMPLEX_DATA((iter2) + 1));
 
 #define GEMV_LOAD2_COL_COMPLEX_MMA(iter1, iter2, iter3, N) \
   if (GEMV_GETN_COMPLEX(N) > iter1) { \
@@ -1498,7 +1503,7 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
 #endif
 
 #define GEMV_DISASSEMBLE_COMPLEX_MMA(iter) \
-  disassembleResults<Scalar, ScalarPacket, ResPacketSize, LhsPacket, RhsPacket, ConjugateLhs, ConjugateRhs>(&e0##iter, result0##iter); \
+  disassembleResults<Scalar, ScalarPacket, ResPacketSize, LhsPacket, RhsPacket, ConjugateLhs, ConjugateRhs>(&e0##iter, result0##iter);
 
 #define GEMV_STORE_COL_COMPLEX_MMA(iter, N) \
   if (GEMV_GETN_COMPLEX(N) > iter) { \
@@ -1520,13 +1525,13 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
     c0##iter2 = PResPacket(result0##iter2.packet[0]); \
     if (GEMV_IS_COMPLEX_FLOAT) { \
       c0##iter3 = PResPacket(result0##iter3.packet[0]); \
-      pstoreu_pmadd_complex<Index, ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter2>(c0##iter2, c0##iter3, alpha_data, res + i); \
+      pstoreu_pmadd_complex<ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter2>(c0##iter2, c0##iter3, alpha_data, res + i); \
     } else { \
       c0##iter3 = PResPacket(result0##iter2.packet[2]); \
-      pstoreu_pmadd_complex<Index, ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter2 << 1>(c0##iter2, c0##iter3, alpha_data, res + i); \
+      pstoreu_pmadd_complex<ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter2 << 1>(c0##iter2, c0##iter3, alpha_data, res + i); \
       c0##iter2 = PResPacket(result0##iter3.packet[0]); \
       c0##iter3 = PResPacket(result0##iter3.packet[2]); \
-      pstoreu_pmadd_complex<Index, ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter3 << 1>(c0##iter2, c0##iter3, alpha_data, res + i); \
+      pstoreu_pmadd_complex<ScalarPacket, PResPacket, ResPacket, ResScalar, AlphaData, ResPacketSize, iter3 << 1>(c0##iter2, c0##iter3, alpha_data, res + i); \
     } \
   }
 
@@ -1607,7 +1612,7 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
 #endif
 #endif
 
-template<typename Index, typename Scalar, typename LhsScalar, typename LhsMapper, bool ConjugateLhs, bool LhsIsReal, typename RhsScalar, typename RhsMapper, bool ConjugateRhs, bool RhsIsReal, typename ResScalar>
+template<typename Scalar, typename LhsScalar, typename LhsMapper, bool ConjugateLhs, bool LhsIsReal, typename RhsScalar, typename RhsMapper, bool ConjugateRhs, bool RhsIsReal, typename ResScalar>
 EIGEN_STRONG_INLINE void gemv_complex_col(
     Index rows, Index cols,
     const LhsMapper& alhs,
@@ -1725,10 +1730,6 @@ static Packet16uc p16uc_ELEMENT_3 = { 0x0c,0x0d,0x0e,0x0f, 0x1c,0x1d,0x1e,0x1f, 
 template<typename ResScalar, typename ResPacket>
 EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_real(__vector_quad* acc0, __vector_quad* acc1)
 {
-    union {
-      ScalarBlock<ResScalar, 2> cs;
-      double                    cd;
-    } cc0;
     PacketBlock<ResPacket, 4> result0, result1;
     __builtin_mma_disassemble_acc(&result0.packet, acc0);
     __builtin_mma_disassemble_acc(&result1.packet, acc1);
@@ -1737,20 +1738,17 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_real(__vector_quad* acc0, _
     result0.packet[2] = vec_mergel(result0.packet[2], result1.packet[2]);
     result0.packet[3] = vec_perm(result0.packet[3], result1.packet[3], p16uc_ELEMENT_3);
     result0.packet[0] = vec_add(vec_add(result0.packet[0], result0.packet[2]), vec_add(result0.packet[1], result0.packet[3]));
-    cc0.cd = pfirst(reinterpret_cast<Packet2d>(result0.packet[0]));
-    return cc0.cs;
+    return *reinterpret_cast<ScalarBlock<ResScalar, 2> *>(&result0.packet[0]);
 }
 
 template<>
 EIGEN_ALWAYS_INLINE ScalarBlock<double, 2> predux_real<double, Packet2d>(__vector_quad* acc0, __vector_quad* acc1)
 {
-    ScalarBlock<double, 2> cc0;
     PacketBlock<Packet2d, 4> result0, result1;
     __builtin_mma_disassemble_acc(&result0.packet, acc0);
     __builtin_mma_disassemble_acc(&result1.packet, acc1);
-    cc0.scalar[0] = result0.packet[0][0] + result0.packet[1][1];
-    cc0.scalar[1] = result1.packet[0][0] + result1.packet[1][1];
-    return cc0;
+    result0.packet[0] = vec_add(vec_mergeh(result0.packet[0], result1.packet[0]), vec_mergel(result0.packet[1], result1.packet[1]));
+    return *reinterpret_cast<ScalarBlock<double, 2> *>(&result0.packet[0]);
 }
 
 /** \internal add complex results together */
@@ -1766,17 +1764,17 @@ EIGEN_ALWAYS_INLINE ScalarBlock<std::complex<float>, 2> addComplexResults(Packet
         result0.packet[3] = reinterpret_cast<Packet4f>(vec_mergel(reinterpret_cast<Packet2d>(result0.packet[3]), reinterpret_cast<Packet2d>(result1.packet[3])));
         result0.packet[1] = vec_add(result0.packet[1], result0.packet[3]);
         if (ConjugateLhs) {
-            result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
-            result0.packet[1] = convertReal(pcplxflip2(convertComplex(result0.packet[1])));
+            result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
+            result0.packet[1] = pcplxflip2(convertComplex(result0.packet[1])).v;
         } else if (ConjugateRhs) {
-            result0.packet[1] = convertReal(pcplxconjflip(convertComplex(result0.packet[1])));
+            result0.packet[1] = pcplxconjflip(convertComplex(result0.packet[1])).v;
         } else {
-            result0.packet[1] = convertReal(pcplxflipconj(convertComplex(result0.packet[1])));
+            result0.packet[1] = pcplxflipconj(convertComplex(result0.packet[1])).v;
         }
         result0.packet[0] = vec_add(result0.packet[0], result0.packet[1]);
     } else {
         if (ConjugateLhs && (sizeof(LhsPacket) == sizeof(std::complex<float>))) {
-            result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
+            result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
         }
     }
     cc0.scalar[0].real(result0.packet[0][0]);
@@ -1807,12 +1805,10 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(__vector_quad* acc0
 template<typename ResScalar, typename ResPacket>
 EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_real(__vector_quad* acc0)
 {
-    ScalarBlock<ResScalar, 2> cc0;
     PacketBlock<ResPacket, 4> result0;
     __builtin_mma_disassemble_acc(&result0.packet, acc0);
-    cc0.scalar[0] = result0.packet[0][0] + result0.packet[1][1];
-    cc0.scalar[1] = result0.packet[2][0] + result0.packet[3][1];
-    return cc0;
+    result0.packet[0] = vec_add(vec_mergeh(result0.packet[0], result0.packet[2]), vec_mergel(result0.packet[1], result0.packet[3]));
+    return *reinterpret_cast<ScalarBlock<ResScalar, 2> *>(&result0.packet[0]);
 }
 
 template<typename ResScalar, typename ResPacket, typename LhsPacket, typename RhsPacket, bool ConjugateLhs, bool ConjugateRhs>
@@ -1823,25 +1819,25 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(__vector_quad* acc0
     __builtin_mma_disassemble_acc(&result0.packet, acc0);
     if (GEMV_IS_COMPLEX_COMPLEX) {
         if (ConjugateLhs) {
-            result0.packet[1] = convertReal(pconjinv(convertComplex(result0.packet[1])));
-            result0.packet[3] = convertReal(pconjinv(convertComplex(result0.packet[3])));
+            result0.packet[1] = pconjinv(convertComplex(result0.packet[1])).v;
+            result0.packet[3] = pconjinv(convertComplex(result0.packet[3])).v;
         } else if (ConjugateRhs) {
-            result0.packet[0] = convertReal(pconj2(convertComplex(result0.packet[0])));
-            result0.packet[2] = convertReal(pconj2(convertComplex(result0.packet[2])));
+            result0.packet[0] = pconj2(convertComplex(result0.packet[0])).v;
+            result0.packet[2] = pconj2(convertComplex(result0.packet[2])).v;
         } else {
-            result0.packet[1] = convertReal(pconj2(convertComplex(result0.packet[1])));
-            result0.packet[3] = convertReal(pconj2(convertComplex(result0.packet[3])));
+            result0.packet[1] = pconj2(convertComplex(result0.packet[1])).v;
+            result0.packet[3] = pconj2(convertComplex(result0.packet[3])).v;
         }
-        cc0.scalar[0].real(result0.packet[0][0] + result0.packet[1][1]);
-        cc0.scalar[0].imag(result0.packet[0][1] + result0.packet[1][0]);
-        cc0.scalar[1].real(result0.packet[2][0] + result0.packet[3][1]);
-        cc0.scalar[1].imag(result0.packet[2][1] + result0.packet[3][0]);
+        result0.packet[0] = vec_add(result0.packet[0], __builtin_vsx_xxpermdi(result0.packet[1], result0.packet[1], 2));
+        result0.packet[2] = vec_add(result0.packet[2], __builtin_vsx_xxpermdi(result0.packet[3], result0.packet[3], 2));
     } else {
-        cc0.scalar[0].real(result0.packet[0][0]);
-        cc0.scalar[0].imag(result0.packet[1][1]);
-        cc0.scalar[1].real(result0.packet[2][0]);
-        cc0.scalar[1].imag(result0.packet[3][1]);
+        result0.packet[0] = __builtin_vsx_xxpermdi(result0.packet[0], result0.packet[1], 1);
+        result0.packet[2] = __builtin_vsx_xxpermdi(result0.packet[2], result0.packet[3], 1);
     }
+    cc0.scalar[0].real(result0.packet[0][0]);
+    cc0.scalar[0].imag(result0.packet[0][1]);
+    cc0.scalar[1].real(result0.packet[2][0]);
+    cc0.scalar[1].imag(result0.packet[2][1]);
     return cc0;
 }
 #endif
@@ -1946,18 +1942,18 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(ResPacket& a, ResPa
     GEMV_UNROLL_ROW(GEMV_INIT_ROW, N) \
     Index j = 0; \
     for (; j + LhsPacketSize <= cols; j += LhsPacketSize) { \
-      RhsPacket a0 = rhs2.template load<RhsPacket, Unaligned>(j, 0); \
+      RhsPacket a0 = rhs2.template load<RhsPacket, Unaligned>(j); \
       GEMV_UNROLL_ROW(GEMV_WORK_ROW, N) \
     } \
     GEMV_UNROLL_ROW_HALF(GEMV_PREDUX2, (N >> 1)) \
     for (; j < cols; ++j) { \
-      RhsScalar a0 = rhs2(j, 0); \
+      RhsScalar a0 = rhs2(j); \
       GEMV_UNROLL_ROW_HALF(GEMV_MULT, (N >> 1)) \
     } \
     GEMV_UNROLL_ROW_HALF(GEMV_STORE_ROW, (N >> 1)) \
   }
 
-template<typename Index, typename LhsScalar, typename LhsMapper, typename RhsScalar, typename RhsMapper, typename ResScalar>
+template<typename LhsScalar, typename LhsMapper, typename RhsScalar, typename RhsMapper, typename ResScalar>
 EIGEN_STRONG_INLINE void gemv_row(
     Index rows, Index cols,
     const LhsMapper& alhs,
@@ -1974,7 +1970,7 @@ EIGEN_STRONG_INLINE void gemv_row(
     // The following copy tells the compiler that lhs's attributes are not modified outside this function
     // This helps GCC to generate proper code.
     LhsMapper lhs(alhs);
-    RhsMapper rhs2(rhs);
+    typename RhsMapper::LinearMapper rhs2 = rhs.getLinearMapper(0, 0);
 
     eigen_internal_assert(rhs.stride() == 1);
     conj_helper<LhsScalar, RhsScalar, false, false> cj;
@@ -2015,14 +2011,14 @@ EIGEN_STRONG_INLINE void gemv_row(
         Index j = 0;
         for (; j + LhsPacketSize <= cols; j += LhsPacketSize)
         {
-            RhsPacket b0 = rhs2.template load<RhsPacket, Unaligned>(j, 0);
+            RhsPacket b0 = rhs2.template load<RhsPacket, Unaligned>(j);
 
             d0 = pcj.pmadd(lhs.template load<LhsPacket, LhsAlignment>(i + 0, j), b0, d0);
         }
         ResScalar dd0 = predux(d0);
         for (; j < cols; ++j)
         {
-            dd0 += cj.pmul(lhs(i, j), rhs2(j, 0));
+            dd0 += cj.pmul(lhs(i, j), rhs2(j));
         }
         res[i * resIncr] += alpha * dd0;
     }
@@ -2040,7 +2036,7 @@ struct general_matrix_vector_product<Index, Scalar, LhsMapper, ColMajor, Conjuga
         const RhsMapper& rhs, \
         ResScalar* res, Index resIncr, \
         ResScalar alpha) { \
-        gemv_col<Index, Scalar, LhsMapper, Scalar, RhsMapper, ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+        gemv_col<Scalar, LhsMapper, Scalar, RhsMapper, ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
     } \
 };
 
@@ -2056,7 +2052,7 @@ struct general_matrix_vector_product<Index, Scalar, LhsMapper, RowMajor, Conjuga
         const RhsMapper& rhs, \
         ResScalar* res, Index resIncr, \
         ResScalar alpha) { \
-        gemv_row<Index, Scalar, LhsMapper, Scalar, RhsMapper, ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+        gemv_row<Scalar, LhsMapper, Scalar, RhsMapper, ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
     } \
 };
 
@@ -2076,7 +2072,7 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(PResPacket& a0, PRe
 }
 
 #define GEMV_LOADPACKET_ROW_COMPLEX(iter) \
-  loadLhsPacket<Scalar, LhsScalar, LhsMapper, PLhsPacket, Index>(lhs, i + (iter), j)
+  loadLhsPacket<Scalar, LhsScalar, LhsMapper, PLhsPacket>(lhs, i + (iter), j)
 
 #define GEMV_LOADPACKET_ROW_COMPLEX_DATA(iter) \
   convertReal(GEMV_LOADPACKET_ROW_COMPLEX(iter))
@@ -2084,14 +2080,14 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(PResPacket& a0, PRe
 #define GEMV_PROCESS_ROW_COMPLEX_SINGLE_WORK(which, N) \
   j = 0; \
   for (; j + LhsPacketSize <= cols; j += LhsPacketSize) { \
-    const RhsScalar& b1 = rhs2(j, 0); \
+    const RhsScalar& b1 = rhs2(j); \
     RhsScalar* b = const_cast<RhsScalar *>(&b1); \
     GEMV_UNROLL_ROW(which, N) \
   }
 
 #define GEMV_PROCESS_END_ROW_COMPLEX(N) \
   for (; j < cols; ++j) { \
-    RhsScalar b0 = rhs2(j, 0); \
+    RhsScalar b0 = rhs2(j); \
     GEMV_UNROLL_ROW_HALF(GEMV_MULT_COMPLEX, (N >> 1)) \
   } \
   GEMV_UNROLL_ROW_HALF(GEMV_STORE_ROW_COMPLEX, (N >> 1))
@@ -2225,7 +2221,7 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(PResPacket& a0, PRe
   GEMV_UNROLL_ROW(GEMV_INIT_COMPLEX_OLD, N) \
   j = 0; \
   for (; j + LhsPacketSize <= cols; j += LhsPacketSize) { \
-    RhsPacket b0 = rhs2.template load<RhsPacket, Unaligned>(j, 0); \
+    RhsPacket b0 = rhs2.template load<RhsPacket, Unaligned>(j); \
     GEMV_UNROLL_ROW(GEMV_WORK_ROW_COMPLEX_OLD, N) \
   }
 
@@ -2276,7 +2272,7 @@ EIGEN_ALWAYS_INLINE ScalarBlock<ResScalar, 2> predux_complex(PResPacket& a0, PRe
   GEMV_PROCESS_ROW_COMPLEX_ONE(N)
 #endif
 
-template<typename Index, typename Scalar, typename LhsScalar, typename LhsMapper, bool ConjugateLhs, bool LhsIsReal, typename RhsScalar, typename RhsMapper, bool ConjugateRhs, bool RhsIsReal, typename ResScalar>
+template<typename Scalar, typename LhsScalar, typename LhsMapper, bool ConjugateLhs, bool LhsIsReal, typename RhsScalar, typename RhsMapper, bool ConjugateRhs, bool RhsIsReal, typename ResScalar>
 EIGEN_STRONG_INLINE void gemv_complex_row(
     Index rows, Index cols,
     const LhsMapper& alhs,
@@ -2298,7 +2294,7 @@ EIGEN_STRONG_INLINE void gemv_complex_row(
     // The following copy tells the compiler that lhs's attributes are not modified outside this function
     // This helps GCC to generate proper code.
     LhsMapper lhs(alhs);
-    RhsMapper rhs2(rhs);
+    typename RhsMapper::LinearMapper rhs2 = rhs.getLinearMapper(0, 0);
 
     eigen_internal_assert(rhs.stride() == 1);
     conj_helper<LhsScalar, RhsScalar, ConjugateLhs, ConjugateRhs> cj;
@@ -2349,7 +2345,7 @@ EIGEN_STRONG_INLINE void gemv_complex_row(
         GEMV_PROCESS_ROW_COMPLEX_PREDUX(0)
         for (; j < cols; ++j)
         {
-            dd0 += cj.pmul(lhs(i, j), rhs2(j, 0));
+            dd0 += cj.pmul(lhs(i, j), rhs2(j));
         }
         res[i * resIncr] += alpha * dd0;
     }
@@ -2367,7 +2363,7 @@ struct general_matrix_vector_product<Index, LhsScalar, LhsMapper, ColMajor, Conj
         const RhsMapper& rhs, \
         ResScalar* res, Index resIncr, \
         ResScalar alpha) { \
-        gemv_complex_col<Index, Scalar, LhsScalar, LhsMapper, ConjugateLhs, sizeof(Scalar) == sizeof(LhsScalar), RhsScalar, RhsMapper, ConjugateRhs, sizeof(Scalar) == sizeof(RhsScalar), ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+        gemv_complex_col<Scalar, LhsScalar, LhsMapper, ConjugateLhs, sizeof(Scalar) == sizeof(LhsScalar), RhsScalar, RhsMapper, ConjugateRhs, sizeof(Scalar) == sizeof(RhsScalar), ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
     } \
 };
 
@@ -2383,7 +2379,7 @@ struct general_matrix_vector_product<Index, LhsScalar, LhsMapper, RowMajor, Conj
         const RhsMapper& rhs, \
         ResScalar* res, Index resIncr, \
         ResScalar alpha) { \
-        gemv_complex_row<Index, Scalar, LhsScalar, LhsMapper, ConjugateLhs, sizeof(Scalar) == sizeof(LhsScalar), RhsScalar, RhsMapper, ConjugateRhs, sizeof(Scalar) == sizeof(RhsScalar), ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
+        gemv_complex_row<Scalar, LhsScalar, LhsMapper, ConjugateLhs, sizeof(Scalar) == sizeof(LhsScalar), RhsScalar, RhsMapper, ConjugateRhs, sizeof(Scalar) == sizeof(RhsScalar), ResScalar>(rows, cols, lhs, rhs, res, resIncr, alpha); \
     } \
 };
 

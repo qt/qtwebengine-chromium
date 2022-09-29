@@ -6,7 +6,10 @@
 
 #include "core/fpdfapi/page/cpdf_generalstate.h"
 
+#include <utility>
+
 #include "core/fpdfapi/page/cpdf_transferfunc.h"
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 
 namespace {
@@ -142,13 +145,18 @@ void CPDF_GeneralState::SetStrokeAlpha(float alpha) {
   m_Ref.GetPrivateCopy()->m_StrokeAlpha = alpha;
 }
 
-CPDF_Object* CPDF_GeneralState::GetSoftMask() const {
+const CPDF_Dictionary* CPDF_GeneralState::GetSoftMask() const {
   const StateData* pData = m_Ref.GetObject();
   return pData ? pData->m_pSoftMask.Get() : nullptr;
 }
 
-void CPDF_GeneralState::SetSoftMask(CPDF_Object* pObject) {
-  m_Ref.GetPrivateCopy()->m_pSoftMask.Reset(pObject);
+RetainPtr<CPDF_Dictionary> CPDF_GeneralState::GetMutableSoftMask() {
+  const StateData* pData = m_Ref.GetObject();
+  return pData ? pData->m_pSoftMask : nullptr;
+}
+
+void CPDF_GeneralState::SetSoftMask(RetainPtr<CPDF_Dictionary> pDict) {
+  m_Ref.GetPrivateCopy()->m_pSoftMask = std::move(pDict);
 }
 
 const CPDF_Object* CPDF_GeneralState::GetTR() const {
@@ -156,7 +164,7 @@ const CPDF_Object* CPDF_GeneralState::GetTR() const {
   return pData ? pData->m_pTR.Get() : nullptr;
 }
 
-void CPDF_GeneralState::SetTR(CPDF_Object* pObject) {
+void CPDF_GeneralState::SetTR(const CPDF_Object* pObject) {
   m_Ref.GetPrivateCopy()->m_pTR.Reset(pObject);
 }
 
@@ -165,9 +173,8 @@ RetainPtr<CPDF_TransferFunc> CPDF_GeneralState::GetTransferFunc() const {
   return pData ? pData->m_pTransferFunc : nullptr;
 }
 
-void CPDF_GeneralState::SetTransferFunc(
-    const RetainPtr<CPDF_TransferFunc>& pFunc) {
-  m_Ref.GetPrivateCopy()->m_pTransferFunc = pFunc;
+void CPDF_GeneralState::SetTransferFunc(RetainPtr<CPDF_TransferFunc> pFunc) {
+  m_Ref.GetPrivateCopy()->m_pTransferFunc = std::move(pFunc);
 }
 
 void CPDF_GeneralState::SetBlendMode(const ByteString& mode) {
@@ -211,15 +218,15 @@ void CPDF_GeneralState::SetOPMode(int mode) {
   m_Ref.GetPrivateCopy()->m_OPMode = mode;
 }
 
-void CPDF_GeneralState::SetBG(CPDF_Object* pObject) {
+void CPDF_GeneralState::SetBG(const CPDF_Object* pObject) {
   m_Ref.GetPrivateCopy()->m_pBG.Reset(pObject);
 }
 
-void CPDF_GeneralState::SetUCR(CPDF_Object* pObject) {
+void CPDF_GeneralState::SetUCR(const CPDF_Object* pObject) {
   m_Ref.GetPrivateCopy()->m_pUCR.Reset(pObject);
 }
 
-void CPDF_GeneralState::SetHT(CPDF_Object* pObject) {
+void CPDF_GeneralState::SetHT(const CPDF_Object* pObject) {
   m_Ref.GetPrivateCopy()->m_pHT.Reset(pObject);
 }
 

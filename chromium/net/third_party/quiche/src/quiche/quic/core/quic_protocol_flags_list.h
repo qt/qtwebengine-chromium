@@ -105,10 +105,6 @@ QUIC_PROTOCOL_FLAG(bool, quic_disable_version_negotiation_grease_randomness,
 QUIC_PROTOCOL_FLAG(bool, quic_enable_http3_grease_randomness, true,
                    "If true, use random greased settings and frames.")
 
-QUIC_PROTOCOL_FLAG(
-    bool, quic_enable_chaos_protection, true,
-    "If true, use chaos protection to randomize client initials.")
-
 QUIC_PROTOCOL_FLAG(int64_t, quic_max_tracked_packet_count, 10000,
                    "Maximum number of tracked packets.")
 
@@ -215,4 +211,7 @@ QUIC_PROTOCOL_FLAG(
 
 QUIC_PROTOCOL_FLAG(bool, quic_use_lower_server_response_mtu_for_test, false,
                    "If true, cap server response packet size at 1250.")
+
+QUIC_PROTOCOL_FLAG(bool, quic_enforce_strict_amplification_factor, false,
+                   "If true, enforce strict amplification factor")
 #endif

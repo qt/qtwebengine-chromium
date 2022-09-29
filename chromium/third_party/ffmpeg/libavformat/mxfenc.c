@@ -2139,7 +2139,7 @@ static int mxf_parse_dv_frame(AVFormatContext *s, AVStream *st, AVPacket *pkt)
 {
     MXFContext *mxf = s->priv_data;
     MXFStreamContext *sc = st->priv_data;
-    uint8_t *vs_pack, *vsc_pack;
+    const uint8_t *vs_pack, *vsc_pack;
     int apt, ul_index, stype, pal;
 
     if (mxf->header_written)
@@ -2806,8 +2806,8 @@ static void mxf_write_d10_audio_packet(AVFormatContext *s, AVStream *st, AVPacke
     MXFContext *mxf = s->priv_data;
     AVIOContext *pb = s->pb;
     int frame_size = pkt->size / st->codecpar->block_align;
-    uint8_t *samples = pkt->data;
-    uint8_t *end = pkt->data + pkt->size;
+    const uint8_t *samples = pkt->data;
+    const uint8_t *const end = pkt->data + pkt->size;
     int i;
 
     klv_encode_ber4_length(pb, 4 + frame_size*4*8);

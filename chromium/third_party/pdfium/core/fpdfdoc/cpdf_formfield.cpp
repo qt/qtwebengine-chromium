@@ -19,6 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
@@ -73,10 +74,11 @@ CPDF_Object* CPDF_FormField::GetFieldAttr(CPDF_Dictionary* pFieldDict,
 }
 
 // static
-WideString CPDF_FormField::GetFullNameForDict(CPDF_Dictionary* pFieldDict) {
+WideString CPDF_FormField::GetFullNameForDict(
+    const CPDF_Dictionary* pFieldDict) {
   WideString full_name;
-  std::set<CPDF_Dictionary*> visited;
-  CPDF_Dictionary* pLevel = pFieldDict;
+  std::set<const CPDF_Dictionary*> visited;
+  const CPDF_Dictionary* pLevel = pFieldDict;
   while (pLevel) {
     visited.insert(pLevel);
     WideString short_name = pLevel->GetUnicodeTextFor(pdfium::form_fields::kT);
@@ -126,7 +128,6 @@ void CPDF_FormField::InitFieldFlags() {
       m_Type = kRichText;
     else
       m_Type = kText;
-    LoadDA();
   } else if (type_name == pdfium::form_fields::kCh) {
     if (flags & pdfium::form_flags::kChoiceCombo) {
       m_Type = kComboBox;
@@ -135,7 +136,6 @@ void CPDF_FormField::InitFieldFlags() {
       m_bIsMultiSelectListBox = flags & pdfium::form_flags::kChoiceMultiSelect;
     }
     m_bUseSelectedIndices = UseSelectedIndicesObject();
-    LoadDA();
   } else if (type_name == pdfium::form_fields::kSig) {
     m_Type = kSign;
   }
@@ -178,14 +178,15 @@ bool CPDF_FormField::ResetField() {
     case kRichText:
     case kFile:
     default: {
-      const CPDF_Object* pDV = GetDefaultValueObject();
       WideString csDValue;
-      if (pDV)
-        csDValue = pDV->GetUnicodeText();
-
       WideString csValue;
       {
-        // Limit the scope of |pV| because it may get invalidated below.
+        // Limit scope of |pDV| and |pV| because they may get invalidated
+        // during notification below.
+        const CPDF_Object* pDV = GetDefaultValueObject();
+        if (pDV)
+          csDValue = pDV->GetUnicodeText();
+
         const CPDF_Object* pV = GetValueObject();
         if (pV)
           csValue = pV->GetUnicodeText();
@@ -195,21 +196,26 @@ bool CPDF_FormField::ResetField() {
       if (!bHasRV && (csDValue == csValue))
         return false;
 
-      if (!NotifyBeforeValueChange(csDValue)) {
+      if (!NotifyBeforeValueChange(csDValue))
         return false;
-      }
-      if (pDV) {
-        RetainPtr<CPDF_Object> pClone = pDV->Clone();
-        if (!pClone)
-          return false;
 
-        m_pDict->SetFor(pdfium::form_fields::kV, std::move(pClone));
-        if (bHasRV) {
-          m_pDict->SetFor("RV", pDV->Clone());
+      {
+        // Limit scope of |pDV| because it may get invalidated during
+        // notification below.
+        const CPDF_Object* pDV = GetDefaultValueObject();
+        if (pDV) {
+          RetainPtr<CPDF_Object> pClone = pDV->Clone();
+          if (!pClone)
+            return false;
+
+          m_pDict->SetFor(pdfium::form_fields::kV, std::move(pClone));
+          if (bHasRV) {
+            m_pDict->SetFor("RV", pDV->Clone());
+          }
+        } else {
+          m_pDict->RemoveFor(pdfium::form_fields::kV);
+          m_pDict->RemoveFor("RV");
         }
-      } else {
-        m_pDict->RemoveFor(pdfium::form_fields::kV);
-        m_pDict->RemoveFor("RV");
       }
       NotifyAfterValueChange();
       break;
@@ -287,15 +293,6 @@ uint32_t CPDF_FormField::GetFieldFlags() const {
 void CPDF_FormField::SetFieldFlags(uint32_t dwFlags) {
   m_pDict->SetNewFor<CPDF_Number>(pdfium::form_fields::kFf,
                                   static_cast<int>(dwFlags));
-}
-
-ByteString CPDF_FormField::GetDefaultStyle() const {
-  const CPDF_Object* pObj = GetFieldAttr(m_pDict.Get(), "DS");
-  return pObj ? pObj->GetString() : ByteString();
-}
-
-void CPDF_FormField::SetOpt(RetainPtr<CPDF_Object> pOpt) {
-  m_pDict->SetFor("Opt", std::move(pOpt));
 }
 
 WideString CPDF_FormField::GetValue(bool bDefault) const {
@@ -535,14 +532,6 @@ void CPDF_FormField::SetItemSelectionSelected(int index,
   }
 }
 
-bool CPDF_FormField::IsItemDefaultSelected(int index) const {
-  DCHECK(GetType() == kComboBox || GetType() == kListBox);
-  if (index < 0 || index >= CountOptions())
-    return false;
-  int iDVIndex = GetDefaultSelectedItem();
-  return iDVIndex >= 0 && iDVIndex == index;
-}
-
 int CPDF_FormField::GetDefaultSelectedItem() const {
   DCHECK(GetType() == kComboBox || GetType() == kListBox);
   const CPDF_Object* pValue = GetDefaultValueObject();
@@ -745,7 +734,7 @@ bool CPDF_FormField::IsSelectedIndex(int iOptIndex) const {
 }
 
 void CPDF_FormField::SelectOption(int iOptIndex) {
-  CPDF_Array* pArray = GetOrCreateArray(m_pDict.Get(), "I");
+  RetainPtr<CPDF_Array> pArray = m_pDict->GetOrCreateArrayFor("I");
   for (size_t i = 0; i < pArray->size(); i++) {
     int iFind = pArray->GetIntegerAt(i);
     if (iFind == iOptIndex)
@@ -834,42 +823,6 @@ bool CPDF_FormField::UseSelectedIndicesObject() const {
     return false;
 
   return pdfium::Contains(values, GetOptionValue(index));
-}
-
-void CPDF_FormField::LoadDA() {
-  CPDF_Dictionary* pFormDict = m_pForm->GetFormDict();
-  if (!pFormDict)
-    return;
-
-  ByteString DA;
-  if (const CPDF_Object* pObj = GetFieldAttr(m_pDict.Get(), "DA"))
-    DA = pObj->GetString();
-
-  if (DA.IsEmpty())
-    DA = pFormDict->GetStringFor("DA");
-
-  if (DA.IsEmpty())
-    return;
-
-  CPDF_Dictionary* pDR = pFormDict->GetDictFor("DR");
-  if (!pDR)
-    return;
-
-  CPDF_Dictionary* pFont = pDR->GetDictFor("Font");
-  if (!ValidateFontResourceDict(pFont))
-    return;
-
-  CPDF_DefaultAppearance appearance(DA);
-  absl::optional<ByteString> font_name = appearance.GetFont(&m_FontSize);
-  if (!font_name.has_value())
-    return;
-
-  CPDF_Dictionary* pFontDict = pFont->GetDictFor(font_name.value());
-  if (!pFontDict)
-    return;
-
-  auto* pData = CPDF_DocPageData::FromDocument(m_pForm->GetDocument());
-  m_pFont = pData->GetFont(pFontDict);
 }
 
 bool CPDF_FormField::NotifyBeforeSelectionChange(const WideString& value) {

@@ -1966,6 +1966,20 @@ void CompilerMSL::mark_packable_structs()
 			    (has_decoration(type.self, DecorationBlock) || has_decoration(type.self, DecorationBufferBlock)))
 				mark_as_packable(type);
 		}
+
+		if (var.storage == StorageClassWorkgroup)
+		{
+			auto *type = &this->get<SPIRType>(var.basetype);
+			if (type->basetype == SPIRType::Struct)
+				mark_as_workgroup_struct(*type);
+		}
+	});
+
+	// Physical storage buffer pointers can appear outside of the context of a variable, if the address
+	// is calculated from a ulong or uvec2 and cast to a pointer, so check if they need to be packed too.
+	ir.for_each_typed_id<SPIRType>([&](uint32_t, SPIRType &type) {
+		if (type.basetype == SPIRType::Struct && type.pointer && type.storage == StorageClassPhysicalStorageBuffer)
+			mark_as_packable(type);
 	});
 }
 
@@ -1980,7 +1994,8 @@ void CompilerMSL::mark_as_packable(SPIRType &type)
 		return;
 	}
 
-	if (type.basetype == SPIRType::Struct)
+	// Handle possible recursion when a struct contains a pointer to its own type nested somewhere.
+	if (type.basetype == SPIRType::Struct && !has_extended_decoration(type.self, SPIRVCrossDecorationBufferBlockRepacked))
 	{
 		set_extended_decoration(type.self, SPIRVCrossDecorationBufferBlockRepacked);
 
@@ -1995,6 +2010,38 @@ void CompilerMSL::mark_as_packable(SPIRType &type)
 			{
 				auto &mbr_type_alias = get<SPIRType>(mbr_type.type_alias);
 				mark_as_packable(mbr_type_alias);
+			}
+		}
+	}
+}
+
+// If the specified type is a struct, it and any nested structs
+// are marked as used with workgroup storage using the SPIRVCrossDecorationWorkgroupStruct decoration.
+void CompilerMSL::mark_as_workgroup_struct(SPIRType &type)
+{
+	// If this is not the base type (eg. it's a pointer or array), tunnel down
+	if (type.parent_type)
+	{
+		mark_as_workgroup_struct(get<SPIRType>(type.parent_type));
+		return;
+	}
+
+	// Handle possible recursion when a struct contains a pointer to its own type nested somewhere.
+	if (type.basetype == SPIRType::Struct && !has_extended_decoration(type.self, SPIRVCrossDecorationWorkgroupStruct))
+	{
+		set_extended_decoration(type.self, SPIRVCrossDecorationWorkgroupStruct);
+
+		// Recurse
+		uint32_t mbr_cnt = uint32_t(type.member_types.size());
+		for (uint32_t mbr_idx = 0; mbr_idx < mbr_cnt; mbr_idx++)
+		{
+			uint32_t mbr_type_id = type.member_types[mbr_idx];
+			auto &mbr_type = get<SPIRType>(mbr_type_id);
+			mark_as_workgroup_struct(mbr_type);
+			if (mbr_type.type_alias)
+			{
+				auto &mbr_type_alias = get<SPIRType>(mbr_type.type_alias);
+				mark_as_workgroup_struct(mbr_type_alias);
 			}
 		}
 	}
@@ -4039,6 +4086,10 @@ uint32_t CompilerMSL::ensure_correct_input_type(uint32_t type_id, uint32_t locat
 
 void CompilerMSL::mark_struct_members_packed(const SPIRType &type)
 {
+	// Handle possible recursion when a struct contains a pointer to its own type nested somewhere.
+	if (has_extended_decoration(type.self, SPIRVCrossDecorationPhysicalTypePacked))
+		return;
+
 	set_extended_decoration(type.self, SPIRVCrossDecorationPhysicalTypePacked);
 
 	// Problem case! Struct needs to be placed at an awkward alignment.
@@ -4065,8 +4116,9 @@ void CompilerMSL::mark_scalar_layout_structs(const SPIRType &type)
 	uint32_t mbr_cnt = uint32_t(type.member_types.size());
 	for (uint32_t i = 0; i < mbr_cnt; i++)
 	{
+		// Handle possible recursion when a struct contains a pointer to its own type nested somewhere.
 		auto &mbr_type = get<SPIRType>(type.member_types[i]);
-		if (mbr_type.basetype == SPIRType::Struct)
+		if (mbr_type.basetype == SPIRType::Struct && !(mbr_type.pointer && mbr_type.storage == StorageClassPhysicalStorageBuffer))
 		{
 			auto *struct_type = &mbr_type;
 			while (!struct_type->array.empty())
@@ -4278,8 +4330,10 @@ void CompilerMSL::ensure_member_packing_rules_msl(SPIRType &ib_type, uint32_t in
 	// This case will be nightmare-ish to deal with. This could possibly happen if struct alignment does not quite
 	// match up with what we want. Scalar block layout comes to mind here where we might have to work around the rule
 	// that struct alignment == max alignment of all members and struct size depends on this alignment.
+	// Can't repack structs, but can repack pointers to structs.
 	auto &mbr_type = get<SPIRType>(ib_type.member_types[index]);
-	if (mbr_type.basetype == SPIRType::Struct)
+	bool is_buff_ptr = mbr_type.pointer && mbr_type.storage == StorageClassPhysicalStorageBuffer;
+	if (mbr_type.basetype == SPIRType::Struct && !is_buff_ptr)
 		SPIRV_CROSS_THROW("Cannot perform any repacking for structs when it is used as a member of another struct.");
 
 	// Perform remapping here.
@@ -4306,7 +4360,9 @@ void CompilerMSL::ensure_member_packing_rules_msl(SPIRType &ib_type, uint32_t in
 		for (uint32_t dim = 0; dim < dimensions; dim++)
 			array_stride /= max(to_array_size_literal(mbr_type, dim), 1u);
 
-		uint32_t elems_per_stride = array_stride / (mbr_type.width / 8);
+		// Pointers are 8 bytes
+		uint32_t mbr_width_in_bytes = is_buff_ptr ? 8 : (mbr_type.width / 8);
+		uint32_t elems_per_stride = array_stride / mbr_width_in_bytes;
 
 		if (elems_per_stride == 3)
 			SPIRV_CROSS_THROW("Cannot use ArrayStride of 3 elements in remapping scenarios.");
@@ -4316,6 +4372,17 @@ void CompilerMSL::ensure_member_packing_rules_msl(SPIRType &ib_type, uint32_t in
 		auto physical_type = mbr_type;
 		physical_type.vecsize = elems_per_stride;
 		physical_type.parent_type = 0;
+
+		// If this is a physical buffer pointer, replace type with a ulongn vector.
+		if (is_buff_ptr)
+		{
+			physical_type.width = 64;
+			physical_type.basetype = to_unsigned_basetype(physical_type.width);
+			physical_type.pointer = false;
+			physical_type.pointer_depth = false;
+			physical_type.forward_pointer = false;
+		}
+
 		uint32_t type_id = ir.increase_bound_by(1);
 		set<SPIRType>(type_id, physical_type);
 		set_extended_member_decoration(ib_type.self, index, SPIRVCrossDecorationPhysicalTypeID, type_id);
@@ -4800,6 +4867,10 @@ void CompilerMSL::add_typedef_line(const string &line)
 // Template struct like spvUnsafeArray<> need to be declared *before* any resources are declared
 void CompilerMSL::emit_custom_templates()
 {
+	static const char * const address_spaces[] = {
+		"thread", "constant", "device", "threadgroup", "threadgroup_imageblock", "ray_data", "object_data"
+	};
+
 	for (const auto &spv_func : spv_function_implementations)
 	{
 		switch (spv_func)
@@ -4842,6 +4913,122 @@ void CompilerMSL::emit_custom_templates()
 			statement("return elements[pos];");
 			end_scope();
 			end_scope_decl();
+			statement("");
+			break;
+
+		case SPVFuncImplStorageMatrix:
+			statement("template<typename T, int Cols, int Rows=Cols>");
+			statement("struct spvStorageMatrix");
+			begin_scope();
+			statement("vec<T, Rows> columns[Cols];");
+			statement("");
+			for (size_t method_idx = 0; method_idx < sizeof(address_spaces) / sizeof(address_spaces[0]); ++method_idx)
+			{
+				// Some address spaces require particular features.
+				if (method_idx == 4) // threadgroup_imageblock
+					statement("#ifdef __HAVE_IMAGEBLOCKS__");
+				else if (method_idx == 5) // ray_data
+					statement("#ifdef __HAVE_RAYTRACING__");
+				else if (method_idx == 6) // object_data
+					statement("#ifdef __HAVE_MESH__");
+				const string &method_as = address_spaces[method_idx];
+				statement("spvStorageMatrix() ", method_as, " = default;");
+				if (method_idx != 1) // constant
+				{
+					statement(method_as, " spvStorageMatrix& operator=(initializer_list<vec<T, Rows>> cols) ",
+					          method_as);
+					begin_scope();
+					statement("size_t i;");
+					statement("thread vec<T, Rows>* col;");
+					statement("for (i = 0, col = cols.begin(); i < Cols; ++i, ++col)");
+					statement("    columns[i] = *col;");
+					statement("return *this;");
+					end_scope();
+				}
+				statement("");
+				for (size_t param_idx = 0; param_idx < sizeof(address_spaces) / sizeof(address_spaces[0]); ++param_idx)
+				{
+					if (param_idx != method_idx)
+					{
+						if (param_idx == 4) // threadgroup_imageblock
+							statement("#ifdef __HAVE_IMAGEBLOCKS__");
+						else if (param_idx == 5) // ray_data
+							statement("#ifdef __HAVE_RAYTRACING__");
+						else if (param_idx == 6) // object_data
+							statement("#ifdef __HAVE_MESH__");
+					}
+					const string &param_as = address_spaces[param_idx];
+					statement("spvStorageMatrix(const ", param_as, " matrix<T, Cols, Rows>& m) ", method_as);
+					begin_scope();
+					statement("for (size_t i = 0; i < Cols; ++i)");
+					statement("    columns[i] = m.columns[i];");
+					end_scope();
+					statement("spvStorageMatrix(const ", param_as, " spvStorageMatrix& m) ", method_as, " = default;");
+					if (method_idx != 1) // constant
+					{
+						statement(method_as, " spvStorageMatrix& operator=(const ", param_as,
+						          " matrix<T, Cols, Rows>& m) ", method_as);
+						begin_scope();
+						statement("for (size_t i = 0; i < Cols; ++i)");
+						statement("    columns[i] = m.columns[i];");
+						statement("return *this;");
+						end_scope();
+						statement(method_as, " spvStorageMatrix& operator=(const ", param_as, " spvStorageMatrix& m) ",
+						          method_as, " = default;");
+					}
+					if (param_idx != method_idx && param_idx >= 4)
+						statement("#endif");
+					statement("");
+				}
+				statement("operator matrix<T, Cols, Rows>() const ", method_as);
+				begin_scope();
+				statement("matrix<T, Cols, Rows> m;");
+				statement("for (int i = 0; i < Cols; ++i)");
+				statement("    m.columns[i] = columns[i];");
+				statement("return m;");
+				end_scope();
+				statement("");
+				statement("vec<T, Rows> operator[](size_t idx) const ", method_as);
+				begin_scope();
+				statement("return columns[idx];");
+				end_scope();
+				if (method_idx != 1) // constant
+				{
+					statement(method_as, " vec<T, Rows>& operator[](size_t idx) ", method_as);
+					begin_scope();
+					statement("return columns[idx];");
+					end_scope();
+				}
+				if (method_idx >= 4)
+					statement("#endif");
+				statement("");
+			}
+			end_scope_decl();
+			statement("");
+			statement("template<typename T, int Cols, int Rows>");
+			statement("matrix<T, Rows, Cols> transpose(spvStorageMatrix<T, Cols, Rows> m)");
+			begin_scope();
+			statement("return transpose(matrix<T, Cols, Rows>(m));");
+			end_scope();
+			statement("");
+			statement("typedef spvStorageMatrix<half, 2, 2> spvStorage_half2x2;");
+			statement("typedef spvStorageMatrix<half, 2, 3> spvStorage_half2x3;");
+			statement("typedef spvStorageMatrix<half, 2, 4> spvStorage_half2x4;");
+			statement("typedef spvStorageMatrix<half, 3, 2> spvStorage_half3x2;");
+			statement("typedef spvStorageMatrix<half, 3, 3> spvStorage_half3x3;");
+			statement("typedef spvStorageMatrix<half, 3, 4> spvStorage_half3x4;");
+			statement("typedef spvStorageMatrix<half, 4, 2> spvStorage_half4x2;");
+			statement("typedef spvStorageMatrix<half, 4, 3> spvStorage_half4x3;");
+			statement("typedef spvStorageMatrix<half, 4, 4> spvStorage_half4x4;");
+			statement("typedef spvStorageMatrix<float, 2, 2> spvStorage_float2x2;");
+			statement("typedef spvStorageMatrix<float, 2, 3> spvStorage_float2x3;");
+			statement("typedef spvStorageMatrix<float, 2, 4> spvStorage_float2x4;");
+			statement("typedef spvStorageMatrix<float, 3, 2> spvStorage_float3x2;");
+			statement("typedef spvStorageMatrix<float, 3, 3> spvStorage_float3x3;");
+			statement("typedef spvStorageMatrix<float, 3, 4> spvStorage_float3x4;");
+			statement("typedef spvStorageMatrix<float, 4, 2> spvStorage_float4x2;");
+			statement("typedef spvStorageMatrix<float, 4, 3> spvStorage_float4x3;");
+			statement("typedef spvStorageMatrix<float, 4, 4> spvStorage_float4x4;");
 			statement("");
 			break;
 
@@ -6792,6 +6979,25 @@ void CompilerMSL::emit_specialization_constants_and_structs()
 	// these types for purpose of iterating over them in ir.ids_for_type and friends.
 	auto loop_lock = ir.create_loop_soft_lock();
 
+	// Physical storage buffer pointers can have cyclical references,
+	// so emit forward declarations of them before other structs.
+	// Ignore type_id because we want the underlying struct type from the pointer.
+	ir.for_each_typed_id<SPIRType>([&](uint32_t /* type_id */, const SPIRType &type) {
+		if (type.basetype == SPIRType::Struct &&
+			type.pointer && type.storage == StorageClassPhysicalStorageBuffer &&
+			declared_structs.count(type.self) == 0)
+		{
+			statement("struct ", to_name(type.self), ";");
+			declared_structs.insert(type.self);
+			emitted = true;
+		}
+	});
+	if (emitted)
+		statement("");
+
+	emitted = false;
+	declared_structs.clear();
+
 	for (auto &id_ : ir.ids_for_constant_or_type)
 	{
 		auto &id = ir.ids[id_];
@@ -7676,6 +7882,23 @@ void CompilerMSL::fix_up_interpolant_access_chain(const uint32_t *ops, uint32_t 
 	}
 	// Save this to the access chain itself so we can recover it later when calling an interpolation function.
 	set_extended_decoration(ops[1], SPIRVCrossDecorationInterfaceMemberIndex, interface_index);
+}
+
+
+// If the physical type of a physical buffer pointer has been changed
+// to a ulong or ulongn vector, add a cast back to the pointer type.
+void CompilerMSL::check_physical_type_cast(std::string &expr, const SPIRType *type, uint32_t physical_type)
+{
+	auto *p_physical_type = maybe_get<SPIRType>(physical_type);
+	if (p_physical_type &&
+		p_physical_type->storage == StorageClassPhysicalStorageBuffer &&
+		p_physical_type->basetype == to_unsigned_basetype(64))
+	{
+		if (p_physical_type->vecsize > 1)
+			expr += ".x";
+
+		expr = join("((", type_to_glsl(*type), ")", expr, ")");
+	}
 }
 
 // Override for MSL-specific syntax instructions
@@ -8628,6 +8851,34 @@ void CompilerMSL::emit_instruction(const Instruction &instruction)
 #undef MSL_RAY_QUERY_IS_OP2
 #undef MSL_RAY_QUERY_GET_OP2
 #undef MSL_RAY_QUERY_OP_INNER2
+
+	case OpConvertPtrToU:
+	case OpConvertUToPtr:
+	case OpBitcast:
+	{
+		auto &type = get<SPIRType>(ops[0]);
+		auto &input_type = expression_type(ops[2]);
+
+		if (opcode != OpBitcast || type.pointer || input_type.pointer)
+		{
+			string op;
+
+			if (type.vecsize == 1 && input_type.vecsize == 1)
+				op = join("reinterpret_cast<", type_to_glsl(type), ">(", to_unpacked_expression(ops[2]), ")");
+			else if (input_type.vecsize == 2)
+				op = join("reinterpret_cast<", type_to_glsl(type), ">(as_type<ulong>(", to_unpacked_expression(ops[2]), "))");
+			else
+				op = join("as_type<", type_to_glsl(type), ">(reinterpret_cast<ulong>(", to_unpacked_expression(ops[2]), "))");
+
+			emit_op(ops[0], ops[1], op, should_forward(ops[2]));
+			inherit_expression_dependencies(ops[1], ops[2]);
+		}
+		else
+			CompilerGLSL::emit_instruction(instruction);
+
+		break;
+	}
+
 	default:
 		CompilerGLSL::emit_instruction(instruction);
 		break;
@@ -10808,12 +11059,23 @@ string CompilerMSL::to_struct_member(const SPIRType &type, uint32_t member_type_
 		else if (!is_scalar(physical_type)) // scalar type is already packed.
 			pack_pfx = "packed_";
 	}
-	else if (row_major)
+	else if (is_matrix(physical_type))
 	{
-		// Need to declare type with flipped vecsize/columns.
-		row_major_physical_type = physical_type;
-		swap(row_major_physical_type.vecsize, row_major_physical_type.columns);
-		declared_type = &row_major_physical_type;
+		if (!msl_options.supports_msl_version(3, 0) &&
+		    has_extended_decoration(type.self, SPIRVCrossDecorationWorkgroupStruct))
+		{
+			pack_pfx = "spvStorage_";
+			add_spv_func_and_recompile(SPVFuncImplStorageMatrix);
+			// The pack prefix causes problems with array<T> wrappers.
+			is_using_builtin_array = true;
+		}
+		if (row_major)
+		{
+			// Need to declare type with flipped vecsize/columns.
+			row_major_physical_type = physical_type;
+			swap(row_major_physical_type.vecsize, row_major_physical_type.columns);
+			declared_type = &row_major_physical_type;
+		}
 	}
 
 	// Very specifically, image load-store in argument buffers are disallowed on MSL on iOS.
@@ -10843,8 +11105,8 @@ string CompilerMSL::to_struct_member(const SPIRType &type, uint32_t member_type_
 		array_type = type_to_array_glsl(physical_type);
 	}
 
-	auto result = join(pack_pfx, type_to_glsl(*declared_type, orig_id), " ", qualifier, to_member_name(type, index),
-	                   member_attribute_qualifier(type, index), array_type, ";");
+	auto result = join(pack_pfx, type_to_glsl(*declared_type, orig_id, true), " ", qualifier,
+	                   to_member_name(type, index), member_attribute_qualifier(type, index), array_type, ";");
 
 	is_using_builtin_array = false;
 	return result;
@@ -11400,6 +11662,7 @@ string CompilerMSL::get_type_address_space(const SPIRType &type, uint32_t id, bo
 		break;
 
 	case StorageClassStorageBuffer:
+	case StorageClassPhysicalStorageBuffer:
 	{
 		// For arguments from variable pointers, we use the write count deduction, so
 		// we should not assume any constness here. Only for global SSBOs.
@@ -13516,7 +13779,7 @@ string CompilerMSL::to_qualifiers_glsl(uint32_t id)
 // The optional id parameter indicates the object whose type we are trying
 // to find the description for. It is optional. Most type descriptions do not
 // depend on a specific object's use of that type.
-string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
+string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id, bool member)
 {
 	string type_name;
 
@@ -13528,7 +13791,7 @@ string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
 		const char *restrict_kw;
 
 		auto type_address_space = get_type_address_space(type, id);
-		auto type_decl = type_to_glsl(get<SPIRType>(type.parent_type), id);
+		const auto *p_parent_type = &get<SPIRType>(type.parent_type);
 
 		// Work around C pointer qualifier rules. If glsl_type is a pointer type as well
 		// we'll need to emit the address space to the right.
@@ -13536,9 +13799,16 @@ string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
 		// Prefer emitting thread T *foo over T thread* foo since it's more readable,
 		// but we'll have to emit thread T * thread * T constant bar; for example.
 		if (type_is_pointer_to_pointer(type))
-			type_name = join(type_decl, " ", type_address_space, " ");
+			type_name = join(type_to_glsl(*p_parent_type, id), " ", type_address_space, " ");
 		else
-			type_name = join(type_address_space, " ", type_decl);
+		{
+			// Since this is not a pointer-to-pointer, ensure we've dug down to the base type.
+			// Some situations chain pointers even though they are not formally pointers-of-pointers.
+			while (type_is_pointer(*p_parent_type))
+				p_parent_type = &get<SPIRType>(p_parent_type->parent_type);
+
+			type_name = join(type_address_space, " ", type_to_glsl(*p_parent_type, id));
+		}
 
 		switch (type.basetype)
 		{
@@ -13599,9 +13869,7 @@ string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
 		// Need to special-case threadgroup booleans. They are supposed to be logical
 		// storage, but MSL compilers will sometimes crash if you use threadgroup bool.
 		// Workaround this by using 16-bit types instead and fixup on load-store to this data.
-		// FIXME: We have no sane way of working around this problem if a struct member is boolean
-		// and that struct is used as a threadgroup variable, but ... sigh.
-		if ((var && var->storage == StorageClassWorkgroup) || type.storage == StorageClassWorkgroup)
+		if ((var && var->storage == StorageClassWorkgroup) || type.storage == StorageClassWorkgroup || member)
 			type_name = "short";
 		else
 			type_name = "bool";
@@ -13663,7 +13931,24 @@ string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
 
 	// Matrix?
 	if (type.columns > 1)
+	{
+		auto *var = maybe_get_backing_variable(id);
+		if (var && var->basevariable)
+			var = &get<SPIRVariable>(var->basevariable);
+
+		// Need to special-case threadgroup matrices. Due to an oversight, Metal's
+		// matrix struct prior to Metal 3 lacks constructors in the threadgroup AS,
+		// preventing us from default-constructing or initializing matrices in threadgroup storage.
+		// Work around this by using our own type as storage.
+		if (((var && var->storage == StorageClassWorkgroup) || type.storage == StorageClassWorkgroup) &&
+		    !msl_options.supports_msl_version(3, 0))
+		{
+			add_spv_func_and_recompile(SPVFuncImplStorageMatrix);
+			type_name = "spvStorage_" + type_name;
+		}
+
 		type_name += to_string(type.columns) + "x";
+	}
 
 	// Vector or Matrix?
 	if (type.vecsize > 1)
@@ -13691,6 +13976,11 @@ string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
 		res += type_name + sizes;
 		return res;
 	}
+}
+
+string CompilerMSL::type_to_glsl(const SPIRType &type, uint32_t id)
+{
+	return type_to_glsl(type, id, false);
 }
 
 string CompilerMSL::type_to_array_glsl(const SPIRType &type)
@@ -14323,17 +14613,14 @@ string CompilerMSL::bitcast_glsl_op(const SPIRType &out_type, const SPIRType &in
 	// size (eg. short shift right becomes int), which means chaining integer ops
 	// together may introduce size variations that SPIR-V doesn't know about.
 	if (same_size_cast && !integral_cast)
-	{
 		return "as_type<" + type_to_glsl(out_type) + ">";
-	}
 	else
-	{
 		return type_to_glsl(out_type);
-	}
 }
 
 bool CompilerMSL::emit_complex_bitcast(uint32_t, uint32_t, uint32_t)
 {
+	// This is handled from the outside where we deal with PtrToU/UToPtr and friends.
 	return false;
 }
 
@@ -15007,6 +15294,25 @@ uint32_t CompilerMSL::get_declared_struct_size_msl(const SPIRType &struct_type, 
 // Returns the byte size of a struct member.
 uint32_t CompilerMSL::get_declared_type_size_msl(const SPIRType &type, bool is_packed, bool row_major) const
 {
+	// Pointers take 8 bytes each
+	if (type.pointer && type.storage == StorageClassPhysicalStorageBuffer)
+	{
+		uint32_t type_size = 8 * (type.vecsize == 3 ? 4 : type.vecsize);
+
+		// Work our way through potentially layered arrays,
+		// stopping when we hit a pointer that is not also an array.
+		int32_t dim_idx = (int32_t)type.array.size() - 1;
+		auto *p_type = &type;
+		while (!type_is_pointer(*p_type) && dim_idx >= 0)
+		{
+			type_size *= to_array_size_literal(*p_type, dim_idx);
+			p_type = &get<SPIRType>(p_type->parent_type);
+			dim_idx--;
+		}
+
+		return type_size;
+	}
+
 	switch (type.basetype)
 	{
 	case SPIRType::Unknown:
@@ -15066,6 +15372,10 @@ uint32_t CompilerMSL::get_declared_input_size_msl(const SPIRType &type, uint32_t
 // Returns the byte alignment of a type.
 uint32_t CompilerMSL::get_declared_type_alignment_msl(const SPIRType &type, bool is_packed, bool row_major) const
 {
+	// Pointers aligns on multiples of 8 bytes
+	if (type.pointer && type.storage == StorageClassPhysicalStorageBuffer)
+		return 8 * (type.vecsize == 3 ? 4 : type.vecsize);
+
 	switch (type.basetype)
 	{
 	case SPIRType::Unknown:
@@ -15678,13 +15988,40 @@ void CompilerMSL::remap_constexpr_sampler_by_binding(uint32_t desc_set, uint32_t
 
 void CompilerMSL::cast_from_variable_load(uint32_t source_id, std::string &expr, const SPIRType &expr_type)
 {
+	bool is_packed = has_extended_decoration(source_id, SPIRVCrossDecorationPhysicalTypePacked);
+	auto *source_expr = maybe_get<SPIRExpression>(source_id);
 	auto *var = maybe_get_backing_variable(source_id);
+	const SPIRType *var_type, *phys_type;
+	if (uint32_t phys_id = get_extended_decoration(source_id, SPIRVCrossDecorationPhysicalTypeID))
+		phys_type = &get<SPIRType>(phys_id);
+	else
+		phys_type = &expr_type;
 	if (var)
+	{
 		source_id = var->self;
+		var_type = &get_variable_data_type(*var);
+	}
 
 	// Type fixups for workgroup variables if they are booleans.
-	if (var && var->storage == StorageClassWorkgroup && expr_type.basetype == SPIRType::Boolean)
+	if (var && (var->storage == StorageClassWorkgroup || var_type->basetype == SPIRType::Struct) &&
+	    expr_type.basetype == SPIRType::Boolean)
 		expr = join(type_to_glsl(expr_type), "(", expr, ")");
+	// Type fixups for workgroup variables if they are matrices.
+	// Don't do fixup for packed types; those are handled specially.
+	// FIXME: Maybe use a type like spvStorageMatrix for packed matrices?
+	if (!msl_options.supports_msl_version(3, 0) && var &&
+	    (var->storage == StorageClassWorkgroup ||
+	     (var_type->basetype == SPIRType::Struct &&
+	      has_extended_decoration(var_type->self, SPIRVCrossDecorationWorkgroupStruct) && !is_packed)) &&
+	    expr_type.columns > 1)
+	{
+		SPIRType matrix_type = *phys_type;
+		if (source_expr && source_expr->need_transpose)
+			swap(matrix_type.vecsize, matrix_type.columns);
+		matrix_type.array.clear();
+		matrix_type.array_size_literal.clear();
+		expr = join(type_to_glsl(matrix_type), "(", expr, ")");
+	}
 
 	// Only interested in standalone builtin variables in the switch below.
 	if (!has_decoration(source_id, DecorationBuiltIn))
@@ -15777,16 +16114,41 @@ void CompilerMSL::cast_from_variable_load(uint32_t source_id, std::string &expr,
 
 void CompilerMSL::cast_to_variable_store(uint32_t target_id, std::string &expr, const SPIRType &expr_type)
 {
+	bool is_packed = has_extended_decoration(target_id, SPIRVCrossDecorationPhysicalTypePacked);
+	auto *target_expr = maybe_get<SPIRExpression>(target_id);
 	auto *var = maybe_get_backing_variable(target_id);
+	const SPIRType *var_type, *phys_type;
+	if (uint32_t phys_id = get_extended_decoration(target_id, SPIRVCrossDecorationPhysicalTypeID))
+		phys_type = &get<SPIRType>(phys_id);
+	else
+		phys_type = &expr_type;
 	if (var)
+	{
 		target_id = var->self;
+		var_type = &get_variable_data_type(*var);
+	}
 
 	// Type fixups for workgroup variables if they are booleans.
-	if (var && var->storage == StorageClassWorkgroup && expr_type.basetype == SPIRType::Boolean)
+	if (var && (var->storage == StorageClassWorkgroup || var_type->basetype == SPIRType::Struct) &&
+	    expr_type.basetype == SPIRType::Boolean)
 	{
 		auto short_type = expr_type;
 		short_type.basetype = SPIRType::Short;
 		expr = join(type_to_glsl(short_type), "(", expr, ")");
+	}
+	// Type fixups for workgroup variables if they are matrices.
+	// Don't do fixup for packed types; those are handled specially.
+	// FIXME: Maybe use a type like spvStorageMatrix for packed matrices?
+	if (!msl_options.supports_msl_version(3, 0) && var &&
+	    (var->storage == StorageClassWorkgroup ||
+	     (var_type->basetype == SPIRType::Struct &&
+	      has_extended_decoration(var_type->self, SPIRVCrossDecorationWorkgroupStruct) && !is_packed)) &&
+	    expr_type.columns > 1)
+	{
+		SPIRType matrix_type = *phys_type;
+		if (target_expr && target_expr->need_transpose)
+			swap(matrix_type.vecsize, matrix_type.columns);
+		expr = join("spvStorage_", type_to_glsl(matrix_type), "(", expr, ")");
 	}
 
 	// Only interested in standalone builtin variables.
@@ -16405,6 +16767,20 @@ void CompilerMSL::emit_block_hints(const SPIRBlock &)
 string CompilerMSL::additional_fixed_sample_mask_str() const
 {
 	char print_buffer[32];
+#ifdef _MSC_VER
+	// snprintf does not exist or is buggy on older MSVC versions, some of
+	// them being used by MinGW. Use sprintf instead and disable
+	// corresponding warning.
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+#if _WIN32
 	sprintf(print_buffer, "0x%x", msl_options.additional_fixed_sample_mask);
+#else
+	snprintf(print_buffer, sizeof(print_buffer), "0x%x", msl_options.additional_fixed_sample_mask);
+#endif
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 	return print_buffer;
 }

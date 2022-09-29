@@ -29,6 +29,29 @@ void ReadOnlyRoots::Iterate(RootVisitor* visitor) {
 }
 
 #ifdef DEBUG
+void ReadOnlyRoots::VerifyNameForProtectors() {
+  DisallowGarbageCollection no_gc;
+  Name prev;
+  for (RootIndex root_index = RootIndex::kFirstNameForProtector;
+       root_index <= RootIndex::kLastNameForProtector; ++root_index) {
+    Name current = Name::cast(Object(at(root_index)));
+    DCHECK(IsNameForProtector(current));
+    if (root_index != RootIndex::kFirstNameForProtector) {
+      // Make sure the objects are adjacent in memory.
+      CHECK_LT(prev.address(), current.address());
+      Address computed_address = prev.address() + prev.Size();
+      // TODO(teodutu): remove the need for this special case by ensuring that
+      // all object sizes are properly aligned.
+      if (V8_COMPRESS_POINTERS_8GB_BOOL) {
+        CHECK_LE(current.address() - computed_address, 4);
+      } else {
+        CHECK_EQ(computed_address, current.address());
+      }
+    }
+    prev = current;
+  }
+}
+
 #define ROOT_TYPE_CHECK(Type, name, CamelName)   \
   bool ReadOnlyRoots::CheckType_##name() const { \
     return unchecked_##name().Is##Type();        \

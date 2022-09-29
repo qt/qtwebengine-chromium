@@ -134,9 +134,6 @@ void QuicSession::Initialize() {
       connection_->set_can_receive_ack_frequency_frame();
       config_.SetMinAckDelayMs(kDefaultMinAckDelayTimeMs);
     }
-    if (config_.HasClientRequestedIndependentOption(kNBPE, perspective_)) {
-      permutes_tls_extensions_ = false;
-    }
   }
 
   connection_->CreateConnectionIdManager();
@@ -630,9 +627,12 @@ void QuicSession::OnCanWrite() {
     if (crypto_stream->HasBufferedCryptoFrames()) {
       crypto_stream->WriteBufferedCryptoFrames();
     }
-    if (crypto_stream->HasBufferedCryptoFrames()) {
-      // Cannot finish writing buffered crypto frames, connection is write
-      // blocked.
+    if ((GetQuicReloadableFlag(
+             quic_no_write_control_frame_upon_connection_close) &&
+         !connection_->connected()) ||
+        crypto_stream->HasBufferedCryptoFrames()) {
+      // Cannot finish writing buffered crypto frames, connection is either
+      // write blocked or closed.
       return;
     }
   }
@@ -849,7 +849,7 @@ void QuicSession::OnControlFrameManagerError(QuicErrorCode error_code,
 
 bool QuicSession::WriteControlFrame(const QuicFrame& frame,
                                     TransmissionType type) {
-  QUICHE_DCHECK(connection()->connected())
+  QUIC_BUG_IF(quic_bug_12435_11, !connection()->connected())
       << ENDPOINT << "Try to write control frames when connection is closed.";
   if (!IsEncryptionEstablished()) {
     // Suppress the write before encryption gets established.
@@ -2098,12 +2098,13 @@ void QuicSession::SendRetireConnectionId(uint64_t sequence_number) {
   control_frame_manager_.WriteOrBufferRetireConnectionId(sequence_number);
 }
 
-void QuicSession::OnServerConnectionIdIssued(
+bool QuicSession::MaybeReserveConnectionId(
     const QuicConnectionId& server_connection_id) {
   if (visitor_) {
-    visitor_->OnNewConnectionIdSent(
+    return visitor_->TryAddNewConnectionId(
         connection_->GetOneActiveServerConnectionId(), server_connection_id);
   }
+  return true;
 }
 
 void QuicSession::OnServerConnectionIdRetired(

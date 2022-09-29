@@ -7,16 +7,18 @@
 #ifndef CORE_FPDFTEXT_CPDF_TEXTPAGE_H_
 #define CORE_FPDFTEXT_CPDF_TEXTPAGE_H_
 
+#include <stdint.h>
+
 #include <deque>
 #include <functional>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
-#include "core/fxcrt/cfx_widetextbuf.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_coordinates.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
+#include "core/fxcrt/widetext_buffer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 class CPDF_FormObject;
@@ -135,11 +137,11 @@ class CPDF_TextPage {
       const std::function<bool(const CharInfo&)>& predicate) const;
 
   UnownedPtr<const CPDF_Page> const m_pPage;
-  std::vector<uint16_t, FxAllocAllocator<uint16_t>> m_CharIndices;
+  DataVector<uint16_t> m_CharIndices;
   std::deque<CharInfo> m_CharList;
   std::deque<CharInfo> m_TempCharList;
-  CFX_WideTextBuf m_TextBuf;
-  CFX_WideTextBuf m_TempTextBuf;
+  WideTextBuffer m_TextBuf;
+  WideTextBuffer m_TempTextBuf;
   UnownedPtr<const CPDF_TextObject> m_pPrevTextObj;
   CFX_Matrix m_PrevMatrix;
   const bool m_rtl;

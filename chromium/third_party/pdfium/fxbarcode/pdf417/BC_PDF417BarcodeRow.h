@@ -9,9 +9,8 @@
 
 #include <stdint.h>
 
-#include <vector>
-
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
+#include "third_party/base/span.h"
 
 class CBC_BarcodeRow final {
  public:
@@ -19,12 +18,10 @@ class CBC_BarcodeRow final {
   ~CBC_BarcodeRow();
 
   void AddBar(bool black, size_t width);
-  const std::vector<uint8_t, FxAllocAllocator<uint8_t>>& GetRow() const {
-    return row_;
-  }
+  pdfium::span<const uint8_t> GetRow() const { return row_; }
 
  private:
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> row_;
+  DataVector<uint8_t> row_;
   size_t offset_ = 0;
 };
 

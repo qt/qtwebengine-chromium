@@ -159,7 +159,7 @@ static void set_src_position(PAFVideoDecContext *c,
     *pend = c->frame[page] + c->frame_size;
 }
 
-static int decode_0(PAFVideoDecContext *c, uint8_t *pkt, uint8_t code)
+static int decode_0(PAFVideoDecContext *c, const uint8_t *pkt, uint8_t code)
 {
     uint32_t opcode_size, offset;
     uint8_t *dst, *dend, mask = 0, color = 0;
@@ -418,5 +418,5 @@ const FFCodec ff_paf_video_decoder = {
     .close          = paf_video_close,
     FF_CODEC_DECODE_CB(paf_video_decode),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

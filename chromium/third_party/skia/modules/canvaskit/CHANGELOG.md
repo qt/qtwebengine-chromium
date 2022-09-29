@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2022-08-16
+
+### Added
+ - The following path methods: `addCircle`, `CanInterpolate`, and `MakeFromPathInterpolation`.
+ - The following ImageFilter factory methods: `MakeBlend`, `MakeDilate`, `MakeDisplacementMap`,
+   `MakeDropShadow`, `MakeDropShadowOnly`, `MakeErode`, `MakeImage`, `MakeOffset`, and `MakeShader`.
+ - The `MakeLuma` ColorFilter factory method.
+ - The `fontVariations` TextStyle property.
+ - `ColorFilter.MakeBlend` supports float colors under the hood and takes an optional colorspace.
+
+### Changed
+ - Updated `dtslint`, `typescript`, and `@webgpu/types` versions, used for testing index.d.ts types.
+
+### Fixed
+ - `Image.readPixels` should work on `Image`s created with `MakeLazyImageFromTextureSource`
+   (https://github.com/flutter/flutter/issues/103803)
+
+### Known Issues
+ - `ImageFilter.MakeDisplacementMap` is not behaving as expected in certain circumstances.
+
+## [0.35.0] - 2022-06-30
+
+### Fixed
+ - Minor bug fixes in the TypeScript type declaration.
+ - Creating a Premul Image from a TextureSource should upload the texture to WebGL correctly.
+
+### Added
+ - `Surface.makeImageFromTextureSource`, `Surface.updateTextureFromSource`, and
+   `MakeLazyImageFromTextureSource` all take an optional `srcIsPremul` to specify if their source
+   data has Premultiplied alpha. This avoids double multiplying alpha in certain cases.
+ - WebGPU support. Introduced `CanvasKit.MakeGPUDeviceContext`, `CanvasKit.MakeGPUCanvasContext`,
+   `CanvasKit.MakeGPUCanvasSurface`, and `CanvasKit.MakeGPUTextureSurface` which are compatible with
+   WebGPU `GPUDevice` and `GPUTexture` objects.
+ - Typescript definitions for WebGPU API functions that are compatible with `@webgpu/types`
+   (https://www.npmjs.com/package/@webgpu/types).
+ - `CanvasKit.MakeCanvasSurface` is now deprecated. Clients should specify a backend target
+   explicitly using `CanvasKit.MakeSWCanvasSurface`, `CanvasKit.MakeOnScreenGLSurface`,
+   `CanvasKit.MakeGPUCanvasSurface`, and `CanvasKit.MakeGPUTextureSurface`.
+ - `CanvasKit.MakeGrContext` is now deprecated. Clients should use `CanvasKit.MakeWebGLContext` and
+   `CanvasKit.MakeGPUDeviceContext` instead.
+
 ## [0.34.1] - 2022-06-02
 
 ### Added

@@ -80,11 +80,11 @@ ValKind V8ValueTypeToWasm(i::wasm::ValueType v8_valtype) {
     case i::wasm::kF64:
       return F64;
     case i::wasm::kRef:
-    case i::wasm::kOptRef:
+    case i::wasm::kRefNull:
       switch (v8_valtype.heap_representation()) {
         case i::wasm::HeapType::kFunc:
           return FUNCREF;
-        case i::wasm::HeapType::kAny:
+        case i::wasm::HeapType::kExtern:
           return ANYREF;
         default:
           // TODO(wasm+): support new value types
@@ -109,7 +109,7 @@ i::wasm::ValueType WasmValKindToV8(ValKind kind) {
     case FUNCREF:
       return i::wasm::kWasmFuncRef;
     case ANYREF:
-      return i::wasm::kWasmAnyRef;
+      return i::wasm::kWasmExternRef;
     default:
       // TODO(wasm+): support new value types
       UNREACHABLE();
@@ -393,11 +393,6 @@ auto Engine::make(own<Config>&& config) -> own<Engine> {
   if (!engine) return own<Engine>();
   engine->platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(engine->platform.get());
-#ifdef V8_ENABLE_SANDBOX
-  if (!v8::V8::InitializeSandbox()) {
-    FATAL("Could not initialize the sandbox");
-  }
-#endif
   v8::V8::Initialize();
   return make_own(seal<Engine>(engine));
 }
@@ -1114,6 +1109,7 @@ auto Module::validate(Store* store_abs, const vec<byte_t>& binary) -> bool {
   i::wasm::ModuleWireBytes bytes(
       {reinterpret_cast<const uint8_t*>(binary.get()), binary.size()});
   i::Isolate* isolate = impl(store_abs)->i_isolate();
+  i::HandleScope scope(isolate);
   i::wasm::WasmFeatures features = i::wasm::WasmFeatures::FromIsolate(isolate);
   return i::wasm::GetWasmEngine()->SyncValidate(isolate, features, bytes);
 }
@@ -1563,7 +1559,7 @@ void PushArgs(const i::wasm::FunctionSig* sig, const Val args[],
         packer->Push(args[i].f64());
         break;
       case i::wasm::kRef:
-      case i::wasm::kOptRef:
+      case i::wasm::kRefNull:
         // TODO(7748): Make sure this works for all heap types.
         packer->Push(WasmRefToV8(store->i_isolate(), args[i].ref())->ptr());
         break;
@@ -1599,7 +1595,7 @@ void PopArgs(const i::wasm::FunctionSig* sig, Val results[],
         results[i] = Val(packer->Pop<double>());
         break;
       case i::wasm::kRef:
-      case i::wasm::kOptRef: {
+      case i::wasm::kRefNull: {
         // TODO(7748): Make sure this works for all heap types.
         i::Address raw = packer->Pop<i::Address>();
         i::Handle<i::Object> obj(i::Object(raw), store->i_isolate());
@@ -1674,7 +1670,7 @@ auto Func::call(const Val args[], Val results[]) const -> own<Trap> {
       instance->module()->functions[function_index].sig;
   PrepareFunctionData(isolate, function_data, sig, instance->module());
   i::Handle<i::CodeT> wrapper_code(function_data->c_wrapper_code(), isolate);
-  i::Address call_target = function_data->internal().foreign_address();
+  i::Address call_target = function_data->internal().call_target(isolate);
 
   i::wasm::CWasmArgumentsPacker packer(function_data->packed_args_size());
   PushArgs(sig, args, &packer, store);
@@ -1862,7 +1858,7 @@ auto Global::get() const -> Val {
     case i::wasm::kF64:
       return Val(v8_global->GetF64());
     case i::wasm::kRef:
-    case i::wasm::kOptRef: {
+    case i::wasm::kRefNull: {
       // TODO(7748): Make sure this works for all heap types.
       StoreImpl* store = impl(this)->store();
       i::HandleScope scope(store->i_isolate());
@@ -1934,7 +1930,7 @@ auto Table::make(Store* store_abs, const TableType* type, const Ref* ref)
       break;
     case ANYREF:
       // See Engine::make().
-      i_type = i::wasm::kWasmAnyRef;
+      i_type = i::wasm::kWasmExternRef;
       break;
     default:
       UNREACHABLE();
@@ -1980,7 +1976,7 @@ auto Table::type() const -> own<TableType> {
     case i::wasm::HeapType::kFunc:
       kind = FUNCREF;
       break;
-    case i::wasm::HeapType::kAny:
+    case i::wasm::HeapType::kExtern:
       kind = ANYREF;
       break;
     default:
@@ -2063,11 +2059,11 @@ auto Memory::make(Store* store_abs, const MemoryType* type) -> own<Memory> {
   uint32_t minimum = limits.min;
   // The max_mem_pages limit is only spec'ed for JS embeddings, so we'll
   // directly use the maximum pages limit here.
-  if (minimum > i::wasm::kSpecMaxMemoryPages) return nullptr;
+  if (minimum > i::wasm::kSpecMaxMemory32Pages) return nullptr;
   uint32_t maximum = limits.max;
   if (maximum != Limits(0).max) {
     if (maximum < minimum) return nullptr;
-    if (maximum > i::wasm::kSpecMaxMemoryPages) return nullptr;
+    if (maximum > i::wasm::kSpecMaxMemory32Pages) return nullptr;
   }
   // TODO(wasm+): Support shared memory.
   i::SharedFlag shared = i::SharedFlag::kNotShared;

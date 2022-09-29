@@ -959,6 +959,9 @@ ANY11(ABGRToYRow_Any_AVX2, ABGRToYRow_AVX2, 0, 4, 1, 31)
 #ifdef HAS_ARGBTOYJROW_AVX2
 ANY11(ARGBToYJRow_Any_AVX2, ARGBToYJRow_AVX2, 0, 4, 1, 31)
 #endif
+#ifdef HAS_ABGRTOYJROW_AVX2
+ANY11(ABGRToYJRow_Any_AVX2, ABGRToYJRow_AVX2, 0, 4, 1, 31)
+#endif
 #ifdef HAS_RGBATOYJROW_AVX2
 ANY11(RGBAToYJRow_Any_AVX2, RGBAToYJRow_AVX2, 0, 4, 1, 31)
 #endif
@@ -983,6 +986,9 @@ ANY11(UYVYToYRow_Any_SSE2, UYVYToYRow_SSE2, 1, 4, 1, 15)
 #ifdef HAS_ARGBTOYJROW_SSSE3
 ANY11(ARGBToYJRow_Any_SSSE3, ARGBToYJRow_SSSE3, 0, 4, 1, 15)
 #endif
+#ifdef HAS_ABGRTOYJROW_SSSE3
+ANY11(ABGRToYJRow_Any_SSSE3, ABGRToYJRow_SSSE3, 0, 4, 1, 15)
+#endif
 #ifdef HAS_RGBATOYJROW_SSSE3
 ANY11(RGBAToYJRow_Any_SSSE3, RGBAToYJRow_SSSE3, 0, 4, 1, 15)
 #endif
@@ -997,6 +1003,9 @@ ANY11(ARGBToYRow_Any_LASX, ARGBToYRow_LASX, 0, 4, 1, 31)
 #endif
 #ifdef HAS_ARGBTOYJROW_NEON
 ANY11(ARGBToYJRow_Any_NEON, ARGBToYJRow_NEON, 0, 4, 1, 15)
+#endif
+#ifdef HAS_ABGRTOYJROW_NEON
+ANY11(ABGRToYJRow_Any_NEON, ABGRToYJRow_NEON, 0, 4, 1, 15)
 #endif
 #ifdef HAS_RGBATOYJROW_NEON
 ANY11(RGBAToYJRow_Any_NEON, RGBAToYJRow_NEON, 0, 4, 1, 15)
@@ -1625,43 +1634,100 @@ ANY11C(UYVYToARGBRow_Any_LSX, UYVYToARGBRow_LSX, 1, 4, 4, 7)
 #undef ANY11C
 
 // Any 1 to 1 interpolate.  Takes 2 rows of source via stride.
-#define ANY11I(NAMEANY, ANY_SIMD, T, SBPP, BPP, MASK)                         \
-  void NAMEANY(T* dst_ptr, const T* src_ptr, ptrdiff_t src_stride, int width, \
-               int source_y_fraction) {                                       \
-    SIMD_ALIGNED(T temp[64 * 3]);                                             \
-    memset(temp, 0, 64 * 2 * sizeof(T)); /* for msan */                       \
-    int r = width & MASK;                                                     \
-    int n = width & ~MASK;                                                    \
-    if (n > 0) {                                                              \
-      ANY_SIMD(dst_ptr, src_ptr, src_stride, n, source_y_fraction);           \
-    }                                                                         \
-    memcpy(temp, src_ptr + n * SBPP, r * SBPP * sizeof(T));                   \
-    memcpy(temp + 64, src_ptr + src_stride + n * SBPP, r * SBPP * sizeof(T)); \
-    ANY_SIMD(temp + 128, temp, 64, MASK + 1, source_y_fraction);              \
-    memcpy(dst_ptr + n * BPP, temp + 128, r * BPP * sizeof(T));               \
+#define ANY11I(NAMEANY, ANY_SIMD, TD, TS, SBPP, BPP, MASK)           \
+  void NAMEANY(TD* dst_ptr, const TS* src_ptr, ptrdiff_t src_stride, \
+               int width, int source_y_fraction) {                   \
+    SIMD_ALIGNED(TS temps[64 * 2]);                                  \
+    SIMD_ALIGNED(TD tempd[64]);                                      \
+    memset(temps, 0, sizeof(temps)); /* for msan */                  \
+    int r = width & MASK;                                            \
+    int n = width & ~MASK;                                           \
+    if (n > 0) {                                                     \
+      ANY_SIMD(dst_ptr, src_ptr, src_stride, n, source_y_fraction);  \
+    }                                                                \
+    memcpy(temps, src_ptr + n * SBPP, r * SBPP * sizeof(TS));        \
+    if (source_y_fraction) {                                         \
+      memcpy(temps + 64, src_ptr + src_stride + n * SBPP,            \
+             r * SBPP * sizeof(TS));                                 \
+    }                                                                \
+    ANY_SIMD(tempd, temps, 64, MASK + 1, source_y_fraction);         \
+    memcpy(dst_ptr + n * BPP, tempd, r * BPP * sizeof(TD));          \
   }
 
 #ifdef HAS_INTERPOLATEROW_AVX2
-ANY11I(InterpolateRow_Any_AVX2, InterpolateRow_AVX2, uint8_t, 1, 1, 31)
+ANY11I(InterpolateRow_Any_AVX2, InterpolateRow_AVX2, uint8_t, uint8_t, 1, 1, 31)
 #endif
 #ifdef HAS_INTERPOLATEROW_SSSE3
-ANY11I(InterpolateRow_Any_SSSE3, InterpolateRow_SSSE3, uint8_t, 1, 1, 15)
+ANY11I(InterpolateRow_Any_SSSE3,
+       InterpolateRow_SSSE3,
+       uint8_t,
+       uint8_t,
+       1,
+       1,
+       15)
 #endif
 #ifdef HAS_INTERPOLATEROW_NEON
-ANY11I(InterpolateRow_Any_NEON, InterpolateRow_NEON, uint8_t, 1, 1, 15)
+ANY11I(InterpolateRow_Any_NEON, InterpolateRow_NEON, uint8_t, uint8_t, 1, 1, 15)
 #endif
 #ifdef HAS_INTERPOLATEROW_MSA
-ANY11I(InterpolateRow_Any_MSA, InterpolateRow_MSA, uint8_t, 1, 1, 31)
+ANY11I(InterpolateRow_Any_MSA, InterpolateRow_MSA, uint8_t, uint8_t, 1, 1, 31)
 #endif
 #ifdef HAS_INTERPOLATEROW_LSX
-ANY11I(InterpolateRow_Any_LSX, InterpolateRow_LSX, uint8_t, 1, 1, 31)
+ANY11I(InterpolateRow_Any_LSX, InterpolateRow_LSX, uint8_t, uint8_t, 1, 1, 31)
 #endif
 
 #ifdef HAS_INTERPOLATEROW_16_NEON
-ANY11I(InterpolateRow_16_Any_NEON, InterpolateRow_16_NEON, uint16_t, 1, 1, 7)
+ANY11I(InterpolateRow_16_Any_NEON,
+       InterpolateRow_16_NEON,
+       uint16_t,
+       uint16_t,
+       1,
+       1,
+       7)
+#endif
+#undef ANY11I
+
+// Any 1 to 1 interpolate with scale param
+#define ANY11IS(NAMEANY, ANY_SIMD, TD, TS, SBPP, BPP, MASK)                \
+  void NAMEANY(TD* dst_ptr, const TS* src_ptr, ptrdiff_t src_stride,       \
+               int scale, int width, int source_y_fraction) {              \
+    SIMD_ALIGNED(TS temps[64 * 2]);                                        \
+    SIMD_ALIGNED(TD tempd[64]);                                            \
+    memset(temps, 0, sizeof(temps)); /* for msan */                        \
+    int r = width & MASK;                                                  \
+    int n = width & ~MASK;                                                 \
+    if (n > 0) {                                                           \
+      ANY_SIMD(dst_ptr, src_ptr, src_stride, scale, n, source_y_fraction); \
+    }                                                                      \
+    memcpy(temps, src_ptr + n * SBPP, r * SBPP * sizeof(TS));              \
+    if (source_y_fraction) {                                               \
+      memcpy(temps + 64, src_ptr + src_stride + n * SBPP,                  \
+             r * SBPP * sizeof(TS));                                       \
+    }                                                                      \
+    ANY_SIMD(tempd, temps, 64, scale, MASK + 1, source_y_fraction);        \
+    memcpy(dst_ptr + n * BPP, tempd, r * BPP * sizeof(TD));                \
+  }
+
+#ifdef HAS_INTERPOLATEROW_16TO8_NEON
+ANY11IS(InterpolateRow_16To8_Any_NEON,
+        InterpolateRow_16To8_NEON,
+        uint8_t,
+        uint16_t,
+        1,
+        1,
+        7)
+#endif
+#ifdef HAS_INTERPOLATEROW_16TO8_AVX2
+ANY11IS(InterpolateRow_16To8_Any_AVX2,
+        InterpolateRow_16To8_AVX2,
+        uint8_t,
+        uint16_t,
+        1,
+        1,
+        31)
 #endif
 
-#undef ANY11I
+#undef ANY11IS
 
 // Any 1 to 1 mirror.
 #define ANY11M(NAMEANY, ANY_SIMD, BPP, MASK)                              \
@@ -1956,9 +2022,17 @@ ANY12S(ABGRToUVRow_Any_AVX2, ABGRToUVRow_AVX2, 0, 4, 31)
 #ifdef HAS_ARGBTOUVJROW_AVX2
 ANY12S(ARGBToUVJRow_Any_AVX2, ARGBToUVJRow_AVX2, 0, 4, 31)
 #endif
+#ifdef HAS_ABGRTOUVJROW_AVX2
+ANY12S(ABGRToUVJRow_Any_AVX2, ABGRToUVJRow_AVX2, 0, 4, 31)
+#endif
+#ifdef HAS_ARGBTOUVJROW_SSSE3
+ANY12S(ARGBToUVJRow_Any_SSSE3, ARGBToUVJRow_SSSE3, 0, 4, 15)
+#endif
+#ifdef HAS_ABGRTOUVJROW_SSSE3
+ANY12S(ABGRToUVJRow_Any_SSSE3, ABGRToUVJRow_SSSE3, 0, 4, 15)
+#endif
 #ifdef HAS_ARGBTOUVROW_SSSE3
 ANY12S(ARGBToUVRow_Any_SSSE3, ARGBToUVRow_SSSE3, 0, 4, 15)
-ANY12S(ARGBToUVJRow_Any_SSSE3, ARGBToUVJRow_SSSE3, 0, 4, 15)
 ANY12S(BGRAToUVRow_Any_SSSE3, BGRAToUVRow_SSSE3, 0, 4, 15)
 ANY12S(ABGRToUVRow_Any_SSSE3, ABGRToUVRow_SSSE3, 0, 4, 15)
 ANY12S(RGBAToUVRow_Any_SSSE3, RGBAToUVRow_SSSE3, 0, 4, 15)
@@ -1982,6 +2056,9 @@ ANY12S(ARGBToUVRow_Any_LASX, ARGBToUVRow_LASX, 0, 4, 31)
 #endif
 #ifdef HAS_ARGBTOUVJROW_NEON
 ANY12S(ARGBToUVJRow_Any_NEON, ARGBToUVJRow_NEON, 0, 4, 15)
+#endif
+#ifdef HAS_ABGRTOUVJROW_NEON
+ANY12S(ABGRToUVJRow_Any_NEON, ABGRToUVJRow_NEON, 0, 4, 15)
 #endif
 #ifdef HAS_ARGBTOUVJROW_MSA
 ANY12S(ARGBToUVJRow_Any_MSA, ARGBToUVJRow_MSA, 0, 4, 31)
@@ -2170,6 +2247,29 @@ ANYDETILESPLITUV(DetileSplitUVRow_Any_NEON, DetileSplitUVRow_NEON, 15)
 #endif
 #ifdef HAS_DETILESPLITUVROW_SSSE3
 ANYDETILESPLITUV(DetileSplitUVRow_Any_SSSE3, DetileSplitUVRow_SSSE3, 15)
+#endif
+
+#define ANYDETILEMERGE(NAMEANY, ANY_SIMD, MASK)                                \
+  void NAMEANY(const uint8_t* src_y, ptrdiff_t src_y_tile_stride,              \
+               const uint8_t* src_uv, ptrdiff_t src_uv_tile_stride,            \
+               uint8_t* dst_yuy2, int width) {                                 \
+    SIMD_ALIGNED(uint8_t temp[16 * 4]);                                        \
+    memset(temp, 0, 16 * 4); /* for msan */                                    \
+    int r = width & MASK;                                                      \
+    int n = width & ~MASK;                                                     \
+    if (n > 0) {                                                               \
+      ANY_SIMD(src_y, src_y_tile_stride, src_uv, src_uv_tile_stride, dst_yuy2, \
+               n);                                                             \
+    }                                                                          \
+    memcpy(temp, src_y + (n / 16) * src_y_tile_stride, r);                     \
+    memcpy(temp + 16, src_uv + (n / 16) * src_uv_tile_stride, r);              \
+    ANY_SIMD(temp, src_y_tile_stride, temp + 16, src_uv_tile_stride,           \
+             temp + 32, r);                                                    \
+    memcpy(dst_yuy2 + 2 * n, temp + 32, 2 * r);                                \
+  }
+
+#ifdef HAS_DETILETOYUY2_NEON
+ANYDETILEMERGE(DetileToYUY2_Any_NEON, DetileToYUY2_NEON, 15)
 #endif
 
 #ifdef __cplusplus

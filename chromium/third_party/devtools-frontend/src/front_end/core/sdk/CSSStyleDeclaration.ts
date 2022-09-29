@@ -6,10 +6,10 @@ import * as TextUtils from '../../models/text_utils/text_utils.js';
 import type * as Protocol from '../../generated/protocol.js';
 
 import {cssMetadata} from './CSSMetadata.js';
-import type {CSSModel, Edit} from './CSSModel.js';
+import {type CSSModel, type Edit} from './CSSModel.js';
 import {CSSProperty} from './CSSProperty.js';
-import type {CSSRule} from './CSSRule.js';
-import type {Target} from './Target.js';
+import {type CSSRule} from './CSSRule.js';
+import {type Target} from './Target.js';
 
 export class CSSStyleDeclaration {
   readonly #cssModelInternal: CSSModel;
@@ -184,7 +184,7 @@ export class CSSStyleDeclaration {
       for (const shorthand of shorthands) {
         if (propertiesSet.has(shorthand)) {
           continue;
-        }  // There already is a shorthand this #longhands falls under.
+        }  // There already is a shorthand this #longhand falls under.
         const shorthandValue = this.#shorthandValues.get(shorthand);
         if (!shorthandValue) {
           continue;

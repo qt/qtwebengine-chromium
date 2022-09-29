@@ -9,7 +9,6 @@
 #define GrShaderCaps_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "src/gpu/ganesh/glsl/GrGLSL.h"
 #include "src/sksl/SkSLUtil.h"
 
 struct GrContextOptions;
@@ -19,8 +18,6 @@ struct GrShaderCaps : SkSL::ShaderCaps {
     GrShaderCaps() {}
 
     void dumpJSON(SkJSONWriter*) const;
-
-    bool supportsDistanceFieldText() const { return fShaderDerivativeSupport; }
 
     const char* noperspectiveInterpolationExtensionString() const {
         SkASSERT(this->fNoPerspectiveInterpolationSupport);

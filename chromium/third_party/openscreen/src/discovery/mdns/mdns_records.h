@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <initializer_list>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -74,8 +75,6 @@ class DomainName {
   bool operator==(const DomainName& rhs) const;
   bool operator!=(const DomainName& rhs) const;
 
-  std::string ToString() const;
-
   // Returns the maximum space that the domain name could take up in its
   // on-the-wire format. This is an upper bound based on the length of the
   // labels that make up the domain name. It's possible that with domain name
@@ -100,6 +99,9 @@ class DomainName {
   // max_wire_size_ starts at 1 for the terminating character length.
   size_t max_wire_size_ = 1;
   std::vector<std::string> labels_;
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const DomainName& domain_name);
 };
 
 // Parsed representation of the extra data in a record. Does not include
@@ -493,8 +495,6 @@ class MdnsRecord {
                       record.ttl_.count(), record.rdata_);
   }
 
-  std::string ToString() const;
-
  private:
   static bool IsValidConfig(const DomainName& name,
                             DnsType dns_type,
@@ -509,6 +509,10 @@ class MdnsRecord {
   // Default-constructed Rdata contains default-constructed RawRecordRdata
   // as it is the first alternative type and it is default-constructible.
   Rdata rdata_;
+
+#ifdef _DEBUG
+  friend std::ostream& operator<<(std::ostream&, const MdnsRecord& mdns_record);
+#endif
 };
 
 // Creates an A or AAAA record as appropriate for the provided parameters.

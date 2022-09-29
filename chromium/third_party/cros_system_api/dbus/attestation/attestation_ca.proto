@@ -56,6 +56,11 @@ enum CertificateProfile {
   //   CN=Local Authority
   //   O=Chrome Device Soft Bind
   SOFT_BIND_CERTIFICATE = 10;
+
+  // A remote attestation certificate for proving device integrity.
+  //   CN=<An opaque device identifier string>
+  //   O=Chrome Device Setup
+  DEVICE_SETUP_CERTIFICATE = 11;
 }
 
 enum TpmVersion {
@@ -200,6 +205,20 @@ message AttestationEnrollmentResponse {
   optional string extra_details = 4;
 }
 
+// `DEVICE_SETUP_CERTIFICATE` specific metadata.
+message DeviceSetupCertificateMetadata {
+  // This will eventually be a DUSI. For now, this will be a 36 character GUID.
+  // This will be used as the CN of the Remote Attestation certificate.
+  optional string id = 1;
+
+  // Unix timestamp of the generation of the request.
+  optional uint64 timestamp = 2;
+
+  // The generated certificate will be bound to this value. This is used to
+  // prevent replay attacks. Currently it is the FIDO credential id.
+  optional string content_binding = 3;
+}
+
 // The certificate request to be sent to the attestation server.
 message AttestationCertificateRequest {
   // The AIK cert in X.509 format.
@@ -226,6 +245,11 @@ message AttestationCertificateRequest {
   // NVRAM quoted by AIK. Keys are values of the NVRAMQuoteType. This is only
   // used for enrollment certificates.
   map<int32, Quote> nvram_quotes = 15;
+  // Certificate profile specific metadata.
+  oneof metadata {
+    // `DEVICE_SETUP_CERTIFICATE` specific metadata.
+    DeviceSetupCertificateMetadata device_setup_certificate_metadata = 16;
+  }
 }
 
 // The response from the attestation server for the certificate request.

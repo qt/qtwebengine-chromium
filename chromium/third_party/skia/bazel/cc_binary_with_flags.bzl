@@ -1,4 +1,6 @@
 """
+THIS IS THE EXTERNAL-ONLY VERSION OF THIS FILE. G3 HAS ITS OWN.
+
 This file contains a way to set flags from BUILD.bazel instead of requiring users to set them from
 the CLI.
 
@@ -6,25 +8,29 @@ It is based off of https://github.com/bazelbuild/examples/tree/main/rules/starla
 
 """
 
+load("//bazel:copts.bzl", "DEFAULT_COPTS")
+
 _bool_flags = [
-    "//bazel/common_config_settings:enable_sksl",
-    "//bazel/common_config_settings:enable_sksl_tracing",
-    "//bazel/common_config_settings:enable_skslc",
-    "//bazel/common_config_settings:is_skia_dev_build",
+    "//bazel/common_config_settings:use_harfbuzz",
     "//bazel/common_config_settings:use_icu",
+    "//src/gpu:enable_gpu_test_utils",
+    "//src/pdf:enable_pdf_backend",
+    "//src/sksl:enable_sksl",
+    "//src/sksl:enable_sksl_tracing",
+    "//src/sksl:enable_skslc",
+    "//src/svg:enable_svg_canvas",
 ]
 
 _string_flags = [
     "//bazel/common_config_settings:fontmgr_factory",
-    "//bazel/common_config_settings:with_gl_standard",
+    "//src/gpu:with_gl_standard",
 ]
 
 _string_list_flags = [
-    "//bazel/common_config_settings:gpu_backend",
-    "//bazel/common_config_settings:include_decoder",
-    "//bazel/common_config_settings:include_encoder",
+    "//src/gpu:gpu_backend",
+    "//src/codec:include_decoder",
+    "//src/images:include_encoder",
     "//bazel/common_config_settings:include_fontmgr",
-    "//bazel/common_config_settings:shaper_backend",
 ]
 
 # These are the flags that we support setting via set_flags
@@ -58,7 +64,7 @@ def _flag_transition_impl(settings, attr):
     return rv
 
 # This defines a Starlark transition and which flags it reads and writes.
-_flag_transition = transition(
+with_flags_transition = transition(
     implementation = _flag_transition_impl,
     inputs = _flags,
     outputs = _flags,
@@ -94,13 +100,13 @@ transition_rule = rule(
         # set_flags is a dictionary with the keys being the short-form of a flag name
         # (e.g. the part that comes after the colon) and the value being a list of values
         # that the flag should be set to, regardless of the relevant CLI flags.
-        # https://docs.bazel.build/versions/main/skylark/lib/attr.html#string_list_dict
+        # https://bazel.build/rules/lib/attr#string_list_dict
         "set_flags": attr.string_list_dict(),
         # This is the cc_binary whose deps will select() on that feature.
         # Note specifically how it is modified with _flag_transition, which
         # ensures that the flags propagates down the graph.
-        # https://docs.bazel.build/versions/main/skylark/lib/attr.html#label
-        "actual_binary": attr.label(cfg = _flag_transition),
+        # https://bazel.build/rules/lib/attr#label
+        "actual_binary": attr.label(cfg = with_flags_transition),
         # This is a stock Bazel requirement for any rule that uses Starlark
         # transitions. It's okay to copy the below verbatim for all such rules.
         #
@@ -117,7 +123,7 @@ transition_rule = rule(
     executable = True,
 )
 
-def cc_binary_with_flags(name, set_flags = {}, **kwargs):
+def cc_binary_with_flags(name, set_flags = {}, copts = DEFAULT_COPTS, **kwargs):
     """Builds a cc_binary as if set_flags were set on the CLI.
 
     Args:
@@ -125,6 +131,8 @@ def cc_binary_with_flags(name, set_flags = {}, **kwargs):
             a transition. Any dependents should use this name.
         set_flags: dictionary of string to list of strings. The keys should be the name of the
             flag, and the values should be the desired valid settings for that flag.
+        copts: a list of strings or select statements that control the compiler flags.
+            It has a sensible list of defaults.
         **kwargs: Any flags that a cc_binary normally takes.
     """
     cc_binary_name = name + "_native_binary"
@@ -139,5 +147,6 @@ def cc_binary_with_flags(name, set_flags = {}, **kwargs):
     kwargs["tags"] = tags
     native.cc_binary(
         name = cc_binary_name,
+        copts = copts,
         **kwargs
     )

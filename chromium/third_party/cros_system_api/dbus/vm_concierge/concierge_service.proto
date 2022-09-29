@@ -53,6 +53,17 @@ enum DiskImageType {
   DISK_IMAGE_PLUGINVM = 3;
 }
 
+// The type of filesystem.
+enum FilesystemType {
+  // Default option. We make no extra assumptions about the filesystem. Most
+  // existing disk functions don't interact with the filesystem directly or
+  // assume that it is Btrfs.
+  UNSPECIFIED = 0;
+
+  // The Ext4 filesystem.
+  EXT4 = 1;
+}
+
 // Describes any additional disk images that should be mounted inside the VM.
 message DiskImage {
   // Path to the disk image on the host.
@@ -120,6 +131,9 @@ message VmInfo {
 
   // What type of VM this is.
   VmType vm_type = 6;
+
+  // Whether the VM is using storage ballooning.
+  bool storage_ballooning = 7;
 }
 
 // Optional fields for network configuration.
@@ -218,6 +232,12 @@ message StartVmRequest {
   // Experimental Termina features to enable. Like Chrome feature flags but for
   // inside the VM.
   repeated TerminaFeature features = 21;
+
+  // If true, connects the virtio-tpm device to the vtpm daemon.
+  bool vtpm_proxy = 22;
+
+  // Whether the VM should use storage ballooning.
+  bool storage_ballooning = 23;
 
   reserved 13, 14, 6;
 }
@@ -348,6 +368,75 @@ message StartArcVmRequest {
 
   // Option to enable disable consumer auto update toggle.
   bool enable_consumer_auto_update_toggle = 16;
+
+  // Display orientation in clock-wise degrees. ORIENTATION_90 means the panel's
+  // right side is the top side of the natural device orientation.
+  enum DisplayOrientation {
+    ORIENTATION_0 = 0;
+    ORIENTATION_90 = 1;
+    ORIENTATION_180 = 2;
+    ORIENTATION_270 = 3;
+  }
+  // The orientation of the display panel in respect to the natural device
+  // orientation. For some devices, the panel's orientation doesn't match to the
+  // device's default orientation. (e.g. a device this is default landscape may
+  // have a portrait display.). It's used to set
+  // 'ro.surface_flinger.primary_display_orientation' property to tell the
+  // orientation to surfaceflinger.
+  DisplayOrientation panel_orientation = 17;
+
+  // Whether to lock guest memory (for the purpose of disabling host swap).
+  bool lock_guest_memory = 18;
+
+  // Whether the file picker experiment feature is enabled.
+  bool enable_arc_file_picker_experiment = 19;
+
+  // Whether the custom tabs experiment feature is enabled.
+  bool enable_custom_tabs_experiment = 20;
+
+  // Whether the keyboard shortcut helper integration feature is enabled.
+  bool enable_keyboard_shortcut_helper_integration = 21;
+
+  // Whether the notifications refresh is enabled.
+  bool enable_notifications_refresh = 22;
+
+  // Whether the tts caching feature is enabled.
+  bool enable_tts_caching = 23;
+
+  // Whether gmscore lmk protection is enabled.
+  bool enable_gmscore_lmk_protection = 24;
+
+  // Whether broadcast anr prenotify is enabled.
+  bool enable_broadcast_anr_prenotify = 25;
+
+  // Size of logd config in kBytes, -1 if disabled
+  int32 logd_config_size = 26;
+
+  // Whether virtio blk data is enabled
+  bool enable_virtio_blk_data = 27;
+
+  // ArcVM metrics memory PSI period, -1 if disabled
+  int32 vm_memory_psi_period = 28;
+
+  // Whether media store maintenance is disabled
+  bool disable_media_store_maintenance = 29;
+
+  // Whether Play auto install is generated
+  bool arc_generate_play_auto_install = 30;
+
+  // Whether download provider is disabled
+  bool disable_download_provider = 31;
+
+  // Size of Guest Zram in bytes
+  int32 guest_zram_size = 32;
+
+  // Likelihood of sending cold memory to swap.
+  // Default value of zero means "unset" - will use the system default.
+  // Positive values will be used to set the guest's vm.swappiness parameter.
+  // NOTE: we are intentionally making it impossible to set vm.swappiness=0,
+  //       as that disables swap - which can be done more appropriately by
+  //       setting |guest_zram_size| to zero.
+  int32 guest_swappiness = 33;
 }
 
 enum VmStatus {
@@ -590,6 +679,21 @@ message ArcVmCompleteBootResponse {
   ArcVmCompleteBootResult result = 1;
 }
 
+// Request for setting balloon timer interval.
+message SetBalloonTimerRequest {
+  // The interval of the balloon timer in milliseconds.
+  uint64 timer_interval_millis = 1;
+}
+
+// Response sent back by vm_concierge for a SetBalloonTimerRequest dbus message.
+message SetBalloonTimerResponse {
+  // If true, the request succeeded.
+  bool success = 1;
+
+  // The failure_reason if the request could not be processed.
+  string failure_reason = 2;
+}
+
 // The type of storage location for a disk image.
 enum StorageLocation {
   // Subdirectory under /home/root/<id>/crosvm.
@@ -656,6 +760,15 @@ message CreateDiskImageRequest {
   // Parameters to pass to Plugin VM helper to facilitate creating
   // new image.
   repeated string params = 7;
+
+  // Will create the specified filesystem on the image. If unspecified, no
+  // filesystem will be created.
+  FilesystemType filesystem_type = 8;
+
+  // Sets up the disk image to support storage ballooning. This setting is
+  // used exclusively with sparse images. If this is true and disk_size is
+  // non-zero, the request will fail.
+  bool storage_ballooning = 9;
 }
 
 // Response to a CreateDiskImageRequest.
@@ -877,91 +990,6 @@ message ListVmDisksResponse {
   uint64 total_size = 4;
 }
 
-// Message used in the signal for when a container has failed to start up.
-message ContainerStartedSignal {
-  // Name of the VM the container is in.
-  string vm_name = 1;
-
-  // Name of the container within the VM.
-  string container_name = 2;
-
-  // The owner of the vm and container.
-  string owner_id = 3;
-}
-
-// Request to start a specified container image within a VM. If the container
-// does not exist in the VM it will be created. Used with the StartContainer
-// D-Bus message into vm_concierge.
-// This method is deprecated and no longer implemented in vm_concierge.
-// Requests to start a container should be handled through tremplin instead.
-message StartContainerRequest {
-  option deprecated = true;
-
-  // Name of the VM to start the container in.
-  string vm_name = 1;
-
-  // Name of the container to start within the VM. If empty, the default
-  // container name will be used.
-  string container_name = 2;
-
-  // Username for the default user in the container. This is only used if the
-  // container has not been created yet.
-  string container_username = 3;
-
-  // Async mode is always used now.
-  bool async = 4 [deprecated = true];
-
-  // The cryptohome id for the user's encrypted storage. This is used for SSH
-  // key storage.
-  string cryptohome_id = 5;
-
-  // Represents the privilege level with which a container should be started. If
-  // the container is already running this should take effect on the next boot.
-  enum PrivilegeLevel {
-    // Don't change the privilege level of the container.
-    UNCHANGED = 0;
-
-    // Make the container unprivileged.
-    UNPRIVILEGED = 1;
-
-    // Make the container privileged.
-    PRIVILEGED = 2;
-  }
-
-  PrivilegeLevel privilege_level = 6;
-}
-
-enum ContainerStatus {
-  // Unknown status.
-  CONTAINER_STATUS_UNKNOWN = 0;
-
-  // The container is already running.
-  CONTAINER_STATUS_RUNNING = 1;
-
-  // The container is currently starting up.
-  CONTAINER_STATUS_STARTING = 2;
-
-  // The container failed to startup.
-  CONTAINER_STATUS_FAILURE = 3;
-}
-
-// Response sent back by vm_concierge when it receives a StartContaienr D-Bus
-// message.
-message StartContainerResponse {
-  // Use the status field instead.
-  bool success = 1 [deprecated = true];
-
-  // The failure_reason if the status is CONTAINER_STATUS_FAILURE.
-  string failure_reason = 2;
-
-  // The status of the container as a result of the StartContainer call. If the
-  // status is CONTAINER_STATUS_STARTING then a D-Bus signal will be sent to
-  // indicate whether success or failure occurred. The signal should be
-  // registered for before the StartContainer call is made because it may be
-  // sent before the call returns.
-  ContainerStatus status = 3;
-}
-
 // Request to get the SSH keys associated with the host and a specific
 // container for the GetContainerSshKeys call. These keys will be generated
 // when StartContainer is called the first time for a container, so this should
@@ -1172,42 +1200,6 @@ message AdjustVmResponse {
   // If the attempt to adjust VM failed, the reason for the failure.
   string failure_reason = 2;
 };
-
-// Request to set owner id of a given VM.
-message SetVmIdRequest {
-  // An identifier for this VM.
-  string name = 1;
-
-  // The current cyptohome id of this VM.
-  string src_owner_id = 2;
-
-  // The cryptohome id to set for this VM.
-  string dest_owner_id = 3;
-}
-
-// Response to a SetVmIdRequest.
-message SetVmIdResponse {
-  // If true, the owner id of the VM was successfully changed.
-  bool success = 1;
-
-  // If the attempt to set the owner id failed, the reason for failure.
-  string failure_reason = 2;
-}
-
-// Message used in the signal for when a VM owner id is changed.
-message VmIdChangedSignal {
-  // The name of the VM which has changed.
-  string name = 1;
-
-  // The new owner of the vm.
-  string owner_id = 2;
-
-  // The previous owner of the vm.
-  string prev_owner_id = 3;
-
-  // The virtual socket context id assigned to the VM which has changed.
-  int64 cid = 4;
-}
 
 // Request to reclaim memory of a given VM.
 message ReclaimVmMemoryRequest {

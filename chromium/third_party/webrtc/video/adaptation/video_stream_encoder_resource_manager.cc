@@ -30,7 +30,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
@@ -309,14 +308,13 @@ VideoStreamEncoderResourceManager::~VideoStreamEncoderResourceManager() =
     default;
 
 void VideoStreamEncoderResourceManager::Initialize(
-    rtc::TaskQueue* encoder_queue) {
+    TaskQueueBase* encoder_queue) {
   RTC_DCHECK(!encoder_queue_);
   RTC_DCHECK(encoder_queue);
   encoder_queue_ = encoder_queue;
-  encode_usage_resource_->RegisterEncoderTaskQueue(encoder_queue_->Get());
-  quality_scaler_resource_->RegisterEncoderTaskQueue(encoder_queue_->Get());
-  bandwidth_quality_scaler_resource_->RegisterEncoderTaskQueue(
-      encoder_queue_->Get());
+  encode_usage_resource_->RegisterEncoderTaskQueue(encoder_queue_);
+  quality_scaler_resource_->RegisterEncoderTaskQueue(encoder_queue_);
+  bandwidth_quality_scaler_resource_->RegisterEncoderTaskQueue(encoder_queue_);
 }
 
 void VideoStreamEncoderResourceManager::SetAdaptationProcessor(
@@ -375,7 +373,7 @@ void VideoStreamEncoderResourceManager::MaybeInitializePixelLimitResource() {
   // resource is active for the lifetme of the stream (until
   // StopManagedResources() is called).
   pixel_limit_resource_ =
-      PixelLimitResource::Create(encoder_queue_->Get(), input_state_provider_);
+      PixelLimitResource::Create(encoder_queue_, input_state_provider_);
   pixel_limit_resource_->SetMaxPixels(max_pixels);
   AddResource(pixel_limit_resource_, VideoAdaptationReason::kCpu);
 }

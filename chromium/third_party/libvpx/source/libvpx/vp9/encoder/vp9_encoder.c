@@ -2057,7 +2057,10 @@ void vp9_change_config(struct VP9_COMP *cpi, const VP9EncoderConfig *oxcf) {
       cpi->external_resize = 0;
     } else if (cm->mi_alloc_size == new_mi_size &&
                (cpi->oxcf.width > last_w || cpi->oxcf.height > last_h)) {
-      vp9_alloc_loop_filter(cm);
+      if (vp9_alloc_loop_filter(cm)) {
+        vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
+                           "Failed to allocate loop filter data");
+      }
     }
   }
 
@@ -4488,7 +4491,8 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest
       }
     }
 #endif  // CONFIG_RATE_CTRL
-    if (cpi->ext_ratectrl.ready && !ext_rc_recode) {
+    if (cpi->ext_ratectrl.ready && !ext_rc_recode &&
+        (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_QP) != 0) {
       vpx_codec_err_t codec_status;
       const GF_GROUP *gf_group = &cpi->twopass.gf_group;
       vpx_rc_encodeframe_decision_t encode_frame_decision;
@@ -4506,8 +4510,12 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest
         vpx_internal_error(&cm->error, codec_status,
                            "vp9_extrc_get_encodeframe_decision() failed");
       }
-      q = encode_frame_decision.q_index;
-      ext_rc_max_frame_size = encode_frame_decision.max_frame_size;
+      // If the external model recommends a reserved value, we use
+      // libvpx's default q.
+      if (encode_frame_decision.q_index != VPX_DEFAULT_Q) {
+        q = encode_frame_decision.q_index;
+        ext_rc_max_frame_size = encode_frame_decision.max_frame_size;
+      }
     }
 
     vp9_set_quantizer(cpi, q);
@@ -4548,7 +4556,8 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest
       if (frame_over_shoot_limit == 0) frame_over_shoot_limit = 1;
     }
 
-    if (cpi->ext_ratectrl.ready) {
+    if (cpi->ext_ratectrl.ready &&
+        (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_QP) != 0) {
       last_q_attempt = q;
       // In general, for the external rate control, we take the qindex provided
       // as input and encode the frame with this qindex faithfully. However,
@@ -5590,7 +5599,7 @@ static void encode_frame_to_data_rate(
   // build the bitstream
   vp9_pack_bitstream(cpi, dest, size);
 
-  {
+  if (cpi->ext_ratectrl.ready) {
     const RefCntBuffer *coded_frame_buf =
         get_ref_cnt_buffer(cm, cm->new_fb_idx);
     vpx_codec_err_t codec_status = vp9_extrc_update_encodeframe_result(
@@ -5797,16 +5806,6 @@ static void Pass2Encode(VP9_COMP *cpi, size_t *size, uint8_t *dest,
                         unsigned int *frame_flags,
                         ENCODE_FRAME_RESULT *encode_frame_result) {
   cpi->allow_encode_breakout = ENCODE_BREAKOUT_ENABLED;
-
-  if (cpi->common.current_frame_coding_index == 0) {
-    VP9_COMMON *cm = &cpi->common;
-    const vpx_codec_err_t codec_status = vp9_extrc_send_firstpass_stats(
-        &cpi->ext_ratectrl, &cpi->twopass.first_pass_info);
-    if (codec_status != VPX_CODEC_OK) {
-      vpx_internal_error(&cm->error, codec_status,
-                         "vp9_extrc_send_firstpass_stats() failed");
-    }
-  }
 #if CONFIG_MISMATCH_DEBUG
   mismatch_move_frame_idx_w();
 #endif
@@ -8156,9 +8155,11 @@ int vp9_set_size_literal(VP9_COMP *cpi, unsigned int width,
                          unsigned int height) {
   VP9_COMMON *cm = &cpi->common;
 #if CONFIG_VP9_HIGHBITDEPTH
-  update_initial_width(cpi, cm->use_highbitdepth, 1, 1);
+  update_initial_width(cpi, cm->use_highbitdepth, cpi->common.subsampling_x,
+                       cpi->common.subsampling_y);
 #else
-  update_initial_width(cpi, 0, 1, 1);
+  update_initial_width(cpi, 0, cpi->common.subsampling_x,
+                       cpi->common.subsampling_y);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
 #if CONFIG_VP9_TEMPORAL_DENOISING

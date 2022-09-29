@@ -6,31 +6,55 @@ import type * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 
 import {Issue, IssueCategory, IssueKind} from './Issue.js';
-import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
+import {type MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 
 export const enum IssueCode {
   PermissionPolicyDisabled = 'AttributionReportingIssue::PermissionPolicyDisabled',
-  AttributionSourceUntrustworthyFrameOrigin = 'AttributionReportingIssue::AttributionSourceUntrustworthyFrameOrigin',
-  AttributionSourceUntrustworthyOrigin = 'AttributionReportingIssue::AttributionSourceUntrustworthyOrigin',
-  AttributionUntrustworthyFrameOrigin = 'AttributionReportingIssue::AttributionUntrustworthyFrameOrigin',
-  AttributionUntrustworthyOrigin = 'AttributionReportingIssue::AttributionUntrustworthyOrigin',
-  InvalidHeader = 'AttributionReportingIssue::InvalidHeader',
+  UntrustworthyReportingOrigin = 'AttributionReportingIssue::UntrustworthyReportingOrigin',
+  InsecureContext = 'AttributionReportingIssue::InsecureContext',
+  InvalidRegisterSourceHeader = 'AttributionReportingIssue::InvalidRegisterSourceHeader',
+  InvalidRegisterTriggerHeader = 'AttributionReportingIssue::InvalidRegisterTriggerHeader',
+  InvalidEligibleHeader = 'AttributionReportingIssue::InvalidEligibleHeader',
+  TooManyConcurrentRequests = 'AttributionReportingIssue::TooManyConcurrentRequests',
+  SourceAndTriggerHeaders = 'AttributionReportingIssue::SourceAndTriggerHeaders',
+  SourceIgnored = 'AttributionReportingIssue::SourceIgnored',
+  TriggerIgnored = 'AttributionReportingIssue::TriggerIgnored',
+  // TODO(apaseltiner): Remove this once old issue types are removed from
+  // protocol.
+  Unknown = 'AttributionReportingIssue::Unknown',
 }
 
 function getIssueCode(details: Protocol.Audits.AttributionReportingIssueDetails): IssueCode {
   switch (details.violationType) {
     case Protocol.Audits.AttributionReportingIssueType.PermissionPolicyDisabled:
       return IssueCode.PermissionPolicyDisabled;
-    case Protocol.Audits.AttributionReportingIssueType.AttributionSourceUntrustworthyOrigin:
-      return details.frame !== undefined ? IssueCode.AttributionSourceUntrustworthyFrameOrigin :
-                                           IssueCode.AttributionSourceUntrustworthyOrigin;
-    case Protocol.Audits.AttributionReportingIssueType.AttributionUntrustworthyOrigin:
-      return details.frame !== undefined ? IssueCode.AttributionUntrustworthyFrameOrigin :
-                                           IssueCode.AttributionUntrustworthyOrigin;
+    case Protocol.Audits.AttributionReportingIssueType.UntrustworthyReportingOrigin:
+      return IssueCode.UntrustworthyReportingOrigin;
+    case Protocol.Audits.AttributionReportingIssueType.InsecureContext:
+      return IssueCode.InsecureContext;
     case Protocol.Audits.AttributionReportingIssueType.InvalidHeader:
-      return IssueCode.InvalidHeader;
+      return IssueCode.InvalidRegisterSourceHeader;
+    case Protocol.Audits.AttributionReportingIssueType.InvalidRegisterTriggerHeader:
+      return IssueCode.InvalidRegisterTriggerHeader;
+    case Protocol.Audits.AttributionReportingIssueType.InvalidEligibleHeader:
+      return IssueCode.InvalidEligibleHeader;
+    case Protocol.Audits.AttributionReportingIssueType.TooManyConcurrentRequests:
+      return IssueCode.TooManyConcurrentRequests;
+    case Protocol.Audits.AttributionReportingIssueType.SourceAndTriggerHeaders:
+      return IssueCode.SourceAndTriggerHeaders;
+    case Protocol.Audits.AttributionReportingIssueType.SourceIgnored:
+      return IssueCode.SourceIgnored;
+    case Protocol.Audits.AttributionReportingIssueType.TriggerIgnored:
+      return IssueCode.TriggerIgnored;
+    default:
+      return IssueCode.Unknown;
   }
 }
+
+const structuredHeaderLink = {
+  link: 'https://tools.ietf.org/id/draft-ietf-httpbis-header-structure-15.html#rfc.section.4.2.2',
+  linkTitle: 'Structured Headers RFC',
+};
 
 export class AttributionReportingIssue extends Issue<IssueCode> {
   issueDetails: Readonly<Protocol.Audits.AttributionReportingIssueDetails>;
@@ -52,42 +76,53 @@ export class AttributionReportingIssue extends Issue<IssueCode> {
           file: 'arPermissionPolicyDisabled.md',
           links: [],
         };
-      case IssueCode.AttributionSourceUntrustworthyFrameOrigin:
+      case IssueCode.UntrustworthyReportingOrigin:
         return {
-          file: 'arAttributionSourceUntrustworthyFrameOrigin.md',
+          file: 'arUntrustworthyReportingOrigin.md',
           links: [],
         };
-      case IssueCode.AttributionSourceUntrustworthyOrigin:
+      case IssueCode.InsecureContext:
         return {
-          file: 'arAttributionSourceUntrustworthyOrigin.md',
-          links: [
-            {
-              link:
-                  'https://developer.chrome.com/docs/privacy-sandbox/attribution-reporting-event-guide/#html-attribute-attributiondestination-required',
-              linkTitle: 'attributiondestination attribute',
-            },
-            {
-              link:
-                  'https://developer.chrome.com/docs/privacy-sandbox/attribution-reporting-event-guide/#html-attribute-attributionreportto',
-              linkTitle: 'attributionreportto attribute',
-            },
-          ],
-        };
-      case IssueCode.AttributionUntrustworthyFrameOrigin:
-        return {
-          file: 'arAttributionUntrustworthyFrameOrigin.md',
+          file: 'arInsecureContext.md',
           links: [],
         };
-      case IssueCode.AttributionUntrustworthyOrigin:
+      case IssueCode.InvalidRegisterSourceHeader:
         return {
-          file: 'arAttributionUntrustworthyOrigin.md',
+          file: 'arInvalidRegisterSourceHeader.md',
           links: [],
         };
-      case IssueCode.InvalidHeader:
+      case IssueCode.InvalidRegisterTriggerHeader:
         return {
-          file: 'arInvalidHeader.md',
+          file: 'arInvalidRegisterTriggerHeader.md',
           links: [],
         };
+      case IssueCode.InvalidEligibleHeader:
+        return {
+          file: 'arInvalidEligibleHeader.md',
+          links: [structuredHeaderLink],
+        };
+      case IssueCode.TooManyConcurrentRequests:
+        return {
+          file: 'arTooManyConcurrentRequests.md',
+          links: [],
+        };
+      case IssueCode.SourceAndTriggerHeaders:
+        return {
+          file: 'arSourceAndTriggerHeaders.md',
+          links: [],
+        };
+      case IssueCode.SourceIgnored:
+        return {
+          file: 'arSourceIgnored.md',
+          links: [structuredHeaderLink],
+        };
+      case IssueCode.TriggerIgnored:
+        return {
+          file: 'arTriggerIgnored.md',
+          links: [structuredHeaderLink],
+        };
+      case IssueCode.Unknown:
+        return null;
     }
   }
 

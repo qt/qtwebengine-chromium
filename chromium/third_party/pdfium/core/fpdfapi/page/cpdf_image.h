@@ -16,6 +16,7 @@
 
 class CFX_DIBBase;
 class CFX_DIBitmap;
+class CPDF_DIB;
 class CPDF_Dictionary;
 class CPDF_Document;
 class CPDF_Page;
@@ -32,8 +33,8 @@ class CPDF_Image final : public Retainable {
 
   void ConvertStreamToIndirectObject();
 
-  CPDF_Dictionary* GetDict() const;
-  CPDF_Stream* GetStream() const { return m_pStream.Get(); }
+  const CPDF_Dictionary* GetDict() const;
+  const CPDF_Stream* GetStream() const { return m_pStream.Get(); }
   const CPDF_Dictionary* GetOC() const { return m_pOC.Get(); }
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
 
@@ -44,11 +45,12 @@ class CPDF_Image final : public Retainable {
   bool IsMask() const { return m_bIsMask; }
   bool IsInterpol() const { return m_bInterpolate; }
 
+  RetainPtr<CPDF_DIB> CreateNewDIB() const;
   RetainPtr<CFX_DIBBase> LoadDIBBase() const;
 
   void SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap);
-  void SetJpegImage(const RetainPtr<IFX_SeekableReadStream>& pFile);
-  void SetJpegImageInline(const RetainPtr<IFX_SeekableReadStream>& pFile);
+  void SetJpegImage(RetainPtr<IFX_SeekableReadStream> pFile);
+  void SetJpegImageInline(RetainPtr<IFX_SeekableReadStream> pFile);
 
   void ResetCache(CPDF_Page* pPage);
 
@@ -71,7 +73,7 @@ class CPDF_Image final : public Retainable {
   CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum);
   ~CPDF_Image() override;
 
-  void FinishInitialization(CPDF_Dictionary* pStreamDict);
+  void FinishInitialization();
   RetainPtr<CPDF_Dictionary> InitJPEG(pdfium::span<uint8_t> src_span);
   RetainPtr<CPDF_Dictionary> CreateXObjectImageDict(int width, int height);
 

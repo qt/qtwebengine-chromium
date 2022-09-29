@@ -39,6 +39,12 @@ const char kSessionManagerStartDeviceWipe[] = "StartDeviceWipe";
 const char kSessionManagerStartRemoteDeviceWipe[] = "StartRemoteDeviceWipe";
 const char kSessionManagerClearForcedReEnrollmentVpd[] =
     "ClearForcedReEnrollmentVpd";
+const char kSessionManagerUnblockDevModeForEnrollment[] =
+    "UnblockDevModeForEnrollment";
+const char kSessionManagerUnblockDevModeForInitialStateDetermination[] =
+    "UnblockDevModeForInitialStateDetermination";
+const char kSessionManagerUnblockDevModeForCarrierLock[] =
+    "UnblockDevModeForCarrierLock";
 const char kSessionManagerHandleSupervisedUserCreationStarting[] =
     "HandleSupervisedUserCreationStarting";
 const char kSessionManagerHandleSupervisedUserCreationFinished[] =
@@ -116,6 +122,9 @@ const char kVerifyFail[] = INTERFACE ".VerifyFail";
 const char kSystemPropertyUpdateFailed[] =
     INTERFACE ".SystemPropertyUpdateFailed";
 const char kVpdUpdateFailed[] = INTERFACE ".VpdUpdateFailed";
+const char kFwmpRemovalFailed[] = INTERFACE ".FwmpRemovalFailed";
+const char kNvramClearedReadFailed[] = INTERFACE ".NvramClearedReadFailed";
+const char kNvramClearedUpdateFailed[] = INTERFACE ".NvramClearedUpdateFailed";
 const char kInvalidArgs[] = INTERFACE ".InvalidArgs";
 
 #undef INTERFACE

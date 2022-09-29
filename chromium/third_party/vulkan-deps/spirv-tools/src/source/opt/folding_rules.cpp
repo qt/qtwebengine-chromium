@@ -277,6 +277,11 @@ uint32_t Reciprocal(analysis::ConstantManager* const_mgr,
   uint32_t width = c->type()->AsFloat()->width();
   assert(width == 32 || width == 64);
   std::vector<uint32_t> words;
+
+  if (c->IsZero()) {
+    return 0;
+  }
+
   if (width == 64) {
     spvtools::utils::FloatProxy<double> result(1.0 / c->GetDouble());
     if (!IsValidResult(result.getAsFloat())) return 0;
@@ -2743,7 +2748,8 @@ FoldingRule VectorShuffleFeedingShuffle() {
 
       if (adjustment != 0) {
         for (uint32_t i = 2; i < new_operands.size(); i++) {
-          if (inst->GetSingleWordInOperand(i) >= op0_length) {
+          uint32_t operand = inst->GetSingleWordInOperand(i);
+          if (operand >= op0_length && operand != undef_literal) {
             new_operands[i].words[0] -= adjustment;
           }
         }

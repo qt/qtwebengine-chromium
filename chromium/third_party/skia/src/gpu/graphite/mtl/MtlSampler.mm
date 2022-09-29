@@ -9,13 +9,13 @@
 
 #include "include/core/SkSamplingOptions.h"
 #include "src/gpu/graphite/mtl/MtlCaps.h"
-#include "src/gpu/graphite/mtl/MtlGpu.h"
+#include "src/gpu/graphite/mtl/MtlSharedContext.h"
 
 namespace skgpu::graphite {
 
-MtlSampler::MtlSampler(const MtlGpu* gpu,
+MtlSampler::MtlSampler(const MtlSharedContext* sharedContext,
                        sk_cfp<id<MTLSamplerState>> samplerState)
-        : Sampler(gpu)
+        : Sampler(sharedContext)
         , fSamplerState(std::move(samplerState)) {}
 
 static inline MTLSamplerAddressMode tile_mode_to_mtl_sampler_address(SkTileMode tileMode,
@@ -44,7 +44,7 @@ static inline MTLSamplerAddressMode tile_mode_to_mtl_sampler_address(SkTileMode 
     SkUNREACHABLE;
 }
 
-sk_sp<MtlSampler> MtlSampler::Make(const MtlGpu* gpu,
+sk_sp<MtlSampler> MtlSampler::Make(const MtlSharedContext* sharedContext,
                                    const SkSamplingOptions& samplingOptions,
                                    SkTileMode xTileMode,
                                    SkTileMode yTileMode) {
@@ -67,29 +67,49 @@ sk_sp<MtlSampler> MtlSampler::Make(const MtlGpu* gpu,
       SkUNREACHABLE;
     }();
 
-    auto samplerDesc = [[MTLSamplerDescriptor alloc] init];
-    samplerDesc.rAddressMode = MTLSamplerAddressModeClampToEdge;
-    samplerDesc.sAddressMode = tile_mode_to_mtl_sampler_address(xTileMode, gpu->mtlCaps());
-    samplerDesc.tAddressMode = tile_mode_to_mtl_sampler_address(yTileMode, gpu->mtlCaps());
-    samplerDesc.magFilter = minMagFilter;
-    samplerDesc.minFilter = minMagFilter;
-    samplerDesc.mipFilter = mipFilter;
-    samplerDesc.lodMinClamp = 0.0f;
-    samplerDesc.lodMaxClamp = FLT_MAX;  // default value according to docs.
-    samplerDesc.maxAnisotropy = 1.0f;
-    samplerDesc.normalizedCoordinates = true;
+    (*desc).rAddressMode = MTLSamplerAddressModeClampToEdge;
+    (*desc).sAddressMode = tile_mode_to_mtl_sampler_address(xTileMode, sharedContext->mtlCaps());
+    (*desc).tAddressMode = tile_mode_to_mtl_sampler_address(yTileMode, sharedContext->mtlCaps());
+    (*desc).magFilter = minMagFilter;
+    (*desc).minFilter = minMagFilter;
+    (*desc).mipFilter = mipFilter;
+    (*desc).lodMinClamp = 0.0f;
+    (*desc).lodMaxClamp = FLT_MAX;  // default value according to docs.
+    (*desc).maxAnisotropy = 1;      // TODO: if we start using aniso, need to add to key
+    (*desc).normalizedCoordinates = true;
     if (@available(macOS 10.11, iOS 9.0, *)) {
-        samplerDesc.compareFunction = MTLCompareFunctionNever;
+        (*desc).compareFunction = MTLCompareFunctionNever;
     }
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
-    // TODO: add label?
+    NSString* tileModeLabels[] = {
+        @"Clamp",
+        @"Repeat",
+        @"Mirror",
+        @"Decal"
+    };
+    NSString* minMagFilterLabels[] = {
+        @"Nearest",
+        @"Linear"
+    };
+    NSString* mipFilterLabels[] = {
+        @"MipNone",
+        @"MipNearest",
+        @"MipLinear"
+    };
+
+    (*desc).label = [NSString stringWithFormat:@"X%@Y%@%@%@",
+                                               tileModeLabels[(int)xTileMode],
+                                               tileModeLabels[(int)yTileMode],
+                                               minMagFilterLabels[(int)samplingOptions.filter],
+                                               mipFilterLabels[(int)samplingOptions.mipmap]];
 #endif
 
-    sk_cfp<id<MTLSamplerState>> sampler([gpu->device() newSamplerStateWithDescriptor:desc.get()]);
+    sk_cfp<id<MTLSamplerState>> sampler(
+            [sharedContext->device() newSamplerStateWithDescriptor:desc.get()]);
     if (!sampler) {
         return nullptr;
     }
-    return sk_sp<MtlSampler>(new MtlSampler(gpu, std::move(sampler)));
+    return sk_sp<MtlSampler>(new MtlSampler(sharedContext, std::move(sampler)));
 }
 
 void MtlSampler::freeGpuData() {

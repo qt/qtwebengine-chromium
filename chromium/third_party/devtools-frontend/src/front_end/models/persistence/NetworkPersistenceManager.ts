@@ -11,8 +11,7 @@ import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../bindings/bindings.js';
 import * as Workspace from '../workspace/workspace.js';
 
-import type {FileSystem} from './FileSystemWorkspaceBinding.js';
-import {FileSystemWorkspaceBinding} from './FileSystemWorkspaceBinding.js';
+import {FileSystemWorkspaceBinding, type FileSystem} from './FileSystemWorkspaceBinding.js';
 import {PersistenceBinding, PersistenceImpl} from './PersistenceImpl.js';
 
 let networkPersistenceManagerInstance: NetworkPersistenceManager|null;
@@ -371,9 +370,8 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     await PersistenceImpl.instance().addBinding(binding);
     const uiSourceCodeOfTruth =
         this.savingForOverrides.has(networkUISourceCode) ? networkUISourceCode : fileSystemUISourceCode;
-    const [{content}, encoded] =
-        await Promise.all([uiSourceCodeOfTruth.requestContent(), uiSourceCodeOfTruth.contentEncoded()]);
-    PersistenceImpl.instance().syncContent(uiSourceCodeOfTruth, content || '', encoded);
+    const {content, isEncoded} = await uiSourceCodeOfTruth.requestContent();
+    PersistenceImpl.instance().syncContent(uiSourceCodeOfTruth, content || '', isEncoded);
   }
 
   private onUISourceCodeWorkingCopyCommitted(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
@@ -391,14 +389,13 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     }
     this.savingForOverrides.add(uiSourceCode);
     let encodedPath = this.encodedPathFromUrl(uiSourceCode.url());
-    const content = (await uiSourceCode.requestContent()).content || '';
-    const encoded = await uiSourceCode.contentEncoded();
+    const {content, isEncoded} = await uiSourceCode.requestContent();
     const lastIndexOfSlash = encodedPath.lastIndexOf('/');
     const encodedFileName = Common.ParsedURL.ParsedURL.substring(encodedPath, lastIndexOfSlash + 1);
     const rawFileName = Common.ParsedURL.ParsedURL.encodedPathToRawPathString(encodedFileName);
     encodedPath = Common.ParsedURL.ParsedURL.substr(encodedPath, 0, lastIndexOfSlash);
     if (this.projectInternal) {
-      await this.projectInternal.createFile(encodedPath, rawFileName, content, encoded);
+      await this.projectInternal.createFile(encodedPath, rawFileName, content ?? '', isEncoded);
     }
     this.fileCreatedForTest(encodedPath, rawFileName);
     this.savingForOverrides.delete(uiSourceCode);
@@ -625,19 +622,27 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     }
   }
 
-  mergeHeaders(baseHeaders: Protocol.Fetch.HeaderEntry[], overrideHeaders: Protocol.Network.Headers):
+  mergeHeaders(baseHeaders: Protocol.Fetch.HeaderEntry[], overrideHeaders: Protocol.Fetch.HeaderEntry[]):
       Protocol.Fetch.HeaderEntry[] {
+    const headerMap = new Platform.MapUtilities.Multimap<string, string>();
+    for (const {name, value} of overrideHeaders) {
+      headerMap.set(name.toLowerCase(), value);
+    }
+
+    const overriddenHeaderNames = new Set(headerMap.keysArray());
+    for (const {name, value} of baseHeaders) {
+      const lowerCaseName = name.toLowerCase();
+      if (!overriddenHeaderNames.has(lowerCaseName)) {
+        headerMap.set(lowerCaseName, value);
+      }
+    }
+
     const result: Protocol.Fetch.HeaderEntry[] = [];
-    const headerMap = new Map<string, string>();
-    for (const header of baseHeaders) {
-      headerMap.set(header.name, header.value);
+    for (const headerName of headerMap.keysArray()) {
+      for (const headerValue of headerMap.get(headerName)) {
+        result.push({name: headerName, value: headerValue});
+      }
     }
-    for (const [headerName, headerValue] of Object.entries(overrideHeaders)) {
-      headerMap.set(headerName, headerValue);
-    }
-    headerMap.forEach((headerValue, headerName) => {
-      result.push({name: headerName, value: headerValue});
-    });
     return result;
   }
 
@@ -734,13 +739,17 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       const blob = await project.requestFileBlob(fileSystemUISourceCode);
       if (blob) {
         void interceptedRequest.continueRequestWithContent(
-            new Blob([blob], {type: mimeType}), /* encoded */ false, responseHeaders);
+            new Blob([blob], {type: mimeType}), /* encoded */ false, responseHeaders, /* isBodyOverridden */ true);
       }
+    } else if (interceptedRequest.isRedirect()) {
+      void interceptedRequest.continueRequestWithContent(
+          new Blob([], {type: mimeType}), /* encoded */ true, responseHeaders, /* isBodyOverridden */ false);
     } else {
       const responseBody = await interceptedRequest.responseBody();
       if (!responseBody.error && responseBody.content) {
         void interceptedRequest.continueRequestWithContent(
-            new Blob([responseBody.content], {type: mimeType}), /* encoded */ true, responseHeaders);
+            new Blob([responseBody.content], {type: mimeType}), /* encoded */ true, responseHeaders,
+            /* isBodyOverridden */ false);
       }
     }
   }
@@ -765,20 +774,23 @@ export type EventTypes = {
 
 export interface HeaderOverride {
   applyTo: string;
-  headers: Protocol.Network.Headers;
+  headers: Protocol.Fetch.HeaderEntry[];
 }
 
 interface HeaderOverrideWithRegex {
   applyToRegex: RegExp;
-  headers: Protocol.Network.Headers;
+  headers: Protocol.Fetch.HeaderEntry[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function isHeaderOverride(arg: any): arg is HeaderOverride {
-  if (!(arg && arg.applyTo && typeof (arg.applyTo === 'string') && arg.headers && Object.keys(arg.headers).length)) {
+  if (!(arg && arg.applyTo && typeof arg.applyTo === 'string' && arg.headers && arg.headers.length &&
+        Array.isArray(arg.headers))) {
     return false;
   }
-  return Object.values(arg.headers).every(value => typeof value === 'string');
+  return arg.headers.every(
+      (header: Protocol.Fetch.HeaderEntry) =>
+          header.name && typeof header.name === 'string' && header.value && typeof header.value === 'string');
 }
 
 export function escapeRegex(pattern: string): string {

@@ -30,6 +30,7 @@ const char kSetUpdateOverCellularPermission[] =
 const char kSetUpdateOverCellularTarget[] = "SetUpdateOverCellularTarget";
 const char kToggleFeature[] = "ToggleFeature";
 const char kIsFeatureEnabled[] = "IsFeatureEnabled";
+const char kApplyDeferredUpdate[] = "ApplyDeferredUpdate";
 
 // Signals.
 const char kStatusUpdateAdvanced[] = "StatusUpdateAdvanced";
@@ -53,6 +54,8 @@ const char kUpdateStatusNeedPermissionToUpdate[] =
     "UPDATE_STATUS_NEED_PERMISSION_TO_UPDATE";
 const char kUpdateStatusCleanupPreviousUpdate[] =
     "UPDATE_STATUS_CLEANUP_PREVIOUS_UPDATE";
+const char kUpdateStatusUpdatedButDeferred[] =
+    "UPDATE_STATUS_UPDATED_BUT_DEFERRED";
 
 // Feature names.
 const char kFeatureRepeatedUpdates[] = "feature-repeated-updates";

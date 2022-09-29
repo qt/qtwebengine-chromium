@@ -170,8 +170,6 @@ class WasmGraphAssembler : public GraphAssembler {
 
   Node* LoadWasmTypeInfo(Node* map);
 
-  Node* LoadSupertypes(Node* wasm_type_info);
-
   // FixedArrays.
 
   Node* LoadFixedArrayLengthAsSmi(Node* fixed_array);
@@ -252,18 +250,20 @@ class WasmGraphAssembler : public GraphAssembler {
 
   Node* AssertNotNull(Node* object);
 
+  Node* WasmExternInternalize(Node* object);
+
   // Generic helpers.
 
   Node* HasInstanceType(Node* heap_object, InstanceType type);
 
-  Node* TrapIf(Node* condition, TrapId reason) {
-    return AddNode(graph()->NewNode(mcgraph()->common()->TrapIf(reason),
-                                    condition, effect(), control()));
+  void TrapIf(Node* condition, TrapId reason) {
+    AddNode(graph()->NewNode(mcgraph()->common()->TrapIf(reason), condition,
+                             effect(), control()));
   }
 
-  Node* TrapUnless(Node* condition, TrapId reason) {
-    return AddNode(graph()->NewNode(mcgraph()->common()->TrapUnless(reason),
-                                    condition, effect(), control()));
+  void TrapUnless(Node* condition, TrapId reason) {
+    AddNode(graph()->NewNode(mcgraph()->common()->TrapUnless(reason), condition,
+                             effect(), control()));
   }
 
   SimplifiedOperatorBuilder* simplified() { return &simplified_; }

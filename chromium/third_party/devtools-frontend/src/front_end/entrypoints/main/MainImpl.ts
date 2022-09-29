@@ -322,6 +322,9 @@ export class MainImpl {
         'evaluateExpressionsWithSourceMaps', 'Console: Resolve variable names in expressions using source maps',
         undefined);
     Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.BREAKPOINT_VIEW, 'Enable re-designed Breakpoint Sidebar Pane in the Sources Panel',
+        true);
 
     // Dual-screen
     Root.Runtime.experiments.register(
@@ -338,7 +341,8 @@ export class MainImpl {
     // Full Accessibility Tree
     Root.Runtime.experiments.register(
         'fullAccessibilityTree', 'Enable full accessibility tree view in the Elements panel', undefined,
-        'https://developer.chrome.com/blog/new-in-devtools-90/#accesibility-tree');
+        'https://developer.chrome.com/blog/new-in-devtools-90/#accesibility-tree',
+        'https://g.co/devtools/a11y-tree-feedback');
 
     // Font Editor
     Root.Runtime.experiments.register(
@@ -370,9 +374,8 @@ export class MainImpl {
 
     // CSS <length> authoring tool.
     Root.Runtime.experiments.register(
-        'cssTypeComponentLength',
-        'Enable CSS <length> authoring tool in the Styles pane (https://g.co/devtools/length-feedback)', undefined,
-        'https://developer.chrome.com/blog/new-in-devtools-96/#length');
+        'cssTypeComponentLength', 'Enable CSS <length> authoring tool in the Styles pane', undefined,
+        'https://developer.chrome.com/blog/new-in-devtools-96/#length', 'https://g.co/devtools/length-feedback');
 
     // Display precise changes in the Changes tab.
     Root.Runtime.experiments.register(
@@ -404,7 +407,17 @@ export class MainImpl {
 
     // Change grouping of sources panel to use Authored/Deployed trees
     Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING, 'Group sources into Authored and Deployed trees');
+        Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING, 'Group sources into Authored and Deployed trees',
+        undefined, 'https://goo.gle/authored-deployed', 'https://goo.gle/authored-deployed-feedback');
+
+    // Hide third party code (as determined by ignore lists or source maps)
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.JUST_MY_CODE, 'Hide ignore-listed code in sources tree view');
+
+    // Highlight important DOM properties in the Object Properties viewer.
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.IMPORTANT_DOM_PROPERTIES,
+        'Highlight important DOM properties in the Object Properties viewer');
 
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
@@ -414,8 +427,12 @@ export class MainImpl {
       'reportingApiDebugging',
       Root.Runtime.ExperimentName.SYNC_SETTINGS,
       Root.Runtime.ExperimentName.CSS_LAYERS,
-      Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER,
+      ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
       'lighthousePanelFR',
+    ]);
+
+    Root.Runtime.experiments.setNonConfigurableExperiments([
+      ...(!('EyeDropper' in window) ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
     ]);
 
     Root.Runtime.experiments.cleanUpStaleExperiments();

@@ -84,16 +84,6 @@ class DebugPrintf : public GpuAssistedBase {
     }
 
     void CreateDevice(const VkDeviceCreateInfo* pCreateInfo) override;
-    bool PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
-                                      VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask,
-                                      uint32_t memoryBarrierCount, const VkMemoryBarrier* pMemoryBarriers,
-                                      uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier* pBufferMemoryBarriers,
-                                      uint32_t imageMemoryBarrierCount,
-                                      const VkImageMemoryBarrier* pImageMemoryBarriers) const override;
-    bool PreCallValidateCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
-                                          const VkDependencyInfoKHR* pDependencyInfos) const override;
-    bool PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
-                                       const VkDependencyInfo* pDependencyInfos) const override;
     bool InstrumentShader(const VkShaderModuleCreateInfo* pCreateInfo, std::vector<uint32_t>& new_pgm, uint32_t* unique_shader_id);
     void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                          const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
@@ -150,39 +140,19 @@ class DebugPrintf : public GpuAssistedBase {
                                      VkDeviceSize hitShaderBindingStride, VkBuffer callableShaderBindingTableBuffer,
                                      VkDeviceSize callableShaderBindingOffset, VkDeviceSize callableShaderBindingStride,
                                      uint32_t width, uint32_t height, uint32_t depth) override;
-    void PostCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
-                                      VkDeviceSize raygenShaderBindingOffset, VkBuffer missShaderBindingTableBuffer,
-                                      VkDeviceSize missShaderBindingOffset, VkDeviceSize missShaderBindingStride,
-                                      VkBuffer hitShaderBindingTableBuffer, VkDeviceSize hitShaderBindingOffset,
-                                      VkDeviceSize hitShaderBindingStride, VkBuffer callableShaderBindingTableBuffer,
-                                      VkDeviceSize callableShaderBindingOffset, VkDeviceSize callableShaderBindingStride,
-                                      uint32_t width, uint32_t height, uint32_t depth) override;
     void PreCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
                                       const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
                                       const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
                                       const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
                                       const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width,
                                       uint32_t height, uint32_t depth) override;
-    void PostCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
-                                       const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
-                                       const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
-                                       const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
-                                       const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width,
-                                       uint32_t height, uint32_t depth) override;
     void PreCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
                                               const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
                                               const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
                                               const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
                                               const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
                                               VkDeviceAddress indirectDeviceAddress) override;
-    void PostCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
-                                               const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
-                                               const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
-                                               const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
-                                               const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
-                                               VkDeviceAddress indirectDeviceAddress) override;
     void PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) override;
-    void PostCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) override;
     void AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point);
 
     std::shared_ptr<CMD_BUFFER_STATE> CreateCmdBufferState(VkCommandBuffer cb, const VkCommandBufferAllocateInfo* create_info,

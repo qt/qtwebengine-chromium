@@ -151,11 +151,11 @@ inline CPDF_ContentMarkItem* CPDFContentMarkItemFromFPDFPageObjectMark(
   return reinterpret_cast<CPDF_ContentMarkItem*>(mark);
 }
 
-inline FPDF_PAGERANGE FPDFPageRangeFromCPDFArray(CPDF_Array* range) {
+inline FPDF_PAGERANGE FPDFPageRangeFromCPDFArray(const CPDF_Array* range) {
   return reinterpret_cast<FPDF_PAGERANGE>(range);
 }
-inline CPDF_Array* CPDFArrayFromFPDFPageRange(FPDF_PAGERANGE range) {
-  return reinterpret_cast<CPDF_Array*>(range);
+inline const CPDF_Array* CPDFArrayFromFPDFPageRange(FPDF_PAGERANGE range) {
+  return reinterpret_cast<const CPDF_Array*>(range);
 }
 
 inline FPDF_PATHSEGMENT FPDFPathSegmentFromFXPathPoint(
@@ -220,12 +220,12 @@ CPDFSDKFormFillEnvironmentFromFPDFFormHandle(FPDF_FORMHANDLE handle) {
 }
 
 inline FPDF_SIGNATURE FPDFSignatureFromCPDFDictionary(
-    CPDF_Dictionary* dictionary) {
+    const CPDF_Dictionary* dictionary) {
   return reinterpret_cast<FPDF_SIGNATURE>(dictionary);
 }
-inline CPDF_Dictionary* CPDFDictionaryFromFPDFSignature(
+inline const CPDF_Dictionary* CPDFDictionaryFromFPDFSignature(
     FPDF_SIGNATURE signature) {
-  return reinterpret_cast<CPDF_Dictionary*>(signature);
+  return reinterpret_cast<const CPDF_Dictionary*>(signature);
 }
 
 inline FPDF_XOBJECT FPDFXObjectFromXObjectContext(XObjectContext* xobject) {
@@ -249,7 +249,8 @@ RetainPtr<IFX_SeekableStream> MakeSeekableStream(
 #endif  // PDF_ENABLE_XFA
 
 const CPDF_Array* GetQuadPointsArrayFromDictionary(const CPDF_Dictionary* dict);
-CPDF_Array* GetQuadPointsArrayFromDictionary(CPDF_Dictionary* dict);
+RetainPtr<CPDF_Array> GetMutableQuadPointsArrayFromDictionary(
+    CPDF_Dictionary* dict);
 CPDF_Array* AddQuadPointsArrayToDictionary(CPDF_Dictionary* dict);
 bool IsValidQuadPointsIndex(const CPDF_Array* array, size_t index);
 bool GetQuadPointsAtIndex(const CPDF_Array* array,

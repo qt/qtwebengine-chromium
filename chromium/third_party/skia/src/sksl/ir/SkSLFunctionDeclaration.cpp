@@ -7,7 +7,6 @@
 
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 
-#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkSLLayout.h"
@@ -25,9 +24,10 @@
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <initializer_list>
 #include <utility>
 
@@ -95,16 +95,24 @@ static bool check_parameters(const Context& context,
 
     // Check modifiers on each function parameter.
     for (auto& param : parameters) {
-        param->modifiers().checkPermitted(context, param->modifiersPosition(),
-                Modifiers::kConst_Flag | Modifiers::kIn_Flag | Modifiers::kOut_Flag,
-                /*permittedLayoutFlags=*/0);
         const Type& type = param->type();
+        int permittedFlags = Modifiers::kConst_Flag | Modifiers::kIn_Flag;
+        if (!type.isOpaque()) {
+            permittedFlags |= Modifiers::kOut_Flag;
+        }
+        if (type.typeKind() == Type::TypeKind::kTexture) {
+            permittedFlags |= Modifiers::kReadOnly_Flag | Modifiers::kWriteOnly_Flag;
+        }
+        param->modifiers().checkPermitted(context,
+                                          param->modifiersPosition(),
+                                          permittedFlags,
+                                          /*permittedLayoutFlags=*/0);
         // Only the (builtin) declarations of 'sample' are allowed to have shader/colorFilter or FP
         // parameters. You can pass other opaque types to functions safely; this restriction is
         // specific to "child" objects.
         if (type.isEffectChild() && !context.fConfig->fIsBuiltinCode) {
             context.fErrors->error(param->fPosition, "parameters of type '" + type.displayName() +
-                    "' not allowed");
+                                                     "' not allowed");
             return false;
         }
 
@@ -129,7 +137,7 @@ static bool check_parameters(const Context& context,
                     m.fLayout.fBuiltin = SK_MAIN_COORDS_BUILTIN;
                     modifiersChanged = true;
                 } else if (typeIsValidForColor(type) &&
-                           builtinColorIndex < SK_ARRAY_COUNT(kBuiltinColorIDs)) {
+                           builtinColorIndex < std::size(kBuiltinColorIDs)) {
                     m.fLayout.fBuiltin = kBuiltinColorIDs[builtinColorIndex++];
                     modifiersChanged = true;
                 }
@@ -292,6 +300,11 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
         }
         case ProgramKind::kVertex:
         case ProgramKind::kGraphiteVertex:
+        case ProgramKind::kCompute:
+            if (!returnType.matches(*context.fTypes.fVoid)) {
+                errors.error(pos, "'main' must return 'void'");
+                return false;
+            }
             if (parameters.size()) {
                 errors.error(pos, "shader 'main' must have zero parameters");
                 return false;
@@ -302,23 +315,85 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
 }
 
 /**
- * Checks for a previously existing declaration of this function, reporting errors if there is an
- * incompatible symbol. Returns true and sets outExistingDecl to point to the existing declaration
- * (or null if none) on success, returns false on error.
+ * Given a concrete type (`float3`) and a generic type (`$genType`), returns the index of the
+ * concrete type within the generic type's typelist. Returns -1 if there is no match.
+ */
+static int find_generic_index(const Type& concreteType,
+                              const Type& genericType,
+                              bool allowNarrowing) {
+    const std::vector<const Type*>& genericTypes = genericType.coercibleTypes();
+    for (size_t index = 0; index < genericTypes.size(); ++index) {
+        if (concreteType.canCoerceTo(*genericTypes[index], allowNarrowing)) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+/** Returns true if the types match, or if `concreteType` can be found in `maybeGenericType`. */
+static bool type_generically_matches(const Type& concreteType, const Type& maybeGenericType) {
+    return maybeGenericType.isGeneric()
+                ? find_generic_index(concreteType, maybeGenericType, /*allowNarrowing=*/false) != -1
+                : concreteType.matches(maybeGenericType);
+}
+
+/**
+ * Checks a parameter list (params) against the parameters of a function that was declared earlier
+ * (otherParams). Returns true if they match, even if the parameters in `otherParams` contain
+ * generic types.
  */
 static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& params,
                              const std::vector<const Variable*>& otherParams) {
+    // If the param lists are different lengths, they're definitely not a match.
     if (params.size() != otherParams.size()) {
         return false;
     }
+
+    // Figure out a consistent generic index (or bail if we find a contradiction).
+    int genericIndex = -1;
+    for (size_t i = 0; i < params.size(); ++i) {
+        const Type* paramType = &params[i]->type();
+        const Type* otherParamType = &otherParams[i]->type();
+
+        if (otherParamType->isGeneric()) {
+            int genericIndexForThisParam = find_generic_index(*paramType, *otherParamType,
+                                                              /*allowNarrowing=*/false);
+            if (genericIndexForThisParam == -1) {
+                // The type wasn't a match for this generic at all; these params can't be a match.
+                return false;
+            }
+            if (genericIndex != -1 && genericIndex != genericIndexForThisParam) {
+                // The generic index mismatches from what we determined on a previous parameter.
+                return false;
+            }
+            genericIndex = genericIndexForThisParam;
+        }
+    }
+
+    // Now that we've determined a generic index (if we needed one), do a parameter check.
     for (size_t i = 0; i < params.size(); i++) {
-        if (!params[i]->type().matches(otherParams[i]->type())) {
+        const Type* paramType = &params[i]->type();
+        const Type* otherParamType = &otherParams[i]->type();
+
+        // Make generic types concrete.
+        if (otherParamType->isGeneric()) {
+            SkASSERT(genericIndex != -1);
+            SkASSERT(genericIndex < (int)otherParamType->coercibleTypes().size());
+            otherParamType = otherParamType->coercibleTypes()[genericIndex];
+        }
+        // Detect type mismatches.
+        if (!paramType->matches(*otherParamType)) {
             return false;
         }
     }
     return true;
 }
 
+/**
+ * Checks for a previously existing declaration of this function, reporting errors if there is an
+ * incompatible symbol. Returns true and sets outExistingDecl to point to the existing declaration
+ * (or null if none) on success, returns false on error.
+ */
 static bool find_existing_declaration(const Context& context,
                                       SymbolTable& symbols,
                                       Position pos,
@@ -331,26 +406,17 @@ static bool find_existing_declaration(const Context& context,
     const Symbol* entry = symbols[name];
     *outExistingDecl = nullptr;
     if (entry) {
-        SkSpan<const FunctionDeclaration* const> functions;
-        const FunctionDeclaration* declPtr;
-        switch (entry->kind()) {
-            case Symbol::Kind::kUnresolvedFunction:
-                functions = SkMakeSpan(entry->as<UnresolvedFunction>().functions());
-                break;
-            case Symbol::Kind::kFunctionDeclaration:
-                declPtr = &entry->as<FunctionDeclaration>();
-                functions = SkMakeSpan(&declPtr, 1);
-                break;
-            default:
-                errors.error(pos, "symbol '" + std::string(name) + "' was already defined");
-                return false;
+        if (!entry->is<FunctionDeclaration>()) {
+            errors.error(pos, "symbol '" + std::string(name) + "' was already defined");
+            return false;
         }
-        for (const FunctionDeclaration* other : functions) {
+        for (const FunctionDeclaration* other = &entry->as<FunctionDeclaration>();
+             other; other = other->nextOverload()) {
             SkASSERT(name == other->name());
             if (!parameters_match(parameters, other->parameters())) {
                 continue;
             }
-            if (!returnType->matches(other->returnType())) {
+            if (!type_generically_matches(*returnType, other->returnType())) {
                 std::vector<const Variable*> paramPtrs;
                 paramPtrs.reserve(parameters.size());
                 for (std::unique_ptr<Variable>& param : parameters) {
@@ -374,7 +440,7 @@ static bool find_existing_declaration(const Context& context,
                     return false;
                 }
             }
-            if (other->definition() && !other->isBuiltin()) {
+            if (other->definition() || other->isBuiltin()) {
                 errors.error(pos, "duplicate definition of " + other->description());
                 return false;
             }
@@ -398,7 +464,10 @@ FunctionDeclaration::FunctionDeclaration(Position pos,
         , fReturnType(returnType)
         , fBuiltin(builtin)
         , fIsMain(name == "main")
-        , fIntrinsicKind(builtin ? identify_intrinsic(name) : kNotIntrinsic) {}
+        , fIntrinsicKind(builtin ? identify_intrinsic(name) : kNotIntrinsic) {
+    // None of the parameters are allowed to be be null.
+    SkASSERT(std::count(fParameters.begin(), fParameters.end(), nullptr) == 0);
+}
 
 const FunctionDeclaration* FunctionDeclaration::Convert(
         const Context& context,
@@ -443,7 +512,7 @@ std::string FunctionDeclaration::mangledName() const {
         // Builtins without a definition (like `sin` or `sqrt`) must use their real names.
         return std::string(this->name());
     }
-    // Built-in functions can have a $ prefix, which will fail to compile in GLSL/Metal. Remove the
+    // Built-in functions can have a $ prefix, which will fail to compile in GLSL. Remove the
     // $ and add a unique mangling specifier, so user code can't conflict with the name.
     std::string_view name = this->name();
     const char* builtinMarker = "";
@@ -504,31 +573,26 @@ bool FunctionDeclaration::determineFinalTypes(const ExpressionArray& arguments,
     for (size_t i = 0; i < arguments.size(); i++) {
         // Non-generic parameters are final as-is.
         const Type& parameterType = parameters[i]->type();
-        if (parameterType.typeKind() != Type::TypeKind::kGeneric) {
+        if (!parameterType.isGeneric()) {
             outParameterTypes->push_back(&parameterType);
             continue;
         }
         // We use the first generic parameter we find to lock in the generic index;
         // e.g. if we find `float3` here, all `$genType`s will be assumed to be `float3`.
-        const std::vector<const Type*>& types = parameterType.coercibleTypes();
         if (genericIndex == -1) {
-            for (size_t j = 0; j < types.size(); j++) {
-                if (arguments[i]->type().canCoerceTo(*types[j], /*allowNarrowing=*/true)) {
-                    genericIndex = j;
-                    break;
-                }
-            }
+            genericIndex = find_generic_index(arguments[i]->type(), parameterType,
+                                              /*allowNarrowing=*/true);
             if (genericIndex == -1) {
                 // The passed-in type wasn't a match for ANY of the generic possibilities.
                 // This function isn't a match at all.
                 return false;
             }
         }
-        outParameterTypes->push_back(types[genericIndex]);
+        outParameterTypes->push_back(parameterType.coercibleTypes()[genericIndex]);
     }
     // Apply the generic index to our return type.
     const Type& returnType = this->returnType();
-    if (returnType.typeKind() == Type::TypeKind::kGeneric) {
+    if (returnType.isGeneric()) {
         if (genericIndex == -1) {
             // We don't support functions with a generic return type and no other generics.
             return false;

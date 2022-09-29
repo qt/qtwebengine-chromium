@@ -41,7 +41,11 @@ int main(int argc, char * argv[])
         // If you have YUV(A) data you want to encode, use this path
         printf("Encoding raw YUVA data\n");
 
-        avifImageAllocatePlanes(image, AVIF_PLANES_YUV | AVIF_PLANES_A);
+        const avifResult allocateResult = avifImageAllocatePlanes(image, AVIF_PLANES_ALL);
+        if (allocateResult != AVIF_RESULT_OK) {
+            fprintf(stderr, "Failed to allocate the planes: %s\n", avifResultToString(allocateResult));
+            goto cleanup;
+        }
 
         // Fill your YUV(A) data here
         memset(image->yuvPlanes[AVIF_CHAN_Y], 255, image->yuvRowBytes[AVIF_CHAN_Y] * image->height);
@@ -53,7 +57,7 @@ int main(int argc, char * argv[])
         printf("Encoding from converted RGBA\n");
 
         avifRGBImageSetDefaults(&rgb, image);
-        // Override RGB(A)->YUV(A) defaults here: depth, format, chromaUpsampling, ignoreAlpha, alphaPremultiplied, libYUVUsage, etc
+        // Override RGB(A)->YUV(A) defaults here: depth, format, chromaDownsampling, ignoreAlpha, alphaPremultiplied, libYUVUsage, etc
 
         // Alternative: set rgb.pixels and rgb.rowBytes yourself, which should match your chosen rgb.format
         // Be sure to use uint16_t* instead of uint8_t* for rgb.pixels/rgb.rowBytes if (rgb.depth > 8)

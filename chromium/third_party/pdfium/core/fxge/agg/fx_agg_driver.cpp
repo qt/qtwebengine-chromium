@@ -1013,14 +1013,14 @@ agg::path_storage BuildAggPath(const CFX_Path& path,
 }  // namespace
 
 CFX_AggDeviceDriver::CFX_AggDeviceDriver(
-    const RetainPtr<CFX_DIBitmap>& pBitmap,
+    RetainPtr<CFX_DIBitmap> pBitmap,
     bool bRgbByteOrder,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap,
+    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout)
-    : m_pBitmap(pBitmap),
+    : m_pBitmap(std::move(pBitmap)),
       m_bRgbByteOrder(bRgbByteOrder),
       m_bGroupKnockout(bGroupKnockout),
-      m_pBackdropBitmap(pBackdropBitmap) {
+      m_pBackdropBitmap(std::move(pBackdropBitmap)) {
   DCHECK(m_pBitmap);
   InitPlatform();
 }
@@ -1120,7 +1120,8 @@ void CFX_AggDeviceDriver::SetClipMask(agg::rasterizer_scanline_aa& rasterizer) {
   agg::scanline_u8 scanline;
   agg::render_scanlines(rasterizer, scanline, final_render,
                         m_FillOptions.aliased_path);
-  m_pClipRgn->IntersectMaskF(path_rect.left, path_rect.top, pThisLayer);
+  m_pClipRgn->IntersectMaskF(path_rect.left, path_rect.top,
+                             std::move(pThisLayer));
 }
 
 bool CFX_AggDeviceDriver::SetClip_PathFill(
@@ -1424,32 +1425,32 @@ CFX_DefaultRenderDevice::CFX_DefaultRenderDevice() = default;
 
 CFX_DefaultRenderDevice::~CFX_DefaultRenderDevice() = default;
 
-bool CFX_DefaultRenderDevice::Attach(
-    const RetainPtr<CFX_DIBitmap>& pBitmap,
+bool CFX_DefaultRenderDevice::AttachImpl(
+    RetainPtr<CFX_DIBitmap> pBitmap,
     bool bRgbByteOrder,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap,
+    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout) {
   if (!pBitmap)
     return false;
 
   SetBitmap(pBitmap);
   SetDeviceDriver(std::make_unique<pdfium::CFX_AggDeviceDriver>(
-      pBitmap, bRgbByteOrder, pBackdropBitmap, bGroupKnockout));
+      std::move(pBitmap), bRgbByteOrder, std::move(pBackdropBitmap),
+      bGroupKnockout));
   return true;
 }
 
-bool CFX_DefaultRenderDevice::Create(
-    int width,
-    int height,
-    FXDIB_Format format,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap) {
+bool CFX_DefaultRenderDevice::Create(int width,
+                                     int height,
+                                     FXDIB_Format format,
+                                     RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (!pBitmap->Create(width, height, format))
     return false;
 
   SetBitmap(pBitmap);
   SetDeviceDriver(std::make_unique<pdfium::CFX_AggDeviceDriver>(
-      pBitmap, false, pBackdropBitmap, false));
+      std::move(pBitmap), false, std::move(pBackdropBitmap), false));
   return true;
 }
 

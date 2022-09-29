@@ -16,8 +16,13 @@ import mainViewStyles from './mainView.css.js';
 import originViewStyles from './originView.css.js';
 import sidebarStyles from './sidebar.css.js';
 
-import type {PageVisibleSecurityState} from './SecurityModel.js';
-import {Events, SecurityModel, SecurityStyleExplanation, SummaryMessages} from './SecurityModel.js';
+import {
+  Events,
+  SecurityModel,
+  SecurityStyleExplanation,
+  SummaryMessages,
+  type PageVisibleSecurityState,
+} from './SecurityModel.js';
 
 const UIStrings = {
   /**
@@ -314,17 +319,25 @@ const UIStrings = {
   */
   protocol: 'Protocol',
   /**
-  *@description Text in Security Panel of the Security panel
+  *@description Text in the Security panel that refers to how the TLS handshake
+  *established encryption keys.
   */
   keyExchange: 'Key exchange',
   /**
-  *@description Text in Security Panel of the Security panel
-  */
-  keyExchangeGroup: 'Key exchange group',
-  /**
-  *@description Text in Security Panel of the Security panel
+  *@description Text in Security Panel that refers to how the TLS handshake
+  *encrypted data.
   */
   cipher: 'Cipher',
+  /**
+  *@description Text in Security Panel that refers to the signature algorithm
+  *used by the server for authenticate in the TLS handshake.
+  */
+  serverSignature: 'Server signature',
+  /**
+  *@description Text in Security Panel that refers to whether the ClientHello
+  *message in the TLS handshake was encrypted.
+  */
+  encryptedClientHello: 'Encrypted ClientHello',
   /**
   *@description Sct div text content in Security Panel of the Security panel
   */
@@ -439,11 +452,41 @@ const UIStrings = {
   *@example {2} PH1
   */
   showMoreSTotal: 'Show more ({PH1} total)',
+  /**
+  *@description Shown when a field refers to an option that is unknown to the frontend.
+  */
+  unknownField: 'unknown',
+  /**
+  *@description Shown when a field refers to a TLS feature which was enabled.
+  */
+  enabled: 'enabled',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/security/SecurityPanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 let securityPanelInstance: SecurityPanel;
+
+// See https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-signaturescheme
+// This contains signature schemes supported by Chrome.
+const SignatureSchemeStrings = new Map([
+  // The full name for these schemes is RSASSA-PKCS1-v1_5, sometimes
+  // "PKCS#1 v1.5", but those are very long, so let "RSA" vs "RSA-PSS"
+  // disambiguate.
+  [0x0201, 'RSA with SHA-1'],
+  [0x0401, 'RSA with SHA-256'],
+  [0x0501, 'RSA with SHA-384'],
+  [0x0601, 'RSA with SHA-512'],
+
+  // We omit the curve from these names because in TLS 1.2 these code points
+  // were not specific to a curve. Saying "P-256" for a server that used a P-384
+  // key with SHA-256 in TLS 1.2 would be confusing.
+  [0x0403, 'ECDSA with SHA-256'],
+  [0x0503, 'ECDSA with SHA-384'],
+
+  [0x0804, 'RSA-PSS with SHA-256'],
+  [0x0805, 'RSA-PSS with SHA-384'],
+  [0x0806, 'RSA-PSS with SHA-512'],
+]);
 
 export class SecurityPanel extends UI.Panel.PanelWithSidebar implements
     SDK.TargetManager.SDKModelObserver<SecurityModel> {
@@ -1434,16 +1477,51 @@ export class SecurityOriginView extends UI.Widget.VBox {
       let table: SecurityDetailsTable = new SecurityDetailsTable();
       connectionSection.appendChild(table.element());
       table.addRow(i18nString(UIStrings.protocol), originState.securityDetails.protocol);
-      if (originState.securityDetails.keyExchange) {
+
+      // A TLS connection negotiates a cipher suite and, when doing an ephemeral
+      // ECDH key exchange, a "named group". In TLS 1.2, the cipher suite is
+      // named like TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256. The DevTools protocol
+      // tried to decompose this name and calls the "ECDHE_RSA" portion the
+      // "keyExchange", because it determined the rough shape of the key
+      // exchange portion of the handshake. (A keyExchange of "RSA" meant a very
+      // different handshake set.) But ECDHE_RSA was still parameterized by a
+      // named group (e.g. X25519), which the DevTools protocol exposes as
+      // "keyExchangeGroup".
+      //
+      // Then, starting TLS 1.3, the cipher suites are named like
+      // TLS_AES_128_GCM_SHA256. The handshake shape is implicit in the
+      // protocol. keyExchange is empty and we only have keyExchangeGroup.
+      //
+      // "Key exchange group" isn't common terminology and, in TLS 1.3,
+      // something like "X25519" is better labelled as "key exchange" than "key
+      // exchange group" anyway. So combine the two fields when displaying in
+      // the UI.
+      if (originState.securityDetails.keyExchange && originState.securityDetails.keyExchangeGroup) {
+        table.addRow(
+            i18nString(UIStrings.keyExchange),
+            originState.securityDetails.keyExchange + ' with ' + originState.securityDetails.keyExchangeGroup);
+      } else if (originState.securityDetails.keyExchange) {
         table.addRow(i18nString(UIStrings.keyExchange), originState.securityDetails.keyExchange);
+      } else if (originState.securityDetails.keyExchangeGroup) {
+        table.addRow(i18nString(UIStrings.keyExchange), originState.securityDetails.keyExchangeGroup);
       }
-      if (originState.securityDetails.keyExchangeGroup) {
-        table.addRow(i18nString(UIStrings.keyExchangeGroup), originState.securityDetails.keyExchangeGroup);
+
+      if (originState.securityDetails.serverSignatureAlgorithm) {
+        // See https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-signaturescheme
+        let sigString = SignatureSchemeStrings.get(originState.securityDetails.serverSignatureAlgorithm);
+        sigString ??=
+            i18nString(UIStrings.unknownField) + ' (' + originState.securityDetails.serverSignatureAlgorithm + ')';
+        table.addRow(i18nString(UIStrings.serverSignature), sigString);
       }
+
       table.addRow(
           i18nString(UIStrings.cipher),
           originState.securityDetails.cipher +
               (originState.securityDetails.mac ? ' with ' + originState.securityDetails.mac : ''));
+
+      if (originState.securityDetails.encryptedClientHello) {
+        table.addRow(i18nString(UIStrings.encryptedClientHello), i18nString(UIStrings.enabled));
+      }
 
       // Create the certificate section outside the callback, so that it appears in the right place.
       const certificateSection = this.element.createChild('div', 'origin-view-section');
@@ -1640,14 +1718,14 @@ export class SecurityDetailsTable {
   }
 
   addRow(key: string, value: string|Node): void {
-    const row = this.elementInternal.createChild('div', 'details-table-row');
-    row.createChild('div').textContent = key;
+    const row = this.elementInternal.createChild('tr', 'details-table-row');
+    row.createChild('td').textContent = key;
 
-    const valueDiv = row.createChild('div');
+    const valueCell = row.createChild('td');
     if (typeof value === 'string') {
-      valueDiv.textContent = value;
+      valueCell.textContent = value;
     } else {
-      valueDiv.appendChild(value);
+      valueCell.appendChild(value);
     }
   }
 }

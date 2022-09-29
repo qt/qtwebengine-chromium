@@ -125,7 +125,7 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
     }
 
     // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
-    const config = self.createConfig(args.categoryIDs, flags.emulatedFormFactor);
+    const config = args.config || self.createConfig(args.categoryIDs, flags.emulatedFormFactor);
     const url = args.url;
 
     // Handle legacy Lighthouse runner path.
@@ -147,19 +147,22 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
     };
 
     if (action === 'snapshot') {
+      // TODO: Remove `configContext` once Lighthouse roll removes it
       // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
-      return await self.runLighthouseSnapshot({config, page, configContext});
+      return await self.runLighthouseSnapshot({config, page, configContext, flags});
     }
 
     if (action === 'startTimespan') {
+      // TODO: Remove `configContext` once Lighthouse roll removes it
       // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
-      const timespan = await self.startLighthouseTimespan({config, page, configContext});
+      const timespan = await self.startLighthouseTimespan({config, page, configContext, flags});
       endTimespan = timespan.endTimespan;
       return;
     }
 
+    // TODO: Remove `configContext` once Lighthouse roll removes it
     // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
-    return await self.runLighthouseNavigation(url, {config, page, configContext});
+    return await self.runLighthouseNavigation(url, {config, page, configContext, flags});
   } catch (err) {
     return ({
       fatal: true,
@@ -219,25 +222,36 @@ async function fetchLocaleData(locales: string[]): Promise<string|void> {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function notifyFrontendViaWorkerMessage(action: string, args: any): void {
-  self.postMessage(JSON.stringify({action, args}));
+  self.postMessage({action, args});
 }
 
 async function onFrontendMessage(event: MessageEvent): Promise<void> {
-  const messageFromFrontend = JSON.parse(event.data);
+  const messageFromFrontend = event.data;
   switch (messageFromFrontend.action) {
     case 'startTimespan':
     case 'endTimespan':
     case 'snapshot':
     case 'navigation': {
       const result = await invokeLH(messageFromFrontend.action, messageFromFrontend.args);
-      self.postMessage(JSON.stringify({id: messageFromFrontend.id, result}));
+      if (result && typeof result === 'object') {
+        // Report isn't used upstream.
+        if ('report' in result) {
+          // @ts-expect-error
+          delete result.report;
+        }
+
+        // Logger PerformanceTiming objects cannot be cloned by this worker's `postMessage` function.
+        if ('artifacts' in result) {
+          // @ts-expect-error
+          result.artifacts.Timing = JSON.parse(JSON.stringify(result.artifacts.Timing));
+        }
+      }
+      self.postMessage({id: messageFromFrontend.id, result});
       break;
     }
     case 'dispatchProtocolMessage': {
-      cdpConnection?.onMessage?.(
-          JSON.parse(messageFromFrontend.args.message),
-      );
-      legacyPort.onMessage?.(messageFromFrontend.args.message);
+      cdpConnection?.onMessage?.(messageFromFrontend.args.message);
+      legacyPort.onMessage?.(JSON.stringify(messageFromFrontend.args.message));
       break;
     }
     default: {

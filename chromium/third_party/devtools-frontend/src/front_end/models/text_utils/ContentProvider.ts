@@ -34,7 +34,6 @@ import type * as Platform from '../../core/platform/platform.js';
 export abstract class ContentProvider {
   abstract contentURL(): Platform.DevToolsPath.UrlString;
   abstract contentType(): Common.ResourceType.ResourceType;
-  abstract contentEncoded(): Promise<boolean>;
   abstract requestContent(): Promise<DeferredContent>;
   abstract searchInContent(query: string, caseSensitive: boolean, isRegex: boolean): Promise<SearchMatch[]>;
 }
@@ -59,4 +58,12 @@ export const contentAsDataURL = function(
 export type DeferredContent = {
   content: string,
   isEncoded: boolean,
-}|{content: null, error: string, isEncoded: boolean};
+}|{
+  content: '',
+  isEncoded: false,
+  wasmDisassemblyInfo: Common.WasmDisassembly.WasmDisassembly,
+}|{
+  content: null,
+  error: string,
+  isEncoded: boolean,
+};

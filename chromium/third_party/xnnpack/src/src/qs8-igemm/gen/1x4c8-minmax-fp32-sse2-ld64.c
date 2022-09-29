@@ -13,6 +13,7 @@
 
 #include <xnnpack/igemm.h>
 #include <xnnpack/math.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qs8_igemm_minmax_fp32_ukernel_1x4c8__sse2_ld64(
@@ -44,11 +45,11 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_1x4c8__sse2_ld64(
   int8_t* c0 = c;
 
   do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[3]);
-    w = (const void*) ((const int32_t*) w + 4);
+    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
+    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
+    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
+    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
+    w = (const int32_t*) w + 4;
 
     size_t p = ks;
     do {
@@ -112,7 +113,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_1x4c8__sse2_ld64(
 
 
     if (nc >= 4) {
-      *((uint32_t*) c0) = (uint32_t) _mm_cvtsi128_si32(vout);
+      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
       c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
 
       a = (const int8_t**restrict) ((uintptr_t) a - ks);
@@ -120,7 +121,7 @@ void xnn_qs8_igemm_minmax_fp32_ukernel_1x4c8__sse2_ld64(
       nc -= 4;
     } else {
       if (nc & 2) {
-        *((uint16_t*) c0) = (uint16_t) _mm_extract_epi16(vout, 0);
+        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
         c0 += 2;
         vout = _mm_srli_epi32(vout, 16);
       }

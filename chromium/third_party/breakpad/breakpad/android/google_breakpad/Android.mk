@@ -80,6 +80,7 @@ LOCAL_SRC_FILES := \
     src/client/linux/minidump_writer/linux_dumper.cc \
     src/client/linux/minidump_writer/linux_ptrace_dumper.cc \
     src/client/linux/minidump_writer/minidump_writer.cc \
+    src/client/linux/minidump_writer/pe_file.cc \
     src/client/minidump_file_writer.cc \
     src/common/convert_UTF.cc \
     src/common/md5.cc \

@@ -33,7 +33,7 @@ using GlslGeneratorImplTest_Type = TestHelper;
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Array) {
     auto* arr = ty.array<bool, 4>();
-    Global("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -46,7 +46,7 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Array) {
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArray) {
     auto* arr = ty.array(ty.array<bool, 4>(), 5_u);
-    Global("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -59,7 +59,7 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArray) {
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArrayOfArray) {
     auto* arr = ty.array(ty.array(ty.array<bool, 4>(), 5_u), 6_u);
-    Global("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -72,7 +72,7 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_ArrayOfArrayOfArray) {
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Array_WithoutName) {
     auto* arr = ty.array<bool, 4>();
-    Global("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -105,6 +105,19 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_F32) {
     EXPECT_EQ(out.str(), "float");
 }
 
+TEST_F(GlslGeneratorImplTest_Type, EmitType_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* f16 = create<sem::F16>();
+
+    GeneratorImpl& gen = Build();
+
+    std::stringstream out;
+    ASSERT_TRUE(gen.EmitType(out, f16, ast::StorageClass::kNone, ast::Access::kReadWrite, ""))
+        << gen.error();
+    EXPECT_EQ(out.str(), "float16_t");
+}
+
 TEST_F(GlslGeneratorImplTest_Type, EmitType_I32) {
     auto* i32 = create<sem::I32>();
 
@@ -116,7 +129,7 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_I32) {
     EXPECT_EQ(out.str(), "int");
 }
 
-TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix) {
+TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix_F32) {
     auto* f32 = create<sem::F32>();
     auto* vec3 = create<sem::Vector>(f32, 3u);
     auto* mat2x3 = create<sem::Matrix>(vec3, 2u);
@@ -129,12 +142,27 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix) {
     EXPECT_EQ(out.str(), "mat2x3");
 }
 
+TEST_F(GlslGeneratorImplTest_Type, EmitType_Matrix_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* f16 = create<sem::F16>();
+    auto* vec3 = create<sem::Vector>(f16, 3u);
+    auto* mat2x3 = create<sem::Matrix>(vec3, 2u);
+
+    GeneratorImpl& gen = Build();
+
+    std::stringstream out;
+    ASSERT_TRUE(gen.EmitType(out, mat2x3, ast::StorageClass::kNone, ast::Access::kReadWrite, ""))
+        << gen.error();
+    EXPECT_EQ(out.str(), "f16mat2x3");
+}
+
 TEST_F(GlslGeneratorImplTest_Type, EmitType_StructDecl) {
-    auto* s = Structure("S", {
+    auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
                                  Member("b", ty.f32()),
                              });
-    Global("g", ty.Of(s), ast::StorageClass::kPrivate);
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -150,11 +178,11 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_StructDecl) {
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct) {
-    auto* s = Structure("S", {
+    auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
                                  Member("b", ty.f32()),
                              });
-    Global("g", ty.Of(s), ast::StorageClass::kPrivate);
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -166,11 +194,11 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct) {
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct_NameCollision) {
-    auto* s = Structure("S", {
+    auto* s = Structure("S", utils::Vector{
                                  Member("double", ty.i32()),
                                  Member("float", ty.f32()),
                              });
-    Global("g", ty.Of(s), ast::StorageClass::kPrivate);
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
@@ -183,11 +211,11 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct_NameCollision) {
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct_WithOffsetAttributes) {
-    auto* s = Structure("S", {
-                                 Member("a", ty.i32(), {MemberOffset(0)}),
-                                 Member("b", ty.f32(), {MemberOffset(8)}),
+    auto* s = Structure("S", utils::Vector{
+                                 Member("a", ty.i32(), utils::Vector{MemberOffset(0)}),
+                                 Member("b", ty.f32(), utils::Vector{MemberOffset(8)}),
                              });
-    Global("g", ty.Of(s), ast::StorageClass::kPrivate);
+    GlobalVar("g", ty.Of(s), ast::StorageClass::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -213,7 +241,7 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_U32) {
     EXPECT_EQ(out.str(), "uint");
 }
 
-TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector) {
+TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector_F32) {
     auto* f32 = create<sem::F32>();
     auto* vec3 = create<sem::Vector>(f32, 3u);
 
@@ -223,6 +251,20 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector) {
     ASSERT_TRUE(gen.EmitType(out, vec3, ast::StorageClass::kNone, ast::Access::kReadWrite, ""))
         << gen.error();
     EXPECT_EQ(out.str(), "vec3");
+}
+
+TEST_F(GlslGeneratorImplTest_Type, EmitType_Vector_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* f16 = create<sem::F16>();
+    auto* vec3 = create<sem::Vector>(f16, 3u);
+
+    GeneratorImpl& gen = Build();
+
+    std::stringstream out;
+    ASSERT_TRUE(gen.EmitType(out, vec3, ast::StorageClass::kNone, ast::Access::kReadWrite, ""))
+        << gen.error();
+    EXPECT_EQ(out.str(), "f16vec3");
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Void) {
@@ -270,14 +312,19 @@ TEST_P(GlslDepthTexturesTest, Emit) {
 
     auto* t = ty.depth_texture(params.dim);
 
-    Global("tex", t,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    GlobalVar("tex", t,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("textureDimensions", "tex")),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     GeneratorImpl& gen = Build();
 
@@ -297,14 +344,19 @@ using GlslDepthMultisampledTexturesTest = TestHelper;
 TEST_F(GlslDepthMultisampledTexturesTest, Emit) {
     auto* t = ty.depth_multisampled_texture(ast::TextureDimension::k2d);
 
-    Global("tex", t,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    GlobalVar("tex", t,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("textureDimensions", "tex")),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     GeneratorImpl& gen = Build();
 
@@ -340,14 +392,19 @@ TEST_P(GlslSampledTexturesTest, Emit) {
     }
     auto* t = ty.sampled_texture(params.dim, datatype);
 
-    Global("tex", t,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    GlobalVar("tex", t,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("textureDimensions", "tex")),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     GeneratorImpl& gen = Build();
 
@@ -474,14 +531,19 @@ TEST_P(GlslStorageTexturesTest, Emit) {
 
     auto* t = ty.storage_texture(params.dim, params.imgfmt, ast::Access::kWrite);
 
-    Global("tex", t,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    GlobalVar("tex", t,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("textureDimensions", "tex")),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     GeneratorImpl& gen = Build();
 

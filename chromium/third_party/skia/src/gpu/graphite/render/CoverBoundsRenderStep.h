@@ -19,8 +19,8 @@ public:
     ~CoverBoundsRenderStep() override;
 
     const char* vertexSkSL() const override;
-    void writeVertices(DrawWriter*, const DrawGeometry&) const override;
-    void writeUniforms(const DrawGeometry&, SkPipelineDataGatherer*) const override;
+    void writeVertices(DrawWriter*, const DrawParams&, int ssboIndex) const override;
+    void writeUniformsAndTextures(const DrawParams&, SkPipelineDataGatherer*) const override;
 
 private:
     const bool fInverseFill;

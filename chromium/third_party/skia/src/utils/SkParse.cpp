@@ -7,8 +7,8 @@
 
 #include "include/utils/SkParse.h"
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <string>
 
 static inline bool is_between(int c, int min, int max)
 {
@@ -248,12 +248,12 @@ bool SkParse::FindBool(const char str[], bool* value)
     static const char* gYes[] = { "yes", "1", "true" };
     static const char* gNo[] = { "no", "0", "false" };
 
-    if (lookup_str(str, gYes, SK_ARRAY_COUNT(gYes)))
+    if (lookup_str(str, gYes, std::size(gYes)))
     {
         if (value) *value = true;
         return true;
     }
-    else if (lookup_str(str, gNo, SK_ARRAY_COUNT(gNo)))
+    else if (lookup_str(str, gNo, std::size(gNo)))
     {
         if (value) *value = false;
         return true;

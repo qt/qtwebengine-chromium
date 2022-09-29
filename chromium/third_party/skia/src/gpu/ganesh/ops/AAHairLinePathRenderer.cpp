@@ -25,12 +25,12 @@
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrStyle.h"
 #include "src/gpu/ganesh/GrUtil.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrBezierEffect.h"
 #include "src/gpu/ganesh/geometry/GrPathUtils.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 #define PREALLOC_PTARRAY(N) SkSTArray<(N),SkPoint, true>
 
@@ -72,7 +72,7 @@ static const uint16_t kQuadIdxBufPattern[] = {
     1, 4, 2
 };
 
-static const int kIdxsPerQuad = SK_ARRAY_COUNT(kQuadIdxBufPattern);
+static const int kIdxsPerQuad = std::size(kQuadIdxBufPattern);
 static const int kQuadNumVertices = 5;
 static const int kQuadsNumInIdxBuffer = 256;
 SKGPU_DECLARE_STATIC_UNIQUE_KEY(gQuadsIndexBufferKey);
@@ -105,7 +105,7 @@ static const uint16_t kLineSegIdxBufPattern[] = {
     1, 5, 3
 };
 
-static const int kIdxsPerLineSeg = SK_ARRAY_COUNT(kLineSegIdxBufPattern);
+static const int kIdxsPerLineSeg = std::size(kLineSegIdxBufPattern);
 static const int kLineSegNumVertices = 6;
 static const int kLineSegsNumInIdxBuffer = 256;
 
@@ -1347,4 +1347,3 @@ bool AAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
 }
 
 } // namespace skgpu::v1
-

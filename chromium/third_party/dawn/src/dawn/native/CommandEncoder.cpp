@@ -20,6 +20,7 @@
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Math.h"
+#include "dawn/native/ApplyClearColorValueWithDrawHelper.h"
 #include "dawn/native/BindGroup.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/ChainUtils_autogen.h"
@@ -43,11 +44,6 @@
 namespace dawn::native {
 
 namespace {
-
-bool HasDeprecatedColor(const RenderPassColorAttachment& attachment) {
-    return !std::isnan(attachment.clearColor.r) || !std::isnan(attachment.clearColor.g) ||
-           !std::isnan(attachment.clearColor.b) || !std::isnan(attachment.clearColor.a);
-}
 
 MaybeError ValidateB2BCopyAlignment(uint64_t dataSize, uint64_t srcOffset, uint64_t dstOffset) {
     // Copy size must be a multiple of 4 bytes on macOS.
@@ -92,7 +88,6 @@ MaybeError ValidateTextureDepthStencilToBufferCopyRestrictions(const ImageCopyTe
         switch (src.texture->GetFormat().format) {
             case wgpu::TextureFormat::Depth24Plus:
             case wgpu::TextureFormat::Depth24PlusStencil8:
-            case wgpu::TextureFormat::Depth24UnormStencil8:
                 return DAWN_FORMAT_VALIDATION_ERROR(
                     "The depth aspect of %s format %s cannot be selected in a texture to "
                     "buffer copy.",
@@ -383,10 +378,16 @@ MaybeError ValidateRenderPassDepthStencilAttachment(
     if (!std::isnan(depthStencilAttachment->clearDepth)) {
         // TODO(dawn:1269): Remove this branch after the deprecation period.
         device->EmitDeprecationWarning("clearDepth is deprecated, prefer depthClearValue instead.");
-    } else {
-        DAWN_INVALID_IF(depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear &&
-                            std::isnan(depthStencilAttachment->depthClearValue),
+        DAWN_INVALID_IF(
+            depthStencilAttachment->clearDepth < 0.0f || depthStencilAttachment->clearDepth > 1.0f,
+            "clearDepth is not between 0.0 and 1.0");
+
+    } else if (depthStencilAttachment->depthLoadOp == wgpu::LoadOp::Clear) {
+        DAWN_INVALID_IF(std::isnan(depthStencilAttachment->depthClearValue),
                         "depthClearValue is NaN.");
+        DAWN_INVALID_IF(depthStencilAttachment->depthClearValue < 0.0f ||
+                            depthStencilAttachment->depthClearValue > 1.0f,
+                        "depthClearValue is not between 0.0 and 1.0");
     }
 
     // TODO(dawn:1269): Remove after the deprecation period.
@@ -445,10 +446,14 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
                                         uint32_t* height,
                                         uint32_t* sampleCount,
                                         UsageValidationMode usageValidationMode) {
+    DAWN_TRY(ValidateSingleSType(descriptor->nextInChain,
+                                 wgpu::SType::RenderPassDescriptorMaxDrawCount));
+
+    uint32_t maxColorAttachments = device->GetLimits().v1.maxColorAttachments;
     DAWN_INVALID_IF(
-        descriptor->colorAttachmentCount > kMaxColorAttachments,
+        descriptor->colorAttachmentCount > maxColorAttachments,
         "Color attachment count (%u) exceeds the maximum number of color attachments (%u).",
-        descriptor->colorAttachmentCount, kMaxColorAttachments);
+        descriptor->colorAttachmentCount, maxColorAttachments);
 
     bool isAllColorAttachmentNull = true;
     for (uint32_t i = 0; i < descriptor->colorAttachmentCount; ++i) {
@@ -647,6 +652,45 @@ bool IsReadOnlyDepthStencilAttachment(
 
 }  // namespace
 
+bool HasDeprecatedColor(const RenderPassColorAttachment& attachment) {
+    return !std::isnan(attachment.clearColor.r) || !std::isnan(attachment.clearColor.g) ||
+           !std::isnan(attachment.clearColor.b) || !std::isnan(attachment.clearColor.a);
+}
+
+Color ClampClearColorValueToLegalRange(const Color& originalColor, const Format& format) {
+    const AspectInfo& aspectInfo = format.GetAspectInfo(Aspect::Color);
+    double minValue = 0;
+    double maxValue = 0;
+    switch (aspectInfo.baseType) {
+        case wgpu::TextureComponentType::Float: {
+            return originalColor;
+        }
+        case wgpu::TextureComponentType::Sint: {
+            const uint32_t bitsPerComponent =
+                (aspectInfo.block.byteSize * 8 / format.componentCount);
+            maxValue =
+                static_cast<double>((static_cast<uint64_t>(1) << (bitsPerComponent - 1)) - 1);
+            minValue = -static_cast<double>(static_cast<uint64_t>(1) << (bitsPerComponent - 1));
+            break;
+        }
+        case wgpu::TextureComponentType::Uint: {
+            const uint32_t bitsPerComponent =
+                (aspectInfo.block.byteSize * 8 / format.componentCount);
+            maxValue = static_cast<double>((static_cast<uint64_t>(1) << bitsPerComponent) - 1);
+            break;
+        }
+        case wgpu::TextureComponentType::DepthComparison:
+        default:
+            UNREACHABLE();
+            break;
+    }
+
+    return {std::clamp(originalColor.r, minValue, maxValue),
+            std::clamp(originalColor.g, minValue, maxValue),
+            std::clamp(originalColor.b, minValue, maxValue),
+            std::clamp(originalColor.a, minValue, maxValue)};
+}
+
 MaybeError ValidateCommandEncoderDescriptor(const DeviceBase* device,
                                             const CommandEncoderDescriptor* descriptor) {
     DAWN_TRY(ValidateSingleSType(descriptor->nextInChain,
@@ -735,8 +779,6 @@ ComputePassEncoder* CommandEncoder::APIBeginComputePass(const ComputePassDescrip
 Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescriptor* descriptor) {
     DeviceBase* device = GetDevice();
 
-    std::vector<TimestampWrite> timestampWritesAtBeginning;
-    std::vector<TimestampWrite> timestampWritesAtEnd;
     bool success = mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -749,26 +791,26 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
                 return {};
             }
 
-            // Split the timestampWrites used in BeginComputePassCmd and EndComputePassCmd
+            // Record timestamp writes at the beginning and end of compute pass. The timestamp write
+            // at the end also be needed in BeginComputePassCmd because it's required by compute
+            // pass descriptor when beginning compute pass on Metal.
             for (uint32_t i = 0; i < descriptor->timestampWriteCount; i++) {
                 QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
                 uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
 
                 switch (descriptor->timestampWrites[i].location) {
                     case wgpu::ComputePassTimestampLocation::Beginning:
-                        timestampWritesAtBeginning.push_back({querySet, queryIndex});
+                        cmd->beginTimestamp.querySet = querySet;
+                        cmd->beginTimestamp.queryIndex = queryIndex;
                         break;
                     case wgpu::ComputePassTimestampLocation::End:
-                        timestampWritesAtEnd.push_back({querySet, queryIndex});
-                        break;
-                    default:
+                        cmd->endTimestamp.querySet = querySet;
+                        cmd->endTimestamp.queryIndex = queryIndex;
                         break;
                 }
 
                 TrackQueryAvailability(querySet, queryIndex);
             }
-
-            cmd->timestampWrites = std::move(timestampWritesAtBeginning);
 
             return {};
         },
@@ -780,8 +822,8 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
             descriptor = &defaultDescriptor;
         }
 
-        Ref<ComputePassEncoder> passEncoder = ComputePassEncoder::Create(
-            device, descriptor, this, &mEncodingContext, std::move(timestampWritesAtEnd));
+        Ref<ComputePassEncoder> passEncoder =
+            ComputePassEncoder::Create(device, descriptor, this, &mEncodingContext);
         mEncodingContext.EnterPass(passEncoder.Get());
         return passEncoder;
     }
@@ -803,8 +845,6 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
     bool depthReadOnly = false;
     bool stencilReadOnly = false;
     Ref<AttachmentState> attachmentState;
-    std::vector<TimestampWrite> timestampWritesAtBeginning;
-    std::vector<TimestampWrite> timestampWritesAtEnd;
     bool success = mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -822,28 +862,6 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             cmd->attachmentState = device->GetOrCreateAttachmentState(descriptor);
             attachmentState = cmd->attachmentState;
 
-            // Split the timestampWrites used in BeginRenderPassCmd and EndRenderPassCmd
-            for (uint32_t i = 0; i < descriptor->timestampWriteCount; i++) {
-                QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
-                uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
-
-                switch (descriptor->timestampWrites[i].location) {
-                    case wgpu::RenderPassTimestampLocation::Beginning:
-                        timestampWritesAtBeginning.push_back({querySet, queryIndex});
-                        break;
-                    case wgpu::RenderPassTimestampLocation::End:
-                        timestampWritesAtEnd.push_back({querySet, queryIndex});
-                        break;
-                    default:
-                        break;
-                }
-
-                TrackQueryAvailability(querySet, queryIndex);
-                // Track the query availability with true on render pass again for rewrite
-                // validation and query reset on Vulkan
-                usageTracker.TrackQueryAvailability(querySet, queryIndex);
-            }
-
             for (ColorAttachmentIndex index :
                  IterateBitSet(cmd->attachmentState->GetColorAttachmentsMask())) {
                 uint8_t i = static_cast<uint8_t>(index);
@@ -855,10 +873,12 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
                 cmd->colorAttachments[index].loadOp = descriptor->colorAttachments[i].loadOp;
                 cmd->colorAttachments[index].storeOp = descriptor->colorAttachments[i].storeOp;
 
+                Color color = HasDeprecatedColor(descriptor->colorAttachments[i])
+                                  ? descriptor->colorAttachments[i].clearColor
+                                  : descriptor->colorAttachments[i].clearValue;
+
                 cmd->colorAttachments[index].clearColor =
-                    HasDeprecatedColor(descriptor->colorAttachments[i])
-                        ? descriptor->colorAttachments[i].clearColor
-                        : descriptor->colorAttachments[i].clearValue;
+                    ClampClearColorValueToLegalRange(color, view->GetFormat());
 
                 usageTracker.TextureViewUsedAs(view, wgpu::TextureUsage::RenderAttachment);
 
@@ -945,7 +965,29 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
 
             cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
 
-            cmd->timestampWrites = std::move(timestampWritesAtBeginning);
+            // Record timestamp writes at the beginning and end of render pass. The timestamp write
+            // at the end also be needed in BeginComputePassCmd because it's required by render pass
+            // descriptor when beginning render pass on Metal.
+            for (uint32_t i = 0; i < descriptor->timestampWriteCount; i++) {
+                QuerySetBase* querySet = descriptor->timestampWrites[i].querySet;
+                uint32_t queryIndex = descriptor->timestampWrites[i].queryIndex;
+
+                switch (descriptor->timestampWrites[i].location) {
+                    case wgpu::RenderPassTimestampLocation::Beginning:
+                        cmd->beginTimestamp.querySet = querySet;
+                        cmd->beginTimestamp.queryIndex = queryIndex;
+                        break;
+                    case wgpu::RenderPassTimestampLocation::End:
+                        cmd->endTimestamp.querySet = querySet;
+                        cmd->endTimestamp.queryIndex = queryIndex;
+                        break;
+                }
+
+                TrackQueryAvailability(querySet, queryIndex);
+                // Track the query availability with true on render pass again for rewrite
+                // validation and query reset on Vulkan
+                usageTracker.TrackQueryAvailability(querySet, queryIndex);
+            }
 
             return {};
         },
@@ -954,9 +996,17 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
     if (success) {
         Ref<RenderPassEncoder> passEncoder = RenderPassEncoder::Create(
             device, descriptor, this, &mEncodingContext, std::move(usageTracker),
-            std::move(attachmentState), std::move(timestampWritesAtEnd), width, height,
-            depthReadOnly, stencilReadOnly);
+            std::move(attachmentState), width, height, depthReadOnly, stencilReadOnly);
         mEncodingContext.EnterPass(passEncoder.Get());
+
+        if (ShouldApplyClearBigIntegerColorValueWithDraw(device, descriptor)) {
+            MaybeError error =
+                ApplyClearBigIntegerColorValueWithDraw(passEncoder.Get(), descriptor);
+            if (error.IsError()) {
+                return RenderPassEncoder::MakeError(device, this, &mEncodingContext);
+            }
+        }
+
         return passEncoder;
     }
 

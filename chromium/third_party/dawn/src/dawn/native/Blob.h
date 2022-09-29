@@ -15,8 +15,11 @@
 #ifndef SRC_DAWN_NATIVE_BLOB_H_
 #define SRC_DAWN_NATIVE_BLOB_H_
 
+#include <cstdint>
 #include <functional>
-#include <memory>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace dawn::native {
 
@@ -43,6 +46,10 @@ class Blob {
     uint8_t* Data();
     size_t Size() const;
 
+    // If the blob data is not aligned to |alignment|, copy it into a new backing store which
+    // is aligned.
+    void AlignTo(size_t alignment);
+
   private:
     // The constructor should be responsible to take ownership of |data| and releases ownership by
     // calling |deleter|. The deleter function is called at ~Blob() and during std::move.
@@ -53,7 +60,16 @@ class Blob {
     std::function<void()> mDeleter;
 };
 
-Blob CreateBlob(size_t size);
+Blob CreateBlob(size_t size, size_t alignment = 1);
+
+template <typename T, typename = std::enable_if_t<std::is_fundamental_v<T>>>
+Blob CreateBlob(std::vector<T> vec) {
+    uint8_t* data = reinterpret_cast<uint8_t*>(vec.data());
+    size_t size = vec.size() * sizeof(T);
+    // Move the vector into a new allocation so we can destruct it in the deleter.
+    auto* wrapped_vec = new std::vector<T>(std::move(vec));
+    return Blob::UnsafeCreateWithDeleter(data, size, [wrapped_vec]() { delete wrapped_vec; });
+}
 
 }  // namespace dawn::native
 

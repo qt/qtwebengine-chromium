@@ -31,6 +31,7 @@ const char kDiskChanged[] = "DiskChanged";
 const char kDiskRemoved[] = "DiskRemoved";
 const char kFormatCompleted[] = "FormatCompleted";
 const char kMountCompleted[] = "MountCompleted";
+const char kMountProgress[] = "MountProgress";
 const char kRenameCompleted[] = "RenameCompleted";
 
 // Properties.

@@ -22,13 +22,15 @@ public:
     }
 
 private:
-    void onMap() override {
+    void onMap(MapType) override {
         if (GrCaps::kNone_MapFlags != this->getGpu()->caps()->mapBufferFlags()) {
             fMapPtr = sk_malloc_throw(this->size());
         }
     }
-    void onUnmap() override { sk_free(fMapPtr); }
-    bool onUpdateData(const void* src, size_t srcSizeInBytes) override { return true; }
+    void onUnmap(MapType) override { sk_free(fMapPtr); }
+    bool onUpdateData(const void* src, size_t offset, size_t size, bool preserve) override {
+        return true;
+    }
 
     using INHERITED = GrGpuBuffer;
 };

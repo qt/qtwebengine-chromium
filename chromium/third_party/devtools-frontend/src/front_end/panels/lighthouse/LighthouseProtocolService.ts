@@ -63,6 +63,7 @@ export class ProtocolService {
   private parallelConnection?: ProtocolClient.InspectorBackend.Connection;
   private lighthouseWorkerPromise?: Promise<Worker>;
   private lighthouseMessageUpdateCallback?: ((arg0: string) => void);
+  private configForTesting?: Object;
 
   async attach(): Promise<void> {
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets();
@@ -113,6 +114,7 @@ export class ProtocolService {
       url: inspectedURL,
       categoryIDs,
       flags,
+      config: this.configForTesting,
       locales: this.getLocales(),
       target: this.targetInfo,
     });
@@ -134,6 +136,7 @@ export class ProtocolService {
       url: inspectedURL,
       categoryIDs,
       flags,
+      config: this.configForTesting,
       locales: this.getLocales(),
       target: this.targetInfo,
     });
@@ -178,7 +181,7 @@ export class ProtocolService {
       method?: string,
     };
     if (protocolMessage.sessionId || (protocolMessage.method && protocolMessage.method.startsWith('Target'))) {
-      void this.send('dispatchProtocolMessage', {message: JSON.stringify(message)});
+      void this.send('dispatchProtocolMessage', {message});
     }
   }
 
@@ -215,7 +218,7 @@ export class ProtocolService {
   }
 
   private onWorkerMessage(event: MessageEvent): void {
-    const lighthouseMessage = JSON.parse(event.data);
+    const lighthouseMessage = event.data;
 
     if (lighthouseMessage.action === 'statusUpdate') {
       if (this.lighthouseMessageUpdateCallback && lighthouseMessage.args && 'message' in lighthouseMessage.args) {
@@ -237,17 +240,17 @@ export class ProtocolService {
   private async send(action: string, args: {[x: string]: string|string[]|Object} = {}): Promise<void> {
     const worker = await this.ensureWorkerExists();
     const messageId = lastId++;
-    worker.postMessage(JSON.stringify({id: messageId, action, args: {...args, id: messageId}}));
+    worker.postMessage({id: messageId, action, args: {...args, id: messageId}});
   }
 
   /** sendWithResponse currently only handles the original startLighthouse request and LHR-filled response. */
-  private async sendWithResponse(action: string, args: {[x: string]: string|string[]|Object} = {}):
+  private async sendWithResponse(action: string, args: {[x: string]: string|string[]|Object|undefined} = {}):
       Promise<ReportRenderer.RunnerResult> {
     const worker = await this.ensureWorkerExists();
     const messageId = lastId++;
     const messageResult = new Promise<ReportRenderer.RunnerResult>(resolve => {
       const workerListener = (event: MessageEvent): void => {
-        const lighthouseMessage = JSON.parse(event.data);
+        const lighthouseMessage = event.data;
 
         if (lighthouseMessage.id === messageId) {
           worker.removeEventListener('message', workerListener);
@@ -256,7 +259,7 @@ export class ProtocolService {
       };
       worker.addEventListener('message', workerListener);
     });
-    worker.postMessage(JSON.stringify({id: messageId, action, args: {...args, id: messageId}}));
+    worker.postMessage({id: messageId, action, args: {...args, id: messageId}});
 
     return messageResult;
   }

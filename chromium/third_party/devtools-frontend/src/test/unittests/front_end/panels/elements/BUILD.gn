@@ -7,10 +7,12 @@ import("../../../../../third_party/typescript/typescript.gni")
 ts_library("elements") {
   testonly = true
   sources = [
+    "CSSRuleValidator_test.ts",
     "ElementsPanel_test.ts",
     "StylePropertyTreeElement_test.ts",
     "StylePropertyUtils_test.ts",
     "StylesSidebarPane_test.ts",
+    "TopLayerContainer_test.ts",
   ]
 
   deps = [

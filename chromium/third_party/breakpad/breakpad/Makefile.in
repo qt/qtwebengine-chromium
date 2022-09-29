@@ -134,7 +134,8 @@ host_triplet = @host@
 @LINUX_HOST_TRUE@am__append_3 = -fPIC
 libexec_PROGRAMS = $(am__EXEEXT_10)
 bin_PROGRAMS = $(am__EXEEXT_2) $(am__EXEEXT_3) $(am__EXEEXT_4)
-check_PROGRAMS = $(am__EXEEXT_5) $(am__EXEEXT_6) $(am__EXEEXT_7) \
+check_PROGRAMS = src/common/safe_math_unittest$(EXEEXT) \
+	$(am__EXEEXT_5) $(am__EXEEXT_6) $(am__EXEEXT_7) \
 	$(am__EXEEXT_8) $(am__EXEEXT_9)
 EXTRA_PROGRAMS = $(am__EXEEXT_1)
 @DISABLE_PROCESSOR_FALSE@am__append_4 = src/libbreakpad.a
@@ -885,6 +886,15 @@ am__src_common_mac_macho_reader_unittest_SOURCES_DIST =  \
 src_common_mac_macho_reader_unittest_OBJECTS =  \
 	$(am_src_common_mac_macho_reader_unittest_OBJECTS)
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_mac_macho_reader_unittest_DEPENDENCIES =  \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_2) \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_1) \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_1)
+am__src_common_safe_math_unittest_SOURCES_DIST =  \
+	src/common/safe_math.h src/common/safe_math_unittest.cc
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@am_src_common_safe_math_unittest_OBJECTS = src/common/safe_math_unittest-safe_math_unittest.$(OBJEXT)
+src_common_safe_math_unittest_OBJECTS =  \
+	$(am_src_common_safe_math_unittest_OBJECTS)
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_safe_math_unittest_DEPENDENCIES =  \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_2) \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_1) \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(am__DEPENDENCIES_1)
@@ -1701,6 +1711,7 @@ am__depfiles_remade = src/client/$(DEPDIR)/minidump_file_writer.Po \
 	src/common/$(DEPDIR)/processor_stackwalker_mips_unittest-test_assembler.Po \
 	src/common/$(DEPDIR)/processor_stackwalker_x86_unittest-test_assembler.Po \
 	src/common/$(DEPDIR)/processor_synth_minidump_unittest-test_assembler.Po \
+	src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po \
 	src/common/$(DEPDIR)/string_conversion.Po \
 	src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Po \
 	src/common/$(DEPDIR)/test_assembler_unittest-test_assembler_unittest.Po \
@@ -1970,6 +1981,7 @@ SOURCES = $(src_client_linux_libbreakpad_client_a_SOURCES) \
 	$(src_common_dwarf_dwarf2reader_splitfunctions_unittest_SOURCES) \
 	$(src_common_linux_google_crashdump_uploader_test_SOURCES) \
 	$(src_common_mac_macho_reader_unittest_SOURCES) \
+	$(src_common_safe_math_unittest_SOURCES) \
 	$(src_common_test_assembler_unittest_SOURCES) \
 	$(src_processor_address_map_unittest_SOURCES) \
 	$(src_processor_basic_source_line_resolver_unittest_SOURCES) \
@@ -2026,6 +2038,7 @@ DIST_SOURCES =  \
 	$(am__src_common_dwarf_dwarf2reader_splitfunctions_unittest_SOURCES_DIST) \
 	$(am__src_common_linux_google_crashdump_uploader_test_SOURCES_DIST) \
 	$(am__src_common_mac_macho_reader_unittest_SOURCES_DIST) \
+	$(am__src_common_safe_math_unittest_SOURCES_DIST) \
 	$(am__src_common_test_assembler_unittest_SOURCES_DIST) \
 	$(am__src_processor_address_map_unittest_SOURCES_DIST) \
 	$(am__src_processor_basic_source_line_resolver_unittest_SOURCES_DIST) \
@@ -2908,6 +2921,17 @@ TESTS = $(check_PROGRAMS) $(check_SCRIPTS)
 
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_tools_mac_dump_syms_dump_syms_mac_LDADD = \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(RUSTC_DEMANGLE_LIBS)
+
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_safe_math_unittest_SOURCES = \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/common/safe_math.h \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/common/safe_math_unittest.cc
+
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_safe_math_unittest_CPPFLAGS = \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(AM_CPPFLAGS) $(TEST_CFLAGS)
+
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_safe_math_unittest_LDADD = \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(TEST_LIBS) \
+@DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	$(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@src_common_dumper_unittest_SOURCES = \
 @DISABLE_TOOLS_FALSE@@LINUX_HOST_TRUE@	src/common/byte_cursor_unittest.cc \
@@ -4800,6 +4824,13 @@ src/common/tests/mac_macho_reader_unittest-file_utils.$(OBJEXT):  \
 src/common/mac/macho_reader_unittest$(EXEEXT): $(src_common_mac_macho_reader_unittest_OBJECTS) $(src_common_mac_macho_reader_unittest_DEPENDENCIES) $(EXTRA_src_common_mac_macho_reader_unittest_DEPENDENCIES) src/common/mac/$(am__dirstamp)
 	@rm -f src/common/mac/macho_reader_unittest$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(src_common_mac_macho_reader_unittest_OBJECTS) $(src_common_mac_macho_reader_unittest_LDADD) $(LIBS)
+src/common/safe_math_unittest-safe_math_unittest.$(OBJEXT):  \
+	src/common/$(am__dirstamp) \
+	src/common/$(DEPDIR)/$(am__dirstamp)
+
+src/common/safe_math_unittest$(EXEEXT): $(src_common_safe_math_unittest_OBJECTS) $(src_common_safe_math_unittest_DEPENDENCIES) $(EXTRA_src_common_safe_math_unittest_DEPENDENCIES) src/common/$(am__dirstamp)
+	@rm -f src/common/safe_math_unittest$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(src_common_safe_math_unittest_OBJECTS) $(src_common_safe_math_unittest_LDADD) $(LIBS)
 src/common/test_assembler_unittest-test_assembler.$(OBJEXT):  \
 	src/common/$(am__dirstamp) \
 	src/common/$(DEPDIR)/$(am__dirstamp)
@@ -5423,6 +5454,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/processor_stackwalker_mips_unittest-test_assembler.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/processor_stackwalker_x86_unittest-test_assembler.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/processor_synth_minidump_unittest-test_assembler.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/string_conversion.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@src/common/$(DEPDIR)/test_assembler_unittest-test_assembler_unittest.Po@am__quote@ # am--include-marker
@@ -7253,6 +7285,20 @@ src/common/tests/mac_macho_reader_unittest-file_utils.obj: src/common/tests/file
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_mac_macho_reader_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o src/common/tests/mac_macho_reader_unittest-file_utils.obj `if test -f 'src/common/tests/file_utils.cc'; then $(CYGPATH_W) 'src/common/tests/file_utils.cc'; else $(CYGPATH_W) '$(srcdir)/src/common/tests/file_utils.cc'; fi`
 
+src/common/safe_math_unittest-safe_math_unittest.o: src/common/safe_math_unittest.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_safe_math_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT src/common/safe_math_unittest-safe_math_unittest.o -MD -MP -MF src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Tpo -c -o src/common/safe_math_unittest-safe_math_unittest.o `test -f 'src/common/safe_math_unittest.cc' || echo '$(srcdir)/'`src/common/safe_math_unittest.cc
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Tpo src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='src/common/safe_math_unittest.cc' object='src/common/safe_math_unittest-safe_math_unittest.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_safe_math_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o src/common/safe_math_unittest-safe_math_unittest.o `test -f 'src/common/safe_math_unittest.cc' || echo '$(srcdir)/'`src/common/safe_math_unittest.cc
+
+src/common/safe_math_unittest-safe_math_unittest.obj: src/common/safe_math_unittest.cc
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_safe_math_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT src/common/safe_math_unittest-safe_math_unittest.obj -MD -MP -MF src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Tpo -c -o src/common/safe_math_unittest-safe_math_unittest.obj `if test -f 'src/common/safe_math_unittest.cc'; then $(CYGPATH_W) 'src/common/safe_math_unittest.cc'; else $(CYGPATH_W) '$(srcdir)/src/common/safe_math_unittest.cc'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Tpo src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='src/common/safe_math_unittest.cc' object='src/common/safe_math_unittest-safe_math_unittest.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_safe_math_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o src/common/safe_math_unittest-safe_math_unittest.obj `if test -f 'src/common/safe_math_unittest.cc'; then $(CYGPATH_W) 'src/common/safe_math_unittest.cc'; else $(CYGPATH_W) '$(srcdir)/src/common/safe_math_unittest.cc'; fi`
+
 src/common/test_assembler_unittest-test_assembler.o: src/common/test_assembler.cc
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(src_common_test_assembler_unittest_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT src/common/test_assembler_unittest-test_assembler.o -MD -MP -MF src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Tpo -c -o src/common/test_assembler_unittest-test_assembler.o `test -f 'src/common/test_assembler.cc' || echo '$(srcdir)/'`src/common/test_assembler.cc
 @am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Tpo src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Po
@@ -8846,6 +8892,13 @@ recheck: all $(check_PROGRAMS) $(check_LIBRARIES) $(check_SCRIPTS)
 	        am__force_recheck=am--force-recheck \
 	        TEST_LOGS="$$log_list"; \
 	exit $$?
+src/common/safe_math_unittest.log: src/common/safe_math_unittest$(EXEEXT)
+	@p='src/common/safe_math_unittest$(EXEEXT)'; \
+	b='src/common/safe_math_unittest'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 src/common/test_assembler_unittest.log: src/common/test_assembler_unittest$(EXEEXT)
 	@p='src/common/test_assembler_unittest$(EXEEXT)'; \
 	b='src/common/test_assembler_unittest'; \
@@ -9508,6 +9561,7 @@ distclean: distclean-am
 	-rm -f src/common/$(DEPDIR)/processor_stackwalker_mips_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/processor_stackwalker_x86_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/processor_synth_minidump_unittest-test_assembler.Po
+	-rm -f src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po
 	-rm -f src/common/$(DEPDIR)/string_conversion.Po
 	-rm -f src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/test_assembler_unittest-test_assembler_unittest.Po
@@ -9853,6 +9907,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f src/common/$(DEPDIR)/processor_stackwalker_mips_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/processor_stackwalker_x86_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/processor_synth_minidump_unittest-test_assembler.Po
+	-rm -f src/common/$(DEPDIR)/safe_math_unittest-safe_math_unittest.Po
 	-rm -f src/common/$(DEPDIR)/string_conversion.Po
 	-rm -f src/common/$(DEPDIR)/test_assembler_unittest-test_assembler.Po
 	-rm -f src/common/$(DEPDIR)/test_assembler_unittest-test_assembler_unittest.Po

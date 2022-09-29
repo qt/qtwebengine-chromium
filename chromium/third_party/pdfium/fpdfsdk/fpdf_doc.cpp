@@ -228,6 +228,12 @@ FPDFAction_GetURIPath(FPDF_DOCUMENT document,
 
   CPDF_Action cAction(CPDFDictionaryFromFPDFAction(action));
   ByteString path = cAction.GetURI(pDoc);
+
+  // Table 206 in the ISO 32000-1:2008 spec states the type for the URI field is
+  // ASCII string. If the data is not 7-bit ASCII, consider that a failure.
+  if (!path.AsStringView().IsASCII())
+    return 0;
+
   const unsigned long len =
       pdfium::base::checked_cast<unsigned long>(path.GetLength() + 1);
   if (buffer && len <= buflen)
@@ -305,7 +311,7 @@ FPDF_EXPORT FPDF_LINK FPDF_CALLCONV FPDFLink_GetLinkAtPoint(FPDF_PAGE page,
   CPDF_Link link = pLinkList->GetLinkAtPoint(
       pPage, CFX_PointF(static_cast<float>(x), static_cast<float>(y)), nullptr);
 
-  return FPDFLinkFromCPDFDictionary(link.GetDict());
+  return FPDFLinkFromCPDFDictionary(link.GetMutableDict().Get());
 }
 
 FPDF_EXPORT int FPDF_CALLCONV FPDFLink_GetLinkZOrderAtPoint(FPDF_PAGE page,
@@ -360,16 +366,18 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_Enumerate(FPDF_PAGE page,
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
   if (!pPage)
     return false;
-  CPDF_Array* pAnnots = pPage->GetDict()->GetArrayFor("Annots");
+  RetainPtr<CPDF_Array> pAnnots =
+      pPage->GetMutableDict()->GetMutableArrayFor("Annots");
   if (!pAnnots)
     return false;
   for (size_t i = *start_pos; i < pAnnots->size(); i++) {
-    CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetDirectObjectAt(i));
+    RetainPtr<CPDF_Dictionary> pDict =
+        ToDictionary(pAnnots->GetMutableDirectObjectAt(i));
     if (!pDict)
       continue;
     if (pDict->GetStringFor("Subtype") == "Link") {
       *start_pos = static_cast<int>(i + 1);
-      *link_annot = FPDFLinkFromCPDFDictionary(pDict);
+      *link_annot = FPDFLinkFromCPDFDictionary(pDict.Get());
       return true;
     }
   }
@@ -379,12 +387,12 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_Enumerate(FPDF_PAGE page,
 FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
 FPDFLink_GetAnnot(FPDF_PAGE page, FPDF_LINK link_annot) {
   CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
-  CPDF_Dictionary* pAnnotDict = CPDFDictionaryFromFPDFLink(link_annot);
+  RetainPtr<CPDF_Dictionary> pAnnotDict(CPDFDictionaryFromFPDFLink(link_annot));
   if (!pPage || !pAnnotDict)
     return nullptr;
 
   auto pAnnotContext = std::make_unique<CPDF_AnnotContext>(
-      pAnnotDict, IPDFPageFromFPDFPage(page));
+      std::move(pAnnotDict), IPDFPageFromFPDFPage(page));
 
   // Caller takes the ownership of the object.
   return FPDFAnnotationFromCPDFAnnotContext(pAnnotContext.release());
@@ -431,7 +439,7 @@ FPDF_EXPORT FPDF_ACTION FPDF_CALLCONV FPDF_GetPageAAction(FPDF_PAGE page,
   if (!pdf_page)
     return nullptr;
 
-  CPDF_Dictionary* page_dict = pdf_page->GetDict();
+  const CPDF_Dictionary* page_dict = pdf_page->GetDict();
   CPDF_AAction aa(page_dict->GetDictFor(pdfium::form_fields::kAA));
 
   CPDF_AAction::AActionType type;

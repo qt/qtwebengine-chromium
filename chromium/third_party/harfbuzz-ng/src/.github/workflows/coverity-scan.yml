@@ -4,11 +4,14 @@ on:
   schedule:
     - cron: '0 10 * * *' # Daily at 10:00 UTC
 
+permissions:
+  contents: read
+
 jobs:
   latest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - run: sudo apt-get install gcc clang wget git curl pkg-config libfreetype6-dev libglib2.0-dev libicu-dev libgraphite2-dev
 

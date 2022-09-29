@@ -13,22 +13,12 @@ resolver) and extracted to
 which will act as our sysroot.
 """
 
+load("//toolchain:utils.bzl", "gcs_mirror_url")
+
 # From https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz.sha256
 clang_prefix = "clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04/"
 clang_sha256 = "2c2fb857af97f41a5032e9ecadf7f78d3eff389a5cd3c9ec620d24f134ceb3c8"
 clang_url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.0/clang+llvm-13.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz"
-
-# Files are expected to be in the mirror location named after their sha256 hash. The files should
-# still have their file extension, as some of the Starlark functions sniff the file extension
-# (e.g. download_and_extract). See //bazel/gcs_mirror for an automated way to update this mirror.
-mirror_prefix = "https://storage.googleapis.com/skia-world-readable/bazel/"
-
-# Set this to True to only use the files from the mirror host. This can be used to test the data
-# in the mirrors is not corrupt and publicly accessible.
-# If testing this, you need to delete the download cache, which defaults to
-# ~/.cache/bazel/_bazel_$USER/cache/repos/v1/
-# https://bazel.build/docs/build#repository-cache
-force_test_of_mirrors = False
 
 debs_to_install = [
     # These three comprise glibc. libc6 has the shared libraries, like libc itself, the math library
@@ -141,29 +131,33 @@ debs_to_install = [
     },
     {
         # This is a requirement of libllvm13
-        # https://packages.debian.org/sid/libz3-4
+        # https://packages.debian.org/sid/libz3-4/download
         "sha256": "b415b863678625dee3f3c75bd48b1b9e3b6e11279ebec337904d7f09630d107f",
         "url": "https://ftp.debian.org/debian/pool/main/z/z3/libz3-4_4.8.12-1+b1_amd64.deb",
+    },
+    {
+        # https://packages.debian.org/bullseye/libfontconfig-dev/download
+        "sha256": "7655d4238ee7e6ced13501006d20986cbf9ff08454a4e502d5aa399f83e28876",
+        "url": "https://ftp.debian.org/debian/pool/main/f/fontconfig/libfontconfig-dev_2.13.1-4.2_amd64.deb",
+    },
+    {
+        # https://packages.debian.org/bullseye/libglu1-mesa-dev/download
+        "sha256": "5df6abeedb1f6986cec4b17810ef1a2773a5cd3291544abacc2bf602a9520893",
+        "url": "https://ftp.debian.org/debian/pool/main/libg/libglu/libglu1-mesa-dev_9.0.1-1_amd64.deb",
     },
 ]
 
 def _download_and_extract_deb(ctx, deb, sha256, prefix, output = ""):
     """Downloads a debian file and extracts the data into the provided output directory"""
 
-    # https://bazel.build/rules/lib/repository_ctx#download
-    # .deb files are also .ar archives.
-    ctx.download(
-        url = _mirror([deb, mirror_prefix + sha256 + ".deb"]),
-        output = "tmp/deb.ar",
+    # https://bazel.build/rules/lib/repository_ctx#download_and_extract
+    # A .deb file has a data.tar.xz and a control.tar.xz, but the important contents
+    # (i.e. the headers or libs) are in the data.tar.xz
+    ctx.download_and_extract(
+        url = gcs_mirror_url(deb, sha256),
+        output = "tmp",
         sha256 = sha256,
     )
-
-    # https://bazel.build/rules/lib/repository_ctx#execute
-    # This uses the statically built binary from the infra repo
-    res = ctx.execute(["bin/open_ar", "--input", "tmp/deb.ar", "--output_dir", "tmp"], quiet = False)
-    if res.return_code != 0:
-        # Run it again to display the error
-        fail("Could not open deb.ar from " + deb)
 
     # https://bazel.build/rules/lib/repository_ctx#extract
     ctx.extract(
@@ -176,20 +170,10 @@ def _download_and_extract_deb(ctx, deb, sha256, prefix, output = ""):
     ctx.delete("tmp")
 
 def _download_linux_amd64_toolchain_impl(ctx):
-    # Workaround for Bazel not yet supporting .ar files
-    # See https://skia-review.googlesource.com/c/buildbot/+/524764
-    # https://bazel.build/rules/lib/repository_ctx#download
-    ctx.download(
-        url = mirror_prefix + "open_ar_v1",
-        sha256 = "55bb74d9ce5d6fa06e390b2319a410ec595dbb591a3ce650da356efe970f86d3",
-        executable = True,
-        output = "bin/open_ar",
-    )
-
     # Download the clang toolchain (the extraction can take a while)
     # https://bazel.build/rules/lib/repository_ctx#download_and_extract
     ctx.download_and_extract(
-        url = _mirror([clang_url, mirror_prefix + clang_sha256 + ".tar.xz"]),
+        url = gcs_mirror_url(clang_url, clang_sha256),
         output = "",
         stripPrefix = clang_prefix,
         sha256 = clang_sha256,
@@ -214,6 +198,8 @@ def _download_linux_amd64_toolchain_impl(ctx):
     ctx.file(
         "BUILD.bazel",
         content = """
+# DO NOT EDIT THIS BAZEL FILE DIRECTLY
+# Generated from ctx.file action in download_linux_amd64_toolchain.bzl
 filegroup(
     name = "archive_files",
     srcs = [
@@ -262,13 +248,6 @@ filegroup(
 """,
         executable = False,
     )
-
-# If force_test_of_mirrors is set, return a list containing only the second item. This assumes
-# that the given list will have a primary source and a mirror source (precisely two items).
-def _mirror(arr):
-    if force_test_of_mirrors:
-        return [arr[1]]
-    return arr
 
 # https://bazel.build/rules/repository_rules
 download_linux_amd64_toolchain = repository_rule(

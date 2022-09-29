@@ -21,11 +21,13 @@
 
 #include "config.h"
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <signal.h>
 
 #include "cmdutils.h"
+#include "sync_queue.h"
 
 #include "libavformat/avformat.h"
 #include "libavformat/avio.h"
@@ -118,6 +120,7 @@ typedef struct OptionsContext {
     float readrate;
     int accurate_seek;
     int thread_queue_size;
+    int input_sync_ref;
 
     SpecifierOpt *ts_scale;
     int        nb_ts_scale;
@@ -147,9 +150,10 @@ typedef struct OptionsContext {
 
     int64_t recording_time;
     int64_t stop_time;
-    uint64_t limit_filesize;
+    int64_t limit_filesize;
     float mux_preload;
     float mux_max_delay;
+    float shortest_buf_duration;
     int shortest;
     int bitexact;
 
@@ -176,6 +180,8 @@ typedef struct OptionsContext {
     int        nb_qscale;
     SpecifierOpt *forced_key_frames;
     int        nb_forced_key_frames;
+    SpecifierOpt *fps_mode;
+    int        nb_fps_mode;
     SpecifierOpt *force_fps;
     int        nb_force_fps;
     SpecifierOpt *frame_aspect_ratios;
@@ -408,6 +414,7 @@ typedef struct InputFile {
                              at the moment when looping happens */
     AVRational time_base; /* time base of the duration */
     int64_t input_ts_offset;
+    int input_sync_ref;
 
     int64_t ts_offset;
     int64_t last_ts;
@@ -422,13 +429,11 @@ typedef struct InputFile {
 
     AVPacket *pkt;
 
-#if HAVE_THREADS
     AVThreadMessageQueue *in_thread_queue;
     pthread_t thread;           /* thread reading from this file */
     int non_blocking;           /* reading packets from the thread should not block */
     int joined;                 /* the thread has been joined */
     int thread_queue_size;      /* maximum number of queued packets */
-#endif
 } InputFile;
 
 enum forced_keyframes_const {
@@ -456,7 +461,8 @@ typedef struct OutputStream {
     int source_index;        /* InputStream index */
     AVStream *st;            /* stream in the output file */
     int encoding_needed;     /* true if encoding needed for this stream */
-    int frame_number;
+    /* number of frames emitted by the video-encoding sync code */
+    int64_t vsync_frame_number;
     /* input pts and corresponding output pts
        for A/V sync */
     struct InputStream *sync_ist; /* input stream to sync against */
@@ -464,8 +470,10 @@ typedef struct OutputStream {
     /* pts of the first frame encoded for this stream, used for limiting
      * recording time */
     int64_t first_pts;
-    /* dts of the last packet sent to the muxer */
+    /* dts of the last packet sent to the muxing queue, in AV_TIME_BASE_Q */
     int64_t last_mux_dts;
+    /* pts of the last frame received from the filters, in AV_TIME_BASE_Q */
+    int64_t last_filter_pts;
     // the timebase of the packets sent to the muxer
     AVRational mux_timebase;
     AVRational enc_timebase;
@@ -478,9 +486,10 @@ typedef struct OutputStream {
     int64_t max_frames;
     AVFrame *filtered_frame;
     AVFrame *last_frame;
+    AVFrame *sq_frame;
     AVPacket *pkt;
-    int last_dropped;
-    int last_nb0_frames[3];
+    int64_t last_dropped;
+    int64_t last_nb0_frames[3];
 
     void  *hwaccel_ctx;
 
@@ -489,10 +498,12 @@ typedef struct OutputStream {
     AVRational max_frame_rate;
     enum VideoSyncMethod vsync_method;
     int is_cfr;
+    const char *fps_mode;
     int force_fps;
     int top_field_first;
     int rotate_overridden;
     int autoscale;
+    int bitexact;
     int bits_per_raw_sample;
     double rotate_override_value;
 
@@ -547,24 +558,17 @@ typedef struct OutputStream {
     // combined size of all the packets written
     uint64_t data_size;
     // number of packets send to the muxer
-    uint64_t packets_written;
+    atomic_uint_least64_t packets_written;
     // number of frames/samples sent to the encoder
     uint64_t frames_encoded;
     uint64_t samples_encoded;
+    // number of packets received from the encoder
+    uint64_t packets_encoded;
 
     /* packet quality factor */
     int quality;
 
     int max_muxing_queue_size;
-
-    /* the packets are buffered here until the muxer is ready to be initialized */
-    AVFifo *muxing_queue;
-
-    /*
-     * The size of the AVPackets' buffers in queue.
-     * Updated when a packet is either pushed or pulled from the queue.
-     */
-    size_t muxing_queue_data_size;
 
     /* Threshold after which max_muxing_queue_size will be in effect */
     size_t muxing_queue_data_threshold;
@@ -574,23 +578,30 @@ typedef struct OutputStream {
 
     /* frame encode sum of squared error values */
     int64_t error[4];
+
+    int sq_idx_encode;
+    int sq_idx_mux;
 } OutputStream;
+
+typedef struct Muxer Muxer;
 
 typedef struct OutputFile {
     int index;
 
+    Muxer                *mux;
     const AVOutputFormat *format;
+    const char           *url;
 
-    AVFormatContext *ctx;
-    AVDictionary *opts;
+    SyncQueue *sq_encode;
+    SyncQueue *sq_mux;
+
+    int nb_streams;
     int ost_index;       /* index of the first stream in output_streams */
     int64_t recording_time;  ///< desired length of the resulting file in microseconds == AV_TIME_BASE units
     int64_t start_time;      ///< start time in microseconds == AV_TIME_BASE units
-    uint64_t limit_filesize; /* filesize limit expressed in bytes */
 
     int shortest;
-
-    int header_written;
+    int bitexact;
 } OutputFile;
 
 extern InputStream **input_streams;
@@ -649,7 +660,6 @@ extern char *qsv_device;
 #endif
 extern HWDevice *filter_hw_device;
 
-extern int want_sdp;
 extern unsigned nb_output_dumped;
 extern int main_return_code;
 
@@ -689,12 +699,17 @@ int hw_device_setup_for_filter(FilterGraph *fg);
 
 int hwaccel_decode_init(AVCodecContext *avctx);
 
+int of_muxer_init(OutputFile *of, AVFormatContext *fc,
+                  AVDictionary *opts, int64_t limit_filesize,
+                  int thread_queue_size);
 /* open the muxer when all the streams are initialized */
 int of_check_init(OutputFile *of);
 int of_write_trailer(OutputFile *of);
 void of_close(OutputFile **pof);
 
-void of_write_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost,
-                     int unqueue);
+int of_submit_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost);
+int64_t of_filesize(OutputFile *of);
+AVChapter * const *
+of_get_chapters(OutputFile *of, unsigned int *nb_chapters);
 
 #endif /* FFTOOLS_FFMPEG_H */

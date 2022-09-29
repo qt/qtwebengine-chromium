@@ -25,10 +25,10 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/spirv.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stack>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -108,7 +108,7 @@ public:
             , fCapabilities(0)
             , fIdCount(1)
             , fCurrentBlock(0)
-            , fSynthetics(fContext, /*builtin=*/true) {}
+            , fSynthetics(/*builtin=*/true) {}
 
     bool generateCode() override;
 

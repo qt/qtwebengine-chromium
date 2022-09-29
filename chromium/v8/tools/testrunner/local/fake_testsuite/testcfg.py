@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2019 the V8 project authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -26,6 +26,3 @@ class TestSuite(testsuite.TestSuite):
 
   def _test_class(self):
     return TestCase
-
-def GetSuite(*args, **kwargs):
-  return TestSuite(*args, **kwargs)

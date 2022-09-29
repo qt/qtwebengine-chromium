@@ -12,6 +12,8 @@ TOOLS_PATH = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(TOOLS_PATH)
 
+from testrunner.local.command import PosixCommand
+from testrunner.local.context import DefaultOSContext
 from testrunner.local.testsuite import TestSuite
 from testrunner.test_config import TestConfig
 
@@ -35,8 +37,9 @@ class TestSuiteTest(unittest.TestCase):
         verbose=False,
     )
 
-    self.suite = TestSuite.Load(self.test_root, self.test_config,
-                                "standard_runner")
+    self.suite = TestSuite.Load(
+        DefaultOSContext(PosixCommand), self.test_root, self.test_config,
+        "standard_runner")
 
   def testLoadingTestSuites(self):
     self.assertEqual(self.suite.name, "fake_testsuite")

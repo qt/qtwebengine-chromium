@@ -208,6 +208,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPageObj_GetLineJoin);
     CHK(FPDFPageObj_GetMark);
     CHK(FPDFPageObj_GetMatrix);
+    CHK(FPDFPageObj_GetRotatedBounds);
     CHK(FPDFPageObj_GetStrokeColor);
     CHK(FPDFPageObj_GetStrokeWidth);
     CHK(FPDFPageObj_GetType);
@@ -249,6 +250,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPath_SetDrawMode);
     CHK(FPDFTextObj_GetFont);
     CHK(FPDFTextObj_GetFontSize);
+    CHK(FPDFTextObj_GetRenderedBitmap);
     CHK(FPDFTextObj_GetText);
     CHK(FPDFTextObj_GetTextRenderMode);
     CHK(FPDFTextObj_SetTextRenderMode);

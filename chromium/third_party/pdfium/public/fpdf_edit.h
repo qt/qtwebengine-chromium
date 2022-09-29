@@ -647,7 +647,7 @@ FPDFImageObj_GetBitmap(FPDF_PAGEOBJECT image_object);
 // Get a bitmap rasterization of |image_object| that takes the image mask and
 // image matrix into account. To render correctly, the caller must provide the
 // |document| associated with |image_object|. If there is a |page| associated
-// with |image_object| the caller should provide that as well.
+// with |image_object|, the caller should provide that as well.
 // The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
 // must be called on the returned bitmap when it is no longer needed.
 //
@@ -655,7 +655,7 @@ FPDFImageObj_GetBitmap(FPDF_PAGEOBJECT image_object);
 //   page         - handle to an optional page associated with |image_object|.
 //   image_object - handle to an image object.
 //
-// Returns the bitmap.
+// Returns the bitmap or NULL on failure.
 FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV
 FPDFImageObj_GetRenderedBitmap(FPDF_DOCUMENT document,
                                FPDF_PAGE page,
@@ -761,13 +761,32 @@ FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV FPDFPageObj_CreateNewRect(float x,
 // right        - pointer where the right coordinate will be stored
 // top          - pointer where the top coordinate will be stored
 //
-// Returns TRUE on success.
+// On success, returns TRUE and fills in the 4 coordinates.
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFPageObj_GetBounds(FPDF_PAGEOBJECT page_object,
                       float* left,
                       float* bottom,
                       float* right,
                       float* top);
+
+// Experimental API.
+// Get the quad points that bounds |page_object|.
+//
+// page_object  - handle to a page object.
+// quad_points  - pointer where the quadrilateral points will be stored.
+//
+// On success, returns TRUE and fills in |quad_points|.
+//
+// Similar to FPDFPageObj_GetBounds(), this returns the bounds of a page
+// object. When the object is rotated by a non-multiple of 90 degrees, this API
+// returns a tighter bound that cannot be represented with just the 4 sides of
+// a rectangle.
+//
+// Currently only works the following |page_object| types: FPDF_PAGEOBJ_TEXT and
+// FPDF_PAGEOBJ_IMAGE.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetRotatedBounds(FPDF_PAGEOBJECT page_object,
+                             FS_QUADPOINTSF* quad_points);
 
 // Set the blend mode of |page_object|.
 //
@@ -1217,6 +1236,25 @@ FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
                     FPDF_TEXTPAGE text_page,
                     FPDF_WCHAR* buffer,
                     unsigned long length);
+
+// Experimental API.
+// Get a bitmap rasterization of |text_object|. To render correctly, the caller
+// must provide the |document| associated with |text_object|. If there is a
+// |page| associated with |text_object|, the caller should provide that as well.
+// The returned bitmap will be owned by the caller, and FPDFBitmap_Destroy()
+// must be called on the returned bitmap when it is no longer needed.
+//
+//   document    - handle to a document associated with |text_object|.
+//   page        - handle to an optional page associated with |text_object|.
+//   text_object - handle to a text object.
+//   scale       - the scaling factor, which must be greater than 0.
+//
+// Returns the bitmap or NULL on failure.
+FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV
+FPDFTextObj_GetRenderedBitmap(FPDF_DOCUMENT document,
+                              FPDF_PAGE page,
+                              FPDF_PAGEOBJECT text_object,
+                              float scale);
 
 // Experimental API.
 // Get the font of a text object.

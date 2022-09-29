@@ -7,11 +7,9 @@
 #include "src/base/logging.h"
 #include "src/common/globals.h"
 #include "src/compiler/common-operator.h"
-#include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
-#include "src/compiler/simplified-operator.h"
 #include "src/compiler/wasm-compiler-definitions.h"
 #include "src/compiler/wasm-graph-assembler.h"
 #include "src/wasm/object-access.h"
@@ -56,19 +54,22 @@ Reduction WasmGCLowering::Reduce(Node* node) {
       return ReduceRttCanon(node);
     case IrOpcode::kTypeGuard:
       return ReduceTypeGuard(node);
+    case IrOpcode::kWasmExternInternalize:
+      return ReduceWasmExternInternalize(node);
     default:
       return NoChange();
   }
 }
 
-Node* WasmGCLowering::Null() {
+Node* WasmGCLowering::RootNode(RootIndex index) {
   Node* isolate_root = gasm_.LoadImmutable(
       MachineType::Pointer(), instance_node_,
       WasmInstanceObject::kIsolateRootOffset - kHeapObjectTag);
-  return gasm_.LoadImmutable(
-      MachineType::Pointer(), isolate_root,
-      IsolateData::root_slot_offset(RootIndex::kNullValue));
+  return gasm_.LoadImmutable(MachineType::Pointer(), isolate_root,
+                             IsolateData::root_slot_offset(index));
 }
+
+Node* WasmGCLowering::Null() { return RootNode(RootIndex::kNullValue); }
 
 // TODO(manoskouk): Use the Callbacks infrastructure from wasm-compiler.h to
 // unify all check/cast implementations.
@@ -101,21 +102,25 @@ Reduction WasmGCLowering::ReduceWasmTypeCheck(Node* node) {
                gasm_.Int32Constant(1));
 
   Node* type_info = gasm_.LoadWasmTypeInfo(map);
-  Node* supertypes = gasm_.LoadSupertypes(type_info);
   DCHECK_GE(rtt_depth, 0);
-  Node* rtt_depth_node = gasm_.IntPtrConstant(rtt_depth);
   // If the depth of the rtt is known to be less that the minimum supertype
   // array length, we can access the supertype without bounds-checking the
   // supertype array.
   if (static_cast<uint32_t>(rtt_depth) >= wasm::kMinimumSupertypeArraySize) {
-    Node* supertypes_length = gasm_.BuildChangeSmiToIntPtr(
-        gasm_.LoadFixedArrayLengthAsSmi(supertypes));
-    gasm_.GotoIfNot(gasm_.UintLessThan(rtt_depth_node, supertypes_length),
-                    &end_label, BranchHint::kTrue, gasm_.Int32Constant(0));
+    Node* supertypes_length =
+        gasm_.BuildChangeSmiToIntPtr(gasm_.LoadImmutableFromObject(
+            MachineType::TaggedSigned(), type_info,
+            wasm::ObjectAccess::ToTagged(
+                WasmTypeInfo::kSupertypesLengthOffset)));
+    gasm_.GotoIfNot(
+        gasm_.UintLessThan(gasm_.IntPtrConstant(rtt_depth), supertypes_length),
+        &end_label, BranchHint::kTrue, gasm_.Int32Constant(0));
   }
 
-  Node* maybe_match = gasm_.LoadImmutableFixedArrayElement(
-      supertypes, rtt_depth_node, MachineType::TaggedPointer());
+  Node* maybe_match = gasm_.LoadImmutableFromObject(
+      MachineType::TaggedPointer(), type_info,
+      wasm::ObjectAccess::ToTagged(WasmTypeInfo::kSupertypesOffset +
+                                   kTaggedSize * rtt_depth));
 
   gasm_.Goto(&end_label, gasm_.TaggedEqual(maybe_match, rtt));
 
@@ -153,21 +158,25 @@ Reduction WasmGCLowering::ReduceWasmTypeCast(Node* node) {
   gasm_.GotoIf(gasm_.TaggedEqual(map, rtt), &end_label, BranchHint::kTrue);
 
   Node* type_info = gasm_.LoadWasmTypeInfo(map);
-  Node* supertypes = gasm_.LoadSupertypes(type_info);
   DCHECK_GE(rtt_depth, 0);
-  Node* rtt_depth_node = gasm_.IntPtrConstant(rtt_depth);
   // If the depth of the rtt is known to be less that the minimum supertype
   // array length, we can access the supertype without bounds-checking the
   // supertype array.
   if (static_cast<uint32_t>(rtt_depth) >= wasm::kMinimumSupertypeArraySize) {
-    Node* supertypes_length = gasm_.BuildChangeSmiToIntPtr(
-        gasm_.LoadFixedArrayLengthAsSmi(supertypes));
-    gasm_.TrapUnless(gasm_.UintLessThan(rtt_depth_node, supertypes_length),
-                     TrapId::kTrapIllegalCast);
+    Node* supertypes_length =
+        gasm_.BuildChangeSmiToIntPtr(gasm_.LoadImmutableFromObject(
+            MachineType::TaggedSigned(), type_info,
+            wasm::ObjectAccess::ToTagged(
+                WasmTypeInfo::kSupertypesLengthOffset)));
+    gasm_.TrapUnless(
+        gasm_.UintLessThan(gasm_.IntPtrConstant(rtt_depth), supertypes_length),
+        TrapId::kTrapIllegalCast);
   }
 
-  Node* maybe_match = gasm_.LoadImmutableFixedArrayElement(
-      supertypes, rtt_depth_node, MachineType::TaggedPointer());
+  Node* maybe_match = gasm_.LoadImmutableFromObject(
+      MachineType::TaggedPointer(), type_info,
+      wasm::ObjectAccess::ToTagged(WasmTypeInfo::kSupertypesOffset +
+                                   kTaggedSize * rtt_depth));
 
   gasm_.TrapUnless(gasm_.TaggedEqual(maybe_match, rtt),
                    TrapId::kTrapIllegalCast);
@@ -228,6 +237,37 @@ Reduction WasmGCLowering::ReduceTypeGuard(Node* node) {
   ReplaceWithValue(node, alias);
   node->Kill();
   return Replace(alias);
+}
+
+Reduction WasmGCLowering::ReduceWasmExternInternalize(Node* node) {
+  DCHECK_EQ(node->opcode(), IrOpcode::kWasmExternInternalize);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  Node* object = NodeProperties::GetValueInput(node, 0);
+  gasm_.InitializeEffectControl(effect, control);
+  auto end = gasm_.MakeLabel(MachineRepresentation::kTaggedPointer);
+
+  if (!FLAG_wasm_gc_js_interop) {
+    Node* context = gasm_.LoadImmutable(
+        MachineType::TaggedPointer(), instance_node_,
+        WasmInstanceObject::kNativeContextOffset - kHeapObjectTag);
+    Node* obj = gasm_.CallBuiltin(
+        Builtin::kWasmGetOwnProperty, Operator::kEliminatable, object,
+        RootNode(RootIndex::kwasm_wrapped_object_symbol), context);
+    // Invalid object wrappers (i.e. any other JS object that doesn't have the
+    // magic hidden property) will return {undefined}. Map that to {object}.
+    Node* is_undefined =
+        gasm_.TaggedEqual(obj, RootNode(RootIndex::kUndefinedValue));
+    gasm_.GotoIf(is_undefined, &end, object);
+    gasm_.Goto(&end, obj);
+  } else {
+    gasm_.Goto(&end, object);
+  }
+  gasm_.Bind(&end);
+  Node* replacement = end.PhiAt(0);
+  ReplaceWithValue(node, replacement, gasm_.effect(), gasm_.control());
+  node->Kill();
+  return Replace(replacement);
 }
 
 }  // namespace compiler

@@ -17,28 +17,30 @@ QUIC_FLAG(quic_restart_flag_quic_testonly_default_false, false)
 QUIC_FLAG(quic_restart_flag_quic_testonly_default_true, true)
 // If bytes in flight has dipped below 1.25*MaxBW in the last round, do not exit PROBE_UP due to excess queue buildup.
 QUIC_FLAG(quic_reloadable_flag_quic_bbr2_no_probe_up_exit_if_no_queue, true)
+// If trrue, early return before write control frame in OnCanWrite() if the connection is already closed.
+QUIC_FLAG(quic_reloadable_flag_quic_no_write_control_frame_upon_connection_close, true)
+// If true and BBQ1 connection option is set, QUIC BBR will use a pacing gain of 2.773 at startup and 0.5 at DRAIN.
+QUIC_FLAG(quic_reloadable_flag_quic_bbr2_support_new_startup_pacing_gain, true)
+// If true, 1) remove all experiments that tunes blackhole detection delay or path degrading delay, and 2) ensure network blackhole delay is at least path degrading delay plus 2 PTOs.
+QUIC_FLAG(quic_reloadable_flag_quic_remove_blackhole_detection_experiments, true)
+// If true, QUIC Legacy Version Encapsulation will be disabled.
+QUIC_FLAG(quic_restart_flag_quic_disable_legacy_version_encapsulation, true)
 // If true, QUIC will default enable MTU discovery at server, with a target of 1450 bytes.
 QUIC_FLAG(quic_reloadable_flag_quic_enable_mtu_discovery_at_server, false)
+// If true, QuicConnection::ScopedPacketFlusher::~ScopedPacketFlusher will early return if connection is disconnected after FlushPackets.
+QUIC_FLAG(quic_reloadable_flag_quic_packet_flusher_check_connected_after_flush_packets, true)
 // If true, QuicGsoBatchWriter will support release time if it is available and the process has the permission to do so.
 QUIC_FLAG(quic_restart_flag_quic_support_release_time_for_gso, false)
-// If true, TlsHandshaker::AdvanceHandshake will check if connection is closed after SSL_do_handshake.
-QUIC_FLAG(quic_reloadable_flag_quic_tls_handshaker_check_connection_closed, true)
-// If true, abort async QPACK header decompression in QuicSpdyStream::Reset() and in QuicSpdyStream::OnStreamReset().
-QUIC_FLAG(quic_reloadable_flag_quic_abort_qpack_on_stream_reset, true)
+// If true, account added padding when coalesced packets get buffered.
+QUIC_FLAG(quic_reloadable_flag_quic_fix_bytes_accounting_for_buffered_coalesced_packets, true)
 // If true, ack frequency frame can be sent from server to client.
 QUIC_FLAG(quic_reloadable_flag_quic_can_send_ack_frequency, true)
 // If true, allow client to enable BBRv2 on server via connection option \'B2ON\'.
 QUIC_FLAG(quic_reloadable_flag_quic_allow_client_enabled_bbr_v2, true)
-// If true, close read side but not write side in QuicSpdyStream::OnStreamReset().
-QUIC_FLAG(quic_reloadable_flag_quic_fix_on_stream_reset, true)
 // If true, close the connection if a crypto send buffer exceeds its size limit.
 QUIC_FLAG(quic_reloadable_flag_quic_bounded_crypto_send_buffer, false)
-// If true, consider original connection ID as active before handshake completes.
-QUIC_FLAG(quic_reloadable_flag_quic_consider_original_connection_id_as_active_pre_handshake, true)
 // If true, default-enable 5RTO blachole detection.
 QUIC_FLAG(quic_reloadable_flag_quic_default_enable_5rto_blackhole_detection2, true)
-// If true, deliver INITIAL packets before other types of packets in QuicBufferedPacketStore.
-QUIC_FLAG(quic_reloadable_flag_quic_deliver_initial_packets_first, true)
 // If true, disable QUIC version Q043.
 QUIC_FLAG(quic_reloadable_flag_quic_disable_version_q043, false)
 // If true, disable QUIC version Q046.
@@ -57,14 +59,18 @@ QUIC_FLAG(quic_reloadable_flag_quic_enable_disable_resumption, true)
 QUIC_FLAG(quic_reloadable_flag_quic_discard_initial_packet_with_key_dropped, true)
 // If true, do not bundle ACK while sending PATH_CHALLENGE on alternative path.
 QUIC_FLAG(quic_reloadable_flag_quic_not_bundle_ack_on_alternative_path, true)
+// If true, do not issue a new connection ID that has been claimed by another connection.
+QUIC_FLAG(quic_reloadable_flag_quic_check_cid_collision_when_issue_new_cid, true)
+// If true, do not mark stream connection level write blocked if its write side has been closed.
+QUIC_FLAG(quic_reloadable_flag_quic_donot_mark_stream_write_blocked_if_write_side_closed, true)
 // If true, enable server retransmittable on wire PING.
 QUIC_FLAG(quic_reloadable_flag_quic_enable_server_on_wire_ping, true)
 // If true, flush pending frames as well as pending padding bytes on connection migration.
 QUIC_FLAG(quic_reloadable_flag_quic_flush_pending_frames_and_padding_bytes_on_migration, true)
 // If true, ietf connection migration is no longer conditioned on connection option RVCM.
 QUIC_FLAG(quic_reloadable_flag_quic_remove_connection_migration_connection_option_v2, false)
-// If true, include offset in QUIC STREAM_DATA_BLOCKED and DATA_BLOCKED frames.
-QUIC_FLAG(quic_reloadable_flag_quic_include_offset_in_blocked_frames, false)
+// If true, if a fatal tls alert is raised while extracting CHLO, QuicDispatcher will send a connection close.
+QUIC_FLAG(quic_restart_flag_quic_dispatcher_send_connection_close_for_tls_alerts, true)
 // If true, include stream information in idle timeout connection close detail.
 QUIC_FLAG(quic_reloadable_flag_quic_add_stream_info_to_idle_close_detail, true)
 // If true, quic server will send ENABLE_CONNECT_PROTOCOL setting and and endpoint will validate required request/response headers and extended CONNECT mechanism and update code counts of valid/invalid headers.
@@ -76,7 +82,7 @@ QUIC_FLAG(quic_reloadable_flag_quic_require_handshake_confirmation, false)
 // If true, server proactively retires client issued connection ID on reverse path validation failure. 
 QUIC_FLAG(quic_reloadable_flag_quic_retire_cid_on_reverse_path_validation_failure, true)
 // If true, server sends bandwidth eastimate when network is idle for a while.
-QUIC_FLAG(quic_restart_flag_quic_enable_sending_bandwidth_estimate_when_network_idle, true)
+QUIC_FLAG(quic_restart_flag_quic_enable_sending_bandwidth_estimate_when_network_idle_v2, true)
 // If true, set burst token to 2 in cwnd bootstrapping experiment.
 QUIC_FLAG(quic_reloadable_flag_quic_conservative_bursts, false)
 // If true, stop resetting ideal_next_packet_send_time_ in pacing sender.
@@ -89,6 +95,10 @@ QUIC_FLAG(quic_reloadable_flag_quic_use_ping_manager2, true)
 QUIC_FLAG(quic_reloadable_flag_quic_connection_migration_use_new_cid_v2, true)
 // If true, uses conservative cwnd gain and pacing gain when cwnd gets bootstrapped.
 QUIC_FLAG(quic_reloadable_flag_quic_conservative_cwnd_and_pacing_gains, false)
+// If true, validate header field character at spdy stream instead of qpack for IETF QUIC.
+QUIC_FLAG(quic_reloadable_flag_quic_validate_header_field_value_at_spdy_stream, true)
+// Store original QUIC connection IDs in the dispatcher\'s map
+QUIC_FLAG(quic_restart_flag_quic_map_original_connection_ids2, false)
 // When the flag is true, exit STARTUP after the same number of loss events as PROBE_UP.
 QUIC_FLAG(quic_reloadable_flag_quic_bbr2_startup_probe_up_loss_events, true)
 // When true, defaults to BBR congestion control instead of Cubic.
@@ -105,8 +115,6 @@ QUIC_FLAG(quic_reloadable_flag_quic_bbr2_ignore_inflight_hi_in_probe_up, true)
 QUIC_FLAG(quic_reloadable_flag_quic_bbr2_startup_extra_acked, true)
 // When true, the B207 connection option causes BBR2 to exit STARTUP if a persistent queue of 2*BDP has existed for the entire round.
 QUIC_FLAG(quic_reloadable_flag_quic_bbr2_exit_startup_on_persistent_queue2, true)
-// When true, the BBQ0 connection option causes QUIC BBR2 to add bytes_acked to probe_up_acked if the connection hasn\'t been app-limited since inflight_hi was utilized.
-QUIC_FLAG(quic_reloadable_flag_quic_bbr2_add_bytes_acked_after_inflight_hi_limited, true)
 // When true, the BBR4 copt sets the extra_acked window to 20 RTTs and BBR5 sets it to 40 RTTs.
 QUIC_FLAG(quic_reloadable_flag_quic_bbr2_extra_acked_window, true)
 

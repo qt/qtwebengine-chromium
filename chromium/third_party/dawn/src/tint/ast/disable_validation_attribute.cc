@@ -20,8 +20,10 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::DisableValidationAttribute);
 
 namespace tint::ast {
 
-DisableValidationAttribute::DisableValidationAttribute(ProgramID pid, DisabledValidation val)
-    : Base(pid), validation(val) {}
+DisableValidationAttribute::DisableValidationAttribute(ProgramID pid,
+                                                       NodeID nid,
+                                                       DisabledValidation val)
+    : Base(pid, nid), validation(val) {}
 
 DisableValidationAttribute::~DisableValidationAttribute() = default;
 
@@ -35,8 +37,8 @@ std::string DisableValidationAttribute::InternalName() const {
             return "disable_validation__ignore_storage_class";
         case DisabledValidation::kEntryPointParameter:
             return "disable_validation__entry_point_parameter";
-        case DisabledValidation::kIgnoreConstructibleFunctionParameter:
-            return "disable_validation__ignore_constructible_function_parameter";
+        case DisabledValidation::kFunctionParameter:
+            return "disable_validation__function_parameter";
         case DisabledValidation::kIgnoreStrideAttribute:
             return "disable_validation__ignore_stride";
         case DisabledValidation::kIgnoreInvalidPointerArgument:
@@ -46,7 +48,8 @@ std::string DisableValidationAttribute::InternalName() const {
 }
 
 const DisableValidationAttribute* DisableValidationAttribute::Clone(CloneContext* ctx) const {
-    return ctx->dst->ASTNodes().Create<DisableValidationAttribute>(ctx->dst->ID(), validation);
+    return ctx->dst->ASTNodes().Create<DisableValidationAttribute>(
+        ctx->dst->ID(), ctx->dst->AllocateNodeID(), validation);
 }
 
 }  // namespace tint::ast

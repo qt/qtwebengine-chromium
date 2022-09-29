@@ -22,6 +22,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <iterator>
 #include <utility>
 
 static inline int is_even(int x) {
@@ -288,7 +290,7 @@ public:
         pts[2].set(x1 - fNormal.fX, y1 - fNormal.fY);   // lineTo
         pts[3].set(x0 - fNormal.fX, y0 - fNormal.fY);   // lineTo
 
-        path->addPoly(pts, SK_ARRAY_COUNT(pts), false);
+        path->addPoly(pts, std::size(pts), false);
     }
 
 private:

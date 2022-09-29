@@ -11,11 +11,13 @@
 
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/SkStuff.h"
 #include "include/gpu/graphite/mtl/MtlBackendContext.h"
 #include "include/gpu/graphite/mtl/MtlTypes.h"
+#include "tools/ToolUtils.h"
 
 using sk_app::DisplayParams;
 using sk_app::GraphiteMetalWindowContext;
@@ -53,8 +55,9 @@ void GraphiteMetalWindowContext::initializeContext() {
     skgpu::graphite::MtlBackendContext backendContext = {};
     backendContext.fDevice.retain((skgpu::graphite::MtlHandle)fDevice.get());
     backendContext.fQueue.retain((skgpu::graphite::MtlHandle)fQueue.get());
-    fGraphiteContext = skgpu::graphite::Context::MakeMetal(backendContext);
-    fGraphiteRecorder = fGraphiteContext->makeRecorder();
+    fGraphiteContext = skgpu::graphite::Context::MakeMetal(backendContext,
+                                                           skgpu::graphite::ContextOptions());
+    fGraphiteRecorder = fGraphiteContext->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
     // TODO
 //    if (!fGraphiteContext && fDisplayParams.fMSAASampleCount > 1) {
 //        fDisplayParams.fMSAASampleCount /= 2;
@@ -104,8 +107,8 @@ void GraphiteMetalWindowContext::swapBuffers() {
         skgpu::graphite::InsertRecordingInfo info;
         info.fRecording = recording.get();
         fGraphiteContext->insertRecording(info);
+        fGraphiteContext->submit(skgpu::graphite::SyncToCpu::kNo);
     }
-    fGraphiteContext->submit(skgpu::graphite::SyncToCpu::kNo);
 
     id<CAMetalDrawable> currentDrawable = (id<CAMetalDrawable>)fDrawableHandle;
 

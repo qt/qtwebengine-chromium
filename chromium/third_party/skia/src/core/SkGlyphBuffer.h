@@ -14,10 +14,13 @@
 
 #include <climits>
 
-class SkStrikeForGPU;
 struct SkGlyphPositionRoundingSpec;
 class SkPath;
 class SkDrawable;
+
+namespace sktext {
+class StrikeForGPU;
+}  // namespace sktext
 
 // SkSourceGlyphBuffer is the source of glyphs between the different stages of glyph drawing.
 // It starts with the glyphs and positions from the SkGlyphRun as the first source. When glyphs
@@ -48,26 +51,14 @@ public:
         }
     }
 
-    void reject(size_t index, int rejectedMaxDimension) {
-        auto [prevMin, prevMax] = fMaxDimensionHintForRejects;
-        fMaxDimensionHintForRejects =
-                {std::min(prevMin, rejectedMaxDimension),
-                 std::max(prevMax, rejectedMaxDimension)};
-        this->reject(index);
-    }
-
     SkZip<const SkGlyphID, const SkPoint> flipRejectsToSource() {
         fRejects = SkMakeZip(fRejectedGlyphIDs, fRejectedPositions).first(fRejectSize);
         fSource = fRejects;
         fRejectSize = 0;
-        fMaxDimensionHintForSource = fMaxDimensionHintForRejects;
-        fMaxDimensionHintForRejects = {INT_MAX, 0};
         return fSource;
     }
 
     SkZip<const SkGlyphID, const SkPoint> source() const { return fSource; }
-
-    std::tuple<int, int> maxDimensionHint() const {return fMaxDimensionHintForSource;}
 
 private:
     SkSourceGlyphBuffer(const SkZip<const SkGlyphID, const SkPoint>& source) {
@@ -79,11 +70,6 @@ private:
 
     SkZip<const SkGlyphID, const SkPoint> fSource;
     size_t fRejectSize{0};
-
-    // Calculate the smallest and largest max glyph dimension. fMaxDimensionHintForSource captures
-    // fMaxDimensionHintForRejects when flipping rejects to the source.
-    std::tuple<int, int> fMaxDimensionHintForSource{INT_MAX, 0};
-    std::tuple<int, int> fMaxDimensionHintForRejects{INT_MAX, 0};
 
     SkZip<SkGlyphID, SkPoint> fRejects;
     SkSTArray<4, SkGlyphID> fRejectedGlyphIDs;
@@ -181,6 +167,22 @@ public:
         SkASSERT(fAcceptedSize <= from);
         fPositions[fAcceptedSize] = fPositions[from];
         fMultiBuffer[fAcceptedSize] = glyph;
+        fFormats[fAcceptedSize] = glyph->maskFormat();
+        fAcceptedSize++;
+    }
+
+    void accept(SkPackedGlyphID glyphID, SkPoint position, SkMask::Format format) {
+        SkASSERT(fPhase == kProcess);
+        fPositions[fAcceptedSize] = position;
+        fMultiBuffer[fAcceptedSize] = glyphID;
+        fFormats[fAcceptedSize] = format;
+        fAcceptedSize++;
+    }
+
+    void accept(SkPackedGlyphID glyphID, SkPoint position) {
+        SkASSERT(fPhase == kProcess);
+        fPositions[fAcceptedSize] = position;
+        fMultiBuffer[fAcceptedSize] = glyphID;
         fAcceptedSize++;
     }
 
@@ -189,6 +191,13 @@ public:
         SkASSERT(fPhase == kProcess);
         SkDEBUGCODE(fPhase = kDraw);
         return SkZip<SkGlyphVariant, SkPoint>{fAcceptedSize, fMultiBuffer.get(), fPositions};
+    }
+
+    SkZip<SkGlyphVariant, SkPoint, SkMask::Format> acceptedWithMaskFormat() {
+        SkASSERT(fPhase == kProcess);
+        SkDEBUGCODE(fPhase = kDraw);
+        return SkZip<SkGlyphVariant, SkPoint, SkMask::Format>{
+                fAcceptedSize, fMultiBuffer.get(), fPositions, fFormats};
     }
 
     bool empty() const {
@@ -211,6 +220,7 @@ private:
     size_t fAcceptedSize{0};
     SkAutoTArray<SkGlyphVariant> fMultiBuffer;
     SkAutoTMalloc<SkPoint> fPositions;
+    SkAutoTMalloc<SkMask::Format> fFormats;
 
 #ifdef SK_DEBUG
     enum {

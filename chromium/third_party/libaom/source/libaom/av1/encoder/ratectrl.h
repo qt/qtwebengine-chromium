@@ -235,6 +235,7 @@ typedef struct {
   /*!\cond */
   // Track amount of low motion in scene
   int avg_frame_low_motion;
+  int cnt_zeromv;
 
   // signals if number of blocks with motion is high
   int high_num_blocks_with_motion;
@@ -355,7 +356,7 @@ typedef struct {
    */
   int avg_frame_qindex[FRAME_TYPES];
 
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
   /*!
    * Temporary variable used in simulating the delayed update of
    * active_best_quality.

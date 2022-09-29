@@ -5035,18 +5035,19 @@ int H420ToRGB565(const uint8_t* src_y,
                             &kYuvH709Constants, width, height);
 }
 
-// Convert I422 to RGB565.
+// Convert I422 to RGB565 with specified color matrix.
 LIBYUV_API
-int I422ToRGB565(const uint8_t* src_y,
-                 int src_stride_y,
-                 const uint8_t* src_u,
-                 int src_stride_u,
-                 const uint8_t* src_v,
-                 int src_stride_v,
-                 uint8_t* dst_rgb565,
-                 int dst_stride_rgb565,
-                 int width,
-                 int height) {
+int I422ToRGB565Matrix(const uint8_t* src_y,
+                       int src_stride_y,
+                       const uint8_t* src_u,
+                       int src_stride_u,
+                       const uint8_t* src_v,
+                       int src_stride_v,
+                       uint8_t* dst_rgb565,
+                       int dst_stride_rgb565,
+                       const struct YuvConstants* yuvconstants,
+                       int width,
+                       int height) {
   int y;
   void (*I422ToRGB565Row)(const uint8_t* y_buf, const uint8_t* u_buf,
                           const uint8_t* v_buf, uint8_t* rgb_buf,
@@ -5103,13 +5104,30 @@ int I422ToRGB565(const uint8_t* src_y,
 #endif
 
   for (y = 0; y < height; ++y) {
-    I422ToRGB565Row(src_y, src_u, src_v, dst_rgb565, &kYuvI601Constants, width);
+    I422ToRGB565Row(src_y, src_u, src_v, dst_rgb565, yuvconstants, width);
     dst_rgb565 += dst_stride_rgb565;
     src_y += src_stride_y;
     src_u += src_stride_u;
     src_v += src_stride_v;
   }
   return 0;
+}
+
+// Convert I422 to RGB565.
+LIBYUV_API
+int I422ToRGB565(const uint8_t* src_y,
+                 int src_stride_y,
+                 const uint8_t* src_u,
+                 int src_stride_u,
+                 const uint8_t* src_v,
+                 int src_stride_v,
+                 uint8_t* dst_rgb565,
+                 int dst_stride_rgb565,
+                 int width,
+                 int height) {
+  return I422ToRGB565Matrix(src_y, src_stride_y, src_u, src_stride_u, src_v,
+                            src_stride_v, dst_rgb565, dst_stride_rgb565,
+                            &kYuvI601Constants, width, height);
 }
 
 // Ordered 8x8 dither for 888 to 565.  Values from 0 to 7.
@@ -5454,25 +5472,25 @@ static int I420ToARGBMatrixBilinear(const uint8_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_SSE2)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_SSE2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_SSSE3;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_AVX2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_NEON;
   }
@@ -5582,22 +5600,22 @@ static int I422ToARGBMatrixLinear(const uint8_t* src_y,
     }
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_SSE2)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_SSE2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_SSSE3;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_AVX2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_NEON;
   }
@@ -5668,19 +5686,19 @@ static int I010ToAR30MatrixBilinear(const uint16_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_SSSE3;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_AVX2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_NEON;
   }
@@ -5768,17 +5786,17 @@ static int I210ToAR30MatrixLinear(const uint16_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_SSSE3;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_AVX2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_NEON;
   }
@@ -5848,19 +5866,19 @@ static int I010ToARGBMatrixBilinear(const uint16_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_SSSE3;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_AVX2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_NEON;
   }
@@ -5947,17 +5965,17 @@ static int I210ToARGBMatrixLinear(const uint16_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_SSSE3;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_AVX2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_NEON;
   }
@@ -6091,25 +6109,25 @@ static int I420AlphaToARGBMatrixBilinear(
     }
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_SSE2)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_SSE2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_SSSE3;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_AVX2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_Any_NEON;
   }
@@ -6277,22 +6295,22 @@ static int I422AlphaToARGBMatrixLinear(const uint8_t* src_y,
     }
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_SSE2)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSE2)
   if (TestCpuFlag(kCpuHasSSE2)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_SSE2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_SSSE3;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_AVX2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleRowUp2_Linear_Any_NEON;
   }
@@ -6408,19 +6426,19 @@ static int I010AlphaToARGBMatrixBilinear(
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_SSSE3;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_AVX2;
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleRowUp2_Bilinear_12_Any_NEON;
   }
@@ -6565,17 +6583,17 @@ static int I210AlphaToARGBMatrixLinear(const uint16_t* src_y,
   }
 #endif
 
-#if defined(HAS_SCALEROWUP2LINEAR_12_SSSE3)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_SSSE3;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_AVX2)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_AVX2)
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_AVX2;
   }
 #endif
-#if defined(HAS_SCALEROWUP2LINEAR_12_NEON)
+#if defined(HAS_SCALEROWUP2_LINEAR_12_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleRowUp2_Linear_12_Any_NEON;
   }
@@ -6647,19 +6665,19 @@ static int P010ToARGBMatrixBilinear(const uint16_t* src_y,
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_SSE41
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_SSE41
   if (TestCpuFlag(kCpuHasSSE41)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_SSE41;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_AVX2
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_AVX2
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_AVX2;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_NEON
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_NEON
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_NEON;
   }
@@ -6737,19 +6755,19 @@ static int P210ToARGBMatrixLinear(const uint16_t* src_y,
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_SSE41
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_SSE41
   if (TestCpuFlag(kCpuHasSSE41)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_SSE41;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_AVX2
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_AVX2
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_AVX2;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_NEON
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_NEON
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_NEON;
   }
@@ -6813,19 +6831,19 @@ static int P010ToAR30MatrixBilinear(const uint16_t* src_y,
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_SSE41
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_SSE41
   if (TestCpuFlag(kCpuHasSSE41)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_SSE41;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_AVX2
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_AVX2
   if (TestCpuFlag(kCpuHasAVX2)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_AVX2;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2BILINEAR_16_NEON
+#ifdef HAS_SCALEUVROWUP2_BILINEAR_16_NEON
   if (TestCpuFlag(kCpuHasNEON)) {
     Scale2RowUp = ScaleUVRowUp2_Bilinear_16_Any_NEON;
   }
@@ -6903,19 +6921,19 @@ static int P210ToAR30MatrixLinear(const uint16_t* src_y,
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_SSE41
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_SSE41
   if (TestCpuFlag(kCpuHasSSE41)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_SSE41;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_AVX2
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_AVX2
   if (TestCpuFlag(kCpuHasAVX2)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_AVX2;
   }
 #endif
 
-#ifdef HAS_SCALEUVROWUP2LINEAR_16_NEON
+#ifdef HAS_SCALEUVROWUP2_LINEAR_16_NEON
   if (TestCpuFlag(kCpuHasNEON)) {
     ScaleRowUp = ScaleUVRowUp2_Linear_16_Any_NEON;
   }

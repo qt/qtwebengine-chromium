@@ -9,6 +9,7 @@
 #define skgpu_graphite_MtlCommandBuffer_DEFINED
 
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 
@@ -21,12 +22,13 @@
 
 namespace skgpu::graphite {
 class MtlBlitCommandEncoder;
-class MtlGpu;
+class MtlComputeCommandEncoder;
 class MtlRenderCommandEncoder;
+class MtlSharedContext;
 
 class MtlCommandBuffer final : public CommandBuffer {
 public:
-    static sk_sp<MtlCommandBuffer> Make(const MtlGpu*);
+    static sk_sp<MtlCommandBuffer> Make(id<MTLCommandQueue>, const MtlSharedContext*);
     ~MtlCommandBuffer() override;
 
     bool isFinished() {
@@ -34,7 +36,7 @@ public:
                (*fCommandBuffer).status == MTLCommandBufferStatusError;
 
     }
-    void waitUntilFinished() {
+    void waitUntilFinished(const SharedContext*) {
         // TODO: it's not clear what do to if status is Enqueued. Commit and then wait?
         if ((*fCommandBuffer).status == MTLCommandBufferStatusScheduled ||
             (*fCommandBuffer).status == MTLCommandBufferStatusCommitted) {
@@ -49,41 +51,62 @@ public:
     bool commit();
 
 private:
-    MtlCommandBuffer(sk_cfp<id<MTLCommandBuffer>> cmdBuffer, const MtlGpu* gpu);
+    MtlCommandBuffer(sk_cfp<id<MTLCommandBuffer>> cmdBuffer, const MtlSharedContext* sharedContext);
 
-    bool onBeginRenderPass(const RenderPassDesc&,
-                           const Texture* colorTexture,
-                           const Texture* resolveTexture,
-                           const Texture* depthStencilTexture) override;
-    void endRenderPass() override;
+    bool onAddRenderPass(const RenderPassDesc&,
+                         const Texture* colorTexture,
+                         const Texture* resolveTexture,
+                         const Texture* depthStencilTexture,
+                         const std::vector<std::unique_ptr<DrawPass>>& drawPasses) override;
+    bool onAddComputePass(const ComputePassDesc&,
+                          const ComputePipeline*,
+                          const std::vector<ResourceBinding>& bindings) override;
 
-    void onBindGraphicsPipeline(const GraphicsPipeline*) override;
-    void onBindUniformBuffer(UniformSlot, const Buffer*, size_t offset) override;
-    void onBindVertexBuffers(const Buffer* vertexBuffer, size_t vertexOffset,
-                             const Buffer* instanceBuffer, size_t instanceOffset) override;
-    void onBindIndexBuffer(const Buffer* indexBuffer, size_t offset) override;
+    // Methods for populating a MTLRenderCommandEncoder:
+    bool beginRenderPass(const RenderPassDesc&,
+                         const Texture* colorTexture,
+                         const Texture* resolveTexture,
+                         const Texture* depthStencilTexture);
+    void endRenderPass();
 
+    void addDrawPass(const DrawPass*);
 
-    void onBindTextureAndSampler(sk_sp<Texture>,
-                                 sk_sp<Sampler>,
-                                 unsigned int bindIndex) override;
+    void bindGraphicsPipeline(const GraphicsPipeline*);
+    void setBlendConstants(float* blendConstants);
 
-    void onSetScissor(unsigned int left, unsigned int top,
-                      unsigned int width, unsigned int height) override;
-    void onSetViewport(float x, float y, float width, float height,
-                       float minDepth, float maxDepth) override;
-    void onSetBlendConstants(std::array<float, 4> blendConstants) override;
+    void bindUniformBuffer(const BindBufferInfo& info, UniformSlot);
+    void bindDrawBuffers(const BindBufferInfo& vertices,
+                         const BindBufferInfo& instances,
+                         const BindBufferInfo& indices);
+    void bindVertexBuffers(const Buffer* vertexBuffer, size_t vertexOffset,
+                           const Buffer* instanceBuffer, size_t instanceOffset);
+    void bindIndexBuffer(const Buffer* indexBuffer, size_t offset);
 
-    void onDraw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount) override;
-    void onDrawIndexed(PrimitiveType type, unsigned int baseIndex, unsigned int indexCount,
-                       unsigned int baseVertex) override;
-    void onDrawInstanced(PrimitiveType type,
-                         unsigned int baseVertex, unsigned int vertexCount,
-                         unsigned int baseInstance, unsigned int instanceCount) override;
-    void onDrawIndexedInstanced(PrimitiveType type, unsigned int baseIndex,
-                                unsigned int indexCount, unsigned int baseVertex,
-                                unsigned int baseInstance, unsigned int instanceCount) override;
+    void bindTextureAndSampler(const Texture*, const Sampler*, unsigned int bindIndex);
 
+    void setScissor(unsigned int left, unsigned int top,
+                    unsigned int width, unsigned int height);
+    void setViewport(float x, float y, float width, float height,
+                     float minDepth, float maxDepth);
+
+    void draw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount);
+    void drawIndexed(PrimitiveType type, unsigned int baseIndex, unsigned int indexCount,
+                     unsigned int baseVertex);
+    void drawInstanced(PrimitiveType type,
+                       unsigned int baseVertex, unsigned int vertexCount,
+                       unsigned int baseInstance, unsigned int instanceCount);
+    void drawIndexedInstanced(PrimitiveType type, unsigned int baseIndex,
+                              unsigned int indexCount, unsigned int baseVertex,
+                              unsigned int baseInstance, unsigned int instanceCount);
+
+    // Methods for populating a MTLComputeCommandEncoder:
+    void beginComputePass();
+    void bindComputePipeline(const ComputePipeline*);
+    void bindBuffer(const Buffer* buffer, unsigned int offset, unsigned int index);
+    void dispatchThreadgroups(const WorkgroupSize& globalSize, const WorkgroupSize& localSize);
+    void endComputePass();
+
+    // Methods for populating a MTLBlitCommandEncoder:
     bool onCopyTextureToBuffer(const Texture*,
                                SkIRect srcRect,
                                const Buffer*,
@@ -99,6 +122,7 @@ private:
 
     sk_cfp<id<MTLCommandBuffer>> fCommandBuffer;
     sk_sp<MtlRenderCommandEncoder> fActiveRenderCommandEncoder;
+    sk_sp<MtlComputeCommandEncoder> fActiveComputeCommandEncoder;
     sk_sp<MtlBlitCommandEncoder> fActiveBlitCommandEncoder;
 
     size_t fCurrentVertexStride = 0;
@@ -106,7 +130,7 @@ private:
     id<MTLBuffer> fCurrentIndexBuffer;
     size_t fCurrentIndexBufferOffset = 0;
 
-    const MtlGpu* fGpu;
+    const MtlSharedContext* fSharedContext;
 };
 
 } // namespace skgpu::graphite

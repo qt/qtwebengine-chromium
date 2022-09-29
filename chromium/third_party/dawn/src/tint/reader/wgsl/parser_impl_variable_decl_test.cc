@@ -51,7 +51,7 @@ TEST_F(ParserImplTest, VariableDecl_Unicode_Parses) {
 
 TEST_F(ParserImplTest, VariableDecl_Inferred_Parses) {
     auto p = parser("var my_var = 1.0");
-    auto v = p->variable_decl(/*allow_inferred = */ true);
+    auto v = p->variable_decl();
     EXPECT_FALSE(p->has_error());
     EXPECT_TRUE(v.matched);
     EXPECT_FALSE(v.errored);
@@ -68,17 +68,8 @@ TEST_F(ParserImplTest, VariableDecl_MissingVar) {
     EXPECT_FALSE(v.errored);
     EXPECT_FALSE(p->has_error());
 
-    auto t = p->next();
+    auto& t = p->next();
     ASSERT_TRUE(t.IsIdentifier());
-}
-
-TEST_F(ParserImplTest, VariableDecl_InvalidIdentDecl) {
-    auto p = parser("var my_var f32");
-    auto v = p->variable_decl();
-    EXPECT_FALSE(v.matched);
-    EXPECT_TRUE(v.errored);
-    EXPECT_TRUE(p->has_error());
-    EXPECT_EQ(p->error(), "1:12: expected ':' for variable declaration");
 }
 
 TEST_F(ParserImplTest, VariableDecl_WithStorageClass) {
@@ -95,6 +86,17 @@ TEST_F(ParserImplTest, VariableDecl_WithStorageClass) {
     EXPECT_EQ(v->source.range.begin.column, 14u);
     EXPECT_EQ(v->source.range.end.line, 1u);
     EXPECT_EQ(v->source.range.end.column, 20u);
+}
+
+TEST_F(ParserImplTest, VariableDecl_WithPushConstant) {
+    auto p = parser("var<push_constant> my_var : f32");
+    auto v = p->variable_decl();
+    EXPECT_TRUE(v.matched);
+    EXPECT_FALSE(v.errored);
+    EXPECT_FALSE(p->has_error());
+    EXPECT_EQ(v->name, "my_var");
+    EXPECT_TRUE(v->type->Is<ast::F32>());
+    EXPECT_EQ(v->storage_class, ast::StorageClass::kPushConstant);
 }
 
 TEST_F(ParserImplTest, VariableDecl_InvalidStorageClass) {

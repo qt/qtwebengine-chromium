@@ -17,8 +17,13 @@ class GrFragmentProcessor;
 class GrRecordingContext;
 class SkArenaAlloc;
 class SkBitmap;
+class SkColorInfo;
 class SkColorSpace;
+class SkKeyContext;
+class SkPaintParamsKeyBuilder;
+class SkPipelineDataGatherer;
 class SkRuntimeEffect;
+class SkSurfaceProps;
 struct SkStageRec;
 using GrFPResult = std::tuple<bool, std::unique_ptr<GrFragmentProcessor>>;
 
@@ -47,7 +52,8 @@ public:
      */
     virtual GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                            GrRecordingContext* context,
-                                           const GrColorInfo& dstColorInfo) const;
+                                           const GrColorInfo& dstColorInfo,
+                                           const SkSurfaceProps& props) const;
 #endif
 
     bool affectsTransparentBlack() const {
@@ -74,6 +80,20 @@ public:
     }
 
     virtual SkPMColor4f onFilterColor4f(const SkPMColor4f& color, SkColorSpace* dstCS) const;
+
+#ifdef SK_ENABLE_SKSL
+    /**
+        Add implementation details, for the specified backend, of this SkColorFilter to the
+        provided key.
+
+        @param keyContext backend context for key creation
+        @param builder    builder for creating the key for this SkShader
+        @param gatherer   if non-null, storage for this colorFilter's data
+    */
+    virtual void addToKey(const SkKeyContext& keyContext,
+                          SkPaintParamsKeyBuilder* builder,
+                          SkPipelineDataGatherer* gatherer) const;
+#endif
 
 protected:
     SkColorFilterBase() {}
@@ -107,5 +127,8 @@ static inline const SkColorFilterBase* as_CFB(const sk_sp<SkColorFilter>& filter
 static inline sk_sp<SkColorFilterBase> as_CFB_sp(sk_sp<SkColorFilter> filter) {
     return sk_sp<SkColorFilterBase>(static_cast<SkColorFilterBase*>(filter.release()));
 }
+
+void SkRegisterMatrixColorFilterFlattenable();
+void SkRegisterModeColorFilterFlattenable();
 
 #endif

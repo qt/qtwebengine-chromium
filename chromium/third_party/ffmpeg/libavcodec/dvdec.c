@@ -137,7 +137,7 @@ static RL_VLC_ELEM dv_rl_vlc[1664];
 
 static void dv_init_static(void)
 {
-    VLC_TYPE vlc_buf[FF_ARRAY_ELEMS(dv_rl_vlc)][2] = { 0 };
+    VLCElem vlc_buf[FF_ARRAY_ELEMS(dv_rl_vlc)] = { 0 };
     VLC dv_vlc = { .table = vlc_buf, .table_allocated = FF_ARRAY_ELEMS(vlc_buf) };
     uint16_t  new_dv_vlc_bits[NB_DV_VLC * 2];
     uint8_t    new_dv_vlc_len[NB_DV_VLC * 2];
@@ -171,8 +171,8 @@ static void dv_init_static(void)
     av_assert1(dv_vlc.table_size == 1664);
 
     for (int i = 0; i < dv_vlc.table_size; i++) {
-        int code = dv_vlc.table[i][0];
-        int len  = dv_vlc.table[i][1];
+        int code = dv_vlc.table[i].sym;
+        int len  = dv_vlc.table[i].len;
         int level, run;
 
         if (len < 0) { // more bits needed
@@ -691,5 +691,4 @@ const FFCodec ff_dvvideo_decoder = {
     FF_CODEC_DECODE_CB(dvvideo_decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS | AV_CODEC_CAP_SLICE_THREADS,
     .p.max_lowres   = 3,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

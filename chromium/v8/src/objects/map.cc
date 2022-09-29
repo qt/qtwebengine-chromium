@@ -16,6 +16,7 @@
 #include "src/objects/descriptor-array.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/field-type.h"
+#include "src/objects/instance-type.h"
 #include "src/objects/js-objects.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/maybe-object.h"
@@ -194,8 +195,11 @@ VisitorId Map::GetVisitorId(Map map) {
     case JS_WEAK_SET_TYPE:
       return kVisitJSWeakCollection;
 
+    case ACCESSOR_INFO_TYPE:
+      return kVisitAccessorInfo;
+
     case CALL_HANDLER_INFO_TYPE:
-      return kVisitStruct;
+      return kVisitCallHandlerInfo;
 
     case JS_PROXY_TYPE:
       return kVisitStruct;
@@ -280,8 +284,8 @@ VisitorId Map::GetVisitorId(Map map) {
     case JS_SET_TYPE:
     case JS_SET_VALUE_ITERATOR_TYPE:
     case JS_SHADOW_REALM_TYPE:
+    case JS_SHARED_ARRAY_TYPE:
     case JS_SHARED_STRUCT_TYPE:
-    case JS_ATOMICS_MUTEX_TYPE:
     case JS_STRING_ITERATOR_PROTOTYPE_TYPE:
     case JS_STRING_ITERATOR_TYPE:
     case JS_TEMPORAL_CALENDAR_TYPE:
@@ -311,6 +315,7 @@ VisitorId Map::GetVisitorId(Map map) {
 #endif  // V8_INTL_SUPPORT
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_TAG_OBJECT_TYPE:
+    case WASM_EXCEPTION_PACKAGE_TYPE:
     case WASM_GLOBAL_OBJECT_TYPE:
     case WASM_MEMORY_OBJECT_TYPE:
     case WASM_MODULE_OBJECT_TYPE:
@@ -319,6 +324,7 @@ VisitorId Map::GetVisitorId(Map map) {
 #endif  // V8_ENABLE_WEBASSEMBLY
     case JS_BOUND_FUNCTION_TYPE:
     case JS_WRAPPED_FUNCTION_TYPE: {
+      // Is GetEmbedderFieldCount(map) > 0 for Atomics.Mutex?
       const bool has_raw_data_fields =
           COMPRESS_POINTERS_BOOL && JSObject::GetEmbedderFieldCount(map) > 0;
       return has_raw_data_fields ? kVisitJSObject : kVisitJSObjectFast;
@@ -337,6 +343,10 @@ VisitorId Map::GetVisitorId(Map map) {
 
     case JS_FINALIZATION_REGISTRY_TYPE:
       return kVisitJSFinalizationRegistry;
+
+    case JS_ATOMICS_MUTEX_TYPE:
+    case JS_ATOMICS_CONDITION_TYPE:
+      return kVisitJSSynchronizationPrimitive;
 
     case FILLER_TYPE:
     case FOREIGN_TYPE:
@@ -381,14 +391,16 @@ VisitorId Map::GetVisitorId(Map map) {
       return kVisitWasmArray;
     case WASM_STRUCT_TYPE:
       return kVisitWasmStruct;
+    case WASM_CONTINUATION_OBJECT_TYPE:
+      return kVisitWasmContinuationObject;
     case WASM_TYPE_INFO_TYPE:
       return kVisitWasmTypeInfo;
     case WASM_INTERNAL_FUNCTION_TYPE:
       return kVisitWasmInternalFunction;
     case WASM_JS_FUNCTION_DATA_TYPE:
       return kVisitWasmJSFunctionData;
-    case WASM_ON_FULFILLED_DATA_TYPE:
-      return kVisitWasmOnFulfilledData;
+    case WASM_RESUME_DATA_TYPE:
+      return kVisitWasmResumeData;
     case WASM_API_FUNCTION_REF_TYPE:
       return kVisitWasmApiFunctionRef;
     case WASM_EXPORTED_FUNCTION_DATA_TYPE:
@@ -563,11 +575,6 @@ Map::FieldCounts Map::GetFieldCounts() const {
   return FieldCounts(mutable_count, const_count);
 }
 
-bool Map::HasOutOfObjectProperties() const {
-  return GetInObjectProperties() <
-         NumberOfFields(ConcurrencyMode::kSynchronous);
-}
-
 void Map::DeprecateTransitionTree(Isolate* isolate) {
   if (is_deprecated()) return;
   TransitionsAccessor transitions(isolate, *this);
@@ -581,8 +588,8 @@ void Map::DeprecateTransitionTree(Isolate* isolate) {
   if (FLAG_log_maps) {
     LOG(isolate, MapEvent("Deprecate", handle(*this, isolate), Handle<Map>()));
   }
-  dependent_code().DeoptimizeDependentCodeGroup(
-      isolate, DependentCode::kTransitionGroup);
+  DependentCode::DeoptimizeDependencyGroups(isolate, *this,
+                                            DependentCode::kTransitionGroup);
   NotifyLeafMapLayoutChange(isolate);
 }
 
@@ -1179,13 +1186,15 @@ Handle<Map> Map::RawCopy(Isolate* isolate, Handle<Map> src_handle,
 
 Handle<Map> Map::Normalize(Isolate* isolate, Handle<Map> fast_map,
                            ElementsKind new_elements_kind,
-                           PropertyNormalizationMode mode, const char* reason) {
+                           PropertyNormalizationMode mode, bool use_cache,
+                           const char* reason) {
   DCHECK(!fast_map->is_dictionary_map());
 
   Handle<Object> maybe_cache(isolate->native_context()->normalized_map_cache(),
                              isolate);
-  bool use_cache =
-      !fast_map->is_prototype_map() && !maybe_cache->IsUndefined(isolate);
+  if (fast_map->is_prototype_map() || maybe_cache->IsUndefined(isolate)) {
+    use_cache = false;
+  }
   Handle<NormalizedMapCache> cache;
   if (use_cache) cache = Handle<NormalizedMapCache>::cast(maybe_cache);
 
@@ -1886,8 +1895,8 @@ Handle<Map> Map::TransitionToDataProperty(Isolate* isolate, Handle<Map> map,
       JSFunction::SetInitialMap(isolate, constructor, result, prototype);
 
       // Deoptimize all code that embeds the previous initial map.
-      initial_map->dependent_code().DeoptimizeDependentCodeGroup(
-          isolate, DependentCode::kInitialMapChangedGroup);
+      DependentCode::DeoptimizeDependencyGroups(
+          isolate, *initial_map, DependentCode::kInitialMapChangedGroup);
       if (!result->EquivalentToForNormalization(*map,
                                                 CLEAR_INOBJECT_PROPERTIES)) {
         result =

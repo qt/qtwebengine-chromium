@@ -30,7 +30,9 @@
 #include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/field_trial_based_config.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/memory/always_valid_pointer.h"
@@ -39,11 +41,12 @@
 #include "rtc_base/string_encode.h"
 #include "rtc_base/string_utils.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/thread.h"
 
 namespace rtc {
 namespace {
+using ::webrtc::SafeTask;
+using ::webrtc::TimeDelta;
 
 // List of MAC addresses of known VPN (for windows).
 constexpr uint8_t kVpns[2][6] = {
@@ -284,7 +287,8 @@ webrtc::MdnsResponderInterface* NetworkManager::GetMdnsResponder() const {
 
 NetworkManagerBase::NetworkManagerBase(
     const webrtc::FieldTrialsView* field_trials)
-    : enumeration_permission_(NetworkManager::ENUMERATION_ALLOWED),
+    : field_trials_(field_trials),
+      enumeration_permission_(NetworkManager::ENUMERATION_ALLOWED),
       signal_network_preference_change_(
           field_trials
               ? field_trials->IsEnabled("WebRTC-SignalNetworkPreferenceChange")
@@ -300,7 +304,7 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv4_any_address_network_) {
     const rtc::IPAddress ipv4_any_address(INADDR_ANY);
     ipv4_any_address_network_ = std::make_unique<Network>(
-        "any", "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY);
+        "any", "any", ipv4_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
     ipv4_any_address_network_->set_default_local_address_provider(this);
     ipv4_any_address_network_->set_mdns_responder_provider(this);
     ipv4_any_address_network_->AddIP(ipv4_any_address);
@@ -310,7 +314,7 @@ std::vector<const Network*> NetworkManagerBase::GetAnyAddressNetworks() {
   if (!ipv6_any_address_network_) {
     const rtc::IPAddress ipv6_any_address(in6addr_any);
     ipv6_any_address_network_ = std::make_unique<Network>(
-        "any", "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY);
+        "any", "any", ipv6_any_address, 0, ADAPTER_TYPE_ANY, field_trials_);
     ipv6_any_address_network_->set_default_local_address_provider(this);
     ipv6_any_address_network_->set_mdns_responder_provider(this);
     ipv6_any_address_network_->AddIP(ipv6_any_address);
@@ -517,7 +521,9 @@ BasicNetworkManager::BasicNetworkManager(
       allow_mac_based_ipv6_(
           field_trials_->IsEnabled("WebRTC-AllowMACBasedIPv6")),
       bind_using_ifname_(
-          !field_trials_->IsDisabled("WebRTC-BindUsingInterfaceName")) {}
+          !field_trials_->IsDisabled("WebRTC-BindUsingInterfaceName")) {
+  RTC_DCHECK(socket_factory_);
+}
 
 BasicNetworkManager::~BasicNetworkManager() {
   if (task_safety_flag_) {
@@ -645,9 +651,9 @@ void BasicNetworkManager::ConvertIfAddrs(
       if_info.adapter_type = ADAPTER_TYPE_VPN;
     }
 
-    auto network =
-        std::make_unique<Network>(cursor->ifa_name, cursor->ifa_name, prefix,
-                                  prefix_length, if_info.adapter_type);
+    auto network = std::make_unique<Network>(
+        cursor->ifa_name, cursor->ifa_name, prefix, prefix_length,
+        if_info.adapter_type, field_trials_.get());
     network->set_default_local_address_provider(this);
     network->set_scope_id(scope_id);
     network->AddIP(ip);
@@ -906,14 +912,14 @@ void BasicNetworkManager::StartUpdating() {
     // we should trigger network signal immediately for the new clients
     // to start allocating ports.
     if (sent_first_update_)
-      thread_->PostTask(ToQueuedTask(task_safety_flag_, [this] {
+      thread_->PostTask(SafeTask(task_safety_flag_, [this] {
         RTC_DCHECK_RUN_ON(thread_);
         SignalNetworksChanged();
       }));
   } else {
     RTC_DCHECK(task_safety_flag_ == nullptr);
     task_safety_flag_ = webrtc::PendingTaskSafetyFlag::Create();
-    thread_->PostTask(ToQueuedTask(task_safety_flag_, [this] {
+    thread_->PostTask(SafeTask(task_safety_flag_, [this] {
       RTC_DCHECK_RUN_ON(thread_);
       UpdateNetworksContinually();
     }));
@@ -978,16 +984,8 @@ void BasicNetworkManager::StopNetworkMonitor() {
 IPAddress BasicNetworkManager::QueryDefaultLocalAddress(int family) const {
   RTC_DCHECK(family == AF_INET || family == AF_INET6);
 
-  // TODO(bugs.webrtc.org/13145): Delete support for null `socket_factory_`,
-  // require socket factory to be provided to constructor.
-  SocketFactory* socket_factory = socket_factory_;
-  if (!socket_factory) {
-    socket_factory = thread_->socketserver();
-  }
-  RTC_DCHECK(socket_factory);
-
   std::unique_ptr<Socket> socket(
-      socket_factory->CreateSocket(family, SOCK_DGRAM));
+      socket_factory_->CreateSocket(family, SOCK_DGRAM));
   if (!socket) {
     RTC_LOG_ERR(LS_ERROR) << "Socket creation failed";
     return IPAddress();
@@ -1029,12 +1027,12 @@ void BasicNetworkManager::UpdateNetworksOnce() {
 
 void BasicNetworkManager::UpdateNetworksContinually() {
   UpdateNetworksOnce();
-  thread_->PostDelayedTask(ToQueuedTask(task_safety_flag_,
-                                        [this] {
-                                          RTC_DCHECK_RUN_ON(thread_);
-                                          UpdateNetworksContinually();
-                                        }),
-                           kNetworksUpdateIntervalMs);
+  thread_->PostDelayedTask(SafeTask(task_safety_flag_,
+                                    [this] {
+                                      RTC_DCHECK_RUN_ON(thread_);
+                                      UpdateNetworksContinually();
+                                    }),
+                           TimeDelta::Millis(kNetworksUpdateIntervalMs));
 }
 
 void BasicNetworkManager::DumpNetworks() {
@@ -1066,8 +1064,10 @@ Network::Network(absl::string_view name,
                  absl::string_view desc,
                  const IPAddress& prefix,
                  int prefix_length,
-                 AdapterType type)
-    : name_(name),
+                 AdapterType type,
+                 const webrtc::FieldTrialsView* field_trials)
+    : field_trials_(field_trials),
+      name_(name),
       description_(desc),
       prefix_(prefix),
       prefix_length_(prefix_length),
@@ -1110,12 +1110,22 @@ IPAddress Network::GetBestIP() const {
     return static_cast<IPAddress>(ips_.at(0));
   }
 
-  InterfaceAddress selected_ip, ula_ip;
-
+  InterfaceAddress selected_ip, link_local_ip, ula_ip;
+  // Bug fix to prefer global IPv6 address over link local.
+  // Field trial key reserved in bugs.webrtc.org/14334
+  const bool prefer_global_ipv6_to_link_local =
+      field_trials_
+          ? field_trials_->IsEnabled("WebRTC-IPv6NetworkResolutionFixes")
+          : false;
   for (const InterfaceAddress& ip : ips_) {
     // Ignore any address which has been deprecated already.
     if (ip.ipv6_flags() & IPV6_ADDRESS_FLAG_DEPRECATED)
       continue;
+
+    if (prefer_global_ipv6_to_link_local && IPIsLinkLocal(ip)) {
+      link_local_ip = ip;
+      continue;
+    }
 
     // ULA address should only be returned when we have no other
     // global IP.
@@ -1130,9 +1140,14 @@ IPAddress Network::GetBestIP() const {
       break;
   }
 
-  // No proper global IPv6 address found, use ULA instead.
-  if (IPIsUnspec(selected_ip) && !IPIsUnspec(ula_ip)) {
-    selected_ip = ula_ip;
+  if (IPIsUnspec(selected_ip)) {
+    if (prefer_global_ipv6_to_link_local && !IPIsUnspec(link_local_ip)) {
+      // No proper global IPv6 address found, use link local address instead.
+      selected_ip = link_local_ip;
+    } else if (!IPIsUnspec(ula_ip)) {
+      // No proper global and link local address found, use ULA instead.
+      selected_ip = ula_ip;
+    }
   }
 
   return static_cast<IPAddress>(selected_ip);

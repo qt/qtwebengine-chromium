@@ -176,9 +176,9 @@ DXGI_FORMAT D3D12TypelessTextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::Depth24Plus:
             return DXGI_FORMAT_R32_TYPELESS;
 
-        // Depth24UnormStencil8 is the smallest format supported on D3D12 that has stencil.
+        // DXGI_FORMAT_D24_UNORM_S8_UINT is the smallest format supported on D3D12 that has stencil,
+        // for which the typeless equivalent is DXGI_FORMAT_R24G8_TYPELESS.
         case wgpu::TextureFormat::Stencil8:
-        case wgpu::TextureFormat::Depth24UnormStencil8:
             return DXGI_FORMAT_R24G8_TYPELESS;
         case wgpu::TextureFormat::Depth24PlusStencil8:
         case wgpu::TextureFormat::Depth32FloatStencil8:
@@ -344,9 +344,8 @@ DXGI_FORMAT D3D12TextureFormat(wgpu::TextureFormat format) {
         case wgpu::TextureFormat::Depth32Float:
         case wgpu::TextureFormat::Depth24Plus:
             return DXGI_FORMAT_D32_FLOAT;
-        // Depth24UnormStencil8 is the smallest format supported on D3D12 that has stencil.
+        // DXGI_FORMAT_D24_UNORM_S8_UINT is the smallest format supported on D3D12 that has stencil.
         case wgpu::TextureFormat::Stencil8:
-        case wgpu::TextureFormat::Depth24UnormStencil8:
             return DXGI_FORMAT_D24_UNORM_S8_UINT;
         case wgpu::TextureFormat::Depth24PlusStencil8:
         case wgpu::TextureFormat::Depth32FloatStencil8:
@@ -511,13 +510,17 @@ ResultOrError<Ref<Texture>> Texture::CreateExternalImage(
     Device* device,
     const TextureDescriptor* descriptor,
     ComPtr<ID3D12Resource> d3d12Texture,
+    ComPtr<ID3D12Fence> d3d12Fence,
     Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
+    uint64_t fenceWaitValue,
+    uint64_t fenceSignalValue,
     bool isSwapChainTexture,
     bool isInitialized) {
     Ref<Texture> dawnTexture =
         AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
     DAWN_TRY(dawnTexture->InitializeAsExternalTexture(
-        descriptor, std::move(d3d12Texture), std::move(d3d11on12Resource), isSwapChainTexture));
+        std::move(d3d12Texture), std::move(d3d12Fence), std::move(d3d11on12Resource),
+        fenceWaitValue, fenceSignalValue, isSwapChainTexture));
 
     // Importing a multi-planar format must be initialized. This is required because
     // a shared multi-planar format cannot be initialized by Dawn.
@@ -541,13 +544,12 @@ ResultOrError<Ref<Texture>> Texture::Create(Device* device,
     return std::move(dawnTexture);
 }
 
-MaybeError Texture::InitializeAsExternalTexture(const TextureDescriptor* descriptor,
-                                                ComPtr<ID3D12Resource> d3d12Texture,
+MaybeError Texture::InitializeAsExternalTexture(ComPtr<ID3D12Resource> d3d12Texture,
+                                                ComPtr<ID3D12Fence> d3d12Fence,
                                                 Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
+                                                uint64_t fenceWaitValue,
+                                                uint64_t fenceSignalValue,
                                                 bool isSwapChainTexture) {
-    mD3D11on12Resource = std::move(d3d11on12Resource);
-    mSwapChainTexture = isSwapChainTexture;
-
     D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
     mD3D12ResourceFlags = desc.Flags;
 
@@ -557,6 +559,12 @@ MaybeError Texture::InitializeAsExternalTexture(const TextureDescriptor* descrip
     // texture is owned externally. The texture's owning entity must remain responsible for
     // memory management.
     mResourceAllocation = {info, 0, std::move(d3d12Texture), nullptr};
+
+    mD3D12Fence = std::move(d3d12Fence);
+    mD3D11on12Resource = std::move(d3d11on12Resource);
+    mFenceWaitValue = fenceWaitValue;
+    mFenceSignalValue = fenceSignalValue;
+    mSwapChainTexture = isSwapChainTexture;
 
     SetLabelHelper("Dawn_ExternalTexture");
 
@@ -573,10 +581,21 @@ MaybeError Texture::InitializeAsInternalTexture() {
     resourceDescriptor.Height = size.height;
     resourceDescriptor.DepthOrArraySize = size.depthOrArrayLayers;
 
+    Device* device = ToBackend(GetDevice());
+    bool applyForceClearCopyableDepthStencilTextureOnCreationToggle =
+        device->IsToggleEnabled(Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation) &&
+        GetFormat().HasDepthOrStencil() && (GetInternalUsage() & wgpu::TextureUsage::CopyDst);
+    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
+        AddInternalUsage(wgpu::TextureUsage::RenderAttachment);
+    }
+
     // This will need to be much more nuanced when WebGPU has
     // texture view compatibility rules.
-    const bool needsTypelessFormat = GetFormat().HasDepthOrStencil() &&
-                                     (GetInternalUsage() & wgpu::TextureUsage::TextureBinding) != 0;
+    const bool needsTypelessFormat =
+        (GetDevice()->IsToggleEnabled(Toggle::D3D12AlwaysUseTypelessFormatsForCastableTexture) &&
+         GetViewFormats().any()) ||
+        (GetFormat().HasDepthOrStencil() &&
+         (GetInternalUsage() & wgpu::TextureUsage::TextureBinding) != 0);
 
     DXGI_FORMAT dxgiFormat = needsTypelessFormat ? D3D12TypelessTextureFormat(GetFormat().format)
                                                  : D3D12TextureFormat(GetFormat().format);
@@ -590,13 +609,16 @@ MaybeError Texture::InitializeAsInternalTexture() {
     mD3D12ResourceFlags = resourceDescriptor.Flags;
 
     DAWN_TRY_ASSIGN(mResourceAllocation,
-                    ToBackend(GetDevice())
-                        ->AllocateMemory(D3D12_HEAP_TYPE_DEFAULT, resourceDescriptor,
-                                         D3D12_RESOURCE_STATE_COMMON));
+                    device->AllocateMemory(D3D12_HEAP_TYPE_DEFAULT, resourceDescriptor,
+                                           D3D12_RESOURCE_STATE_COMMON));
 
     SetLabelImpl();
 
-    Device* device = ToBackend(GetDevice());
+    if (applyForceClearCopyableDepthStencilTextureOnCreationToggle) {
+        CommandRecordingContext* commandContext;
+        DAWN_TRY_ASSIGN(commandContext, device->GetPendingCommandContext());
+        DAWN_TRY(ClearTexture(commandContext, GetAllSubresources(), TextureBase::ClearValue::Zero));
+    }
 
     if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
         CommandRecordingContext* commandContext;
@@ -657,9 +679,23 @@ void Texture::DestroyImpl() {
     // ID3D12SharingContract::Present.
     mSwapChainTexture = false;
 
-    // Now that the texture has been destroyed. It should release the refptr
-    // of the d3d11on12 resource.
+    // Signal the fence on destroy after all uses of the texture.
+    if (mD3D12Fence != nullptr && mFenceSignalValue != 0) {
+        // Enqueue a fence wait if we haven't already; otherwise the fence signal will be racy.
+        if (mFenceWaitValue != UINT64_MAX) {
+            device->ConsumedError(
+                CheckHRESULT(device->GetCommandQueue()->Wait(mD3D12Fence.Get(), mFenceWaitValue),
+                             "D3D12 fence wait"));
+        }
+        device->ConsumedError(
+            CheckHRESULT(device->GetCommandQueue()->Signal(mD3D12Fence.Get(), mFenceSignalValue),
+                         "D3D12 fence signal"));
+    }
+
+    // Now that the texture has been destroyed. It should release the refptr of the d3d11on12
+    // resource and the fence.
     mD3D11on12Resource = nullptr;
+    mD3D12Fence = nullptr;
 }
 
 DXGI_FORMAT Texture::GetD3D12Format() const {
@@ -670,11 +706,14 @@ ID3D12Resource* Texture::GetD3D12Resource() const {
     return mResourceAllocation.GetD3D12Resource();
 }
 
+D3D12_RESOURCE_FLAGS Texture::GetD3D12ResourceFlags() const {
+    return mD3D12ResourceFlags;
+}
+
 DXGI_FORMAT Texture::GetD3D12CopyableSubresourceFormat(Aspect aspect) const {
     ASSERT(GetFormat().aspects & aspect);
 
     switch (GetFormat().format) {
-        case wgpu::TextureFormat::Depth24UnormStencil8:
         case wgpu::TextureFormat::Depth24PlusStencil8:
         case wgpu::TextureFormat::Depth32FloatStencil8:
         case wgpu::TextureFormat::Stencil8:
@@ -692,14 +731,27 @@ DXGI_FORMAT Texture::GetD3D12CopyableSubresourceFormat(Aspect aspect) const {
     }
 }
 
-MaybeError Texture::AcquireKeyedMutex() {
-    ASSERT(mD3D11on12Resource != nullptr);
-    return mD3D11on12Resource->AcquireKeyedMutex();
+MaybeError Texture::SynchronizeImportedTextureBeforeUse() {
+    if (mD3D11on12Resource != nullptr) {
+        DAWN_TRY(mD3D11on12Resource->AcquireKeyedMutex());
+    }
+    // Perform the wait only on the first call. We can use UINT64_MAX as a sentinel value since it's
+    // also used by the D3D runtime to indicate device removed according to:
+    // https://docs.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12fence-getcompletedvalue#return-value
+    if (mD3D12Fence != nullptr && mFenceWaitValue != UINT64_MAX) {
+        DAWN_TRY(CheckHRESULT(
+            ToBackend(GetDevice())->GetCommandQueue()->Wait(mD3D12Fence.Get(), mFenceWaitValue),
+            "D3D12 fence wait"));
+        mFenceWaitValue = UINT64_MAX;
+    }
+    return {};
 }
 
-void Texture::ReleaseKeyedMutex() {
-    ASSERT(mD3D11on12Resource != nullptr);
-    mD3D11on12Resource->ReleaseKeyedMutex();
+void Texture::SynchronizeImportedTextureAfterUse() {
+    if (mD3D11on12Resource != nullptr) {
+        mD3D11on12Resource->ReleaseKeyedMutex();
+    }
+    // Defer signaling the fence until destroy after all uses of the fence.
 }
 
 void Texture::TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
@@ -798,7 +850,7 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
     // non-simultaneous-access texture: NON_PIXEL_SHADER_RESOURCE,
     // PIXEL_SHADER_RESOURCE, COPY_SRC, COPY_DEST.
     {
-        static constexpr D3D12_RESOURCE_STATES kD3D12PromotableReadOnlyStates =
+        const D3D12_RESOURCE_STATES kD3D12PromotableReadOnlyStates =
             D3D12_RESOURCE_STATE_COPY_SOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
@@ -850,10 +902,10 @@ void Texture::TransitionSubresourceRange(std::vector<D3D12_RESOURCE_BARRIER>* ba
 }
 
 void Texture::HandleTransitionSpecialCases(CommandRecordingContext* commandContext) {
-    // Textures with keyed mutexes can be written from other graphics queues. Hence, they
-    // must be acquired before command list submission to ensure work from the other queues
-    // has finished. See Device::ExecuteCommandContext.
-    if (mD3D11on12Resource != nullptr) {
+    // Externally allocated textures can be written from other graphics queues. Hence, they must be
+    // acquired before command list submission to ensure work from the other queues has finished.
+    // See CommandRecordingContext::ExecuteCommandList.
+    if (mResourceAllocation.GetInfo().mMethod == AllocationMethod::kExternal) {
         commandContext->AddToSharedTextureList(this);
     }
 }
@@ -1182,8 +1234,7 @@ TextureView::TextureView(TextureBase* texture, const TextureViewDescriptor* desc
             case wgpu::TextureFormat::Depth16Unorm:
                 mSrvDesc.Format = DXGI_FORMAT_R16_UNORM;
                 break;
-            case wgpu::TextureFormat::Stencil8:
-            case wgpu::TextureFormat::Depth24UnormStencil8: {
+            case wgpu::TextureFormat::Stencil8: {
                 Aspect aspects = SelectFormatAspects(textureFormat, descriptor->aspect);
                 ASSERT(aspects != Aspect::None);
                 if (!HasZeroOrOneBits(aspects)) {

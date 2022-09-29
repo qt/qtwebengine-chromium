@@ -121,7 +121,6 @@ struct interface_var {
 };
 
 // Utils taking a spirv_inst_iter
-uint32_t GetConstantValue(const spirv_inst_iter &itr);
 std::vector<uint32_t> FindEntrypointInterfaces(const spirv_inst_iter &entrypoint);
 
 enum FORMAT_TYPE {
@@ -148,6 +147,7 @@ struct decoration_set {
         nonreadable_bit = 1 << 11,
         per_vertex_bit = 1 << 12,
         passthrough_bit = 1 << 13,
+        aliased_bit = 1 << 14,
     };
     static constexpr uint32_t kInvalidValue = std::numeric_limits<uint32_t>::max();
 
@@ -218,8 +218,6 @@ struct shader_struct_member {
     std::vector<uint8_t> used_bytes;  // This only works for root. 0: not used. 1: used. The totally array * size.
 };
 
-struct shader_module_used_operators;
-
 struct SHADER_MODULE_STATE : public BASE_NODE {
     struct EntryPoint {
         uint32_t offset;  // into module to get OpEntryPoint instruction
@@ -274,7 +272,8 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
     SHADER_MODULE_STATE(const uint32_t *code, std::size_t count, spv_target_env env = SPV_ENV_VULKAN_1_0)
         : BASE_NODE(static_cast<VkShaderModule>(VK_NULL_HANDLE), kVulkanObjectTypeShaderModule),
-          words(code, code + (count / sizeof(uint32_t))) {
+          words(code, code + (count / sizeof(uint32_t))),
+          static_data_(*this) {
         PreprocessShaderBinary(env);
     }
 
@@ -363,6 +362,7 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
                        uint32_t &local_size_z) const;
 
     spirv_inst_iter GetConstantDef(uint32_t id) const;
+    uint32_t GetConstantValue(const spirv_inst_iter &itr) const;
     uint32_t GetConstantValueById(uint32_t id) const;
     int32_t GetShaderResourceDimensionality(const interface_var &resource) const;
     uint32_t GetLocationsConsumedByType(uint32_t type, bool strip_array_level) const;
@@ -389,7 +389,7 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
     // State tracking helpers for collecting interface information
     void IsSpecificDescriptorType(const spirv_inst_iter &id_it, bool is_storage_buffer, bool is_check_writable,
-                                  interface_var &out_interface_var, shader_module_used_operators &used_operators) const;
+                                  interface_var &out_interface_var) const;
     std::vector<std::pair<DescriptorSlot, interface_var>> CollectInterfaceByDescriptorSlot(
         layer_data::unordered_set<uint32_t> const &accessible_ids) const;
     layer_data::unordered_set<uint32_t> CollectWritableOutputLocationinFS(const spirv_inst_iter &entrypoint) const;

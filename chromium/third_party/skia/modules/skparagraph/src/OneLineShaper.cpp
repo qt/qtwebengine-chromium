@@ -300,10 +300,7 @@ void OneLineShaper::addUnresolvedWithRun(GlyphRange glyphRange) {
 
 // Glue whitespaces to the next/prev unresolved blocks
 // (so we don't have chinese text with english whitespaces broken into millions of tiny runs)
-#ifndef SK_PARAGRAPH_GRAPHEME_EDGES
 void OneLineShaper::sortOutGlyphs(std::function<void(GlyphRange)>&& sortOutUnresolvedBLock) {
-
-    auto text = fCurrentRun->fOwner->text();
 
     GlyphRange block = EMPTY_RANGE;
     bool graphemeResolved = false;
@@ -320,9 +317,8 @@ void OneLineShaper::sortOutGlyphs(std::function<void(GlyphRange)>&& sortOutUnres
         if ((fCurrentRun->leftToRight() ? gi > graphemeStart : gi < graphemeStart) || graphemeStart == EMPTY_INDEX) {
             // This is the Flutter change
             // Do not count control codepoints as unresolved
-            const char* cluster = text.begin() + ci;
-            SkUnichar codepoint = nextUtf8Unit(&cluster, text.end());
-            bool isControl8 = fParagraph->getUnicode()->isControl(codepoint);
+            bool isControl8 = fParagraph->codeUnitHasProperty(ci,
+                                                              SkUnicode::CodeUnitFlags::kControl);
             // We only count glyph resolved if all the glyphs in its grapheme are resolved
             graphemeResolved = glyph != 0 || isControl8;
             graphemeStart = gi;
@@ -357,70 +353,6 @@ void OneLineShaper::sortOutGlyphs(std::function<void(GlyphRange)>&& sortOutUnres
         sortOutUnresolvedBLock(block);
     }
 }
-#else
-void OneLineShaper::sortOutGlyphs(std::function<void(GlyphRange)>&& sortOutUnresolvedBLock) {
-
-    auto text = fCurrentRun->fOwner->text();
-    size_t unresolvedGlyphs = 0;
-
-    TextIndex whitespacesStart = EMPTY_INDEX;
-    GlyphRange block = EMPTY_RANGE;
-    for (size_t i = 0; i < fCurrentRun->size(); ++i) {
-
-        const char* cluster = text.begin() + clusterIndex(i);
-        SkUnichar codepoint = nextUtf8Unit(&cluster, text.end());
-        bool isControl8 = fParagraph->getUnicode()->isControl(codepoint);
-        // TODO: This is a temp change to match space handiling in LibTxt
-        // (all spaces are resolved with the main font)
-#ifdef SK_PARAGRAPH_LIBTXT_SPACES_RESOLUTION
-        bool isWhitespace8 = false; // fParagraph->getUnicode()->isWhitespace(codepoint);
-#else
-        bool isWhitespace8 = fParagraph->getUnicode()->isWhitespace(codepoint);
-#endif
-        // Inspect the glyph
-        auto glyph = fCurrentRun->fGlyphs[i];
-        if (glyph == 0 && !isControl8) { // Unresolved glyph and not control codepoint
-            ++unresolvedGlyphs;
-            if (block.start == EMPTY_INDEX) {
-                // Start new unresolved block
-                // (all leading whitespaces glued to the resolved part if it's not empty)
-                block.start = whitespacesStart == 0 ? 0 : i;
-                block.end = EMPTY_INDEX;
-            } else {
-                // Keep skipping unresolved block
-            }
-        } else { // Resolved glyph or control codepoint
-            if (block.start == EMPTY_INDEX) {
-                // Keep skipping resolved code points
-            } else if (isWhitespace8) {
-                // Glue whitespaces after to the unresolved block
-                ++unresolvedGlyphs;
-            } else {
-                // This is the end of unresolved block (all trailing whitespaces glued to the resolved part)
-                block.end = whitespacesStart == EMPTY_INDEX ? i : whitespacesStart;
-                sortOutUnresolvedBLock(block);
-                block = EMPTY_RANGE;
-                whitespacesStart = EMPTY_INDEX;
-            }
-        }
-
-        // Keep updated the start of the latest whitespaces patch
-        if (isWhitespace8) {
-            if (whitespacesStart == EMPTY_INDEX) {
-                whitespacesStart = i;
-            }
-        } else {
-            whitespacesStart = EMPTY_INDEX;
-        }
-    }
-
-    // One last block could have been left
-    if (block.start != EMPTY_INDEX) {
-        block.end = fCurrentRun->size();
-        sortOutUnresolvedBLock(block);
-    }
-}
-#endif
 
 void OneLineShaper::iterateThroughFontStyles(TextRange textRange,
                                              SkSpan<Block> styleSpan,
@@ -494,13 +426,30 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
             const char* ch = unresolvedText.begin();
             // We have the global cache for all already found typefaces for SkUnichar
             // but we still need to keep track of all SkUnichars used in this unresolved block
-            SkTHashSet<SkUnichar> alreadyTried;
-            SkUnichar unicode = nextUtf8Unit(&ch, unresolvedText.end());
+            SkTHashSet<SkUnichar> alreadyTriedCodepoints;
+            SkTHashSet<SkTypefaceID> alreadyTriedTypefaces;
             while (true) {
 
-                sk_sp<SkTypeface> typeface;
+                if (ch == unresolvedText.end()) {
+                    // Not a single codepoint could be resolved but we finished the block
+                    hopelessBlocks.push_back(fUnresolvedBlocks.front());
+                    fUnresolvedBlocks.pop_front();
+                    break;
+                }
+
+                // See if we can switch to the next DIFFERENT codepoint
+                SkUnichar unicode = -1;
+                while (ch != unresolvedText.end()) {
+                    unicode = nextUtf8Unit(&ch, unresolvedText.end());
+                    if (!alreadyTriedCodepoints.contains(unicode)) {
+                        alreadyTriedCodepoints.add(unicode);
+                        break;
+                    }
+                }
+                SkASSERT(unicode != -1);
 
                 // First try to find in in a cache
+                sk_sp<SkTypeface> typeface;
                 FontKey fontKey(unicode, textStyle.getFontStyle(), textStyle.getLocale());
                 auto found = fFallbackFonts.find(fontKey);
                 if (found != nullptr) {
@@ -515,35 +464,36 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                     fFallbackFonts.set(fontKey, typeface);
                 }
 
+                // Check if we already tried this font on this text range
+                if (!alreadyTriedTypefaces.contains(typeface->uniqueID())) {
+                    alreadyTriedTypefaces.add(typeface->uniqueID());
+                } else {
+                    continue;
+                }
+
+                auto resolvedBlocksBefore = fResolvedBlocks.size();
                 auto resolved = visitor(typeface);
                 if (resolved == Resolved::Everything) {
-                    // Resolved everything, no need to try another font
-                    return;
+                    if (hopelessBlocks.empty()) {
+                        // Resolved everything, no need to try another font
+                        return;
+                    } else if (resolvedBlocksBefore < fResolvedBlocks.size()) {
+                        // There are some resolved blocks
+                        resolved = Resolved::Something;
+                    } else {
+                        // All blocks are hopeless
+                        resolved = Resolved::Nothing;
+                    }
                 }
 
                 if (resolved == Resolved::Something) {
                     // Resolved something, no need to try another codepoint
                     break;
                 }
-
-                if (ch == unresolvedText.end()) {
-                    // Not a single codepoint could be resolved but we finished the block
-                    hopelessBlocks.push_back(fUnresolvedBlocks.front());
-                    fUnresolvedBlocks.pop_front();
-                    break;
-                }
-
-                // We can stop here or we can switch to another DIFFERENT codepoint
-                while (ch != unresolvedText.end()) {
-                    unicode = nextUtf8Unit(&ch, unresolvedText.end());
-                    if (alreadyTried.find(unicode) == nullptr) {
-                        alreadyTried.add(unicode);
-                        break;
-                    }
-                }
             }
         }
 
+        // Return hopeless blocks back
         for (auto& block : hopelessBlocks) {
             fUnresolvedBlocks.emplace_front(block);
         }
@@ -687,8 +637,8 @@ bool OneLineShaper::shape() {
                     LangIterator langIter(unresolvedText, blockSpan,
                                       fParagraph->paragraphStyle().getTextStyle());
                     SkShaper::TrivialBiDiRunIterator bidiIter(defaultBidiLevel, unresolvedText.size());
-                    auto scriptIter = SkShaper::MakeSkUnicodeHbScriptRunIterator
-                                     (fParagraph->getUnicode(), unresolvedText.begin(), unresolvedText.size());
+                    auto scriptIter = SkShaper::MakeSkUnicodeHbScriptRunIterator(
+                            unresolvedText.begin(), unresolvedText.size());
                     fCurrentText = unresolvedRange;
 
                     // Map the block's features to subranges within the unresolved range.
@@ -713,6 +663,8 @@ bool OneLineShaper::shape() {
                 }
 
                 if (fUnresolvedBlocks.empty()) {
+                    // In some cases it does not mean everything
+                    // (when we excluded some hopeless blocks from the list)
                     return Resolved::Everything;
                 } else if (resolvedCount < fResolvedBlocks.size()) {
                     return Resolved::Something;
@@ -742,7 +694,7 @@ TextRange OneLineShaper::clusteredText(GlyphRange& glyphs) {
         if (dir == Dir::right) {
             while (index < fCurrentRun->fTextRange.end) {
                 if (this->fParagraph->codeUnitHasProperty(index,
-                                                          CodeUnitFlags::kGraphemeStart)) {
+                                                      SkUnicode::CodeUnitFlags::kGraphemeStart)) {
                     return index;
                 }
                 ++index;
@@ -751,7 +703,7 @@ TextRange OneLineShaper::clusteredText(GlyphRange& glyphs) {
         } else {
             while (index > fCurrentRun->fTextRange.start) {
                 if (this->fParagraph->codeUnitHasProperty(index,
-                                                          CodeUnitFlags::kGraphemeStart)) {
+                                                      SkUnicode::CodeUnitFlags::kGraphemeStart)) {
                     return index;
                 }
                 --index;

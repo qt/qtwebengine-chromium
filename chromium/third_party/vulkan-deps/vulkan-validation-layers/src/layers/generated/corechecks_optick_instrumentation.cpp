@@ -7888,6 +7888,24 @@ void CoreChecksOptickInstrumented::PostCallRecordGetPrivateDataEXT(VkDevice devi
     CoreChecks::PostCallRecordGetPrivateDataEXT(device, objectType, objectHandle, privateDataSlot, pData);
 }
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+bool CoreChecksOptickInstrumented::PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) const {
+    OPTICK_EVENT();
+    auto result = CoreChecks::PreCallValidateExportMetalObjectsEXT(device, pMetalObjectsInfo);
+    return result;
+}
+
+void CoreChecksOptickInstrumented::PreCallRecordExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {
+    OPTICK_EVENT();
+    CoreChecks::PreCallRecordExportMetalObjectsEXT(device, pMetalObjectsInfo);
+}
+
+void CoreChecksOptickInstrumented::PostCallRecordExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {
+    OPTICK_EVENT();
+    CoreChecks::PostCallRecordExportMetalObjectsEXT(device, pMetalObjectsInfo);
+}
+
+#endif // VK_USE_PLATFORM_METAL_EXT
 bool CoreChecksOptickInstrumented::PreCallValidateCmdSetFragmentShadingRateEnumNV(VkCommandBuffer           commandBuffer, VkFragmentShadingRateNV                     shadingRate, const VkFragmentShadingRateCombinerOpKHR    combinerOps[2]) const {
     OPTICK_EVENT();
     auto result = CoreChecks::PreCallValidateCmdSetFragmentShadingRateEnumNV(commandBuffer, shadingRate, combinerOps);
@@ -8460,6 +8478,70 @@ void CoreChecksOptickInstrumented::PreCallRecordGetDescriptorSetHostMappingVALVE
 void CoreChecksOptickInstrumented::PostCallRecordGetDescriptorSetHostMappingVALVE(VkDevice device, VkDescriptorSet descriptorSet, void** ppData) {
     OPTICK_EVENT();
     CoreChecks::PostCallRecordGetDescriptorSetHostMappingVALVE(device, descriptorSet, ppData);
+}
+
+bool CoreChecksOptickInstrumented::PreCallValidateGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule, VkShaderModuleIdentifierEXT* pIdentifier) const {
+    OPTICK_EVENT();
+    auto result = CoreChecks::PreCallValidateGetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+    return result;
+}
+
+void CoreChecksOptickInstrumented::PreCallRecordGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule, VkShaderModuleIdentifierEXT* pIdentifier) {
+    OPTICK_EVENT();
+    CoreChecks::PreCallRecordGetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+}
+
+void CoreChecksOptickInstrumented::PostCallRecordGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule, VkShaderModuleIdentifierEXT* pIdentifier) {
+    OPTICK_EVENT();
+    CoreChecks::PostCallRecordGetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+}
+
+bool CoreChecksOptickInstrumented::PreCallValidateGetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, VkShaderModuleIdentifierEXT* pIdentifier) const {
+    OPTICK_EVENT();
+    auto result = CoreChecks::PreCallValidateGetShaderModuleCreateInfoIdentifierEXT(device, pCreateInfo, pIdentifier);
+    return result;
+}
+
+void CoreChecksOptickInstrumented::PreCallRecordGetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, VkShaderModuleIdentifierEXT* pIdentifier) {
+    OPTICK_EVENT();
+    CoreChecks::PreCallRecordGetShaderModuleCreateInfoIdentifierEXT(device, pCreateInfo, pIdentifier);
+}
+
+void CoreChecksOptickInstrumented::PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, VkShaderModuleIdentifierEXT* pIdentifier) {
+    OPTICK_EVENT();
+    CoreChecks::PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(device, pCreateInfo, pIdentifier);
+}
+
+bool CoreChecksOptickInstrumented::PreCallValidateGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount, VkTilePropertiesQCOM* pProperties) const {
+    OPTICK_EVENT();
+    auto result = CoreChecks::PreCallValidateGetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties);
+    return result;
+}
+
+void CoreChecksOptickInstrumented::PreCallRecordGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount, VkTilePropertiesQCOM* pProperties) {
+    OPTICK_EVENT();
+    CoreChecks::PreCallRecordGetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties);
+}
+
+void CoreChecksOptickInstrumented::PostCallRecordGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount, VkTilePropertiesQCOM* pProperties, VkResult result) {
+    OPTICK_EVENT();
+    CoreChecks::PostCallRecordGetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties, result);
+}
+
+bool CoreChecksOptickInstrumented::PreCallValidateGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo* pRenderingInfo, VkTilePropertiesQCOM* pProperties) const {
+    OPTICK_EVENT();
+    auto result = CoreChecks::PreCallValidateGetDynamicRenderingTilePropertiesQCOM(device, pRenderingInfo, pProperties);
+    return result;
+}
+
+void CoreChecksOptickInstrumented::PreCallRecordGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo* pRenderingInfo, VkTilePropertiesQCOM* pProperties) {
+    OPTICK_EVENT();
+    CoreChecks::PreCallRecordGetDynamicRenderingTilePropertiesQCOM(device, pRenderingInfo, pProperties);
+}
+
+void CoreChecksOptickInstrumented::PostCallRecordGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo* pRenderingInfo, VkTilePropertiesQCOM* pProperties, VkResult result) {
+    OPTICK_EVENT();
+    CoreChecks::PostCallRecordGetDynamicRenderingTilePropertiesQCOM(device, pRenderingInfo, pProperties, result);
 }
 
 bool CoreChecksOptickInstrumented::PreCallValidateCreateAccelerationStructureKHR(VkDevice                                           device, const VkAccelerationStructureCreateInfoKHR*        pCreateInfo, const VkAllocationCallbacks*       pAllocator, VkAccelerationStructureKHR*                        pAccelerationStructure) const {

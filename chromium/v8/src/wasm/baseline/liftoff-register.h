@@ -67,7 +67,7 @@ static inline constexpr RegClass reg_class_for(ValueKind kind) {
     case kS128:
       return kNeedS128RegPair ? kFpRegPair : kFpReg;
     case kRef:
-    case kOptRef:
+    case kRefNull:
     case kRtt:
       return kGpReg;
     default:
@@ -205,8 +205,8 @@ class LiftoffRegister {
   static LiftoffRegister ForPair(Register low, Register high) {
     DCHECK(kNeedI64RegPair);
     DCHECK_NE(low, high);
-    storage_t combined_code = low.code() | high.code() << kBitsPerGpRegCode |
-                              1 << (2 * kBitsPerGpRegCode);
+    storage_t combined_code = low.code() | (high.code() << kBitsPerGpRegCode) |
+                              (1 << (2 * kBitsPerGpRegCode));
     return LiftoffRegister(combined_code);
   }
 
@@ -354,7 +354,7 @@ class LiftoffRegList {
       typename = std::enable_if_t<std::conjunction_v<std::disjunction<
           std::is_same<Register, Regs>, std::is_same<DoubleRegister, Regs>,
           std::is_same<LiftoffRegister, Regs>>...>>>
-  constexpr LiftoffRegList(Regs... regs) {
+  constexpr explicit LiftoffRegList(Regs... regs) {
     (..., set(regs));
   }
 
@@ -469,7 +469,7 @@ class LiftoffRegList {
   template <storage_t bits>
   static constexpr LiftoffRegList FromBits() {
     static_assert(bits == (bits & (kGpMask | kFpMask)), "illegal reg list");
-    return LiftoffRegList(bits);
+    return LiftoffRegList{bits};
   }
 
  private:

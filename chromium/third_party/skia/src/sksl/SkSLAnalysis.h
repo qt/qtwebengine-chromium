@@ -9,13 +9,15 @@
 #define SkSLAnalysis_DEFINED
 
 #include "include/private/SkSLSampleUsage.h"
+#include "include/private/SkTArray.h"
 
-#include <stdint.h>
+#include <cstdint>
 #include <memory>
 #include <set>
 
 namespace SkSL {
 
+class Context;
 class ErrorReporter;
 class Expression;
 class FunctionDeclaration;
@@ -187,6 +189,13 @@ bool CanExitWithoutReturningValue(const FunctionDeclaration& funcDecl, const Sta
  * - Reports function `out` params which are never written to (structs are currently exempt)
  */
 void DoFinalizationChecks(const Program& program);
+
+/**
+ * Error checks compute shader in/outs and returns a vector containing them ordered by location.
+ */
+SkTArray<const SkSL::Variable*> GetComputeShaderMainParams(const Context& context,
+        const Program& program);
+
 
 }  // namespace Analysis
 }  // namespace SkSL

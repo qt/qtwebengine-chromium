@@ -18,8 +18,10 @@ class GrMtlGpu;
 
 class GrMtlBuffer: public GrGpuBuffer {
 public:
-    static sk_sp<GrMtlBuffer> Make(GrMtlGpu*, size_t size, GrGpuBufferType intendedType,
-                                   GrAccessPattern, const void* data = nullptr);
+    static sk_sp<GrMtlBuffer> Make(GrMtlGpu*,
+                                   size_t size,
+                                   GrGpuBufferType intendedType,
+                                   GrAccessPattern);
 
     ~GrMtlBuffer() override;
 
@@ -38,16 +40,18 @@ protected:
 private:
     GrMtlGpu* mtlGpu() const;
 
-    void onMap() override;
-    void onUnmap() override;
-    bool onUpdateData(const void* src, size_t srcSizeInBytes) override;
+    void onMap(MapType) override;
+    void onUnmap(MapType) override;
+    bool onUpdateData(const void* src, size_t offset, size_t size, bool preserve) override;
 
-    void internalMap(size_t sizeInBytes);
-    void internalUnmap(size_t sizeInBytes);
+    void internalMap();
+    void internalUnmap(size_t writtenOffset, size_t writtenSize);
 
 #ifdef SK_DEBUG
     void validate() const;
 #endif
+
+    void onSetLabel() override;
 
     bool fIsDynamic;
     id<MTLBuffer> fMtlBuffer;

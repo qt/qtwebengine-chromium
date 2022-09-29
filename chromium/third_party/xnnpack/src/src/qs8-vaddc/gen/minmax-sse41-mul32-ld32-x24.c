@@ -12,7 +12,8 @@
 #include <immintrin.h>
 
 #include <xnnpack/intrinsics-polyfill.h>
-#include <xnnpack/vaddsub.h>
+#include <xnnpack/unaligned.h>
+#include <xnnpack/vadd.h>
 
 
 void xnn_qs8_vaddc_minmax_ukernel__sse41_mul32_ld32_x24(
@@ -20,10 +21,10 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul32_ld32_x24(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_addsub_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   const __m128i va_multiplier = _mm_load_si128((const __m128i*) params->sse4_mul32.a_multiplier);
-  const __m128i vshift = _mm_loadu_si32(params->sse4_mul32.shift);
+  const __m128i vshift = _mm_load_si128((const __m128i*) params->sse4_mul32.shift);
   const __m128i voutput_zero_point = _mm_load_si128((const __m128i*) params->sse4_mul32.output_zero_point);
   const __m128i voutput_min = _mm_load_si128((const __m128i*) params->sse4_mul32.output_min);
   const __m128i voutput_max = _mm_load_si128((const __m128i*) params->sse4_mul32.output_max);
@@ -32,12 +33,12 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul32_ld32_x24(
   vbias = _mm_shuffle_epi32(vbias, _MM_SHUFFLE(0, 0, 0, 0));
   vbias = _mm_add_epi32(vbias, _mm_load_si128((const __m128i*) params->sse4_mul32.bias));
   for (; n >= 24 * sizeof(int8_t); n -= 24 * sizeof(int8_t)) {
-    const __m128i va0123 = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a));
-    const __m128i va4567 = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 4));
-    const __m128i va89AB = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 8));
-    const __m128i vaCDEF = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 12));
-    const __m128i vaGHIJ = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 16));
-    const __m128i vaKLMN = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 20));
+    const __m128i va0123 = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a)));
+    const __m128i va4567 = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 4)));
+    const __m128i va89AB = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 8)));
+    const __m128i vaCDEF = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 12)));
+    const __m128i vaGHIJ = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 16)));
+    const __m128i vaKLMN = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 20)));
     input_a += 24;
     input_b += 24;
 
@@ -74,8 +75,8 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul32_ld32_x24(
   }
   if XNN_UNLIKELY(n != 0) {
     do {
-      const __m128i va0123 = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a));
-      const __m128i va4567 = _mm_cvtepi8_epi32(_mm_loadu_si32(input_a + 4));
+      const __m128i va0123 = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a)));
+      const __m128i va4567 = _mm_cvtepi8_epi32(_mm_cvtsi32_si128((int) unaligned_load_s32(input_a + 4)));
       input_a += 8;
 
       __m128i vacc0123 = _mm_add_epi32(vbias, _mm_mullo_epi32(va0123, va_multiplier));
@@ -96,12 +97,12 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul32_ld32_x24(
         n -= 8 * sizeof(int8_t);
       } else {
         if (n & (4 * sizeof(int8_t))) {
-          *((uint32_t*) output) = (uint32_t) _mm_cvtsi128_si32(vout0123456701234567);
+          unaligned_store_u32(output, (uint32_t) _mm_cvtsi128_si32(vout0123456701234567));
           vout0123456701234567 = _mm_srli_epi64(vout0123456701234567, 32);
           output += 4;
         }
         if (n & (2 * sizeof(int8_t))) {
-          *((uint16_t*) output) = (uint16_t) _mm_extract_epi16(vout0123456701234567, 0);
+          unaligned_store_u16(output, (uint16_t) _mm_extract_epi16(vout0123456701234567, 0));
           vout0123456701234567 = _mm_srli_epi32(vout0123456701234567, 16);
           output += 2;
         }

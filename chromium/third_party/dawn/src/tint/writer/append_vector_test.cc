@@ -41,14 +41,14 @@ TEST_F(AppendVectorTest, Vec2i32_i32) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 3u);
+    ASSERT_EQ(vec_123->args.Length(), 3u);
     EXPECT_EQ(vec_123->args[0], scalar_1);
     EXPECT_EQ(vec_123->args[1], scalar_2);
     EXPECT_EQ(vec_123->args[2], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 3u);
+    ASSERT_EQ(call->Arguments().Length(), 3u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(scalar_1));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_2));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(scalar_3));
@@ -60,7 +60,7 @@ TEST_F(AppendVectorTest, Vec2i32_i32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 3u);
+    ASSERT_EQ(ctor->Parameters().Length(), 3u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());
@@ -81,18 +81,18 @@ TEST_F(AppendVectorTest, Vec2i32_u32) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 3u);
+    ASSERT_EQ(vec_123->args.Length(), 3u);
     EXPECT_EQ(vec_123->args[0], scalar_1);
     EXPECT_EQ(vec_123->args[1], scalar_2);
     auto* u32_to_i32 = vec_123->args[2]->As<ast::CallExpression>();
     ASSERT_NE(u32_to_i32, nullptr);
     EXPECT_TRUE(u32_to_i32->target.type->Is<ast::I32>());
-    ASSERT_EQ(u32_to_i32->args.size(), 1u);
+    ASSERT_EQ(u32_to_i32->args.Length(), 1u);
     EXPECT_EQ(u32_to_i32->args[0], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 3u);
+    ASSERT_EQ(call->Arguments().Length(), 3u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(scalar_1));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_2));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(u32_to_i32));
@@ -104,7 +104,7 @@ TEST_F(AppendVectorTest, Vec2i32_u32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 3u);
+    ASSERT_EQ(ctor->Parameters().Length(), 3u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());
@@ -127,24 +127,24 @@ TEST_F(AppendVectorTest, Vec2i32FromVec2u32_u32) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 2u);
+    ASSERT_EQ(vec_123->args.Length(), 2u);
     auto* v2u32_to_v2i32 = vec_123->args[0]->As<ast::CallExpression>();
     ASSERT_NE(v2u32_to_v2i32, nullptr);
     ASSERT_TRUE(v2u32_to_v2i32->target.type->Is<ast::Vector>());
     EXPECT_EQ(v2u32_to_v2i32->target.type->As<ast::Vector>()->width, 2u);
     EXPECT_TRUE(v2u32_to_v2i32->target.type->As<ast::Vector>()->type->Is<ast::I32>());
-    EXPECT_EQ(v2u32_to_v2i32->args.size(), 1u);
+    EXPECT_EQ(v2u32_to_v2i32->args.Length(), 1u);
     EXPECT_EQ(v2u32_to_v2i32->args[0], uvec_12);
 
     auto* u32_to_i32 = vec_123->args[1]->As<ast::CallExpression>();
     ASSERT_NE(u32_to_i32, nullptr);
     EXPECT_TRUE(u32_to_i32->target.type->Is<ast::I32>());
-    ASSERT_EQ(u32_to_i32->args.size(), 1u);
+    ASSERT_EQ(u32_to_i32->args.Length(), 1u);
     EXPECT_EQ(u32_to_i32->args[0], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 2u);
+    ASSERT_EQ(call->Arguments().Length(), 2u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_12));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(u32_to_i32));
 
@@ -155,7 +155,7 @@ TEST_F(AppendVectorTest, Vec2i32FromVec2u32_u32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 2u);
+    ASSERT_EQ(ctor->Parameters().Length(), 2u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::Vector>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
 }
@@ -175,18 +175,18 @@ TEST_F(AppendVectorTest, Vec2i32_f32) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 3u);
+    ASSERT_EQ(vec_123->args.Length(), 3u);
     EXPECT_EQ(vec_123->args[0], scalar_1);
     EXPECT_EQ(vec_123->args[1], scalar_2);
     auto* f32_to_i32 = vec_123->args[2]->As<ast::CallExpression>();
     ASSERT_NE(f32_to_i32, nullptr);
     EXPECT_TRUE(f32_to_i32->target.type->Is<ast::I32>());
-    ASSERT_EQ(f32_to_i32->args.size(), 1u);
+    ASSERT_EQ(f32_to_i32->args.Length(), 1u);
     EXPECT_EQ(f32_to_i32->args[0], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 3u);
+    ASSERT_EQ(call->Arguments().Length(), 3u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(scalar_1));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_2));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(f32_to_i32));
@@ -198,7 +198,7 @@ TEST_F(AppendVectorTest, Vec2i32_f32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 3u);
+    ASSERT_EQ(ctor->Parameters().Length(), 3u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());
@@ -220,7 +220,7 @@ TEST_F(AppendVectorTest, Vec3i32_i32) {
 
     auto* vec_1234 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_1234, nullptr);
-    ASSERT_EQ(vec_1234->args.size(), 4u);
+    ASSERT_EQ(vec_1234->args.Length(), 4u);
     EXPECT_EQ(vec_1234->args[0], scalar_1);
     EXPECT_EQ(vec_1234->args[1], scalar_2);
     EXPECT_EQ(vec_1234->args[2], scalar_3);
@@ -228,7 +228,7 @@ TEST_F(AppendVectorTest, Vec3i32_i32) {
 
     auto* call = Sem().Get<sem::Call>(vec_1234);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 4u);
+    ASSERT_EQ(call->Arguments().Length(), 4u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(scalar_1));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_2));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(scalar_3));
@@ -241,7 +241,7 @@ TEST_F(AppendVectorTest, Vec3i32_i32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 4u);
+    ASSERT_EQ(ctor->Parameters().Length(), 4u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());
@@ -250,7 +250,7 @@ TEST_F(AppendVectorTest, Vec3i32_i32) {
 
 // AppendVector(vec_12, 3) -> vec3<i32>(vec_12, 3)
 TEST_F(AppendVectorTest, Vec2i32Var_i32) {
-    Global("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
+    GlobalVar("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
     auto* vec_12 = Expr("vec_12");
     auto* scalar_3 = Expr(3_i);
     WrapInFunction(vec_12, scalar_3);
@@ -262,13 +262,13 @@ TEST_F(AppendVectorTest, Vec2i32Var_i32) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 2u);
+    ASSERT_EQ(vec_123->args.Length(), 2u);
     EXPECT_EQ(vec_123->args[0], vec_12);
     EXPECT_EQ(vec_123->args[1], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 2u);
+    ASSERT_EQ(call->Arguments().Length(), 2u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_12));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_3));
 
@@ -279,14 +279,14 @@ TEST_F(AppendVectorTest, Vec2i32Var_i32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 2u);
+    ASSERT_EQ(ctor->Parameters().Length(), 2u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::Vector>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
 }
 
 // AppendVector(1, 2, scalar_3) -> vec3<i32>(1, 2, scalar_3)
 TEST_F(AppendVectorTest, Vec2i32_i32Var) {
-    Global("scalar_3", ty.i32(), ast::StorageClass::kPrivate);
+    GlobalVar("scalar_3", ty.i32(), ast::StorageClass::kPrivate);
     auto* scalar_1 = Expr(1_i);
     auto* scalar_2 = Expr(2_i);
     auto* scalar_3 = Expr("scalar_3");
@@ -300,14 +300,14 @@ TEST_F(AppendVectorTest, Vec2i32_i32Var) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 3u);
+    ASSERT_EQ(vec_123->args.Length(), 3u);
     EXPECT_EQ(vec_123->args[0], scalar_1);
     EXPECT_EQ(vec_123->args[1], scalar_2);
     EXPECT_EQ(vec_123->args[2], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 3u);
+    ASSERT_EQ(call->Arguments().Length(), 3u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(scalar_1));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_2));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(scalar_3));
@@ -319,7 +319,7 @@ TEST_F(AppendVectorTest, Vec2i32_i32Var) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 3u);
+    ASSERT_EQ(ctor->Parameters().Length(), 3u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());
@@ -327,8 +327,8 @@ TEST_F(AppendVectorTest, Vec2i32_i32Var) {
 
 // AppendVector(vec_12, scalar_3) -> vec3<i32>(vec_12, scalar_3)
 TEST_F(AppendVectorTest, Vec2i32Var_i32Var) {
-    Global("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
-    Global("scalar_3", ty.i32(), ast::StorageClass::kPrivate);
+    GlobalVar("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
+    GlobalVar("scalar_3", ty.i32(), ast::StorageClass::kPrivate);
     auto* vec_12 = Expr("vec_12");
     auto* scalar_3 = Expr("scalar_3");
     WrapInFunction(vec_12, scalar_3);
@@ -340,13 +340,13 @@ TEST_F(AppendVectorTest, Vec2i32Var_i32Var) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 2u);
+    ASSERT_EQ(vec_123->args.Length(), 2u);
     EXPECT_EQ(vec_123->args[0], vec_12);
     EXPECT_EQ(vec_123->args[1], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 2u);
+    ASSERT_EQ(call->Arguments().Length(), 2u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_12));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_3));
 
@@ -357,15 +357,15 @@ TEST_F(AppendVectorTest, Vec2i32Var_i32Var) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 2u);
+    ASSERT_EQ(ctor->Parameters().Length(), 2u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::Vector>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
 }
 
 // AppendVector(vec_12, scalar_3) -> vec3<i32>(vec_12, i32(scalar_3))
 TEST_F(AppendVectorTest, Vec2i32Var_f32Var) {
-    Global("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
-    Global("scalar_3", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("vec_12", ty.vec2<i32>(), ast::StorageClass::kPrivate);
+    GlobalVar("scalar_3", ty.f32(), ast::StorageClass::kPrivate);
     auto* vec_12 = Expr("vec_12");
     auto* scalar_3 = Expr("scalar_3");
     WrapInFunction(vec_12, scalar_3);
@@ -377,17 +377,17 @@ TEST_F(AppendVectorTest, Vec2i32Var_f32Var) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 2u);
+    ASSERT_EQ(vec_123->args.Length(), 2u);
     EXPECT_EQ(vec_123->args[0], vec_12);
     auto* f32_to_i32 = vec_123->args[1]->As<ast::CallExpression>();
     ASSERT_NE(f32_to_i32, nullptr);
     EXPECT_TRUE(f32_to_i32->target.type->Is<ast::I32>());
-    ASSERT_EQ(f32_to_i32->args.size(), 1u);
+    ASSERT_EQ(f32_to_i32->args.Length(), 1u);
     EXPECT_EQ(f32_to_i32->args[0], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 2u);
+    ASSERT_EQ(call->Arguments().Length(), 2u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_12));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(f32_to_i32));
 
@@ -398,15 +398,15 @@ TEST_F(AppendVectorTest, Vec2i32Var_f32Var) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 2u);
+    ASSERT_EQ(ctor->Parameters().Length(), 2u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::Vector>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
 }
 
 // AppendVector(vec_12, scalar_3) -> vec3<bool>(vec_12, scalar_3)
 TEST_F(AppendVectorTest, Vec2boolVar_boolVar) {
-    Global("vec_12", ty.vec2<bool>(), ast::StorageClass::kPrivate);
-    Global("scalar_3", ty.bool_(), ast::StorageClass::kPrivate);
+    GlobalVar("vec_12", ty.vec2<bool>(), ast::StorageClass::kPrivate);
+    GlobalVar("scalar_3", ty.bool_(), ast::StorageClass::kPrivate);
     auto* vec_12 = Expr("vec_12");
     auto* scalar_3 = Expr("scalar_3");
     WrapInFunction(vec_12, scalar_3);
@@ -418,13 +418,13 @@ TEST_F(AppendVectorTest, Vec2boolVar_boolVar) {
 
     auto* vec_123 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_123, nullptr);
-    ASSERT_EQ(vec_123->args.size(), 2u);
+    ASSERT_EQ(vec_123->args.Length(), 2u);
     EXPECT_EQ(vec_123->args[0], vec_12);
     EXPECT_EQ(vec_123->args[1], scalar_3);
 
     auto* call = Sem().Get<sem::Call>(vec_123);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 2u);
+    ASSERT_EQ(call->Arguments().Length(), 2u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_12));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(scalar_3));
 
@@ -435,7 +435,7 @@ TEST_F(AppendVectorTest, Vec2boolVar_boolVar) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::Bool>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 2u);
+    ASSERT_EQ(ctor->Parameters().Length(), 2u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::Vector>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::Bool>());
 }
@@ -453,7 +453,7 @@ TEST_F(AppendVectorTest, ZeroVec3i32_i32) {
 
     auto* vec_0004 = As<ast::CallExpression>(append->Declaration());
     ASSERT_NE(vec_0004, nullptr);
-    ASSERT_EQ(vec_0004->args.size(), 4u);
+    ASSERT_EQ(vec_0004->args.Length(), 4u);
     for (size_t i = 0; i < 3; i++) {
         auto* literal = As<ast::IntLiteralExpression>(vec_0004->args[i]);
         ASSERT_NE(literal, nullptr);
@@ -463,7 +463,7 @@ TEST_F(AppendVectorTest, ZeroVec3i32_i32) {
 
     auto* call = Sem().Get<sem::Call>(vec_0004);
     ASSERT_NE(call, nullptr);
-    ASSERT_EQ(call->Arguments().size(), 4u);
+    ASSERT_EQ(call->Arguments().Length(), 4u);
     EXPECT_EQ(call->Arguments()[0], Sem().Get(vec_0004->args[0]));
     EXPECT_EQ(call->Arguments()[1], Sem().Get(vec_0004->args[1]));
     EXPECT_EQ(call->Arguments()[2], Sem().Get(vec_0004->args[2]));
@@ -476,7 +476,7 @@ TEST_F(AppendVectorTest, ZeroVec3i32_i32) {
     EXPECT_TRUE(ctor->ReturnType()->As<sem::Vector>()->type()->Is<sem::I32>());
     EXPECT_EQ(ctor->ReturnType(), call->Type());
 
-    ASSERT_EQ(ctor->Parameters().size(), 4u);
+    ASSERT_EQ(ctor->Parameters().Length(), 4u);
     EXPECT_TRUE(ctor->Parameters()[0]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[1]->Type()->Is<sem::I32>());
     EXPECT_TRUE(ctor->Parameters()[2]->Type()->Is<sem::I32>());

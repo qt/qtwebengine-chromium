@@ -19,8 +19,8 @@
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 
 #if SK_GPU_V1
-#include "src/gpu/ganesh/v1/PathRenderer.h"
-#include "src/gpu/ganesh/v1/PathRendererChain.h"
+#include "src/gpu/ganesh/PathRenderer.h"
+#include "src/gpu/ganesh/PathRendererChain.h"
 #endif
 
 // Enabling this will print out which path renderers are being chosen
@@ -102,6 +102,17 @@ public:
                                           sk_sp<GrSurfaceProxy> dst,
                                           SkIPoint dstPoint,
                                           GrSurfaceOrigin);
+
+    // Adds a render task that copies the range [srcOffset, srcOffset + size] from src to
+    // [dstOffset, dstOffset + size] in dst. The src buffer must have type kXferCpuToGpu and the
+    // dst must NOT have type kXferCpuToGpu. Neither buffer may be mapped. Because this is used to
+    // insert transfers to vertex/index buffers between draws and we don't track dependencies with
+    // buffers, this task is a hard boundary for task reordering.
+    void newBufferTransferTask(sk_sp<GrGpuBuffer> src,
+                               size_t srcOffset,
+                               sk_sp<GrGpuBuffer> dst,
+                               size_t dstOffset,
+                               size_t size);
 
     // Adds a task that writes the data from the passed GrMipLevels to dst. The lifetime of the
     // pixel data in the levels should be tied to the passed SkData or the caller must flush the
@@ -221,6 +232,7 @@ private:
     sk_sp<GrBufferAllocPool::CpuBufferCache> fCpuBufferCache;
 
     SkTArray<sk_sp<GrRenderTask>>            fDAG;
+    std::vector<int>                         fReorderBlockerTaskIndices;
     skgpu::v1::OpsTask*                      fActiveOpsTask = nullptr;
 
 #if SK_GPU_V1

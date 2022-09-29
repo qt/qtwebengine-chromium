@@ -28,9 +28,11 @@ namespace dawn::native::d3d12 {
 
 ExternalImageDXGIImpl::ExternalImageDXGIImpl(Device* backendDevice,
                                              Microsoft::WRL::ComPtr<ID3D12Resource> d3d12Resource,
+                                             Microsoft::WRL::ComPtr<ID3D12Fence> d3d12Fence,
                                              const WGPUTextureDescriptor* descriptor)
     : mBackendDevice(backendDevice),
       mD3D12Resource(std::move(d3d12Resource)),
+      mD3D12Fence(std::move(d3d12Fence)),
       mD3D11on12ResourceCache(std::make_unique<D3D11on12ResourceCache>()),
       mUsage(descriptor->usage),
       mDimension(descriptor->dimension),
@@ -60,14 +62,20 @@ bool ExternalImageDXGIImpl::IsValid() const {
 void ExternalImageDXGIImpl::Destroy() {
     if (IsInList()) {
         RemoveFromList();
+
+        // Keep fence alive until any pending signal calls are done on the GPU.
+        mBackendDevice->ConsumedError(mBackendDevice->NextSerial());
+        mBackendDevice->ReferenceUntilUnused(mD3D12Fence.Get());
         mBackendDevice = nullptr;
+
         mD3D12Resource.Reset();
+        mD3D12Fence.Reset();
         mD3D11on12ResourceCache.reset();
     }
 }
 
 WGPUTexture ExternalImageDXGIImpl::ProduceTexture(
-    const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor) {
+    const ExternalImageAccessDescriptorDXGISharedHandle* descriptor) {
     ASSERT(mBackendDevice != nullptr);
     // Ensure the texture usage is allowed
     if (!IsSubset(descriptor->usage, mUsage)) {
@@ -90,16 +98,20 @@ WGPUTexture ExternalImageDXGIImpl::ProduceTexture(
         internalDesc.sType = wgpu::SType::DawnTextureInternalUsageDescriptor;
     }
 
-    Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource =
-        mD3D11on12ResourceCache->GetOrCreateD3D11on12Resource(mBackendDevice, mD3D12Resource.Get());
-    if (d3d11on12Resource == nullptr) {
-        dawn::ErrorLog() << "Unable to create 11on12 resource for external image";
-        return nullptr;
+    Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource;
+    if (!mD3D12Fence) {
+        d3d11on12Resource = mD3D11on12ResourceCache->GetOrCreateD3D11on12Resource(
+            mBackendDevice, mD3D12Resource.Get());
+        if (d3d11on12Resource == nullptr) {
+            dawn::ErrorLog() << "Unable to create 11on12 resource for external image";
+            return nullptr;
+        }
     }
 
     Ref<TextureBase> texture = mBackendDevice->CreateD3D12ExternalTexture(
-        &textureDescriptor, mD3D12Resource, std::move(d3d11on12Resource),
-        descriptor->isSwapChainTexture, descriptor->isInitialized);
+        &textureDescriptor, mD3D12Resource, mD3D12Fence, std::move(d3d11on12Resource),
+        descriptor->fenceWaitValue, descriptor->fenceSignalValue, descriptor->isSwapChainTexture,
+        descriptor->isInitialized);
     return ToAPI(texture.Detach());
 }
 

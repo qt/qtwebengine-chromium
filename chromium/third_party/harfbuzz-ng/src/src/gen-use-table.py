@@ -221,7 +221,10 @@ def is_CONS_SUB(U, UISC, UDI, UGC, AJT):
 def is_CONS_WITH_STACKER(U, UISC, UDI, UGC, AJT):
 	return UISC == Consonant_With_Stacker
 def is_HALANT(U, UISC, UDI, UGC, AJT):
-	return UISC == Virama
+	return UISC == Virama and not is_HALANT_OR_VOWEL_MODIFIER(U, UISC, UDI, UGC, AJT)
+def is_HALANT_OR_VOWEL_MODIFIER(U, UISC, UDI, UGC, AJT):
+	# Split off of HALANT
+	return U == 0x0DCA
 def is_HALANT_NUM(U, UISC, UDI, UGC, AJT):
 	return UISC == Number_Joiner
 def is_HIEROGLYPH(U, UISC, UDI, UGC, AJT):
@@ -280,6 +283,7 @@ use_mapping = {
 	'SUB':	is_CONS_SUB,
 	'CS':	is_CONS_WITH_STACKER,
 	'H':	is_HALANT,
+	'HVM':	is_HALANT_OR_VOWEL_MODIFIER,
 	'HN':	is_HALANT_NUM,
 	'IS':	is_INVISIBLE_STACKER,
 	'G':	is_HIEROGLYPH,
@@ -329,6 +333,7 @@ use_positions = {
 		'Blw': [Bottom],
 	},
 	'H': None,
+	'HVM': None,
 	'IS': None,
 	'B': None,
 	'FM': {
@@ -412,12 +417,12 @@ for h in headers:
 		print (" * %s" % (l.strip()))
 print (" */")
 print ()
-print ("#ifndef HB_OT_SHAPE_COMPLEX_USE_TABLE_HH")
-print ("#define HB_OT_SHAPE_COMPLEX_USE_TABLE_HH")
+print ("#ifndef HB_OT_SHAPER_USE_TABLE_HH")
+print ("#define HB_OT_SHAPER_USE_TABLE_HH")
 print ()
 print ('#include "hb.hh"')
 print ()
-print ('#include "hb-ot-shape-complex-use-machine.hh"')
+print ('#include "hb-ot-shaper-use-machine.hh"')
 print ()
 
 total = 0
@@ -473,64 +478,15 @@ for k,v in sorted(use_positions.items()):
 		print ("#define %s	USE(%s)" % (tag, tag))
 print ('#pragma GCC diagnostic pop')
 print ("")
-print ("static const uint8_t use_table[] = {")
-for u in uu:
-	if u <= last:
-		continue
-	if use_data[u][0] == 'O':
-		continue
-	block = use_data[u][1]
 
-	start = u//8*8
-	end = start+1
-	while end in uu and block == use_data[end][1]:
-		end += 1
-	end = (end-1)//8*8 + 7
 
-	if start != last + 1:
-		if start - last <= 1+16*3:
-			print_block (None, last+1, start-1, use_data)
-		else:
-			if last >= 0:
-				ends.append (last + 1)
-				offset += ends[-1] - starts[-1]
-			print ()
-			print ()
-			print ("#define use_offset_0x%04xu %d" % (start, offset))
-			starts.append (start)
+import packTab
+data = {u:v[0] for u,v in use_data.items()}
+code = packTab.Code('hb_use')
+sol = packTab.pack_table(data, compression=5, default='O')
+sol.genCode(code, f'get_category')
+code.print_c(linkage='static inline')
 
-	print_block (block, start, end, use_data)
-	last = end
-ends.append (last + 1)
-offset += ends[-1] - starts[-1]
-print ()
-print ()
-occupancy = used * 100. / total
-page_bits = 12
-print ("}; /* Table items: %d; occupancy: %d%% */" % (offset, occupancy))
-print ()
-print ("static inline uint8_t")
-print ("hb_use_get_category (hb_glyph_info_t info)")
-print ("{")
-print ("  hb_codepoint_t u = info.codepoint;")
-print ("  switch (u >> %d)" % page_bits)
-print ("  {")
-pages = set([u>>page_bits for u in starts+ends])
-for p in sorted(pages):
-	print ("    case 0x%0Xu:" % p)
-	for (start,end) in zip (starts, ends):
-		if p not in [start>>page_bits, end>>page_bits]: continue
-		offset = "use_offset_0x%04xu" % start
-		print ("      if (hb_in_range<hb_codepoint_t> (u, 0x%04Xu, 0x%04Xu)) return use_table[u - 0x%04Xu + %s];" % (start, end-1, start, offset))
-	print ("      break;")
-	print ("")
-print ("    default:")
-print ("      break;")
-print ("  }")
-print ("  if (_hb_glyph_info_get_general_category (&info) == HB_UNICODE_GENERAL_CATEGORY_UNASSIGNED)")
-print ("    return WJ;")
-print ("  return O;")
-print ("}")
 print ()
 for k in sorted(use_mapping.keys()):
 	if k in use_positions and use_positions[k]: continue
@@ -542,9 +498,5 @@ for k,v in sorted(use_positions.items()):
 		print ("#undef %s" % tag)
 print ()
 print ()
-print ("#endif /* HB_OT_SHAPE_COMPLEX_USE_TABLE_HH */")
+print ("#endif /* HB_OT_SHAPER_USE_TABLE_HH */")
 print ("/* == End of generated table == */")
-
-# Maintain at least 50% occupancy in the table */
-if occupancy < 50:
-	raise Exception ("Table too sparse, please investigate: ", occupancy)

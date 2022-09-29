@@ -7,6 +7,7 @@
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 
 #include <iterator>
+#include <utility>
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
@@ -38,9 +39,9 @@ static_assert(kHighlightModes[CPDF_FormControl::kToggle] == 'T',
 }  // namespace
 
 CPDF_FormControl::CPDF_FormControl(CPDF_FormField* pField,
-                                   CPDF_Dictionary* pWidgetDict)
+                                   RetainPtr<CPDF_Dictionary> pWidgetDict)
     : m_pField(pField),
-      m_pWidgetDict(pWidgetDict),
+      m_pWidgetDict(std::move(pWidgetDict)),
       m_pForm(m_pField->GetForm()) {
   DCHECK(m_pWidgetDict);
 }
@@ -54,11 +55,11 @@ CFX_FloatRect CPDF_FormControl::GetRect() const {
 ByteString CPDF_FormControl::GetOnStateName() const {
   DCHECK(GetType() == CPDF_FormField::kCheckBox ||
          GetType() == CPDF_FormField::kRadioButton);
-  CPDF_Dictionary* pAP = m_pWidgetDict->GetDictFor("AP");
+  const CPDF_Dictionary* pAP = m_pWidgetDict->GetDictFor("AP");
   if (!pAP)
     return ByteString();
 
-  CPDF_Dictionary* pN = pAP->GetDictFor("N");
+  const CPDF_Dictionary* pN = pAP->GetDictFor("N");
   if (!pN)
     return ByteString();
 
@@ -85,7 +86,7 @@ WideString CPDF_FormControl::GetExportValue() const {
   DCHECK(GetType() == CPDF_FormField::kCheckBox ||
          GetType() == CPDF_FormField::kRadioButton);
   ByteString csOn = GetOnStateName();
-  CPDF_Array* pArray =
+  const CPDF_Array* pArray =
       ToArray(CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "Opt"));
   if (pArray)
     csOn = pArray->GetStringAt(m_pField->GetControlIndex(this));
@@ -105,7 +106,8 @@ bool CPDF_FormControl::IsChecked() const {
 bool CPDF_FormControl::IsDefaultChecked() const {
   DCHECK(GetType() == CPDF_FormField::kCheckBox ||
          GetType() == CPDF_FormField::kRadioButton);
-  CPDF_Object* pDV = CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "DV");
+  const CPDF_Object* pDV =
+      CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "DV");
   if (!pDV)
     return false;
 
@@ -138,7 +140,7 @@ CPDF_FormControl::HighlightingMode CPDF_FormControl::GetHighlightingMode()
 }
 
 CPDF_ApSettings CPDF_FormControl::GetMK() const {
-  return CPDF_ApSettings(m_pWidgetDict->GetDictFor("MK"));
+  return CPDF_ApSettings(m_pWidgetDict->GetMutableDictFor("MK"));
 }
 
 bool CPDF_FormControl::HasMKEntry(const ByteString& csEntry) const {
@@ -167,7 +169,7 @@ WideString CPDF_FormControl::GetCaption(const ByteString& csEntry) const {
   return GetMK().GetCaption(csEntry);
 }
 
-CPDF_Stream* CPDF_FormControl::GetIcon(const ByteString& csEntry) {
+RetainPtr<CPDF_Stream> CPDF_FormControl::GetIcon(const ByteString& csEntry) {
   return GetMK().GetIcon(csEntry);
 }
 
@@ -183,9 +185,11 @@ CPDF_DefaultAppearance CPDF_FormControl::GetDefaultAppearance() const {
   if (m_pWidgetDict->KeyExist("DA"))
     return CPDF_DefaultAppearance(m_pWidgetDict->GetStringFor("DA"));
 
-  CPDF_Object* pObj = CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "DA");
+  const CPDF_Object* pObj =
+      CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "DA");
   if (!pObj)
     return m_pForm->GetDefaultAppearance();
+
   return CPDF_DefaultAppearance(pObj->GetString());
 }
 
@@ -206,9 +210,10 @@ RetainPtr<CPDF_Font> CPDF_FormControl::GetDefaultControlFont() const {
 
   CPDF_Object* pObj = CPDF_FormField::GetFieldAttr(m_pWidgetDict.Get(), "DR");
   if (CPDF_Dictionary* pDict = ToDictionary(pObj)) {
-    CPDF_Dictionary* pFonts = pDict->GetDictFor("Font");
-    if (ValidateFontResourceDict(pFonts)) {
-      CPDF_Dictionary* pElement = pFonts->GetDictFor(csFontNameTag.value());
+    RetainPtr<CPDF_Dictionary> pFonts = pDict->GetMutableDictFor("Font");
+    if (ValidateFontResourceDict(pFonts.Get())) {
+      RetainPtr<CPDF_Dictionary> pElement =
+          pFonts->GetMutableDictFor(csFontNameTag.value());
       if (pElement) {
         auto* pData = CPDF_DocPageData::FromDocument(m_pForm->GetDocument());
         RetainPtr<CPDF_Font> pFont = pData->GetFont(pElement);
@@ -221,17 +226,18 @@ RetainPtr<CPDF_Font> CPDF_FormControl::GetDefaultControlFont() const {
   if (pFormFont)
     return pFormFont;
 
-  CPDF_Dictionary* pPageDict = m_pWidgetDict->GetDictFor("P");
+  RetainPtr<CPDF_Dictionary> pPageDict = m_pWidgetDict->GetMutableDictFor("P");
   CPDF_Dictionary* pDict =
-      ToDictionary(CPDF_FormField::GetFieldAttr(pPageDict, "Resources"));
+      ToDictionary(CPDF_FormField::GetFieldAttr(pPageDict.Get(), "Resources"));
   if (!pDict)
     return nullptr;
 
-  CPDF_Dictionary* pFonts = pDict->GetDictFor("Font");
-  if (!ValidateFontResourceDict(pFonts))
+  RetainPtr<CPDF_Dictionary> pFonts = pDict->GetMutableDictFor("Font");
+  if (!ValidateFontResourceDict(pFonts.Get()))
     return nullptr;
 
-  CPDF_Dictionary* pElement = pFonts->GetDictFor(csFontNameTag.value());
+  RetainPtr<CPDF_Dictionary> pElement =
+      pFonts->GetMutableDictFor(csFontNameTag.value());
   if (!pElement)
     return nullptr;
 
@@ -243,8 +249,10 @@ int CPDF_FormControl::GetControlAlignment() const {
   if (m_pWidgetDict->KeyExist("Q"))
     return m_pWidgetDict->GetIntegerFor("Q", 0);
 
-  CPDF_Object* pObj = CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "Q");
+  const CPDF_Object* pObj =
+      CPDF_FormField::GetFieldAttr(m_pField->GetDict(), "Q");
   if (pObj)
     return pObj->GetInteger();
+
   return m_pForm->GetFormAlignment();
 }

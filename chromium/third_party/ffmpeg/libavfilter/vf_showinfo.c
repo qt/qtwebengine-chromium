@@ -42,6 +42,7 @@
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/video_enc_params.h"
 #include "libavutil/detection_bbox.h"
+#include "libavutil/uuid.h"
 
 #include "avfilter.h"
 #include "internal.h"
@@ -421,29 +422,20 @@ static void dump_video_enc_params(AVFilterContext *ctx, const AVFrameSideData *s
 
 static void dump_sei_unregistered_metadata(AVFilterContext *ctx, const AVFrameSideData *sd)
 {
-    const int uuid_size = 16;
     const uint8_t *user_data = sd->data;
-    int i;
 
-    if (sd->size < uuid_size) {
+    if (sd->size < AV_UUID_LEN) {
         av_log(ctx, AV_LOG_ERROR, "invalid data(%"SIZE_SPECIFIER" < "
-               "UUID(%d-bytes))\n", sd->size, uuid_size);
+               "UUID(%d-bytes))\n", sd->size, AV_UUID_LEN);
         return;
     }
 
     av_log(ctx, AV_LOG_INFO, "User Data Unregistered:\n");
-    av_log(ctx, AV_LOG_INFO, "UUID=");
-    for (i = 0; i < uuid_size; i++) {
-        av_log(ctx, AV_LOG_INFO, "%02x", user_data[i]);
-        if (i == 3 || i == 5 || i == 7 || i == 9)
-            av_log(ctx, AV_LOG_INFO, "-");
-    }
-    av_log(ctx, AV_LOG_INFO, "\n");
+    av_log(ctx, AV_LOG_INFO, "UUID=" AV_PRI_UUID "\n", AV_UUID_ARG(user_data));
 
     av_log(ctx, AV_LOG_INFO, "User Data=");
-    for (; i < sd->size; i++) {
+    for (size_t i = 16; i < sd->size; i++)
         av_log(ctx, AV_LOG_INFO, "%02x", user_data[i]);
-    }
     av_log(ctx, AV_LOG_INFO, "\n");
 }
 
@@ -717,10 +709,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *frame)
     }
 
     av_log(ctx, AV_LOG_INFO,
-           "n:%4"PRId64" pts:%7s pts_time:%-7s pos:%9"PRId64" "
+           "n:%4"PRId64" pts:%7s pts_time:%-7s duration:%7"PRId64
+           " duration_time:%-7s pos:%9"PRId64" "
            "fmt:%s sar:%d/%d s:%dx%d i:%c iskey:%d type:%c ",
            inlink->frame_count_out,
-           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base), frame->pkt_pos,
+           av_ts2str(frame->pts), av_ts2timestr(frame->pts, &inlink->time_base),
+           frame->duration, av_ts2timestr(frame->duration, &inlink->time_base),
+           frame->pkt_pos,
            desc->name,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
            frame->width, frame->height,

@@ -11,6 +11,7 @@
 #include "src/compiler/bytecode-liveness-map.h"
 #include "src/interpreter/bytecode-register.h"
 #include "src/maglev/maglev-compilation-unit.h"
+#include "src/maglev/maglev-graph-printer.h"
 #include "src/maglev/maglev-ir.h"
 #include "src/maglev/maglev-regalloc-data.h"
 #include "src/maglev/maglev-register-frame-array.h"
@@ -117,7 +118,8 @@ class CompactInterpreterFrameState {
     int live_reg = 0;
     for (int register_index : *liveness_) {
       interpreter::Register reg = interpreter::Register(register_index);
-      f(live_registers_and_accumulator_[info.parameter_count() + live_reg++],
+      f(live_registers_and_accumulator_[info.parameter_count() +
+                                        context_register_count_ + live_reg++],
         reg);
     }
   }
@@ -127,7 +129,8 @@ class CompactInterpreterFrameState {
     int live_reg = 0;
     for (int register_index : *liveness_) {
       interpreter::Register reg = interpreter::Register(register_index);
-      f(live_registers_and_accumulator_[info.parameter_count() + live_reg++],
+      f(live_registers_and_accumulator_[info.parameter_count() +
+                                        context_register_count_ + live_reg++],
         reg);
     }
   }
@@ -135,12 +138,14 @@ class CompactInterpreterFrameState {
   template <typename Function>
   void ForEachRegister(const MaglevCompilationUnit& info, Function&& f) {
     ForEachParameter(info, f);
+    f(context(info), interpreter::Register::current_context());
     ForEachLocal(info, f);
   }
 
   template <typename Function>
   void ForEachRegister(const MaglevCompilationUnit& info, Function&& f) const {
     ForEachParameter(info, f);
+    f(context(info), interpreter::Register::current_context());
     ForEachLocal(info, f);
   }
 
@@ -169,6 +174,13 @@ class CompactInterpreterFrameState {
     return live_registers_and_accumulator_[size(info) - 1];
   }
 
+  ValueNode*& context(const MaglevCompilationUnit& info) {
+    return live_registers_and_accumulator_[info.parameter_count()];
+  }
+  ValueNode* context(const MaglevCompilationUnit& info) const {
+    return live_registers_and_accumulator_[info.parameter_count()];
+  }
+
   size_t size(const MaglevCompilationUnit& info) const {
     return SizeFor(info, liveness_);
   }
@@ -176,9 +188,13 @@ class CompactInterpreterFrameState {
  private:
   static size_t SizeFor(const MaglevCompilationUnit& info,
                         const compiler::BytecodeLivenessState* liveness) {
-    return info.parameter_count() + liveness->live_value_count();
+    return info.parameter_count() + context_register_count_ +
+           liveness->live_value_count();
   }
 
+  // TODO(leszeks): Only include the context register if there are any
+  // Push/PopContext calls.
+  static const int context_register_count_ = 1;
   ValueNode** const live_registers_and_accumulator_;
   const compiler::BytecodeLivenessState* const liveness_;
 };
@@ -212,8 +228,6 @@ class MergePointRegisterState {
 
 class MergePointInterpreterFrameState {
  public:
-  static constexpr BasicBlock* kDeadPredecessor = nullptr;
-
   void CheckIsLoopPhiIfNeeded(const MaglevCompilationUnit& compilation_unit,
                               int merge_offset, interpreter::Register reg,
                               ValueNode* value) {
@@ -222,6 +236,7 @@ class MergePointInterpreterFrameState {
     if (!analysis.IsLoopHeader(merge_offset)) return;
     auto& assignments = analysis.GetLoopInfoFor(merge_offset).assignments();
     if (reg.is_parameter()) {
+      if (reg.is_current_context()) return;
       if (!assignments.ContainsParameter(reg.ToParameterIndex())) return;
     } else {
       DCHECK(
@@ -238,6 +253,7 @@ class MergePointInterpreterFrameState {
       const compiler::BytecodeLivenessState* liveness)
       : predecessor_count_(predecessor_count),
         predecessors_so_far_(1),
+        is_loop_header_(false),
         predecessors_(info.zone()->NewArray<BasicBlock*>(predecessor_count)),
         frame_state_(info, liveness, state) {
     predecessors_[0] = predecessor;
@@ -248,7 +264,8 @@ class MergePointInterpreterFrameState {
       int predecessor_count, const compiler::BytecodeLivenessState* liveness,
       const compiler::LoopInfo* loop_info)
       : predecessor_count_(predecessor_count),
-        predecessors_so_far_(1),
+        predecessors_so_far_(0),
+        is_loop_header_(true),
         predecessors_(info.zone()->NewArray<BasicBlock*>(predecessor_count)),
         frame_state_(info, liveness) {
     auto& assignments = loop_info->assignments();
@@ -259,6 +276,7 @@ class MergePointInterpreterFrameState {
             entry = NewLoopPhi(info.zone(), reg, merge_offset);
           }
         });
+    frame_state_.context(info) = nullptr;
     frame_state_.ForEachLocal(
         info, [&](ValueNode*& entry, interpreter::Register reg) {
           entry = nullptr;
@@ -267,8 +285,6 @@ class MergePointInterpreterFrameState {
           }
         });
     DCHECK(!frame_state_.liveness()->AccumulatorIsLive());
-
-    predecessors_[0] = uninitialized_predecessor();
   }
 
   // Merges an unmerged framestate with a possibly merged framestate into |this|
@@ -280,13 +296,29 @@ class MergePointInterpreterFrameState {
     DCHECK_LT(predecessors_so_far_, predecessor_count_);
     predecessors_[predecessors_so_far_] = predecessor;
 
-    frame_state_.ForEachValue(
-        compilation_unit, [&](ValueNode*& value, interpreter::Register reg) {
-          CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
+    if (FLAG_trace_maglev_graph_building) {
+      std::cout << "Merging..." << std::endl;
+    }
+    frame_state_.ForEachValue(compilation_unit, [&](ValueNode*& value,
+                                                    interpreter::Register reg) {
+      CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
 
-          value = MergeValue(compilation_unit, reg, value, unmerged.get(reg),
-                             merge_offset);
-        });
+      if (FLAG_trace_maglev_graph_building) {
+        std::cout << "  " << reg.ToString() << ": "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(), value)
+                  << " <- "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(),
+                                    unmerged.get(reg));
+      }
+      value = MergeValue(compilation_unit, reg, value, unmerged.get(reg),
+                         merge_offset);
+      if (FLAG_trace_maglev_graph_building) {
+        std::cout << " => "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(), value)
+                  << ": " << PrintNode(compilation_unit.graph_labeller(), value)
+                  << std::endl;
+      }
+    });
     predecessors_so_far_++;
     DCHECK_LE(predecessors_so_far_, predecessor_count_);
   }
@@ -296,17 +328,36 @@ class MergePointInterpreterFrameState {
   void MergeLoop(MaglevCompilationUnit& compilation_unit,
                  const InterpreterFrameState& loop_end_state,
                  BasicBlock* loop_end_block, int merge_offset) {
+    // This should be the last predecessor we try to merge.
+    DCHECK_EQ(predecessors_so_far_, predecessor_count_ - 1);
+    DCHECK(is_unmerged_loop());
+    predecessors_[predecessor_count_ - 1] = loop_end_block;
+
+    if (FLAG_trace_maglev_graph_building) {
+      std::cout << "Merging loop backedge..." << std::endl;
+    }
+    frame_state_.ForEachValue(compilation_unit, [&](ValueNode* value,
+                                                    interpreter::Register reg) {
+      CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
+
+      if (FLAG_trace_maglev_graph_building) {
+        std::cout << "  " << reg.ToString() << ": "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(), value)
+                  << " <- "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(),
+                                    loop_end_state.get(reg));
+      }
+      MergeLoopValue(compilation_unit, reg, value, loop_end_state.get(reg),
+                     merge_offset);
+      if (FLAG_trace_maglev_graph_building) {
+        std::cout << " => "
+                  << PrintNodeLabel(compilation_unit.graph_labeller(), value)
+                  << ": " << PrintNode(compilation_unit.graph_labeller(), value)
+                  << std::endl;
+      }
+    });
+    predecessors_so_far_++;
     DCHECK_EQ(predecessors_so_far_, predecessor_count_);
-    DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
-    predecessors_[0] = loop_end_block;
-
-    frame_state_.ForEachValue(
-        compilation_unit, [&](ValueNode* value, interpreter::Register reg) {
-          CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
-
-          MergeLoopValue(compilation_unit, reg, value, loop_end_state.get(reg),
-                         merge_offset);
-        });
   }
 
   // Merges a dead framestate (e.g. one which has been early terminated with a
@@ -327,10 +378,14 @@ class MergePointInterpreterFrameState {
 
   // Merges a dead loop framestate (e.g. one where the block containing the
   // JumpLoop has been early terminated with a deopt).
-  void MergeDeadLoop() {
-    DCHECK_EQ(predecessors_so_far_, predecessor_count_);
-    DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
-    predecessors_[0] = kDeadPredecessor;
+  void MergeDeadLoop(const MaglevCompilationUnit& compilation_unit,
+                     int merge_offset) {
+    // This should be the last predecessor we try to merge.
+    DCHECK_EQ(predecessors_so_far_, predecessor_count_ - 1);
+    DCHECK(is_unmerged_loop());
+    MergeDead(compilation_unit, merge_offset);
+    // This means that this is no longer a loop.
+    is_loop_header_ = false;
   }
 
   const CompactInterpreterFrameState& frame_state() const {
@@ -355,25 +410,26 @@ class MergePointInterpreterFrameState {
     return predecessors_[i];
   }
 
+  bool is_loop() const { return is_loop_header_; }
+
+  bool is_unmerged_loop() const {
+    // If this is a loop and not all predecessors are set, then the loop isn't
+    // merged yet.
+    DCHECK_GT(predecessor_count_, 0);
+    return is_loop_header_ && predecessors_so_far_ < predecessor_count_;
+  }
+
   bool is_unreachable_loop() const {
-    DCHECK_EQ(predecessors_so_far_, predecessor_count_);
     // If there is only one predecessor, and it's not set, then this is a loop
     // merge with no forward control flow entering it.
-    return predecessor_count_ == 1 &&
-           predecessors_[0] == uninitialized_predecessor();
+    return is_loop_header_ && predecessor_count_ == 1 &&
+           predecessors_so_far_ == 0;
   }
 
  private:
   friend void InterpreterFrameState::CopyFrom(
       const MaglevCompilationUnit& info,
       const MergePointInterpreterFrameState& state);
-
-  // Create an uninitialized value sentinel for loop merges. This is distinct
-  // from kDeadPredecessor, which is for loops that were reached, but were dead.
-  // TODO(leszeks): Do this in a way that isn't UB.
-  static BasicBlock* uninitialized_predecessor() {
-    return reinterpret_cast<BasicBlock*>(0x100b);
-  }
 
   ValueNode* FromInt32ToTagged(MaglevCompilationUnit& compilation_unit,
                                ValueNode* value) {
@@ -449,8 +505,8 @@ class MergePointInterpreterFrameState {
     // If the merged node is null, this is a pre-created loop header merge
     // frame will null values for anything that isn't a loop Phi.
     if (merged == nullptr) {
-      DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
-      DCHECK_EQ(predecessors_so_far_, 1);
+      DCHECK(is_unmerged_loop());
+      DCHECK_EQ(predecessors_so_far_, 0);
       return unmerged;
     }
 
@@ -488,6 +544,11 @@ class MergePointInterpreterFrameState {
 
     for (int i = 0; i < predecessors_so_far_; i++) result->set_input(i, merged);
     result->set_input(predecessors_so_far_, unmerged);
+    if (FLAG_trace_maglev_graph_building) {
+      for (int i = predecessors_so_far_ + 1; i < predecessor_count_; i++) {
+        result->set_input(i, nullptr);
+      }
+    }
 
     phis_.Add(result);
     return result;
@@ -498,8 +559,8 @@ class MergePointInterpreterFrameState {
     // If the merged node is null, this is a pre-created loop header merge
     // frame with null values for anything that isn't a loop Phi.
     if (merged == nullptr) {
-      DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
-      DCHECK_EQ(predecessors_so_far_, 1);
+      DCHECK(is_unmerged_loop());
+      DCHECK_EQ(predecessors_so_far_, 0);
       return;
     }
 
@@ -518,35 +579,36 @@ class MergePointInterpreterFrameState {
     Phi* result = merged->TryCast<Phi>();
     if (result == nullptr || result->merge_offset() != merge_offset) {
       if (merged != unmerged) {
-        DCHECK(unmerged->Is<CheckedSmiUntag>() ||
-               unmerged->Is<CheckedFloat64Unbox>());
-        DCHECK_EQ(merged, unmerged->input(0).node());
+        // TODO(leszeks): These DCHECKs are too restrictive, investigate making
+        // them looser.
+        // DCHECK(unmerged->Is<CheckedSmiUntag>() ||
+        //        unmerged->Is<CheckedFloat64Unbox>());
+        // DCHECK_EQ(merged, unmerged->input(0).node());
       }
       return;
     }
     DCHECK_EQ(result->owner(), owner);
-    // The loop jump is defined to unconditionally be index 0.
-#ifdef DEBUG
-    DCHECK_NULL(result->input(0).node());
-#endif
     unmerged = EnsureTagged(compilation_unit, unmerged);
-    result->set_input(0, unmerged);
+    result->set_input(predecessor_count_ - 1, unmerged);
   }
 
   ValueNode* NewLoopPhi(Zone* zone, interpreter::Register reg,
                         int merge_offset) {
-    DCHECK_EQ(predecessors_so_far_, 1);
+    DCHECK_EQ(predecessors_so_far_, 0);
     // Create a new loop phi, which for now is empty.
     Phi* result = Node::New<Phi>(zone, predecessor_count_, reg, merge_offset);
-#ifdef DEBUG
-    result->set_input(0, nullptr);
-#endif
+    if (FLAG_trace_maglev_graph_building) {
+      for (int i = 0; i < predecessor_count_; i++) {
+        result->set_input(i, nullptr);
+      }
+    }
     phis_.Add(result);
     return result;
   }
 
   int predecessor_count_;
   int predecessors_so_far_;
+  bool is_loop_header_;
   Phi::List phis_;
   BasicBlock** predecessors_;
 

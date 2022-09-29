@@ -18,24 +18,27 @@ namespace Eigen {
 namespace internal {
 
 template <typename Scalar, typename Index, int Mode, bool Conjugate, int TriStorageOrder,int OtherInnerStride>
-struct trsm_kernels {
+struct trsmKernelL {
   // Generic Implementation of triangular solve for triangular matrix on left and multiple rhs.
   // Handles non-packed matrices.
-  static void trsmKernelL(
-    Index size, Index otherSize,
-    const Scalar* _tri, Index triStride,
-    Scalar* _other, Index otherIncr, Index otherStride);
-
-  // Generic Implementation of triangular solve for triangular matrix on right and multiple lhs.
-  // Handles non-packed matrices.
-  static void trsmKernelR(
+  static void kernel(
     Index size, Index otherSize,
     const Scalar* _tri, Index triStride,
     Scalar* _other, Index otherIncr, Index otherStride);
 };
 
 template <typename Scalar, typename Index, int Mode, bool Conjugate, int TriStorageOrder,int OtherInnerStride>
-EIGEN_STRONG_INLINE void trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::trsmKernelL(
+struct trsmKernelR {
+  // Generic Implementation of triangular solve for triangular matrix on right and multiple lhs.
+  // Handles non-packed matrices.
+  static void kernel(
+    Index size, Index otherSize,
+    const Scalar* _tri, Index triStride,
+    Scalar* _other, Index otherIncr, Index otherStride);
+};
+
+template <typename Scalar, typename Index, int Mode, bool Conjugate, int TriStorageOrder,int OtherInnerStride>
+EIGEN_STRONG_INLINE void trsmKernelL<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::kernel(
     Index size, Index otherSize,
     const Scalar* _tri, Index triStride,
     Scalar* _other, Index otherIncr, Index otherStride)
@@ -86,7 +89,7 @@ EIGEN_STRONG_INLINE void trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorage
 
 
 template <typename Scalar, typename Index, int Mode, bool Conjugate, int TriStorageOrder, int OtherInnerStride>
-EIGEN_STRONG_INLINE void trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::trsmKernelR(
+EIGEN_STRONG_INLINE void trsmKernelR<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::kernel(
     Index size, Index otherSize,
     const Scalar* _tri, Index triStride,
     Scalar* _other, Index otherIncr, Index otherStride)
@@ -168,7 +171,7 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheLeft,Mode,Conju
     std::ptrdiff_t l1, l2, l3;
     manage_caching_sizes(GetAction, &l1, &l2, &l3);
 
-#if defined(EIGEN_ENABLE_AVX512_NOCOPY_TRSM_CUTOFFS)
+#if defined(EIGEN_VECTORIZE_AVX512) && EIGEN_USE_AVX512_TRSM_L_KERNELS && EIGEN_ENABLE_AVX512_NOCOPY_TRSM_L_CUTOFFS
     EIGEN_IF_CONSTEXPR( (OtherInnerStride == 1 &&
                        (std::is_same<Scalar,float>::value ||
                         std::is_same<Scalar,double>::value)) ) {
@@ -177,7 +180,7 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheLeft,Mode,Conju
       // TODO: Investigate better heuristics for cutoffs.
       double L2Cap = 0.5; // 50% of L2 size
       if (size < avx512_trsm_cutoff<Scalar>(l2, cols, L2Cap)) {
-        trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, 1>::trsmKernelL(
+        trsmKernelL<Scalar, Index, Mode, Conjugate, TriStorageOrder, 1>::kernel(
           size, cols, _tri, triStride, _other, 1, otherStride);
         return;
       }
@@ -243,14 +246,14 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheLeft,Mode,Conju
           // tr solve
           {
             Index i  = IsLower ? k2+k1 : k2-k1;
-#if defined(EIGEN_USE_AVX512_TRSM_KERNELS)
+#if defined(EIGEN_VECTORIZE_AVX512) && EIGEN_USE_AVX512_TRSM_L_KERNELS
             EIGEN_IF_CONSTEXPR( (OtherInnerStride == 1 &&
                                  (std::is_same<Scalar,float>::value ||
                                   std::is_same<Scalar,double>::value)) ) {
               i  = IsLower ? k2 + k1: k2 - k1 - actualPanelWidth;
             }
 #endif
-            trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::trsmKernelL(
+            trsmKernelL<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::kernel(
               actualPanelWidth, actual_cols,
               _tri + i + (i)*triStride, triStride,
               _other + i*OtherInnerStride + j2*otherStride, otherIncr, otherStride);
@@ -315,7 +318,7 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheRight,Mode,Conj
   {
     Index rows = otherSize;
 
-#if defined(EIGEN_ENABLE_AVX512_NOCOPY_TRSM_CUTOFFS)
+#if defined(EIGEN_VECTORIZE_AVX512) && EIGEN_USE_AVX512_TRSM_R_KERNELS && EIGEN_ENABLE_AVX512_NOCOPY_TRSM_R_CUTOFFS
     EIGEN_IF_CONSTEXPR( (OtherInnerStride == 1 &&
                  (std::is_same<Scalar,float>::value ||
                   std::is_same<Scalar,double>::value)) ) {
@@ -324,8 +327,8 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheRight,Mode,Conj
       manage_caching_sizes(GetAction, &l1, &l2, &l3);
       double L2Cap = 0.5; // 50% of L2 size
       if (size < avx512_trsm_cutoff<Scalar>(l2, rows, L2Cap)) {
-        trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::
-          trsmKernelR(size, rows, _tri, triStride, _other, 1, otherStride);
+        trsmKernelR<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::
+          kernel(size, rows, _tri, triStride, _other, 1, otherStride);
         return;
       }
     }
@@ -420,8 +423,8 @@ EIGEN_DONT_INLINE void triangular_solve_matrix<Scalar,Index,OnTheRight,Mode,Conj
 
             {
               // unblocked triangular solve
-              trsm_kernels<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::
-                trsmKernelR(actualPanelWidth, actual_mc,
+              trsmKernelR<Scalar, Index, Mode, Conjugate, TriStorageOrder, OtherInnerStride>::
+                kernel(actualPanelWidth, actual_mc,
                             _tri + absolute_j2 + absolute_j2*triStride, triStride,
                             _other + i2*OtherInnerStride + absolute_j2*otherStride, otherIncr, otherStride);
             }

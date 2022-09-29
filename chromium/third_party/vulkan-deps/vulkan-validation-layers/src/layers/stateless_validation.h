@@ -24,6 +24,7 @@
 #include "parameter_name.h"
 #include "vk_typemap_helper.h"
 #include "sync_utils.h"
+#include "cmd_buffer_state.h"
 
 // Suppress unused warning on Linux
 #if defined(__GNUC__)
@@ -121,6 +122,7 @@ class StatelessValidation : public ValidationObject {
         layer_data::unordered_set<uint32_t> subpasses_using_color_attachment;
         layer_data::unordered_set<uint32_t> subpasses_using_depthstencil_attachment;
         std::vector<VkSubpassDescriptionFlags> subpasses_flags;
+        uint32_t color_attachment_count;
     };
 
     // Though this validation object is predominantly statless, the Framebuffer checks are greatly simplified by creating and
@@ -1362,7 +1364,7 @@ class StatelessValidation : public ValidationObject {
             // Need to check first so layer doesn't segfault from out of bound array access
             // src subpass bound check
             if ((dependency.srcSubpass != VK_SUBPASS_EXTERNAL) && (dependency.srcSubpass >= pCreateInfo->subpassCount)) {
-                vuid = use_rp2 ? "VUID-VkRenderPassCreateInfo2-srcSubpass-02526" : "VUID-VkRenderPassCreateInfo-srcSubpass-02517";
+                vuid = use_rp2 ? "VUID-VkRenderPassCreateInfo2-srcSubpass-02526" : "VUID-VkRenderPassCreateInfo-pDependencies-06866";
                 skip |= LogError(device, vuid,
                                  "%s: pCreateInfo->pDependencies[%u].srcSubpass index (%u) has to be less than subpassCount (%u)",
                                  func_name, i, dependency.srcSubpass, pCreateInfo->subpassCount);
@@ -1370,7 +1372,7 @@ class StatelessValidation : public ValidationObject {
 
             // dst subpass bound check
             if ((dependency.dstSubpass != VK_SUBPASS_EXTERNAL) && (dependency.dstSubpass >= pCreateInfo->subpassCount)) {
-                vuid = use_rp2 ? "VUID-VkRenderPassCreateInfo2-dstSubpass-02527" : "VUID-VkRenderPassCreateInfo-dstSubpass-02518";
+                vuid = use_rp2 ? "VUID-VkRenderPassCreateInfo2-dstSubpass-02527" : "VUID-VkRenderPassCreateInfo-pDependencies-06867";
                 skip |= LogError(device, vuid,
                                  "%s: pCreateInfo->pDependencies[%u].dstSubpass index (%u) has to be less than subpassCount (%u)",
                                  func_name, i, dependency.dstSubpass, pCreateInfo->subpassCount);
@@ -1398,6 +1400,8 @@ class StatelessValidation : public ValidationObject {
         renderpass_state.subpasses_flags.resize(pCreateInfo->subpassCount);
         for (uint32_t subpass = 0; subpass < pCreateInfo->subpassCount; ++subpass) {
             bool uses_color = false;
+            renderpass_state.color_attachment_count = pCreateInfo->pSubpasses[subpass].colorAttachmentCount;
+
             for (uint32_t i = 0; i < pCreateInfo->pSubpasses[subpass].colorAttachmentCount && !uses_color; ++i)
                 if (pCreateInfo->pSubpasses[subpass].pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED) uses_color = true;
 
@@ -1473,9 +1477,9 @@ class StatelessValidation : public ValidationObject {
                                               const VkAllocationCallbacks *pAllocator, VkSamplerYcbcrConversion *pYcbcrConversion,
                                               const char *apiName) const;
     bool ValidateCmdDrawIndirectCount(VkCommandBuffer commandBuffer, VkDeviceSize offset, VkDeviceSize countBufferOffset,
-                                      bool khr) const;
+                                      CMD_TYPE cmd_type) const;
     bool ValidateCmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkDeviceSize offset, VkDeviceSize countBufferOffset,
-                                             bool khr) const;
+                                             CMD_TYPE cmd_type) const;
 
     bool ValidateSwapchainCreateInfo(const char *func_name, VkSwapchainCreateInfoKHR const *pCreateInfo) const;
 
@@ -1526,6 +1530,20 @@ class StatelessValidation : public ValidationObject {
                                                          const VkAllocationCallbacks *pAllocator,
                                                          VkDescriptorSetLayout *pSetLayout) const;
 
+    bool manual_PreCallValidateCreateSemaphore(VkDevice device, const VkSemaphoreCreateInfo *pCreateInfo,
+                                               const VkAllocationCallbacks *pAllocator, VkSemaphore *pSemaphore) const;
+
+    bool manual_PreCallValidateCreateEvent(VkDevice device, const VkEventCreateInfo *pCreateInfo,
+                                           const VkAllocationCallbacks *pAllocator, VkEvent *pEvent) const;
+
+    bool manual_PreCallValidateCreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo,
+                                                const VkAllocationCallbacks *pAllocator, VkBufferView *pBufferView) const;
+
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    bool ExportMetalObjectsPNextUtil(VkExportMetalObjectTypeFlagBitsEXT bit, const char *vuid, const char *api_call,
+                                         const char *sType, const void *pNext) const;
+#endif  // VK_USE_PLATFORM_METAL_EXT
+
     bool validate_WriteDescriptorSet(const char *vkCallingFunction, const uint32_t descriptorWriteCount,
                                      const VkWriteDescriptorSet *pDescriptorWrites, const bool isPushDescriptor) const;
     bool manual_PreCallValidateUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
@@ -1566,6 +1584,10 @@ class StatelessValidation : public ValidationObject {
                                                     VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                     uint32_t stride) const;
 
+    bool manual_PreCallValidateCmdDrawIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                       VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                                       uint32_t stride) const;
+
     bool manual_PreCallValidateCmdDrawIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                        VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                        uint32_t stride) const;
@@ -1573,6 +1595,10 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateCmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                            VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                            uint32_t maxDrawCount, uint32_t stride) const;
+
+    bool manual_PreCallValidateCmdDrawIndexedIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                              VkBuffer countBuffer, VkDeviceSize countBufferOffset,
+                                                              uint32_t maxDrawCount, uint32_t stride) const;
 
     bool manual_PreCallValidateCmdDrawIndexedIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                               VkBuffer countBuffer, VkDeviceSize countBufferOffset,
@@ -1604,11 +1630,6 @@ class StatelessValidation : public ValidationObject {
                                                                       VkImageType type, VkImageTiling tiling,
                                                                       VkImageUsageFlags usage, VkImageCreateFlags flags,
                                                                       VkImageFormatProperties *pImageFormatProperties) const;
-
-    bool manual_PreCallValidateGetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
-                                                                         const VkPhysicalDeviceVideoFormatInfoKHR *pVideoFormatInfo,
-                                                                         uint32_t *pVideoFormatPropertyCount,
-                                                                         VkVideoFormatPropertiesKHR *pVideoFormatProperties) const;
 
     bool manual_PreCallValidateCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer,
                                              uint32_t regionCount, const VkBufferCopy *pRegions) const;
@@ -1928,6 +1949,10 @@ class StatelessValidation : public ValidationObject {
     bool manual_PreCallValidateGetDeviceImageSparseMemoryRequirementsKHR(
         VkDevice device, const VkDeviceImageMemoryRequirements *pInfo, uint32_t *pSparseMemoryRequirementCount,
         VkSparseImageMemoryRequirements2 *pSparseMemoryRequirements) const;
+
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    bool manual_PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT *pMetalObjectsInfo) const;
+#endif // VK_USE_PLATFORM_METAL_EXT
 
 #include "parameter_validation.h"
 };  // Class StatelessValidation

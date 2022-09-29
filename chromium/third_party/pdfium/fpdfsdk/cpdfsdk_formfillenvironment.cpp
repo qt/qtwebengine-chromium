@@ -6,6 +6,8 @@
 
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 
+#include <stdint.h>
+
 #include <memory>
 #include <utility>
 #include <vector>
@@ -14,7 +16,7 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/stl_util.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
@@ -125,14 +127,14 @@ bool CPDFSDK_FormFillEnvironment::IsSelectionImplemented() const {
 
 #ifdef PDF_ENABLE_V8
 CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetCurrentView() {
-  IPDF_Page* pPage = IPDFPageFromFPDFPage(GetCurrentPage());
+  IPDF_Page* pPage = GetCurrentPage();
   return pPage ? GetOrCreatePageView(pPage) : nullptr;
 }
 
-FPDF_PAGE CPDFSDK_FormFillEnvironment::GetCurrentPage() const {
+IPDF_Page* CPDFSDK_FormFillEnvironment::GetCurrentPage() const {
   if (m_pInfo && m_pInfo->FFI_GetCurrentPage) {
-    return m_pInfo->FFI_GetCurrentPage(
-        m_pInfo, FPDFDocumentFromCPDFDocument(m_pCPDFDoc.Get()));
+    return IPDFPageFromFPDFPage(m_pInfo->FFI_GetCurrentPage(
+        m_pInfo, FPDFDocumentFromCPDFDocument(m_pCPDFDoc.Get())));
   }
   return nullptr;
 }
@@ -146,7 +148,7 @@ WideString CPDFSDK_FormFillEnvironment::GetLanguage() {
   if (nRequiredLen <= 0)
     return WideString();
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
+  DataVector<uint8_t> pBuff(nRequiredLen);
   int nActualLen =
       m_pInfo->FFI_GetLanguage(m_pInfo, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
@@ -168,7 +170,7 @@ WideString CPDFSDK_FormFillEnvironment::GetPlatform() {
   if (nRequiredLen <= 0)
     return WideString();
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
+  DataVector<uint8_t> pBuff(nRequiredLen);
   int nActualLen =
       m_pInfo->FFI_GetPlatform(m_pInfo, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
@@ -233,7 +235,7 @@ WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
   if (nRequiredLen <= 0)
     return WideString();
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
+  DataVector<uint8_t> pBuff(nRequiredLen);
   const int nActualLen =
       js_platform->Field_browse(js_platform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
@@ -246,13 +248,14 @@ WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
   return WideString::FromDefANSI(ByteStringView(pBuff));
 }
 
-void CPDFSDK_FormFillEnvironment::JS_docmailForm(pdfium::span<uint8_t> mailData,
-                                                 FPDF_BOOL bUI,
-                                                 const WideString& To,
-                                                 const WideString& Subject,
-                                                 const WideString& CC,
-                                                 const WideString& BCC,
-                                                 const WideString& Msg) {
+void CPDFSDK_FormFillEnvironment::JS_docmailForm(
+    pdfium::span<const uint8_t> mailData,
+    FPDF_BOOL bUI,
+    const WideString& To,
+    const WideString& Subject,
+    const WideString& CC,
+    const WideString& BCC,
+    const WideString& Msg) {
   IPDF_JSPLATFORM* js_platform = GetJSPlatform();
   if (!js_platform || !js_platform->Doc_mail)
     return;
@@ -262,7 +265,7 @@ void CPDFSDK_FormFillEnvironment::JS_docmailForm(pdfium::span<uint8_t> mailData,
   ByteString bsCC = CC.ToUTF16LE();
   ByteString bsBcc = BCC.ToUTF16LE();
   ByteString bsMsg = Msg.ToUTF16LE();
-  js_platform->Doc_mail(js_platform, mailData.data(),
+  js_platform->Doc_mail(js_platform, const_cast<uint8_t*>(mailData.data()),
                         pdfium::base::checked_cast<int>(mailData.size()), bUI,
                         AsFPDFWideString(&bsTo), AsFPDFWideString(&bsSubject),
                         AsFPDFWideString(&bsCC), AsFPDFWideString(&bsBcc),
@@ -308,7 +311,7 @@ WideString CPDFSDK_FormFillEnvironment::GetFilePath() const {
   if (nRequiredLen <= 0)
     return WideString();
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
+  DataVector<uint8_t> pBuff(nRequiredLen);
   const int nActualLen =
       js_platform->Doc_getFilePath(js_platform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
@@ -321,16 +324,17 @@ WideString CPDFSDK_FormFillEnvironment::GetFilePath() const {
   return WideString::FromDefANSI(ByteStringView(pBuff));
 }
 
-void CPDFSDK_FormFillEnvironment::SubmitForm(pdfium::span<uint8_t> form_data,
-                                             const WideString& URL) {
+void CPDFSDK_FormFillEnvironment::SubmitForm(
+    pdfium::span<const uint8_t> form_data,
+    const WideString& URL) {
   IPDF_JSPLATFORM* js_platform = GetJSPlatform();
   if (!js_platform || !js_platform->Doc_submitForm)
     return;
 
   ByteString bsUrl = URL.ToUTF16LE();
-  js_platform->Doc_submitForm(js_platform, form_data.data(),
-                              fxcrt::CollectionSize<int>(form_data),
-                              AsFPDFWideString(&bsUrl));
+  js_platform->Doc_submitForm(
+      js_platform, const_cast<uint8_t*>(form_data.data()),
+      fxcrt::CollectionSize<int>(form_data), AsFPDFWideString(&bsUrl));
 }
 
 IJS_Runtime* CPDFSDK_FormFillEnvironment::GetIJSRuntime() {
@@ -598,8 +602,12 @@ void CPDFSDK_FormFillEnvironment::PageEvent(int iPageCount,
 
 void CPDFSDK_FormFillEnvironment::ClearAllFocusedAnnots() {
   for (auto& it : m_PageMap) {
-    if (it.second->IsValidSDKAnnot(GetFocusAnnot()))
+    if (it.second->IsValidSDKAnnot(GetFocusAnnot())) {
+      ObservedPtr<CPDFSDK_PageView> pObserved(it.second.get());
       KillFocusAnnot({});
+      if (!pObserved)
+        break;
+    }
   }
 }
 
@@ -647,11 +655,11 @@ void CPDFSDK_FormFillEnvironment::ProcJavascriptAction() {
 }
 
 bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
-  CPDF_Dictionary* pRoot = m_pCPDFDoc->GetRoot();
+  const CPDF_Dictionary* pRoot = m_pCPDFDoc->GetRoot();
   if (!pRoot)
     return false;
 
-  CPDF_Object* pOpenAction = pRoot->GetDictFor("OpenAction");
+  const CPDF_Object* pOpenAction = pRoot->GetDictFor("OpenAction");
   if (!pOpenAction)
     pOpenAction = pRoot->GetArrayFor("OpenAction");
   if (!pOpenAction)
@@ -660,7 +668,7 @@ bool CPDFSDK_FormFillEnvironment::ProcOpenAction() {
   if (pOpenAction->IsArray())
     return true;
 
-  CPDF_Dictionary* pDict = pOpenAction->AsDictionary();
+  const CPDF_Dictionary* pDict = pOpenAction->AsDictionary();
   if (!pDict)
     return false;
 
@@ -709,9 +717,12 @@ CPDFSDK_InteractiveForm* CPDFSDK_FormFillEnvironment::GetInteractiveForm() {
 
 void CPDFSDK_FormFillEnvironment::UpdateAllViews(CPDFSDK_Annot* pAnnot) {
   for (const auto& it : m_PageMap) {
-    CPDFSDK_PageView* pPageView = it.second.get();
-    if (pPageView)
-      pPageView->UpdateView(pAnnot);
+    ObservedPtr<CPDFSDK_PageView> pObserved(it.second.get());
+    if (pObserved) {
+      pObserved->UpdateView(pAnnot);
+      if (!pObserved)
+        break;
+    }
   }
 }
 
@@ -811,7 +822,8 @@ void CPDFSDK_FormFillEnvironment::SendOnFocusChange(
   if (!page)
     return;
 
-  CPDF_Dictionary* annot_dict = pAnnot->GetPDFAnnot()->GetAnnotDict();
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      pAnnot->GetPDFAnnot()->GetMutableAnnotDict();
   auto focused_annot = std::make_unique<CPDF_AnnotContext>(annot_dict, page);
   FPDF_ANNOTATION fpdf_annot =
       FPDFAnnotationFromCPDFAnnotContext(focused_annot.get());
@@ -969,7 +981,8 @@ bool CPDFSDK_FormFillEnvironment::ExecuteDocumentPageAction(
   return true;
 }
 
-bool CPDFSDK_FormFillEnvironment::IsValidField(CPDF_Dictionary* pFieldDict) {
+bool CPDFSDK_FormFillEnvironment::IsValidField(
+    const CPDF_Dictionary* pFieldDict) {
   DCHECK(pFieldDict);
 
   CPDFSDK_InteractiveForm* pForm = GetInteractiveForm();

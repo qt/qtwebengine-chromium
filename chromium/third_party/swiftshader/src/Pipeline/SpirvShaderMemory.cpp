@@ -55,16 +55,28 @@ SpirvShader::EmitResult SpirvShader::EmitLoad(InsnIterator insn, EmitState *stat
 
 	auto ptr = GetPointerToData(pointerId, 0, false, state);
 	bool interleavedByLane = IsStorageInterleavedByLane(pointerTy.storageClass);
-	auto &dst = state->createIntermediate(resultId, resultTy.componentCount);
 	auto robustness = getOutOfBoundsBehavior(pointerId, state);
 
-	VisitMemoryObject(pointerId, [&](const MemoryElement &el) {
-		auto p = ptr + el.offset;
-		if(interleavedByLane) { p = InterleaveByLane(p); }  // TODO: Interleave once, then add offset?
-		dst.move(el.index, p.Load<SIMD::Float>(robustness, state->activeLaneMask(), atomic, memoryOrder));
-	});
+	if(result.kind == Object::Kind::Pointer)
+	{
+		VisitMemoryObject(pointerId, true, [&](const MemoryElement &el) {
+			ASSERT(el.index == 0);
+			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
+			state->createPointer(resultId, p.Load<SIMD::Pointer>(robustness, state->activeLaneMask(), atomic, memoryOrder, sizeof(void *)));
+		});
 
-	SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, val: {3}, mask: {4})", atomic, int(memoryOrder), ptr, dst, state->activeLaneMask());
+		SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, mask: {3})", atomic, int(memoryOrder), ptr, state->activeLaneMask());
+	}
+	else
+	{
+		auto &dst = state->createIntermediate(resultId, resultTy.componentCount);
+		VisitMemoryObject(pointerId, false, [&](const MemoryElement &el) {
+			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
+			dst.move(el.index, p.Load<SIMD::Float>(robustness, state->activeLaneMask(), atomic, memoryOrder));
+		});
+
+		SPIRV_SHADER_DBG("Load(atomic: {0}, order: {1}, ptr: {2}, val: {3}, mask: {4})", atomic, int(memoryOrder), ptr, dst, state->activeLaneMask());
+	}
 
 	return EmitResult::Continue;
 }
@@ -110,11 +122,20 @@ void SpirvShader::Store(Object::ID pointerId, const Operand &value, bool atomic,
 
 	SPIRV_SHADER_DBG("Store(atomic: {0}, order: {1}, ptr: {2}, val: {3}, mask: {4}", atomic, int(memoryOrder), ptr, value, mask);
 
-	VisitMemoryObject(pointerId, [&](const MemoryElement &el) {
-		auto p = ptr + el.offset;
-		if(interleavedByLane) { p = InterleaveByLane(p); }
-		p.Store(value.Float(el.index), robustness, mask, atomic, memoryOrder);
-	});
+	if(value.isPointer())
+	{
+		VisitMemoryObject(pointerId, true, [&](const MemoryElement &el) {
+			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
+			p.Store(value.Pointer(el.index), robustness, mask, atomic, memoryOrder);
+		});
+	}
+	else
+	{
+		VisitMemoryObject(pointerId, false, [&](const MemoryElement &el) {
+			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
+			p.Store(value.Float(el.index), robustness, mask, atomic, memoryOrder);
+		});
+	}
 }
 
 SpirvShader::EmitResult SpirvShader::EmitVariable(InsnIterator insn, EmitState *state) const
@@ -179,6 +200,7 @@ SpirvShader::EmitResult SpirvShader::EmitVariable(InsnIterator insn, EmitState *
 		break;
 	case spv::StorageClassUniform:
 	case spv::StorageClassStorageBuffer:
+	case spv::StorageClassPhysicalStorageBuffer:
 		{
 			const auto &d = descriptorDecorations.at(resultId);
 			ASSERT(d.DescriptorSet >= 0);
@@ -224,9 +246,8 @@ SpirvShader::EmitResult SpirvShader::EmitVariable(InsnIterator insn, EmitState *
 				bool interleavedByLane = IsStorageInterleavedByLane(objectTy.storageClass);
 				auto ptr = GetPointerToData(resultId, 0, false, state);
 				Operand initialValue(this, state, initializerId);
-				VisitMemoryObject(resultId, [&](const MemoryElement &el) {
-					auto p = ptr + el.offset;
-					if(interleavedByLane) { p = InterleaveByLane(p); }
+				VisitMemoryObject(resultId, false, [&](const MemoryElement &el) {
+					auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
 					auto robustness = OutOfBoundsBehavior::UndefinedBehavior;  // Local variables are always within bounds.
 					p.Store(initialValue.Float(el.index), robustness, state->activeLaneMask());
 				});
@@ -261,18 +282,16 @@ SpirvShader::EmitResult SpirvShader::EmitCopyMemory(InsnIterator insn, EmitState
 
 	std::unordered_map<uint32_t, uint32_t> srcOffsets;
 
-	VisitMemoryObject(srcPtrId, [&](const MemoryElement &el) { srcOffsets[el.index] = el.offset; });
+	VisitMemoryObject(srcPtrId, false, [&](const MemoryElement &el) { srcOffsets[el.index] = el.offset; });
 
-	VisitMemoryObject(dstPtrId, [&](const MemoryElement &el) {
+	VisitMemoryObject(dstPtrId, false, [&](const MemoryElement &el) {
 		auto it = srcOffsets.find(el.index);
 		ASSERT(it != srcOffsets.end());
 		auto srcOffset = it->second;
 		auto dstOffset = el.offset;
 
-		auto dst = dstPtr + dstOffset;
-		auto src = srcPtr + srcOffset;
-		if(dstInterleavedByLane) { dst = InterleaveByLane(dst); }
-		if(srcInterleavedByLane) { src = InterleaveByLane(src); }
+		auto dst = GetElementPointer(dstPtr, dstOffset, dstInterleavedByLane);
+		auto src = GetElementPointer(srcPtr, srcOffset, srcInterleavedByLane);
 
 		// TODO(b/131224163): Optimize based on src/dst storage classes.
 		auto robustness = OutOfBoundsBehavior::RobustBufferAccess;
@@ -292,7 +311,7 @@ SpirvShader::EmitResult SpirvShader::EmitMemoryBarrier(InsnIterator insn, EmitSt
 	return EmitResult::Continue;
 }
 
-void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::SpirvShader::Decorations d, uint32_t &index, uint32_t offset, const MemoryVisitor &f) const
+void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::SpirvShader::Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &f) const
 {
 	ApplyDecorationsForId(&d, id);
 	auto const &type = getType(id);
@@ -306,7 +325,15 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 	switch(type.opcode())
 	{
 	case spv::OpTypePointer:
-		VisitMemoryObjectInner(type.definition.word(3), d, index, offset, f);
+		if(resultIsPointer)
+		{
+			// Load/Store the pointer itself, rather than the structure pointed to by the pointer
+			f(MemoryElement{ index++, offset, type });
+		}
+		else
+		{
+			VisitMemoryObjectInner(type.definition.word(3), d, index, offset, resultIsPointer, f);
+		}
 		break;
 	case spv::OpTypeInt:
 	case spv::OpTypeFloat:
@@ -318,7 +345,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 			auto elemStride = (d.InsideMatrix && d.HasRowMajor && d.RowMajor) ? d.MatrixStride : static_cast<int32_t>(sizeof(float));
 			for(auto i = 0u; i < type.definition.word(3); i++)
 			{
-				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + elemStride * i, f);
+				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + elemStride * i, resultIsPointer, f);
 			}
 		}
 		break;
@@ -329,7 +356,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 			for(auto i = 0u; i < type.definition.word(3); i++)
 			{
 				ASSERT(d.HasMatrixStride);
-				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + columnStride * i, f);
+				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + columnStride * i, resultIsPointer, f);
 			}
 		}
 		break;
@@ -337,7 +364,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 		for(auto i = 0u; i < type.definition.wordCount() - 2; i++)
 		{
 			ApplyDecorationsForIdMember(&d, id, i);
-			VisitMemoryObjectInner(type.definition.word(i + 2), d, index, offset, f);
+			VisitMemoryObjectInner(type.definition.word(i + 2), d, index, offset, resultIsPointer, f);
 		}
 		break;
 	case spv::OpTypeArray:
@@ -346,7 +373,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 			for(auto i = 0u; i < arraySize; i++)
 			{
 				ASSERT(d.HasArrayStride);
-				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + i * d.ArrayStride, f);
+				VisitMemoryObjectInner(type.definition.word(2), d, index, offset + i * d.ArrayStride, resultIsPointer, f);
 			}
 		}
 		break;
@@ -355,7 +382,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 	}
 }
 
-void SpirvShader::VisitMemoryObject(Object::ID id, const MemoryVisitor &f) const
+void SpirvShader::VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &f) const
 {
 	auto typeId = getObject(id).typeId();
 	auto const &type = getType(typeId);
@@ -364,7 +391,7 @@ void SpirvShader::VisitMemoryObject(Object::ID id, const MemoryVisitor &f) const
 	{
 		Decorations d = GetDecorationsForId(id);
 		uint32_t index = 0;
-		VisitMemoryObjectInner(typeId, d, index, 0, f);
+		VisitMemoryObjectInner(typeId, d, index, 0, resultIsPointer, f);
 	}
 	else
 	{
@@ -405,7 +432,7 @@ SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndice
 				auto robustness = getOutOfBoundsBehavior(id, state);
 				ASSERT(routine->pipelineLayout->getDescriptorType(d.DescriptorSet, d.Binding) != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT);
 
-				std::array<Pointer<Byte>, 4> pointers;
+				std::vector<Pointer<Byte>> pointers(SIMD::Width);
 				for(int i = 0; i < SIMD::Width; i++)
 				{
 					pointers[i] = *Pointer<Pointer<Byte>>(set.getPointerForLane(i) + Extract(descriptorOffset, i) + OFFSET(vk::BufferDescriptor, ptr));
@@ -518,6 +545,7 @@ bool SpirvShader::StoresInHelperInvocation(spv::StorageClass storageClass)
 	{
 	case spv::StorageClassUniform:
 	case spv::StorageClassStorageBuffer:
+	case spv::StorageClassPhysicalStorageBuffer:
 	case spv::StorageClassImage:
 		return false;
 	default:
@@ -527,10 +555,14 @@ bool SpirvShader::StoresInHelperInvocation(spv::StorageClass storageClass)
 
 bool SpirvShader::IsExplicitLayout(spv::StorageClass storageClass)
 {
+	// From the Vulkan spec:
+	// "Composite objects in the StorageBuffer, PhysicalStorageBuffer, Uniform,
+	//  and PushConstant Storage Classes must be explicitly laid out."
 	switch(storageClass)
 	{
 	case spv::StorageClassUniform:
 	case spv::StorageClassStorageBuffer:
+	case spv::StorageClassPhysicalStorageBuffer:
 	case spv::StorageClassPushConstant:
 		return true;
 	default:
@@ -538,14 +570,21 @@ bool SpirvShader::IsExplicitLayout(spv::StorageClass storageClass)
 	}
 }
 
-sw::SIMD::Pointer SpirvShader::InterleaveByLane(sw::SIMD::Pointer p)
+sw::SIMD::Pointer SpirvShader::GetElementPointer(sw::SIMD::Pointer structure, uint32_t offset, bool interleavedByLane)
 {
-	p *= sw::SIMD::Width;
-	p.staticOffsets[0] += 0 * sizeof(float);
-	p.staticOffsets[1] += 1 * sizeof(float);
-	p.staticOffsets[2] += 2 * sizeof(float);
-	p.staticOffsets[3] += 3 * sizeof(float);
-	return p;
+	if(interleavedByLane)
+	{
+		for(int i = 0; i < SIMD::Width; i++)
+		{
+			structure.staticOffsets[i] += i * sizeof(float);
+		}
+
+		return structure + offset * sw::SIMD::Width;
+	}
+	else
+	{
+		return structure + offset;
+	}
 }
 
 bool SpirvShader::IsStorageInterleavedByLane(spv::StorageClass storageClass)
@@ -554,6 +593,7 @@ bool SpirvShader::IsStorageInterleavedByLane(spv::StorageClass storageClass)
 	{
 	case spv::StorageClassUniform:
 	case spv::StorageClassStorageBuffer:
+	case spv::StorageClassPhysicalStorageBuffer:
 	case spv::StorageClassPushConstant:
 	case spv::StorageClassWorkgroup:
 	case spv::StorageClassImage:

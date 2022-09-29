@@ -1,7 +1,7 @@
 load("//bazel:macros.bzl", "exports_files_legacy", "wasm_cc_binary")
 load("//bazel/common_config_settings:defs.bzl", "bool_flag")
-load("//bazel:cc_binary_with_flags.bzl", "cc_binary_with_flags")
 load("//bazel:karma_test.bzl", "karma_test")
+load("//bazel:copts.bzl", "DEFAULT_COPTS")
 
 licenses(["notice"])
 
@@ -10,6 +10,7 @@ exports_files_legacy()
 BASE_LINKOPTS = [
     #"-flto",  # https://github.com/emscripten-core/emsdk/issues/807
     "--bind",  # Compiles the source code using the Embind bindings to connect C/C++ and JavaScript
+    "-fno-rtti",
     "--no-entry",
     "-sALLOW_MEMORY_GROWTH",
     "-sUSE_PTHREADS=0",  # Disable pthreads
@@ -58,13 +59,14 @@ genrule(
           # in the fonts/ subdirectory as if it had been there all along.
           "--output=$@ " +
           "--align=4",
-    tools = ["//tools:embed_resources"],
+    exec_tools = ["//tools:embed_resources"],
 )
 
 # Note: These are defines that only impact the _bindings.cpp files in this folder.
 # Any defines that need to effect the entire Skia build should go in //bazel/BUILD.bazel
 CK_DEFINES = [
     "CK_INCLUDE_PATHOPS",
+    "EMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",  # Allows us to compile with -fno-rtti
 ] + select({
     ":enable_fonts_true": ["CK_INCLUDE_PARAGRAPH"],
     ":enable_fonts_false": ["CK_NO_FONTS"],
@@ -74,6 +76,9 @@ CK_DEFINES = [
 }) + select({
     ":enable_runtime_effect_true": ["CK_INCLUDE_RUNTIME_EFFECT=1"],
     ":enable_runtime_effect_false": [],
+}) + select({
+    "//src/gpu:gl_backend": ["CK_ENABLE_WEBGL"],
+    "//conditions:default": [],
 })
 
 CK_RELEASE_OPTS = [
@@ -82,7 +87,7 @@ CK_RELEASE_OPTS = [
     "--closure-args=--externs=$(location externs.js)",
 ]
 
-CK_OPTS = BASE_LINKOPTS + [
+CK_LINKOPTS = BASE_LINKOPTS + [
     "-sEXPORT_NAME=CanvasKitInit",
     "-sINITIAL_MEMORY=128MB",
     # The order of these --pre-js flags matters! The preamble is a partially open scope and the
@@ -100,11 +105,11 @@ CK_OPTS = BASE_LINKOPTS + [
     "--pre-js",
     "modules/canvaskit/pathops.js",
 ] + select({
-    "//bazel/common_config_settings:gl_backend": [
+    "//src/gpu:gl_backend": [
         "--pre-js",
         "modules/canvaskit/cpu.js",
         "--pre-js",
-        "modules/canvaskit/gpu.js",
+        "modules/canvaskit/webgl.js",
     ],
     "//conditions:default": [
         "--pre-js",
@@ -194,13 +199,12 @@ CK_OPTS = BASE_LINKOPTS + [
 })
 
 # All JS files that could possibly be included via --pre-js or --post-js.
-# Whether they actually will be or not will be controlled above in the construction of CK_OPTS.
+# Whether they actually will be or not will be controlled above in the construction of CK_LINKOPTS.
 JS_INTERFACE_FILES = [
     "color.js",
     "cpu.js",
     "debug.js",
     "font.js",
-    "gpu.js",
     "interface.js",
     "matrix.js",
     "memory.js",
@@ -214,6 +218,8 @@ JS_INTERFACE_FILES = [
     "skottie.js",
     "skp.js",
     "util.js",
+    "webgl.js",
+    "webgpu.js",
 ] + [
     "htmlcanvas/canvas2dcontext.js",
     "htmlcanvas/color.js",
@@ -250,47 +256,17 @@ CK_SRCS = [
     ":enable_particles_false": [],
 })
 
-cc_binary_with_flags(
-    name = "canvaskit.with_flags",
+CK_COPTS = [
+    "-Wno-header-hygiene",
+]
+
+cc_binary(
+    name = "canvaskit.build",
     srcs = CK_SRCS,
     additional_linker_inputs = JS_INTERFACE_FILES + ["externs.js"],
-    # wasm_cc_binary makes the canvaskit.js/canvaskit.wasm based on the actual name
-    # of the executable.
-    linkopts = CK_OPTS,
+    copts = DEFAULT_COPTS + CK_COPTS,
+    linkopts = CK_LINKOPTS,
     local_defines = CK_DEFINES,
-    set_flags = {
-        "disable_tracing": ["True"],
-        "include_decoder": [
-            "jpeg_decode_codec",
-            "png_decode_codec",
-            "webp_decode_codec",
-            "gif_decode_codec",
-        ],
-        "include_encoder": [
-            "jpeg_encode_codec",
-            "png_encode_codec",
-            "webp_encode_codec",
-        ],
-        # TODO(kjlubick) make this optional, depending on enable_fonts
-        "fontmgr_factory": [
-            "custom_embedded_fontmgr_factory",
-        ],
-        "gpu_backend": [
-            "gl_backend",
-        ],
-        "with_gl_standard": [
-            "webgl_standard",
-        ],
-        "use_icu": [
-            "True",
-        ],
-        "enable_sksl_tracing": [
-            "True",
-        ],
-        "shaper_backend": [
-            "harfbuzz_shaper",
-        ],
-    },
     # This target won't build successfully on its own because of missing emscripten
     # headers etc. Therefore, we hide it from wildcards.
     tags = ["manual"],
@@ -316,56 +292,56 @@ cc_binary_with_flags(
 )
 
 wasm_cc_binary(
-    name = "canvaskit_wasm",
+    name = "canvaskit",
     # Whatever is before the dot will be the name of the output js and wasm, aka "the stem".
     # https://github.com/emscripten-core/emsdk/blob/82ad00499a42abde16b363239d2bc83bf5d863ab/bazel/emscripten_toolchain/wasm_cc_binary.bzl#L91
-    cc_target = ":canvaskit.with_flags",
+    cc_target = ":canvaskit.build",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "enable_canvas_polyfill",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "enable_fonts",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "include_embedded_font",
 )
 
 bool_flag(
-    default = True,
+    default = False,
+    flag_name = "include_matrix_js",
+)
+
+bool_flag(
+    default = False,
     flag_name = "enable_skottie",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "enable_skp_serialization",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "enable_particles",
 )
 
 bool_flag(
-    default = True,
+    default = False,
     flag_name = "enable_runtime_effect",
-)
-
-bool_flag(
-    default = True,
-    flag_name = "include_matrix_js",
 )
 
 karma_test(
     name = "canvaskit_js_tests",
     srcs = [
-        ":canvaskit_wasm/canvaskit.js",
+        ":canvaskit/canvaskit.js",
         # We want to make sure the CanvasKit JS is loaded before the loader script
         "tests/bazel/canvaskitinit.js",
         "tests/bazel/util.js",
@@ -387,7 +363,7 @@ karma_test(
     # exfiltrate the PNGs they create.
     env = "//modules/canvaskit/go/gold_test_env:gold_test_env",
     static_files = [
-        ":canvaskit_wasm/canvaskit.wasm",
+        ":canvaskit/canvaskit.wasm",
         "//modules/canvaskit/tests/assets:test_assets",
     ],
 )

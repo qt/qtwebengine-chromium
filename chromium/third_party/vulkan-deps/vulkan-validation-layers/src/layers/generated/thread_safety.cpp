@@ -8372,6 +8372,21 @@ void ThreadSafety::PostCallRecordGetPrivateDataEXT(
     FinishReadObject(privateDataSlot, "vkGetPrivateDataEXT");
 }
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+
+void ThreadSafety::PreCallRecordExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) {
+    StartReadObjectParentInstance(device, "vkExportMetalObjectsEXT");
+}
+
+void ThreadSafety::PostCallRecordExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) {
+    FinishReadObjectParentInstance(device, "vkExportMetalObjectsEXT");
+}
+#endif // VK_USE_PLATFORM_METAL_EXT
+
 void ThreadSafety::PreCallRecordCmdSetFragmentShadingRateEnumNV(
     VkCommandBuffer                             commandBuffer,
     VkFragmentShadingRateNV                     shadingRate,
@@ -8897,6 +8912,70 @@ void ThreadSafety::PostCallRecordGetDescriptorSetHostMappingVALVE(
     void**                                      ppData) {
     FinishReadObjectParentInstance(device, "vkGetDescriptorSetHostMappingVALVE");
     FinishReadObject(descriptorSet, "vkGetDescriptorSetHostMappingVALVE");
+}
+
+void ThreadSafety::PreCallRecordGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    StartReadObjectParentInstance(device, "vkGetShaderModuleIdentifierEXT");
+    StartReadObject(shaderModule, "vkGetShaderModuleIdentifierEXT");
+}
+
+void ThreadSafety::PostCallRecordGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    FinishReadObjectParentInstance(device, "vkGetShaderModuleIdentifierEXT");
+    FinishReadObject(shaderModule, "vkGetShaderModuleIdentifierEXT");
+}
+
+void ThreadSafety::PreCallRecordGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    StartReadObjectParentInstance(device, "vkGetShaderModuleCreateInfoIdentifierEXT");
+}
+
+void ThreadSafety::PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    FinishReadObjectParentInstance(device, "vkGetShaderModuleCreateInfoIdentifierEXT");
+}
+
+void ThreadSafety::PreCallRecordGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties) {
+    StartReadObjectParentInstance(device, "vkGetFramebufferTilePropertiesQCOM");
+    StartReadObject(framebuffer, "vkGetFramebufferTilePropertiesQCOM");
+}
+
+void ThreadSafety::PostCallRecordGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkGetFramebufferTilePropertiesQCOM");
+    FinishReadObject(framebuffer, "vkGetFramebufferTilePropertiesQCOM");
+}
+
+void ThreadSafety::PreCallRecordGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties) {
+    StartReadObjectParentInstance(device, "vkGetDynamicRenderingTilePropertiesQCOM");
+}
+
+void ThreadSafety::PostCallRecordGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties,
+    VkResult                                    result) {
+    FinishReadObjectParentInstance(device, "vkGetDynamicRenderingTilePropertiesQCOM");
 }
 
 void ThreadSafety::PreCallRecordCreateAccelerationStructureKHR(

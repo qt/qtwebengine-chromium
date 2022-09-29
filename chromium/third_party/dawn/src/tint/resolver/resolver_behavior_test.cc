@@ -20,6 +20,7 @@
 #include "src/tint/sem/for_loop_statement.h"
 #include "src/tint/sem/if_statement.h"
 #include "src/tint/sem/switch_statement.h"
+#include "src/tint/sem/while_statement.h"
 
 using namespace tint::number_suffixes;  // NOLINT
 
@@ -32,8 +33,8 @@ class ResolverBehaviorTest : public ResolverTest {
         // Create a function called 'DiscardOrNext' which returns an i32, and has
         // the behavior of {Discard, Return}, which when called, will have the
         // behavior {Discard, Next}.
-        Func("DiscardOrNext", {}, ty.i32(),
-             {
+        Func("DiscardOrNext", utils::Empty, ty.i32(),
+             utils::Vector{
                  If(true, Block(Discard())),
                  Return(1_i),
              });
@@ -71,8 +72,8 @@ TEST_F(ResolverBehaviorTest, ExprBitcastOp) {
 }
 
 TEST_F(ResolverBehaviorTest, ExprIndex_Arr) {
-    Func("ArrayDiscardOrNext", {}, ty.array<i32, 4>(),
-         {
+    Func("ArrayDiscardOrNext", utils::Empty, ty.array<i32, 4>(),
+         utils::Vector{
              If(true, Block(Discard())),
              Return(Construct(ty.array<i32, 4>())),
          });
@@ -164,7 +165,7 @@ TEST_F(ResolverBehaviorTest, StmtBlockSingleStmt) {
 }
 
 TEST_F(ResolverBehaviorTest, StmtCallReturn) {
-    Func("f", {}, ty.void_(), {Return()});
+    Func("f", utils::Empty, ty.void_(), utils::Vector{Return()});
     auto* stmt = CallStmt(Call("f"));
     WrapInFunction(stmt);
 
@@ -175,7 +176,7 @@ TEST_F(ResolverBehaviorTest, StmtCallReturn) {
 }
 
 TEST_F(ResolverBehaviorTest, StmtCallFuncDiscard) {
-    Func("f", {}, ty.void_(), {Discard()});
+    Func("f", utils::Empty, ty.void_(), utils::Vector{Discard()});
     auto* stmt = CallStmt(Call("f"));
     WrapInFunction(stmt);
 
@@ -306,6 +307,56 @@ TEST_F(ResolverBehaviorTest, StmtForLoopEmpty_CondTrue) {
 
 TEST_F(ResolverBehaviorTest, StmtForLoopEmpty_CondCallFuncMayDiscard) {
     auto* stmt = For(nullptr, Equal(Call("DiscardOrNext"), 1_i), nullptr, Block());
+    WrapInFunction(stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* sem = Sem().Get(stmt);
+    EXPECT_EQ(sem->Behaviors(), sem::Behaviors(sem::Behavior::kDiscard, sem::Behavior::kNext));
+}
+
+TEST_F(ResolverBehaviorTest, StmtWhileBreak) {
+    auto* stmt = While(Expr(true), Block(Break()));
+    WrapInFunction(stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* sem = Sem().Get(stmt);
+    EXPECT_EQ(sem->Behaviors(), sem::Behavior::kNext);
+}
+
+TEST_F(ResolverBehaviorTest, StmtWhileDiscard) {
+    auto* stmt = While(Expr(true), Block(Discard()));
+    WrapInFunction(stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* sem = Sem().Get(stmt);
+    EXPECT_EQ(sem->Behaviors(), sem::Behaviors(sem::Behavior::kDiscard, sem::Behavior::kNext));
+}
+
+TEST_F(ResolverBehaviorTest, StmtWhileReturn) {
+    auto* stmt = While(Expr(true), Block(Return()));
+    WrapInFunction(stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* sem = Sem().Get(stmt);
+    EXPECT_EQ(sem->Behaviors(), sem::Behaviors(sem::Behavior::kReturn, sem::Behavior::kNext));
+}
+
+TEST_F(ResolverBehaviorTest, StmtWhileEmpty_CondTrue) {
+    auto* stmt = While(Expr(true), Block());
+    WrapInFunction(stmt);
+
+    ASSERT_TRUE(r()->Resolve()) << r()->error();
+
+    auto* sem = Sem().Get(stmt);
+    EXPECT_EQ(sem->Behaviors(), sem::Behaviors(sem::Behavior::kNext));
+}
+
+TEST_F(ResolverBehaviorTest, StmtWhileEmpty_CondCallFuncMayDiscard) {
+    auto* stmt = While(Equal(Call("DiscardOrNext"), 1_i), Block());
     WrapInFunction(stmt);
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -471,7 +522,7 @@ TEST_F(ResolverBehaviorTest, StmtReturn) {
 
 TEST_F(ResolverBehaviorTest, StmtReturn_DiscardOrNext) {
     auto* stmt = Return(Call("DiscardOrNext"));
-    Func("F", {}, ty.i32(), {stmt});
+    Func("F", utils::Empty, ty.i32(), utils::Vector{stmt});
 
     ASSERT_TRUE(r()->Resolve()) << r()->error();
 

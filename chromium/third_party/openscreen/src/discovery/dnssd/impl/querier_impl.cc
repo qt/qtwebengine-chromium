@@ -236,7 +236,7 @@ void QuerierImpl::StartQuery(const std::string& service, Callback* callback) {
   if (!graph_->IsTracked(domain)) {
     std::function<void(const DomainName&)> mdns_query(
         [this, &domain](const DomainName& changed_domain) {
-          OSP_DVLOG << "Starting mDNS query for '" << domain.ToString() << "'";
+          OSP_DVLOG << "Starting mDNS query for '" << domain << "'";
           mdns_querier_->StartQuery(changed_domain, DnsType::kANY,
                                     DnsClass::kANY, this);
         });
@@ -281,8 +281,7 @@ void QuerierImpl::StopQuery(const std::string& service, Callback* callback) {
 
     std::function<void(const DomainName&)> stop_mdns_query(
         [this](const DomainName& changed_domain) {
-          OSP_DVLOG << "Stopping mDNS query for '" << changed_domain.ToString()
-                    << "'";
+          OSP_DVLOG << "Stopping mDNS query for '" << changed_domain << "'";
           mdns_querier_->StopQuery(changed_domain, DnsType::kANY,
                                    DnsClass::kANY, this);
         });
@@ -325,8 +324,10 @@ std::vector<PendingQueryChange> QuerierImpl::OnRecordChanged(
     RecordChangedEvent event) {
   OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
 
-  OSP_DVLOG << "Record " << record.ToString()
-            << " has received change of type '" << event << "'";
+#ifdef _DEBUG
+  OSP_DVLOG << "Record " << record << " has received change of type '" << event
+            << "'";
+#endif
 
   std::function<void(Error)> log = [this](Error error) mutable {
     reporting_client_->OnRecoverableError(

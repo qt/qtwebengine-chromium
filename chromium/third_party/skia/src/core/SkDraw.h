@@ -24,6 +24,7 @@ class SkBlitter;
 class SkMatrix;
 class SkMatrixProvider;
 class SkPath;
+class SkSurfaceProps;
 class SkRegion;
 class SkRasterClip;
 struct SkRect;
@@ -63,7 +64,7 @@ public:
     void    drawSprite(const SkBitmap&, int x, int y, const SkPaint&) const;
     void    drawGlyphRunList(SkCanvas* canvas,
                              SkGlyphRunListPainterCPU* glyphPainter,
-                             const SkGlyphRunList& glyphRunList,
+                             const sktext::GlyphRunList& glyphRunList,
                              const SkPaint& paint) const;
     /* If skipColorXform, skips color conversion when assigning per-vertex colors */
     void drawVertices(const SkVertices*,
@@ -102,6 +103,10 @@ public:
                            SkMask* mask, SkMask::CreateMode mode,
                            SkStrokeRec::InitStyle style);
 
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
+    void drawDevMask(const SkMask& mask, const SkPaint&) const;
+#endif
+
     enum RectType {
         kHair_RectType,
         kFill_RectType,
@@ -121,6 +126,9 @@ public:
                                     SkPoint* strokeSize);
 
 private:
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
+    void drawBitmapAsMask(const SkBitmap&, const SkSamplingOptions&, const SkPaint&) const;
+#endif
     void drawFixedVertices(const SkVertices* vertices,
                            sk_sp<SkBlender> blender,
                            const SkPaint& paint,
@@ -158,6 +166,7 @@ public:
     SkPixmap                fDst;
     const SkMatrixProvider* fMatrixProvider{nullptr};  // required
     const SkRasterClip*     fRC{nullptr};              // required
+    const SkSurfaceProps*   fProps{nullptr};           // optional
 
 #ifdef SK_DEBUG
     void validate() const;

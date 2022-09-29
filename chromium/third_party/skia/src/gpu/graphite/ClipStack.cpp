@@ -16,8 +16,9 @@
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTLazy.h"
 #include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/DrawGeometry.h"
+#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
+#include "src/gpu/graphite/geom/Geometry.h"
 
 namespace skgpu::graphite {
 
@@ -33,6 +34,51 @@ Rect subtract(const Rect& a, const Rect& b, bool exact) {
         // For our purposes, we want the original A when A-B cannot be exactly represented
         return a;
     }
+}
+
+bool oriented_bbox_intersection(const Rect& a, const Transform& aXform,
+                                const Rect& b, const Transform& bXform) {
+    // NOTE: We intentionally exclude projected bounds for two reasons:
+    //   1. We can skip the division by w and worring about clipping to w = 0.
+    //   2. W/o the projective case, the separating axes are simpler to compute (see below).
+    SkASSERT(aXform.type() != Transform::Type::kProjection &&
+             bXform.type() != Transform::Type::kProjection);
+    SkV4 quadA[4], quadB[4];
+
+    aXform.mapPoints(a, quadA);
+    bXform.mapPoints(b, quadB);
+
+    // There are 4 separating axes, defined by the two normals from quadA and from quadB, but
+    // since they were produced by transforming a rectangle by an affine transform, we know the
+    // normals are orthoganal to the basis vectors of upper 2x2 of their two transforms.
+    auto axesX = skvx::float4(-aXform.matrix().rc(1,0), -aXform.matrix().rc(1,1),
+                              -bXform.matrix().rc(1,0), -bXform.matrix().rc(1,1));
+    auto axesY = skvx::float4(aXform.matrix().rc(0,0), aXform.matrix().rc(0,1),
+                              bXform.matrix().rc(0,0), bXform.matrix().rc(0,1));
+
+    // Projections of the 4 corners of each quadrilateral vs. the 4 axes. For orthonormal
+    // transforms, the projections of a quad's corners to its own normal axes should work out
+    // to the original dimensions of the rectangle, but this code handles skew and scale factors
+    // without branching.
+    auto aProj0 = quadA[0].x * axesX + quadA[0].y * axesY;
+    auto aProj1 = quadA[1].x * axesX + quadA[1].y * axesY;
+    auto aProj2 = quadA[2].x * axesX + quadA[2].y * axesY;
+    auto aProj3 = quadA[3].x * axesX + quadA[3].y * axesY;
+
+    auto bProj0 = quadB[0].x * axesX + quadB[0].y * axesY;
+    auto bProj1 = quadB[1].x * axesX + quadB[1].y * axesY;
+    auto bProj2 = quadB[2].x * axesX + quadB[2].y * axesY;
+    auto bProj3 = quadB[3].x * axesX + quadB[3].y * axesY;
+
+    // Minimum and maximum projected values against the 4 axes, for both quadA and quadB, which
+    // gives us four pairs of intervals to test for separation.
+    auto minA = min(min(aProj0, aProj1), min(aProj2, aProj3));
+    auto maxA = max(max(aProj0, aProj1), max(aProj2, aProj3));
+    auto minB = min(min(bProj0, bProj1), min(bProj2, bProj3));
+    auto maxB = max(max(bProj0, bProj1), max(bProj2, bProj3));
+
+    auto overlaps = (minB <= maxA) & (minA <= maxB);
+    return all(overlaps); // any non-overlapping interval would imply no intersection
 }
 
 static const Transform kIdentity{SkM44()};
@@ -69,45 +115,32 @@ bool ClipStack::TransformedShape::intersects(const TransformedShape& o) const {
     if (!fOuterBounds.intersects(o.fOuterBounds)) {
         return false;
     }
-    if (fLocalToDevice == o.fLocalToDevice) {
+
+    if (fLocalToDevice.type() <= Transform::Type::kRectStaysRect &&
+        o.fLocalToDevice.type() <= Transform::Type::kRectStaysRect) {
+        // The two shape's coordinate spaces are different but both rect-stays-rect or simpler.
+        // This means, though, that their outer bounds approximations are tight to their transormed
+        // shape bounds. There's no point to do further tests given that and that we already found
+        // that these outer bounds *do* intersect.
+        return true;
+    } else if (fLocalToDevice == o.fLocalToDevice) {
         // Since the two shape's local coordinate spaces are the same, we can compare shape
         // bounds directly for a more accurate intersection test. We intentionally do not go
         // further and do shape-specific intersection tests since these could have unknown
         // complexity (for paths) and limited utility (e.g. two round rects that are disjoint
         // solely from their corner curves).
         return fShape.bounds().intersects(o.fShape.bounds());
-    } else if (fLocalToDevice.type() > Transform::Type::kRectStaysRect ||
-               o.fLocalToDevice.type() > Transform::Type::kRectStaysRect) {
+    } else if (fLocalToDevice.type() != Transform::Type::kProjection &&
+               o.fLocalToDevice.type() != Transform::Type::kProjection) {
         // The shapes don't share the same coordinate system, and their approximate 'outer'
         // bounds in device space could have substantial outsetting to contain the transformed
-        // shape (e.g. 45 degree rotation). This makes it worth mapping the corners of o'
-        // into this shape's local space for a more accurate test.
-        Rect bounds = fShape.bounds();
-        SkV4 deviceQuad[4];
-        o.fLocalToDevice.mapPoints(o.fShape.bounds(), deviceQuad);
-        SkV4 localQuad[4];
-        fLocalToDevice.inverseMapPoints(deviceQuad, localQuad, 4);
-        for (int i = 0; i < 4; ++i) {
-            // TODO: Would be nice to make this consistent with how the GPU clips NDC w.
-            if (deviceQuad[i].w < SkPathPriv::kW0PlaneDistance ||
-                localQuad[i].w < SkPathPriv::kW0PlaneDistance) {
-                // Something in 'o' actually projects behind the W = 0 plane and would be
-                // clipped to infinity, so pessimistically assume that they could intersect.
-                return true;
-            }
-            if (bounds.contains(Rect::Point(skvx::float2::Load(localQuad + i) / localQuad[i].w))) {
-                // If any corner of 'o's bounds are contained then it intersects our bounds
-                return true;
-            }
-        }
-        // Else no corners of 'o's bounds are inside our bounds, so no intersection
-        return false;
+        // shape (e.g. 45 degree rotation). Perform a more detailed check on their oriented
+        // bounding boxes.
+        return oriented_bbox_intersection(fShape.bounds(), fLocalToDevice,
+                                          o.fShape.bounds(), o.fLocalToDevice);
     }
-
-    // Else the two shape's coordinate spaces are different but both rect-stays-rect or simpler.
-    // This means, though, that their outer bounds approximations are tight to their transormed
-    // shape bounds. There's no point to do further tests given that and that we already found
-    // that these outer bounds *do* intersect.
+    // Else multiple perspective transforms are involved, so assume intersection and allow the
+    // rasterizer to handle perspective clipping.
     return true;
 }
 
@@ -115,6 +148,13 @@ bool ClipStack::TransformedShape::contains(const TransformedShape& o) const {
     if (fInnerBounds.contains(o.fOuterBounds)) {
         return true;
     }
+    // Skip more expensive contains() checks if configured not to, or if the extent of 'o' exceeds
+    // this shape's outer bounds. When that happens there must be some part of 'o' that cannot be
+    // contained in this shape.
+    if (fContainsChecksOnlyBounds || !fOuterBounds.contains(o.fOuterBounds)) {
+        return false;
+    }
+
     if (fContainsChecksOnlyBounds) {
         return false; // don't do any more work
     }
@@ -265,7 +305,7 @@ ClipStack::RawElement::RawElement(const Rect& deviceBounds,
     // Apply rect-stays-rect transforms to rects and round rects to reduce the number of unique
     // local coordinate systems that are in play.
     if (!fOuterBounds.isEmptyNegativeOrNaN() &&
-        fLocalToDevice.type() == Transform::Type::kRectStaysRect) {
+        fLocalToDevice.type() <= Transform::Type::kRectStaysRect) {
         if (fShape.isRect()) {
             // The actual geometry can be updated to the device-intersected bounds and we know the
             // inner bounds are equal to the outer.
@@ -322,17 +362,16 @@ void ClipStack::RawElement::drawClip(Device* device) {
     if (!drawBounds.isEmptyNegativeOrNaN()) {
         // Although we are recording this clip draw after all the draws it affects, 'fOrder' was
         // determined at the first usage, so after sorting by DrawOrder the clip draw will be in the
-        // right place. Unlike regular draws that use their own "Z", by writing the max Z this clip
-        // affects, it will cause those draws to fail depth tests where they need to be clipped.
-        DrawOrder order{fMaxZ, fOrder};
+        // right place. Unlike regular draws that use their own "Z", by writing (1 + max Z this clip
+        // affects), it will cause those draws to fail either GREATER and GEQUAL depth tests where
+        // they need to be clipped.
+        DrawOrder order{fMaxZ.next(), fOrder};
         // An element's clip op is encoded in the shape's fill type. Inverse fills are intersect ops
         // and regular fills are difference ops. This means fShape is already in the right state to
         // draw directly.
         SkASSERT((fOp == SkClipOp::kDifference && !fShape.inverted()) ||
                  (fOp == SkClipOp::kIntersect && fShape.inverted()));
-        // A null paint implies depth-only rendering, a null stroke style implies fill.
-        device->recordDraw(fLocalToDevice, fShape, Clip{drawBounds, scissor.asSkIRect()}, order,
-                           /*paint=*/nullptr, /*stroke=*/nullptr);
+        device->drawClipShape(fLocalToDevice, fShape, Clip{drawBounds, scissor.asSkIRect()}, order);
     }
 
     // After the clip shape is drawn, reset its state. If the clip element is being popped off the
@@ -1039,7 +1078,7 @@ void ClipStack::clipShape(const Transform& localToDevice,
 std::pair<Clip, CompressedPaintersOrder> ClipStack::applyClipToDraw(
         const BoundsManager* boundsManager,
         const Transform& localToDevice,
-        const Shape& shape,
+        const Geometry& geometry,
         const SkStrokeRec& style,
         PaintersDepth z) {
     const SaveRecord& cs = this->currentSaveRecord();
@@ -1053,14 +1092,23 @@ std::pair<Clip, CompressedPaintersOrder> ClipStack::applyClipToDraw(
 
     // When 'style' isn't fill, 'shape' describes the pre-stroke shape so we can't use it to check
     // against clip elements and this will be set to the bounds of the post-stroked shape instead.
-    SkTCopyOnFirstWrite<Shape> styledShape{shape};
-    Rect drawBounds = shape.bounds();
-    if (shape.inverted()) {
+    SkTCopyOnFirstWrite<Shape> styledShape;
+    if (geometry.isShape()) {
+        styledShape.init(geometry.shape());
+    } else {
+        // The geometry is something special like text or vertices, in which case it's definitely
+        // not a shape that could simplify cleanly with the clip stack.
+        styledShape.initIfNeeded(geometry.bounds());
+    }
+
+    Rect drawBounds; // defined in device space
+    if (styledShape->inverted()) {
         // Inverse-filled shapes always fill the entire device (restricted to the clip).
         drawBounds = deviceBounds;
         styledShape.writable()->setRect(drawBounds);
     } else {
         // Regular filled shapes and strokes get larger based on style and transform
+        drawBounds = styledShape->bounds();
         if (!style.isHairlineStyle()) {
             float localStyleOutset = style.getInflationRadius();
             drawBounds.outset(localStyleOutset);
@@ -1080,9 +1128,11 @@ std::pair<Clip, CompressedPaintersOrder> ClipStack::applyClipToDraw(
             // localToDevice already.
             styledShape.writable()->setRect(drawBounds);
         }
+
+        // Restrict bounds to the device limits
+        drawBounds.intersect(deviceBounds);
     }
 
-    drawBounds.intersect(deviceBounds);
     if (drawBounds.isEmptyNegativeOrNaN() || cs.state() == ClipState::kWideOpen) {
         // Either the draw is off screen, so it's clipped out regardless of the state of the
         // SaveRecord, or there are no elements to apply to the draw. In both cases, 'drawBounds'

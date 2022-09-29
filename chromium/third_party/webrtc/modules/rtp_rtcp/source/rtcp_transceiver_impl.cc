@@ -36,7 +36,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/divide_round.h"
 #include "rtc_base/task_utils/repeating_task.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {

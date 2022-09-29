@@ -238,6 +238,8 @@ message ProvisionStatus {
     RMAD_PROVISION_ERROR_MISSING_LID_ACCELEROMETER = 7;
     RMAD_PROVISION_ERROR_MISSING_BASE_GYROSCOPE = 8;
     RMAD_PROVISION_ERROR_MISSING_LID_GYROSCOPE = 9;
+    RMAD_PROVISION_ERROR_CR50 = 10;
+    RMAD_PROVISION_ERROR_GBB = 11;
   }
   Status status = 1;
   double progress = 2;
@@ -594,4 +596,49 @@ message RecordBrowserActionMetricRequest {
 // Reply for BrowserActionMetric.
 message RecordBrowserActionMetricReply {
   RmadErrorCode error = 1;
+}
+
+// Defined RO verification status for showing in metrics.
+// Keep this in sync with metrics/structured/structured.xml.
+enum RoVerification {
+  RMAD_RO_VERIFICATION_UNKNOWN = 0;
+  RMAD_RO_VERIFICATION_PASS = 1;
+  RMAD_RO_VERIFICATION_UNSUPPORTED = 2;
+}
+
+// Defined returning owner for showing in metrics.
+// Keep this in sync with metrics/structured/structured.xml.
+enum ReturningOwner {
+  RMAD_RETURNING_OWNER_UNKNOWN = 0;
+  RMAD_RETURNING_OWNER_SAME_OWNER = 1;
+  RMAD_RETURNING_OWNER_DIFFERENT_OWNER = 2;
+}
+
+// Defined mainboard replacement status for showing in metrics.
+// Keep this in sync with metrics/structured/structured.xml.
+enum MainboardReplacement {
+  RMAD_MLB_REPLACEMENT_UNKNOWN = 0;
+  RMAD_MLB_REPLACEMENT_REPLACED = 1;
+  RMAD_MLB_REPLACEMENT_ORIGINAL = 2;
+}
+
+// Defined additional activities for showing in metrics.
+// Keep this in sync with metrics/structured/structured.xml.
+enum AdditionalActivity {
+  RMAD_ADDITIONAL_ACTIVITY_NOTHING = 0;
+  RMAD_ADDITIONAL_ACTIVITY_SHUTDOWN = 1;
+  RMAD_ADDITIONAL_ACTIVITY_REBOOT = 2;
+  RMAD_ADDITIONAL_ACTIVITY_BATTERY_CUTOFF = 3;
+  RMAD_ADDITIONAL_ACTIVITY_DIAGNOSTICS = 4;
+  RMAD_ADDITIONAL_ACTIVITY_OS_UPDATE = 5;
+}
+
+// Defined write protection methods for showing in metrics.
+// Keep this in sync with metrics/structured/structured.xml.
+enum WpDisableMethod {
+  RMAD_WP_DISABLE_METHOD_UNKNOWN = 0;
+  RMAD_WP_DISABLE_METHOD_SKIPPED = 1;
+  RMAD_WP_DISABLE_METHOD_RSU = 2;
+  RMAD_WP_DISABLE_METHOD_PHYSICAL_ASSEMBLE_DEVICE = 3;
+  RMAD_WP_DISABLE_METHOD_PHYSICAL_KEEP_DEVICE_OPEN = 4;
 }

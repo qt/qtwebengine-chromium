@@ -17,41 +17,30 @@
 
 struct test_input_t
 {
-  const char *text_path;
   const char *font_path;
+  const char *text_path;
   bool is_variable;
 } default_tests[] =
 {
-  {"perf/texts/fa-thelittleprince.txt",
-   "perf/fonts/Amiri-Regular.ttf",
+
+  {"perf/fonts/NotoNastaliqUrdu-Regular.ttf",
+   "perf/texts/fa-thelittleprince.txt",
    false},
 
-  {"perf/texts/fa-thelittleprince.txt",
-   "perf/fonts/NotoNastaliqUrdu-Regular.ttf",
+  {"perf/fonts/Amiri-Regular.ttf",
+   "perf/texts/fa-thelittleprince.txt",
    false},
 
-  {"perf/texts/fa-monologue.txt",
-   "perf/fonts/Amiri-Regular.ttf",
+  {"perf/fonts/Roboto-Regular.ttf",
+   "perf/texts/en-thelittleprince.txt",
    false},
 
-  {"perf/texts/fa-monologue.txt",
-   "perf/fonts/NotoNastaliqUrdu-Regular.ttf",
+  {"perf/fonts/Roboto-Regular.ttf",
+   "perf/texts/en-words.txt",
    false},
 
-  {"perf/texts/en-thelittleprince.txt",
-   "perf/fonts/Roboto-Regular.ttf",
-   false},
-
-  {"perf/texts/en-thelittleprince.txt",
-   SUBSET_FONT_BASE_PATH "SourceSerifVariable-Roman.ttf",
-   true},
-
-  {"perf/texts/en-words.txt",
-   "perf/fonts/Roboto-Regular.ttf",
-   false},
-
-  {"perf/texts/en-words.txt",
-   SUBSET_FONT_BASE_PATH "SourceSerifVariable-Roman.ttf",
+  {SUBSET_FONT_BASE_PATH "SourceSerifVariable-Roman.ttf",
+   "perf/texts/en-thelittleprince.txt",
    true},
 };
 
@@ -132,11 +121,11 @@ static void test_backend (backend_t backend,
   char name[1024] = "BM_Shape";
   const char *p;
   strcat (name, "/");
-  p = strrchr (test_input.text_path, '/');
-  strcat (name, p ? p + 1 : test_input.text_path);
-  strcat (name, "/");
   p = strrchr (test_input.font_path, '/');
   strcat (name, p ? p + 1 : test_input.font_path);
+  strcat (name, "/");
+  p = strrchr (test_input.text_path, '/');
+  strcat (name, p ? p + 1 : test_input.text_path);
   strcat (name, variable ? "/var" : "");
   strcat (name, "/");
   strcat (name, backend_name);
@@ -156,8 +145,8 @@ int main(int argc, char** argv)
     for (unsigned i = 0; i < num_tests; i++)
     {
       tests[i].is_variable = true;
-      tests[i].text_path = argv[1 + i * 2];
-      tests[i].font_path = argv[2 + i * 2];
+      tests[i].font_path = argv[1 + i * 2];
+      tests[i].text_path = argv[2 + i * 2];
     }
   }
 

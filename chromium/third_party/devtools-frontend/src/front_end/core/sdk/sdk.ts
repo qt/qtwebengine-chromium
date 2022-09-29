@@ -33,6 +33,7 @@ import * as CSSProperty from './CSSProperty.js';
 import * as CSSPropertyParser from './CSSPropertyParser.js';
 import * as CSSQuery from './CSSQuery.js';
 import * as CSSRule from './CSSRule.js';
+import * as CSSScope from './CSSScope.js';
 import * as CSSStyleDeclaration from './CSSStyleDeclaration.js';
 import * as CSSStyleSheetHeader from './CSSStyleSheetHeader.js';
 import * as CSSSupports from './CSSSupports.js';
@@ -72,6 +73,7 @@ import * as ServiceWorkerCacheModel from './ServiceWorkerCacheModel.js';
 import * as ServiceWorkerManager from './ServiceWorkerManager.js';
 import * as SourceMap from './SourceMap.js';
 import * as SourceMapManager from './SourceMapManager.js';
+import * as StorageKeyManager from './StorageKeyManager.js';
 import * as Target from './Target.js';
 import * as TargetManager from './TargetManager.js';
 import * as TracingManager from './TracingManager.js';
@@ -102,6 +104,7 @@ export {
   CSSPropertyParser,
   CSSQuery,
   CSSRule,
+  CSSScope,
   CSSStyleDeclaration,
   CSSStyleSheetHeader,
   CSSSupports,
@@ -141,6 +144,7 @@ export {
   ServiceWorkerManager,
   SourceMap,
   SourceMapManager,
+  StorageKeyManager,
   Target,
   TargetManager,
   TracingManager,

@@ -26,10 +26,15 @@ void MutableBigInt_AbsoluteAddAndCanonicalize(Address result_addr,
 int32_t MutableBigInt_AbsoluteCompare(Address x_addr, Address y_addr);
 void MutableBigInt_AbsoluteSubAndCanonicalize(Address result_addr,
                                               Address x_addr, Address y_addr);
+bool MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
+                                              Address x_addr, Address y_addr);
 
 class BigInt;
 class ValueDeserializer;
 class ValueSerializer;
+class WebSnapshotSerializerDeserializer;
+class WebSnapshotSerializer;
+class WebSnapshotDeserializer;
 
 #include "torque-generated/src/objects/bigint-tq.inc"
 
@@ -242,7 +247,8 @@ class BigInt : public BigIntBase {
       Isolate* isolate, Handle<Object> number);
 
   // ECMAScript's ToBigInt (throws for Number input)
-  static MaybeHandle<BigInt> FromObject(Isolate* isolate, Handle<Object> obj);
+  V8_EXPORT_PRIVATE static MaybeHandle<BigInt> FromObject(Isolate* isolate,
+                                                          Handle<Object> obj);
 
   class BodyDescriptor;
 
@@ -251,6 +257,9 @@ class BigInt : public BigIntBase {
   friend class StringToBigIntHelper;
   friend class ValueDeserializer;
   friend class ValueSerializer;
+  friend class WebSnapshotSerializerDeserializer;
+  friend class WebSnapshotSerializer;
+  friend class WebSnapshotDeserializer;
 
   // Special functions for StringToBigIntHelper:
   template <typename IsolateT>

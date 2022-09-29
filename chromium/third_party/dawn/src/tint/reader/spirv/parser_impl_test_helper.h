@@ -21,8 +21,18 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/utils/compiler_macros.h"
+
 #if TINT_BUILD_SPV_READER
+TINT_BEGIN_DISABLE_WARNING(NEWLINE_EOF);
+TINT_BEGIN_DISABLE_WARNING(OLD_STYLE_CAST);
+TINT_BEGIN_DISABLE_WARNING(SIGN_CONVERSION);
+TINT_BEGIN_DISABLE_WARNING(WEAK_VTABLES);
 #include "source/opt/ir_context.h"
+TINT_END_DISABLE_WARNING(WEAK_VTABLES);
+TINT_END_DISABLE_WARNING(SIGN_CONVERSION);
+TINT_END_DISABLE_WARNING(OLD_STYLE_CAST);
+TINT_END_DISABLE_WARNING(NEWLINE_EOF);
 #endif
 
 #include "gtest/gtest.h"
@@ -185,10 +195,10 @@ class ParserImplWrapperForTest {
     /// @param member_ty the type of the member
     /// @param decoration an encoded SPIR-V Decoration
     /// @returns the AST decorations
-    ast::AttributeList ConvertMemberDecoration(uint32_t struct_type_id,
-                                               uint32_t member_index,
-                                               const Type* member_ty,
-                                               const Decoration& decoration) {
+    auto ConvertMemberDecoration(uint32_t struct_type_id,
+                                 uint32_t member_index,
+                                 const Type* member_ty,
+                                 const Decoration& decoration) {
         return impl_.ConvertMemberDecoration(struct_type_id, member_index, member_ty, decoration);
     }
 
@@ -265,7 +275,7 @@ std::string ToString(const Program& program);
 /// @param program the Program
 /// @param stmts the statement list
 /// @returns the WGSL printed string of a statement list.
-std::string ToString(const Program& program, const ast::StatementList& stmts);
+std::string ToString(const Program& program, utils::VectorRef<const ast::Statement*> stmts);
 
 /// Returns the WGSL printed string of an AST node.
 /// @param program the Program

@@ -131,6 +131,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   CXFA_Object* GetThisObject() const { return m_pThisObject; }
   CFXJSE_Class* GetJseNormalClass() const { return m_pJsClass.Get(); }
   CFXJSE_Context* GetJseContext() const { return m_JsContext.get(); }
+  CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
   void SetNodesOfRunScript(std::vector<cppgc::Persistent<CXFA_Node>>* pArray);
   void AddNodesOfRunScript(CXFA_Node* pNode);
@@ -139,16 +140,17 @@ class CFXJSE_Engine final : public CFX_V8 {
   bool IsRunAtClient() { return m_eRunAtType != XFA_AttributeValue::Server; }
 
   CXFA_Script::Type GetType();
-  std::vector<cppgc::Persistent<CXFA_Node>>* GetUpObjectArray() {
-    return &m_upObjectArray;
-  }
-  CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
+
+  void AddObjectToUpArray(CXFA_Node* pNode);
+  CXFA_Node* LastObjectFromUpArray();
 
   CXFA_Object* ToXFAObject(v8::Local<v8::Value> obj);
   v8::Local<v8::Object> NewNormalXFAObject(CXFA_Object* obj);
 
+  bool IsResolvingNodes() const { return m_bResolvingNodes; }
+
  private:
-  CFXJSE_Context* CreateVariablesContext(CXFA_Node* pScriptNode,
+  CFXJSE_Context* CreateVariablesContext(CXFA_Script* pScriptNode,
                                          CXFA_Node* pSubform);
   void RemoveBuiltInObjs(CFXJSE_Context* pContext);
   bool QueryNodeByFlag(CXFA_Node* refNode,
@@ -162,14 +164,14 @@ class CFXJSE_Engine final : public CFX_V8 {
   bool IsStrictScopeInJavaScript();
   CXFA_Object* GetVariablesThis(CXFA_Object* pObject);
   CXFA_Object* GetVariablesScript(CXFA_Object* pObject);
-  CFXJSE_Context* VariablesContextForScriptNode(CXFA_Node* pScriptNode);
-  bool QueryVariableValue(CXFA_Node* pScriptNode,
+  CFXJSE_Context* VariablesContextForScriptNode(CXFA_Script* pScriptNode);
+  bool QueryVariableValue(CXFA_Script* pScriptNode,
                           ByteStringView szPropName,
                           v8::Local<v8::Value>* pValue);
-  bool UpdateVariableValue(CXFA_Node* pScriptNode,
+  bool UpdateVariableValue(CXFA_Script* pScriptNode,
                            ByteStringView szPropName,
                            v8::Local<v8::Value> pValue);
-  bool RunVariablesScript(CXFA_Node* pScriptNode);
+  void RunVariablesScript(CXFA_Script* pScriptNode);
 
   UnownedPtr<CJS_Runtime> const m_pSubordinateRuntime;
   cppgc::WeakPersistent<CXFA_Document> const m_pDocument;
@@ -187,6 +189,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   std::unique_ptr<CFXJSE_FormCalcContext> m_FormCalcContext;
   cppgc::Persistent<CXFA_Object> m_pThisObject;
   XFA_AttributeValue m_eRunAtType = XFA_AttributeValue::Client;
+  bool m_bResolvingNodes = false;
 };
 
 #endif  //  FXJS_XFA_CFXJSE_ENGINE_H_

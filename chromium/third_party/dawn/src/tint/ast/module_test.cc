@@ -22,11 +22,11 @@ namespace {
 using ModuleTest = TestHelper;
 
 TEST_F(ModuleTest, Creation) {
-    EXPECT_EQ(Program(std::move(*this)).AST().Functions().size(), 0u);
+    EXPECT_EQ(Program(std::move(*this)).AST().Functions().Length(), 0u);
 }
 
 TEST_F(ModuleTest, LookupFunction) {
-    auto* func = Func("main", VariableList{}, ty.f32(), StatementList{}, ast::AttributeList{});
+    auto* func = Func("main", {}, ty.f32(), {});
 
     Program program(std::move(*this));
     EXPECT_EQ(func, program.AST().Functions().Find(program.Symbols().Get("main")));
@@ -61,8 +61,8 @@ TEST_F(ModuleTest, Assert_DifferentProgramID_Function) {
             ProgramBuilder b1;
             ProgramBuilder b2;
             b1.AST().AddFunction(b2.create<ast::Function>(b2.Symbols().Register("func"),
-                                                          VariableList{}, b2.ty.f32(), b2.Block(),
-                                                          AttributeList{}, AttributeList{}));
+                                                          utils::Empty, b2.ty.f32(), b2.Block(),
+                                                          utils::Empty, utils::Empty));
         },
         "internal compiler error");
 }
@@ -92,7 +92,7 @@ TEST_F(ModuleTest, CloneOrder) {
         ProgramBuilder b;
         b.Func("F", {}, b.ty.void_(), {});
         b.Alias("A", b.ty.u32());
-        b.Global("V", b.ty.i32(), ast::StorageClass::kPrivate);
+        b.GlobalVar("V", b.ty.i32(), ast::StorageClass::kPrivate);
         return Program(std::move(b));
     }();
 
@@ -116,7 +116,7 @@ TEST_F(ModuleTest, CloneOrder) {
     ctx.Clone();
 
     auto& decls = cloned.AST().GlobalDeclarations();
-    ASSERT_EQ(decls.size(), 6u);
+    ASSERT_EQ(decls.Length(), 6u);
     EXPECT_TRUE(decls[1]->Is<ast::Function>());
     EXPECT_TRUE(decls[3]->Is<ast::Alias>());
     EXPECT_TRUE(decls[5]->Is<ast::Variable>());

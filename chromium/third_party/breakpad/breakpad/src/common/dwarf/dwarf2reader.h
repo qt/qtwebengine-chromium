@@ -1332,6 +1332,9 @@ class CallFrameInfo::Handler {
   // should stop.
   virtual bool End() = 0;
 
+  // The target architecture for the data.
+  virtual string Architecture() = 0;
+
   // Handler functions for Linux C++ exception handling data. These are
   // only called if the data includes 'z' augmentation strings.
 

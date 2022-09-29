@@ -7,7 +7,7 @@ import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 import type * as Protocol from '../../generated/protocol.js';
-import type {TargetManager} from './TargetManager.js';
+import {type TargetManager} from './TargetManager.js';
 import {SDKModel} from './SDKModel.js';
 
 export class Target extends ProtocolClient.InspectorBackend.TargetBase {
@@ -72,6 +72,9 @@ export class Target extends ProtocolClient.InspectorBackend.TargetBase {
         break;
       case Type.Browser:
         this.#capabilitiesMask = Capability.Target | Capability.IO;
+        break;
+      case Type.Tab:
+        this.#capabilitiesMask = Capability.Target;
         break;
     }
     this.#typeInternal = type;
@@ -227,6 +230,7 @@ export enum Type {
   Node = 'node',
   Browser = 'browser',
   AuctionWorklet = 'auction-worklet',
+  Tab = 'tab',
 }
 
 // TODO(crbug.com/1167717): Make this a const enum again

@@ -62,6 +62,7 @@
 #include "net/dcsctp/public/dcsctp_options.h"
 #include "net/dcsctp/public/dcsctp_socket.h"
 #include "net/dcsctp/public/packet_observer.h"
+#include "net/dcsctp/public/types.h"
 #include "net/dcsctp/rx/data_tracker.h"
 #include "net/dcsctp/rx/reassembly_queue.h"
 #include "net/dcsctp/socket/callback_deferrer.h"
@@ -186,15 +187,12 @@ DcSctpSocket::DcSctpSocket(absl::string_view log_prefix,
                        options.max_retransmissions))),
       packet_sender_(callbacks_,
                      absl::bind_front(&DcSctpSocket::OnSentPacket, this)),
-      send_queue_(
-          log_prefix_,
-          options_.max_send_buffer_size,
-          options_.default_stream_priority,
-          [this](StreamID stream_id) {
-            callbacks_.OnBufferedAmountLow(stream_id);
-          },
-          options_.total_buffered_amount_low_threshold,
-          [this]() { callbacks_.OnTotalBufferedAmountLow(); }) {}
+      send_queue_(log_prefix_,
+                  &callbacks_,
+                  options_.max_send_buffer_size,
+                  options_.mtu,
+                  options_.default_stream_priority,
+                  options_.total_buffered_amount_low_threshold) {}
 
 std::string DcSctpSocket::log_prefix() const {
   return log_prefix_ + "[" + std::string(ToString(state_)) + "] ";
@@ -305,6 +303,23 @@ void DcSctpSocket::Connect() {
   RTC_DCHECK(IsConsistent());
 }
 
+void DcSctpSocket::CreateTransmissionControlBlock(
+    const Capabilities& capabilities,
+    VerificationTag my_verification_tag,
+    TSN my_initial_tsn,
+    VerificationTag peer_verification_tag,
+    TSN peer_initial_tsn,
+    size_t a_rwnd,
+    TieTag tie_tag) {
+  metrics_.uses_message_interleaving = capabilities.message_interleaving;
+  tcb_ = std::make_unique<TransmissionControlBlock>(
+      timer_manager_, log_prefix_, options_, capabilities, callbacks_,
+      send_queue_, my_verification_tag, my_initial_tsn, peer_verification_tag,
+      peer_initial_tsn, a_rwnd, tie_tag, packet_sender_,
+      [this]() { return state_ == State::kEstablished; });
+  RTC_DLOG(LS_VERBOSE) << log_prefix() << "Created TCB: " << tcb_->ToString();
+}
+
 void DcSctpSocket::RestoreFromState(const DcSctpSocketHandoverState& state) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   CallbackDeferrer::ScopedDeferrer deferrer(callbacks_);
@@ -327,15 +342,13 @@ void DcSctpSocket::RestoreFromState(const DcSctpSocketHandoverState& state) {
 
       send_queue_.RestoreFromState(state);
 
-      tcb_ = std::make_unique<TransmissionControlBlock>(
-          timer_manager_, log_prefix_, options_, capabilities, callbacks_,
-          send_queue_, my_verification_tag, TSN(state.my_initial_tsn),
+      CreateTransmissionControlBlock(
+          capabilities, my_verification_tag, TSN(state.my_initial_tsn),
           VerificationTag(state.peer_verification_tag),
           TSN(state.peer_initial_tsn), static_cast<size_t>(0),
-          TieTag(state.tie_tag), packet_sender_,
-          [this]() { return state_ == State::kEstablished; }, &state);
-      RTC_DLOG(LS_VERBOSE) << log_prefix() << "Created peer TCB from state: "
-                           << tcb_->ToString();
+          TieTag(state.tie_tag));
+
+      tcb_->RestoreFromState(state);
 
       SetState(State::kEstablished, "restored from handover state");
       callbacks_.OnConnected();
@@ -435,13 +448,20 @@ SendStatus DcSctpSocket::Send(DcSctpMessage message,
                               const SendOptions& send_options) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   CallbackDeferrer::ScopedDeferrer deferrer(callbacks_);
+  LifecycleId lifecycle_id = send_options.lifecycle_id;
 
   if (message.payload().empty()) {
+    if (lifecycle_id.IsSet()) {
+      callbacks_.OnLifecycleEnd(lifecycle_id);
+    }
     callbacks_.OnError(ErrorKind::kProtocolViolation,
                        "Unable to send empty message");
     return SendStatus::kErrorMessageEmpty;
   }
   if (message.payload().size() > options_.max_message_size) {
+    if (lifecycle_id.IsSet()) {
+      callbacks_.OnLifecycleEnd(lifecycle_id);
+    }
     callbacks_.OnError(ErrorKind::kProtocolViolation,
                        "Unable to send too large message");
     return SendStatus::kErrorMessageTooLarge;
@@ -452,11 +472,17 @@ SendStatus DcSctpSocket::Send(DcSctpMessage message,
     // "An endpoint should reject any new data request from its upper layer
     // if it is in the SHUTDOWN-PENDING, SHUTDOWN-SENT, SHUTDOWN-RECEIVED, or
     // SHUTDOWN-ACK-SENT state."
+    if (lifecycle_id.IsSet()) {
+      callbacks_.OnLifecycleEnd(lifecycle_id);
+    }
     callbacks_.OnError(ErrorKind::kWrongSequence,
                        "Unable to send message as the socket is shutting down");
     return SendStatus::kErrorShuttingDown;
   }
   if (send_queue_.IsFull()) {
+    if (lifecycle_id.IsSet()) {
+      callbacks_.OnLifecycleEnd(lifecycle_id);
+    }
     callbacks_.OnError(ErrorKind::kResourceExhaustion,
                        "Unable to send message as the send queue is full");
     return SendStatus::kErrorResourceExhaustion;
@@ -1200,14 +1226,18 @@ void DcSctpSocket::HandleInitAck(
 
   metrics_.peer_implementation = DeterminePeerImplementation(cookie->data());
 
-  tcb_ = std::make_unique<TransmissionControlBlock>(
-      timer_manager_, log_prefix_, options_, capabilities, callbacks_,
-      send_queue_, connect_params_.verification_tag,
-      connect_params_.initial_tsn, chunk->initiate_tag(), chunk->initial_tsn(),
-      chunk->a_rwnd(), MakeTieTag(callbacks_), packet_sender_,
-      [this]() { return state_ == State::kEstablished; });
-  RTC_DLOG(LS_VERBOSE) << log_prefix()
-                       << "Created peer TCB: " << tcb_->ToString();
+  // If the connection is re-established (peer restarted, but re-used old
+  // connection), make sure that all message identifiers are reset and any
+  // partly sent message is re-sent in full. The same is true when the socket
+  // is closed and later re-opened, which never happens in WebRTC, but is a
+  // valid operation on the SCTP level. Note that in case of handover, the
+  // send queue is already re-configured, and shouldn't be reset.
+  send_queue_.Reset();
+
+  CreateTransmissionControlBlock(capabilities, connect_params_.verification_tag,
+                                 connect_params_.initial_tsn,
+                                 chunk->initiate_tag(), chunk->initial_tsn(),
+                                 chunk->a_rwnd(), MakeTieTag(callbacks_));
 
   SetState(State::kCookieEchoed, "INIT_ACK received");
 
@@ -1261,14 +1291,18 @@ void DcSctpSocket::HandleCookieEcho(
   }
 
   if (tcb_ == nullptr) {
-    tcb_ = std::make_unique<TransmissionControlBlock>(
-        timer_manager_, log_prefix_, options_, cookie->capabilities(),
-        callbacks_, send_queue_, connect_params_.verification_tag,
+    // If the connection is re-established (peer restarted, but re-used old
+    // connection), make sure that all message identifiers are reset and any
+    // partly sent message is re-sent in full. The same is true when the socket
+    // is closed and later re-opened, which never happens in WebRTC, but is a
+    // valid operation on the SCTP level. Note that in case of handover, the
+    // send queue is already re-configured, and shouldn't be reset.
+    send_queue_.Reset();
+
+    CreateTransmissionControlBlock(
+        cookie->capabilities(), connect_params_.verification_tag,
         connect_params_.initial_tsn, cookie->initiate_tag(),
-        cookie->initial_tsn(), cookie->a_rwnd(), MakeTieTag(callbacks_),
-        packet_sender_, [this]() { return state_ == State::kEstablished; });
-    RTC_DLOG(LS_VERBOSE) << log_prefix()
-                         << "Created peer TCB: " << tcb_->ToString();
+        cookie->initial_tsn(), cookie->a_rwnd(), MakeTieTag(callbacks_));
   }
 
   SctpPacket::Builder b = tcb_->PacketBuilder();

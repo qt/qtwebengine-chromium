@@ -201,6 +201,7 @@ class PIPELINE_STATE : public BASE_NODE {
     // Flag of which shader stages are active for this pipeline
     const uint32_t active_shaders = 0;
     const VkPrimitiveTopology topology_at_rasterizer;
+    const bool uses_shader_module_id;
 
     // Executable or legacy pipeline
     PIPELINE_STATE(const ValidationStateTracker *state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
@@ -340,6 +341,13 @@ class PIPELINE_STATE : public BASE_NODE {
         return nullptr;
     }
 
+    bool RasterizationDisabled() const {
+        if (pre_raster_state && pre_raster_state->raster_state) {
+            return pre_raster_state->raster_state->rasterizerDiscardEnable == VK_TRUE;
+        }
+        return false;
+    }
+
     const safe_VkPipelineViewportStateCreateInfo *ViewportState() const {
         // TODO A render pass object is required for all of these sub-states. Which one should be used for an "executable pipeline"?
         if (pre_raster_state) {
@@ -466,6 +474,17 @@ class PIPELINE_STATE : public BASE_NODE {
 
     static ActiveSlotMap GetActiveSlots(const StageStateVec &stage_states);
     static StageStateVec GetStageStates(const ValidationStateTracker &state_data, const PIPELINE_STATE &pipe_state);
+
+    // Return true if for a given PSO, the given state enum is dynamic, else return false
+    bool IsDynamic(const VkDynamicState state) const {
+        const auto *dynamic_state = DynamicState();
+        if ((GetPipelineType() == VK_PIPELINE_BIND_POINT_GRAPHICS) && dynamic_state) {
+            for (uint32_t i = 0; i < dynamic_state->dynamicStateCount; i++) {
+                if (state == dynamic_state->pDynamicStates[i]) return true;
+            }
+        }
+        return false;
+    }
 
   protected:
     static std::shared_ptr<VertexInputState> CreateVertexInputState(const PIPELINE_STATE &p, const ValidationStateTracker &state,
@@ -601,9 +620,11 @@ VkShaderModule PIPELINE_STATE::GetShaderModuleByCIIndex<VkRayTracingPipelineCrea
 
 // Track last states that are bound per pipeline bind point (Gfx & Compute)
 struct LAST_BOUND_STATE {
-    LAST_BOUND_STATE() { Reset(); }  // must define default constructor for portability reasons
-    PIPELINE_STATE *pipeline_state;
-    VkPipelineLayout pipeline_layout;
+    LAST_BOUND_STATE(CMD_BUFFER_STATE &cb) : cb_state(cb) {}
+
+    CMD_BUFFER_STATE &cb_state;
+    PIPELINE_STATE *pipeline_state{nullptr};
+    VkPipelineLayout pipeline_layout{VK_NULL_HANDLE};
     std::shared_ptr<cvdescriptorset::DescriptorSet> push_descriptor_set;
 
     // Ordered bound set tracking where index is set# that given set is bound to
@@ -624,7 +645,7 @@ struct LAST_BOUND_STATE {
 
     void Reset();
 
-    void UnbindAndResetPushDescriptorSet(CMD_BUFFER_STATE *cb_state, std::shared_ptr<cvdescriptorset::DescriptorSet> &&ds);
+    void UnbindAndResetPushDescriptorSet(std::shared_ptr<cvdescriptorset::DescriptorSet> &&ds);
 
     inline bool IsUsing() const { return pipeline_state ? true : false; }
 };

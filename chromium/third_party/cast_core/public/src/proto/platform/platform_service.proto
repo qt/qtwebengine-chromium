@@ -48,6 +48,8 @@ message StartRuntimeRequest {
   string runtime_id = 1;
   // gRPC endpoint Cast Runtime must run on.
   cast.common.ServiceInfo runtime_service_info = 2;
+  // Flag to indicate that the request is for prelaunch.
+  bool prelaunch = 3;
 }
 
 message StartRuntimeResponse {}

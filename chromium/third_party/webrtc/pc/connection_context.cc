@@ -12,6 +12,7 @@
 
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "api/transport/field_trial_based_config.h"
 #include "media/base/media_engine.h"
@@ -19,7 +20,6 @@
 #include "rtc_base/helpers.h"
 #include "rtc_base/internal/default_socket_server.h"
 #include "rtc_base/socket_server.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
@@ -101,26 +101,35 @@ ConnectionContext::ConnectionContext(
       media_engine_(std::move(dependencies->media_engine)),
       network_monitor_factory_(
           std::move(dependencies->network_monitor_factory)),
+      default_network_manager_(std::move(dependencies->network_manager)),
       call_factory_(std::move(dependencies->call_factory)),
+      default_socket_factory_(std::move(dependencies->packet_socket_factory)),
       sctp_factory_(
           MaybeCreateSctpFactory(std::move(dependencies->sctp_factory),
                                  network_thread(),
                                  *trials_.get())) {
+  RTC_DCHECK_RUN_ON(signaling_thread_);
+  RTC_DCHECK(!(default_network_manager_ && network_monitor_factory_))
+      << "You can't set both network_manager and network_monitor_factory.";
+
   signaling_thread_->AllowInvokesToThread(worker_thread());
   signaling_thread_->AllowInvokesToThread(network_thread_);
   worker_thread_->AllowInvokesToThread(network_thread_);
-  if (network_thread_->IsCurrent()) {
-    // TODO(https://crbug.com/webrtc/12802) switch to DisallowAllInvokes
-    network_thread_->AllowInvokesToThread(network_thread_);
-  } else {
-    network_thread_->PostTask(ToQueuedTask([thread = network_thread_] {
-      thread->DisallowBlockingCalls();
-      // TODO(https://crbug.com/webrtc/12802) switch to DisallowAllInvokes
-      thread->AllowInvokesToThread(thread);
-    }));
+  if (!network_thread_->IsCurrent()) {
+    // network_thread_->IsCurrent() == true means signaling_thread_ is
+    // network_thread_. In this case, no further action is required as
+    // signaling_thread_ can already invoke network_thread_.
+    network_thread_->PostTask(
+        [thread = network_thread_, worker_thread = worker_thread_.get()] {
+          thread->DisallowBlockingCalls();
+          thread->DisallowAllInvokes();
+          if (worker_thread == thread) {
+            // In this case, worker_thread_ == network_thread_
+            thread->AllowInvokesToThread(thread);
+          }
+        });
   }
 
-  RTC_DCHECK_RUN_ON(signaling_thread_);
   rtc::InitRandom(rtc::Time32());
 
   rtc::SocketFactory* socket_factory = dependencies->socket_factory;
@@ -136,14 +145,16 @@ ConnectionContext::ConnectionContext(
       socket_factory = network_thread()->socketserver();
     }
   }
-  // If network_monitor_factory_ is non-null, it will be used to create a
-  // network monitor while on the network thread.
-  default_network_manager_ = std::make_unique<rtc::BasicNetworkManager>(
-      network_monitor_factory_.get(), socket_factory, &field_trials());
-
-  default_socket_factory_ =
-      std::make_unique<rtc::BasicPacketSocketFactory>(socket_factory);
-
+  if (!default_network_manager_) {
+    // If network_monitor_factory_ is non-null, it will be used to create a
+    // network monitor while on the network thread.
+    default_network_manager_ = std::make_unique<rtc::BasicNetworkManager>(
+        network_monitor_factory_.get(), socket_factory, &field_trials());
+  }
+  if (!default_socket_factory_) {
+    default_socket_factory_ =
+        std::make_unique<rtc::BasicPacketSocketFactory>(socket_factory);
+  }
   // Set warning levels on the threads, to give warnings when response
   // may be slower than is expected of the thread.
   // Since some of the threads may be the same, start with the least

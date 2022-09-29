@@ -21,12 +21,11 @@
 #include "api/media_stream_interface.h"
 #include "api/priority.h"
 #include "media/base/media_engine.h"
-#include "pc/stats_collector_interface.h"
+#include "pc/legacy_stats_collector_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/helpers.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/trace_event.h"
 
 namespace webrtc {
@@ -306,7 +305,8 @@ void RtpSenderBase::SetSsrc(uint32_t ssrc) {
     SetSend();
     AddTrackToStats();
   }
-  if (!init_parameters_.encodings.empty()) {
+  if (!init_parameters_.encodings.empty() ||
+      init_parameters_.degradation_preference.has_value()) {
     worker_thread_->Invoke<void>(RTC_FROM_HERE, [&] {
       RTC_DCHECK(media_channel_);
       // Get the current parameters, which are constructed from the SDP.
@@ -329,6 +329,7 @@ void RtpSenderBase::SetSsrc(uint32_t ssrc) {
           init_parameters_.degradation_preference;
       media_channel_->SetRtpSendParameters(ssrc_, current_parameters);
       init_parameters_.encodings.clear();
+      init_parameters_.degradation_preference = absl::nullopt;
     });
   }
   // Attempt to attach the frame decryptor to the current media channel.
@@ -454,7 +455,7 @@ void LocalAudioSinkAdapter::SetSink(cricket::AudioSource::Sink* sink) {
 rtc::scoped_refptr<AudioRtpSender> AudioRtpSender::Create(
     rtc::Thread* worker_thread,
     const std::string& id,
-    StatsCollectorInterface* stats,
+    LegacyStatsCollectorInterface* stats,
     SetStreamsObserver* set_streams_observer) {
   return rtc::make_ref_counted<AudioRtpSender>(worker_thread, id, stats,
                                                set_streams_observer);
@@ -462,18 +463,17 @@ rtc::scoped_refptr<AudioRtpSender> AudioRtpSender::Create(
 
 AudioRtpSender::AudioRtpSender(rtc::Thread* worker_thread,
                                const std::string& id,
-                               StatsCollectorInterface* stats,
+                               LegacyStatsCollectorInterface* legacy_stats,
                                SetStreamsObserver* set_streams_observer)
     : RtpSenderBase(worker_thread, id, set_streams_observer),
-      stats_(stats),
-      dtmf_sender_proxy_(DtmfSenderProxy::Create(
-          rtc::Thread::Current(),
-          DtmfSender::Create(rtc::Thread::Current(), this))),
+      legacy_stats_(legacy_stats),
+      dtmf_sender_(DtmfSender::Create(rtc::Thread::Current(), this)),
+      dtmf_sender_proxy_(
+          DtmfSenderProxy::Create(rtc::Thread::Current(), dtmf_sender_)),
       sink_adapter_(new LocalAudioSinkAdapter()) {}
 
 AudioRtpSender::~AudioRtpSender() {
-  // For DtmfSender.
-  SignalDestroyed();
+  dtmf_sender_->OnDtmfProviderDestroyed();
   Stop();
 }
 
@@ -510,10 +510,6 @@ bool AudioRtpSender::InsertDtmf(int code, int duration) {
   return success;
 }
 
-sigslot::signal0<>* AudioRtpSender::GetOnDestroyedSignal() {
-  return &SignalDestroyed;
-}
-
 void AudioRtpSender::OnChanged() {
   RTC_DCHECK_RUN_ON(signaling_thread_);
   TRACE_EVENT0("webrtc", "AudioRtpSender::OnChanged");
@@ -538,14 +534,14 @@ void AudioRtpSender::AttachTrack() {
 }
 
 void AudioRtpSender::AddTrackToStats() {
-  if (can_send_track() && stats_) {
-    stats_->AddLocalAudioTrack(audio_track().get(), ssrc_);
+  if (can_send_track() && legacy_stats_) {
+    legacy_stats_->AddLocalAudioTrack(audio_track().get(), ssrc_);
   }
 }
 
 void AudioRtpSender::RemoveTrackFromStats() {
-  if (can_send_track() && stats_) {
-    stats_->RemoveLocalAudioTrack(audio_track().get(), ssrc_);
+  if (can_send_track() && legacy_stats_) {
+    legacy_stats_->RemoveLocalAudioTrack(audio_track().get(), ssrc_);
   }
 }
 

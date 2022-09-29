@@ -66,39 +66,48 @@ dependencies that have changed.
 
 # Build setup
 
-The following are the main tools are required for development/builds:
+The following are the main tools are required for development/builds.
 
- - Build file generator: `gn`
- - Code formatter: `clang-format`
- - Builder: `ninja` ([GitHub releases](https://github.com/ninja-build/ninja/releases))
- - Compiler/Linker: `clang` (installed by default) or `gcc` (installed by you)
+- Installed by gclient automatically
+  - Build file generator: `gn` (installed into `buildtools/`)
+  - Code formatter: `clang-format` (installed into `buildtools/`)
+  - Builder: `ninja`
+  - Compiler/Linker: `clang`
+- Installed by you
+  - JSON validator: `yajsv`
+  - `libstdc++`
+  - `gcc`
+  - XCode
 
-All of these--except `gcc` as noted above--are automatically downloaded/updated
-for the Linux and Mac environments via `gclient sync` as described above. The
-first two are installed into `buildtools/<platform>/`.
+## yajsv installation
 
-Mac only: XCode must be installed on the system, to link against its frameworks.
+1. Install `go` from [https://golang.org](https://golang.org) or your Linux package manager.
+2. `go install github.com/neilpa/yajsv@latest`
 
-`clang-format` is used for maintaining consistent coding style, but it is not a
-complete replacement for adhering to Chromium/Google C++ style (that's on you!).
-The presubmit script will sanity-check that it has been run on all new/changed
-code.
-
-## Linux clang
-
-On Linux, the build will automatically download the Clang compiler from the
-Google storage cache, the same way that Chromium does it.
+## libstdc++ (Linux only)
 
 Ensure that libstdc++ 8 is installed, as clang depends on the system
 instance of it. On Debian flavors, you can run:
 
 ```bash
-   sudo apt-get install libstdc++-8-dev
+   sudo apt-get install libstdc++-8-dev libstdc++6-8-dbg
 ```
 
-## Linux gcc
+## XCode (Mac only)
 
-Setting the `gn` argument "is_gcc=true" on Linux enables building using gcc
+On Mac OS X, the build will use the clang provided by
+[XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12). You can install
+the XCode command-line tools only or the full version of XCode.
+
+```bash
+xcode-select --install
+```
+
+TODO(https://issuetracker.google.com/202964797): Switch to use Chromium clang for Mac builds.
+
+##  gcc (optional, Linux only)
+
+Setting the `gn` argument `is_gcc=true` on Linux enables building using gcc
 instead.
 
 ```bash
@@ -113,30 +122,19 @@ run:
   sudo apt-get install gcc-7
 ```
 
-## Mac clang
-
-On Mac OS X, the build will use the clang provided by
-[XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12), which must be
-installed.
-
 ## Debug build
 
-Setting the `gn` argument "is_debug=true" enables debug build.
+Setting the `gn` argument `is_debug=true` enables debug build.
 
 ```bash
   gn gen out/debug --args="is_debug=true"
 ```
 
-To install debug information for libstdc++ 8 on Debian flavors, you can run:
-
-```bash
-   sudo apt-get install libstdc++6-8-dbg
-```
-
 ## gn configuration
 
 Running `gn args` opens an editor that allows to create a list of arguments
-passed to every invocation of `gn gen`.
+passed to every invocation of `gn gen`.  `gn args --list` will list all of the
+possible arguments you can set.
 
 ```bash
   gn args out/debug
@@ -225,9 +223,10 @@ committed changes locally, simply run:
   git cl upload
 ```
 
-The first command will will auto-format the code changes. Then, the second
-command runs the `PRESUBMIT.py` script to check style and, if it passes, a
-newcode review will be posted on `chromium-review.googlesource.com`.
+The first command will will auto-format the code changes using
+`clang-format`. Then, the second command runs the `PRESUBMIT.py` script to check
+style and, if it passes, a newcode review will be posted on
+`chromium-review.googlesource.com`.
 
 If you make additional commits to your local branch, then running `git cl
 upload` again in the same branch will merge those commits into the ongoing

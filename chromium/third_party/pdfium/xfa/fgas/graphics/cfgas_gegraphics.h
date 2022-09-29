@@ -11,7 +11,9 @@
 #include <vector>
 
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "third_party/base/span.h"
@@ -23,11 +25,19 @@ class CFX_RenderDevice;
 
 class CFGAS_GEGraphics {
  public:
+  class StateRestorer {
+   public:
+    FX_STACK_ALLOCATED();
+
+    explicit StateRestorer(CFGAS_GEGraphics* graphics);
+    ~StateRestorer();
+
+   private:
+    UnownedPtr<CFGAS_GEGraphics> const graphics_;
+  };
+
   explicit CFGAS_GEGraphics(CFX_RenderDevice* renderDevice);
   ~CFGAS_GEGraphics();
-
-  void SaveGraphState();
-  void RestoreGraphState();
 
   CFX_RectF GetClipRect() const;
   const CFX_Matrix* GetMatrix() const;
@@ -60,6 +70,9 @@ class CFGAS_GEGraphics {
     CFGAS_GEColor fillColor{nullptr};
   };
 
+  void SaveGraphState();
+  void RestoreGraphState();
+
   void RenderDeviceStrokePath(const CFGAS_GEPath& path,
                               const CFX_Matrix& matrix);
   void RenderDeviceFillPath(const CFGAS_GEPath& path,
@@ -71,7 +84,7 @@ class CFGAS_GEGraphics {
   void FillPathWithShading(const CFGAS_GEPath& path,
                            const CFX_FillRenderOptions& fill_options,
                            const CFX_Matrix& matrix);
-  void SetDIBitsWithMatrix(const RetainPtr<CFX_DIBBase>& source,
+  void SetDIBitsWithMatrix(RetainPtr<CFX_DIBBase> source,
                            const CFX_Matrix& matrix);
 
   UnownedPtr<CFX_RenderDevice> const m_renderDevice;

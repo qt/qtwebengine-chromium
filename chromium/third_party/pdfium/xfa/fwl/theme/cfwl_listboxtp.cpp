@@ -19,7 +19,7 @@ CFWL_ListBoxTP::CFWL_ListBoxTP() = default;
 CFWL_ListBoxTP::~CFWL_ListBoxTP() = default;
 
 void CFWL_ListBoxTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
-  switch (pParams.m_iPart) {
+  switch (pParams.GetPart()) {
     case CFWL_ThemePart::Part::kBorder: {
       DrawBorder(pParams.GetGraphics(), pParams.m_PartRect, pParams.m_matrix);
       break;
@@ -60,7 +60,7 @@ void CFWL_ListBoxTP::DrawListBoxItem(CFGAS_GEGraphics* pGraphics,
                                      const CFX_RectF* pData,
                                      const CFX_Matrix& matrix) {
   if (dwStates & CFWL_PartState::kSelected) {
-    pGraphics->SaveGraphState();
+    CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
     pGraphics->SetFillColor(CFGAS_GEColor(FWLTHEME_COLOR_BKSelected));
     CFGAS_GEPath path;
 #if BUILDFLAG(IS_APPLE)
@@ -71,7 +71,6 @@ void CFWL_ListBoxTP::DrawListBoxItem(CFGAS_GEGraphics* pGraphics,
 #endif
     pGraphics->FillPath(path, CFX_FillRenderOptions::FillType::kWinding,
                         matrix);
-    pGraphics->RestoreGraphState();
   }
   if ((dwStates & CFWL_PartState::kFocused) && pData)
     DrawFocus(pGraphics, *pData, matrix);

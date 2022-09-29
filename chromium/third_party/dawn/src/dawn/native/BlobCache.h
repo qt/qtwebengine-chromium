@@ -19,6 +19,7 @@
 
 #include "dawn/common/Platform.h"
 #include "dawn/native/Blob.h"
+#include "dawn/native/CacheResult.h"
 
 namespace dawn::platform {
 class CachingInterface;
@@ -42,11 +43,24 @@ class BlobCache {
     void Store(const CacheKey& key, size_t valueSize, const void* value);
     void Store(const CacheKey& key, const Blob& value);
 
+    // Store a CacheResult into the cache if it isn't cached yet.
+    // Calls T::ToBlob which should be defined elsewhere.
+    template <typename T>
+    void EnsureStored(const CacheResult<T>& cacheResult) {
+        if (!cacheResult.IsCached()) {
+            Store(cacheResult.GetCacheKey(), cacheResult->ToBlob());
+        }
+    }
+
   private:
     // Non-thread safe internal implementations of load and store. Exposed callers that use
     // these helpers need to make sure that these are entered with `mMutex` held.
     Blob LoadInternal(const CacheKey& key);
     void StoreInternal(const CacheKey& key, size_t valueSize, const void* value);
+
+    // Validates the cache key for this version of Dawn. At the moment, this is naively checking
+    // that the cache key contains the dawn version string in it.
+    bool ValidateCacheKey(const CacheKey& key);
 
     // Protects thread safety of access to mCache.
     std::mutex mMutex;

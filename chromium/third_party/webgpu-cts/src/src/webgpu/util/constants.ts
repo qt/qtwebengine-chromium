@@ -29,12 +29,30 @@ export const kBit = {
       max: 0x7f7f_ffff,
       zero: 0x0000_0000,
       nearest_max: 0x7f7f_fffe,
+      less_than_one: 0x3f7f_ffff,
+      pi: {
+        whole: 0x404_90fdb,
+        three_quarters: 0x4016_cbe4,
+        half: 0x3fc9_0fdb,
+        third: 0x3f86_0a92,
+        quarter: 0x3f49_0fdb,
+        sixth: 0x3f06_0a92,
+      },
+      e: 0x402d_f854,
     },
     negative: {
       max: 0x8080_0000,
       min: 0xff7f_ffff,
       zero: 0x8000_0000,
       nearest_min: 0xff7f_fffe,
+      pi: {
+        whole: 0xc04_90fdb,
+        three_quarters: 0xc016_cbe4,
+        half: 0xbfc90fdb,
+        third: 0xbf860a92,
+        quarter: 0xbf49_0fdb,
+        sixth: 0xbf06_0a92,
+      },
     },
     subnormal: {
       positive: {
@@ -238,11 +256,29 @@ export const kValue = {
       min: hexToF32(kBit.f32.positive.min),
       max: hexToF32(kBit.f32.positive.max),
       nearest_max: hexToF32(kBit.f32.positive.nearest_max),
+      less_than_one: hexToF32(kBit.f32.positive.less_than_one),
+      pi: {
+        whole: hexToF32(kBit.f32.positive.pi.whole),
+        three_quarters: hexToF32(kBit.f32.positive.pi.three_quarters),
+        half: hexToF32(kBit.f32.positive.pi.half),
+        third: hexToF32(kBit.f32.positive.pi.third),
+        quarter: hexToF32(kBit.f32.positive.pi.quarter),
+        sixth: hexToF32(kBit.f32.positive.pi.sixth),
+      },
+      e: hexToF32(kBit.f32.positive.e),
     },
     negative: {
       max: hexToF32(kBit.f32.negative.max),
       min: hexToF32(kBit.f32.negative.min),
       nearest_min: hexToF32(kBit.f32.negative.nearest_min),
+      pi: {
+        whole: hexToF32(kBit.f32.negative.pi.whole),
+        three_quarters: hexToF32(kBit.f32.negative.pi.three_quarters),
+        half: hexToF32(kBit.f32.negative.pi.half),
+        third: hexToF32(kBit.f32.negative.pi.third),
+        quarter: hexToF32(kBit.f32.negative.pi.quarter),
+        sixth: hexToF32(kBit.f32.negative.pi.sixth),
+      },
     },
     subnormal: {
       positive: {

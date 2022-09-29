@@ -25,6 +25,7 @@
 #include "src/sksl/SkSLLexer.h"
 #include "src/sksl/SkSLProgramSettings.h"
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -117,6 +118,9 @@ private:
      */
     bool expectIdentifier(Token* result);
 
+    /** If the next token is a newline, consumes it and returns true. If not, returns false. */
+    bool expectNewline();
+
     void error(Token token, std::string_view msg);
     void error(Position position, std::string_view msg);
 
@@ -165,6 +169,10 @@ private:
 
     SkTArray<dsl::DSLGlobalVar> structVarDeclaration(Position start,
                                                      const dsl::DSLModifiers& modifiers);
+
+    bool allowUnsizedArrays() {
+        return ProgramConfig::IsCompute(fKind);
+    }
 
     bool parseArrayDimensions(Position pos, dsl::DSLType* type);
 

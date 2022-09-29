@@ -25,6 +25,7 @@
 #include "libavutil/cpu.h"
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "avs2.h"
 #include "davs2.h"
 
 typedef struct DAVS2Context {
@@ -78,8 +79,15 @@ static int davs2_dump_frames(AVCodecContext *avctx, davs2_picture_t *pic, int *g
         avctx->height    = headerset->height;
         avctx->pix_fmt   = headerset->output_bit_depth == 10 ?
                            AV_PIX_FMT_YUV420P10 : AV_PIX_FMT_YUV420P;
+        /* It should be picture_reorder_delay, but libdavs2 doesn't export that
+         * info.
+         * Use FFMAX since has_b_frames could be set by AVS2 parser in theory,
+         * which doesn't do it yet.
+         */
+        avctx->has_b_frames = FFMAX(avctx->has_b_frames, !headerset->low_delay);
 
-        avctx->framerate = av_d2q(headerset->frame_rate,4096);
+        if (headerset->frame_rate_id < 16)
+            avctx->framerate = ff_avs2_frame_rate_tab[headerset->frame_rate_id];
         *got_frame = 0;
         return 0;
     }
@@ -169,6 +177,7 @@ static av_cold int davs2_end(AVCodecContext *avctx)
 
     /* close the decoder */
     if (cad->decoder) {
+        davs2_flush(avctx);
         davs2_decoder_close(cad->decoder);
         cad->decoder = NULL;
     }
@@ -181,7 +190,7 @@ static int davs2_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 {
     DAVS2Context *cad      = avctx->priv_data;
     int           buf_size = avpkt->size;
-    uint8_t      *buf_ptr  = avpkt->data;
+    const uint8_t *buf_ptr = avpkt->data;
     int           ret      = DAVS2_DEFAULT;
 
     /* end of stream, output what is still in the buffers */
@@ -223,7 +232,8 @@ const FFCodec ff_libdavs2_decoder = {
     FF_CODEC_DECODE_CB(davs2_decode_frame),
     .flush          = davs2_flush,
     .p.capabilities =  AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS,
-    .caps_internal  = FF_CODEC_CAP_AUTO_THREADS,
+    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE |
+                      FF_CODEC_CAP_AUTO_THREADS,
     .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P,
                                                      AV_PIX_FMT_NONE },
     .p.wrapper_name = "libdavs2",

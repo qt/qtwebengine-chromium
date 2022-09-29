@@ -121,7 +121,6 @@ endif ()
 
 include(CheckIncludeFile)
 include(CMakeDependentOption)
-include(FindPkgConfig)
 
 # CMAKE_TOOLCHAIN_FILE must be set before `project' is called, which
 # configures the base build environment and references the toolchain file
@@ -245,6 +244,8 @@ endif ()
 
 
 # Find dependencies
+include(FindPkgConfig)
+
 if (NOT FT_DISABLE_HARFBUZZ)
   set(HARFBUZZ_MIN_VERSION "2.0.0")
   if (FT_REQUIRE_HARFBUZZ)
@@ -497,6 +498,13 @@ if (BUILD_FRAMEWORK)
   )
 endif ()
 
+# 'freetype-interface' is an interface library, to be accessed with
+# `EXPORT_NAME Freetype::Freetype`.  This is the target name provided by
+# CMake's `FindFreetype.cmake`, so we provide it for compatibility.
+add_library(freetype-interface INTERFACE)
+set_target_properties(freetype-interface PROPERTIES
+  EXPORT_NAME Freetype::Freetype
+  INTERFACE_LINK_LIBRARIES freetype)
 
 set(PKGCONFIG_REQUIRES "")
 set(PKGCONFIG_REQUIRES_PRIVATE "")
@@ -614,7 +622,7 @@ if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
     COMPATIBILITY SameMajorVersion)
 
   install(
-    TARGETS freetype
+    TARGETS freetype freetype-interface
       EXPORT freetype-targets
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

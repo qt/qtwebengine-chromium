@@ -195,7 +195,7 @@ export class ValidationTest extends GPUTest {
   }
 
   /**
-   * Return an arbitrary object of the specified {@link BindableResource} type
+   * Return an arbitrary object of the specified {@link webgpu/capability_info!BindableResource} type
    * (e.g. `'errorBuf'`, `'nonFiltSamp'`, `sampledTexMS`, etc.)
    */
   getBindingResource(bindingType: BindableResource): GPUBindingResource {
@@ -316,9 +316,11 @@ export class ValidationTest extends GPUTest {
   }
 
   /** Return a GPURenderPipeline with default options and no-op vertex and fragment shaders. */
-  createNoOpRenderPipeline(): GPURenderPipeline {
+  createNoOpRenderPipeline(
+    layout: GPUPipelineLayout | GPUAutoLayoutMode = 'auto'
+  ): GPURenderPipeline {
     return this.device.createRenderPipeline({
-      layout: 'auto',
+      layout,
       vertex: {
         module: this.device.createShaderModule({
           code: this.getNoOpShaderCode('VERTEX'),
@@ -381,5 +383,52 @@ export class ValidationTest extends GPUTest {
     });
     void this.device.popErrorScope();
     return pipeline;
+  }
+
+  /** Return an invalid GPUShaderModule. */
+  createInvalidShaderModule(): GPUShaderModule {
+    this.device.pushErrorScope('validation');
+    const code = 'deadbeaf'; // Something make no sense
+    const shaderModule = this.device.createShaderModule({ code });
+    void this.device.popErrorScope();
+    return shaderModule;
+  }
+
+  /** Helper for testing createRenderPipeline(Async) validation */
+  doCreateRenderPipelineTest(
+    isAsync: boolean,
+    _success: boolean,
+    descriptor: GPURenderPipelineDescriptor
+  ) {
+    if (isAsync) {
+      if (_success) {
+        this.shouldResolve(this.device.createRenderPipelineAsync(descriptor));
+      } else {
+        this.shouldReject('OperationError', this.device.createRenderPipelineAsync(descriptor));
+      }
+    } else {
+      this.expectValidationError(() => {
+        this.device.createRenderPipeline(descriptor);
+      }, !_success);
+    }
+  }
+
+  /** Helper for testing createComputePipeline(Async) validation */
+  doCreateComputePipelineTest(
+    isAsync: boolean,
+    _success: boolean,
+    descriptor: GPUComputePipelineDescriptor
+  ) {
+    if (isAsync) {
+      if (_success) {
+        this.shouldResolve(this.device.createComputePipelineAsync(descriptor));
+      } else {
+        this.shouldReject('OperationError', this.device.createComputePipelineAsync(descriptor));
+      }
+    } else {
+      this.expectValidationError(() => {
+        this.device.createComputePipeline(descriptor);
+      }, !_success);
+    }
   }
 }

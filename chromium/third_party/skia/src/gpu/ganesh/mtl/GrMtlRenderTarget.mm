@@ -58,7 +58,8 @@ sk_sp<GrMtlRenderTarget> GrMtlRenderTarget::MakeWrappedRenderTarget(GrMtlGpu* gp
     sk_sp<GrMtlAttachment> textureAttachment =
             GrMtlAttachment::MakeWrapped(gpu, dimensions, texture,
                                          GrAttachment::UsageFlags::kColorAttachment,
-                                         GrWrapCacheable::kNo);
+                                         GrWrapCacheable::kNo,
+                                         /*label=*/"MtlAttachment_TextureAttachment");
 
     GrMtlRenderTarget* mtlRT;
     if (sampleCnt > 1) {
@@ -78,16 +79,18 @@ sk_sp<GrMtlRenderTarget> GrMtlRenderTarget::MakeWrappedRenderTarget(GrMtlGpu* gp
                     sk_sp<GrMtlAttachment>(static_cast<GrMtlAttachment*>(msaaAttachment.release()));
             mtlRT = new GrMtlRenderTarget(
                     gpu, dimensions, std::move(colorAttachment), std::move(textureAttachment),
-                    kWrapped, /*label=*/{});
+                    kWrapped, /*label=*/"MakeWrappedRenderTargetWithOneTextureSampleCount");
             mtlRT->setRequiresManualMSAAResolve();
         } else {
             SkASSERT(sampleCnt == static_cast<int>([texture sampleCount]));
             mtlRT = new GrMtlRenderTarget(gpu, dimensions, std::move(textureAttachment), nil,
-                                          kWrapped, /*label=*/{});
+                                          kWrapped,
+                                          /*label=*/"MakeWrappedRenderTargetWithManySampleCount");
         }
     } else {
         mtlRT = new GrMtlRenderTarget(gpu, dimensions, std::move(textureAttachment), nil,
-                                      kWrapped, /*label=*/{});
+                                      kWrapped,
+                                      /*label=*/"MakeWrappedRenderTargetWithOneOrLessSampleCount");
     }
 
     return sk_sp<GrMtlRenderTarget>(mtlRT);
@@ -161,6 +164,21 @@ void GrMtlRenderTarget::onRelease() {
 bool GrMtlRenderTarget::completeStencilAttachment(GrAttachment* stencil, bool useMSAASurface) {
     SkASSERT(useMSAASurface == (this->numSamples() > 1));
     return true;
+}
+
+void GrMtlRenderTarget::onSetLabel() {
+    SkASSERT(fColorAttachment);
+    if (!this->getLabel().empty()) {
+        NSString* labelStr = @(this->getLabel().c_str());
+        if (fResolveAttachment) {
+            fColorAttachment->mtlTexture().label =
+                    [@"_Skia_MSAA_" stringByAppendingString:labelStr];
+            fResolveAttachment->mtlTexture().label =
+                    [@"_Skia_Resolve_" stringByAppendingString:labelStr];
+        } else {
+            fColorAttachment->mtlTexture().label = [@"_Skia_" stringByAppendingString:labelStr];
+        }
+    }
 }
 
 GR_NORETAIN_END

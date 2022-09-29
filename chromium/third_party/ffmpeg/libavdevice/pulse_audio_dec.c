@@ -162,7 +162,12 @@ static av_cold int pulse_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
     }
 
-    attr.fragsize = pd->fragment_size;
+    if (pd->fragment_size == -1) {
+        // 50 ms fragments/latency by default seem good enough
+        attr.fragsize = pa_frame_size(&ss) * (pd->sample_rate / 20);
+    } else {
+        attr.fragsize = pd->fragment_size;
+    }
 
     if (s->url[0] != '\0' && strcmp(s->url, "default"))
         device = s->url;
@@ -220,7 +225,7 @@ static av_cold int pulse_read_header(AVFormatContext *s)
 
     ret = pa_stream_connect_record(pd->stream, device, &attr,
                                     PA_STREAM_INTERPOLATE_TIMING
-                                    | (pd->fragment_size == -1 ? PA_STREAM_ADJUST_LATENCY : 0)
+                                    |PA_STREAM_ADJUST_LATENCY
                                     |PA_STREAM_AUTO_TIMING_UPDATE);
 
     if (ret < 0) {
@@ -366,6 +371,7 @@ static int pulse_get_device_list(AVFormatContext *h, AVDeviceInfoList *device_li
 
 #define OFFSET(a) offsetof(PulseData, a)
 #define D AV_OPT_FLAG_DECODING_PARAM
+#define DEPR AV_OPT_FLAG_DEPRECATED
 
 static const AVOption options[] = {
     { "server",        "set PulseAudio server",                             OFFSET(server),        AV_OPT_TYPE_STRING, {.str = NULL},     0, 0, D },
@@ -373,7 +379,7 @@ static const AVOption options[] = {
     { "stream_name",   "set stream description",                            OFFSET(stream_name),   AV_OPT_TYPE_STRING, {.str = "record"}, 0, 0, D },
     { "sample_rate",   "set sample rate in Hz",                             OFFSET(sample_rate),   AV_OPT_TYPE_INT,    {.i64 = 48000},    1, INT_MAX, D },
     { "channels",      "set number of audio channels",                      OFFSET(channels),      AV_OPT_TYPE_INT,    {.i64 = 2},        1, INT_MAX, D },
-    { "frame_size",    "set number of bytes per frame",                     OFFSET(frame_size),    AV_OPT_TYPE_INT,    {.i64 = 1024},     1, INT_MAX, D },
+    { "frame_size",    "set number of bytes per frame",                     OFFSET(frame_size),    AV_OPT_TYPE_INT,    {.i64 = 1024},     1, INT_MAX, D | DEPR },
     { "fragment_size", "set buffering size, affects latency and cpu usage", OFFSET(fragment_size), AV_OPT_TYPE_INT,    {.i64 = -1},      -1, INT_MAX, D },
     { "wallclock",     "set the initial pts using the current time",     OFFSET(wallclock),     AV_OPT_TYPE_INT,    {.i64 = 1},       -1, 1, D },
     { NULL },

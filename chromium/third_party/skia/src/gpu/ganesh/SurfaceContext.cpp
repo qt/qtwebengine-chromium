@@ -35,7 +35,7 @@
 #define RETURN_FALSE_IF_ABANDONED   if (this->fContext->abandoned()) { return false;   }
 #define RETURN_NULLPTR_IF_ABANDONED if (this->fContext->abandoned()) { return nullptr; }
 
-namespace skgpu {
+namespace skgpu::v1 {
 
 SurfaceContext::SurfaceContext(GrRecordingContext* context,
                                GrSurfaceProxyView readView,
@@ -190,7 +190,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             this->origin(),
                                             kMipMapped,
                                             kFit,
-                                            kBudgeted);
+                                            kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixelsWithCopyWholeSrc");
             } else {
                 auto srcRect = SkIRect::MakePtSize(pt, dst.dimensions());
                 copy = GrSurfaceProxy::Copy(fContext,
@@ -200,6 +201,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                             srcRect,
                                             kFit,
                                             kBudgeted,
+                                            /*label=*/"SurfaceContext_ReadPixels",
                                             restrictions.fRectsMustMatch);
                 pt = {0, 0};
             }
@@ -597,7 +599,7 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
         return;
     }
 
-    std::unique_ptr<skgpu::SurfaceFillContext> tempFC;
+    std::unique_ptr<SurfaceFillContext> tempFC;
     int x = srcRect.fLeft;
     int y = srcRect.fTop;
     if (needsRescale) {
@@ -763,7 +765,7 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
                                             callbackContext,
                                             rect.size(),
                                             colorType,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             mappedBufferManager,
                                             std::move(transferResult)};
     auto finishCallback = [](GrGpuFinishedContext c) {
@@ -850,7 +852,8 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                            GrMipmapped::kNo,
                                            srcRect,
                                            SkBackingFit::kApprox,
-                                           SkBudgeted::kYes);
+                                           SkBudgeted::kYes,
+                                           /*label=*/"SurfaceContext_AsyncRescaleAndReadPixelsYUV420");
         if (!srcView) {
             // If we can't get a texture copy of the contents then give up.
             callback(callbackContext, nullptr);
@@ -996,7 +999,7 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
                                             callbackContext,
                                             dContext->priv().clientMappedBufferManager(),
                                             dstSize,
-                                            this->caps()->transferBufferAlignment(),
+                                            this->caps()->transferBufferRowBytesAlignment(),
                                             std::move(yTransfer),
                                             std::move(uTransfer),
                                             std::move(vTransfer)};
@@ -1063,11 +1066,11 @@ sk_sp<GrRenderTask> SurfaceContext::copy(sk_sp<GrSurfaceProxy> src,
                                                      this->origin());
 }
 
-std::unique_ptr<skgpu::SurfaceFillContext> SurfaceContext::rescale(const GrImageInfo& info,
-                                                                   GrSurfaceOrigin origin,
-                                                                   SkIRect srcRect,
-                                                                   RescaleGamma rescaleGamma,
-                                                                   RescaleMode rescaleMode) {
+std::unique_ptr<SurfaceFillContext> SurfaceContext::rescale(const GrImageInfo& info,
+                                                            GrSurfaceOrigin origin,
+                                                            SkIRect srcRect,
+                                                            RescaleGamma rescaleGamma,
+                                                            RescaleMode rescaleMode) {
     auto sfc = fContext->priv().makeSFCWithFallback(info,
                                                     SkBackingFit::kExact,
                                                     1,
@@ -1084,7 +1087,7 @@ std::unique_ptr<skgpu::SurfaceFillContext> SurfaceContext::rescale(const GrImage
     return sfc;
 }
 
-bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
+bool SurfaceContext::rescaleInto(SurfaceFillContext* dst,
                                  SkIRect dstRect,
                                  SkIRect srcRect,
                                  RescaleGamma rescaleGamma,
@@ -1108,7 +1111,9 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         // TODO: If copying supported specifying a renderable copy then we could return the copy
         // when there are no other conversions.
         texView = GrSurfaceProxyView::Copy(fContext, std::move(texView), GrMipmapped::kNo, srcRect,
-                                           SkBackingFit::kApprox, SkBudgeted::kNo);
+                                           SkBackingFit::kApprox,
+                                           SkBudgeted::kNo,
+                                           /*label=*/"SurfaceContext_RescaleInto");
         if (!texView) {
             return false;
         }
@@ -1124,8 +1129,8 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
 
     // Within a rescaling pass A is the input (if not null) and B is the output. At the end of the
     // pass B is moved to A. If 'this' is the input on the first pass then tempA is null.
-    std::unique_ptr<skgpu::SurfaceFillContext> tempA;
-    std::unique_ptr<skgpu::SurfaceFillContext> tempB;
+    std::unique_ptr<SurfaceFillContext> tempA;
+    std::unique_ptr<SurfaceFillContext> tempB;
 
     // Assume we should ignore the rescale linear request if the surface has no color space since
     // it's unclear how we'd linearize from an unknown color space.
@@ -1177,7 +1182,7 @@ bool SurfaceContext::rescaleInto(skgpu::SurfaceFillContext* dst,
         }
         auto input = tempA ? tempA.get() : this;
         sk_sp<GrColorSpaceXform> xform;
-        skgpu::SurfaceFillContext* stepDst;
+        SurfaceFillContext* stepDst;
         SkIRect stepDstRect;
         if (nextDims == finalSize) {
             stepDst = dst;
@@ -1265,7 +1270,7 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
     }
 
     size_t rowBytes = GrColorTypeBytesPerPixel(supportedRead.fColorType) * rect.width();
-    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferAlignment());
+    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferRowBytesAlignment());
     size_t size = rowBytes * rect.height();
     // By using kStream_GrAccessPattern here, we are not able to cache and reuse the buffer for
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing
@@ -1311,4 +1316,4 @@ void SurfaceContext::validate() const {
 }
 #endif
 
-} // namespace skgpu
+} // namespace skgpu::v1

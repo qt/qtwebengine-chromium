@@ -98,14 +98,14 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
     m_pTextOut->SetFont(m_pCalendarFont);
     m_pTextOut->SetFontSize(FWLTHEME_CAPACITY_FontSize);
     m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
-    if ((pParams.m_iPart == CFWL_ThemePart::Part::kDatesIn) &&
+    if ((pParams.GetPart() == CFWL_ThemePart::Part::kDatesIn) &&
         !(pParams.m_dwStates & CFWL_PartState::kFlagged) &&
         (pParams.m_dwStates &
          Mask<CFWL_PartState>{CFWL_PartState::kHovered,
                               CFWL_PartState::kSelected})) {
       m_pTextOut->SetTextColor(0xFF888888);
     }
-    if (pParams.m_iPart == CFWL_ThemePart::Part::kCaption)
+    if (pParams.GetPart() == CFWL_ThemePart::Part::kCaption)
       m_pTextOut->SetTextColor(ArgbEncode(0xff, 0, 153, 255));
 
     CFGAS_GEGraphics* pGraphics = pParams.GetGraphics();
@@ -116,7 +116,7 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
       mtPart.Concat(*pMatrix);
 
     m_pTextOut->SetMatrix(mtPart);
-    m_pTextOut->DrawLogicText(pRenderDevice, pParams.m_wsText.AsStringView(),
+    m_pTextOut->DrawLogicText(pRenderDevice, pParams.m_wsText,
                               pParams.m_PartRect);
     return;
   }
@@ -138,7 +138,7 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
     mtPart.Concat(*pMatrix);
 
   m_pTextOut->SetMatrix(mtPart);
-  m_pTextOut->DrawLogicText(pRenderDevice, pParams.m_wsText.AsStringView(),
+  m_pTextOut->DrawLogicText(pRenderDevice, pParams.m_wsText,
                             pParams.m_PartRect);
 }
 
@@ -229,9 +229,6 @@ CFX_SizeF CXFA_FWLTheme::GetSpaceAboveBelow(
 
 void CXFA_FWLTheme::CalcTextRect(const CFWL_ThemeText& pParams,
                                  CFX_RectF* pRect) {
-  if (!m_pTextOut)
-    return;
-
   CXFA_FFWidget* pWidget = GetOutmostFFWidget(pParams.GetWidget());
   if (!pWidget)
     return;

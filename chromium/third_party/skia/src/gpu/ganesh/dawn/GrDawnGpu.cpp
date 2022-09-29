@@ -204,6 +204,16 @@ bool GrDawnGpu::onWritePixels(GrSurface* surface,
     return true;
 }
 
+bool GrDawnGpu::onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                             size_t srcOffset,
+                                             sk_sp<GrGpuBuffer> dst,
+                                             size_t dstOffset,
+                                             size_t size) {
+    // skbug.com/13453
+    SkASSERT(!"unimplemented");
+    return false;
+}
+
 bool GrDawnGpu::onTransferPixelsTo(GrTexture* texture,
                                    SkIRect rect,
                                    GrColorType textureColorType,
@@ -211,6 +221,7 @@ bool GrDawnGpu::onTransferPixelsTo(GrTexture* texture,
                                    sk_sp<GrGpuBuffer> transferBuffer,
                                    size_t bufferOffset,
                                    size_t rowBytes) {
+    // skbug.com/13453
     SkASSERT(!"unimplemented");
     return false;
 }
@@ -221,6 +232,7 @@ bool GrDawnGpu::onTransferPixelsFrom(GrSurface* surface,
                                      GrColorType bufferColorType,
                                      sk_sp<GrGpuBuffer> transferBuffer,
                                      size_t offset) {
+    // skbug.com/13453
     SkASSERT(!"unimplemented");
     return false;
 }
@@ -269,7 +281,7 @@ sk_sp<GrTexture> GrDawnGpu::onWrapBackendTexture(const GrBackendTexture& backend
 
     SkISize dimensions = { backendTex.width(), backendTex.height() };
     return GrDawnTexture::MakeWrapped(this, dimensions, GrRenderable::kNo, 1, cacheable, ioType,
-                                      info);
+                                      info, backendTex.getLabel());
 }
 
 sk_sp<GrTexture> GrDawnGpu::onWrapCompressedBackendTexture(const GrBackendTexture& backendTex,
@@ -294,7 +306,8 @@ sk_sp<GrTexture> GrDawnGpu::onWrapRenderableBackendTexture(const GrBackendTextur
     }
 
     sk_sp<GrTexture> result = GrDawnTexture::MakeWrapped(this, dimensions, GrRenderable::kYes,
-                                                         sampleCnt, cacheable, kRW_GrIOType, info);
+                                                         sampleCnt, cacheable, kRW_GrIOType, info,
+                                                         tex.getLabel());
     result->markMipmapsDirty();
     return result;
 }
@@ -307,7 +320,8 @@ sk_sp<GrRenderTarget> GrDawnGpu::onWrapBackendRenderTarget(const GrBackendRender
 
     SkISize dimensions = { rt.width(), rt.height() };
     int sampleCnt = 1;
-    return GrDawnRenderTarget::MakeWrapped(this, dimensions, sampleCnt, info);
+    return GrDawnRenderTarget::MakeWrapped(
+            this, dimensions, sampleCnt, info, /*label=*/"DawnGpu_WrapBackendRenderTarget");
 }
 
 sk_sp<GrAttachment> GrDawnGpu::makeStencilAttachment(const GrBackendFormat& /*colorFormat*/,
@@ -979,7 +993,7 @@ std::string GrDawnGpu::SkSLToSPIRV(const char* shaderString,
                                    uint32_t rtFlipOffset,
                                    SkSL::Program::Inputs* inputs) {
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     settings.fRTFlipOffset = rtFlipOffset;
     settings.fRTFlipBinding = 0;
     settings.fRTFlipSet = 0;

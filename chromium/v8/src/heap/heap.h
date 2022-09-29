@@ -28,6 +28,8 @@
 #include "src/common/globals.h"
 #include "src/heap/allocation-observer.h"
 #include "src/heap/allocation-result.h"
+#include "src/heap/base/stack.h"
+#include "src/heap/gc-callbacks.h"
 #include "src/heap/heap-allocator.h"
 #include "src/init/heap-symbols.h"
 #include "src/objects/allocation-site.h"
@@ -46,9 +48,16 @@ namespace cppgc {
 namespace internal {
 
 enum class HeapObjectNameForUnnamedObject : uint8_t;
+class ClassNameAsHeapObjectNameScope;
 
 }  // namespace internal
 }  // namespace cppgc
+
+namespace heap {
+namespace base {
+class Stack;
+}  // namespace base
+}  // namespace heap
 
 namespace v8 {
 
@@ -59,6 +68,7 @@ using OutOfMemoryCallback = void (*)(void* data);
 namespace internal {
 
 namespace heap {
+
 class HeapTester;
 class TestMemoryAllocatorScope;
 }  // namespace heap
@@ -99,7 +109,6 @@ class JSFinalizationRegistry;
 class LinearAllocationArea;
 class LocalEmbedderHeapTracer;
 class LocalHeap;
-class MarkingBarrier;
 class MemoryAllocator;
 class MemoryChunk;
 class MemoryMeasurement;
@@ -110,7 +119,6 @@ class ObjectIterator;
 class ObjectStats;
 class Page;
 class PagedSpace;
-class PromoteYoungGenerationGC;
 class ReadOnlyHeap;
 class RootVisitor;
 class RwxMemoryWriteScope;
@@ -505,17 +513,13 @@ class Heap {
                                                         HeapObject value);
 
   V8_EXPORT_PRIVATE static void SharedHeapBarrierSlow(HeapObject object,
-                                                      Address slot,
-                                                      HeapObject value);
+                                                      Address slot);
   V8_EXPORT_PRIVATE inline void RecordEphemeronKeyWrite(
       EphemeronHashTable table, Address key_slot);
   V8_EXPORT_PRIVATE static void EphemeronKeyWriteBarrierFromCode(
       Address raw_object, Address address, Isolate* isolate);
   V8_EXPORT_PRIVATE static void GenerationalBarrierForCodeSlow(
       Code host, RelocInfo* rinfo, HeapObject value);
-  V8_EXPORT_PRIVATE static void SharedHeapBarrierForCodeSlow(Code host,
-                                                             RelocInfo* rinfo,
-                                                             HeapObject value);
   V8_EXPORT_PRIVATE static bool PageFlagsAreConsistent(HeapObject object);
 
   // Notifies the heap that is ok to start marking or other activities that
@@ -671,9 +675,9 @@ class Heap {
   void UnregisterUnprotectedMemoryChunk(MemoryChunk* chunk);
   V8_EXPORT_PRIVATE void ProtectUnprotectedMemoryChunks();
 
-  void IncrementCodePageCollectionMemoryModificationScopeDepth() {
-    code_page_collection_memory_modification_scope_depth_++;
-  }
+  inline void IncrementCodePageCollectionMemoryModificationScopeDepth();
+  inline bool DecrementCodePageCollectionMemoryModificationScopeDepth();
+  inline uintptr_t code_page_collection_memory_modification_scope_depth();
 
   inline HeapState gc_state() const {
     return gc_state_.load(std::memory_order_relaxed);
@@ -834,8 +838,8 @@ class Heap {
   void ReplaceReadOnlySpace(SharedReadOnlySpace* shared_ro_space);
 
   // Sets up the heap memory without creating any objects.
-  void SetUpSpaces(LinearAllocationArea* new_allocation_info,
-                   LinearAllocationArea* old_allocation_info);
+  void SetUpSpaces(LinearAllocationArea& new_allocation_info,
+                   LinearAllocationArea& old_allocation_info);
 
   // Prepares the heap, setting up for deserialization.
   void InitializeMainThreadLocalHeap(LocalHeap* main_thread_local_heap);
@@ -875,6 +879,7 @@ class Heap {
   MapSpace* map_space() { return map_space_; }
   inline PagedSpace* space_for_maps();
   OldLargeObjectSpace* lo_space() { return lo_space_; }
+  OldLargeObjectSpace* shared_lo_space() { return shared_lo_space_; }
   CodeLargeObjectSpace* code_lo_space() { return code_lo_space_; }
   NewLargeObjectSpace* new_lo_space() { return new_lo_space_; }
   ReadOnlySpace* read_only_space() { return read_only_space_; }
@@ -942,6 +947,8 @@ class Heap {
   MUTABLE_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
+  V8_INLINE FixedArray single_character_string_table();
+
   V8_INLINE void SetRootMaterializedObjects(FixedArray objects);
   V8_INLINE void SetRootScriptList(Object value);
   V8_INLINE void SetRootNoScriptSharedFunctionInfos(Object value);
@@ -956,14 +963,6 @@ class Heap {
 
   void SetBuiltinsConstantsTable(FixedArray cache);
   void SetDetachedContexts(WeakArrayList detached_contexts);
-
-  // A full copy of the interpreter entry trampoline, used as a template to
-  // create copies of the builtin at runtime. The copies are used to create
-  // better profiling information for ticks in bytecode execution. Note that
-  // this is always a copy of the full builtin, i.e. not the off-heap
-  // trampoline.
-  // See also: FLAG_interpreted_frames_native_stack.
-  void SetInterpreterEntryTrampolineForProfiling(Code code);
 
   void EnqueueDirtyJSFinalizationRegistry(
       JSFinalizationRegistry finalization_registry,
@@ -1060,6 +1059,7 @@ class Heap {
   void IterateRoots(RootVisitor* v, base::EnumSet<SkipRoot> options);
   void IterateRootsIncludingClients(RootVisitor* v,
                                     base::EnumSet<SkipRoot> options);
+  void IterateRootsFromStackIncludingClient(RootVisitor* v);
 
   // Iterates over entries in the smi roots list.  Only interesting to the
   // serializer/deserializer, since GC does not care about smis.
@@ -1075,11 +1075,7 @@ class Heap {
   // ===========================================================================
 
   // Used for query incremental marking status in generated code.
-  Address* IsMarkingFlagAddress() {
-    return reinterpret_cast<Address*>(&is_marking_flag_);
-  }
-
-  void SetIsMarkingFlag(uint8_t flag) { is_marking_flag_ = flag; }
+  bool* IsMarkingFlagAddress();
 
   void ClearRecordedSlot(HeapObject object, ObjectSlot slot);
   void ClearRecordedSlotRange(Address start, Address end);
@@ -1130,8 +1126,6 @@ class Heap {
   IncrementalMarking* incremental_marking() const {
     return incremental_marking_.get();
   }
-
-  MarkingBarrier* marking_barrier() const { return marking_barrier_.get(); }
 
   // ===========================================================================
   // Concurrent marking API. ===================================================
@@ -1210,11 +1204,16 @@ class Heap {
 
   const cppgc::EmbedderStackState* overriden_stack_state() const;
 
+  V8_EXPORT_PRIVATE void SetStackStart(void* stack_start);
+
+  ::heap::base::Stack& stack();
+
   // ===========================================================================
   // Embedder roots optimizations. =============================================
   // ===========================================================================
 
-  V8_EXPORT_PRIVATE void SetEmbedderRootsHandler(EmbedderRootsHandler* handler);
+  V8_EXPORT_PRIVATE
+  void SetEmbedderRootsHandler(EmbedderRootsHandler* handler);
 
   EmbedderRootsHandler* GetEmbedderRootsHandler() const;
 
@@ -1600,8 +1599,18 @@ class Heap {
   // Stack frame support. ======================================================
   // ===========================================================================
 
-  // Returns the Code object for a given interior pointer.
-  CodeLookupResult GcSafeFindCodeForInnerPointer(Address inner_pointer);
+  // Searches for compiled code or embedded builtins code object by given
+  // interior pointer.
+  // Crashes process on unsuccessful lookup if {die_on_unsuccessful_lookup}
+  // is true. All code lookups made by GC must succeed.
+  CodeLookupResult GcSafeFindCodeForInnerPointer(
+      Address inner_pointer, bool die_on_unsuccessful_lookup = true);
+
+  // Same as GcSafeFindCodeForInnerPointer() but it doesn't crash the process
+  // on unsuccessful lookup.
+  // It's intended to be used only from gdb's 'jco' macro.
+  CodeLookupResult GcSafeFindCodeForInnerPointerForPrinting(
+      Address inner_pointer);
 
   // Returns true if {addr} is contained within {code} and false otherwise.
   // Mostly useful for debugging.
@@ -1619,9 +1628,15 @@ class Heap {
 #ifdef VERIFY_HEAP
   // Verify the heap is in its normal state before or after a GC.
   V8_EXPORT_PRIVATE void Verify();
+
   // Verify the read-only heap after all read-only heap objects have been
   // created.
   void VerifyReadOnlyHeap();
+
+  // Verify the shared heap, initiating from a client heap. This performs a
+  // global safepoint, then the normal heap verification.
+  void VerifySharedHeap(Isolate* initiator);
+
   void VerifyRememberedSetFor(HeapObject object);
 
   // Verify that cached size of invalidated object is up-to-date.
@@ -1745,18 +1760,6 @@ class Heap {
     InstanceType type;
     int size;
     RootIndex index;
-  };
-
-  struct GCCallbackTuple {
-    GCCallbackTuple(v8::Isolate::GCCallbackWithData callback, GCType gc_type,
-                    void* data)
-        : callback(callback), gc_type(gc_type), data(data) {}
-
-    bool operator==(const GCCallbackTuple& other) const;
-
-    v8::Isolate::GCCallbackWithData callback;
-    GCType gc_type;
-    void* data;
   };
 
   static const int kInitialEvalCacheSize = 64;
@@ -1907,15 +1910,6 @@ class Heap {
 
   bool InvokeNearHeapLimitCallback();
 
-  void ComputeFastPromotionMode();
-
-  // Attempt to over-approximate the weak closure by marking object groups and
-  // implicit references from global handles, but don't atomically complete
-  // marking. If we continue to mark incrementally, we might have marked
-  // objects that die later.
-  void FinalizeIncrementalMarkingIncrementally(
-      GarbageCollectionReason gc_reason);
-
   void InvokeIncrementalMarkingPrologueCallbacks();
   void InvokeIncrementalMarkingEpilogueCallbacks();
 
@@ -1954,7 +1948,6 @@ class Heap {
 
   // Performs a minor collection in new generation.
   void Scavenge();
-  void PromoteYoungGeneration();
 
   void UpdateYoungReferencesInExternalStringTable(
       ExternalStringTableUpdaterCallback updater_func);
@@ -2060,12 +2053,6 @@ class Heap {
   void RecomputeLimits(GarbageCollector collector);
 
   // ===========================================================================
-  // Idle notification. ========================================================
-  // ===========================================================================
-
-  bool RecentIdleNotificationHappened();
-
-  // ===========================================================================
   // GC Tasks. =================================================================
   // ===========================================================================
 
@@ -2152,6 +2139,8 @@ class Heap {
 
   bool IsStressingScavenge();
 
+  void SetIsMarkingFlag(bool value);
+
   ExternalMemoryAccounting external_memory_;
 
   // This can be calculated directly from a pointer to the heap; however, it is
@@ -2219,6 +2208,7 @@ class Heap {
   ReadOnlySpace* read_only_space_ = nullptr;
 
   OldSpace* shared_old_space_ = nullptr;
+  OldLargeObjectSpace* shared_lo_space_ = nullptr;
   MapSpace* shared_map_space_ = nullptr;
 
   std::unique_ptr<ConcurrentAllocator> shared_old_allocator_;
@@ -2229,20 +2219,12 @@ class Heap {
 
   LocalHeap* main_thread_local_heap_ = nullptr;
 
-  // List for tracking ArrayBufferExtensions
-  ArrayBufferExtension* old_array_buffer_extensions_ = nullptr;
-  ArrayBufferExtension* young_array_buffer_extensions_ = nullptr;
-
   // Determines whether code space is write-protected. This is essentially a
   // race-free copy of the {FLAG_write_protect_code_memory} flag.
   bool write_protect_code_memory_ = false;
 
   // Holds the number of open CodeSpaceMemoryModificationScopes.
   uintptr_t code_space_memory_modification_scope_depth_ = 0;
-
-  // Holds the number of open CodePageCollectionMemoryModificationScopes.
-  std::atomic<uintptr_t> code_page_collection_memory_modification_scope_depth_{
-      0};
 
   std::atomic<HeapState> gc_state_{NOT_IN_GC};
 
@@ -2300,8 +2282,8 @@ class Heap {
   // Weak list tails.
   Object dirty_js_finalization_registries_list_tail_;
 
-  std::vector<GCCallbackTuple> gc_epilogue_callbacks_;
-  std::vector<GCCallbackTuple> gc_prologue_callbacks_;
+  GCCallbacks<v8::Isolate, AllowGarbageCollection> gc_prologue_callbacks_;
+  GCCallbacks<v8::Isolate, AllowGarbageCollection> gc_epilogue_callbacks_;
 
   GetExternallyAllocatedMemoryInBytesCallback external_memory_callback_;
 
@@ -2326,9 +2308,6 @@ class Heap {
   // Total time spent in GC.
   double total_gc_time_ms_ = 0.0;
 
-  // Last time an idle notification happened.
-  double last_idle_notification_time_ = 0.0;
-
   // Last time a garbage collection happened.
   double last_gc_time_ = 0.0;
 
@@ -2336,7 +2315,6 @@ class Heap {
   std::unique_ptr<MarkCompactCollector> mark_compact_collector_;
   std::unique_ptr<MinorMarkCompactCollector> minor_mark_compact_collector_;
   std::unique_ptr<ScavengerCollector> scavenger_collector_;
-  std::unique_ptr<PromoteYoungGenerationGC> promote_young_generation_gc_;
   std::unique_ptr<ArrayBufferSweeper> array_buffer_sweeper_;
 
   std::unique_ptr<MemoryAllocator> memory_allocator_;
@@ -2351,9 +2329,9 @@ class Heap {
   std::unique_ptr<AllocationObserver> scavenge_task_observer_;
   std::unique_ptr<AllocationObserver> stress_concurrent_allocation_observer_;
   std::unique_ptr<LocalEmbedderHeapTracer> local_embedder_heap_tracer_;
-  std::unique_ptr<MarkingBarrier> marking_barrier_;
   std::unique_ptr<AllocationTrackerForDebugging>
       allocation_tracker_for_debugging_;
+  std::unique_ptr<::heap::base::Stack> stack_;
 
   // This object controls virtual space reserved for code on the V8 heap. This
   // is only valid for 64-bit architectures where kRequiresCodeRange.
@@ -2400,9 +2378,6 @@ class Heap {
 
   char trace_ring_buffer_[kTraceRingBufferSize];
 
-  // Used as boolean.
-  uint8_t is_marking_flag_ = 0;
-
   // If it's not full then the data is from 0 to ring_buffer_end_.  If it's
   // full then the data is from ring_buffer_end_ to the end of the buffer and
   // from 0 to ring_buffer_end_.
@@ -2442,17 +2417,12 @@ class Heap {
 
   int max_regular_code_object_size_ = 0;
 
-  bool fast_promotion_mode_ = false;
-
   // Used for testing purposes.
   bool force_oom_ = false;
   bool force_gc_on_next_allocation_ = false;
   bool delay_sweeper_tasks_for_testing_ = false;
 
   HeapObject pending_layout_change_object_;
-
-  base::Mutex unprotected_memory_chunks_mutex_;
-  std::unordered_set<MemoryChunk*> unprotected_memory_chunks_;
 
   std::unordered_map<HeapObject, HeapObject, Object::Hasher> retainer_;
   std::unordered_map<HeapObject, Root, Object::Hasher> retaining_root_;
@@ -2478,6 +2448,7 @@ class Heap {
   friend class EvacuateVisitorBase;
   friend class GCCallbacksScope;
   friend class GCTracer;
+  friend class GlobalHandleMarkingVisitor;
   friend class HeapAllocator;
   friend class HeapObjectIterator;
   friend class ScavengeTaskObserver;
@@ -2500,7 +2471,6 @@ class Heap {
   friend class ObjectStatsCollector;
   friend class Page;
   friend class PagedSpaceBase;
-  friend class PromoteYoungGenerationGC;
   friend class ReadOnlyRoots;
   friend class Scavenger;
   friend class ScavengerCollector;
@@ -2926,9 +2896,7 @@ class V8_NODISCARD CppClassNamesAsHeapObjectNameScope final {
   ~CppClassNamesAsHeapObjectNameScope();
 
  private:
-  CppHeap* const cpp_heap_;
-  const cppgc::internal::HeapObjectNameForUnnamedObject
-      saved_heap_object_name_value_;
+  std::unique_ptr<cppgc::internal::ClassNameAsHeapObjectNameScope> scope_;
 };
 
 }  // namespace internal

@@ -24,6 +24,7 @@
 #include "src/heap/base/stack.h"
 #include "src/heap/cppgc-js/cpp-marking-state.h"
 #include "src/heap/cppgc-js/cpp-snapshot.h"
+#include "src/heap/cppgc-js/unified-heap-marking-state-inl.h"
 #include "src/heap/cppgc-js/unified-heap-marking-state.h"
 #include "src/heap/cppgc-js/unified-heap-marking-verifier.h"
 #include "src/heap/cppgc-js/unified-heap-marking-visitor.h"
@@ -41,9 +42,11 @@
 #include "src/heap/cppgc/stats-collector.h"
 #include "src/heap/cppgc/sweeper.h"
 #include "src/heap/cppgc/unmarker.h"
+#include "src/heap/cppgc/visitor.h"
 #include "src/heap/embedder-tracing-inl.h"
 #include "src/heap/embedder-tracing.h"
 #include "src/heap/gc-tracer.h"
+#include "src/heap/global-handle-marking-visitor.h"
 #include "src/heap/marking-worklist.h"
 #include "src/heap/sweeper.h"
 #include "src/init/v8.h"
@@ -240,6 +243,38 @@ void FatalOutOfMemoryHandlerImpl(const std::string& reason,
       static_cast<v8::internal::CppHeap*>(heap)->isolate(), reason.c_str());
 }
 
+void GlobalFatalOutOfMemoryHandlerImpl(const std::string& reason,
+                                       const SourceLocation&, HeapBase* heap) {
+  V8::FatalProcessOutOfMemory(nullptr, reason.c_str());
+}
+
+class UnifiedHeapConservativeMarkingVisitor final
+    : public cppgc::internal::ConservativeMarkingVisitor {
+ public:
+  UnifiedHeapConservativeMarkingVisitor(
+      HeapBase& heap, MutatorMarkingState& mutator_marking_state,
+      cppgc::Visitor& visitor)
+      : ConservativeMarkingVisitor(heap, mutator_marking_state, visitor) {}
+  ~UnifiedHeapConservativeMarkingVisitor() override = default;
+
+  void SetGlobalHandlesMarkingVisitor(
+      std::unique_ptr<GlobalHandleMarkingVisitor>
+          global_handle_marking_visitor) {
+    global_handle_marking_visitor_ = std::move(global_handle_marking_visitor);
+  }
+
+  void TraceConservativelyIfNeeded(const void* address) override {
+    ConservativeMarkingVisitor::TraceConservativelyIfNeeded(address);
+    if (global_handle_marking_visitor_) {
+      global_handle_marking_visitor_->VisitPointer(address);
+    }
+  }
+
+ private:
+  std::unique_ptr<GlobalHandleMarkingVisitor> global_handle_marking_visitor_ =
+      nullptr;
+};
+
 }  // namespace
 
 class UnifiedHeapMarker final : public cppgc::internal::MarkerBase {
@@ -264,11 +299,12 @@ class UnifiedHeapMarker final : public cppgc::internal::MarkerBase {
     return mutator_unified_heap_marking_state_;
   }
 
- protected:
-  cppgc::Visitor& visitor() final { return *marking_visitor_; }
-  cppgc::internal::ConservativeTracingVisitor& conservative_visitor() final {
+  UnifiedHeapConservativeMarkingVisitor& conservative_visitor() final {
     return conservative_marking_visitor_;
   }
+
+ protected:
+  cppgc::Visitor& visitor() final { return *marking_visitor_; }
   ::heap::base::StackVisitor& stack_visitor() final {
     return conservative_marking_visitor_;
   }
@@ -276,7 +312,7 @@ class UnifiedHeapMarker final : public cppgc::internal::MarkerBase {
  private:
   UnifiedHeapMarkingState mutator_unified_heap_marking_state_;
   std::unique_ptr<MutatorUnifiedHeapMarkingVisitor> marking_visitor_;
-  cppgc::internal::ConservativeMarkingVisitor conservative_marking_visitor_;
+  UnifiedHeapConservativeMarkingVisitor conservative_marking_visitor_;
 };
 
 UnifiedHeapMarker::UnifiedHeapMarker(Heap* v8_heap,
@@ -428,6 +464,12 @@ v8::metrics::Recorder::ContextId CppHeap::MetricRecorderAdapter::GetContextId()
       GetIsolate()->native_context());
 }
 
+// static
+void CppHeap::InitializeOncePerProcess() {
+  cppgc::internal::GetGlobalOOMHandler().SetCustomHandler(
+      &GlobalFatalOutOfMemoryHandlerImpl);
+}
+
 CppHeap::CppHeap(
     v8::Platform* platform,
     const std::vector<std::unique_ptr<cppgc::CustomSpaceBase>>& custom_spaces,
@@ -473,7 +515,7 @@ void CppHeap::AttachIsolate(Isolate* isolate) {
         &CppGraphBuilder::Run, this);
   }
   SetMetricRecorder(std::make_unique<MetricRecorderAdapter>(*this));
-  isolate_->global_handles()->SetStackStart(base::Stack::GetStackStart());
+  isolate_->heap()->SetStackStart(base::Stack::GetStackStart());
   oom_handler().SetCustomHandler(&FatalOutOfMemoryHandlerImpl);
   no_gc_scope_--;
 }
@@ -600,8 +642,9 @@ void CppHeap::StartTracing() {
     // Reuse the same local worklist for the mutator marking state which results
     // in directly processing the objects by the JS logic. Also avoids
     // publishing local objects.
-    static_cast<UnifiedHeapMarker*>(marker_.get())
-        ->GetMutatorUnifiedHeapMarkingState()
+    marker_.get()
+        ->To<UnifiedHeapMarker>()
+        .GetMutatorUnifiedHeapMarkingState()
         .Update(isolate_->heap()
                     ->mark_compact_collector()
                     ->local_marking_worklists());
@@ -639,12 +682,19 @@ bool CppHeap::IsTracingDone() { return marking_done_; }
 void CppHeap::EnterFinalPause(cppgc::EmbedderStackState stack_state) {
   CHECK(!in_disallow_gc_scope());
   in_atomic_pause_ = true;
-  marker_->EnterAtomicPause(stack_state);
+  auto& marker = marker_.get()->To<UnifiedHeapMarker>();
+  // Scan global handles conservatively in case we are attached to an Isolate.
+  if (isolate_) {
+    auto& heap = *isolate()->heap();
+    marker.conservative_visitor().SetGlobalHandlesMarkingVisitor(
+        std::make_unique<GlobalHandleMarkingVisitor>(
+            heap, *heap.mark_compact_collector()->marking_state(),
+            *heap.mark_compact_collector()->local_marking_worklists()));
+  }
+  marker.EnterAtomicPause(stack_state);
   if (isolate_ && *collection_type_ == CollectionType::kMinor) {
     // Visit V8 -> cppgc references.
-    TraceV8ToCppGCReferences(isolate_,
-                             static_cast<UnifiedHeapMarker*>(marker_.get())
-                                 ->GetMutatorMarkingState(),
+    TraceV8ToCppGCReferences(isolate_, marker.GetMutatorMarkingState(),
                              wrapper_descriptor_);
   }
   compactor_.CancelIfShouldNotCompact(MarkingType::kAtomic, stack_state);
@@ -929,8 +979,7 @@ std::unique_ptr<CppMarkingState> CppHeap::CreateCppMarkingState() {
   return std::make_unique<CppMarkingState>(
       isolate(), wrapper_descriptor_,
       std::make_unique<cppgc::internal::MarkingStateBase>(
-          AsBase(),
-          static_cast<UnifiedHeapMarker*>(marker())->GetMarkingWorklists()));
+          AsBase(), marker()->To<UnifiedHeapMarker>().GetMarkingWorklists()));
 }
 
 std::unique_ptr<CppMarkingState>
@@ -938,7 +987,7 @@ CppHeap::CreateCppMarkingStateForMutatorThread() {
   DCHECK(IsMarking());
   return std::make_unique<CppMarkingState>(
       isolate(), wrapper_descriptor_,
-      static_cast<UnifiedHeapMarker*>(marker())->GetMutatorMarkingState());
+      marker()->To<UnifiedHeapMarker>().GetMutatorMarkingState());
 }
 
 CppHeap::PauseConcurrentMarkingScope::PauseConcurrentMarkingScope(

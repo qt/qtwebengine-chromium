@@ -1,10 +1,1 @@
-# primary (in CET)
-antrim@chromium.org
-raleksandrov@google.com
-rsorokin@chromium.org
-rrsilva@google.com
-
-# secondary (in PST)
-achuith@chromium.org
-alemate@chromium.org
-tbarzic@chromium.org
+file://ash/login/OOBE_WEBUI_OWNERS

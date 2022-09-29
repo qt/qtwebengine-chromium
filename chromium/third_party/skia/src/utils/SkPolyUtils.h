@@ -11,7 +11,7 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkScalar.h"
 
-#include <stdint.h>
+#include <cstdint>
 
 struct SkRect;
 template <typename T> class SkTDArray;
@@ -109,8 +109,5 @@ bool SkIsConvexPolygon(const SkPoint* polygonVerts, int polygonSize);
   */
  bool SkTriangulateSimplePolygon(const SkPoint* polygonVerts, uint16_t* indexMap, int polygonSize,
                                  SkTDArray<uint16_t>* triangleIndices);
-
-// Experiment: doesn't handle really big floats (returns false), always returns true for count <= 3
-bool SkIsPolyConvex_experimental(const SkPoint[], int count);
 
 #endif

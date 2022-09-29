@@ -38,8 +38,7 @@ import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
 import * as Platform from '../platform/platform.js';
 
-import type {Cookie} from './Cookie.js';
-import {Attributes} from './Cookie.js';
+import {Attributes, type Cookie} from './Cookie.js';
 import {CookieParser} from './CookieParser.js';
 import {NetworkManager, Events as NetworkManagerEvents} from './NetworkManager.js';
 import {Type} from './Target.js';
@@ -237,6 +236,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     [x: string]: string|undefined,
   };
   #responseHeadersTextInternal: string;
+  #originalResponseHeaders: Protocol.Fetch.HeaderEntry[];
   #requestHeadersInternal: NameValue[];
   #requestHeaderValues: {
     [x: string]: string|undefined,
@@ -337,6 +337,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
     this.#responseHeaderValues = {};
     this.#responseHeadersTextInternal = '';
+    this.#originalResponseHeaders = [];
 
     this.#requestHeadersInternal = [];
     this.#requestHeaderValues = {};
@@ -940,6 +941,14 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.dispatchEventToListeners(Events.ResponseHeadersChanged);
   }
 
+  get originalResponseHeaders(): Protocol.Fetch.HeaderEntry[] {
+    return this.#originalResponseHeaders;
+  }
+
+  set originalResponseHeaders(headers: Protocol.Fetch.HeaderEntry[]) {
+    this.#originalResponseHeaders = headers;
+  }
+
   get responseHeadersText(): string {
     return this.#responseHeadersTextInternal;
   }
@@ -1195,10 +1204,6 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   contentType(): Common.ResourceType.ResourceType {
     return this.#resourceTypeInternal;
-  }
-
-  async contentEncoded(): Promise<boolean> {
-    return (await this.contentData()).encoded;
   }
 
   async requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {

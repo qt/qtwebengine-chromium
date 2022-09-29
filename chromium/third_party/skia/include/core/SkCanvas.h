@@ -38,6 +38,11 @@
 #define SK_SUPPORT_LEGACY_GETTOTALMATRIX
 #endif
 
+namespace sktext {
+class GlyphRunBuilder;
+class GlyphRunList;
+}
+
 class AutoLayerForImageFilter;
 class GrBackendRenderTarget;
 class GrRecordingContext;
@@ -47,8 +52,6 @@ class SkData;
 class SkDrawable;
 struct SkDrawShadowRec;
 class SkFont;
-class SkGlyphRunBuilder;
-class SkGlyphRunList;
 class SkImage;
 class SkImageFilter;
 class SkPaintFilterCanvas;
@@ -260,9 +263,26 @@ public:
         @param props  storage for writable SkSurfaceProps
         @return       true if SkSurfaceProps was copied
 
+        DEPRECATED: Replace usage with getBaseProps() or getTopProps()
+
         example: https://fiddle.skia.org/c/@Canvas_getProps
     */
     bool getProps(SkSurfaceProps* props) const;
+
+    /** Returns the SkSurfaceProps associated with the canvas (i.e., at the base of the layer
+        stack).
+
+        @return  base SkSurfaceProps
+    */
+    SkSurfaceProps getBaseProps() const;
+
+    /** Returns the SkSurfaceProps associated with the canvas that are currently active (i.e., at
+        the top of the layer stack). This can differ from getBaseProps depending on the flags
+        passed to saveLayer (see SaveLayerFlagsSet).
+
+        @return  SkSurfaceProps active in the current/top layer
+    */
+    SkSurfaceProps getTopProps() const;
 
     /** Triggers the immediate execution of all pending draw operations.
         If SkCanvas is associated with GPU surface, resolves all pending GPU operations.
@@ -1961,7 +1981,7 @@ public:
     */
     void drawVertices(const sk_sp<SkVertices>& vertices, SkBlendMode mode, const SkPaint& paint);
 
-#if defined(SK_ENABLE_EXPERIMENTAL_CUSTOM_MESH) && defined(SK_ENABLE_SKSL)
+#if defined(SK_ENABLE_SKSL)
     /**
         Experimental, under active development, and subject to change without notice.
 
@@ -2176,7 +2196,7 @@ protected:
     virtual bool onPeekPixels(SkPixmap* pixmap);
     virtual bool onAccessTopLayerPixels(SkPixmap* pixmap);
     virtual SkImageInfo onImageInfo() const;
-    virtual bool onGetProps(SkSurfaceProps* props) const;
+    virtual bool onGetProps(SkSurfaceProps* props, bool top) const;
     virtual void onFlush();
 
     // Subclass save/restore notifiers.
@@ -2203,11 +2223,6 @@ protected:
     virtual void didTranslate(SkScalar, SkScalar) {}
     virtual void didScale(SkScalar, SkScalar) {}
 
-#ifndef SK_ENABLE_EXPERIMENTAL_CUSTOM_MESH
-    // Define this in protected so we can still access internally for testing.
-    void drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint);
-#endif
-
     // NOTE: If you are adding a new onDraw virtual to SkCanvas, PLEASE add an override to
     // SkCanvasVirtualEnforcer (in SkCanvasVirtualEnforcer.h). This ensures that subclasses using
     // that mechanism  will be required to implement the new function.
@@ -2225,7 +2240,7 @@ protected:
     virtual void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                 const SkPaint& paint);
 
-    virtual void onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint);
+    virtual void onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, const SkPaint& paint);
 
     virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                            const SkPoint texCoords[4], SkBlendMode mode, const SkPaint& paint);
@@ -2279,7 +2294,7 @@ protected:
     /** Experimental
      */
     virtual sk_sp<sktext::gpu::Slug> onConvertGlyphRunListToSlug(
-            const SkGlyphRunList& glyphRunList, const SkPaint& paint);
+            const sktext::GlyphRunList& glyphRunList, const SkPaint& paint);
 
     /** Experimental
      */
@@ -2540,7 +2555,7 @@ private:
     class AutoUpdateQRBounds;
     void validateClip() const;
 
-    std::unique_ptr<SkGlyphRunBuilder> fScratchGlyphRunBuilder;
+    std::unique_ptr<sktext::GlyphRunBuilder> fScratchGlyphRunBuilder;
 
     using INHERITED = SkRefCnt;
 };

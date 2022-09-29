@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/functional/any_invocable.h"
 #include "call/rtp_transport_controller_send.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
@@ -203,12 +204,11 @@ class RtpVideoSenderTestFixture {
   // default thread as the transport queue, explicit checks for the transport
   // queue (not just using a SequenceChecker) aren't possible unless such a
   // queue is actually active. So RunOnTransportQueue is a convenience function
-  // that allow for running a closure on the transport queue, similar to
+  // that allow for running a `task` on the transport queue, similar to
   // SendTask().
-  template <typename Closure>
-  void RunOnTransportQueue(Closure&& task) {
+  void RunOnTransportQueue(absl::AnyInvocable<void() &&> task) {
     transport_controller_.GetWorkerQueue()->PostTask(std::move(task));
-    AdvanceTime(TimeDelta::Millis(0));
+    AdvanceTime(TimeDelta::Zero());
   }
 
  private:
@@ -328,6 +328,41 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
   EXPECT_NE(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
+}
+
+TEST(
+    RtpVideoSenderTest,
+    DiscardsHigherSpatialVideoFramesAfterLayerDisabledInVideoLayersAllocation) {
+  constexpr uint8_t kPayload = 'a';
+  EncodedImage encoded_image_1;
+  encoded_image_1.SetTimestamp(1);
+  encoded_image_1.capture_time_ms_ = 2;
+  encoded_image_1._frameType = VideoFrameType::kVideoFrameKey;
+  encoded_image_1.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
+  EncodedImage encoded_image_2(encoded_image_1);
+  encoded_image_2.SetSpatialIndex(1);
+  CodecSpecificInfo codec_info;
+  codec_info.codecType = kVideoCodecVP8;
+  RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
+                                 kPayloadType, {});
+  test.SetActiveModules({true, true});
+  // A layer is sent on both rtp streams.
+  test.router()->OnVideoLayersAllocationUpdated(
+      {.active_spatial_layers = {{.rtp_stream_index = 0},
+                                 {.rtp_stream_index = 1}}});
+
+  EXPECT_EQ(EncodedImageCallback::Result::OK,
+            test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
+  EXPECT_EQ(EncodedImageCallback::Result::OK,
+            test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
+
+  // Only rtp stream index 0 is configured to send a stream.
+  test.router()->OnVideoLayersAllocationUpdated(
+      {.active_spatial_layers = {{.rtp_stream_index = 0}}});
+  EXPECT_EQ(EncodedImageCallback::Result::OK,
+            test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
+  EXPECT_NE(EncodedImageCallback::Result::OK,
+            test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
 }
 
 TEST(RtpVideoSenderTest, CreateWithNoPreviousStates) {

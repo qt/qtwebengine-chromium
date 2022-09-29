@@ -40,7 +40,7 @@
 
 
 /**
- * hb_map_create: (Xconstructor)
+ * hb_map_create:
  *
  * Creates a new, initially empty map.
  *
@@ -55,8 +55,6 @@ hb_map_create ()
 
   if (!(map = hb_object_create<hb_map_t> ()))
     return hb_map_get_empty ();
-
-  map->init_shallow ();
 
   return map;
 }
@@ -107,8 +105,6 @@ hb_map_destroy (hb_map_t *map)
 {
   if (!hb_object_destroy (map)) return;
 
-  map->fini_shallow ();
-
   hb_free (map);
 }
 
@@ -122,7 +118,7 @@ hb_map_destroy (hb_map_t *map)
  *
  * Attaches a user-data key/data pair to the specified map.
  *
- * Return value: %true if success, %false otherwise
+ * Return value: `true` if success, `false` otherwise
  *
  * Since: 1.7.7
  **/
@@ -162,7 +158,7 @@ hb_map_get_user_data (hb_map_t           *map,
  *
  * Tests whether memory allocation for a set was successful.
  *
- * Return value: %true if allocation succeeded, %false otherwise
+ * Return value: `true` if allocation succeeded, `false` otherwise
  *
  * Since: 1.7.7
  **/
@@ -180,7 +176,7 @@ hb_map_allocation_successful (const hb_map_t  *map)
  *
  * Return value: Newly-allocated map.
  *
- * Since: REPLACEME
+ * Since: 4.4.0
  **/
 hb_map_t *
 hb_map_copy (const hb_map_t *map)
@@ -251,7 +247,7 @@ hb_map_del (hb_map_t       *map,
  *
  * Tests whether @key is an element of @map.
  *
- * Return value: %true if @key is found in @map, %false otherwise
+ * Return value: `true` if @key is found in @map, `false` otherwise
  *
  * Since: 1.7.7
  **/
@@ -283,7 +279,7 @@ hb_map_clear (hb_map_t *map)
  *
  * Tests whether @map is empty (contains no elements).
  *
- * Return value: %true if @map is empty
+ * Return value: `true` if @map is empty
  *
  * Since: 1.7.7
  **/
@@ -317,7 +313,7 @@ hb_map_get_population (const hb_map_t *map)
  * Tests whether @map and @other are equal (contain the same
  * elements).
  *
- * Return value: %true if the two maps are equal, %false otherwise.
+ * Return value: `true` if the two maps are equal, `false` otherwise.
  *
  * Since: 4.3.0
  **/
@@ -337,7 +333,7 @@ hb_map_is_equal (const hb_map_t *map,
  * Return value:
  * A hash of @map.
  *
- * Since: REPLACEME
+ * Since: 4.4.0
  **/
 HB_EXTERN unsigned int
 hb_map_hash (const hb_map_t *map)

@@ -46,7 +46,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/api_cpp.h)) " +
           "--targets cpp_headers " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -68,7 +68,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/api.h)) " +
           "--targets headers " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -90,7 +90,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets proc " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -110,7 +110,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets cpp " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 genrule(
@@ -119,7 +119,6 @@ genrule(
         "dawn.json",
         "dawn_wire.json",
         "generator/templates/BSD_LICENSE",
-        "generator/templates/dawn/native/CacheKey.cpp",
         "generator/templates/dawn/native/ChainUtils.cpp",
         "generator/templates/dawn/native/ChainUtils.h",
         "generator/templates/dawn/native/ObjectType.cpp",
@@ -127,6 +126,7 @@ genrule(
         "generator/templates/dawn/native/ProcTable.cpp",
         "generator/templates/dawn/native/ValidationUtils.cpp",
         "generator/templates/dawn/native/ValidationUtils.h",
+        "generator/templates/dawn/native/api_StreamImpl.cpp",
         "generator/templates/dawn/native/api_absl_format.cpp",
         "generator/templates/dawn/native/api_absl_format.h",
         "generator/templates/dawn/native/api_structs.cpp",
@@ -134,7 +134,6 @@ genrule(
         "generator/templates/dawn/native/dawn_platform.h",
     ],
     outs = [
-        "src/dawn/native/CacheKey_autogen.cpp",
         "src/dawn/native/ChainUtils_autogen.cpp",
         "src/dawn/native/ChainUtils_autogen.h",
         "src/dawn/native/ObjectType_autogen.cpp",
@@ -143,6 +142,7 @@ genrule(
         "src/dawn/native/ValidationUtils_autogen.cpp",
         "src/dawn/native/ValidationUtils_autogen.h",
         "src/dawn/native/dawn_platform_autogen.h",
+        "src/dawn/native/webgpu_StreamImpl_autogen.cpp",
         "src/dawn/native/webgpu_absl_format_autogen.cpp",
         "src/dawn/native/webgpu_absl_format_autogen.h",
         "src/dawn/native/wgpu_structs_autogen.cpp",
@@ -154,7 +154,7 @@ genrule(
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--targets native_utils " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_json_generator"],
+    exec_tools = [":dawn_json_generator"],
 )
 
 py_binary(
@@ -174,7 +174,7 @@ py_binary(
 genrule(
     name = "generate_gpuinfo",
     srcs = [
-        "gpu_info.json",
+        "src/dawn/gpu_info.json",
         "generator/templates/BSD_LICENSE",
         "generator/templates/dawn/common/GPUInfo.h",
         "generator/templates/dawn/common/GPUInfo.cpp",
@@ -184,10 +184,10 @@ genrule(
         "src/dawn/common/GPUInfo_autogen.cpp",
     ],
     cmd = "$(location :dawn_gpu_info_generator) " +
-          "--gpu-info-json $(location gpu_info.json) " +
+          "--gpu-info-json $(location src/dawn/gpu_info.json) " +
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--output-dir $(RULEDIR)",
-    tools = [":dawn_gpu_info_generator"],
+    exec_tools = [":dawn_gpu_info_generator"],
 )
 
 py_binary(
@@ -221,8 +221,8 @@ genrule(
     cmd = "$(location :dawn_version_generator) " +
           "--template-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
           "--dawn-dir $$(dirname $(location generator/templates/BSD_LICENSE)) " +
-          "--output-dir $(RULEDIR)",
-    tools = [":dawn_version_generator"],
+          "--output-dir $(RULEDIR) 2> /dev/null",
+    exec_tools = [":dawn_version_generator"],
 )
 
 DAWN_HDRS = [
@@ -256,6 +256,8 @@ DAWN_SRCS = [
     "src/dawn/native/DawnNative.cpp",
     "src/dawn/native/Adapter.cpp",
     "src/dawn/native/Adapter.h",
+    "src/dawn/native/ApplyClearColorValueWithDrawHelper.cpp",
+    "src/dawn/native/ApplyClearColorValueWithDrawHelper.h",
     "src/dawn/native/AsyncTask.cpp",
     "src/dawn/native/AsyncTask.h",
     "src/dawn/native/AttachmentState.cpp",
@@ -279,6 +281,11 @@ DAWN_SRCS = [
     "src/dawn/native/BuddyMemoryAllocator.h",
     "src/dawn/native/Buffer.cpp",
     "src/dawn/native/Buffer.h",
+    "src/dawn/native/CacheKey.cpp",
+    "src/dawn/native/CacheKey.h",
+    "src/dawn/native/CacheRequest.cpp",
+    "src/dawn/native/CacheRequest.h",
+    "src/dawn/native/CacheResult.h",
     "src/dawn/native/CachedObject.cpp",
     "src/dawn/native/CachedObject.h",
     "src/dawn/native/CallbackTaskManager.cpp",
@@ -295,8 +302,6 @@ DAWN_SRCS = [
     "src/dawn/native/CommandValidation.h",
     "src/dawn/native/Commands.cpp",
     "src/dawn/native/Commands.h",
-    "src/dawn/native/CacheKey.cpp",
-    "src/dawn/native/CacheKey.h",
     "src/dawn/native/CompilationMessages.cpp",
     "src/dawn/native/CompilationMessages.h",
     "src/dawn/native/ComputePassEncoder.cpp",
@@ -345,8 +350,8 @@ DAWN_SRCS = [
     "src/dawn/native/ObjectBase.h",
     "src/dawn/native/ObjectContentHasher.cpp",
     "src/dawn/native/ObjectContentHasher.h",
-    "src/dawn/native/PassResourceUsage.h",
     "src/dawn/native/PassResourceUsage.cpp",
+    "src/dawn/native/PassResourceUsage.h",
     "src/dawn/native/PassResourceUsageTracker.cpp",
     "src/dawn/native/PassResourceUsageTracker.h",
     "src/dawn/native/PerStage.cpp",
@@ -393,6 +398,7 @@ DAWN_SRCS = [
     "src/dawn/native/ShaderModule.h",
     "src/dawn/native/StagingBuffer.cpp",
     "src/dawn/native/StagingBuffer.h",
+    "src/dawn/native/StreamImplTint.cpp",
     "src/dawn/native/Subresource.cpp",
     "src/dawn/native/Subresource.h",
     "src/dawn/native/SubresourceStorage.h",
@@ -407,15 +413,24 @@ DAWN_SRCS = [
     "src/dawn/native/ToBackend.h",
     "src/dawn/native/Toggles.cpp",
     "src/dawn/native/Toggles.h",
+    "src/dawn/native/UsageValidationMode.h",
     "src/dawn/native/VertexFormat.cpp",
     "src/dawn/native/VertexFormat.h",
+    "src/dawn/native/VisitableMembers.h",
     "src/dawn/native/dawn_platform.h",
+    "src/dawn/native/stream/BlobSource.cpp",
+    "src/dawn/native/stream/BlobSource.h",
+    "src/dawn/native/stream/ByteVectorSink.cpp",
+    "src/dawn/native/stream/ByteVectorSink.h",
+    "src/dawn/native/stream/Sink.h",
+    "src/dawn/native/stream/Source.h",
+    "src/dawn/native/stream/Stream.cpp",
+    "src/dawn/native/stream/Stream.h",
     "src/dawn/native/utils/WGPUHelpers.cpp",
     "src/dawn/native/utils/WGPUHelpers.h",
     "src/dawn/native/webgpu_absl_format.cpp",
     "src/dawn/native/webgpu_absl_format.h",
     # From dawn/src/dawn/native/BUILD.gn:utils_gen
-    "src/dawn/native/CacheKey_autogen.cpp",
     "src/dawn/native/ChainUtils_autogen.cpp",
     "src/dawn/native/ChainUtils_autogen.h",
     "src/dawn/native/ObjectType_autogen.cpp",
@@ -423,9 +438,10 @@ DAWN_SRCS = [
     "src/dawn/native/ProcTable.cpp",
     "src/dawn/native/ValidationUtils_autogen.cpp",
     "src/dawn/native/ValidationUtils_autogen.h",
+    "src/dawn/native/dawn_platform_autogen.h",
+    "src/dawn/native/webgpu_StreamImpl_autogen.cpp",
     "src/dawn/native/webgpu_absl_format_autogen.cpp",
     "src/dawn/native/webgpu_absl_format_autogen.h",
-    "src/dawn/native/dawn_platform_autogen.h",
     "src/dawn/native/wgpu_structs_autogen.cpp",
     "src/dawn/native/wgpu_structs_autogen.h",
     # From dawn/src/dawn/common/BUILD.gn:common
@@ -506,8 +522,7 @@ DAWN_VULKAN_SRCS = [
     "src/dawn/native/vulkan/BindGroupVk.h",
     "src/dawn/native/vulkan/BufferVk.cpp",
     "src/dawn/native/vulkan/BufferVk.h",
-    "src/dawn/native/vulkan/CacheKeyVk.cpp",
-    "src/dawn/native/vulkan/CacheKeyVk.h",
+    "src/dawn/native/vulkan/StreamImplVk.cpp",
     "src/dawn/native/vulkan/CommandBufferVk.cpp",
     "src/dawn/native/vulkan/CommandBufferVk.h",
     "src/dawn/native/vulkan/CommandRecordingContext.h",
@@ -584,7 +599,7 @@ cc_library(
         # List this as a copt, so as not to propagate it to dependents
         # Skia has its own vulkan headers and we do not want these to
         # interfere/override those.
-        "-isystem external/vulkan_headers/include",
+        "-Iexternal/vulkan_headers/include",
     ],
     defines = DAWN_VULKAN_DEFINES,
     includes = [
@@ -648,6 +663,7 @@ TINT_HDRS = [
 ]
 
 TINT_SRCS = [
+    "include/tint/override_id.h",
     # From dawn/src/tint/BUILD.gn:libtint_core_all_src
     "src/tint/ast/access.cc",
     "src/tint/ast/access.h",
@@ -676,16 +692,18 @@ TINT_SRCS = [
     "src/tint/ast/bool_literal_expression.h",
     "src/tint/ast/break_statement.cc",
     "src/tint/ast/break_statement.h",
-    "src/tint/ast/builtin.cc",
-    "src/tint/ast/builtin.h",
     "src/tint/ast/builtin_attribute.cc",
     "src/tint/ast/builtin_attribute.h",
+    "src/tint/ast/builtin_value.cc",
+    "src/tint/ast/builtin_value.h",
     "src/tint/ast/call_expression.cc",
     "src/tint/ast/call_expression.h",
     "src/tint/ast/call_statement.cc",
     "src/tint/ast/call_statement.h",
     "src/tint/ast/case_statement.cc",
     "src/tint/ast/case_statement.h",
+    "src/tint/ast/const.cc",
+    "src/tint/ast/const.h",
     "src/tint/ast/compound_assignment_statement.cc",
     "src/tint/ast/compound_assignment_statement.h",
     "src/tint/ast/continue_statement.cc",
@@ -740,6 +758,8 @@ TINT_SRCS = [
     "src/tint/ast/interpolate_attribute.h",
     "src/tint/ast/invariant_attribute.cc",
     "src/tint/ast/invariant_attribute.h",
+    "src/tint/ast/let.cc",
+    "src/tint/ast/let.h",
     "src/tint/ast/literal_expression.cc",
     "src/tint/ast/literal_expression.h",
     "src/tint/ast/location_attribute.cc",
@@ -756,6 +776,11 @@ TINT_SRCS = [
     "src/tint/ast/multisampled_texture.h",
     "src/tint/ast/node.cc",
     "src/tint/ast/node.h",
+    "src/tint/ast/node_id.h",
+    "src/tint/ast/override.cc",
+    "src/tint/ast/override.h",
+    "src/tint/ast/parameter.cc",
+    "src/tint/ast/parameter.h",
     "src/tint/ast/phony_expression.cc",
     "src/tint/ast/phony_expression.h",
     "src/tint/ast/pipeline_stage.cc",
@@ -772,6 +797,8 @@ TINT_SRCS = [
     "src/tint/ast/stage_attribute.h",
     "src/tint/ast/statement.cc",
     "src/tint/ast/statement.h",
+    "src/tint/ast/static_assert.cc",
+    "src/tint/ast/static_assert.h",
     "src/tint/ast/storage_class.cc",
     "src/tint/ast/storage_class.h",
     "src/tint/ast/storage_texture.cc",
@@ -790,6 +817,8 @@ TINT_SRCS = [
     "src/tint/ast/struct_member_size_attribute.h",
     "src/tint/ast/switch_statement.cc",
     "src/tint/ast/switch_statement.h",
+    "src/tint/ast/texel_format.cc",
+    "src/tint/ast/texel_format.h",
     "src/tint/ast/texture.cc",
     "src/tint/ast/texture.h",
     "src/tint/ast/traverse_expressions.h",
@@ -806,12 +835,16 @@ TINT_SRCS = [
     "src/tint/ast/unary_op_expression.h",
     "src/tint/ast/variable.cc",
     "src/tint/ast/variable.h",
+    "src/tint/ast/var.cc",
+    "src/tint/ast/var.h",
     "src/tint/ast/variable_decl_statement.cc",
     "src/tint/ast/variable_decl_statement.h",
     "src/tint/ast/vector.cc",
     "src/tint/ast/vector.h",
     "src/tint/ast/void.cc",
     "src/tint/ast/void.h",
+    "src/tint/ast/while_statement.cc",
+    "src/tint/ast/while_statement.h",
     "src/tint/ast/workgroup_attribute.cc",
     "src/tint/ast/workgroup_attribute.h",
     "src/tint/castable.cc",
@@ -857,7 +890,6 @@ TINT_SRCS = [
     "src/tint/resolver/intrinsic_table.inl",
     "src/tint/resolver/resolver.cc",
     "src/tint/resolver/resolver.h",
-    "src/tint/resolver/resolver_constants.cc",
     "src/tint/resolver/sem_helper.cc",
     "src/tint/resolver/sem_helper.h",
     "src/tint/resolver/uniformity.cc",
@@ -918,8 +950,8 @@ TINT_SRCS = [
     "src/tint/transform/multiplanar_external_texture.h",
     "src/tint/transform/num_workgroups_from_uniform.cc",
     "src/tint/transform/num_workgroups_from_uniform.h",
-    "src/tint/transform/promote_initializers_to_const_var.cc",
-    "src/tint/transform/promote_initializers_to_const_var.h",
+    "src/tint/transform/promote_initializers_to_let.cc",
+    "src/tint/transform/promote_initializers_to_let.h",
     "src/tint/transform/promote_side_effects_to_decl.cc",
     "src/tint/transform/promote_side_effects_to_decl.h",
     "src/tint/transform/remove_phonies.cc",
@@ -934,6 +966,10 @@ TINT_SRCS = [
     "src/tint/transform/simplify_pointers.h",
     "src/tint/transform/single_entry_point.cc",
     "src/tint/transform/single_entry_point.h",
+    "src/tint/transform/substitute_override.cc",
+    "src/tint/transform/substitute_override.h",
+    "src/tint/transform/spirv_atomic.cc",
+    "src/tint/transform/spirv_atomic.h",
     "src/tint/transform/transform.cc",
     "src/tint/transform/transform.h",
     "src/tint/transform/unshadow.cc",
@@ -950,11 +986,12 @@ TINT_SRCS = [
     "src/tint/transform/vectorize_scalar_matrix_constructors.h",
     "src/tint/transform/vertex_pulling.cc",
     "src/tint/transform/vertex_pulling.h",
-    "src/tint/transform/wrap_arrays_in_structs.cc",
-    "src/tint/transform/wrap_arrays_in_structs.h",
+    "src/tint/transform/while_to_loop.cc",
+    "src/tint/transform/while_to_loop.h",
     "src/tint/transform/zero_init_workgroup_memory.cc",
     "src/tint/transform/zero_init_workgroup_memory.h",
     "src/tint/utils/bitcast.h",
+    "src/tint/utils/bitset.h",
     "src/tint/utils/block_allocator.h",
     "src/tint/utils/concat.h",
     "src/tint/utils/compiler_macros.h",
@@ -964,16 +1001,18 @@ TINT_SRCS = [
     "src/tint/utils/defer.h",
     "src/tint/utils/enum_set.h",
     "src/tint/utils/hash.h",
+    "src/tint/utils/hashmap.h",
+    "src/tint/utils/hashset.h",
     "src/tint/utils/map.h",
     "src/tint/utils/math.h",
     "src/tint/utils/reverse.h",
     "src/tint/utils/result.h",
     "src/tint/utils/scoped_assignment.h",
     "src/tint/utils/string.h",
-    "src/tint/utils/to_const_ptr_vec.h",
     "src/tint/utils/transform.h",
     "src/tint/utils/unique_allocator.h",
     "src/tint/utils/unique_vector.h",
+    "src/tint/utils/vector.h",
     "src/tint/writer/append_vector.cc",
     "src/tint/writer/append_vector.h",
     "src/tint/writer/array_length_from_uniform_options.cc",
@@ -1022,6 +1061,7 @@ TINT_SRCS = [
     "src/tint/sem/depth_multisampled_texture.h",
     "src/tint/sem/depth_texture.cc",
     "src/tint/sem/depth_texture.h",
+    "src/tint/sem/evaluation_stage.h",
     "src/tint/sem/expression.cc",
     "src/tint/sem/expression.h",
     "src/tint/sem/external_texture.cc",
@@ -1038,6 +1078,8 @@ TINT_SRCS = [
     "src/tint/sem/i32.h",
     "src/tint/sem/if_statement.cc",
     "src/tint/sem/if_statement.h",
+    "src/tint/sem/index_accessor_expression.cc",
+    "src/tint/sem/index_accessor_expression.h",
     "src/tint/sem/info.cc",
     "src/tint/sem/info.h",
     "src/tint/sem/loop_statement.cc",
@@ -1093,6 +1135,8 @@ TINT_SRCS = [
     "src/tint/sem/vector.h",
     "src/tint/sem/void.cc",
     "src/tint/sem/void.h",
+    "src/tint/sem/while_statement.cc",
+    "src/tint/sem/while_statement.h",
     # Dawn sets the following tint GN variables
     #    tint_build_spv_reader = true
     #    tint_build_spv_writer = true

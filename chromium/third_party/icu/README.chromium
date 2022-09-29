@@ -291,3 +291,14 @@ D. Local Modifications
     patches/timezone-rawoffset.patch
   - https://github.com/unicode-org/icu/pull/2096
   - https://unicode-org.atlassian.net/browse/ICU-22041
+
+18. Patch NumberRangeFormatter to fix numbering system resolution.
+    patches/number_range_format.patch
+  - https://github.com/unicode-org/icu/pull/2085
+  - https://unicode-org.atlassian.net/browse/ICU-22017
+
+19. Patch Calendar to return error ASAP to avoid incorrect assert
+    patches/calendar_return_error_early.patch
+  - https://github.com/unicode-org/icu/pull/2177
+  - https://unicode-org.atlassian.net/browse/ICU-22070
+

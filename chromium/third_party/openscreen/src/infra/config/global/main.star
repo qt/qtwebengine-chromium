@@ -156,6 +156,7 @@ def get_properties(
         properties["$build/goma"] = {
             "server_host": "goma.chromium.org",
             "rpc_extra_params": "?prod",
+            "use_luci_auth": True,
         }
         if use_ats:
             properties["$build/goma"]["enable_ats"] = True

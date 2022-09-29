@@ -12,7 +12,9 @@
 #include "public/fpdf_formfill.h"
 #include "public/fpdfview.h"
 #include "v8/include/libplatform/libplatform.h"
-#include "v8/include/v8.h"
+#include "v8/include/v8-array-buffer.h"
+#include "v8/include/v8-initialization.h"
+#include "v8/include/v8-isolate.h"
 
 int main(int argc, const char* argv[]) {
   // V8 must be initialized before the PDFium library if using V8.
@@ -20,9 +22,6 @@ int main(int argc, const char* argv[]) {
   v8::V8::InitializeExternalStartupData(argv[0]);
   v8::Platform* platform = v8::platform::NewDefaultPlatform().release();
   v8::V8::InitializePlatform(platform);
-#ifdef V8_ENABLE_SANDBOX
-  v8::V8::InitializeSandbox();
-#endif
   v8::V8::Initialize();
 
   v8::Isolate::CreateParams params;

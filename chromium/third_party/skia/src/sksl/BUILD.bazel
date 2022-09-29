@@ -1,4 +1,4 @@
-load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "selects", "split_srcs_and_hdrs")
+load("//bazel:macros.bzl", "bool_flag", "exports_files_legacy", "selects", "skia_cc_deps", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -7,12 +7,14 @@ exports_files_legacy()
 filegroup(
     name = "txts",
     srcs = [
+        "generated/sksl_compute.dehydrated.sksl",
         "generated/sksl_frag.dehydrated.sksl",
         "generated/sksl_gpu.dehydrated.sksl",
         "generated/sksl_graphite_frag.dehydrated.sksl",
         "generated/sksl_graphite_vert.dehydrated.sksl",
         "generated/sksl_public.dehydrated.sksl",
         "generated/sksl_rt_shader.dehydrated.sksl",
+        "generated/sksl_shared.dehydrated.sksl",
         "generated/sksl_vert.dehydrated.sksl",
     ],
     visibility = ["//:__subpackages__"],
@@ -76,11 +78,36 @@ split_srcs_and_hdrs(
 )
 
 selects.config_setting_group(
+    name = "needs_sksl",
+    match_any = [
+        "//src/gpu:has_gpu_backend",
+        ":enable_sksl_true",
+    ],
+    visibility = ["//:__subpackages__"],
+)
+
+selects.config_setting_group(
     name = "use_sksl_gpu_srcs",
     match_any = [
-        "//bazel/common_config_settings:has_gpu_backend",
-        "//bazel/common_config_settings:enable_skslc_true",
+        "//src/gpu:has_gpu_backend",
+        ":enable_skslc_true",
     ],
+    visibility = ["//:__subpackages__"],
+)
+
+bool_flag(
+    default = False,
+    flag_name = "enable_sksl",
+)
+
+bool_flag(
+    default = False,
+    flag_name = "enable_skslc",
+)
+
+bool_flag(
+    default = False,
+    flag_name = "enable_sksl_tracing",
 )
 
 filegroup(
@@ -116,7 +143,7 @@ filegroup(
     visibility = ["//src:__pkg__"],
 )
 
-cc_library(
+skia_cc_deps(
     name = "deps",
     textual_hdrs = [
         ":txts",
@@ -125,7 +152,7 @@ cc_library(
     deps = [
         "//src/sksl/codegen:deps",
     ] + select({
-        "//bazel/common_config_settings:enable_skslc_true": [
+        "//src/sksl:enable_skslc_true": [
             "@spirv_tools",
             "@dawn//:tint",
         ],

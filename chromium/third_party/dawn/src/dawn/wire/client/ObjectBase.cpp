@@ -14,13 +14,41 @@
 
 #include "dawn/wire/client/ObjectBase.h"
 
+#include "dawn/common/Assert.h"
+
 namespace dawn::wire::client {
 
-ObjectBase::ObjectBase(Client* client, uint32_t refcount, uint32_t id)
-    : client(client), refcount(refcount), id(id) {}
+ObjectBase::ObjectBase(const ObjectBaseParams& params)
+    : mClient(params.client), mHandle(params.handle), mRefcount(1) {}
 
 ObjectBase::~ObjectBase() {
     RemoveFromList();
+}
+
+const ObjectHandle& ObjectBase::GetWireHandle() const {
+    return mHandle;
+}
+
+ObjectId ObjectBase::GetWireId() const {
+    return mHandle.id;
+}
+
+ObjectGeneration ObjectBase::GetWireGeneration() const {
+    return mHandle.generation;
+}
+
+Client* ObjectBase::GetClient() const {
+    return mClient;
+}
+
+void ObjectBase::Reference() {
+    mRefcount++;
+}
+
+bool ObjectBase::Release() {
+    ASSERT(mRefcount != 0);
+    mRefcount--;
+    return mRefcount == 0;
 }
 
 }  // namespace dawn::wire::client

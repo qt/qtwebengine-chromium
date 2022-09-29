@@ -13,6 +13,7 @@
 #include "src/base/platform/platform.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/interface-descriptors.h"
+#include "src/common/code-memory-access.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/execution/frames.h"
@@ -31,8 +32,8 @@
 #include "src/wasm/wasm-engine.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
-#include "src/diagnostics/system-jit-win.h"
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_ETW_STACK_WALKING)
+#include "src/diagnostics/etw-jit-win.h"
 #endif
 
 namespace v8 {
@@ -97,23 +98,20 @@ void V8::InitializePlatform(v8::Platform* platform) {
   platform_ = platform;
   v8::base::SetPrintStackTrace(platform_->GetStackTracePrinter());
   v8::tracing::TracingCategoryObserver::SetUp();
-#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
-  if (FLAG_enable_system_instrumentation) {
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_ETW_STACK_WALKING)
+  if (FLAG_enable_etw_stack_walking) {
     // TODO(sartang@microsoft.com): Move to platform specific diagnostics object
     v8::internal::ETWJITInterface::Register();
   }
 #endif
+
+  // Initialization needs to happen on platform-level, as this sets up some
+  // cppgc internals that are needed to allow gracefully failing during cppgc
+  // platform setup.
+  CppHeap::InitializeOncePerProcess();
+
   AdvanceStartupState(V8StartupState::kPlatformInitialized);
 }
-
-#ifdef V8_ENABLE_SANDBOX
-bool V8::InitializeSandbox() {
-  // Platform must have been initialized already.
-  CHECK(platform_);
-  v8::VirtualAddressSpace* vas = GetPlatformVirtualAddressSpace();
-  return GetProcessWideSandbox()->Initialize(vas);
-}
-#endif  // V8_ENABLE_SANDBOX
 
 #define DISABLE_FLAG(flag)                                                    \
   if (FLAG_##flag) {                                                          \
@@ -126,19 +124,8 @@ void V8::Initialize() {
   AdvanceStartupState(V8StartupState::kV8Initializing);
   CHECK(platform_);
 
-#ifdef V8_ENABLE_SANDBOX
-  if (!kAllowBackingStoresOutsideSandbox) {
-    CHECK(GetProcessWideSandbox()->is_initialized());
-  } else if (!GetProcessWideSandbox()->is_initialized()) {
-    // For now, we still allow the sandbox to be disabled even if V8 was
-    // compiled with V8_ENABLE_SANDBOX. This will eventually be forbidden.
-    GetProcessWideSandbox()->Disable();
-  }
-#endif  // V8_ENABLE_SANDBOX
-
   // Update logging information before enforcing flag implications.
-  FlagValue<bool>* log_all_flags[] = {&FLAG_turbo_profiling_log_builtins,
-                                      &FLAG_log_all,
+  FlagValue<bool>* log_all_flags[] = {&FLAG_log_all,
                                       &FLAG_log_code,
                                       &FLAG_log_code_disassemble,
                                       &FLAG_log_source_code,
@@ -163,8 +150,8 @@ void V8::Initialize() {
     // Profiling flags depend on logging.
     FLAG_log = FLAG_log || FLAG_perf_prof || FLAG_perf_basic_prof ||
                FLAG_ll_prof || FLAG_prof || FLAG_prof_cpp || FLAG_gdbjit;
-#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
-    FLAG_log = FLAG_log || FLAG_enable_system_instrumentation;
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_ETW_STACK_WALKING)
+    FLAG_log = FLAG_log || FLAG_enable_etw_stack_walking;
 #endif
   }
 
@@ -230,7 +217,10 @@ void V8::Initialize() {
 
   base::OS::Initialize(FLAG_hard_abort, FLAG_gc_fake_mmap);
 
-  if (FLAG_random_seed) SetRandomMmapSeed(FLAG_random_seed);
+  if (FLAG_random_seed) {
+    GetPlatformPageAllocator()->SetRandomMmapSeed(FLAG_random_seed);
+    GetPlatformVirtualAddressSpace()->SetRandomSeed(FLAG_random_seed);
+  }
 
   if (FLAG_print_flag_values) FlagList::PrintValues();
 
@@ -241,6 +231,12 @@ void V8::Initialize() {
   // are not allowed. Global initialization of the Isolate or the WasmEngine
   // already reads flags, so they should not be changed afterwards.
   if (FLAG_freeze_flags_after_init) FlagList::FreezeFlags();
+
+#if defined(V8_ENABLE_SANDBOX)
+  // If enabled, the sandbox must be initialized first.
+  GetProcessWideSandbox()->Initialize(GetPlatformVirtualAddressSpace());
+  CHECK_EQ(kSandboxSize, GetProcessWideSandbox()->size());
+#endif
 
 #if defined(V8_USE_PERFETTO)
   if (perfetto::Tracing::IsInitialized()) TrackEvent::Register();
@@ -255,6 +251,12 @@ void V8::Initialize() {
   ElementsAccessor::InitializeOncePerProcess();
   Bootstrapper::InitializeOncePerProcess();
   CallDescriptors::InitializeOncePerProcess();
+
+#if V8_HAS_PKU_JIT_WRITE_PROTECT
+  base::MemoryProtectionKey::InitializeMemoryProtectionKeySupport();
+  RwxMemoryWriteScope::InitializeMemoryProtectionKey();
+#endif
+
 #if V8_ENABLE_WEBASSEMBLY
   wasm::WasmEngine::InitializeOncePerProcess();
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -279,15 +281,15 @@ void V8::Dispose() {
   ElementsAccessor::TearDown();
   RegisteredExtension::UnregisterAll();
   Isolate::DisposeOncePerProcess();
-  FlagList::ResetAllFlags();  // Frees memory held by string arguments.
+  FlagList::ReleaseDynamicAllocations();
   AdvanceStartupState(V8StartupState::kV8Disposed);
 }
 
 void V8::DisposePlatform() {
   AdvanceStartupState(V8StartupState::kPlatformDisposing);
   CHECK(platform_);
-#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
-  if (FLAG_enable_system_instrumentation) {
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_ETW_STACK_WALKING)
+  if (FLAG_enable_etw_stack_walking) {
     v8::internal::ETWJITInterface::Unregister();
   }
 #endif

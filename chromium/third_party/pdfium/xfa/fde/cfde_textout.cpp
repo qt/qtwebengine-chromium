@@ -136,10 +136,10 @@ CFDE_TextOut::CFDE_TextOut()
 
 CFDE_TextOut::~CFDE_TextOut() = default;
 
-void CFDE_TextOut::SetFont(const RetainPtr<CFGAS_GEFont>& pFont) {
+void CFDE_TextOut::SetFont(RetainPtr<CFGAS_GEFont> pFont) {
   DCHECK(pFont);
-  m_pFont = pFont;
-  m_pTxtBreak->SetFont(pFont);
+  m_pFont = std::move(pFont);
+  m_pTxtBreak->SetFont(m_pFont);
 }
 
 void CFDE_TextOut::SetFontSize(float fFontSize) {
@@ -255,9 +255,9 @@ bool CFDE_TextOut::RetrieveLineWidth(CFGAS_Char::BreakType dwBreakStatus,
   float fLineWidth = 0.0f;
   for (int32_t i = 0; i < m_pTxtBreak->CountBreakPieces(); i++) {
     const CFGAS_BreakPiece* pPiece = m_pTxtBreak->GetBreakPieceUnstable(i);
-    fLineWidth += static_cast<float>(pPiece->m_iWidth) / 20000.0f;
+    fLineWidth += static_cast<float>(pPiece->GetWidth()) / 20000.0f;
     *pStartPos = std::min(*pStartPos,
-                          static_cast<float>(pPiece->m_iStartPos) / 20000.0f);
+                          static_cast<float>(pPiece->GetStartPos()) / 20000.0f);
   }
   m_pTxtBreak->ClearBreakPieces();
 
@@ -274,7 +274,7 @@ bool CFDE_TextOut::RetrieveLineWidth(CFGAS_Char::BreakType dwBreakStatus,
 }
 
 void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
-                                 WideStringView str,
+                                 const WideString& str,
                                  const CFX_RectF& rect) {
   DCHECK(m_pFont);
   DCHECK(m_fFontSize >= 1.0f);
@@ -289,7 +289,7 @@ void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
   m_ttoLines.clear();
   m_wsText.clear();
 
-  LoadText(WideString(str), rect);
+  LoadText(str, rect);
   Reload(rect);
   DoAlignment(rect);
 
@@ -346,7 +346,7 @@ void CFDE_TextOut::LoadText(const WideString& str, const CFX_RectF& rect) {
       m_fLinePos += fLineStep;
     }
     if (m_fLinePos + fLineStep > fLineStop) {
-      int32_t iCurLine = bEndofLine ? m_iCurLine - 1 : m_iCurLine;
+      size_t iCurLine = bEndofLine ? m_iCurLine - 1 : m_iCurLine;
       m_ttoLines[iCurLine].set_new_reload(true);
       bRet = true;
       break;
@@ -370,12 +370,19 @@ bool CFDE_TextOut::RetrievePieces(CFGAS_Char::BreakType dwBreakStatus,
   bool bNeedReload = false;
   int32_t iLineWidth = FXSYS_roundf(rect.Width() * 20000.0f);
   int32_t iCount = m_pTxtBreak->CountBreakPieces();
+
+  size_t chars_to_skip = *pStartChar;
   for (int32_t i = 0; i < iCount; i++) {
     const CFGAS_BreakPiece* pPiece = m_pTxtBreak->GetBreakPieceUnstable(i);
-    int32_t iPieceChars = pPiece->GetLength();
+    size_t iPieceChars = pPiece->GetLength();
+    if (chars_to_skip > iPieceChars) {
+      chars_to_skip -= iPieceChars;
+      continue;
+    }
+
     size_t iChar = *pStartChar;
     int32_t iWidth = 0;
-    int32_t j = 0;
+    size_t j = chars_to_skip;
     for (; j < iPieceChars; j++) {
       const CFGAS_Char* pTC = pPiece->GetChar(j);
       int32_t iCurCharWidth = std::max(pTC->m_iCharWidth, 0);
@@ -389,18 +396,18 @@ bool CFDE_TextOut::RetrievePieces(CFGAS_Char::BreakType dwBreakStatus,
       m_CharWidths[iChar++] = iCurCharWidth;
     }
 
-    if (j == 0 && !bReload) {
+    if (j == chars_to_skip && !bReload) {
       m_ttoLines[m_iCurLine].set_new_reload(true);
-    } else if (j > 0) {
+    } else if (j > chars_to_skip) {
       Piece piece;
       piece.start_char = *pStartChar;
-      piece.char_count = j;
-      piece.char_styles = pPiece->m_dwCharStyles;
+      piece.char_count = j - chars_to_skip;
+      piece.char_styles = pPiece->GetCharStyles();
       piece.bounds = CFX_RectF(
-          rect.left + static_cast<float>(pPiece->m_iStartPos) / 20000.0f,
+          rect.left + static_cast<float>(pPiece->GetStartPos()) / 20000.0f,
           m_fLinePos, iWidth / 20000.0f, fLineStep);
 
-      if (FX_IsOdd(pPiece->m_iBidiLevel))
+      if (FX_IsOdd(pPiece->GetBidiLevel()))
         piece.char_styles |= FX_TXTCHARSTYLE_OddBidiLevel;
 
       AppendPiece(piece, bNeedReload, (bReload && i == iCount - 1));
@@ -417,13 +424,13 @@ bool CFDE_TextOut::RetrievePieces(CFGAS_Char::BreakType dwBreakStatus,
 void CFDE_TextOut::AppendPiece(const Piece& piece,
                                bool bNeedReload,
                                bool bEnd) {
-  if (m_iCurLine >= fxcrt::CollectionSize<int32_t>(m_ttoLines)) {
+  if (m_iCurLine >= m_ttoLines.size()) {
     Line ttoLine;
     ttoLine.set_new_reload(bNeedReload);
 
     m_iCurPiece = ttoLine.AddPiece(m_iCurPiece, piece);
     m_ttoLines.push_back(ttoLine);
-    m_iCurLine = fxcrt::CollectionSize<int32_t>(m_ttoLines) - 1;
+    m_iCurLine = m_ttoLines.size() - 1;
   } else {
     Line* pLine = &m_ttoLines[m_iCurLine];
     pLine->set_new_reload(bNeedReload);
@@ -440,7 +447,7 @@ void CFDE_TextOut::AppendPiece(const Piece& piece,
 }
 
 void CFDE_TextOut::Reload(const CFX_RectF& rect) {
-  int i = 0;
+  size_t i = 0;
   for (auto& line : m_ttoLines) {
     if (line.new_reload()) {
       m_iCurLine = i;
@@ -459,13 +466,13 @@ void CFDE_TextOut::ReloadLinePiece(Line* line, const CFX_RectF& rect) {
   CFGAS_Char::BreakType break_status = CFGAS_Char::BreakType::kNone;
   for (size_t piece_index = 0; piece_index < piece_count; ++piece_index) {
     const Piece* piece = line->GetPieceAtIndex(piece_index);
-    if (piece_index == 0) {
-      start_char = piece->start_char;
+    if (piece_index == 0)
       m_fLinePos = piece->bounds.top;
-    }
-    size_t end = start_char + piece->char_count;
-    for (size_t start = start_char; start < end; ++start) {
-      break_status = m_pTxtBreak->AppendChar(text_span[start]);
+
+    start_char = piece->start_char;
+    const size_t end = piece->start_char + piece->char_count;
+    for (size_t char_index = start_char; char_index < end; ++char_index) {
+      break_status = m_pTxtBreak->AppendChar(text_span[char_index]);
       if (!CFX_BreakTypeNoneOrPiece(break_status))
         RetrievePieces(break_status, true, rect, &start_char, &piece_widths);
     }

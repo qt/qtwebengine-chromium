@@ -25,7 +25,8 @@
   bottom: 0;
   left: 0;
   right: 0;
-  overflow: scroll;
+  overflow-x: hidden;
+  overflow-y: overlay;
   transform: translateZ(0);
   background-color: var(--color-background);
 }
@@ -91,8 +92,8 @@
   display: table-row;
 }
 
-.striped-data-grid .revealed.data-grid-data-grid-node:nth-child(odd):not(.dirty):not(.selected),
-.striped-data-grid-starts-with-odd .revealed.data-grid-data-grid-node:nth-child(even):not(.dirty):not(.selected) {
+.striped-data-grid .revealed.data-grid-data-grid-node:nth-child(odd):not(.dirty):not(.selected):not(:hover),
+.striped-data-grid-starts-with-odd .revealed.data-grid-data-grid-node:nth-child(even):not(.dirty):not(.selected):not(:hover) {
   background-color: var(--color-background-elevation-1);
 }
 

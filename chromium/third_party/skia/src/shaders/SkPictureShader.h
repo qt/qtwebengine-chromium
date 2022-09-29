@@ -50,23 +50,8 @@ private:
                     const SkMatrix*, const SkRect*);
 
     sk_sp<SkShader> rasterShader(const SkMatrix&, SkTCopyOnFirstWrite<SkMatrix>* localMatrix,
-                                 SkColorType dstColorType, SkColorSpace* dstColorSpace) const;
-
-    class PictureShaderContext : public Context {
-    public:
-        PictureShaderContext(
-            const SkPictureShader&, const ContextRec&, sk_sp<SkShader> bitmapShader, SkArenaAlloc*);
-
-        uint32_t getFlags() const override;
-
-        void shadeSpan(int x, int y, SkPMColor dstC[], int count) override;
-
-        sk_sp<SkShader>         fBitmapShader;
-        SkShaderBase::Context*  fBitmapShaderContext;
-        void*                   fBitmapShaderContextStorage;
-
-        using INHERITED = Context;
-    };
+                                 SkColorType dstColorType, SkColorSpace* dstColorSpace,
+                                 const SkSurfaceProps& props) const;
 
     sk_sp<SkPicture>    fPicture;
     SkRect              fTile;

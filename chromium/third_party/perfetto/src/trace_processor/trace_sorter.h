@@ -99,6 +99,7 @@ class TraceSorter {
   TraceSorter(TraceProcessorContext* context,
               std::unique_ptr<TraceParser> parser,
               SortingMode);
+  ~TraceSorter();
 
   inline void PushTracePacket(int64_t timestamp,
                               PacketSequenceState* state,
@@ -114,20 +115,19 @@ class TraceSorter {
   }
 
   inline void PushFuchsiaRecord(int64_t timestamp,
-                                std::unique_ptr<FuchsiaRecord> fuchsia_record) {
+                                FuchsiaRecord fuchsia_record) {
     uint32_t offset = variadic_queue_.Append(std::move(fuchsia_record));
     AppendNonFtraceEvent(timestamp, offset, Type::kFuchsiaRecord);
   }
 
-  inline void PushSystraceLine(std::unique_ptr<SystraceLine> systrace_line) {
-    auto ts = systrace_line->ts;
+  inline void PushSystraceLine(SystraceLine systrace_line) {
+    auto ts = systrace_line.ts;
     auto offset = variadic_queue_.Append(std::move(systrace_line));
     AppendNonFtraceEvent(ts, offset, Type::kSystraceLine);
   }
 
-  inline void PushTrackEventPacket(
-      int64_t timestamp,
-      std::unique_ptr<TrackEventData> track_event) {
+  inline void PushTrackEventPacket(int64_t timestamp,
+                                   TrackEventData track_event) {
     uint32_t offset = variadic_queue_.Append(std::move(track_event));
     AppendNonFtraceEvent(timestamp, offset, Type::kTrackEvent);
   }
@@ -173,7 +173,7 @@ class TraceSorter {
   void ExtractEventsForced() {
     uint32_t cur_mem_block_offset = variadic_queue_.NextOffset();
     SortAndExtractEventsUntilPacket(cur_mem_block_offset);
-    queues_.resize(0);
+    queues_.clear();
 
     offset_for_extraction_ = cur_mem_block_offset;
     flushes_since_extraction_ = 0;
@@ -256,8 +256,6 @@ class TraceSorter {
   static_assert(sizeof(TimestampedDescriptor) == 16,
                 "TimestampeDescriptor cannot grow beyond 16 bytes");
 
-  static constexpr uint32_t kNoBatch = std::numeric_limits<uint32_t>::max();
-
   struct Queue {
     inline void Append(TimestampedDescriptor ts_desc) {
       auto ts = ts_desc.ts;
@@ -314,23 +312,36 @@ class TraceSorter {
     global_max_ts_ = std::max(global_max_ts_, queue->max_ts_);
   }
 
-  template <typename T>
-  void ParseTracePacket(size_t queue_idx,
-                        const TimestampedDescriptor& ts_desc) {
-    if (queue_idx == 0) {
-      // queues_[0] is for non-ftrace packets.
-      parser_->ParseTracePacket(
-          ts_desc.ts,
-          TimestampedTracePiece(ts_desc.ts, variadic_queue_.Evict<T>(
-                                                ts_desc.descriptor.offset())));
-    } else {
-      // Ftrace queues start at offset 1. So queues_[1] = cpu[0] and so on.
-      uint32_t cpu = static_cast<uint32_t>(queue_idx - 1);
-      parser_->ParseFtracePacket(
-          cpu, ts_desc.ts,
-          TimestampedTracePiece(ts_desc.ts, variadic_queue_.Evict<T>(
-                                                ts_desc.descriptor.offset())));
+  TimestampedTracePiece EvictVariadicAsTtp(
+      const TimestampedDescriptor& ts_desc) {
+    switch (ts_desc.descriptor.type()) {
+      case Type::kInlineSchedSwitch:
+        return EvictTypedVariadicAsTtp<InlineSchedSwitch>(ts_desc);
+      case Type::kInlineSchedWaking:
+        return EvictTypedVariadicAsTtp<InlineSchedWaking>(ts_desc);
+      case Type::kFtraceEvent:
+        return EvictTypedVariadicAsTtp<FtraceEventData>(ts_desc);
+      case Type::kTracePacket:
+        return EvictTypedVariadicAsTtp<TracePacketData>(ts_desc);
+      case Type::kTrackEvent:
+        return EvictTypedVariadicAsTtp<TrackEventData>(ts_desc);
+      case Type::kFuchsiaRecord:
+        return EvictTypedVariadicAsTtp<FuchsiaRecord>(ts_desc);
+      case Type::kJsonValue:
+        return EvictTypedVariadicAsTtp<std::string>(ts_desc);
+      case Type::kSystraceLine:
+        return EvictTypedVariadicAsTtp<SystraceLine>(ts_desc);
+      case Type::kInvalid:
+        PERFETTO_FATAL("Invalid TimestampedTracePiece type");
     }
+    PERFETTO_FATAL("For GCC");
+  }
+
+  template <typename T>
+  TimestampedTracePiece EvictTypedVariadicAsTtp(
+      const TimestampedDescriptor& ts_desc) {
+    return TimestampedTracePiece(
+        ts_desc.ts, variadic_queue_.Evict<T>(ts_desc.descriptor.offset()));
   }
 
   void MaybePushEvent(size_t queue_idx, const TimestampedDescriptor& ts_desc)

@@ -11,7 +11,8 @@
 
 #include <smmintrin.h>
 
-#include <xnnpack/vaddsub.h>
+#include <xnnpack/unaligned.h>
+#include <xnnpack/vadd.h>
 
 
 void xnn_qs8_vaddc_minmax_ukernel__sse41_mul16_ld64_x24(
@@ -19,7 +20,7 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul16_ld64_x24(
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
-    const union xnn_qs8_addsub_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   const __m128i vbias = _mm_add_epi32(
     _mm_shuffle_epi32(_mm_cvtsi32_si128(params->sse4_mul16.b_multiplier * (int32_t) *input_b), _MM_SHUFFLE(0, 0, 0, 0)),
@@ -116,12 +117,12 @@ void xnn_qs8_vaddc_minmax_ukernel__sse41_mul16_ld64_x24(
         n -= 8 * sizeof(int8_t);
       } else {
         if (n & (4 * sizeof(int8_t))) {
-          *((uint32_t*) output) = (uint32_t) _mm_cvtsi128_si32(vout0123456701234567);
+          unaligned_store_u32(output, (uint32_t) _mm_cvtsi128_si32(vout0123456701234567));
           vout0123456701234567 = _mm_srli_epi64(vout0123456701234567, 32);
           output += 4;
         }
         if (n & (2 * sizeof(int8_t))) {
-          *((uint16_t*) output) = (uint16_t) _mm_extract_epi16(vout0123456701234567, 0);
+          unaligned_store_u16(output, (uint16_t) _mm_extract_epi16(vout0123456701234567, 0));
           vout0123456701234567 = _mm_srli_epi32(vout0123456701234567, 16);
           output += 2;
         }

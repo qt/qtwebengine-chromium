@@ -29,10 +29,8 @@
 #include "src/logging/log.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/debug-objects.h"
-#include "src/objects/literal-objects-inl.h"
-#include "src/objects/objects-inl.h"
 #include "src/objects/smi.h"
-#include "src/objects/template-objects-inl.h"
+#include "src/objects/template-objects.h"
 #include "src/parsing/parse-info.h"
 #include "src/parsing/token.h"
 #include "src/utils/ostreams.h"
@@ -2016,6 +2014,8 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
   VisitForAccumulatorValue(stmt->tag());
 
   if (use_jump_table) {
+    // Release temps so that they can be reused in clauses.
+    RegisterAllocationScope allocation_scope(this);
     // This also fills empty slots in jump table.
     Register r2 = register_allocator()->NewRegister();
 
@@ -2095,6 +2095,7 @@ void BytecodeGenerator::VisitSwitchStatement(SwitchStatement* stmt) {
                                         case_compare_ctr++);
       }
     }
+    register_allocator()->ReleaseRegister(tag_holder);
   }
 
   // For fall-throughs after comparisons (or out-of-range/non-Smi's for jump
@@ -2418,40 +2419,43 @@ void BytecodeGenerator::VisitForOfStatement(ForOfStatement* stmt) {
   BuildTryFinally(
       // Try block.
       [&]() {
-        Register next_result = register_allocator()->NewRegister();
-
         LoopBuilder loop_builder(builder(), block_coverage_builder_, stmt,
                                  feedback_spec());
         LoopScope loop_scope(this, &loop_builder);
 
         builder()->LoadTrue().StoreAccumulatorInRegister(done);
 
-        // Call the iterator's .next() method. Break from the loop if the `done`
-        // property is truthy, otherwise load the value from the iterator result
-        // and append the argument.
-        builder()->SetExpressionAsStatementPosition(stmt->each());
-        BuildIteratorNext(iterator, next_result);
-        builder()->LoadNamedProperty(
-            next_result, ast_string_constants()->done_string(),
-            feedback_index(feedback_spec()->AddLoadICSlot()));
-        loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
+        {
+          RegisterAllocationScope allocation_scope(this);
+          Register next_result = register_allocator()->NewRegister();
 
-        builder()
-            // value = value.value
-            ->LoadNamedProperty(
-                next_result, ast_string_constants()->value_string(),
-                feedback_index(feedback_spec()->AddLoadICSlot()));
-        // done = false, before the assignment to each happens, so that done is
-        // false if the assignment throws.
-        builder()
-            ->StoreAccumulatorInRegister(next_result)
-            .LoadFalse()
-            .StoreAccumulatorInRegister(done);
+          // Call the iterator's .next() method. Break from the loop if the
+          // `done` property is truthy, otherwise load the value from the
+          // iterator result and append the argument.
+          builder()->SetExpressionAsStatementPosition(stmt->each());
+          BuildIteratorNext(iterator, next_result);
+          builder()->LoadNamedProperty(
+              next_result, ast_string_constants()->done_string(),
+              feedback_index(feedback_spec()->AddLoadICSlot()));
+          loop_builder.BreakIfTrue(ToBooleanMode::kConvertToBoolean);
 
-        // Assign to the 'each' target.
-        AssignmentLhsData lhs_data = PrepareAssignmentLhs(stmt->each());
-        builder()->LoadAccumulatorWithRegister(next_result);
-        BuildAssignment(lhs_data, Token::ASSIGN, LookupHoistingMode::kNormal);
+          builder()
+              // value = value.value
+              ->LoadNamedProperty(
+                  next_result, ast_string_constants()->value_string(),
+                  feedback_index(feedback_spec()->AddLoadICSlot()));
+          // done = false, before the assignment to each happens, so that done
+          // is false if the assignment throws.
+          builder()
+              ->StoreAccumulatorInRegister(next_result)
+              .LoadFalse()
+              .StoreAccumulatorInRegister(done);
+
+          // Assign to the 'each' target.
+          AssignmentLhsData lhs_data = PrepareAssignmentLhs(stmt->each());
+          builder()->LoadAccumulatorWithRegister(next_result);
+          BuildAssignment(lhs_data, Token::ASSIGN, LookupHoistingMode::kNormal);
+        }
 
         VisitIterationBody(stmt, &loop_builder);
       },
@@ -2583,6 +2587,8 @@ void BytecodeGenerator::BuildClassLiteral(ClassLiteral* expr, Register name) {
         ->LoadLiteral(class_name)
         .StoreAccumulatorInRegister(brand)
         .CallRuntime(Runtime::kCreatePrivateBrandSymbol, brand);
+    register_allocator()->ReleaseRegister(brand);
+
     BuildVariableAssignment(expr->scope()->brand(), Token::INIT,
                             HoleCheckMode::kElided);
   }
@@ -2705,8 +2711,6 @@ void BytecodeGenerator::BuildClassLiteral(ClassLiteral* expr, Register name) {
 
     builder()->CallRuntime(Runtime::kDefineClass, args);
   }
-  Register prototype = register_allocator()->NewRegister();
-  builder()->StoreAccumulatorInRegister(prototype);
 
   // Assign to the home object variable. Accumulator already contains the
   // prototype.
@@ -2807,11 +2811,19 @@ void BytecodeGenerator::VisitClassLiteral(ClassLiteral* expr, Register name) {
     // Make sure to associate the source position for the class
     // after the block context is created. Otherwise we have a mismatch
     // between the scope and the context, where we already are in a
-    // block context for the class, but not yet in the class scope.
-    BytecodeSourceInfo source_info = builder()->PopSourcePosition();
+    // block context for the class, but not yet in the class scope. Only do
+    // this if the current source position is inside the class scope though.
+    // For example:
+    //  * `var x = class {};` will break on `class` which is inside
+    //    the class scope, so we expect the BlockContext to be pushed.
+    //
+    //  * `new class x {};` will break on `new` which is outside the
+    //    class scope, so we expect the BlockContext to not be pushed yet.
+    base::Optional<BytecodeSourceInfo> source_info =
+        builder()->MaybePopSourcePosition(expr->scope()->start_position());
     BuildNewLocalBlockContext(expr->scope());
     ContextScope scope(this, expr->scope());
-    builder()->PushSourcePosition(source_info);
+    if (source_info) builder()->PushSourcePosition(*source_info);
     BuildClassLiteral(expr, name);
   } else {
     BuildClassLiteral(expr, name);
@@ -6864,6 +6876,7 @@ void BytecodeGenerator::BuildNewLocalActivationContext() {
     Register arg = register_allocator()->NewRegister();
     builder()->LoadLiteral(scope).StoreAccumulatorInRegister(arg).CallRuntime(
         Runtime::kNewFunctionContext, arg);
+    register_allocator()->ReleaseRegister(arg);
   }
 }
 
@@ -6907,6 +6920,8 @@ void BytecodeGenerator::BuildNewLocalWithContext(Scope* scope) {
 
   builder()->ToObject(extension_object);
   builder()->CreateWithContext(extension_object, scope);
+
+  register_allocator()->ReleaseRegister(extension_object);
 }
 
 void BytecodeGenerator::BuildNewLocalCatchContext(Scope* scope) {
@@ -6916,6 +6931,7 @@ void BytecodeGenerator::BuildNewLocalCatchContext(Scope* scope) {
   Register exception = register_allocator()->NewRegister();
   builder()->StoreAccumulatorInRegister(exception);
   builder()->CreateCatchContext(exception, scope);
+  register_allocator()->ReleaseRegister(exception);
 }
 
 void BytecodeGenerator::VisitLiteralAccessor(LiteralProperty* property,

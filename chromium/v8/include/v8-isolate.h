@@ -211,6 +211,8 @@ class V8_EXPORT Isolate {
     CreateParams();
     ~CreateParams();
 
+    ALLOW_COPY_AND_MOVE_WITH_DEPRECATED_FIELDS(CreateParams)
+
     /**
      * Allows the host application to provide the address of a function that is
      * notified each time code is added, moved or removed.
@@ -287,9 +289,6 @@ class V8_EXPORT Isolate {
      */
     FatalErrorCallback fatal_error_callback = nullptr;
     OOMErrorCallback oom_error_callback = nullptr;
-
-    V8_DEPRECATE_SOON("Use oom_error_callback (https://crbug.com/1323177)")
-    LegacyOOMErrorCallback legacy_oom_error_callback = nullptr;
 
     /**
      * The following parameter is experimental and may change significantly.
@@ -840,15 +839,6 @@ class V8_EXPORT Isolate {
    * \returns the adjusted value.
    */
   int64_t AdjustAmountOfExternalAllocatedMemory(int64_t change_in_bytes);
-
-  /**
-   * Returns the number of phantom handles without callbacks that were reset
-   * by the garbage collector since the last call to this function.
-   */
-  V8_DEPRECATED(
-      "Information cannot be relied on anymore as internal representation may "
-      "change.")
-  size_t NumberOfPhantomHandleResetsSinceLastCall();
 
   /**
    * Returns heap profiler for this isolate. Will return NULL until the isolate
@@ -1477,10 +1467,6 @@ class V8_EXPORT Isolate {
   /** Set the callback to invoke in case of fatal errors. */
   void SetFatalErrorHandler(FatalErrorCallback that);
 
-  /** Set the callback to invoke in case of OOM errors (deprecated). */
-  V8_DEPRECATE_SOON("Use OOMErrorCallback (https://crbug.com/1323177)")
-  void SetOOMErrorHandler(LegacyOOMErrorCallback that);
-
   /** Set the callback to invoke in case of OOM errors. */
   void SetOOMErrorHandler(OOMErrorCallback that);
 
@@ -1541,7 +1527,7 @@ class V8_EXPORT Isolate {
 
   void SetWasmExceptionsEnabledCallback(WasmExceptionsEnabledCallback callback);
 
-  V8_DEPRECATE_SOON("Dynamic tiering is now enabled by default")
+  V8_DEPRECATED("Dynamic tiering is now enabled by default")
   void SetWasmDynamicTieringEnabledCallback(WasmDynamicTieringEnabledCallback) {
   }
 
@@ -1610,25 +1596,6 @@ class V8_EXPORT Isolate {
    * guarantee that visited objects are still alive.
    */
   void VisitExternalResources(ExternalResourceVisitor* visitor);
-
-  /**
-   * Iterates through all the persistent handles in the current isolate's heap
-   * that have class_ids.
-   */
-  V8_DEPRECATED(
-      "Information cannot be relied on anymore as internal representation may "
-      "change.")
-  void VisitHandlesWithClassIds(PersistentHandleVisitor* visitor);
-
-  /**
-   * Iterates through all the persistent handles in the current isolate's heap
-   * that have class_ids and are weak to be marked as inactive if there is no
-   * pending activity for the handle.
-   */
-  V8_DEPRECATED(
-      "Information cannot be relied on anymore as internal representation may "
-      "change.")
-  void VisitWeakHandles(PersistentHandleVisitor* visitor);
 
   /**
    * Check if this isolate is in use.

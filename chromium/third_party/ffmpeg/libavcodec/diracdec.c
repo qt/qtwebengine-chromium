@@ -2264,7 +2264,7 @@ static int dirac_decode_frame(AVCodecContext *avctx, AVFrame *picture,
                               int *got_frame, AVPacket *pkt)
 {
     DiracContext *s     = avctx->priv_data;
-    uint8_t *buf        = pkt->data;
+    const uint8_t *buf  = pkt->data;
     int buf_size        = pkt->size;
     int i, buf_idx      = 0;
     int ret;
@@ -2366,6 +2366,5 @@ const FFCodec ff_dirac_decoder = {
     .close          = dirac_decode_end,
     FF_CODEC_DECODE_CB(dirac_decode_frame),
     .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
     .flush          = dirac_decode_flush,
 };

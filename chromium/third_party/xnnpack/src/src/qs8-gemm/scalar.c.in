@@ -9,12 +9,11 @@ $assert DATATYPE in ["QC8", "QS8", "QU8"]
 #include <assert.h>
 $if VARIANT == "LRINTF":
   #include <math.h>
-$elif VARIANT in ["FMAGIC", "IMAGIC"]:
-
-  #include <fp16.h>
 
 #include <xnnpack/math.h>
 #include <xnnpack/gemm.h>
+$if NR % 4 != 0:
+  #include <xnnpack/unaligned.h>
 
 
 $PARAMS_UNION = "xnn_qs8_minmax_params" if DATATYPE == "QC8" else "xnn_%s_conv_minmax_params" % DATATYPE.lower()
@@ -63,8 +62,12 @@ void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}
   $if DATATYPE == "QU8":
     const int32_t vb_zero_point = params->${PARAMS_STRUCT}.kernel_zero_point;
   do {
-    $for N in range(NR):
-      int32_t vacc0x${N} = ((const int32_t*) w)[${N}];
+    $if NR % 4 != 0:
+      $for N in range(NR):
+        int32_t vacc0x${N} = unaligned_indexed_load_s32(w, ${N});
+    $else:
+      $for N in range(NR):
+        int32_t vacc0x${N} = ((const int32_t*) w)[${N}];
     $for M in range(1, MR):
       $for N in range(NR):
         int32_t vacc${M}x${N} = vacc0x${N};
@@ -98,9 +101,8 @@ void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}
 
     $if DATATYPE == "QC8":
       $if NR % 4 != 0:
-        typedef XNN_UNALIGNED float unaligned_float;
         $for N in range(NR):
-          const float vscale${N} = ((const unaligned_float*) w)[${N}];
+          const float vscale${N} = unaligned_indexed_load_f32(w, ${N});
           $for M in range(MR):
             vfpacc${M}x${N} *= vscale${N};
       $else:
@@ -134,7 +136,7 @@ void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}
       const int32_t vmagic_bias_less_output_zero_point = params->${PARAMS_STRUCT}.magic_bias_less_output_zero_point;
       $for M in range(MR):
         $for N in range(NR):
-          int32_t vout${M}x${N} = (int32_t) fp32_to_bits(vfpacc${M}x${N}) - vmagic_bias_less_output_zero_point;
+          int32_t vout${M}x${N} = (int32_t) float_as_uint32(vfpacc${M}x${N}) - vmagic_bias_less_output_zero_point;
     $elif VARIANT == "IMAGIC":
       const float vmagic_bias = params->${PARAMS_STRUCT}.magic_bias;
       $for M in range(MR):
@@ -143,7 +145,7 @@ void xnn_${DATATYPE.lower()}_gemm_minmax_${REQUANTIZATION.lower()}_ukernel_${MR}
 
       $for M in range(MR):
         $for N in range(NR):
-          int32_t vout${M}x${N} = (int32_t) fp32_to_bits(vfpacc${M}x${N});
+          int32_t vout${M}x${N} = (int32_t) float_as_uint32(vfpacc${M}x${N});
 
       const int32_t vmagic_min = params->${PARAMS_STRUCT}.magic_min;
       $for M in range(MR):

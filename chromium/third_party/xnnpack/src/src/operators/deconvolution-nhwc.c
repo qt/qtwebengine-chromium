@@ -28,20 +28,6 @@
 #error "XNN_ENABLE_GEMM_M_SPECIALIZATION is not defined"
 #endif
 
-static inline size_t compute_output_dimension(
-    size_t input_dimension,
-    size_t output_padding_dimension,
-    size_t adjustment_dimension,
-    size_t kernel_dimension,
-    size_t dilation_dimension,
-    size_t stride_dimension)
-{
-  const size_t effective_kernel_dimension = (kernel_dimension - 1) * dilation_dimension + 1;
-  return doz(
-    stride_dimension * (input_dimension - 1) + adjustment_dimension + effective_kernel_dimension,
-    output_padding_dimension);
-}
-
 static enum xnn_status create_deconvolution2d_nhwc(
     uint32_t output_padding_top,
     uint32_t output_padding_right,
@@ -205,11 +191,11 @@ static enum xnn_status create_deconvolution2d_nhwc(
 
   const size_t aligned_total_weights_size = round_up_po2(packed_group_weights_size * groups, XNN_ALLOCATION_ALIGNMENT);
   void* weights_ptr = xnn_get_pointer_to_write_weights(
-      deconvolution_op, caches, aligned_total_weights_size, packed_weights_padding_byte);
+      deconvolution_op, aligned_total_weights_size, packed_weights_padding_byte);
   if (weights_ptr == NULL) {
     xnn_log_error(
       "failed to allocate %zu bytes for %s operator packed weights",
-      packed_group_weights_size * groups, xnn_operator_type_to_string(operator_type));
+      aligned_total_weights_size, xnn_operator_type_to_string(operator_type));
     goto error;
   }
 
@@ -237,9 +223,9 @@ static enum xnn_status create_deconvolution2d_nhwc(
       XNN_UNREACHABLE;
   }
 
-  if (use_weights_cache(caches)) {
+  if (use_weights_cache(deconvolution_op)) {
     deconvolution_op->packed_weights.offset = xnn_get_or_insert_weights_cache(
-        caches->weights_cache, weights_ptr, aligned_total_weights_size);
+        deconvolution_op->weights_cache, weights_ptr, aligned_total_weights_size);
   }
 
   const size_t zero_size = (k_stride << log2_input_element_size) + XNN_EXTRA_BYTES;
@@ -1110,10 +1096,10 @@ static enum xnn_status setup_deconvolution2d_nhwc(
   deconvolution_op->input = input;
   deconvolution_op->output = output;
 
-  deconvolution_op->output_height = compute_output_dimension(
+  deconvolution_op->output_height = xnn_compute_deconvolution_output_dimension(
       input_height, deconvolution_op->padding_top + deconvolution_op->padding_bottom,
       adjustment_height, deconvolution_op->kernel_height, deconvolution_op->dilation_height, deconvolution_op->stride_height);
-  deconvolution_op->output_width = deconvolution_op->output_width = compute_output_dimension(
+  deconvolution_op->output_width = deconvolution_op->output_width = xnn_compute_deconvolution_output_dimension(
       input_width, deconvolution_op->padding_left + deconvolution_op->padding_right,
       adjustment_width, deconvolution_op->kernel_width, deconvolution_op->dilation_width, deconvolution_op->stride_width);
 

@@ -19,17 +19,18 @@
 namespace skgpu::graphite {
 
 class Buffer;
-class CommandBuffer;
+class Recording;
 class ResourceProvider;
 
 class DrawBufferManager {
 public:
-    DrawBufferManager(ResourceProvider*, size_t uniformStartAlignment);
+    DrawBufferManager(ResourceProvider*, size_t uniformStartAlignment, size_t ssboStartAlignment);
     ~DrawBufferManager();
 
     std::tuple<VertexWriter, BindBufferInfo> getVertexWriter(size_t requiredBytes);
     std::tuple<IndexWriter, BindBufferInfo> getIndexWriter(size_t requiredBytes);
     std::tuple<UniformWriter, BindBufferInfo> getUniformWriter(size_t requiredBytes);
+    std::tuple<UniformWriter, BindBufferInfo> getSsboWriter(size_t requiredBytes);
 
     // Returns the last 'unusedBytes' from the last call to getVertexWriter(). Assumes that
     // 'unusedBytes' is less than the 'requiredBytes' to the original allocation.
@@ -48,8 +49,8 @@ public:
                                    InitializeBufferFn,
                                    BufferSizeFn);
 
-    // Finalizes all buffers and transfers ownership of them to the CommandBuffer.
-    void transferToCommandBuffer(CommandBuffer*);
+    // Finalizes all buffers and transfers ownership of them to a Recording.
+    void transferToRecording(Recording*);
 
 private:
     ResourceProvider* fResourceProvider;
@@ -63,7 +64,11 @@ private:
     sk_sp<Buffer> fCurrentUniformBuffer;
     size_t fUniformOffset = 0;
 
-    size_t fUniformStartAlignment;
+    sk_sp<Buffer> fCurrentStorageBuffer;
+    size_t fSsboOffset = 0;
+
+    const size_t fUniformStartAlignment;
+    const size_t fSsboStartAlignment;
 
     std::vector<sk_sp<Buffer>> fUsedBuffers;
     // TODO(skbug.com/13059): This is likely not the final location for static buffers, but makes it

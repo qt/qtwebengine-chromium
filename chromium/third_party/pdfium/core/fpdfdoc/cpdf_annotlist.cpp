@@ -157,7 +157,7 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
   if (pAnnotDict->KeyExist(pdfium::annotation::kAS))
     return;
 
-  CPDF_Dictionary* pParentDict =
+  const CPDF_Dictionary* pParentDict =
       pAnnotDict->GetDictFor(pdfium::form_fields::kParent);
   if (!pParentDict || !pParentDict->KeyExist(pdfium::annotation::kAS))
     return;
@@ -171,7 +171,8 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
 
 CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     : m_pDocument(pPage->GetDocument()) {
-  CPDF_Array* pAnnots = pPage->GetDict()->GetArrayFor("Annots");
+  RetainPtr<CPDF_Array> pAnnots =
+      pPage->GetMutableDict()->GetMutableArrayFor("Annots");
   if (!pAnnots)
     return;
 
@@ -180,7 +181,8 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
   bool bRegenerateAP =
       pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances", false);
   for (size_t i = 0; i < pAnnots->size(); ++i) {
-    CPDF_Dictionary* pDict = ToDictionary(pAnnots->GetDirectObjectAt(i));
+    RetainPtr<CPDF_Dictionary> pDict =
+        ToDictionary(pAnnots->GetMutableDirectObjectAt(i));
     if (!pDict)
       continue;
     const ByteString subtype =
@@ -192,11 +194,11 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     }
     pAnnots->ConvertToIndirectObjectAt(i, m_pDocument.Get());
     m_AnnotList.push_back(
-        std::make_unique<CPDF_Annot>(pDict, m_pDocument.Get()));
+        std::make_unique<CPDF_Annot>(pDict.Get(), m_pDocument.Get()));
     if (bRegenerateAP && subtype == "Widget" &&
         CPDF_InteractiveForm::IsUpdateAPEnabled() &&
         !pDict->GetDictFor(pdfium::annotation::kAP)) {
-      GenerateAP(m_pDocument.Get(), pDict);
+      GenerateAP(m_pDocument.Get(), pDict.Get());
     }
   }
 
@@ -218,6 +220,14 @@ CPDF_AnnotList::~CPDF_AnnotList() {
   for (size_t i = 0; i < nPopupCount; ++i)
     popups[i] = std::move(m_AnnotList[m_nAnnotCount + i]);
   m_AnnotList.clear();
+}
+
+bool CPDF_AnnotList::Contains(const CPDF_Annot* pAnnot) const {
+  auto it = std::find_if(m_AnnotList.begin(), m_AnnotList.end(),
+                         [pAnnot](const std::unique_ptr<CPDF_Annot>& annot) {
+                           return annot.get() == pAnnot;
+                         });
+  return it != m_AnnotList.end();
 }
 
 void CPDF_AnnotList::DisplayPass(CPDF_Page* pPage,

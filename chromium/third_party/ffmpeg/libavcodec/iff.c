@@ -26,8 +26,6 @@
  * IFF ACBM/ANIM/DEEP/ILBM/PBM/RGB8/RGBN bitmap decoder
  */
 
-#include "config_components.h"
-
 #include <stdint.h>
 
 #include "libavutil/imgutils.h"
@@ -1908,7 +1906,6 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return buf_size;
 }
 
-#if CONFIG_IFF_ILBM_DECODER
 const FFCodec ff_iff_ilbm_decoder = {
     .p.name         = "iff",
     .p.long_name    = NULL_IF_CONFIG_SMALL("IFF ACBM/ANIM/DEEP/ILBM/PBM/RGB8/RGBN"),
@@ -1919,6 +1916,5 @@ const FFCodec ff_iff_ilbm_decoder = {
     .close          = decode_end,
     FF_CODEC_DECODE_CB(decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };
-#endif

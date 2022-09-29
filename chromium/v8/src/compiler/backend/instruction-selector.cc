@@ -95,7 +95,7 @@ InstructionSelector::InstructionSelector(
   }
 }
 
-bool InstructionSelector::SelectInstructions() {
+base::Optional<BailoutReason> InstructionSelector::SelectInstructions() {
   // Mark the inputs of all phis in loop headers as used.
   BasicBlockVector* blocks = schedule()->rpo_order();
   for (auto const block : *blocks) {
@@ -114,7 +114,8 @@ bool InstructionSelector::SelectInstructions() {
   // Visit each basic block in post order.
   for (auto i = blocks->rbegin(); i != blocks->rend(); ++i) {
     VisitBlock(*i);
-    if (instruction_selection_failed()) return false;
+    if (instruction_selection_failed())
+      return BailoutReason::kCodeGenerationFailed;
   }
 
   // Schedule the selected instructions.
@@ -145,7 +146,7 @@ bool InstructionSelector::SelectInstructions() {
 #if DEBUG
   sequence()->ValidateSSA();
 #endif
-  return true;
+  return base::nullopt;
 }
 
 void InstructionSelector::StartBlock(RpoNumber rpo) {
@@ -1366,6 +1367,12 @@ void InstructionSelector::VisitNode(Node* node) {
   tick_counter_->TickAndMaybeEnterSafepoint();
   DCHECK_NOT_NULL(schedule()->block(node));  // should only use scheduled nodes.
   switch (node->opcode()) {
+    case IrOpcode::kTraceInstruction:
+#if V8_TARGET_ARCH_X64
+      return VisitTraceInstruction(node);
+#else
+      return;
+#endif
     case IrOpcode::kStart:
     case IrOpcode::kLoop:
     case IrOpcode::kEnd:
@@ -1655,6 +1662,10 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord64(node), VisitTryTruncateFloat32ToUint64(node);
     case IrOpcode::kTryTruncateFloat64ToUint64:
       return MarkAsWord64(node), VisitTryTruncateFloat64ToUint64(node);
+    case IrOpcode::kTryTruncateFloat64ToInt32:
+      return MarkAsWord32(node), VisitTryTruncateFloat64ToInt32(node);
+    case IrOpcode::kTryTruncateFloat64ToUint32:
+      return MarkAsWord32(node), VisitTryTruncateFloat64ToUint32(node);
     case IrOpcode::kBitcastWord32ToWord64:
       return MarkAsWord64(node), VisitBitcastWord32ToWord64(node);
     case IrOpcode::kChangeInt32ToInt64:
@@ -2627,6 +2638,14 @@ void InstructionSelector::VisitTryTruncateFloat64ToUint64(Node* node) {
   UNIMPLEMENTED();
 }
 
+void InstructionSelector::VisitTryTruncateFloat64ToInt32(Node* node) {
+  UNIMPLEMENTED();
+}
+
+void InstructionSelector::VisitTryTruncateFloat64ToUint32(Node* node) {
+  UNIMPLEMENTED();
+}
+
 void InstructionSelector::VisitTruncateInt64ToInt32(Node* node) {
   UNIMPLEMENTED();
 }
@@ -2683,7 +2702,8 @@ void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
 #endif  // V8_TARGET_ARCH_64_BIT
 
-#if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS
+#if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS && \
+    !V8_TARGET_ARCH_RISCV32
 void InstructionSelector::VisitWord32AtomicPairLoad(Node* node) {
   UNIMPLEMENTED();
 }
@@ -2720,6 +2740,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   UNIMPLEMENTED();
 }
 #endif  // !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS
+        // && !V8_TARGET_ARCH_RISCV32
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS64 && \
     !V8_TARGET_ARCH_S390 && !V8_TARGET_ARCH_PPC64 &&                          \
@@ -2763,27 +2784,29 @@ void InstructionSelector::VisitI64x2ReplaceLaneI32Pair(Node* node) {
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64
 #if !V8_TARGET_ARCH_ARM64
-#if !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 && !V8_TARGET_ARCH_RISCV64
+#if !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 && \
+    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64
 void InstructionSelector::VisitI64x2Splat(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2ExtractLane(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitI64x2ReplaceLane(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 &&
-        // !V8_TARGET_ARCH_RISCV64
+        // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_RISCV32
 #endif  // !V8_TARGET_ARCH_ARM64
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64 && \
-    !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_RISCV64
+    !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32 &&                         \
+    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64
 void InstructionSelector::VisitF64x2Qfma(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF64x2Qfms(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF32x4Qfma(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitF32x4Qfms(Node* node) { UNIMPLEMENTED(); }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64
         // && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32 &&
-        // !V8_TARGET_ARCH_RISCV64
+        // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_RISCV32
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64 && \
-    !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_ARM
+    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_ARM
 void InstructionSelector::VisitI8x16RelaxedLaneSelect(Node* node) {
   UNIMPLEMENTED();
 }
@@ -2813,7 +2836,8 @@ void InstructionSelector::VisitI32x4RelaxedTruncF32x4U(Node* node) {
   UNIMPLEMENTED();
 }
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
-        // && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARM
+        // && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARM &&
+        // !V8_TARGET_ARCH_RISCV32
 
 #if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
 void InstructionSelector::VisitI16x8RelaxedQ15MulRS(Node* node) {
@@ -2910,6 +2934,8 @@ void InstructionSelector::VisitProjection(Node* node) {
     case IrOpcode::kTryTruncateFloat64ToInt64:
     case IrOpcode::kTryTruncateFloat32ToUint64:
     case IrOpcode::kTryTruncateFloat64ToUint64:
+    case IrOpcode::kTryTruncateFloat64ToInt32:
+    case IrOpcode::kTryTruncateFloat64ToUint32:
     case IrOpcode::kInt32PairAdd:
     case IrOpcode::kInt32PairSub:
     case IrOpcode::kInt32PairMul:

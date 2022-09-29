@@ -68,7 +68,7 @@ TEST_F(BuilderTest, If_WithStatements) {
     //   v = 2;
     // }
 
-    auto* var = Global("v", ty.i32(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), ast::StorageClass::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* expr = If(true, body);
     WrapInFunction(expr);
@@ -104,7 +104,7 @@ TEST_F(BuilderTest, If_WithElse) {
     //   v = 3i;
     // }
 
-    auto* var = Global("v", ty.i32(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), ast::StorageClass::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* else_body = Block(Assign("v", 3_i));
 
@@ -146,7 +146,7 @@ TEST_F(BuilderTest, If_WithElseIf) {
     //   v = 3i;
     // }
 
-    auto* var = Global("v", ty.i32(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), ast::StorageClass::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* else_body = Block(Assign("v", 3_i));
 
@@ -197,7 +197,7 @@ TEST_F(BuilderTest, If_WithMultiple) {
     //   v = 5i;
     // }
 
-    auto* var = Global("v", ty.i32(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("v", ty.i32(), ast::StorageClass::kPrivate);
     auto* body = Block(Assign("v", 2_i));
     auto* elseif_1_body = Block(Assign("v", 3_i));
     auto* elseif_2_body = Block(Assign("v", 4_i));
@@ -434,7 +434,10 @@ TEST_F(BuilderTest, If_WithReturn) {
     //   return;
     // }
 
-    auto* fn = Func("f", {}, ty.void_(), {If(true, Block(Return()))});
+    auto* fn = Func("f", utils::Empty, ty.void_(),
+                    utils::Vector{
+                        If(true, Block(Return())),
+                    });
 
     spirv::Builder& b = Build();
 
@@ -460,8 +463,8 @@ TEST_F(BuilderTest, If_WithReturnValue) {
     // }
     // return true;
 
-    auto* fn = Func("f", {}, ty.bool_(),
-                    {
+    auto* fn = Func("f", utils::Empty, ty.bool_(),
+                    utils::Vector{
                         If(true, Block(Return(false))),
                         Return(true),
                     });
@@ -491,8 +494,8 @@ TEST_F(BuilderTest, IfElse_BothReturn) {
     //   return true;
     // }
 
-    auto* fn = Func("f", {}, ty.bool_(),
-                    {
+    auto* fn = Func("f", utils::Empty, ty.bool_(),
+                    utils::Vector{
                         If(true,                 //
                            Block(Return(true)),  //
                            Else(Block(Return(true)))),
@@ -530,8 +533,8 @@ TEST_F(BuilderTest, If_WithNestedBlockReturnValue) {
     // }
     // return true;
 
-    auto* fn = Func("f", {}, ty.bool_(),
-                    {
+    auto* fn = Func("f", utils::Empty, ty.bool_(),
+                    utils::Vector{
                         If(true, Block(Block(Block(Block(Return(false)))))),
                         Return(true),
                     });
@@ -559,8 +562,11 @@ TEST_F(BuilderTest, If_WithLoad_Bug327) {
     // if (a) {
     // }
 
-    auto* var = Global("a", ty.bool_(), ast::StorageClass::kPrivate);
-    auto* fn = Func("f", {}, ty.void_(), {If("a", Block())});
+    auto* var = GlobalVar("a", ty.bool_(), ast::StorageClass::kPrivate);
+    auto* fn = Func("f", utils::Empty, ty.void_(),
+                    utils::Vector{
+                        If("a", Block()),
+                    });
 
     spirv::Builder& b = Build();
 
@@ -592,7 +598,7 @@ TEST_F(BuilderTest, If_ElseIf_WithReturn) {
     // }
 
     auto* if_stmt = If(false, Block(), Else(If(true, Block(Return()))));
-    auto* fn = Func("f", {}, ty.void_(), {if_stmt});
+    auto* fn = Func("f", utils::Empty, ty.void_(), utils::Vector{if_stmt});
 
     spirv::Builder& b = Build();
 
@@ -630,7 +636,10 @@ TEST_F(BuilderTest, Loop_If_ElseIf_WithBreak) {
     // }
 
     auto* if_stmt = If(false, Block(), Else(If(true, Block(Break()))));
-    auto* fn = Func("f", {}, ty.void_(), {Loop(Block(if_stmt))});
+    auto* fn = Func("f", utils::Empty, ty.void_(),
+                    utils::Vector{
+                        Loop(Block(if_stmt)),
+                    });
 
     spirv::Builder& b = Build();
 

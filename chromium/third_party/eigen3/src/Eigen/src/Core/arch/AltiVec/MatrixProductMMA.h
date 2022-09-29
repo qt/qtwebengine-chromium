@@ -39,30 +39,30 @@ EIGEN_ALWAYS_INLINE void bsetzeroMMA(__vector_quad* acc)
   __builtin_mma_xxsetaccz(acc);
 }
 
-template<typename DataMapper, typename Index, typename Packet, const Index accCols, const Index accCols2>
+template<typename DataMapper, typename Packet, const Index accCols, const Index accCols2>
 EIGEN_ALWAYS_INLINE void storeAccumulator(Index i, const DataMapper& data, const Packet& alpha, const Packet& pMask, __vector_quad* acc)
 {
   PacketBlock<Packet, 4> result;
   __builtin_mma_disassemble_acc(&result.packet, acc);
 
   PacketBlock<Packet, 4> tRes;
-  bload<DataMapper, Packet, Index, 0, ColMajor, false, 4>(tRes, data, i, 0);
+  bload<DataMapper, Packet, 0, ColMajor, false, 4>(tRes, data, i, 0);
 
   bscale<Packet, 4, (accCols != accCols2)>(tRes, result, alpha, pMask);
 
-  bstore<DataMapper, Packet, Index, 4>(tRes, data, i);
+  bstore<DataMapper, Packet, 4>(tRes, data, i);
 }
 
-template<typename DataMapper, typename Index, typename Packet, typename Packetc, const Index accCols, const Index accCols2>
+template<typename DataMapper, typename Packet, typename Packetc, const Index accCols, const Index accCols2>
 EIGEN_ALWAYS_INLINE void storeComplexAccumulator(Index i, const DataMapper& data, const Packet& alphaReal, const Packet& alphaImag, const Packet& pMask, __vector_quad* accReal, __vector_quad* accImag)
 {
-  const bool full = (accCols2 > accColsC);
+  constexpr bool full = (accCols2 > accColsC);
   PacketBlock<Packet, 4> resultReal, resultImag;
   __builtin_mma_disassemble_acc(&resultReal.packet, accReal);
   __builtin_mma_disassemble_acc(&resultImag.packet, accImag);
 
   PacketBlock<Packetc, 8> tRes;
-  bload<DataMapper, Packetc, Index, accColsC, ColMajor, true, 4, full>(tRes, data, i, 0);
+  bload<DataMapper, Packetc, accColsC, ColMajor, true, 4, full>(tRes, data, i, 0);
 
   PacketBlock<Packet, 4> taccReal, taccImag;
   bscalec<Packet, 4, (accCols != accCols2)>(resultReal, resultImag, alphaReal, alphaImag, taccReal, taccImag, pMask);
@@ -70,9 +70,9 @@ EIGEN_ALWAYS_INLINE void storeComplexAccumulator(Index i, const DataMapper& data
   PacketBlock<Packetc, 4> acc1, acc2;
   bcouple<Packet, Packetc, 4, full>(taccReal, taccImag, tRes, acc1, acc2);
 
-  bstore<DataMapper, Packetc, Index, 4>(acc1, data, i);
+  bstore<DataMapper, Packetc, 4>(acc1, data, i);
   if (full) {
-    bstore<DataMapper, Packetc, Index, 4>(acc2, data, i + accColsC);
+    bstore<DataMapper, Packetc, 4>(acc2, data, i + accColsC);
   }
 }
 
@@ -138,7 +138,7 @@ EIGEN_ALWAYS_INLINE void ploadRhsMMA(const double* rhs, __vector_pair& rhsV)
     reinterpret_cast<__vector unsigned char>(ploadRhs<Packet2d>(rhs + (sizeof(Packet2d) / sizeof(double)))),
     reinterpret_cast<__vector unsigned char>(ploadRhs<Packet2d>(rhs)));
 #else
-  __asm__ ("lxvp %x0,%1" : "=wa" (rhsV) : "Y" (*rhs));
+  rhsV = *reinterpret_cast<__vector_pair *>(const_cast<double *>(rhs));
 #endif
 }
 
@@ -146,6 +146,10 @@ EIGEN_ALWAYS_INLINE void ploadLhsMMA(const double* lhs, __vector_pair& lhsV)
 {
   ploadRhsMMA(lhs, lhsV);
 }
+
+#if (EIGEN_COMP_LLVM || (__GNUC__ >= 11))
+#define VECTOR_PAIR_LOADS_LHS
+#endif
 
 // PEEL_MMA loop factor.
 #define PEEL_MMA 7
@@ -159,12 +163,13 @@ EIGEN_ALWAYS_INLINE void ploadLhsMMA(const double* lhs, __vector_pair& lhsV)
 
 #define MICRO_MMA_WORK_ONE(iter, type, peel) \
   if (unroll_factor > iter) { \
-    pgerMMA<Packet, type, false>(&accZero##iter, rhsV##peel, lhsV##iter); \
+    pgerMMA<Packet, type, false>(&accZero##iter, rhsV[peel], lhsV##iter); \
   }
 
+#ifdef VECTOR_PAIR_LOADS_LHS
 #define MICRO_MMA_WORK_TWO(iter, type, peel) \
   if (unroll_factor > iter) { \
-    pgerMMA<Packet, type, false>(&accZero##iter, rhsV##peel, lhsV2##iter.packet[peel & 1]); \
+    pgerMMA<Packet, type, false>(&accZero##iter, rhsV[peel], lhsV2##iter.packet[peel & 1]); \
   }
 
 #define MICRO_MMA_LOAD1_TWO(lhs_ptr, iter) \
@@ -185,50 +190,70 @@ EIGEN_ALWAYS_INLINE void ploadLhsMMA(const double* lhs, __vector_pair& lhsV)
   }
 
 #define MICRO_MMA_LOAD_TWO(iter) MICRO_MMA_LOAD1_TWO(lhs_ptr, iter)
+#endif
 
 #define MICRO_MMA_TYPE_PEEL(funcw, funcl, type, peel) \
   if (PEEL_MMA > peel) { \
     Packet lhsV0, lhsV1, lhsV2, lhsV3, lhsV4, lhsV5, lhsV6, lhsV7; \
-    ploadRhsMMA(rhs_ptr + (accRows * peel), rhsV##peel); \
+    ploadRhsMMA(rhs_ptr + (accRows * peel), rhsV[peel]); \
     MICRO_MMA_UNROLL(funcl) \
     MICRO_MMA_WORK(funcw, type, peel) \
-  } else { \
-    EIGEN_UNUSED_VARIABLE(rhsV##peel); \
   }
 
+#ifndef VECTOR_PAIR_LOADS_LHS
+#define MICRO_MMA_UNROLL_TYPE_PEEL(funcw, funcl, type) \
+  type rhsV[8]; \
+  MICRO_MMA_TYPE_PEEL(funcw,funcl,type,0) MICRO_MMA_TYPE_PEEL(funcw,funcl,type,1) \
+  MICRO_MMA_TYPE_PEEL(funcw,funcl,type,2) MICRO_MMA_TYPE_PEEL(funcw,funcl,type,3) \
+  MICRO_MMA_TYPE_PEEL(funcw,funcl,type,4) MICRO_MMA_TYPE_PEEL(funcw,funcl,type,5) \
+  MICRO_MMA_TYPE_PEEL(funcw,funcl,type,6) MICRO_MMA_TYPE_PEEL(funcw,funcl,type,7)
+#else
 #define MICRO_MMA_TYPE_PEEL2(funcw1, funcl1, funcw2, funcl2, type, peel1, peel2) \
   if (PEEL_MMA > peel2) { \
     PacketBlock<Packet,2> lhsV20, lhsV21, lhsV22, lhsV23, lhsV24, lhsV25, lhsV26, lhsV27; \
     __vector_pair plhsV0, plhsV1, plhsV2, plhsV3, plhsV4, plhsV5, plhsV6, plhsV7; \
-    ploadRhsMMA(rhs_ptr + (accRows * peel1), rhsV##peel1); \
-    ploadRhsMMA(rhs_ptr + (accRows * peel2), rhsV##peel2); \
+    if (sizeof(type) == 16) { \
+      ploadRhsMMA(reinterpret_cast<const double*>(rhs_ptr + (accRows * peel1)), prhsV##peel1); \
+      __builtin_vsx_disassemble_pair(reinterpret_cast<void*>(&rhsV[peel1]), &prhsV##peel1); \
+    } else { \
+      EIGEN_UNUSED_VARIABLE(prhsV##peel1); \
+      ploadRhsMMA(rhs_ptr + (accRows * peel1), rhsV[peel1]); \
+      ploadRhsMMA(rhs_ptr + (accRows * peel2), rhsV[peel2]); \
+    } \
     MICRO_MMA_UNROLL(funcl2) \
     MICRO_MMA_WORK(funcw2, type, peel1) \
     MICRO_MMA_WORK(funcw2, type, peel2) \
   } else { \
+    EIGEN_UNUSED_VARIABLE(prhsV##peel1); \
     MICRO_MMA_TYPE_PEEL(funcw1, funcl1, type, peel1) \
   }
 
 #define MICRO_MMA_UNROLL_TYPE_PEEL2(funcw1, funcl1, funcw2, funcl2, type) \
-  type rhsV0, rhsV1, rhsV2, rhsV3, rhsV4, rhsV5, rhsV6, rhsV7; \
+  type rhsV[8]; \
+  __vector_pair prhsV0, prhsV2, prhsV4, prhsV6; \
   MICRO_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,0,1) \
   MICRO_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,2,3) \
   MICRO_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,4,5) \
   MICRO_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,6,7)
+#endif
 
 #define MICRO_MMA_UNROLL_TYPE_ONE(funcw, funcl, type) \
-  type rhsV0; \
+  type rhsV[1]; \
   MICRO_MMA_TYPE_PEEL(funcw,funcl,type,0)
 
 #define MICRO_MMA_UNROLL_TYPE(MICRO_MMA_TYPE, size) \
   MICRO_MMA_TYPE(MICRO_MMA_WORK_ONE, MICRO_LOAD_ONE, RhsPacket) \
   rhs_ptr += (accRows * size);
 
+#ifndef VECTOR_PAIR_LOADS_LHS
+#define MICRO_MMA_ONE_PEEL MICRO_MMA_UNROLL_TYPE(MICRO_MMA_UNROLL_TYPE_PEEL, PEEL_MMA)
+#else
 #define MICRO_MMA_UNROLL_TYPE2(MICRO_MMA_TYPE, size) \
- MICRO_MMA_TYPE(MICRO_MMA_WORK_ONE, MICRO_LOAD_ONE, MICRO_MMA_WORK_TWO, MICRO_MMA_LOAD_TWO, RhsPacket) \
+  MICRO_MMA_TYPE(MICRO_MMA_WORK_ONE, MICRO_LOAD_ONE, MICRO_MMA_WORK_TWO, MICRO_MMA_LOAD_TWO, RhsPacket) \
   rhs_ptr += (accRows * size);
 
 #define MICRO_MMA_ONE_PEEL MICRO_MMA_UNROLL_TYPE2(MICRO_MMA_UNROLL_TYPE_PEEL2, PEEL_MMA)
+#endif
 
 #define MICRO_MMA_ONE MICRO_MMA_UNROLL_TYPE(MICRO_MMA_UNROLL_TYPE_ONE, 1)
 
@@ -247,12 +272,12 @@ EIGEN_ALWAYS_INLINE void ploadLhsMMA(const double* lhs, __vector_pair& lhsV)
 
 #define MICRO_MMA_STORE_ONE(iter) \
   if (unroll_factor > iter) { \
-    storeAccumulator<DataMapper, Index, Packet, accCols, (unroll_factor != (iter + 1)) ? accCols : accCols2>(row + iter*accCols, res, pAlpha, pMask, &accZero##iter); \
+    storeAccumulator<DataMapper, Packet, accCols, (unroll_factor != (iter + 1)) ? accCols : accCols2>(row + iter*accCols, res, pAlpha, pMask, &accZero##iter); \
   }
 
 #define MICRO_MMA_STORE MICRO_MMA_UNROLL(MICRO_MMA_STORE_ONE)
 
-template<int unroll_factor, typename Scalar, typename Packet, typename RhsPacket, typename DataMapper, typename Index, const Index accRows, const Index accCols, const Index accCols2>
+template<int unroll_factor, typename Scalar, typename Packet, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols, const Index accCols2>
 EIGEN_ALWAYS_INLINE void gemm_unrolled_MMA_iteration(
   const DataMapper& res,
   const Scalar* lhs_base,
@@ -288,10 +313,10 @@ EIGEN_ALWAYS_INLINE void gemm_unrolled_MMA_iteration(
 }
 
 #define MICRO_MMA_UNROLL_ITER2(N, M) \
-  gemm_unrolled_MMA_iteration<N + (M ? 1 : 0), Scalar, Packet, RhsPacket, DataMapper, Index, accRows, accCols, M ? M : accCols>(res3, lhs_base, rhs_base, depth, strideA, offsetA, row, pAlpha, pMask); \
+  gemm_unrolled_MMA_iteration<N + (M ? 1 : 0), Scalar, Packet, RhsPacket, DataMapper, accRows, accCols, M ? M : accCols>(res3, lhs_base, rhs_base, depth, strideA, offsetA, row, pAlpha, pMask); \
   if (M) return;
 
-template<typename Scalar, typename Packet, typename RhsPacket, typename DataMapper, typename Index, const Index accRows, const Index accCols>
+template<typename Scalar, typename Packet, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols>
 EIGEN_ALWAYS_INLINE void gemmMMA_cols(
   const DataMapper& res,
   const Scalar* blockA,
@@ -360,11 +385,11 @@ EIGEN_ALWAYS_INLINE void gemmMMA_cols(
 
   if(remaining_rows > 0)
   {
-    gemm_extra_row<Scalar, Packet, DataMapper, Index, accRows, accCols>(res3, blockA, rhs_base, depth, strideA, offsetA, strideB, row, rows, remaining_rows, pAlpha, pMask);
+    gemm_extra_row<Scalar, Packet, DataMapper, accRows, accCols>(res3, blockA, rhs_base, depth, strideA, offsetA, strideB, row, rows, remaining_rows, pAlpha, pMask);
   }
 }
 
-template<typename Scalar, typename Index, typename Packet, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols>
+template<typename Scalar, typename Packet, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols>
 void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, Index rows, Index depth, Index cols, Scalar alpha, Index strideA, Index strideB, Index offsetA, Index offsetB)
 {
       const Index remaining_rows = rows % accCols;
@@ -380,12 +405,12 @@ void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, 
       Index col = 0;
       for(; col + accRows <= cols; col += accRows)
       {
-        gemmMMA_cols<Scalar, Packet, RhsPacket2, DataMapper, Index, accRows, accCols>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, remaining_rows, pAlpha, pMask);
+        gemmMMA_cols<Scalar, Packet, RhsPacket2, DataMapper, accRows, accCols>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, remaining_rows, pAlpha, pMask);
       }
 
       if (col != cols)
       {
-        gemm_extra_cols<Scalar, Packet, DataMapper, Index, accCols>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, cols, remaining_rows, pAlpha, pMask);
+        gemm_extra_cols<Scalar, Packet, DataMapper, accCols>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, cols, remaining_rows, pAlpha, pMask);
       }
 }
 
@@ -403,12 +428,13 @@ void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, 
 
 #define MICRO_COMPLEX_MMA_WORK_ONE(iter, type, peel) \
   if (unroll_factor > iter) { \
-    pgercMMA<Packet, type, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(&accReal##iter, &accImag##iter, lhsV##iter, lhsVi##iter, rhsV##peel, rhsVi##peel); \
+    pgercMMA<Packet, type, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(&accReal##iter, &accImag##iter, lhsV##iter, lhsVi##iter, rhsV[peel], rhsVi[peel]); \
   }
 
+#ifdef VECTOR_PAIR_LOADS_LHS
 #define MICRO_COMPLEX_MMA_WORK_TWO(iter, type, peel) \
   if (unroll_factor > iter) { \
-    pgercMMA<Packet, type, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(&accReal##iter, &accImag##iter, lhsV2##iter.packet[peel & 1], lhsVi2##iter.packet[peel & 1], rhsV##peel, rhsVi##peel); \
+    pgercMMA<Packet, type, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(&accReal##iter, &accImag##iter, lhsV2##iter.packet[peel & 1], lhsVi2##iter.packet[peel & 1], rhsV[peel], rhsVi[peel]); \
   }
 
 #define MICRO_COMPLEX_MMA_LOAD1_TWO(lhs_ptr, iter) \
@@ -428,54 +454,70 @@ void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, 
   MICRO_MMA_LOAD1_TWO(lhs_ptr_real, iter)
 
 #define MICRO_COMPLEX_MMA_LOAD_TWO(iter) MICRO_COMPLEX_MMA_LOAD1_TWO(lhs_ptr, iter)
+#endif
 
 #define MICRO_COMPLEX_MMA_TYPE_PEEL(funcw, funcl, type, peel) \
   if (PEEL_COMPLEX_MMA > peel) { \
     Packet lhsV0, lhsV1, lhsV2, lhsV3; \
     Packet lhsVi0, lhsVi1, lhsVi2, lhsVi3; \
-    ploadRhsMMA(rhs_ptr_real + (accRows * peel), rhsV##peel); \
+    ploadRhsMMA(rhs_ptr_real + (accRows * peel), rhsV[peel]); \
     if(!RhsIsReal) { \
-      ploadRhsMMA(rhs_ptr_imag + (accRows * peel), rhsVi##peel); \
-    } else { \
-      EIGEN_UNUSED_VARIABLE(rhsVi##peel); \
+      ploadRhsMMA(rhs_ptr_imag + (accRows * peel), rhsVi[peel]); \
     } \
     MICRO_COMPLEX_MMA_UNROLL(funcl) \
     MICRO_COMPLEX_MMA_WORK(funcw, type, peel) \
-  } else { \
-    EIGEN_UNUSED_VARIABLE(rhsV##peel); \
-    EIGEN_UNUSED_VARIABLE(rhsVi##peel); \
   }
 
+#ifndef VECTOR_PAIR_LOADS_LHS
+#define MICRO_COMPLEX_MMA_UNROLL_TYPE_PEEL(funcw, funcl, type) \
+  type rhsV[4], rhsVi[4]; \
+  MICRO_COMPLEX_MMA_TYPE_PEEL(funcw,funcl,type,0) MICRO_COMPLEX_MMA_TYPE_PEEL(funcw,funcl,type,1) \
+  MICRO_COMPLEX_MMA_TYPE_PEEL(funcw,funcl,type,2) MICRO_COMPLEX_MMA_TYPE_PEEL(funcw,funcl,type,3)
+#else
 #define MICRO_COMPLEX_MMA_TYPE_PEEL2(funcw1, funcl1, funcw2, funcl2, type, peel1, peel2) \
   if (PEEL_COMPLEX_MMA > peel2) { \
     PacketBlock<Packet,2> lhsV20, lhsV21, lhsV22, lhsV23; \
     PacketBlock<Packet,2> lhsVi20, lhsVi21, lhsVi22, lhsVi23; \
     __vector_pair plhsV0, plhsV1, plhsV2, plhsV3; \
     __vector_pair plhsVi0, plhsVi1, plhsVi2, plhsVi3; \
-    ploadRhsMMA(rhs_ptr_real + (accRows * peel1), rhsV##peel1); \
-    ploadRhsMMA(rhs_ptr_real + (accRows * peel2), rhsV##peel2); \
-    if(!RhsIsReal) { \
-      ploadRhsMMA(rhs_ptr_imag + (accRows * peel1), rhsVi##peel1); \
-      ploadRhsMMA(rhs_ptr_imag + (accRows * peel2), rhsVi##peel2); \
+    if (sizeof(type) == 16) { \
+      ploadRhsMMA(reinterpret_cast<const double*>(rhs_ptr_real + (accRows * peel1)), prhsV##peel1); \
+      __builtin_vsx_disassemble_pair(reinterpret_cast<void*>(&rhsV[peel1]), &prhsV##peel1); \
+      if(!RhsIsReal) { \
+        ploadRhsMMA(reinterpret_cast<const double*>(rhs_ptr_imag + (accRows * peel1)), prhsVi##peel1); \
+        __builtin_vsx_disassemble_pair(reinterpret_cast<void*>(&rhsVi[peel1]), &prhsVi##peel1); \
+      } else { \
+        EIGEN_UNUSED_VARIABLE(prhsVi##peel1); \
+      } \
     } else { \
-      EIGEN_UNUSED_VARIABLE(rhsVi##peel1); \
-      EIGEN_UNUSED_VARIABLE(rhsVi##peel2); \
+      EIGEN_UNUSED_VARIABLE(prhsV##peel1); \
+      EIGEN_UNUSED_VARIABLE(prhsVi##peel1); \
+      ploadRhsMMA(rhs_ptr_real + (accRows * peel1), rhsV[peel1]); \
+      ploadRhsMMA(rhs_ptr_real + (accRows * peel2), rhsV[peel2]); \
+      if(!RhsIsReal) { \
+        ploadRhsMMA(rhs_ptr_imag + (accRows * peel1), rhsVi[peel1]); \
+        ploadRhsMMA(rhs_ptr_imag + (accRows * peel2), rhsVi[peel2]); \
+      } \
     } \
     MICRO_COMPLEX_MMA_UNROLL(funcl2) \
     MICRO_COMPLEX_MMA_WORK(funcw2, type, peel1) \
     MICRO_COMPLEX_MMA_WORK(funcw2, type, peel2) \
   } else { \
+    EIGEN_UNUSED_VARIABLE(prhsV##peel1); \
+    EIGEN_UNUSED_VARIABLE(prhsVi##peel1); \
     MICRO_COMPLEX_MMA_TYPE_PEEL(funcw1, funcl1, type, peel1) \
   }
 
 #define MICRO_COMPLEX_MMA_UNROLL_TYPE_PEEL2(funcw1, funcl1, funcw2, funcl2, type) \
-  type rhsV0, rhsV1, rhsV2, rhsV3; \
-  type rhsVi0, rhsVi1, rhsVi2, rhsVi3; \
+  type rhsV[4], rhsVi[4]; \
+  __vector_pair prhsV0, prhsV2; \
+  __vector_pair prhsVi0, prhsVi2; \
   MICRO_COMPLEX_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,0,1) \
   MICRO_COMPLEX_MMA_TYPE_PEEL2(funcw1,funcl1,funcw2,funcl2,type,2,3)
+#endif
 
 #define MICRO_COMPLEX_MMA_UNROLL_TYPE_ONE(funcw, funcl, type) \
-  type rhsV0, rhsVi0; \
+  type rhsV[1], rhsVi[1]; \
   MICRO_COMPLEX_MMA_TYPE_PEEL(funcw,funcl,type,0)
 
 #define MICRO_COMPLEX_MMA_UNROLL_TYPE(MICRO_COMPLEX_MMA_TYPE, size) \
@@ -483,12 +525,16 @@ void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, 
   rhs_ptr_real += (accRows * size); \
   if(!RhsIsReal) rhs_ptr_imag += (accRows * size);
 
+#ifndef VECTOR_PAIR_LOADS_LHS
+#define MICRO_COMPLEX_MMA_ONE_PEEL MICRO_COMPLEX_MMA_UNROLL_TYPE(MICRO_COMPLEX_MMA_UNROLL_TYPE_PEEL, PEEL_COMPLEX_MMA)
+#else
 #define MICRO_COMPLEX_MMA_UNROLL_TYPE2(MICRO_COMPLEX_MMA_TYPE, size) \
- MICRO_COMPLEX_MMA_TYPE(MICRO_COMPLEX_MMA_WORK_ONE, MICRO_COMPLEX_LOAD_ONE, MICRO_COMPLEX_MMA_WORK_TWO, MICRO_COMPLEX_MMA_LOAD_TWO, RhsPacket) \
+  MICRO_COMPLEX_MMA_TYPE(MICRO_COMPLEX_MMA_WORK_ONE, MICRO_COMPLEX_LOAD_ONE, MICRO_COMPLEX_MMA_WORK_TWO, MICRO_COMPLEX_MMA_LOAD_TWO, RhsPacket) \
   rhs_ptr_real += (accRows * size); \
   if(!RhsIsReal) rhs_ptr_imag += (accRows * size);
 
 #define MICRO_COMPLEX_MMA_ONE_PEEL MICRO_COMPLEX_MMA_UNROLL_TYPE2(MICRO_COMPLEX_MMA_UNROLL_TYPE_PEEL2, PEEL_COMPLEX_MMA)
+#endif
 
 #define MICRO_COMPLEX_MMA_ONE MICRO_COMPLEX_MMA_UNROLL_TYPE(MICRO_COMPLEX_MMA_UNROLL_TYPE_ONE, 1)
 
@@ -509,12 +555,12 @@ void gemmMMA(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, 
 
 #define MICRO_COMPLEX_MMA_STORE_ONE(iter) \
   if (unroll_factor > iter) { \
-    storeComplexAccumulator<DataMapper, Index, Packet, Packetc, accCols, (unroll_factor != (iter + 1)) ? accCols : accCols2>(row + iter*accCols, res, pAlphaReal, pAlphaImag, pMask, &accReal##iter, &accImag##iter); \
+    storeComplexAccumulator<DataMapper, Packet, Packetc, accCols, (unroll_factor != (iter + 1)) ? accCols : accCols2>(row + iter*accCols, res, pAlphaReal, pAlphaImag, pMask, &accReal##iter, &accImag##iter); \
   }
 
 #define MICRO_COMPLEX_MMA_STORE MICRO_COMPLEX_MMA_UNROLL(MICRO_COMPLEX_MMA_STORE_ONE)
 
-template<int unroll_factor, typename Scalar, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, typename Index, const Index accRows, const Index accCols, const Index accCols2, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<int unroll_factor, typename Scalar, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols, const Index accCols2, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 EIGEN_ALWAYS_INLINE void gemm_complex_unrolled_MMA_iteration(
   const DataMapper& res,
   const Scalar* lhs_base,
@@ -564,10 +610,10 @@ EIGEN_ALWAYS_INLINE void gemm_complex_unrolled_MMA_iteration(
 }
 
 #define MICRO_COMPLEX_MMA_UNROLL_ITER2(N, M) \
-  gemm_complex_unrolled_MMA_iteration<N + (M ? 1 : 0), Scalar, Packet, Packetc, RhsPacket, DataMapper, Index, accRows, accCols, M ? M : accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res3, lhs_base, rhs_base, depth, strideA, offsetA, strideB, row, pAlphaReal, pAlphaImag, pMask); \
+  gemm_complex_unrolled_MMA_iteration<N + (M ? 1 : 0), Scalar, Packet, Packetc, RhsPacket, DataMapper, accRows, accCols, M ? M : accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res3, lhs_base, rhs_base, depth, strideA, offsetA, strideB, row, pAlphaReal, pAlphaImag, pMask); \
   if (M) return;
 
-template<typename Scalar, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, typename Index, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<typename Scalar, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 EIGEN_ALWAYS_INLINE void gemmMMA_complex_cols(
   const DataMapper& res,
   const Scalar* blockA,
@@ -622,11 +668,11 @@ EIGEN_ALWAYS_INLINE void gemmMMA_complex_cols(
 
   if(remaining_rows > 0)
   {
-    gemm_complex_extra_row<Scalar, Packet, Packetc, DataMapper, Index, accRows, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res3, blockA, rhs_base, depth, strideA, offsetA, strideB, row, rows, remaining_rows, pAlphaReal, pAlphaImag, pMask);
+    gemm_complex_extra_row<Scalar, Packet, Packetc, DataMapper, accRows, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res3, blockA, rhs_base, depth, strideA, offsetA, strideB, row, rows, remaining_rows, pAlphaReal, pAlphaImag, pMask);
   }
 }
 
-template<typename LhsScalar, typename RhsScalar, typename Scalarc, typename Scalar, typename Index, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<typename LhsScalar, typename RhsScalar, typename Scalarc, typename Scalar, typename Packet, typename Packetc, typename RhsPacket, typename DataMapper, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 void gemm_complexMMA(const DataMapper& res, const LhsScalar* blockAc, const RhsScalar* blockBc, Index rows, Index depth, Index cols, Scalarc alpha, Index strideA, Index strideB, Index offsetA, Index offsetB)
 {
       const Index remaining_rows = rows % accCols;
@@ -646,12 +692,12 @@ void gemm_complexMMA(const DataMapper& res, const LhsScalar* blockAc, const RhsS
       Index col = 0;
       for(; col + accRows <= cols; col += accRows)
       {
-        gemmMMA_complex_cols<Scalar, Packet, Packetc, RhsPacket2, DataMapper, Index, accRows, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, remaining_rows, pAlphaReal, pAlphaImag, pMask);
+        gemmMMA_complex_cols<Scalar, Packet, Packetc, RhsPacket2, DataMapper, accRows, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, remaining_rows, pAlphaReal, pAlphaImag, pMask);
       }
 
       if (col != cols)
       {
-        gemm_complex_extra_cols<Scalar, Packet, Packetc, DataMapper, Index, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, cols, remaining_rows, pAlphaReal, pAlphaImag, pMask);
+        gemm_complex_extra_cols<Scalar, Packet, Packetc, DataMapper, accCols, ConjugateLhs, ConjugateRhs, LhsIsReal, RhsIsReal>(res, blockA, blockB, depth, strideA, offsetA, strideB, offsetB, col, rows, cols, remaining_rows, pAlphaReal, pAlphaImag, pMask);
       }
 }
 

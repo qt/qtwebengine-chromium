@@ -9,8 +9,6 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/gavgpool.h>
 #include <xnnpack/math.h>
 
@@ -220,8 +218,8 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c2(
     vfpacc0 += vmagic_bias;
     vfpacc1 += vmagic_bias;
 
-    int32_t vout0 = (int32_t) fp32_to_bits(vfpacc0);
-    int32_t vout1 = (int32_t) fp32_to_bits(vfpacc1);
+    int32_t vout0 = (int32_t) float_as_uint32(vfpacc0);
+    int32_t vout1 = (int32_t) float_as_uint32(vfpacc1);
 
     vout0 = math_max_s32(vout0, vmagic_min);
     vout1 = math_max_s32(vout1, vmagic_min);
@@ -257,7 +255,7 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7p7x__scalar_imagic_c2(
 
     float vfpacc = (float) vacc * vscale;
     vfpacc += vmagic_bias;
-    int32_t vout = (int32_t) fp32_to_bits(vfpacc);
+    int32_t vout = (int32_t) float_as_uint32(vfpacc);
     vout = math_max_s32(vout, vmagic_min);
     vout = math_min_s32(vout, vmagic_max);
     vout -= vmagic_bias_less_zero_point;

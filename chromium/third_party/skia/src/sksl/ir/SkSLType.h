@@ -15,6 +15,8 @@
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/spirv.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -48,6 +50,11 @@ struct CoercionCost {
 
     bool operator<(CoercionCost rhs) const {
         return std::tie(    fImpossible,     fNarrowingCost,     fNormalCost) <
+               std::tie(rhs.fImpossible, rhs.fNarrowingCost, rhs.fNormalCost);
+    }
+
+    bool operator<=(CoercionCost rhs) const {
+        return std::tie(    fImpossible,     fNarrowingCost,     fNormalCost) <=
                std::tie(rhs.fImpossible, rhs.fNarrowingCost, rhs.fNormalCost);
     }
 
@@ -434,6 +441,10 @@ public:
         return fTypeKind == TypeKind::kVoid;
     }
 
+    bool isGeneric() const {
+        return fTypeKind == TypeKind::kGeneric;
+    }
+
     virtual bool isScalar() const {
         return false;
     }
@@ -455,6 +466,10 @@ public:
     }
 
     virtual bool isArray() const {
+        return false;
+    }
+
+    virtual bool isUnsizedArray() const {
         return false;
     }
 

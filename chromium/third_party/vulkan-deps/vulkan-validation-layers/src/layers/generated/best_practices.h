@@ -1814,6 +1814,14 @@ void PostCallRecordCreateScreenSurfaceQNX(
 
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+void PostCallRecordGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties,
+    VkResult                                    result) override;
+
+
 void PostCallRecordCreateAccelerationStructureKHR(
     VkDevice                                    device,
     const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
@@ -1996,6 +2004,7 @@ const layer_data::unordered_map<std::string, std::string> special_use_extensions
     {"VK_EXT_device_memory_report", "devtools"},
     {"VK_EXT_image_2d_view_of_3d", "glemulation"},
     {"VK_EXT_line_rasterization", "cadsupport"},
+    {"VK_EXT_non_seamless_cube_map", "d3demulation, glemulation"},
     {"VK_EXT_pipeline_creation_feedback", "devtools"},
     {"VK_EXT_primitive_topology_list_restart", "glemulation"},
     {"VK_EXT_primitives_generated_query", "glemulation"},

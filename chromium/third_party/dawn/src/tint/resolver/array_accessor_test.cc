@@ -16,6 +16,7 @@
 
 #include "gmock/gmock.h"
 #include "src/tint/resolver/resolver_test_helper.h"
+#include "src/tint/sem/index_accessor_expression.h"
 #include "src/tint/sem/reference.h"
 
 using namespace tint::number_suffixes;  // NOLINT
@@ -26,7 +27,7 @@ namespace {
 using ResolverIndexAccessorTest = ResolverTest;
 
 TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic_F32) {
-    Global("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
     auto* acc = IndexAccessor("my_var", Expr(Source{{12, 34}}, 1_f));
     WrapInFunction(acc);
 
@@ -35,22 +36,32 @@ TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic_F32) {
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic_Ref) {
-    Global("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
     auto* idx = Var("idx", ty.i32(), Construct(ty.i32()));
     auto* acc = IndexAccessor("my_var", idx);
     WrapInFunction(Decl(idx), acc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_BothDimensions_Dynamic_Ref) {
-    Global("my_var", ty.mat4x4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.mat4x4<f32>(), ast::StorageClass::kPrivate);
     auto* idx = Var("idx", ty.u32(), Expr(3_u));
     auto* idy = Var("idy", ty.u32(), Expr(2_u));
     auto* acc = IndexAccessor(IndexAccessor("my_var", idx), idy);
     WrapInFunction(Decl(idx), Decl(idy), acc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic) {
@@ -61,12 +72,17 @@ TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic) {
 
     EXPECT_TRUE(r()->Resolve());
     EXPECT_EQ(r()->error(), "");
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_XDimension_Dynamic) {
-    GlobalConst("my_var", ty.mat4x4<f32>(), Construct(ty.mat4x4<f32>()));
+    GlobalConst("my_const", ty.mat4x4<f32>(), Construct(ty.mat4x4<f32>()));
     auto* idx = Var("idx", ty.u32(), Expr(3_u));
-    auto* acc = IndexAccessor("my_var", Expr(Source{{12, 34}}, idx));
+    auto* acc = IndexAccessor("my_const", Expr(Source{{12, 34}}, idx));
     WrapInFunction(Decl(idx), acc);
 
     EXPECT_TRUE(r()->Resolve());
@@ -74,9 +90,9 @@ TEST_F(ResolverIndexAccessorTest, Matrix_XDimension_Dynamic) {
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_BothDimension_Dynamic) {
-    GlobalConst("my_var", ty.mat4x4<f32>(), Construct(ty.mat4x4<f32>()));
+    GlobalConst("my_const", ty.mat4x4<f32>(), Construct(ty.mat4x4<f32>()));
     auto* idx = Var("idy", ty.u32(), Expr(2_u));
-    auto* acc = IndexAccessor(IndexAccessor("my_var", Expr(Source{{12, 34}}, idx)), 1_i);
+    auto* acc = IndexAccessor(IndexAccessor("my_const", Expr(Source{{12, 34}}, idx)), 1_i);
     WrapInFunction(Decl(idx), acc);
 
     EXPECT_TRUE(r()->Resolve());
@@ -84,7 +100,7 @@ TEST_F(ResolverIndexAccessorTest, Matrix_BothDimension_Dynamic) {
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix) {
-    Global("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
 
     auto* acc = IndexAccessor("my_var", 2_i);
     WrapInFunction(acc);
@@ -97,10 +113,15 @@ TEST_F(ResolverIndexAccessorTest, Matrix) {
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     ASSERT_TRUE(ref->StoreType()->Is<sem::Vector>());
     EXPECT_EQ(ref->StoreType()->As<sem::Vector>()->Width(), 3u);
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_BothDimensions) {
-    Global("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
 
     auto* acc = IndexAccessor(IndexAccessor("my_var", 2_i), 1_i);
     WrapInFunction(acc);
@@ -112,10 +133,15 @@ TEST_F(ResolverIndexAccessorTest, Matrix_BothDimensions) {
 
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Vector_F32) {
-    Global("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
     auto* acc = IndexAccessor("my_var", Expr(Source{{12, 34}}, 2_f));
     WrapInFunction(acc);
 
@@ -124,25 +150,30 @@ TEST_F(ResolverIndexAccessorTest, Vector_F32) {
 }
 
 TEST_F(ResolverIndexAccessorTest, Vector_Dynamic_Ref) {
-    Global("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
     auto* idx = Var("idx", ty.i32(), Expr(2_i));
     auto* acc = IndexAccessor("my_var", idx);
     WrapInFunction(Decl(idx), acc);
 
     EXPECT_TRUE(r()->Resolve());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Vector_Dynamic) {
-    GlobalConst("my_var", ty.vec3<f32>(), Construct(ty.vec3<f32>()));
+    GlobalConst("my_const", ty.vec3<f32>(), Construct(ty.vec3<f32>()));
     auto* idx = Var("idx", ty.i32(), Expr(2_i));
-    auto* acc = IndexAccessor("my_var", Expr(Source{{12, 34}}, idx));
+    auto* acc = IndexAccessor("my_const", Expr(Source{{12, 34}}, idx));
     WrapInFunction(Decl(idx), acc);
 
     EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverIndexAccessorTest, Vector) {
-    Global("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
 
     auto* acc = IndexAccessor("my_var", 2_i);
     WrapInFunction(acc);
@@ -154,10 +185,15 @@ TEST_F(ResolverIndexAccessorTest, Vector) {
 
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Literal_i32) {
-    Global("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
     auto* acc = IndexAccessor("my_var", 2_i);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -165,10 +201,15 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_i32) {
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     ASSERT_NE(ref, nullptr);
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Literal_u32) {
-    Global("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
     auto* acc = IndexAccessor("my_var", 2_u);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -176,10 +217,15 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_u32) {
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     ASSERT_NE(ref, nullptr);
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Literal_AInt) {
-    Global("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.array<f32, 3>(), ast::StorageClass::kPrivate);
     auto* acc = IndexAccessor("my_var", 2_a);
     WrapInFunction(acc);
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -187,12 +233,17 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_AInt) {
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     ASSERT_NE(ref, nullptr);
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Alias_Array) {
     auto* aary = Alias("myarrty", ty.array<f32, 3>());
 
-    Global("my_var", ty.Of(aary), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.Of(aary), ast::StorageClass::kPrivate);
 
     auto* acc = IndexAccessor("my_var", 2_i);
     WrapInFunction(acc);
@@ -204,12 +255,17 @@ TEST_F(ResolverIndexAccessorTest, Alias_Array) {
 
     auto* ref = TypeOf(acc)->As<sem::Reference>();
     EXPECT_TRUE(ref->StoreType()->Is<sem::F32>());
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Constant) {
-    GlobalConst("my_var", ty.array<f32, 3>(), array<f32, 3>());
+    GlobalConst("my_const", ty.array<f32, 3>(), array<f32, 3>());
 
-    auto* acc = IndexAccessor("my_var", 2_i);
+    auto* acc = IndexAccessor("my_const", 2_i);
     WrapInFunction(acc);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -224,17 +280,22 @@ TEST_F(ResolverIndexAccessorTest, Array_Dynamic_I32) {
     // var f : f32 = a[idx];
     auto* a = Let("a", ty.array<f32, 3>(), array<f32, 3>());
     auto* idx = Var("idx", ty.i32(), Construct(ty.i32()));
-    auto* f = Var("f", ty.f32(), IndexAccessor("a", Expr(Source{{12, 34}}, idx)));
-    Func("my_func", ast::VariableList{}, ty.void_(),
-         {
+    auto* acc = IndexAccessor("a", Expr(Source{{12, 34}}, idx));
+    auto* f = Var("f", ty.f32(), acc);
+    Func("my_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(a),
              Decl(idx),
              Decl(f),
-         },
-         ast::AttributeList{});
+         });
 
     EXPECT_TRUE(r()->Resolve());
     EXPECT_EQ(r()->error(), "");
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Literal_F32) {
@@ -242,12 +303,11 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_F32) {
     // var f : f32 = a[2.0f];
     auto* a = Let("a", ty.array<f32, 3>(), array<f32, 3>());
     auto* f = Var("a_2", ty.f32(), IndexAccessor("a", Expr(Source{{12, 34}}, 2_f)));
-    Func("my_func", ast::VariableList{}, ty.void_(),
-         {
+    Func("my_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(a),
              Decl(f),
-         },
-         ast::AttributeList{});
+         });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: index must be of type 'i32' or 'u32', found: 'f32'");
 }
@@ -256,14 +316,19 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_I32) {
     // let a : array<f32, 3>;
     // var f : f32 = a[2i];
     auto* a = Let("a", ty.array<f32, 3>(), array<f32, 3>());
-    auto* f = Var("a_2", ty.f32(), IndexAccessor("a", 2_i));
-    Func("my_func", ast::VariableList{}, ty.void_(),
-         {
+    auto* acc = IndexAccessor("a", 2_i);
+    auto* f = Var("a_2", ty.f32(), acc);
+    Func("my_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(a),
              Decl(f),
-         },
-         ast::AttributeList{});
+         });
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Expr_Deref_FuncGoodParent) {
@@ -275,11 +340,16 @@ TEST_F(ResolverIndexAccessorTest, Expr_Deref_FuncGoodParent) {
     auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::StorageClass::kFunction));
     auto* idx = Let("idx", ty.u32(), Construct(ty.u32()));
     auto* star_p = Deref(p);
-    auto* accessor_expr = IndexAccessor(Source{{12, 34}}, star_p, idx);
-    auto* x = Var("x", ty.f32(), accessor_expr);
-    Func("func", {p}, ty.f32(), {Decl(idx), Decl(x), Return(x)});
+    auto* acc = IndexAccessor(Source{{12, 34}}, star_p, idx);
+    auto* x = Var("x", ty.f32(), acc);
+    Func("func", utils::Vector{p}, ty.f32(), utils::Vector{Decl(idx), Decl(x), Return(x)});
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
+
+    auto idx_sem = Sem().Get<sem::IndexAccessorExpression>(acc);
+    ASSERT_NE(idx_sem, nullptr);
+    EXPECT_EQ(idx_sem->Index()->Declaration(), acc->index);
+    EXPECT_EQ(idx_sem->Object()->Declaration(), acc->object);
 }
 
 TEST_F(ResolverIndexAccessorTest, Expr_Deref_FuncBadParent) {
@@ -293,7 +363,7 @@ TEST_F(ResolverIndexAccessorTest, Expr_Deref_FuncBadParent) {
     auto* accessor_expr = IndexAccessor(Source{{12, 34}}, p, idx);
     auto* star_p = Deref(accessor_expr);
     auto* x = Var("x", ty.f32(), star_p);
-    Func("func", {p}, ty.f32(), {Decl(idx), Decl(x), Return(x)});
+    Func("func", utils::Vector{p}, ty.f32(), utils::Vector{Decl(idx), Decl(x), Return(x)});
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),

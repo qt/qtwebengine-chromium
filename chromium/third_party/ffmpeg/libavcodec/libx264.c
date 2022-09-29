@@ -37,10 +37,6 @@
 #include "atsc_a53.h"
 #include "sei.h"
 
-#if defined(_MSC_VER)
-#define X264_API_IMPORTS 1
-#endif
-
 #include <x264.h>
 #include <float.h>
 #include <math.h>
@@ -66,7 +62,8 @@ typedef struct X264Context {
     int             sei_size;
     char *preset;
     char *tune;
-    char *profile;
+    const char *profile;
+    char *profile_opt;
     char *level;
     int fastfirstpass;
     char *wpredp;
@@ -836,26 +833,27 @@ static av_cold int X264_init(AVCodecContext *avctx)
     if (x4->fastfirstpass)
         x264_param_apply_fastfirstpass(&x4->params);
 
+    x4->profile = x4->profile_opt;
     /* Allow specifying the x264 profile through AVCodecContext. */
     if (!x4->profile)
         switch (avctx->profile) {
         case FF_PROFILE_H264_BASELINE:
-            x4->profile = av_strdup("baseline");
+            x4->profile = "baseline";
             break;
         case FF_PROFILE_H264_HIGH:
-            x4->profile = av_strdup("high");
+            x4->profile = "high";
             break;
         case FF_PROFILE_H264_HIGH_10:
-            x4->profile = av_strdup("high10");
+            x4->profile = "high10";
             break;
         case FF_PROFILE_H264_HIGH_422:
-            x4->profile = av_strdup("high422");
+            x4->profile = "high422";
             break;
         case FF_PROFILE_H264_HIGH_444:
-            x4->profile = av_strdup("high444");
+            x4->profile = "high444";
             break;
         case FF_PROFILE_H264_MAIN:
-            x4->profile = av_strdup("main");
+            x4->profile = "main";
             break;
         default:
             break;
@@ -944,7 +942,9 @@ static av_cold int X264_init(AVCodecContext *avctx)
                     return ret;
             }
             p= strchr(p, ':');
-            p+=!!p;
+            if (p) {
+                ++p;
+            }
         }
     }
 
@@ -1100,7 +1100,7 @@ static av_cold void X264_init_static(FFCodec *codec)
 static const AVOption options[] = {
     { "preset",        "Set the encoding preset (cf. x264 --fullhelp)",   OFFSET(preset),        AV_OPT_TYPE_STRING, { .str = "medium" }, 0, 0, VE},
     { "tune",          "Tune the encoding params (cf. x264 --fullhelp)",  OFFSET(tune),          AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
-    { "profile",       "Set profile restrictions (cf. x264 --fullhelp) ", OFFSET(profile),       AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
+    { "profile",       "Set profile restrictions (cf. x264 --fullhelp)",  OFFSET(profile_opt),       AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE},
     { "fastfirstpass", "Use fast settings when encoding first pass",      OFFSET(fastfirstpass), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, VE},
     {"level", "Specify level (as defined by Annex A)", OFFSET(level), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
     {"passlogfile", "Filename for 2 pass stats", OFFSET(stats), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, VE},
@@ -1237,8 +1237,8 @@ FFCodec ff_libx264_encoder = {
     .p.pix_fmts       = pix_fmts_all,
 #endif
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_AUTO_THREADS
-#if X264_BUILD >= 158
-                      | FF_CODEC_CAP_INIT_THREADSAFE
+#if X264_BUILD < 158
+                      | FF_CODEC_CAP_NOT_INIT_THREADSAFE
 #endif
                       ,
 };
@@ -1269,8 +1269,8 @@ const FFCodec ff_libx264rgb_encoder = {
     .close          = X264_close,
     .defaults       = x264_defaults,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_AUTO_THREADS
-#if X264_BUILD >= 158
-                      | FF_CODEC_CAP_INIT_THREADSAFE
+#if X264_BUILD < 158
+                      | FF_CODEC_CAP_NOT_INIT_THREADSAFE
 #endif
                       ,
 };
@@ -1300,6 +1300,7 @@ const FFCodec ff_libx262_encoder = {
     FF_CODEC_ENCODE_CB(X264_frame),
     .close            = X264_close,
     .defaults         = x264_defaults,
-    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_AUTO_THREADS,
+    .caps_internal    = FF_CODEC_CAP_NOT_INIT_THREADSAFE |
+                        FF_CODEC_CAP_INIT_CLEANUP | FF_CODEC_CAP_AUTO_THREADS,
 };
 #endif

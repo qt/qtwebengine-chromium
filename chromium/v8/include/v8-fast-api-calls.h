@@ -240,6 +240,7 @@ class CTypeInfo {
   enum class Type : uint8_t {
     kVoid,
     kBool,
+    kUint8,
     kInt32,
     kUint32,
     kInt64,
@@ -302,8 +303,9 @@ class CTypeInfo {
   constexpr Flags GetFlags() const { return flags_; }
 
   static constexpr bool IsIntegralType(Type type) {
-    return type == Type::kInt32 || type == Type::kUint32 ||
-           type == Type::kInt64 || type == Type::kUint64;
+    return type == Type::kUint8 || type == Type::kInt32 ||
+           type == Type::kUint32 || type == Type::kInt64 ||
+           type == Type::kUint64;
   }
 
   static constexpr bool IsFloatingPointType(Type type) {
@@ -429,6 +431,7 @@ struct AnyCType {
     double double_value;
     Local<Object> object_value;
     Local<Array> sequence_value;
+    const FastApiTypedArray<uint8_t>* uint8_ta_value;
     const FastApiTypedArray<int32_t>* int32_ta_value;
     const FastApiTypedArray<uint32_t>* uint32_ta_value;
     const FastApiTypedArray<int64_t>* int64_ta_value;
@@ -544,7 +547,7 @@ struct FastApiCallbackOptions {
    * returned instance may be filled with mock data.
    */
   static FastApiCallbackOptions CreateForTesting(Isolate* isolate) {
-    return {false, {0}};
+    return {false, {0}, nullptr};
   }
 
   /**
@@ -568,6 +571,11 @@ struct FastApiCallbackOptions {
     uintptr_t data_ptr;
     v8::Value data;
   };
+
+  /**
+   * When called from WebAssembly, a view of the calling module's memory.
+   */
+  FastApiTypedArray<uint8_t>* const wasm_memory;
 };
 
 namespace internal {
@@ -648,7 +656,8 @@ struct CTypeInfoTraits {};
   V(int64_t, kInt64)         \
   V(uint64_t, kUint64)       \
   V(float, kFloat32)         \
-  V(double, kFloat64)
+  V(double, kFloat64)        \
+  V(uint8_t, kUint8)
 
 // Same as above, but includes deprecated types for compatibility.
 #define ALL_C_TYPES(V)               \
@@ -687,7 +696,8 @@ PRIMITIVE_C_TYPES(DEFINE_TYPE_INFO_TRAITS)
   V(int64_t, kInt64)           \
   V(uint64_t, kUint64)         \
   V(float, kFloat32)           \
-  V(double, kFloat64)
+  V(double, kFloat64)          \
+  V(uint8_t, kUint8)
 
 TYPED_ARRAY_C_TYPES(SPECIALIZE_GET_TYPE_INFO_HELPER_FOR_TA)
 
@@ -800,6 +810,16 @@ class CFunctionBuilderWithFunction {
     // template parameter pack Flags.
     return ArgImpl<N, Flags...>(
         std::make_index_sequence<sizeof...(ArgBuilders)>());
+  }
+
+  // Provided for testing purposes.
+  template <typename Ret, typename... Args>
+  auto Patch(Ret (*patching_func)(Args...)) {
+    static_assert(
+        sizeof...(Args) == sizeof...(ArgBuilders),
+        "The patching function must have the same number of arguments.");
+    fn_ = reinterpret_cast<void*>(patching_func);
+    return *this;
   }
 
   auto Build() {

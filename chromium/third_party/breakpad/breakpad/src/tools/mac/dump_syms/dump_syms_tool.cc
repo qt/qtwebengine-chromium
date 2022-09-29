@@ -107,6 +107,35 @@ static void CopyCFIDataBetweenModules(Module* to_module,
   }
 }
 
+static bool SetArchitecture(DumpSymbols& dump_symbols,
+                            const NXArchInfo* arch,
+                            const std::string& filename) {
+  if (!dump_symbols.SetArchitecture(arch->cputype, arch->cpusubtype)) {
+    fprintf(stderr, "%s: no architecture '%s' is present in file.\n",
+            filename.c_str(), arch->name);
+    size_t available_size;
+    const SuperFatArch* available =
+        dump_symbols.AvailableArchitectures(&available_size);
+    if (available_size == 1)
+      fprintf(stderr, "the file's architecture is: ");
+    else
+      fprintf(stderr, "architectures present in the file are:\n");
+    for (size_t i = 0; i < available_size; i++) {
+      const SuperFatArch* arch = &available[i];
+      const NXArchInfo* arch_info =
+          google_breakpad::BreakpadGetArchInfoFromCpuType(arch->cputype,
+                                                          arch->cpusubtype);
+      if (arch_info)
+        fprintf(stderr, "%s (%s)\n", arch_info->name, arch_info->description);
+      else
+        fprintf(stderr, "unrecognized cpu type 0x%x, subtype 0x%x\n",
+                arch->cputype, arch->cpusubtype);
+    }
+    return false;
+  }
+  return true;
+}
+
 static bool Start(const Options& options) {
   SymbolData symbol_data =
       (options.handle_inlines ? INLINES : NO_DATA) |
@@ -129,31 +158,9 @@ static bool Start(const Options& options) {
   if (!dump_symbols.Read(primary_file))
     return false;
 
-  if (options.arch) {
-    if (!dump_symbols.SetArchitecture(options.arch->cputype,
-                                      options.arch->cpusubtype)) {
-      fprintf(stderr, "%s: no architecture '%s' is present in file.\n",
-              primary_file.c_str(), options.arch->name);
-      size_t available_size;
-      const SuperFatArch *available =
-        dump_symbols.AvailableArchitectures(&available_size);
-      if (available_size == 1)
-        fprintf(stderr, "the file's architecture is: ");
-      else
-        fprintf(stderr, "architectures present in the file are:\n");
-      for (size_t i = 0; i < available_size; i++) {
-        const SuperFatArch *arch = &available[i];
-        const NXArchInfo *arch_info =
-          google_breakpad::BreakpadGetArchInfoFromCpuType(
-              arch->cputype, arch->cpusubtype);
-        if (arch_info)
-          fprintf(stderr, "%s (%s)\n", arch_info->name, arch_info->description);
-        else
-          fprintf(stderr, "unrecognized cpu type 0x%x, subtype 0x%x\n",
-                  arch->cputype, arch->cpusubtype);
-      }
-      return false;
-    }
+  if (options.arch &&
+      !SetArchitecture(dump_symbols, options.arch, primary_file)) {
+    return false;
   }
 
   if (options.header_only)
@@ -171,6 +178,10 @@ static bool Start(const Options& options) {
     if (!dump_symbols.Read(options.srcPath))
       return false;
 
+    if (options.arch &&
+        !SetArchitecture(dump_symbols, options.arch, options.srcPath)) {
+      return false;
+    }
     Module* cfi_module = NULL;
     if (!dump_symbols.ReadSymbolData(&cfi_module))
       return false;

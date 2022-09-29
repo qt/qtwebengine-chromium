@@ -71,9 +71,10 @@ public:
                                     std::string_view label);
     ~GrDawnBuffer() override = default;
 
-    void onMap() override;
-    void onUnmap() override;
-    bool onUpdateData(const void* src, size_t srcSizeInBytes) override;
+    void onMap(MapType) override;
+    void onUnmap(MapType) override;
+    void onRelease() override;
+    bool onUpdateData(const void* src, size_t offset, size_t size, bool preserve) override;
 
     GrDawnGpu* getDawnGpu() const;
     wgpu::Buffer get() const { return fBuffer; }
@@ -115,6 +116,9 @@ private:
                  wgpu::Buffer buffer,
                  void* mapPtr);
 
+    void* internalMap(MapType type, size_t offset, size_t size);
+    void internalUnmap(MapType type, size_t offset, size_t size);
+
     // Called to handle the asynchronous mapAsync callback.
     void mapAsyncDone(WGPUBufferMapAsyncStatus status);
 
@@ -128,10 +132,10 @@ private:
     //
     // This procedure is used to cover the case where a buffer that is not managed by a
     // GrStagingBufferManager (and thus not asynchronously mapped by the owning GrDawnGpu) is
-    // unmapped and needs to get re-mapped for use.
+    // unmapped and needs to get re-mapped for use (e.g. in onUpdateData()).
     //
-    // Returns false if the buffer fails to map.
-    bool blockingMap();
+    // Returns nullptr if the buffer fails to map.
+    void* blockingMap(size_t offset, size_t size);
 
     wgpu::Buffer fBuffer;
     Mappable fMappable = Mappable::kNot;

@@ -325,7 +325,7 @@ struct reshaped_evaluator<ArgType, Rows, Cols, Order, /* HasDirectAccess */ fals
 
   typedef std::pair<Index, Index> RowCol;
 
-  inline RowCol index_remap(Index rowId, Index colId) const
+  EIGEN_DEVICE_FUNC inline RowCol index_remap(Index rowId, Index colId) const
   {
     if(Order==ColMajor)
     {

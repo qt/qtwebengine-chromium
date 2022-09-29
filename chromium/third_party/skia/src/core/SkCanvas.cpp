@@ -27,7 +27,6 @@
 #include "src/core/SkClipStack.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkDraw.h"
-#include "src/core/SkGlyphRun.h"
 #include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLatticeIter.h"
@@ -46,6 +45,7 @@
 #include "src/core/SkVerticesPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkSurface_Base.h"
+#include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
 
 #include <memory>
@@ -54,7 +54,6 @@
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/ganesh/BaseDevice.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/utils/SkTestCanvas.h"
 #if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
@@ -422,7 +421,7 @@ void SkCanvas::init(sk_sp<SkBaseDevice> device) {
 
     fSurfaceBase = nullptr;
     fBaseDevice = std::move(device);
-    fScratchGlyphRunBuilder = std::make_unique<SkGlyphRunBuilder>();
+    fScratchGlyphRunBuilder = std::make_unique<sktext::GlyphRunBuilder>();
     fQuickRejectBounds = this->computeDeviceClipBounds();
 }
 
@@ -1284,12 +1283,24 @@ SkImageInfo SkCanvas::onImageInfo() const {
 }
 
 bool SkCanvas::getProps(SkSurfaceProps* props) const {
-    return this->onGetProps(props);
+    return this->onGetProps(props, /*top=*/false);
 }
 
-bool SkCanvas::onGetProps(SkSurfaceProps* props) const {
+SkSurfaceProps SkCanvas::getBaseProps() const {
+    SkSurfaceProps props;
+    this->onGetProps(&props, /*top=*/false);
+    return props;
+}
+
+SkSurfaceProps SkCanvas::getTopProps() const {
+    SkSurfaceProps props;
+    this->onGetProps(&props, /*top=*/true);
+    return props;
+}
+
+bool SkCanvas::onGetProps(SkSurfaceProps* props, bool top) const {
     if (props) {
-        *props = fProps;
+        *props = top ? topDevice()->surfaceProps() : fProps;
     }
     return true;
 }
@@ -2334,7 +2345,7 @@ void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
-void SkCanvas::onDrawGlyphRunList(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+void SkCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBounds();
     if (this->internalQuickReject(bounds, paint)) {
         return;
@@ -2354,7 +2365,8 @@ sk_sp<Slug> SkCanvas::convertBlobToSlug(
 }
 
 sk_sp<Slug>
-SkCanvas::onConvertGlyphRunListToSlug(const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+SkCanvas::onConvertGlyphRunListToSlug(
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBounds();
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
         return nullptr;
@@ -2392,7 +2404,7 @@ void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncodin
     TRACE_EVENT0("skia", TRACE_FUNC);
     if (byteLength) {
         sk_msan_assert_initialized(text, SkTAddOffset<const void>(text, byteLength));
-        const SkGlyphRunList& glyphRunList =
+        const sktext::GlyphRunList& glyphRunList =
             fScratchGlyphRunBuilder->textToGlyphRunList(
                     font, paint, text, byteLength, {x, y}, encoding);
         if (!glyphRunList.empty()) {
@@ -2406,15 +2418,15 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID* glyphs, const SkPoint* pos
                           SkPoint origin, const SkFont& font, const SkPaint& paint) {
     if (count <= 0) { return; }
 
-    SkGlyphRun glyphRun {
+    sktext::GlyphRun glyphRun {
             font,
-            SkMakeSpan(positions, count),
-            SkMakeSpan(glyphs, count),
-            SkMakeSpan(utf8text, textByteCount),
-            SkMakeSpan(clusters, count),
+            SkSpan(positions, count),
+            SkSpan(glyphs, count),
+            SkSpan(utf8text, textByteCount),
+            SkSpan(clusters, count),
             SkSpan<SkVector>()
     };
-    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+    sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
             glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
@@ -2423,15 +2435,15 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint pos
                           SkPoint origin, const SkFont& font, const SkPaint& paint) {
     if (count <= 0) { return; }
 
-    SkGlyphRun glyphRun {
+    sktext::GlyphRun glyphRun {
         font,
-        SkMakeSpan(positions, count),
-        SkMakeSpan(glyphs, count),
+        SkSpan(positions, count),
+        SkSpan(glyphs, count),
         SkSpan<const char>(),
         SkSpan<const uint32_t>(),
         SkSpan<SkVector>()
     };
-    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+    sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
             glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
@@ -2441,17 +2453,17 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform x
     if (count <= 0) { return; }
 
     auto [positions, rotateScales] =
-            fScratchGlyphRunBuilder->convertRSXForm(SkMakeSpan(xforms, count));
+            fScratchGlyphRunBuilder->convertRSXForm(SkSpan(xforms, count));
 
-    SkGlyphRun glyphRun {
+    sktext::GlyphRun glyphRun {
             font,
             positions,
-            SkMakeSpan(glyphs, count),
+            SkSpan(glyphs, count),
             SkSpan<const char>(),
             SkSpan<const uint32_t>(),
             rotateScales
     };
-    SkGlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
+    sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
             glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
@@ -2894,7 +2906,7 @@ SkTestCanvas<SkSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
         : SkCanvas(sk_ref_sp(canvas->baseDevice())) {}
 
 void SkTestCanvas<SkSlugTestKey>::onDrawGlyphRunList(
-        const SkGlyphRunList& glyphRunList, const SkPaint& paint) {
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     SkRect bounds = glyphRunList.sourceBounds();
     if (this->internalQuickReject(bounds, paint)) {
         return;

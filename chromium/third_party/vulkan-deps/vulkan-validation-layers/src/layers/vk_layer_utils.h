@@ -286,6 +286,11 @@ static inline uint32_t GetPlaneIndex(VkImageAspectFlags aspect) {
     }
 }
 
+// all "advanced blend operation" found in spec
+static inline bool IsAdvanceBlendOperation(const VkBlendOp blend_op) {
+    return (static_cast<int>(blend_op) >= VK_BLEND_OP_ZERO_EXT) && (static_cast<int>(blend_op) <= VK_BLEND_OP_BLUE_EXT);
+}
+
 // Perform a zero-tolerant modulo operation
 static inline VkDeviceSize SafeModulo(VkDeviceSize dividend, VkDeviceSize divisor) {
     VkDeviceSize result = 0;
@@ -306,7 +311,7 @@ static inline VkDeviceSize SafeDivision(VkDeviceSize dividend, VkDeviceSize divi
 extern "C" {
 #endif
 
-#define VK_LAYER_API_VERSION VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION)
+#define VK_LAYER_API_VERSION VK_HEADER_VERSION_COMPLETE
 
 typedef enum VkStringErrorFlagBits {
     VK_STRING_ERROR_NONE = 0x00000000,

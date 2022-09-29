@@ -20,9 +20,7 @@
 #include "api/video/video_adaptation_counters.h"
 #include "call/adaptation/video_stream_adapter.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 
 namespace webrtc {
 
@@ -42,11 +40,11 @@ void ResourceAdaptationProcessor::ResourceListenerDelegate::
     OnResourceUsageStateMeasured(rtc::scoped_refptr<Resource> resource,
                                  ResourceUsageState usage_state) {
   if (!task_queue_->IsCurrent()) {
-    task_queue_->PostTask(ToQueuedTask(
+    task_queue_->PostTask(
         [this_ref = rtc::scoped_refptr<ResourceListenerDelegate>(this),
          resource, usage_state] {
           this_ref->OnResourceUsageStateMeasured(resource, usage_state);
-        }));
+        });
     return;
   }
   RTC_DCHECK_RUN_ON(task_queue_);
@@ -143,8 +141,8 @@ void ResourceAdaptationProcessor::RemoveResource(
 void ResourceAdaptationProcessor::RemoveLimitationsImposedByResource(
     rtc::scoped_refptr<Resource> resource) {
   if (!task_queue_->IsCurrent()) {
-    task_queue_->PostTask(ToQueuedTask(
-        [this, resource]() { RemoveLimitationsImposedByResource(resource); }));
+    task_queue_->PostTask(
+        [this, resource]() { RemoveLimitationsImposedByResource(resource); });
     return;
   }
   RTC_DCHECK_RUN_ON(task_queue_);

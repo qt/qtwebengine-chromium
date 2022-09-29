@@ -784,6 +784,22 @@ TEST_F(MinidumpProcessorTest, TestXStateAmd64ContextMinidump) {
   // breakpad.
 }
 
+TEST_F(MinidumpProcessorTest, TestFastFailException) {
+  // This tests if we can understand fastfail exception subcodes.
+  // Dump is captured from a toy executable and is readable by windbg.
+  MinidumpProcessor processor(nullptr, nullptr /*&supplier, &resolver*/);
+
+  string minidump_file = GetTestDataPath()
+                         + "tiny-exe-fastfail.dmp";
+
+  ProcessState state;
+  ASSERT_EQ(processor.Process(minidump_file, &state),
+            google_breakpad::PROCESS_OK);
+  ASSERT_TRUE(state.crashed());
+  ASSERT_EQ(state.threads()->size(), size_t(4));
+  ASSERT_EQ(state.crash_reason(), "FAST_FAIL_FATAL_APP_EXIT");
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {

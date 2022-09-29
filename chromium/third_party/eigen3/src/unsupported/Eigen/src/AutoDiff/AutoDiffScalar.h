@@ -715,6 +715,23 @@ template<typename DerType> struct NumTraits<AutoDiffScalar<DerType> >
   };
 };
 
+namespace internal {
+template<typename DerivativeType>
+struct is_identically_zero_impl<AutoDiffScalar<DerivativeType>> {
+  static inline bool run(const AutoDiffScalar<DerivativeType>& s)
+  {
+    const DerivativeType& derivatives = s.derivatives();
+    for(int i=0; i<derivatives.size(); ++i)
+    {
+      if(!numext::is_exactly_zero(derivatives[i]))
+      {
+        return false;
+      }
+    }
+    return numext::is_exactly_zero(s.value());
+  }
+};
+}
 }
 
 namespace std {

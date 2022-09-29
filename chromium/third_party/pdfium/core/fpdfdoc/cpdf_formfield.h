@@ -19,7 +19,6 @@
 #include "core/fxcrt/unowned_ptr.h"
 
 class CPDF_Dictionary;
-class CPDF_Font;
 class CPDF_FormControl;
 class CPDF_InteractiveForm;
 class CPDF_Object;
@@ -80,12 +79,12 @@ class CPDF_FormField {
   static CPDF_Object* GetFieldAttr(CPDF_Dictionary* pFieldDict,
                                    const ByteString& name);
 
-  static WideString GetFullNameForDict(CPDF_Dictionary* pFieldDict);
+  static WideString GetFullNameForDict(const CPDF_Dictionary* pFieldDict);
 
   WideString GetFullName() const;
   Type GetType() const { return m_Type; }
 
-  CPDF_Dictionary* GetFieldDict() const { return m_pDict.Get(); }
+  const CPDF_Dictionary* GetFieldDict() const { return m_pDict.Get(); }
   bool ResetField();
 
   int CountControls() const;
@@ -100,7 +99,6 @@ class CPDF_FormField {
 
   uint32_t GetFieldFlags() const;
   void SetFieldFlags(uint32_t dwFlags);
-  ByteString GetDefaultStyle() const;
 
   bool IsRequired() const { return m_bRequired; }
   bool IsNoExport() const { return m_bNoExport; }
@@ -116,8 +114,6 @@ class CPDF_FormField {
   bool ClearSelection(NotificationOption notify);
   bool IsItemSelected(int index) const;
   bool SetItemSelection(int index, NotificationOption notify);
-
-  bool IsItemDefaultSelected(int index) const;
 
   int GetDefaultSelectedItem() const;
   int CountOptions() const;
@@ -140,15 +136,10 @@ class CPDF_FormField {
   // entries are consistent with the value (/V) object.
   bool UseSelectedIndicesObject() const;
 
-  float GetFontSize() const { return m_FontSize; }
-  CPDF_Font* GetFont() const { return m_pFont.Get(); }
-
-  CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
+  const CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
   CPDF_InteractiveForm* GetForm() const { return m_pForm.Get(); }
 
   WideString GetCheckValue(bool bDefault) const;
-
-  void SetOpt(RetainPtr<CPDF_Object> pOpt);
 
  private:
   WideString GetValue(bool bDefault) const;
@@ -188,10 +179,8 @@ class CPDF_FormField {
   bool m_bIsMultiSelectListBox = false;
   bool m_bIsUnison = false;
   bool m_bUseSelectedIndices = false;
-  float m_FontSize = 0;
   UnownedPtr<CPDF_InteractiveForm> const m_pForm;
   RetainPtr<CPDF_Dictionary> const m_pDict;
-  RetainPtr<CPDF_Font> m_pFont;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_FORMFIELD_H_

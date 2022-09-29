@@ -34,8 +34,8 @@
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 #include "tools/ToolUtils.h"
 #include "tools/gpu/TestOps.h"
 
@@ -72,7 +72,7 @@ protected:
     void onOnceBeforeDraw() override {
         SkColor colors[] = { 0xFFFF0000, 0x2000FF00, 0xFF0000FF};
         SkPoint pts[] = { SkPoint::Make(0, 0), SkPoint::Make(kRectSize, kRectSize) };
-        fShader = SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+        fShader = SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                                SkTileMode::kClamp);
     }
 
@@ -100,8 +100,8 @@ protected:
         SkScalar y = kPad;
         SkScalar x = kPad;
         SkScalar maxW = 0;
-        for (size_t paintType = 0; paintType < SK_ARRAY_COUNT(kPaintColors) + 1; ++paintType) {
-            for (size_t procColor = 0; procColor < SK_ARRAY_COUNT(kColors); ++procColor) {
+        for (size_t paintType = 0; paintType < std::size(kPaintColors) + 1; ++paintType) {
+            for (size_t procColor = 0; procColor < std::size(kColors); ++procColor) {
                 // translate by x,y for the canvas draws and the test target draws.
                 canvas->save();
                 canvas->translate(x, y);
@@ -111,9 +111,10 @@ protected:
 
                 // Create a base-layer FP for the const color processor to draw on top of.
                 std::unique_ptr<GrFragmentProcessor> baseFP;
-                if (paintType >= SK_ARRAY_COUNT(kPaintColors)) {
+                if (paintType >= std::size(kPaintColors)) {
                     GrColorInfo colorInfo;
-                    GrFPArgs args(rContext, SkMatrixProvider(SkMatrix::I()), &colorInfo);
+                    SkSurfaceProps props;
+                    GrFPArgs args(rContext, SkMatrixProvider(SkMatrix::I()), &colorInfo, props);
                     baseFP = as_SB(fShader)->asFragmentProcessor(args);
                 } else {
                     baseFP = GrFragmentProcessor::MakeColor(
@@ -152,7 +153,7 @@ protected:
                 SkPaint labelPaint;
                 labelPaint.setAntiAlias(true);
                 SkString inputLabel("Input: ");
-                if (paintType >= SK_ARRAY_COUNT(kPaintColors)) {
+                if (paintType >= std::size(kPaintColors)) {
                     inputLabel.append("gradient");
                 } else {
                     inputLabel.appendf("0x%08x", kPaintColors[paintType]);

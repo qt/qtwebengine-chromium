@@ -282,9 +282,12 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool is_row,
   const int32x4_t max = vdupq_n_s32((1 << range) - 1);
   int32x4_t s[4], x[4];
 
-  LoadSrc<4>(dst, step, 0, x);
   if (is_row) {
-    Transpose4x4(x, x);
+    assert(step == 4);
+    int32x4x4_t y = vld4q_s32(dst);
+    for (int i = 0; i < 4; ++i) x[i] = y.val[i];
+  } else {
+    LoadSrc<4>(dst, step, 0, x);
   }
 
   // stage 1.
@@ -301,9 +304,12 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool is_row,
     for (auto& i : s) {
       i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
-    Transpose4x4(s, s);
+    int32x4x4_t y;
+    for (int i = 0; i < 4; ++i) y.val[i] = s[i];
+    vst4q_s32(dst, y);
+  } else {
+    StoreDst<4>(dst, step, 0, s);
   }
-  StoreDst<4>(dst, step, 0, s);
 }
 
 template <ButterflyRotationFunc butterfly_rotation,
@@ -937,9 +943,12 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step, bool is_row,
   int32x4_t s[8];
   int32x4_t x[4];
 
-  LoadSrc<4>(dst, step, 0, x);
   if (is_row) {
-    Transpose4x4(x, x);
+    assert(step == 4);
+    int32x4x4_t y = vld4q_s32(dst);
+    for (int i = 0; i < 4; ++i) x[i] = y.val[i];
+  } else {
+    LoadSrc<4>(dst, step, 0, x);
   }
 
   // stage 1.
@@ -981,9 +990,12 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step, bool is_row,
     x[1] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[1], v_row_shift)));
     x[2] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[2], v_row_shift)));
     x[3] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[3], v_row_shift)));
-    Transpose4x4(x, x);
+    int32x4x4_t y;
+    for (int i = 0; i < 4; ++i) y.val[i] = x[i];
+    vst4q_s32(dst, y);
+  } else {
+    StoreDst<4>(dst, step, 0, x);
   }
-  StoreDst<4>(dst, step, 0, x);
 }
 
 alignas(16) constexpr int32_t kAdst4DcOnlyMultiplier[4] = {1321, 2482, 3344,

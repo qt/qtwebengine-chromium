@@ -15,6 +15,7 @@ licenses(["notice"])
 
 package(default_visibility = [
     "//connections/clients/ios:__subpackages__",
+    "//connections/clients/swift:__subpackages__",
     "//internal/platform/implementation/ios:__subpackages__",
 ])
 
@@ -42,13 +43,12 @@ objc_library(
         "wifi_lan.h",
     ],
     features = ["-layering_check"],
-    sdk_frameworks = [
-        "CoreBluetooth",
-        "CoreFoundation",
-    ],
     deps = [
         ":Platform_cc",
         ":Shared",
+        "//third_party/apple_frameworks:CoreBluetooth",
+        "//third_party/apple_frameworks:CoreFoundation",
+        "//third_party/apple_frameworks:Foundation",
         "//internal/platform/implementation:platform",
         "//internal/platform/implementation:types",
         "//internal/platform/implementation/ios/Mediums",
@@ -66,7 +66,7 @@ objc_library(
         "GNCUtils.h",
     ],
     deps = [
-        "//third_party/objective_c/google_toolbox_for_mac:GTM_StringEncoding",
+        "//third_party/apple_frameworks:Foundation",
         "@aappleby_smhasher//:libmurmur3",
     ],
 )

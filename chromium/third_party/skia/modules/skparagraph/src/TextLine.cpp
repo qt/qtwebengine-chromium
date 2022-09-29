@@ -137,14 +137,14 @@ TextLine::TextLine(ParagraphImpl* owner,
         auto& run = fOwner->run(runIndex);
         runLevels[runLevelsIndex++] = run.fBidiLevel;
         fMaxRunMetrics.add(
-            InternalLineMetrics(run.fFontMetrics.fAscent, run.fFontMetrics.fDescent, run.fFontMetrics.fLeading));
+            InternalLineMetrics(run.correctAscent(), run.correctDescent(), run.fFontMetrics.fLeading));
     }
     SkASSERT(runLevelsIndex == numRuns);
 
     SkAutoSTArray<kPreallocCount, int32_t> logicalOrder(numRuns);
 
     // TODO: hide all these logic in SkUnicode?
-  fOwner->getUnicode()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
+    fOwner->getUnicode()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
     auto firstRunIndex = start.runIndex();
     for (auto index : logicalOrder) {
         fRunsInVisualOrder.push_back(firstRunIndex + index);
@@ -424,6 +424,7 @@ void TextLine::paintShadow(SkCanvas* canvas,
         if (context.clippingNeeded) {
             canvas->save();
             SkRect clip = extendHeight(context);
+            clip.offset(x, y);
             clip.offset(this->offset());
             canvas->clipRect(clip);
         }
@@ -1041,7 +1042,7 @@ bool TextLine::isLastLine() {
 bool TextLine::endsWithHardLineBreak() const {
     // TODO: For some reason Flutter imagines a hard line break at the end of the last line.
     //  To be removed...
-    return fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak() ||
+    return (fGhostClusterRange.width() > 0 && fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak()) ||
            fEllipsis != nullptr ||
            fGhostClusterRange.end == fOwner->clusters().size() - 1;
 }

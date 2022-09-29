@@ -41,9 +41,9 @@ namespace internal {
   T(AwaitNotInDebugEvaluate,                                                   \
     "await can not be used when evaluating code "                              \
     "while paused in the debugger")                                            \
-  T(AtomicsMutexLockNotAllowed,                                                \
-    "Atomics.Mutex.lock cannot be called in this context")                     \
-  T(AtomicsWaitNotAllowed, "Atomics.wait cannot be called in this context")    \
+  T(AtomicsMutexNotOwnedByCurrentThread,                                       \
+    "Atomics.Mutex is not owned by the current agent")                         \
+  T(AtomicsOperationNotAllowed, "% cannot be called in this context")          \
   T(BadRoundingType, "RoundingType is not fractionDigits")                     \
   T(BadSortComparisonFunction,                                                 \
     "The comparison function must be either a function or undefined")          \
@@ -120,7 +120,11 @@ namespace internal {
   T(InvalidUnit, "Invalid unit argument for %() '%'")                          \
   T(IterableYieldedNonString, "Iterable yielded % which is not a string")      \
   T(IteratorResultNotAnObject, "Iterator result % is not an object")           \
-  T(IteratorSymbolNonCallable, "Found non-callable @@iterator")                \
+  T(SpreadIteratorSymbolNonCallable,                                           \
+    "Spread syntax requires ...iterable[Symbol.iterator] to be a function")    \
+  T(FirstArgumentIteratorSymbolNonCallable,                                    \
+    "% requires that the property of the first argument, "                     \
+    "items[Symbol.iterator], when exists, be a function")                      \
   T(IteratorValueNotAnObject, "Iterator value % is not an entry object")       \
   T(LanguageID, "Language ID should be string or object.")                     \
   T(LocaleNotEmpty,                                                            \
@@ -325,6 +329,7 @@ namespace internal {
   T(SymbolToNumber, "Cannot convert a Symbol value to a number")               \
   T(SymbolToString, "Cannot convert a Symbol value to a string")               \
   T(ThrowMethodMissing, "The iterator does not provide a 'throw' method.")     \
+  T(TopLevelAwaitStalled, "Top-level await promise never resolved")            \
   T(UndefinedOrNullToObject, "Cannot convert undefined or null to object")     \
   T(ValueAndAccessor,                                                          \
     "Invalid property descriptor. Cannot both specify accessors and a value "  \
@@ -339,6 +344,7 @@ namespace internal {
   T(SuperAlreadyCalled, "Super constructor may only be called once")           \
   T(AccessedUninitializedVariable, "Cannot access '%' before initialization")  \
   T(UnsupportedSuper, "Unsupported reference to 'super'")                      \
+  T(AccessedUnavailableVariable, "Cannot access '%' from debugger")            \
   /* RangeError */                                                             \
   T(BigIntDivZero, "Division by zero")                                         \
   T(BigIntNegativeExponent, "Exponent must be positive")                       \
@@ -395,6 +401,8 @@ namespace internal {
   T(ToPrecisionFormatRange,                                                    \
     "toPrecision() argument must be between 1 and 100")                        \
   T(ToRadixFormatRange, "toString() radix argument must be between 2 and 36")  \
+  T(SharedArraySizeOutOfRange,                                                 \
+    "SharedArray length out of range (maximum of 2**14-2 allowed)")            \
   T(StructFieldCountOutOfRange,                                                \
     "Struct field count out of range (maximum of 999 allowed)")                \
   T(TypedArraySetOffsetOutOfBounds, "offset is out of bounds")                 \
@@ -601,7 +609,7 @@ namespace internal {
   T(UnexpectedTokenUnaryExponentiation,                                        \
     "Unary operator used immediately before exponentiation expression. "       \
     "Parenthesis must be used to disambiguate operator precedence")            \
-  T(UnexpectedTokenIdentifier, "Unexpected identifier")                        \
+  T(UnexpectedTokenIdentifier, "Unexpected identifier '%'")                    \
   T(UnexpectedTokenNumber, "Unexpected number")                                \
   T(UnexpectedTokenString, "Unexpected string")                                \
   T(UnexpectedTokenRegExp, "Unexpected regular expression")                    \
@@ -637,13 +645,17 @@ namespace internal {
   T(WasmTrapMultiReturnLengthMismatch, "multi-return length mismatch")         \
   T(WasmTrapJSTypeError, "type incompatibility when transforming from/to JS")  \
   T(WasmTrapDataSegmentOutOfBounds, "data segment out of bounds")              \
-  T(WasmTrapElemSegmentDropped, "element segment has been dropped")            \
+  T(WasmTrapElementSegmentOutOfBounds, "element segment out of bounds")        \
   T(WasmTrapRethrowNull, "rethrowing null value")                              \
   T(WasmTrapNullDereference, "dereferencing a null pointer")                   \
   T(WasmTrapIllegalCast, "illegal cast")                                       \
   T(WasmTrapArrayOutOfBounds, "array element access out of bounds")            \
   T(WasmTrapArrayTooLarge, "requested new array is too large")                 \
+  T(WasmTrapStringInvalidUtf8, "invalid UTF-8 string")                         \
   T(WasmTrapStringInvalidWtf8, "invalid WTF-8 string")                         \
+  T(WasmTrapStringOffsetOutOfBounds, "string offset out of bounds")            \
+  T(WasmTrapStringIsolatedSurrogate,                                           \
+    "Failed to encode string as UTF-8: contains unpaired surrogate")           \
   T(WasmExceptionError, "wasm exception")                                      \
   /* Asm.js validation related */                                              \
   T(AsmJsInvalid, "Invalid asm.js: %")                                         \

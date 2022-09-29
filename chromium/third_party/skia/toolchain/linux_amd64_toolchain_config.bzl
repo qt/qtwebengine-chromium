@@ -34,14 +34,12 @@ def _linux_amd64_toolchain_info(ctx):
     features += _make_diagnostic_flags()
     features += _make_iwyu_flags()
 
-    # https://docs.bazel.build/versions/main/skylark/lib/cc_common.html#create_cc_toolchain_config_info
+    # https://bazel.build/rules/lib/cc_common#create_cc_toolchain_config_info
     # Note, this rule is defined in Java code, not Starlark
     # https://cs.opensource.google/bazel/bazel/+/master:src/main/java/com/google/devtools/build/lib/starlarkbuildapi/cpp/CcModuleApi.java
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
         features = features,
-        abi_libc_version = "unknown",
-        abi_version = "unknown",
         action_configs = action_configs,
         # This is important because the linker will complain if the libc shared libraries are not
         # under this directory. Because we extract the libc libraries to
@@ -51,13 +49,12 @@ def _linux_amd64_toolchain_info(ctx):
         # is just a text file that refers to "/lib/x86_64-linux-gnu/libc.so.6" and
         # "/lib64/ld-linux-x86-64.so.2" which will use the sysroot as the root).
         builtin_sysroot = EXTERNAL_TOOLCHAIN,
-        compiler = "clang",
-        host_system_name = "local",
-        target_cpu = "k8",
-        # It is unclear if target_libc matters.
-        target_libc = "glibc-2.31",
-        target_system_name = "local",
-        toolchain_identifier = "clang-toolchain",
+        # These are required, but do nothing
+        compiler = "",
+        target_cpu = "",
+        target_libc = "",
+        target_system_name = "",
+        toolchain_identifier = "",
     )
 
 provide_linux_amd64_toolchain_config = rule(
@@ -196,7 +193,15 @@ def _make_action_configs():
     return action_configs
 
 def _make_default_flags():
-    """Here we define the flags for certain actions that are always applied."""
+    """Here we define the flags for certain actions that are always applied.
+
+    For any flag that might be conditionally applied, it should be defined in //bazel/copts.bzl.
+
+    Flags that are set here will be unconditionally applied to everything we compile with
+    this toolchain, even third_party deps.
+    """
+
+    # Note: These values must be kept in sync with those defined in cmake_exporter.go.
     cxx_compile_includes = flag_set(
         actions = [
             ACTION_NAMES.c_compile,
@@ -225,7 +230,7 @@ def _make_default_flags():
         ],
     )
 
-    cpp_compile_includes = flag_set(
+    cpp_compile_flags = flag_set(
         actions = [
             ACTION_NAMES.cpp_compile,
         ],
@@ -233,7 +238,6 @@ def _make_default_flags():
             flag_group(
                 flags = [
                     "-std=c++17",
-                    "-Wno-psabi",  # noisy
                 ],
             ),
         ],
@@ -267,7 +271,7 @@ def _make_default_flags():
         enabled = True,
         flag_sets = [
             cxx_compile_includes,
-            cpp_compile_includes,
+            cpp_compile_flags,
             link_exe_flags,
         ],
     )]

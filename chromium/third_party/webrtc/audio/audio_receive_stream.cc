@@ -215,7 +215,7 @@ bool AudioReceiveStreamImpl::transport_cc() const {
 }
 
 void AudioReceiveStreamImpl::SetTransportCc(bool transport_cc) {
-  RTC_DCHECK_RUN_ON(&worker_thread_checker_);
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
   config_.rtp.transport_cc = transport_cc;
 }
 
@@ -338,6 +338,9 @@ webrtc::AudioReceiveStreamInterface::Stats AudioReceiveStreamImpl::GetStats(
   stats.jitter_buffer_emitted_count = ns.jitterBufferEmittedCount;
   stats.jitter_buffer_target_delay_seconds =
       static_cast<double>(ns.jitterBufferTargetDelayMs) /
+      static_cast<double>(rtc::kNumMillisecsPerSec);
+  stats.jitter_buffer_minimum_delay_seconds =
+      static_cast<double>(ns.jitterBufferMinimumDelayMs) /
       static_cast<double>(rtc::kNumMillisecsPerSec);
   stats.inserted_samples_for_deceleration = ns.insertedSamplesForDeceleration;
   stats.removed_samples_for_acceleration = ns.removedSamplesForAcceleration;

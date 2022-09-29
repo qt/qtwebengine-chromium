@@ -48,8 +48,7 @@ import {linkifyDeferredNodeReference} from './DOMLinkifier.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import stylesSectionTreeStyles from './stylesSectionTree.css.js';
 
-import type {Context} from './StylePropertyTreeElement.js';
-import {StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import {StylePropertyTreeElement, type Context} from './StylePropertyTreeElement.js';
 import {StylesSidebarPane} from './StylesSidebarPane.js';
 
 const UIStrings = {
@@ -121,6 +120,8 @@ export class StylePropertiesSection {
   protected parentPane: StylesSidebarPane;
   styleInternal: SDK.CSSStyleDeclaration.CSSStyleDeclaration;
   readonly matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles;
+  private computedStyles: Map<string, string>|null;
+  private parentsComputedStyles: Map<string, string>|null;
   editable: boolean;
   private hoverTimer: number|null;
   private willCauseCancelEditing: boolean;
@@ -152,11 +153,14 @@ export class StylePropertiesSection {
 
   constructor(
       parentPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
-      style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
+      style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, computedStyles: Map<string, string>|null,
+      parentsComputedStyles: Map<string, string>|null) {
     this.parentPane = parentPane;
     this.sectionIdx = sectionIdx;
     this.styleInternal = style;
     this.matchedStyles = matchedStyles;
+    this.computedStyles = computedStyles;
+    this.parentsComputedStyles = parentsComputedStyles;
     this.editable = Boolean(style.styleSheetId && style.range);
     this.hoverTimer = null;
     this.willCauseCancelEditing = false;
@@ -284,6 +288,26 @@ export class StylePropertiesSection {
     this.isHiddenInternal = false;
     this.markSelectorMatches();
     this.onpopulate();
+  }
+
+  setComputedStyles(computedStyles: Map<string, string>|null): void {
+    this.computedStyles = computedStyles;
+  }
+
+  setParentsComputedStyles(parentsComputedStyles: Map<string, string>|null): void {
+    this.parentsComputedStyles = parentsComputedStyles;
+  }
+
+  updateAuthoringHint(): void {
+    let child = this.propertiesTreeOutline.firstChild();
+    while (child) {
+      if (child instanceof StylePropertyTreeElement) {
+        child.setComputedStyles(this.computedStyles);
+        child.setParentsComputedStyles(this.parentsComputedStyles);
+        child.updateAuthoringHint();
+      }
+      child = child.nextSibling;
+    }
   }
 
   setSectionIdx(sectionIdx: number): void {
@@ -703,6 +727,7 @@ export class StylePropertiesSection {
   protected createAtRuleLists(rule: SDK.CSSRule.CSSStyleRule): void {
     this.createMediaList(rule.media);
     this.createContainerQueryList(rule.containerQueries);
+    this.createScopesList(rule.scopes);
     this.createSupportsList(rule.supports);
   }
 
@@ -770,6 +795,28 @@ export class StylePropertiesSection {
       this.queryListElement.append(containerQueryElement);
 
       void this.addContainerForContainerQuery(containerQuery);
+    }
+  }
+
+  protected createScopesList(scopesList: SDK.CSSScope.CSSScope[]): void {
+    for (let i = scopesList.length - 1; i >= 0; --i) {
+      const scope = scopesList[i];
+      if (!scope.text) {
+        continue;
+      }
+
+      let onQueryTextClick;
+      if (scope.styleSheetId) {
+        onQueryTextClick = this.handleQueryRuleClick.bind(this, scope);
+      }
+
+      const scopeElement = new ElementsComponents.CSSQuery.CSSQuery();
+      scopeElement.data = {
+        queryPrefix: '@scope',
+        queryText: scope.text,
+        onQueryTextClick,
+      };
+      this.queryListElement.append(scopeElement);
     }
   }
 
@@ -932,6 +979,8 @@ export class StylePropertiesSection {
       }
       const item = new StylePropertyTreeElement(
           this.parentPane, this.matchedStyles, property, isShorthand, inherited, overloaded, false);
+      item.setComputedStyles(this.computedStyles);
+      item.setParentsComputedStyles(this.parentsComputedStyles);
       this.propertiesTreeOutline.appendChild(item);
     }
 
@@ -1178,6 +1227,8 @@ export class StylePropertiesSection {
         success = await cssModel.setContainerQueryText(query.styleSheetId, range, newContent);
       } else if (query instanceof SDK.CSSSupports.CSSSupports) {
         success = await cssModel.setSupportsText(query.styleSheetId, range, newContent);
+      } else if (query instanceof SDK.CSSScope.CSSScope) {
+        success = await cssModel.setScopeText(query.styleSheetId, range, newContent);
       } else {
         success = await cssModel.setMediaText(query.styleSheetId, range, newContent);
       }
@@ -1449,7 +1500,7 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
       insertAfterStyle: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
     const cssModel = (stylesPane.cssModel() as SDK.CSSModel.CSSModel);
     const rule = SDK.CSSRule.CSSStyleRule.createDummyRule(cssModel, defaultSelectorText);
-    super(stylesPane, matchedStyles, rule.style, sectionIdx);
+    super(stylesPane, matchedStyles, rule.style, sectionIdx, null, null);
     this.normal = false;
     this.ruleLocation = ruleLocation;
     this.styleSheetId = styleSheetId;
@@ -1553,7 +1604,7 @@ export class KeyframePropertiesSection extends StylePropertiesSection {
   constructor(
       stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
-    super(stylesPane, matchedStyles, style, sectionIdx);
+    super(stylesPane, matchedStyles, style, sectionIdx, null, null);
     this.selectorElement.className = 'keyframe-key';
   }
 

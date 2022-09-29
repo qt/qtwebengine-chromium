@@ -262,10 +262,10 @@ int I210ToI420(const uint16_t* src_y,
                       height);
     ScalePlaneVertical_16To8(height, uv_width, uv_height, src_stride_u,
                              dst_stride_u, src_u, dst_u, 0, 32768, dy,
-                             /*bpp=*/1, scale, kFilterBilinear);
+                             /*wpp=*/1, scale, kFilterBilinear);
     ScalePlaneVertical_16To8(height, uv_width, uv_height, src_stride_v,
                              dst_stride_v, src_v, dst_v, 0, 32768, dy,
-                             /*bpp=*/1, scale, kFilterBilinear);
+                             /*wpp=*/1, scale, kFilterBilinear);
   }
   return 0;
 }
@@ -709,6 +709,25 @@ int MM21ToI420(const uint8_t* src_y,
   }
   DetileSplitUVPlane(src_uv, src_stride_uv, dst_u, dst_stride_u, dst_v,
                      dst_stride_v, (width + 1) & ~1, (height + sign) / 2, 16);
+
+  return 0;
+}
+
+LIBYUV_API
+int MM21ToYUY2(const uint8_t* src_y,
+               int src_stride_y,
+               const uint8_t* src_uv,
+               int src_stride_uv,
+               uint8_t* dst_yuy2,
+               int dst_stride_yuy2,
+               int width,
+               int height) {
+  if (!src_y || !src_uv || !dst_yuy2 || width <= 0) {
+    return -1;
+  }
+
+  DetileToYUY2(src_y, src_stride_y, src_uv, src_stride_uv, dst_yuy2,
+                   dst_stride_yuy2, width, height, 32);
 
   return 0;
 }
@@ -1641,7 +1660,7 @@ int BGRAToI420(const uint8_t* src_bgra,
 #if defined(HAS_BGRATOYROW_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     BGRAToYRow = BGRAToYRow_Any_NEON;
-    if (IS_ALIGNED(width, 8)) {
+    if (IS_ALIGNED(width, 16)) {
       BGRAToYRow = BGRAToYRow_NEON;
     }
   }
@@ -3190,6 +3209,7 @@ int RAWToJ400(const uint8_t* src_raw,
   if (!src_raw || !dst_yj || width <= 0 || height == 0) {
     return -1;
   }
+
   if (height < 0) {
     height = -height;
     src_raw = src_raw + (height - 1) * src_stride_raw;
@@ -3201,6 +3221,7 @@ int RAWToJ400(const uint8_t* src_raw,
     height = 1;
     src_stride_raw = dst_stride_yj = 0;
   }
+
 #if defined(HAS_RAWTOYJROW_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     RAWToYJRow = RAWToYJRow_Any_SSSE3;
@@ -3220,7 +3241,7 @@ int RAWToJ400(const uint8_t* src_raw,
 #if defined(HAS_RAWTOYJROW_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     RAWToYJRow = RAWToYJRow_Any_NEON;
-    if (IS_ALIGNED(width, 8)) {
+    if (IS_ALIGNED(width, 16)) {
       RAWToYJRow = RAWToYJRow_NEON;
     }
   }

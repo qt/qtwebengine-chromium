@@ -991,9 +991,9 @@ angle::CallCapture CaptureDrawArraysInstancedBaseInstanceEXT(const State &glStat
                                                              GLuint baseinstance);
 angle::CallCapture CaptureDrawElementsInstancedBaseInstanceEXT(const State &glState,
                                                                bool isCallValid,
-                                                               GLenum mode,
+                                                               PrimitiveMode modePacked,
                                                                GLsizei count,
-                                                               GLenum type,
+                                                               DrawElementsType typePacked,
                                                                const void *indices,
                                                                GLsizei instancecount,
                                                                GLuint baseinstance);
@@ -2064,6 +2064,8 @@ angle::CallCapture CaptureBlitFramebufferNV(const State &glState,
 // GL_NV_pixel_buffer_object
 
 // GL_NV_read_depth
+
+// GL_NV_read_depth_stencil
 
 // GL_NV_read_stencil
 
@@ -4126,9 +4128,9 @@ void CaptureEGLImageTargetTextureStorageEXT_attrib_list(const State &glState,
                                                         angle::ParamCapture *paramCapture);
 void CaptureDrawElementsInstancedBaseInstanceEXT_indices(const State &glState,
                                                          bool isCallValid,
-                                                         GLenum mode,
+                                                         PrimitiveMode modePacked,
                                                          GLsizei count,
-                                                         GLenum type,
+                                                         DrawElementsType typePacked,
                                                          const void *indices,
                                                          GLsizei instancecount,
                                                          GLuint baseinstance,

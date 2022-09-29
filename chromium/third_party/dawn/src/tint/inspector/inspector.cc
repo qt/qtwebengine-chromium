@@ -22,12 +22,17 @@
 #include "src/tint/ast/extension.h"
 #include "src/tint/ast/float_literal_expression.h"
 #include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/int_literal_expression.h"
 #include "src/tint/ast/interpolate_attribute.h"
 #include "src/tint/ast/location_attribute.h"
 #include "src/tint/ast/module.h"
+#include "src/tint/ast/override.h"
+#include "src/tint/ast/var.h"
 #include "src/tint/sem/array.h"
 #include "src/tint/sem/call.h"
 #include "src/tint/sem/depth_multisampled_texture.h"
+#include "src/tint/sem/depth_texture.h"
+#include "src/tint/sem/external_texture.h"
 #include "src/tint/sem/f16.h"
 #include "src/tint/sem/f32.h"
 #include "src/tint/sem/function.h"
@@ -44,6 +49,7 @@
 #include "src/tint/sem/vector.h"
 #include "src/tint/sem/void.h"
 #include "src/tint/utils/math.h"
+#include "src/tint/utils/string.h"
 #include "src/tint/utils/unique_vector.h"
 
 namespace tint::inspector {
@@ -101,7 +107,7 @@ std::tuple<ComponentType, CompositionType> CalculateComponentAndComposition(cons
 
 std::tuple<InterpolationType, InterpolationSampling> CalculateInterpolationData(
     const sem::Type* type,
-    const ast::AttributeList& attributes) {
+    utils::VectorRef<const ast::Attribute*> attributes) {
     auto* interpolation_attribute = ast::GetAttribute<ast::InterpolateAttribute>(attributes);
     if (type->is_integer_scalar_or_vector()) {
         return {InterpolationType::kFlat, InterpolationSampling::kNone};
@@ -140,16 +146,32 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
         EntryPoint entry_point;
         entry_point.name = program_->Symbols().NameFor(func->symbol);
         entry_point.remapped_name = program_->Symbols().NameFor(func->symbol);
-        entry_point.stage = func->PipelineStage();
 
-        auto wgsize = sem->WorkgroupSize();
-        entry_point.workgroup_size_x = wgsize[0].value;
-        entry_point.workgroup_size_y = wgsize[1].value;
-        entry_point.workgroup_size_z = wgsize[2].value;
-        if (wgsize[0].overridable_const || wgsize[1].overridable_const ||
-            wgsize[2].overridable_const) {
-            // TODO(crbug.com/tint/713): Handle overridable constants.
-            TINT_ASSERT(Inspector, false);
+        switch (func->PipelineStage()) {
+            case ast::PipelineStage::kCompute: {
+                entry_point.stage = PipelineStage::kCompute;
+
+                auto wgsize = sem->WorkgroupSize();
+                if (!wgsize[0].overridable_const && !wgsize[1].overridable_const &&
+                    !wgsize[2].overridable_const) {
+                    entry_point.workgroup_size = {wgsize[0].value, wgsize[1].value,
+                                                  wgsize[2].value};
+                }
+                break;
+            }
+            case ast::PipelineStage::kFragment: {
+                entry_point.stage = PipelineStage::kFragment;
+                break;
+            }
+            case ast::PipelineStage::kVertex: {
+                entry_point.stage = PipelineStage::kVertex;
+                break;
+            }
+            default: {
+                TINT_UNREACHABLE(Inspector, diagnostics_)
+                    << "invalid pipeline stage for entry point '" << entry_point.name << "'";
+                break;
+            }
         }
 
         for (auto* param : sem->Parameters()) {
@@ -158,15 +180,15 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
                                         entry_point.input_variables);
 
             entry_point.input_position_used |= ContainsBuiltin(
-                ast::Builtin::kPosition, param->Type(), param->Declaration()->attributes);
+                ast::BuiltinValue::kPosition, param->Type(), param->Declaration()->attributes);
             entry_point.front_facing_used |= ContainsBuiltin(
-                ast::Builtin::kFrontFacing, param->Type(), param->Declaration()->attributes);
+                ast::BuiltinValue::kFrontFacing, param->Type(), param->Declaration()->attributes);
             entry_point.sample_index_used |= ContainsBuiltin(
-                ast::Builtin::kSampleIndex, param->Type(), param->Declaration()->attributes);
+                ast::BuiltinValue::kSampleIndex, param->Type(), param->Declaration()->attributes);
             entry_point.input_sample_mask_used |= ContainsBuiltin(
-                ast::Builtin::kSampleMask, param->Type(), param->Declaration()->attributes);
+                ast::BuiltinValue::kSampleMask, param->Type(), param->Declaration()->attributes);
             entry_point.num_workgroups_used |= ContainsBuiltin(
-                ast::Builtin::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
+                ast::BuiltinValue::kNumWorkgroups, param->Type(), param->Declaration()->attributes);
         }
 
         if (!sem->ReturnType()->Is<sem::Void>()) {
@@ -174,7 +196,7 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
                                         entry_point.output_variables);
 
             entry_point.output_sample_mask_used = ContainsBuiltin(
-                ast::Builtin::kSampleMask, sem->ReturnType(), func->return_type_attributes);
+                ast::BuiltinValue::kSampleMask, sem->ReturnType(), func->return_type_attributes);
         }
 
         for (auto* var : sem->TransitivelyReferencedGlobals()) {
@@ -183,29 +205,29 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
             auto name = program_->Symbols().NameFor(decl->symbol);
 
             auto* global = var->As<sem::GlobalVariable>();
-            if (global && global->IsOverridable()) {
-                OverridableConstant overridable_constant;
-                overridable_constant.name = name;
-                overridable_constant.numeric_id = global->ConstantId();
+            if (global && global->Declaration()->Is<ast::Override>()) {
+                Override override;
+                override.name = name;
+                override.id = global->OverrideId();
                 auto* type = var->Type();
                 TINT_ASSERT(Inspector, type->is_scalar());
                 if (type->is_bool_scalar_or_vector()) {
-                    overridable_constant.type = OverridableConstant::Type::kBool;
+                    override.type = Override::Type::kBool;
                 } else if (type->is_float_scalar()) {
-                    overridable_constant.type = OverridableConstant::Type::kFloat32;
+                    override.type = Override::Type::kFloat32;
                 } else if (type->is_signed_integer_scalar()) {
-                    overridable_constant.type = OverridableConstant::Type::kInt32;
+                    override.type = Override::Type::kInt32;
                 } else if (type->is_unsigned_integer_scalar()) {
-                    overridable_constant.type = OverridableConstant::Type::kUint32;
+                    override.type = Override::Type::kUint32;
                 } else {
                     TINT_UNREACHABLE(Inspector, diagnostics_);
                 }
 
-                overridable_constant.is_initialized = global->Declaration()->constructor;
-                overridable_constant.is_numeric_id_specified =
+                override.is_initialized = global->Declaration()->constructor;
+                override.is_id_specified =
                     ast::HasAttribute<ast::IdAttribute>(global->Declaration()->attributes);
 
-                entry_point.overridable_constants.push_back(overridable_constant);
+                entry_point.overrides.push_back(override);
             }
         }
 
@@ -215,37 +237,37 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
     return result;
 }
 
-std::map<uint32_t, Scalar> Inspector::GetConstantIDs() {
-    std::map<uint32_t, Scalar> result;
+std::map<OverrideId, Scalar> Inspector::GetOverrideDefaultValues() {
+    std::map<OverrideId, Scalar> result;
     for (auto* var : program_->AST().GlobalVariables()) {
         auto* global = program_->Sem().Get<sem::GlobalVariable>(var);
-        if (!global || !global->IsOverridable()) {
+        if (!global || !global->Declaration()->Is<ast::Override>()) {
             continue;
         }
 
-        // If there are conflicting defintions for a constant id, that is invalid
+        // If there are conflicting defintions for an override id, that is invalid
         // WGSL, so the resolver should catch it. Thus here the inspector just
-        // assumes all definitions of the constant id are the same, so only needs
-        // to find the first reference to constant id.
-        uint32_t constant_id = global->ConstantId();
-        if (result.find(constant_id) != result.end()) {
+        // assumes all definitions of the override id are the same, so only needs
+        // to find the first reference to override id.
+        OverrideId override_id = global->OverrideId();
+        if (result.find(override_id) != result.end()) {
             continue;
         }
 
         if (!var->constructor) {
-            result[constant_id] = Scalar();
+            result[override_id] = Scalar();
             continue;
         }
 
         auto* literal = var->constructor->As<ast::LiteralExpression>();
         if (!literal) {
             // This is invalid WGSL, but handling gracefully.
-            result[constant_id] = Scalar();
+            result[override_id] = Scalar();
             continue;
         }
 
         if (auto* l = literal->As<ast::BoolLiteralExpression>()) {
-            result[constant_id] = Scalar(l->value);
+            result[override_id] = Scalar(l->value);
             continue;
         }
 
@@ -253,32 +275,32 @@ std::map<uint32_t, Scalar> Inspector::GetConstantIDs() {
             switch (l->suffix) {
                 case ast::IntLiteralExpression::Suffix::kNone:
                 case ast::IntLiteralExpression::Suffix::kI:
-                    result[constant_id] = Scalar(static_cast<int32_t>(l->value));
+                    result[override_id] = Scalar(static_cast<int32_t>(l->value));
                     continue;
                 case ast::IntLiteralExpression::Suffix::kU:
-                    result[constant_id] = Scalar(static_cast<uint32_t>(l->value));
+                    result[override_id] = Scalar(static_cast<uint32_t>(l->value));
                     continue;
             }
         }
 
         if (auto* l = literal->As<ast::FloatLiteralExpression>()) {
-            result[constant_id] = Scalar(static_cast<float>(l->value));
+            result[override_id] = Scalar(static_cast<float>(l->value));
             continue;
         }
 
-        result[constant_id] = Scalar();
+        result[override_id] = Scalar();
     }
 
     return result;
 }
 
-std::map<std::string, uint32_t> Inspector::GetConstantNameToIdMap() {
-    std::map<std::string, uint32_t> result;
+std::map<std::string, OverrideId> Inspector::GetNamedOverrideIds() {
+    std::map<std::string, OverrideId> result;
     for (auto* var : program_->AST().GlobalVariables()) {
         auto* global = program_->Sem().Get<sem::GlobalVariable>(var);
-        if (global && global->IsOverridable()) {
+        if (global && global->Declaration()->Is<ast::Override>()) {
             auto name = program_->Symbols().NameFor(var->symbol);
-            result[name] = global->ConstantId();
+            result[name] = global->OverrideId();
         }
     }
     return result;
@@ -483,7 +505,7 @@ std::vector<ResourceBinding> Inspector::GetExternalTextureResourceBindings(
                                       ResourceBinding::ResourceType::kExternalTexture);
 }
 
-std::vector<sem::SamplerTexturePair> Inspector::GetSamplerTextureUses(
+utils::Vector<sem::SamplerTexturePair, 4> Inspector::GetSamplerTextureUses(
     const std::string& entry_point) {
     auto* func = FindEntryPointByName(entry_point);
     if (!func) {
@@ -548,9 +570,9 @@ uint32_t Inspector::GetWorkgroupStorageSize(const std::string& entry_point) {
 std::vector<std::string> Inspector::GetUsedExtensionNames() {
     auto& extensions = program_->Sem().Module()->Extensions();
     std::vector<std::string> out;
-    out.reserve(extensions.size());
+    out.reserve(extensions.Length());
     for (auto ext : extensions) {
-        out.push_back(ast::str(ext));
+        out.push_back(utils::ToString(ext));
     }
     return out;
 }
@@ -562,7 +584,7 @@ std::vector<std::pair<std::string, Source>> Inspector::GetEnableDirectives() {
     auto global_decls = program_->AST().GlobalDeclarations();
     for (auto* node : global_decls) {
         if (auto* ext = node->As<ast::Enable>()) {
-            result.push_back({ast::str(ext->extension), ext->source});
+            result.push_back({utils::ToString(ext->extension), ext->source});
         }
     }
 
@@ -586,7 +608,7 @@ const ast::Function* Inspector::FindEntryPointByName(const std::string& name) {
 
 void Inspector::AddEntryPointInOutVariables(std::string name,
                                             const sem::Type* type,
-                                            const ast::AttributeList& attributes,
+                                            utils::VectorRef<const ast::Attribute*> attributes,
                                             std::vector<StageVariable>& variables) const {
     // Skip builtins.
     if (ast::HasAttribute<ast::BuiltinAttribute>(attributes)) {
@@ -623,9 +645,9 @@ void Inspector::AddEntryPointInOutVariables(std::string name,
     variables.push_back(stage_variable);
 }
 
-bool Inspector::ContainsBuiltin(ast::Builtin builtin,
+bool Inspector::ContainsBuiltin(ast::BuiltinValue builtin,
                                 const sem::Type* type,
-                                const ast::AttributeList& attributes) const {
+                                utils::VectorRef<const ast::Attribute*> attributes) const {
     auto* unwrapped_type = type->UnwrapRef();
 
     if (auto* struct_ty = unwrapped_type->As<sem::Struct>()) {
@@ -767,7 +789,7 @@ void Inspector::GenerateSamplerTargets() {
     }
 
     sampler_targets_ = std::make_unique<
-        std::unordered_map<std::string, utils::UniqueVector<sem::SamplerTexturePair>>>();
+        std::unordered_map<std::string, utils::UniqueVector<sem::SamplerTexturePair, 4>>>();
 
     auto& sem = program_->Sem();
 
@@ -810,28 +832,27 @@ void Inspector::GenerateSamplerTargets() {
             continue;
         }
 
-        auto* t = c->args[texture_index];
-        auto* s = c->args[sampler_index];
+        auto* t = c->args[static_cast<size_t>(texture_index)];
+        auto* s = c->args[static_cast<size_t>(sampler_index)];
 
-        GetOriginatingResources(std::array<const ast::Expression*, 2>{t, s},
-                                [&](std::array<const sem::GlobalVariable*, 2> globals) {
-                                    auto* texture = globals[0];
-                                    sem::BindingPoint texture_binding_point = {
-                                        texture->Declaration()->BindingPoint().group->value,
-                                        texture->Declaration()->BindingPoint().binding->value};
+        GetOriginatingResources(
+            std::array<const ast::Expression*, 2>{t, s},
+            [&](std::array<const sem::GlobalVariable*, 2> globals) {
+                auto* texture = globals[0]->Declaration()->As<ast::Var>();
+                sem::BindingPoint texture_binding_point = {texture->BindingPoint().group->value,
+                                                           texture->BindingPoint().binding->value};
 
-                                    auto* sampler = globals[1];
-                                    sem::BindingPoint sampler_binding_point = {
-                                        sampler->Declaration()->BindingPoint().group->value,
-                                        sampler->Declaration()->BindingPoint().binding->value};
+                auto* sampler = globals[1]->Declaration()->As<ast::Var>();
+                sem::BindingPoint sampler_binding_point = {sampler->BindingPoint().group->value,
+                                                           sampler->BindingPoint().binding->value};
 
-                                    for (auto* entry_point : entry_points) {
-                                        const auto& ep_name = program_->Symbols().NameFor(
-                                            entry_point->Declaration()->symbol);
-                                        (*sampler_targets_)[ep_name].add(
-                                            {sampler_binding_point, texture_binding_point});
-                                    }
-                                });
+                for (auto* entry_point : entry_points) {
+                    const auto& ep_name =
+                        program_->Symbols().NameFor(entry_point->Declaration()->symbol);
+                    (*sampler_targets_)[ep_name].Add(
+                        {sampler_binding_point, texture_binding_point});
+                }
+            });
     }
 }
 
@@ -847,7 +868,7 @@ void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> ex
 
     std::array<const sem::GlobalVariable*, N> globals{};
     std::array<const sem::Parameter*, N> parameters{};
-    utils::UniqueVector<const ast::CallExpression*> callsites;
+    utils::UniqueVector<const ast::CallExpression*, 8> callsites;
 
     for (size_t i = 0; i < N; i++) {
         const sem::Variable* source_var = sem.Get(exprs[i])->SourceVariable();
@@ -861,7 +882,7 @@ void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> ex
                 return;
             }
             for (auto* call : func->CallSites()) {
-                callsites.add(call->Declaration());
+                callsites.Add(call->Declaration());
             }
             parameters[i] = param;
         } else {
@@ -872,7 +893,7 @@ void Inspector::GetOriginatingResources(std::array<const ast::Expression*, N> ex
         }
     }
 
-    if (callsites.size()) {
+    if (callsites.Length()) {
         for (auto* call_expr : callsites) {
             // Make a copy of the expressions for this callsite
             std::array<const ast::Expression*, N> call_exprs = exprs;

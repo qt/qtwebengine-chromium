@@ -325,40 +325,47 @@ export class Processor extends LogReader {
   async _setupCppEntriesProvider() {
     // Probe the local symbol server for the platform:
     const url = new URL('http://localhost:8000/v8/info/platform')
-    let platform = 'linux'
+    let platform = {name: 'linux'};
     try {
-      const response = await fetch(url);
-      platform = await response.text();
+      const response = await fetch(url, {timeout: 1});
+      if (response.status == 404) {
+        throw new Error(
+            `Local symbol server returned 404: ${await response.text()}`);
+      }
+      platform = await response.json();
     } catch (e) {
+      console.warn(`Local symbol server is not running on ${url}`);
       console.warn(e);
     }
-    if (platform === 'darwin') {
-      this._cppEntriesProvider = new RemoteMacOSCppEntriesProvider();
-    } else {
-      this._cppEntriesProvider = new RemoteLinuxCppEntriesProvider();
+    let CppEntriesProvider = RemoteLinuxCppEntriesProvider;
+    if (platform.name === 'darwin') {
+      CppEntriesProvider = RemoteMacOSCppEntriesProvider;
     }
+    this._cppEntriesProvider = new CppEntriesProvider(
+        platform.nmExec, platform.objdumpExec, platform.targetRootFS,
+        platform.apkEmbeddedLibrary);
   }
 
   processCodeCreation(
       type, kind, timestamp, start, size, nameAndPosition, maybe_func) {
     this._lastTimestamp = timestamp;
-    let entry;
+    let profilerEntry;
     let stateName = '';
     if (maybe_func.length) {
       const funcAddr = parseInt(maybe_func[0]);
       stateName = maybe_func[1] ?? '';
       const state = Profile.parseState(maybe_func[1]);
-      entry = this._profile.addFuncCode(
+      profilerEntry = this._profile.addFuncCode(
           type, nameAndPosition, timestamp, start, size, funcAddr, state);
     } else {
-      entry = this._profile.addAnyCode(
+      profilerEntry = this._profile.addAnyCode(
           type, nameAndPosition, timestamp, start, size);
     }
     const name = nameAndPosition.slice(0, nameAndPosition.indexOf(' '));
     this._lastCodeLogEntry = new CodeLogEntry(
         type + stateName, timestamp,
         Profile.getKindFromState(Profile.parseState(stateName)), kind, name,
-        entry);
+        profilerEntry);
     this._codeTimeline.push(this._lastCodeLogEntry);
   }
 

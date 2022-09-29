@@ -209,6 +209,39 @@ void StripLlvmSuffixAndUndecorate(BSTR* name) {
   }
 }
 
+// Prints the error message related to the error code as seen in
+// Microsoft's MSVS documentation for loadDataFromPdb and loadDataForExe.
+void PrintOpenError(HRESULT hr, const char* fn_name, const wchar_t* file) {
+  switch (hr) {
+    case E_PDB_NOT_FOUND:
+      fprintf(stderr, "%s: Failed to open %ws, or the file has an "
+              "invalid format.\n", fn_name, file);
+      break;
+    case E_PDB_FORMAT:
+      fprintf(stderr, "%s: Attempted to access %ws with an obsolete "
+              "format.\n", fn_name, file);
+      break;
+    case E_PDB_INVALID_SIG:
+      fprintf(stderr, "%s: Signature does not match for %ws.\n", fn_name,
+              file);
+      break;
+    case E_PDB_INVALID_AGE:
+      fprintf(stderr, "%s: Age does not match for %ws.\n", fn_name, file);
+      break;
+    case E_INVALIDARG:
+      fprintf(stderr, "%s: Invalid parameter for %ws.\n", fn_name, file);
+      break;
+    case E_UNEXPECTED:
+      fprintf(stderr, "%s: Data source has already been prepared for %ws.\n",
+              fn_name, file);
+      break;
+    default:
+      fprintf(stderr, "%s: Unexpected error 0x%lx, file: %ws.\n",
+              fn_name, hr, file);
+      break;
+  }
+}
+
 }  // namespace
 
 PDBSourceLineWriter::Inline::Inline(int inline_nest_level)
@@ -400,25 +433,32 @@ bool PDBSourceLineWriter::Open(const wstring& file, FileFormat format) {
     return false;
   }
 
+  HRESULT from_pdb_result;
+  HRESULT for_exe_result;
+  const wchar_t* file_name = file.c_str();
   switch (format) {
     case PDB_FILE:
-      if (FAILED(data_source->loadDataFromPdb(file.c_str()))) {
-        fprintf(stderr, "loadDataFromPdb failed for %ws\n", file.c_str());
+      from_pdb_result = data_source->loadDataFromPdb(file_name);
+      if (FAILED(from_pdb_result)) {
+        PrintOpenError(from_pdb_result, "loadDataFromPdb", file_name);
         return false;
       }
       break;
     case EXE_FILE:
-      if (FAILED(data_source->loadDataForExe(file.c_str(), NULL, NULL))) {
-        fprintf(stderr, "loadDataForExe failed for %ws\n", file.c_str());
+      for_exe_result = data_source->loadDataForExe(file_name, NULL, NULL);
+      if (FAILED(for_exe_result)) {
+        PrintOpenError(for_exe_result, "loadDataForExe", file_name);
         return false;
       }
       code_file_ = file;
       break;
     case ANY_FILE:
-      if (FAILED(data_source->loadDataFromPdb(file.c_str()))) {
-        if (FAILED(data_source->loadDataForExe(file.c_str(), NULL, NULL))) {
-          fprintf(stderr, "loadDataForPdb and loadDataFromExe failed for %ws\n",
-                  file.c_str());
+      from_pdb_result = data_source->loadDataFromPdb(file_name);
+      if (FAILED(from_pdb_result)) {
+        for_exe_result = data_source->loadDataForExe(file_name, NULL, NULL);
+        if (FAILED(for_exe_result)) {
+          PrintOpenError(from_pdb_result, "loadDataFromPdb", file_name);
+          PrintOpenError(for_exe_result, "loadDataForExe", file_name);
           return false;
         }
         code_file_ = file;

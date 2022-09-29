@@ -46,15 +46,15 @@ bool SaveXFADocumentData(CPDFXFA_Context* pContext,
   if (!pPDFDocument)
     return false;
 
-  CPDF_Dictionary* pRoot = pPDFDocument->GetRoot();
+  RetainPtr<CPDF_Dictionary> pRoot = pPDFDocument->GetMutableRoot();
   if (!pRoot)
     return false;
 
-  CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+  RetainPtr<CPDF_Dictionary> pAcroForm = pRoot->GetMutableDictFor("AcroForm");
   if (!pAcroForm)
     return false;
 
-  CPDF_Object* pXFA = pAcroForm->GetObjectFor("XFA");
+  RetainPtr<CPDF_Object> pXFA = pAcroForm->GetMutableObjectFor("XFA");
   if (!pXFA)
     return true;
 
@@ -75,12 +75,12 @@ bool SaveXFADocumentData(CPDFXFA_Context* pContext,
       iDataSetsIndex = i + 1;
   }
 
-  CPDF_Stream* pFormStream = nullptr;
+  RetainPtr<CPDF_Stream> pFormStream;
   if (iFormIndex != -1) {
     // Get form CPDF_Stream
-    CPDF_Object* pFormPDFObj = pArray->GetObjectAt(iFormIndex);
+    RetainPtr<CPDF_Object> pFormPDFObj = pArray->GetMutableObjectAt(iFormIndex);
     if (pFormPDFObj->IsReference()) {
-      CPDF_Object* pFormDirectObj = pFormPDFObj->GetDirect();
+      RetainPtr<CPDF_Object> pFormDirectObj = pFormPDFObj->GetMutableDirect();
       if (pFormDirectObj && pFormDirectObj->IsStream()) {
         pFormStream = pFormDirectObj->AsStream();
       }
@@ -89,13 +89,15 @@ bool SaveXFADocumentData(CPDFXFA_Context* pContext,
     }
   }
 
-  CPDF_Stream* pDataSetsStream = nullptr;
+  RetainPtr<CPDF_Stream> pDataSetsStream;
   if (iDataSetsIndex != -1) {
     // Get datasets CPDF_Stream
-    CPDF_Object* pDataSetsPDFObj = pArray->GetObjectAt(iDataSetsIndex);
+    RetainPtr<CPDF_Object> pDataSetsPDFObj =
+        pArray->GetMutableObjectAt(iDataSetsIndex);
     if (pDataSetsPDFObj->IsReference()) {
       CPDF_Reference* pDataSetsRefObj = pDataSetsPDFObj->AsReference();
-      CPDF_Object* pDataSetsDirectObj = pDataSetsRefObj->GetDirect();
+      RetainPtr<CPDF_Object> pDataSetsDirectObj =
+          pDataSetsRefObj->GetMutableDirect();
       if (pDataSetsDirectObj && pDataSetsDirectObj->IsStream()) {
         pDataSetsStream = pDataSetsDirectObj->AsStream();
       }

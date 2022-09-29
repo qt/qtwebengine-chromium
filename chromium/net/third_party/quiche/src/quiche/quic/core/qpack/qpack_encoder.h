@@ -20,7 +20,7 @@
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_export.h"
 #include "quiche/quic/platform/api/quic_exported_stats.h"
-#include "quiche/spdy/core/spdy_header_block.h"
+#include "quiche/spdy/core/http2_header_block.h"
 
 namespace quic {
 
@@ -153,6 +153,16 @@ class QUIC_EXPORT_PRIVATE QpackEncoder
   uint64_t maximum_blocked_streams_;
   QpackBlockingManager blocking_manager_;
   int header_list_count_;
+};
+
+// QpackEncoder::DecoderStreamErrorDelegate implementation that does nothing.
+class QUIC_EXPORT_PRIVATE NoopDecoderStreamErrorDelegate
+    : public QpackEncoder::DecoderStreamErrorDelegate {
+ public:
+  ~NoopDecoderStreamErrorDelegate() override = default;
+
+  void OnDecoderStreamError(QuicErrorCode /*error_code*/, absl::string_view
+                            /*error_message*/) override {}
 };
 
 }  // namespace quic

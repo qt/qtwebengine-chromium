@@ -14,6 +14,9 @@ OBJS-ffmpeg +=                  \
     fftools/ffmpeg_hw.o         \
     fftools/ffmpeg_mux.o        \
     fftools/ffmpeg_opt.o        \
+    fftools/objpool.o           \
+    fftools/sync_queue.o        \
+    fftools/thread_queue.o      \
 
 define DOFFTOOL
 OBJS-$(1) += fftools/cmdutils.o fftools/opt_common.o fftools/$(1).o $(OBJS-$(1)-yes)

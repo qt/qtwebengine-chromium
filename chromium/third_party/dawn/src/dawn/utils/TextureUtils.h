@@ -22,7 +22,7 @@
 #include "dawn/common/Assert.h"
 
 namespace utils {
-static constexpr std::array<wgpu::TextureFormat, 95> kAllTextureFormats = {
+static constexpr std::array<wgpu::TextureFormat, 94> kAllTextureFormats = {
     wgpu::TextureFormat::R8Unorm,
     wgpu::TextureFormat::R8Snorm,
     wgpu::TextureFormat::R8Uint,
@@ -63,7 +63,6 @@ static constexpr std::array<wgpu::TextureFormat, 95> kAllTextureFormats = {
     wgpu::TextureFormat::Depth32Float,
     wgpu::TextureFormat::Depth24Plus,
     wgpu::TextureFormat::Depth24PlusStencil8,
-    wgpu::TextureFormat::Depth24UnormStencil8,
     wgpu::TextureFormat::Depth32FloatStencil8,
     wgpu::TextureFormat::Stencil8,
     wgpu::TextureFormat::BC1RGBAUnorm,
@@ -206,20 +205,18 @@ static_assert(kCompressedFormats.size() ==
                   kBCFormats.size() + kETC2Formats.size() + kASTCFormats.size(),
               "Number of compressed format must equal number of BC, ETC2, and ASTC formats.");
 
-static constexpr std::array<wgpu::TextureFormat, 6> kDepthFormats = {
+static constexpr std::array<wgpu::TextureFormat, 5> kDepthFormats = {
     wgpu::TextureFormat::Depth16Unorm,         wgpu::TextureFormat::Depth32Float,
     wgpu::TextureFormat::Depth24Plus,          wgpu::TextureFormat::Depth24PlusStencil8,
-    wgpu::TextureFormat::Depth24UnormStencil8, wgpu::TextureFormat::Depth32FloatStencil8,
+    wgpu::TextureFormat::Depth32FloatStencil8,
 };
-static constexpr std::array<wgpu::TextureFormat, 4> kStencilFormats = {
+static constexpr std::array<wgpu::TextureFormat, 3> kStencilFormats = {
     wgpu::TextureFormat::Depth24PlusStencil8,
-    wgpu::TextureFormat::Depth24UnormStencil8,
     wgpu::TextureFormat::Depth32FloatStencil8,
     wgpu::TextureFormat::Stencil8,
 };
-static constexpr std::array<wgpu::TextureFormat, 3> kDepthAndStencilFormats = {
+static constexpr std::array<wgpu::TextureFormat, 2> kDepthAndStencilFormats = {
     wgpu::TextureFormat::Depth24PlusStencil8,
-    wgpu::TextureFormat::Depth24UnormStencil8,
     wgpu::TextureFormat::Depth32FloatStencil8,
 };
 
@@ -231,10 +228,10 @@ bool IsASTCTextureFormat(wgpu::TextureFormat textureFormat);
 
 bool IsDepthOnlyFormat(wgpu::TextureFormat textureFormat);
 bool IsStencilOnlyFormat(wgpu::TextureFormat textureFormat);
+bool IsDepthOrStencilFormat(wgpu::TextureFormat textureFormat);
 
 bool TextureFormatSupportsMultisampling(wgpu::TextureFormat textureFormat);
 bool TextureFormatSupportsResolveTarget(wgpu::TextureFormat textureFormat);
-bool TextureFormatSupportsRendering(wgpu::TextureFormat textureFormat);
 
 uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat);
 uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat);

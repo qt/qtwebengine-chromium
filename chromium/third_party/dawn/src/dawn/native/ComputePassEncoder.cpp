@@ -46,23 +46,23 @@ ResultOrError<ComputePipelineBase*> GetOrCreateIndirectDispatchValidationPipelin
     Ref<ShaderModuleBase> shaderModule;
     DAWN_TRY_ASSIGN(shaderModule, utils::CreateShaderModule(device, R"(
                 struct UniformParams {
-                    maxComputeWorkgroupsPerDimension: u32;
-                    clientOffsetInU32: u32;
-                    enableValidation: u32;
-                    duplicateNumWorkgroups: u32;
-                };
+                    maxComputeWorkgroupsPerDimension: u32,
+                    clientOffsetInU32: u32,
+                    enableValidation: u32,
+                    duplicateNumWorkgroups: u32,
+                }
 
                 struct IndirectParams {
-                    data: array<u32>;
-                };
+                    data: array<u32>
+                }
 
                 struct ValidatedParams {
-                    data: array<u32>;
-                };
+                    data: array<u32>
+                }
 
                 @group(0) @binding(0) var<uniform> uniformParams: UniformParams;
                 @group(0) @binding(1) var<storage, read_write> clientParams: IndirectParams;
-                @group(0) @binding(2) var<storage, write> validatedParams: ValidatedParams;
+                @group(0) @binding(2) var<storage, read_write> validatedParams: ValidatedParams;
 
                 @compute @workgroup_size(1, 1, 1)
                 fn main() {
@@ -111,23 +111,18 @@ ResultOrError<ComputePipelineBase*> GetOrCreateIndirectDispatchValidationPipelin
 ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
                                        const ComputePassDescriptor* descriptor,
                                        CommandEncoder* commandEncoder,
-                                       EncodingContext* encodingContext,
-                                       std::vector<TimestampWrite> timestampWritesAtEnd)
+                                       EncodingContext* encodingContext)
     : ProgrammableEncoder(device, descriptor->label, encodingContext),
-      mCommandEncoder(commandEncoder),
-      mTimestampWritesAtEnd(std::move(timestampWritesAtEnd)) {
+      mCommandEncoder(commandEncoder) {
     TrackInDevice();
 }
 
 // static
-Ref<ComputePassEncoder> ComputePassEncoder::Create(
-    DeviceBase* device,
-    const ComputePassDescriptor* descriptor,
-    CommandEncoder* commandEncoder,
-    EncodingContext* encodingContext,
-    std::vector<TimestampWrite> timestampWritesAtEnd) {
-    return AcquireRef(new ComputePassEncoder(device, descriptor, commandEncoder, encodingContext,
-                                             std::move(timestampWritesAtEnd)));
+Ref<ComputePassEncoder> ComputePassEncoder::Create(DeviceBase* device,
+                                                   const ComputePassDescriptor* descriptor,
+                                                   CommandEncoder* commandEncoder,
+                                                   EncodingContext* encodingContext) {
+    return AcquireRef(new ComputePassEncoder(device, descriptor, commandEncoder, encodingContext));
 }
 
 ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
@@ -162,11 +157,7 @@ void ComputePassEncoder::APIEnd() {
                     DAWN_TRY(ValidateProgrammableEncoderEnd());
                 }
 
-                EndComputePassCmd* cmd =
-                    allocator->Allocate<EndComputePassCmd>(Command::EndComputePass);
-                // The query availability has already been updated at the beginning of compute
-                // pass, and no need to do update here.
-                cmd->timestampWrites = std::move(mTimestampWritesAtEnd);
+                allocator->Allocate<EndComputePassCmd>(Command::EndComputePass);
 
                 return {};
             },
@@ -306,7 +297,8 @@ ComputePassEncoder::TransformIndirectDispatchBuffer(Ref<BufferBase> indirectBuff
                                              {1, indirectBuffer, clientIndirectBindingOffset,
                                               clientIndirectBindingSize},
                                              {2, validatedIndirectBuffer, 0, scratchBufferSize},
-                                         }));
+                                         },
+                                         UsageValidationMode::Internal));
 
     // Issue commands to validate the indirect buffer.
     APISetPipeline(validationPipeline.Get());

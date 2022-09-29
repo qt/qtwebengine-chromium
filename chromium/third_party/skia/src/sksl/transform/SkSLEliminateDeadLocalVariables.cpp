@@ -12,6 +12,7 @@
 #include "include/private/SkTHash.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
@@ -65,6 +66,8 @@ static bool eliminate_dead_local_variables(const Context& context,
                         fUsage->remove(stmt.get());
                         stmt = Nop::Make();
                     }
+                    // The variable is no longer referenced anywhere so it should be safe to change.
+                    const_cast<Variable*>(var)->markEliminated();
                     fMadeChanges = true;
                 }
                 return false;
@@ -112,14 +115,14 @@ static bool eliminate_dead_local_variables(const Context& context,
 bool Transform::EliminateDeadLocalVariables(const Context& context,
                                             LoadedModule& module,
                                             ProgramUsage* usage) {
-    return eliminate_dead_local_variables(context, SkMakeSpan(module.fElements), usage);
+    return eliminate_dead_local_variables(context, SkSpan(module.fElements), usage);
 }
 
-bool Transform::EliminateDeadLocalVariables(Program& program, ProgramUsage* usage) {
+bool Transform::EliminateDeadLocalVariables(Program& program) {
     return program.fConfig->fSettings.fRemoveDeadVariables
                    ? eliminate_dead_local_variables(*program.fContext,
-                                                    SkMakeSpan(program.fOwnedElements),
-                                                    usage)
+                                                    SkSpan(program.fOwnedElements),
+                                                    program.fUsage.get())
                    : false;
 }
 

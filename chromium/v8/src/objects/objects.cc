@@ -651,7 +651,8 @@ MaybeHandle<Object> Object::ConvertToIndex(Isolate* isolate,
   return js_len;
 }
 
-bool Object::BooleanValue(Isolate* isolate) {
+template <typename IsolateT>
+bool Object::BooleanValue(IsolateT* isolate) {
   if (IsSmi()) return Smi::ToInt(*this) != 0;
   DCHECK(IsHeapObject());
   if (IsBoolean()) return IsTrue(isolate);
@@ -662,6 +663,8 @@ bool Object::BooleanValue(Isolate* isolate) {
   if (IsBigInt()) return BigInt::cast(*this).ToBoolean();
   return true;
 }
+template bool Object::BooleanValue(Isolate*);
+template bool Object::BooleanValue(LocalIsolate*);
 
 Object Object::ToBoolean(Isolate* isolate) {
   if (IsBoolean()) return *this;
@@ -1324,8 +1327,8 @@ bool Object::ToInt32(int32_t* value) {
 
 // static
 Handle<TemplateList> TemplateList::New(Isolate* isolate, int size) {
-  Handle<FixedArray> list =
-      isolate->factory()->NewFixedArray(kLengthIndex + size);
+  Handle<FixedArray> list = isolate->factory()->NewFixedArray(
+      kLengthIndex + size, AllocationType::kOld);
   list->set(kLengthIndex, Smi::zero());
   return Handle<TemplateList>::cast(list);
 }
@@ -1479,13 +1482,13 @@ Address AccessorInfo::redirect(Address address, AccessorComponent component) {
 }
 
 Address AccessorInfo::redirected_getter() const {
-  Address accessor = v8::ToCData<Address>(getter());
+  Address accessor = getter();
   if (accessor == kNullAddress) return kNullAddress;
   return redirect(accessor, ACCESSOR_GETTER);
 }
 
 Address CallHandlerInfo::redirected_callback() const {
-  Address address = v8::ToCData<Address>(callback());
+  Address address = callback();
   ApiFunction fun(address);
   ExternalReference::Type type = ExternalReference::DIRECT_API_CALL;
   return ExternalReference::Create(&fun, type).address();
@@ -2045,6 +2048,19 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {
       os << ">";
       break;
     }
+    case CODE_DATA_CONTAINER_TYPE: {
+#ifdef V8_EXTERNAL_CODE_SPACE
+      CodeDataContainer code = CodeDataContainer::cast(*this);
+      os << "<CodeDataContainer " << CodeKindToString(code.kind());
+      if (code.is_builtin()) {
+        os << " " << Builtins::name(code.builtin_id());
+      }
+      os << ">";
+#else
+      os << "<CodeDataContainer>";
+#endif  // V8_EXTERNAL_CODE_SPACE
+      break;
+    }
     case CODE_TYPE: {
       Code code = Code::cast(*this);
       os << "<Code " << CodeKindToString(code.kind());
@@ -2116,11 +2132,19 @@ void HeapObject::HeapObjectShortPrint(std::ostream& os) {
       os << '>';
       break;
     }
+    case ACCESSOR_INFO_TYPE: {
+      AccessorInfo info = AccessorInfo::cast(*this);
+      os << "<AccessorInfo ";
+      os << "name= " << Brief(info.name());
+      os << ", data= " << Brief(info.data());
+      os << ">";
+      break;
+    }
     case CALL_HANDLER_INFO_TYPE: {
       CallHandlerInfo info = CallHandlerInfo::cast(*this);
       os << "<CallHandlerInfo ";
-      os << "callback= " << Brief(info.callback());
-      os << ", js_callback= " << Brief(info.js_callback());
+      os << "callback= " << reinterpret_cast<void*>(info.callback());
+      os << ", js_callback= " << reinterpret_cast<void*>(info.js_callback());
       os << ", data= " << Brief(info.data());
       if (info.IsSideEffectFreeCallHandlerInfo()) {
         os << ", side_effect_free= true>";
@@ -2288,11 +2312,15 @@ int HeapObject::SizeFromMap(Map map) const {
         CoverageInfo::unchecked_cast(*this).slot_count());
   }
 #if V8_ENABLE_WEBASSEMBLY
+  if (instance_type == WASM_TYPE_INFO_TYPE) {
+    return WasmTypeInfo::SizeFor(
+        WasmTypeInfo::unchecked_cast(*this).supertypes_length());
+  }
   if (instance_type == WASM_STRUCT_TYPE) {
     return WasmStruct::GcSafeSize(map);
   }
   if (instance_type == WASM_ARRAY_TYPE) {
-    return WasmArray::SizeFor(map, WasmArray::cast(*this).length());
+    return WasmArray::SizeFor(map, WasmArray::unchecked_cast(*this).length());
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
   DCHECK_EQ(instance_type, EMBEDDER_DATA_ARRAY_TYPE);
@@ -2792,21 +2820,15 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
       ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
                                        BigInt::FromObject(isolate, value),
                                        Nothing<bool>());
-      // We have to recheck the length. However, it can only change if the
-      // underlying buffer was detached, so just check that.
-      if (Handle<JSArrayBufferView>::cast(receiver)->WasDetached()) {
+      if (Handle<JSTypedArray>::cast(receiver)->IsDetachedOrOutOfBounds()) {
         return Just(true);
-        // TODO(neis): According to the spec, this should throw a TypeError.
       }
     } else if (!value->IsNumber() && !value->IsUndefined(isolate)) {
       ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, to_assign,
                                        Object::ToNumber(isolate, value),
                                        Nothing<bool>());
-      // We have to recheck the length. However, it can only change if the
-      // underlying buffer was detached, so just check that.
-      if (Handle<JSArrayBufferView>::cast(receiver)->WasDetached()) {
+      if (Handle<JSTypedArray>::cast(receiver)->IsDetachedOrOutOfBounds()) {
         return Just(true);
-        // TODO(neis): According to the spec, this should throw a TypeError.
       }
     }
   }
@@ -2826,22 +2848,23 @@ Maybe<bool> Object::SetDataProperty(LookupIterator* it, Handle<Object> value) {
   } else  // NOLINT(readability/braces)
 #endif    // V8_ENABLE_WEBASSEMBLY
           // clang-format off
-  if (V8_UNLIKELY(receiver->IsJSSharedStruct(isolate))) {
-    // clang-format on
+  if (V8_UNLIKELY(receiver->IsJSSharedStruct(isolate) ||
+                  receiver->IsJSSharedArray(isolate))) {
+      // clang-format on
 
-    // Shared structs can only point to primitives or shared values.
-    ASSIGN_RETURN_ON_EXCEPTION_VALUE(
-        isolate, to_assign, Object::Share(isolate, to_assign, kThrowOnError),
-        Nothing<bool>());
-    it->WriteDataValue(to_assign, false);
-  } else {
-    // Possibly migrate to the most up-to-date map that will be able to store
-    // |value| under it->name().
-    it->PrepareForDataProperty(to_assign);
+      // Shared structs can only point to primitives or shared values.
+      ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+          isolate, to_assign, Object::Share(isolate, to_assign, kThrowOnError),
+          Nothing<bool>());
+      it->WriteDataValue(to_assign, false);
+    } else {
+      // Possibly migrate to the most up-to-date map that will be able to store
+      // |value| under it->name().
+      it->PrepareForDataProperty(to_assign);
 
-    // Write the property value.
-    it->WriteDataValue(to_assign, false);
-  }
+      // Write the property value.
+      it->WriteDataValue(to_assign, false);
+    }
 
 #if VERIFY_HEAP
   if (FLAG_verify_heap) {
@@ -4024,9 +4047,10 @@ void FixedArray::CopyTo(int pos, FixedArray dest, int dest_pos, int len) const {
 
 // static
 Handle<ArrayList> ArrayList::Add(Isolate* isolate, Handle<ArrayList> array,
-                                 Handle<Object> obj) {
+                                 Handle<Object> obj,
+                                 AllocationType allocation) {
   int length = array->Length();
-  array = EnsureSpace(isolate, array, length + 1);
+  array = EnsureSpace(isolate, array, length + 1, allocation);
   // Check that GC didn't remove elements from the array.
   DCHECK_EQ(array->Length(), length);
   {
@@ -4091,14 +4115,15 @@ Handle<FixedArray> ArrayList::Elements(Isolate* isolate,
 namespace {
 
 Handle<FixedArray> EnsureSpaceInFixedArray(Isolate* isolate,
-                                           Handle<FixedArray> array,
-                                           int length) {
+                                           Handle<FixedArray> array, int length,
+                                           AllocationType allocation) {
   int capacity = array->length();
   if (capacity < length) {
     int new_capacity = length;
     new_capacity = new_capacity + std::max(new_capacity / 2, 2);
     int grow_by = new_capacity - capacity;
-    array = isolate->factory()->CopyFixedArrayAndGrow(array, grow_by);
+    array =
+        isolate->factory()->CopyFixedArrayAndGrow(array, grow_by, allocation);
   }
   return array;
 }
@@ -4107,10 +4132,11 @@ Handle<FixedArray> EnsureSpaceInFixedArray(Isolate* isolate,
 
 // static
 Handle<ArrayList> ArrayList::EnsureSpace(Isolate* isolate,
-                                         Handle<ArrayList> array, int length) {
+                                         Handle<ArrayList> array, int length,
+                                         AllocationType allocation) {
   DCHECK_LT(0, length);
-  auto new_array = Handle<ArrayList>::cast(
-      EnsureSpaceInFixedArray(isolate, array, kFirstIndex + length));
+  auto new_array = Handle<ArrayList>::cast(EnsureSpaceInFixedArray(
+      isolate, array, kFirstIndex + length, allocation));
   DCHECK_EQ(array->Length(), new_array->Length());
   return new_array;
 }
@@ -4275,6 +4301,13 @@ bool WeakArrayList::RemoveOne(const MaybeObjectHandle& value) {
   return false;
 }
 
+bool WeakArrayList::Contains(MaybeObject value) {
+  for (int i = 0; i < length(); ++i) {
+    if (Get(i) == value) return true;
+  }
+  return false;
+}
+
 // static
 Handle<WeakArrayList> PrototypeUsers::Add(Isolate* isolate,
                                           Handle<WeakArrayList> array,
@@ -4385,8 +4418,9 @@ Handle<RegExpMatchInfo> RegExpMatchInfo::ReserveCaptures(
   int capture_register_count =
       JSRegExp::RegistersForCaptureCount(capture_count);
   const int required_length = kFirstCaptureIndex + capture_register_count;
-  Handle<RegExpMatchInfo> result = Handle<RegExpMatchInfo>::cast(
-      EnsureSpaceInFixedArray(isolate, match_info, required_length));
+  Handle<RegExpMatchInfo> result =
+      Handle<RegExpMatchInfo>::cast(EnsureSpaceInFixedArray(
+          isolate, match_info, required_length, AllocationType::kYoung));
   result->SetNumberOfCaptureRegisters(capture_register_count);
   return result;
 }
@@ -4503,6 +4537,21 @@ void DescriptorArray::Sort() {
     }
   }
   DCHECK(IsSortedNoDuplicates());
+}
+
+void DescriptorArray::CheckNameCollisionDuringInsertion(Descriptor* desc,
+                                                        uint32_t desc_hash,
+                                                        int insertion_index) {
+  DCHECK_GE(insertion_index, 0);
+  DCHECK_LE(insertion_index, number_of_all_descriptors());
+
+  if (insertion_index <= 0) return;
+
+  for (int i = insertion_index; i > 0; --i) {
+    Name current_key = GetSortedKey(i - 1);
+    if (current_key.hash() != desc_hash) return;
+    CHECK(current_key != *desc->GetKey());
+  }
 }
 
 int16_t DescriptorArray::UpdateNumberOfMarkedDescriptors(
@@ -4801,7 +4850,8 @@ int Script::GetEvalPosition(Isolate* isolate, Handle<Script> script) {
       Handle<SharedFunctionInfo> shared =
           handle(script->eval_from_shared(), isolate);
       SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate, shared);
-      position = shared->abstract_code(isolate).SourcePosition(-position);
+      position =
+          shared->abstract_code(isolate).SourcePosition(isolate, -position);
     }
     DCHECK_GE(position, 0);
     script->set_eval_from_position(position);
@@ -5033,32 +5083,35 @@ Object Script::GetNameOrSourceURL() {
   return name();
 }
 
-Handle<String> Script::GetScriptHash(bool forceForInspector) {
-  auto isolate = GetIsolate();
-
-  if (origin_options().IsOpaque() && !forceForInspector) {
+// static
+Handle<String> Script::GetScriptHash(Isolate* isolate, Handle<Script> script,
+                                     bool forceForInspector) {
+  if (script->origin_options().IsOpaque() && !forceForInspector) {
     return isolate->factory()->empty_string();
   }
 
-  Object maybe_source_hash = source_hash();
-  if (maybe_source_hash.IsString()) {
-    Handle<String> precomputed(String::cast(maybe_source_hash), isolate);
-    if (precomputed->length() > 0) {
-      return precomputed;
+  PtrComprCageBase cage_base(isolate);
+  {
+    Object maybe_source_hash = script->source_hash(cage_base);
+    if (maybe_source_hash.IsString(cage_base)) {
+      Handle<String> precomputed(String::cast(maybe_source_hash), isolate);
+      if (precomputed->length() > 0) {
+        return precomputed;
+      }
     }
   }
 
-  Handle<Object> src(source(), isolate);
-  if (!src->IsString()) {
-    return isolate->factory()->empty_string();
+  Handle<String> src_text;
+  {
+    Object maybe_script_source = script->source(cage_base);
+
+    if (!maybe_script_source.IsString(cage_base)) {
+      return isolate->factory()->empty_string();
+    }
+    src_text = handle(String::cast(maybe_script_source), isolate);
   }
 
-  Handle<String> src_text = Handle<String>::cast(src);
   char formatted_hash[kSizeOfFormattedSha256Digest];
-  // std::unique_ptr<UChar[]> buffer(new UChar[src->Length()]);
-  // int written = src->Write(isolate,
-  // reinterpret_cast<uint16_t*>(buffer.get()), 0, source->Length()); size_t
-  // writtenSizeInBytes = sizeof(UChar) * written;
 
   std::unique_ptr<char[]> string_val = src_text->ToCString();
   size_t len = strlen(string_val.get());
@@ -5070,7 +5123,7 @@ Handle<String> Script::GetScriptHash(bool forceForInspector) {
 
   Handle<String> result =
       isolate->factory()->NewStringFromAsciiChecked(formatted_hash);
-  set_source_hash(*result);
+  script->set_source_hash(*result);
   return result;
 }
 
@@ -6603,8 +6656,8 @@ void PropertyCell::ClearAndInvalidate(ReadOnlyRoots roots) {
   Transition(details, roots.the_hole_value_handle());
   // TODO(11527): pass Isolate as an argument.
   Isolate* isolate = GetIsolateFromWritableObject(*this);
-  dependent_code().DeoptimizeDependentCodeGroup(
-      isolate, DependentCode::kPropertyCellChangedGroup);
+  DependentCode::DeoptimizeDependencyGroups(
+      isolate, *this, DependentCode::kPropertyCellChangedGroup);
 }
 
 // static
@@ -6700,8 +6753,8 @@ Handle<PropertyCell> PropertyCell::PrepareForAndSetValue(
     // forever.
     if (original_details.cell_type() != new_type ||
         (!original_details.IsReadOnly() && details.IsReadOnly())) {
-      cell->dependent_code().DeoptimizeDependentCodeGroup(
-          isolate, DependentCode::kPropertyCellChangedGroup);
+      DependentCode::DeoptimizeDependencyGroups(
+          isolate, *cell, DependentCode::kPropertyCellChangedGroup);
     }
   }
   return cell;
@@ -6714,8 +6767,8 @@ void PropertyCell::InvalidateProtector() {
     set_value(Smi::FromInt(Protectors::kProtectorInvalid), kReleaseStore);
     // TODO(11527): pass Isolate as an argument.
     Isolate* isolate = GetIsolateFromWritableObject(*this);
-    dependent_code().DeoptimizeDependentCodeGroup(
-        isolate, DependentCode::kPropertyCellChangedGroup);
+    DependentCode::DeoptimizeDependencyGroups(
+        isolate, *this, DependentCode::kPropertyCellChangedGroup);
   }
 }
 
@@ -6764,21 +6817,25 @@ bool PropertyCell::CanTransitionTo(PropertyDetails new_details,
 }
 #endif  // DEBUG
 
+int JSGeneratorObject::code_offset() const {
+  DCHECK(input_or_debug_pos().IsSmi());
+  int code_offset = Smi::ToInt(input_or_debug_pos());
+
+  // The stored bytecode offset is relative to a different base than what
+  // is used in the source position table, hence the subtraction.
+  code_offset -= BytecodeArray::kHeaderSize - kHeapObjectTag;
+  return code_offset;
+}
+
 int JSGeneratorObject::source_position() const {
   CHECK(is_suspended());
   DCHECK(function().shared().HasBytecodeArray());
   Isolate* isolate = GetIsolate();
   DCHECK(
       function().shared().GetBytecodeArray(isolate).HasSourcePositionTable());
-
-  int code_offset = Smi::ToInt(input_or_debug_pos());
-
-  // The stored bytecode offset is relative to a different base than what
-  // is used in the source position table, hence the subtraction.
-  code_offset -= BytecodeArray::kHeaderSize - kHeapObjectTag;
   AbstractCode code =
       AbstractCode::cast(function().shared().GetBytecodeArray(isolate));
-  return code.SourcePosition(code_offset);
+  return code.SourcePosition(isolate, code_offset());
 }
 
 // static

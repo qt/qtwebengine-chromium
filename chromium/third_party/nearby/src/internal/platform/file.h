@@ -19,7 +19,6 @@
 #include <memory>
 #include <string>
 
-#include "connections/clients/windows/dll_config.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/implementation/input_file.h"
@@ -49,7 +48,7 @@ class InputFile final {
   // Returns Exception::kIo on error, or end of file.
   ExceptionOr<ByteArray> Read(std::int64_t size);
 
-  // Returns a string that uniqely identifies this file.
+  // Returns a string that uniquely identifies this file.
   std::string GetFilePath() const;
 
   // Returns total size of this file in bytes.

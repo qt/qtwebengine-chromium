@@ -14,7 +14,9 @@
 #include "src/base/iterator.h"
 #include "src/base/small-vector.h"
 #include "src/base/vector.h"
+#include "src/codegen/source-position.h"
 #include "src/compiler/turboshaft/operations.h"
+#include "src/compiler/turboshaft/sidetable.h"
 #include "src/zone/zone-containers.h"
 
 namespace v8::internal::compiler::turboshaft {
@@ -126,6 +128,7 @@ class OperationBuffer {
     DCHECK_GT(operation_sizes_[idx.id()], 0);
     OpIndex result = OpIndex(idx.offset() + operation_sizes_[idx.id()] *
                                                 sizeof(OperationStorageSlot));
+    DCHECK_LT(0, result.offset());
     DCHECK_LE(result.offset(), capacity() * sizeof(OperationStorageSlot));
     return result;
   }
@@ -134,6 +137,7 @@ class OperationBuffer {
     DCHECK_GT(operation_sizes_[idx.id() - 1], 0);
     OpIndex result = OpIndex(idx.offset() - operation_sizes_[idx.id() - 1] *
                                                 sizeof(OperationStorageSlot));
+    DCHECK_LE(0, result.offset());
     DCHECK_LT(result.offset(), capacity() * sizeof(OperationStorageSlot));
     return result;
   }
@@ -179,8 +183,71 @@ class OperationBuffer {
   uint16_t* operation_sizes_;
 };
 
+template <class Derived>
+class DominatorForwardTreeNode {
+  // A class storing a forward representation of the dominator tree, since the
+  // regular dominator tree is represented as pointers from the children to
+  // parents rather than parents to children.
+ public:
+  void AddChild(Derived* next) {
+    DCHECK_EQ(static_cast<Derived*>(this)->len_ + 1, next->len_);
+    next->neighboring_child_ = last_child_;
+    last_child_ = next;
+  }
+
+  Derived* LastChild() const { return last_child_; }
+  Derived* NeighboringChild() const { return neighboring_child_; }
+  bool HasChildren() const { return last_child_ != nullptr; }
+
+  base::SmallVector<Derived*, 8> Children() const {
+    base::SmallVector<Derived*, 8> result;
+    for (Derived* child = last_child_; child != nullptr;
+         child = child->neighboring_child_) {
+      result.push_back(child);
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+  }
+
+ private:
+  friend class Block;
+
+  Derived* neighboring_child_ = nullptr;
+  Derived* last_child_ = nullptr;
+};
+
+template <class Derived>
+class RandomAccessStackDominatorNode
+    : public DominatorForwardTreeNode<Derived> {
+  // This class represents a node of a dominator tree implemented using Myers'
+  // Random-Access Stack (see
+  // https://publications.mpi-cbg.de/Myers_1983_6328.pdf). This datastructure
+  // enables searching for a predecessor of a node in log(h) time, where h is
+  // the height of the dominator tree.
+ public:
+  void SetDominator(Derived* dominator);
+  Derived* GetDominator() { return nxt_; }
+
+  // Returns the lowest common dominator of {this} and {other}.
+  Derived* GetCommonDominator(RandomAccessStackDominatorNode<Derived>* other);
+
+  int Depth() const { return len_; }
+
+ private:
+  friend class Graph;
+  friend class DominatorForwardTreeNode<Derived>;
+
+  int len_ = 0;
+  Derived* nxt_ = nullptr;
+  Derived* jmp_ = nullptr;
+  // Myers' original datastructure requires to often check jmp_->len_, which is
+  // not so great on modern computers (memory access, caches & co). To speed up
+  // things a bit, we store here jmp_len_.
+  int jmp_len_ = 0;
+};
+
 // A basic block
-class Block {
+class Block : public RandomAccessStackDominatorNode<Block> {
  public:
   enum class Kind : uint8_t { kMerge, kLoopHeader, kBranchTarget };
 
@@ -220,6 +287,17 @@ class Block {
     return result;
   }
 
+#ifdef DEBUG
+  int PredecessorCount() {
+    int count = 0;
+    for (Block* pred = last_predecessor_; pred != nullptr;
+         pred = pred->neighboring_predecessor_) {
+      count++;
+    }
+    return count;
+  }
+#endif
+
   Block* LastPredecessor() const { return last_predecessor_; }
   Block* NeighboringPredecessor() const { return neighboring_predecessor_; }
   bool HasPredecessors() const { return last_predecessor_ != nullptr; }
@@ -241,6 +319,10 @@ class Block {
     DCHECK(end_.valid());
     return end_;
   }
+
+  void PrintDominatorTree(
+      std::vector<const char*> tree_symbols = std::vector<const char*>(),
+      bool has_next = false) const;
 
   explicit Block(Kind kind) : kind_(kind) {}
 
@@ -268,14 +350,20 @@ class Graph {
       : operations_(graph_zone, initial_capacity),
         bound_blocks_(graph_zone),
         all_blocks_(graph_zone),
-        graph_zone_(graph_zone) {}
+        graph_zone_(graph_zone),
+        source_positions_(graph_zone),
+        operation_origins_(graph_zone) {}
 
   // Reset the graph to recycle its memory.
   void Reset() {
     operations_.Reset();
     bound_blocks_.clear();
+    source_positions_.Reset();
+    operation_origins_.Reset();
     next_block_ = 0;
   }
+
+  void GenerateDominatorTree();
 
   const Operation& Get(OpIndex i) const {
     // `Operation` contains const fields and can be overwritten with placement
@@ -305,6 +393,10 @@ class Graph {
   const Block& Get(BlockIndex i) const {
     DCHECK_LT(i.id(), bound_blocks_.size());
     return *bound_blocks_[i.id()];
+  }
+  Block* GetPtr(uint32_t index) {
+    DCHECK_LT(index, bound_blocks_.size());
+    return bound_blocks_[index];
   }
 
   OpIndex Index(const Operation& op) const { return operations_.Index(op); }
@@ -341,7 +433,8 @@ class Graph {
   V8_INLINE Block* NewBlock(Block::Kind kind) {
     if (V8_UNLIKELY(next_block_ == all_blocks_.size())) {
       constexpr size_t new_block_count = 64;
-      Block* blocks = graph_zone_->NewArray<Block>(new_block_count);
+      base::Vector<Block> blocks =
+          graph_zone_->NewVector<Block>(new_block_count, Block(kind));
       for (size_t i = 0; i < new_block_count; ++i) {
         all_blocks_.push_back(&blocks[i]);
       }
@@ -392,6 +485,33 @@ class Graph {
     return operations_.capacity() / kSlotsPerId;
   }
 
+  class OpIndexIterator
+      : public base::iterator<std::bidirectional_iterator_tag, OpIndex> {
+   public:
+    using value_type = OpIndex;
+
+    explicit OpIndexIterator(OpIndex index, const Graph* graph)
+        : index_(index), graph_(graph) {}
+    value_type& operator*() { return index_; }
+    OpIndexIterator& operator++() {
+      index_ = graph_->operations_.Next(index_);
+      return *this;
+    }
+    OpIndexIterator& operator--() {
+      index_ = graph_->operations_.Previous(index_);
+      return *this;
+    }
+    bool operator!=(OpIndexIterator other) const {
+      DCHECK_EQ(graph_, other.graph_);
+      return index_ != other.index_;
+    }
+    bool operator==(OpIndexIterator other) const { return !(*this != other); }
+
+   private:
+    OpIndex index_;
+    const Graph* const graph_;
+  };
+
   template <class OperationT, typename GraphT>
   class OperationIterator
       : public base::iterator<std::bidirectional_iterator_tag, OperationT> {
@@ -417,8 +537,6 @@ class Graph {
     }
     bool operator==(OperationIterator other) const { return !(*this != other); }
 
-    OpIndex Index() const { return index_; }
-
    private:
     OpIndex index_;
     GraphT* const graph_;
@@ -431,9 +549,12 @@ class Graph {
   base::iterator_range<MutableOperationIterator> AllOperations() {
     return operations(operations_.BeginIndex(), operations_.EndIndex());
   }
-
   base::iterator_range<ConstOperationIterator> AllOperations() const {
     return operations(operations_.BeginIndex(), operations_.EndIndex());
+  }
+
+  base::iterator_range<OpIndexIterator> AllOperationIndices() const {
+    return OperationIndices(operations_.BeginIndex(), operations_.EndIndex());
   }
 
   base::iterator_range<MutableOperationIterator> operations(
@@ -445,6 +566,11 @@ class Graph {
     return operations(block.begin_, block.end_);
   }
 
+  base::iterator_range<OpIndexIterator> OperationIndices(
+      const Block& block) const {
+    return OperationIndices(block.begin_, block.end_);
+  }
+
   base::iterator_range<ConstOperationIterator> operations(OpIndex begin,
                                                           OpIndex end) const {
     DCHECK(begin.valid());
@@ -452,7 +578,6 @@ class Graph {
     return {ConstOperationIterator(begin, this),
             ConstOperationIterator(end, this)};
   }
-
   base::iterator_range<MutableOperationIterator> operations(OpIndex begin,
                                                             OpIndex end) {
     DCHECK(begin.valid());
@@ -461,10 +586,17 @@ class Graph {
             MutableOperationIterator(end, this)};
   }
 
+  base::iterator_range<OpIndexIterator> OperationIndices(OpIndex begin,
+                                                         OpIndex end) const {
+    DCHECK(begin.valid());
+    DCHECK(end.valid());
+    return {OpIndexIterator(begin, this), OpIndexIterator(end, this)};
+  }
+
   base::iterator_range<base::DerefPtrIterator<Block>> blocks() {
-    return {
-        base::DerefPtrIterator(bound_blocks_.data()),
-        base::DerefPtrIterator(bound_blocks_.data() + bound_blocks_.size())};
+    return {base::DerefPtrIterator<Block>(bound_blocks_.data()),
+            base::DerefPtrIterator<Block>(bound_blocks_.data() +
+                                          bound_blocks_.size())};
   }
   base::iterator_range<base::DerefPtrIterator<const Block>> blocks() const {
     return {base::DerefPtrIterator<const Block>(bound_blocks_.data()),
@@ -473,6 +605,18 @@ class Graph {
   }
 
   bool IsValid(OpIndex i) const { return i < next_operation_index(); }
+
+  const GrowingSidetable<SourcePosition>& source_positions() const {
+    return source_positions_;
+  }
+  GrowingSidetable<SourcePosition>& source_positions() {
+    return source_positions_;
+  }
+
+  const GrowingSidetable<OpIndex>& operation_origins() const {
+    return operation_origins_;
+  }
+  GrowingSidetable<OpIndex>& operation_origins() { return operation_origins_; }
 
   Graph& GetOrCreateCompanion() {
     if (!companion_) {
@@ -493,6 +637,8 @@ class Graph {
     std::swap(all_blocks_, companion.all_blocks_);
     std::swap(next_block_, companion.next_block_);
     std::swap(graph_zone_, companion.graph_zone_);
+    std::swap(source_positions_, companion.source_positions_);
+    std::swap(operation_origins_, companion.operation_origins_);
 #ifdef DEBUG
     // Update generation index.
     DCHECK_EQ(generation_ + 1, companion.generation_);
@@ -513,6 +659,9 @@ class Graph {
   ZoneVector<Block*> all_blocks_;
   size_t next_block_ = 0;
   Zone* graph_zone_;
+  GrowingSidetable<SourcePosition> source_positions_;
+  GrowingSidetable<OpIndex> operation_origins_;
+
   std::unique_ptr<Graph> companion_ = {};
 #ifdef DEBUG
   size_t generation_ = 1;

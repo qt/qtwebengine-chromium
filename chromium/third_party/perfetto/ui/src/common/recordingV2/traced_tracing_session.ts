@@ -25,15 +25,20 @@ import {
   FreeBuffersResponse,
   GetTraceStatsRequest,
   GetTraceStatsResponse,
+  IBufferStats,
   IMethodInfo,
   IPCFrame,
   ISlice,
-  ITraceStats,
   ReadBuffersRequest,
   ReadBuffersResponse,
   TraceConfig,
 } from '../protos';
 
+import {
+  BUFFER_USAGE_INCORRECT_FORMAT,
+  BUFFER_USAGE_NOT_ACCESSIBLE,
+} from './chrome_utils';
+import {RecordingError} from './recording_error_handling';
 import {
   ByteStream,
   TracingSession,
@@ -50,6 +55,7 @@ const TRACE_PACKET_PROTO_ID = 1;
 const TRACE_PACKET_PROTO_TAG =
     (TRACE_PACKET_PROTO_ID << 3) | PROTO_LEN_DELIMITED_WIRE_TYPE;
 
+export const RECORDING_IN_PROGRESS = 'Recording in progress';
 export const PARSING_UNKNWON_REQUEST_ID = 'Unknown request id';
 export const PARSING_UNABLE_TO_DECODE_METHOD = 'Unable to decode method';
 export const PARSING_UNRECOGNIZED_PORT = 'Unrecognized consumer port response';
@@ -85,7 +91,7 @@ export class TracedTracingSession implements TracingSession {
   // to keep track of the type of request, and parse the response correctly.
   private requestId = 1;
 
-  private pendingStatsMessages = new Array<Deferred<ITraceStats>>();
+  private pendingStatsMessages = new Array<Deferred<IBufferStats[]>>();
 
   // The bytestream is obtained when creating a connection with a target.
   // For instance, the AdbStream is obtained from a connection with an Adb
@@ -99,7 +105,7 @@ export class TracedTracingSession implements TracingSession {
 
   start(config: TraceConfig): void {
     const duration = config.durationMs;
-    this.tracingSessionListener.onStatus(`Recording in progress${
+    this.tracingSessionListener.onStatus(`${RECORDING_IN_PROGRESS}${
         duration ? ' for ' + duration.toString() + ' ms' : ''}...`);
 
     const enableTracingRequest = new EnableTracingRequest();
@@ -120,15 +126,12 @@ export class TracedTracingSession implements TracingSession {
   }
 
   async getTraceBufferUsage(): Promise<number> {
-    const traceStats = await this.getTraceStats();
-    if (!traceStats.bufferStats) {
-      // // If a buffer stats is pending and we finish tracing, it will be
-      // resolved as {} when closing the connection. In that case just ignore it
-      // rather than erroring.
+    if (!this.byteStream.isOpen()) {
       return 0;
     }
-    let percentageUsed = 0;
-    for (const buffer of assertExists(traceStats.bufferStats)) {
+    const bufferStats = await this.getBufferStats();
+    let percentageUsed = -1;
+    for (const buffer of bufferStats) {
       if (!Number.isFinite(buffer.bytesWritten) ||
           !Number.isFinite(buffer.bufferSize)) {
         continue;
@@ -138,6 +141,10 @@ export class TracedTracingSession implements TracingSession {
       if (total >= 0) {
         percentageUsed = Math.max(percentageUsed, used / total);
       }
+    }
+
+    if (percentageUsed === -1) {
+      return Promise.reject(new RecordingError(BUFFER_USAGE_INCORRECT_FORMAT));
     }
     return percentageUsed;
   }
@@ -155,10 +162,10 @@ export class TracedTracingSession implements TracingSession {
     // session.
     assertFalse(!!this.resolveBindingPromise);
     this.resolveBindingPromise = defer<void>();
-    await this.resolveBindingPromise;
+    return this.resolveBindingPromise;
   }
 
-  private getTraceStats(): Promise<ITraceStats> {
+  private getBufferStats(): Promise<IBufferStats[]> {
     const getTraceStatsRequestProto =
         GetTraceStatsRequest.encode(new GetTraceStatsRequest()).finish();
     try {
@@ -168,7 +175,7 @@ export class TracedTracingSession implements TracingSession {
       this.raiseError(e);
     }
 
-    const statsMessage = defer<ITraceStats>();
+    const statsMessage = defer<IBufferStats[]>();
     this.pendingStatsMessages.push(statsMessage);
     return statsMessage;
   }
@@ -178,25 +185,25 @@ export class TracedTracingSession implements TracingSession {
     const requestProto =
         FreeBuffersRequest.encode(new FreeBuffersRequest()).finish();
     this.rpcInvoke('FreeBuffers', requestProto);
+    this.byteStream.close();
   }
 
   private clearState() {
     for (const statsMessage of this.pendingStatsMessages) {
-      // Resolving with an empty object instead of rejecting because a rejection
-      // would trigger an 'unhandledRejection' event, causing the application
-      // to show an error modal in the UI, which is not necessary for stats
-      // messages because that would mean the error modal is shown on every
-      // successful recording.
-      statsMessage.resolve({});
+      statsMessage.reject(new RecordingError(BUFFER_USAGE_NOT_ACCESSIBLE));
     }
     this.pendingStatsMessages = [];
   }
 
   private async rpcInvoke(methodName: string, argsProto: Uint8Array):
       Promise<void> {
+    if (!this.byteStream.isOpen()) {
+      return;
+    }
     const method = this.availableMethods.find((m) => m.name === methodName);
     if (!method || !method.id) {
-      throw new Error(`Method ${methodName} not supported by the target`);
+      throw new RecordingError(
+          `Method ${methodName} not supported by the target`);
     }
     const requestId = this.requestId++;
     const frame = new IPCFrame({
@@ -335,12 +342,15 @@ export class TracedTracingSession implements TracingSession {
       } else if (method === 'GetTraceStats') {
         const maybePendingStatsMessage = this.pendingStatsMessages.shift();
         if (maybePendingStatsMessage) {
-          maybePendingStatsMessage.resolve(data.traceStats || {});
+          maybePendingStatsMessage.resolve(data?.traceStats?.bufferStats || []);
         }
       } else if (method === 'FreeBuffers') {
-        this.byteStream.close();
+        // No action required. If we successfully read a whole trace,
+        // we close the connection. Alternatively, if the tracing finishes
+        // with an exception or if the user cancels it, we also close the
+        // connection.
       } else if (method === 'DisableTracing') {
-        // No action required.
+        // No action required. Same reasoning as for FreeBuffers.
       } else {
         this.raiseError(`${PARSING_UNRECOGNIZED_PORT}: ${method}`);
       }

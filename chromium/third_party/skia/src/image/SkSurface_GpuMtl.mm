@@ -13,7 +13,7 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrResourceProviderPriv.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/image/SkSurface_Gpu.h"
 
 #if SK_SUPPORT_GPU
@@ -88,7 +88,7 @@ sk_sp<SkSurface> SkSurface::MakeFromCAMetalLayer(GrRecordingContext* rContext,
                                                 std::move(colorSpace),
                                                 origin,
                                                 SkSurfacePropsCopyOrDefault(surfaceProps),
-                                                skgpu::BaseDevice::InitContents::kUninit);
+                                                skgpu::v1::Device::InitContents::kUninit);
     if (!device) {
         return nullptr;
     }
@@ -157,7 +157,7 @@ sk_sp<SkSurface> SkSurface::MakeFromMTKView(GrRecordingContext* rContext,
                                                 std::move(colorSpace),
                                                 origin,
                                                 SkSurfacePropsCopyOrDefault(surfaceProps),
-                                                skgpu::BaseDevice::InitContents::kUninit);
+                                                skgpu::v1::Device::InitContents::kUninit);
     if (!device) {
         return nullptr;
     }

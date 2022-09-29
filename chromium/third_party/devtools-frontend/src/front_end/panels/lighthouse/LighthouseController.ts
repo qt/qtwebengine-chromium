@@ -8,7 +8,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 
-import type {ProtocolService} from './LighthouseProtocolService.js';
+import {type ProtocolService} from './LighthouseProtocolService.js';
 
 const UIStrings = {
   /**
@@ -309,6 +309,9 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
       return '';
     }
     const usageData = await mainTarget.storageAgent().invoke_getUsageAndQuota({origin});
+    if (usageData.getError()) {
+      return '';
+    }
     const locations = usageData.usageBreakdown.filter(usage => usage.usage)
                           .map(usage => STORAGE_TYPE_NAMES.get(usage.storageType))
                           .map(i18nStringFn => i18nStringFn ? i18nStringFn() : undefined)

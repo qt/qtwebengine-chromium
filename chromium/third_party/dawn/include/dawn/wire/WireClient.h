@@ -70,7 +70,8 @@ class DAWN_WIRE_EXPORT WireClient : public CommandHandler {
 
     const volatile char* HandleCommands(const volatile char* commands, size_t size) override;
 
-    ReservedTexture ReserveTexture(WGPUDevice device);
+    ReservedTexture ReserveTexture(WGPUDevice device,
+                                   const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device);
     ReservedDevice ReserveDevice();
     ReservedInstance ReserveInstance();

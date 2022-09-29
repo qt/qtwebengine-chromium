@@ -166,6 +166,9 @@ def EnsureLLVMSymlinks(robo_configuration):
   EnsureSymlink("lld", "lld-link")
   # For mac. Only used at configure time to check if symbols are present.
   EnsureSymlink("lld", "ld64.lld")
+  # For linux.
+  EnsureSymlink("llvm-ar", "ar")
+  EnsureSymlink("llvm-ar", "ranlib")
 
 
 def EnsureSysroots(robo_configuration):

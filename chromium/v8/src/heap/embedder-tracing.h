@@ -10,7 +10,6 @@
 #include "include/v8-cppgc.h"
 #include "include/v8-embedder-heap.h"
 #include "include/v8-traced-handle.h"
-#include "src/common/allow-deprecated.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
 #include "src/flags/flags.h"
@@ -152,8 +151,6 @@ class V8_EXPORT_PRIVATE LocalEmbedderHeapTracer final {
   DefaultEmbedderRootsHandler& default_embedder_roots_handler() {
     return default_embedder_roots_handler_;
   }
-
-  void NotifyEmptyEmbedderStack();
 
   EmbedderHeapTracer::EmbedderStackState embedder_stack_state() const {
     return embedder_stack_state_;

@@ -88,6 +88,8 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool hide_scrollbars;
+  // If false, ignore ::-webkit-scrollbar-* CSS pseudo-elements in stylesheets.
+  bool enable_webkit_scrollbar_styling = true;
   bool accelerated_2d_canvas_enabled;
   bool canvas_2d_layers_enabled = false;
   bool antialiased_2d_canvas_disabled;
@@ -154,6 +156,10 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   blink::mojom::V8CacheOptions v8_cache_options;
   bool record_whole_document;
 
+  // If true, stylus handwriting recognition to text input will be available in
+  // editable input fields which are non-password type.
+  bool stylus_handwriting_enabled;
+
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
   // connected to the backing store, for instance if you wanted to be able to
@@ -191,8 +197,6 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // around WebVTT text tracks.
   // Window color can be any legal CSS color descriptor.
   std::string text_track_window_color;
-  // Window padding is in em.
-  std::string text_track_window_padding;
   // Window radius is in pixels.
   std::string text_track_window_radius;
 
@@ -347,6 +351,11 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   // By default, WebXR's immersive-ar session creation is allowed, but this can
   // change depending on the enterprise policy if the platform supports it.
   bool webxr_immersive_ar_allowed = true;
+
+  // Whether lookup of frames in the associated WebView (e.g. lookup via
+  // window.open or via <a target=...>) should be renderer-wide (i.e. going
+  // beyond the usual opener-relationship-based BrowsingInstance boundaries).
+  bool renderer_wide_named_frame_lookup = false;
 
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for

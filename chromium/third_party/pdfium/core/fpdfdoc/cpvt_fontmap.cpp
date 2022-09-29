@@ -20,11 +20,11 @@
 
 CPVT_FontMap::CPVT_FontMap(CPDF_Document* pDoc,
                            CPDF_Dictionary* pResDict,
-                           const RetainPtr<CPDF_Font>& pDefFont,
+                           RetainPtr<CPDF_Font> pDefFont,
                            const ByteString& sDefFontAlias)
     : m_pDocument(pDoc),
       m_pResDict(pResDict),
-      m_pDefFont(pDefFont),
+      m_pDefFont(std::move(pDefFont)),
       m_sDefFontAlias(sDefFontAlias) {}
 
 CPVT_FontMap::~CPVT_FontMap() = default;
@@ -39,8 +39,8 @@ void CPVT_FontMap::SetupAnnotSysPDFFont() {
   if (!pPDFFont)
     return;
 
-  CPDF_Dictionary* pFontList = m_pResDict->GetDictFor("Font");
-  if (ValidateFontResourceDict(pFontList) &&
+  RetainPtr<CPDF_Dictionary> pFontList = m_pResDict->GetMutableDictFor("Font");
+  if (ValidateFontResourceDict(pFontList.Get()) &&
       !pFontList->KeyExist(m_sSysFontAlias)) {
     pFontList->SetNewFor<CPDF_Reference>(m_sSysFontAlias, m_pDocument.Get(),
                                          pPDFFont->GetFontDict()->GetObjNum());

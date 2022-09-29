@@ -9,10 +9,12 @@ option optimize_for = LITE_RUNTIME;
 package fusebox;
 
 message DirEntryProto {
-  // True if the entry is a directory.
+  // Deprecated: use (mode_bits & S_IFDIR) instead.
   optional bool is_directory = 1;
   // Entry name.
   optional string name = 2;
+  // POSIX style (S_IFREG | rwxr-x---) bits.
+  optional uint32 mode_bits = 3;
 }
 
 message DirEntryListProto {

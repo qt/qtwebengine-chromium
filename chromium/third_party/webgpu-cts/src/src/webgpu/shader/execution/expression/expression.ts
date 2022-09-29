@@ -1,12 +1,6 @@
 import { assert } from '../../../../common/util/util.js';
 import { GPUTest } from '../../../gpu_test.js';
-import {
-  compare,
-  Comparator,
-  FloatMatch,
-  anyOf,
-  intervalComparator,
-} from '../../../util/compare.js';
+import { compare, Comparator, anyOf } from '../../../util/compare.js';
 import {
   ScalarType,
   Scalar,
@@ -17,19 +11,27 @@ import {
   Vector,
   VectorType,
   f32,
-  f64,
 } from '../../../util/conversion.js';
 import {
   BinaryToInterval,
+  F32Interval,
   PointToInterval,
   TernaryToInterval,
+  VectorPairToInterval,
 } from '../../../util/f32_interval.js';
-import { flushSubnormalNumber, isSubnormalNumber, quantizeToF32 } from '../../../util/math.js';
+import { quantizeToF32 } from '../../../util/math.js';
 
-// Helper for converting Values to Comparators.
-function toComparator(input: Value | Comparator): Comparator {
-  if ((input as Value).type !== undefined) {
-    return (got, cmpFloats) => compare(got, input as Value, cmpFloats);
+export type Expectation = Value | F32Interval | Comparator;
+
+/** Is this expectation actually a Comparator */
+function isComparator(e: Expectation): boolean {
+  return !(e instanceof F32Interval || e instanceof Scalar || e instanceof Vector);
+}
+
+/** Helper for converting Values to Comparators */
+export function toComparator(input: Expectation): Comparator {
+  if (!isComparator(input)) {
+    return got => compare(got, input as Value);
   }
   return input as Comparator;
 }
@@ -38,8 +40,8 @@ function toComparator(input: Value | Comparator): Comparator {
 export type Case = {
   // The input value(s)
   input: Value | Array<Value>;
-  // The expected value, or comparator
-  expected: Value | Comparator;
+  // The expected result, or function to check the result
+  expected: Expectation;
 };
 
 /** CaseList is a list of Cases */
@@ -66,9 +68,6 @@ export type Config = {
   // If the number of test cases is not a multiple of the vector width, then the
   // last scalar value is repeated to fill the last vector value.
   vectorize?: number;
-  // The FloatMatch to use when comparing floating point numbers.
-  // If undefined, floating point numbers must match exactly.
-  cmpFloats?: FloatMatch;
 };
 
 // Helper for returning the WGSL storage type for the given Type.
@@ -142,9 +141,6 @@ export function run(
   cfg: Config = { inputSource: 'storage_r' },
   cases: CaseList
 ) {
-  const cmpFloats =
-    cfg.cmpFloats !== undefined ? cfg.cmpFloats : (got: number, expect: number) => got === expect;
-
   // If the 'vectorize' config option was provided, pack the cases into vectors.
   if (cfg.vectorize !== undefined) {
     const packed = packScalarsToVector(parameterTypes, returnType, cases, cfg.vectorize);
@@ -171,40 +167,43 @@ export function run(
     }
   })();
 
+  // Submit all the batches, then check the results.
+  const checkResults: Array<() => void> = [];
   for (let i = 0; i < cases.length; i += casesPerBatch) {
     const batchCases = cases.slice(i, Math.min(i + casesPerBatch, cases.length));
-    runBatch(
+    const checkResult = submitBatch(
       t,
       expressionBuilder,
       parameterTypes,
       returnType,
       batchCases,
-      cfg.inputSource,
-      cmpFloats
+      cfg.inputSource
     );
+    checkResults.push(checkResult);
   }
+
+  checkResults.forEach(f => f());
 }
 
 /**
- * Runs the list of expression tests. The input data must fit within the buffer
- * binding limits of the given inputSource.
+ * Submits the list of expression tests. The input data must fit within the
+ * buffer binding limits of the given inputSource.
  * @param t the GPUTest
  * @param expressionBuilder the expression builder function
  * @param parameterTypes the list of expression parameter types
  * @param returnType the return type for the expression overload
  * @param cases list of test cases that fit within the binding limits of the device
  * @param inputSource the source of the input values
- * @param cmpFloats the method to compare floating point numbers
+ * @returns a function that checks the results are as expected
  */
-function runBatch(
+function submitBatch(
   t: GPUTest,
   expressionBuilder: ExpressionBuilder,
   parameterTypes: Array<Type>,
   returnType: Type,
   cases: CaseList,
-  inputSource: InputSource,
-  cmpFloats: FloatMatch
-) {
+  inputSource: InputSource
+): () => void {
   // Construct a buffer to hold the results of the expression tests
   const outputBufferSize = cases.length * kValueStride;
   const outputBuffer = t.device.createBuffer({
@@ -230,35 +229,38 @@ function runBatch(
 
   t.queue.submit([encoder.finish()]);
 
-  const checkExpectation = (outputData: Uint8Array) => {
-    // Read the outputs from the output buffer
-    const outputs = new Array<Value>(cases.length);
-    for (let i = 0; i < cases.length; i++) {
-      outputs[i] = returnType.read(outputData, i * kValueStride);
-    }
+  // Return a function that can check the results of the shader
+  return () => {
+    const checkExpectation = (outputData: Uint8Array) => {
+      // Read the outputs from the output buffer
+      const outputs = new Array<Value>(cases.length);
+      for (let i = 0; i < cases.length; i++) {
+        outputs[i] = returnType.read(outputData, i * kValueStride);
+      }
 
-    // The list of expectation failures
-    const errs: string[] = [];
+      // The list of expectation failures
+      const errs: string[] = [];
 
-    // For each case...
-    for (let caseIdx = 0; caseIdx < cases.length; caseIdx++) {
-      const c = cases[caseIdx];
-      const got = outputs[caseIdx];
-      const cmp = toComparator(c.expected)(got, cmpFloats);
-      if (!cmp.matched) {
-        errs.push(`(${c.input instanceof Array ? c.input.join(', ') : c.input})
+      // For each case...
+      for (let caseIdx = 0; caseIdx < cases.length; caseIdx++) {
+        const c = cases[caseIdx];
+        const got = outputs[caseIdx];
+        const cmp = toComparator(c.expected)(got);
+        if (!cmp.matched) {
+          errs.push(`(${c.input instanceof Array ? c.input.join(', ') : c.input})
     returned: ${cmp.got}
     expected: ${cmp.expected}`);
+        }
       }
-    }
 
-    return errs.length > 0 ? new Error(errs.join('\n\n')) : undefined;
+      return errs.length > 0 ? new Error(errs.join('\n\n')) : undefined;
+    };
+
+    t.expectGPUBufferValuesPassCheck(outputBuffer, checkExpectation, {
+      type: Uint8Array,
+      typedLength: outputBufferSize,
+    });
   };
-
-  t.expectGPUBufferValuesPassCheck(outputBuffer, checkExpectation, {
-    type: Uint8Array,
-    typedLength: outputBufferSize,
-  });
 }
 
 /**
@@ -296,11 +298,12 @@ function buildPipeline(
   outputBuffer: GPUBuffer
 ): [GPUComputePipeline, GPUBindGroup] {
   // wgsl declaration of output buffer and binding
+  const wgslStorageType = storageType(returnType);
   const wgslOutputs = `
 struct Output {
-  @size(${kValueStride}) value : ${storageType(returnType)}
+  @size(${kValueStride}) value : ${wgslStorageType}
 };
-@group(0) @binding(0) var<storage, write> outputs : array<Output, ${cases.length}>;
+@group(0) @binding(0) var<storage, read_write> outputs : array<Output, ${cases.length}>;
 `;
 
   switch (inputSource) {
@@ -308,18 +311,24 @@ struct Output {
       //////////////////////////////////////////////////////////////////////////
       // Input values are constant values in the WGSL shader
       //////////////////////////////////////////////////////////////////////////
-      const wgslCases = cases.map((c, caseIdx) => {
+      const wgslValues = cases.map(c => {
         const args = parameterTypes.map((_, i) => `(${ith(c.input, i).wgsl()})`);
-        return `outputs[${caseIdx}].value = ${toStorage(returnType, expressionBuilder(args))};`;
+        return `${toStorage(returnType, expressionBuilder(args))}`;
       });
 
       // the full WGSL shader source
       const source = `
 ${wgslOutputs}
 
+const values = array<${wgslStorageType}, ${cases.length}>(
+  ${wgslValues.join(',\n  ')}
+);
+
 @compute @workgroup_size(1)
 fn main() {
-  ${wgslCases.join('\n   ')}
+  for (var i = 0u; i < ${cases.length}; i++) {
+    outputs[i].value = values[i];
+  }
 }
 `;
 
@@ -492,12 +501,12 @@ function packScalarsToVector(
     for (let i = 0; i < vectorWidth; i++) {
       comparators[i] = toComparator(cases[clampCaseIdx(caseIdx + i)].expected);
     }
-    const packedComparator = (got: Value, cmpFloats: FloatMatch) => {
+    const packedComparator = (got: Value) => {
       let matched = true;
       const gElements = new Array<string>(vectorWidth);
       const eElements = new Array<string>(vectorWidth);
       for (let i = 0; i < vectorWidth; i++) {
-        const d = comparators[i]((got as Vector).elements[i], cmpFloats);
+        const d = comparators[i]((got as Vector).elements[i]);
         matched = matched && d.matched;
         gElements[i] = d.got;
         eElements[i] = d.expected;
@@ -521,81 +530,19 @@ function packScalarsToVector(
   };
 }
 
-/** @returns a set of flushed and non-flushed floating point results for a given number. */
-function calculateFlushedResults(value: number): Array<Scalar> {
-  return [f64(value), f64(flushSubnormalNumber(value))];
-}
-
-/**
- * Generates a Case for the param and unary op provide.
- * The Case will use either exact matching or the test level Comparator.
- * @param param the parameter to pass into the operation
- * @param op callback that implements the truth function for the unary operation
- */
-export function makeUnaryF32Case(param: number, op: (p: number) => number): Case {
-  const f32_param = quantizeToF32(param);
-  const is_param_subnormal = isSubnormalNumber(f32_param);
-  const expected = calculateFlushedResults(op(f32_param));
-  if (is_param_subnormal) {
-    calculateFlushedResults(op(0)).forEach(value => {
-      expected.push(value);
-    });
-  }
-  return { input: [f32(param)], expected: anyOf(...expected) };
-}
-
-/**
- * Generates a Case for the params and binary op provide.
- * The Case will use either exact matching or the test level Comparator.
- * @param param0 the first param or left hand side to pass into the binary operation
- * @param param1 the second param or rhs hand side to pass into the binary operation
- * @param op callback that implements the truth function for the binary operation
- * @param skip_param1_zero_flush should the builder skip cases where the param1 would be flushed to 0,
- *                               this is to avoid performing division by 0, other invalid operations.
- *                               The caller is responsible for making sure the initial param1 isn't 0.
- */
-export function makeBinaryF32Case(
-  param0: number,
-  param1: number,
-  op: (p0: number, p1: number) => number,
-  skip_param1_zero_flush: boolean = false
-): Case {
-  const f32_param0 = quantizeToF32(param0);
-  const f32_param1 = quantizeToF32(param1);
-  const is_param0_subnormal = isSubnormalNumber(f32_param0);
-  const is_param1_subnormal = isSubnormalNumber(f32_param1);
-  const expected = calculateFlushedResults(op(f32_param0, f32_param1));
-  if (is_param0_subnormal) {
-    calculateFlushedResults(op(0, f32_param1)).forEach(value => {
-      expected.push(value);
-    });
-  }
-  if (!skip_param1_zero_flush && is_param1_subnormal) {
-    calculateFlushedResults(op(f32_param0, 0)).forEach(value => {
-      expected.push(value);
-    });
-  }
-  if (!skip_param1_zero_flush && is_param0_subnormal && is_param1_subnormal) {
-    calculateFlushedResults(op(0, 0)).forEach(value => {
-      expected.push(value);
-    });
-  }
-
-  return { input: [f32(param0), f32(param1)], expected: anyOf(...expected) };
-}
-
 /**
  * Generates a Case for the param and unary interval generator provided.
  * The Case will use use an interval comparator for matching results.
  * @param param the param to pass into the unary operation
- * @param op callback that implements generating an acceptance interval for a unary operation
+ * @param ops callbacks that implement generating an acceptance interval for a unary operation
  */
-// Will be used in test implementations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function makeUnaryF32IntervalCase(param: number, op: PointToInterval): Case {
+export function makeUnaryF32IntervalCase(param: number, ...ops: PointToInterval[]): Case {
   param = quantizeToF32(param);
-  const interval = op(param);
-  return { input: [f32(param)], expected: intervalComparator(interval) };
+  const intervals: Array<F32Interval> = new Array<F32Interval>();
+  for (const op of ops) {
+    intervals.push(op(param));
+  }
+  return { input: [f32(param)], expected: anyOf(...intervals) };
 }
 
 /**
@@ -603,19 +550,20 @@ export function makeUnaryF32IntervalCase(param: number, op: PointToInterval): Ca
  * The Case will use use an interval comparator for matching results.
  * @param param0 the first param or left hand side to pass into the binary operation
  * @param param1 the second param or rhs hand side to pass into the binary operation
- * @param op callback that implements generating an acceptance interval for a binary operation
+ * @param ops callbacks that implement generating an acceptance interval for a binary operation
  */
-// Will be used in test implementations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function makeBinaryF32IntervalCase(
   param0: number,
   param1: number,
-  op: BinaryToInterval
+  ...ops: BinaryToInterval[]
 ): Case {
   param0 = quantizeToF32(param0);
   param1 = quantizeToF32(param1);
-  const interval = op(param0, param1);
-  return { input: [f32(param0), f32(param1)], expected: intervalComparator(interval) };
+  const intervals: Array<F32Interval> = new Array<F32Interval>();
+  for (const op of ops) {
+    intervals.push(op(param0, param1));
+  }
+  return { input: [f32(param0), f32(param1)], expected: anyOf(...intervals) };
 }
 
 /**
@@ -624,19 +572,48 @@ export function makeBinaryF32IntervalCase(
  * @param param0 the first param to pass into the ternary operation
  * @param param1 the second param to pass into the ternary operation
  * @param param2 the third param to pass into the ternary operation
- * @param op callback that implements generating an acceptance interval for a ternary operation
+ * @param ops callbacks that implement generating an acceptance interval for a
+ *           ternary operation.
  */
-// Will be used in test implementations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function makeTernaryF32IntervalCase(
   param0: number,
   param1: number,
   param2: number,
-  op: TernaryToInterval
+  ...ops: TernaryToInterval[]
 ): Case {
   param0 = quantizeToF32(param0);
   param1 = quantizeToF32(param1);
   param2 = quantizeToF32(param2);
-  const interval = op(param0, param1, param2);
-  return { input: [f32(param0), f32(param1), f32(param2)], expected: intervalComparator(interval) };
+  const intervals: Array<F32Interval> = new Array<F32Interval>();
+  for (const op of ops) {
+    intervals.push(op(param0, param1, param2));
+  }
+  return {
+    input: [f32(param0), f32(param1), f32(param2)],
+    expected: anyOf(...intervals),
+  };
+}
+
+/**
+ * Generates a Case for the params and vector pair interval generator provided.
+ * @param param0 the first param to pass into the operation
+ * @param param1 the second param to pass into the operation
+ * @param ops callbacks that implement generating an acceptance interval for a
+ *            pair of vectors.
+ */
+export function makeVectorPairF32IntervalCase(
+  param0: number[],
+  param1: number[],
+  ...ops: VectorPairToInterval[]
+): Case {
+  param0 = param0.map(quantizeToF32);
+  param1 = param1.map(quantizeToF32);
+  const param0_f32 = param0.map(f32);
+  const param1_f32 = param1.map(f32);
+
+  const intervals = ops.map(o => o(param0, param1));
+  return {
+    input: [new Vector(param0_f32), new Vector(param1_f32)],
+    expected: anyOf(...intervals),
+  };
 }

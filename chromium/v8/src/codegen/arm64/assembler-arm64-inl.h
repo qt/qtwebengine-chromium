@@ -10,6 +10,7 @@
 #include "src/base/memory.h"
 #include "src/codegen/arm64/assembler-arm64.h"
 #include "src/codegen/assembler.h"
+#include "src/codegen/flush-instruction-cache.h"
 #include "src/debug/debug.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/smi.h"
@@ -701,9 +702,8 @@ void RelocInfo::set_target_object(Heap* heap, HeapObject target,
     Assembler::set_target_address_at(pc_, constant_pool_, target.ptr(),
                                      icache_flush_mode);
   }
-  if (write_barrier_mode == UPDATE_WRITE_BARRIER && !host().is_null() &&
-      !FLAG_disable_write_barriers) {
-    WriteBarrierForCode(host(), this, target);
+  if (!host().is_null() && !FLAG_disable_write_barriers) {
+    WriteBarrierForCode(host(), this, target, write_barrier_mode);
   }
 }
 
@@ -1063,21 +1063,6 @@ Instr Assembler::FPScale(unsigned scale) {
 
 const Register& Assembler::AppropriateZeroRegFor(const CPURegister& reg) const {
   return reg.Is64Bits() ? xzr : wzr;
-}
-
-inline void Assembler::CheckBufferSpace() {
-  DCHECK_LT(pc_, buffer_start_ + buffer_->size());
-  if (V8_UNLIKELY(buffer_space() < kGap)) {
-    GrowBuffer();
-  }
-}
-
-V8_INLINE void Assembler::CheckBuffer() {
-  CheckBufferSpace();
-  if (pc_offset() >= next_veneer_pool_check_) {
-    CheckVeneerPool(false, true);
-  }
-  constpool_.MaybeCheck();
 }
 
 EnsureSpace::EnsureSpace(Assembler* assembler) : block_pools_scope_(assembler) {

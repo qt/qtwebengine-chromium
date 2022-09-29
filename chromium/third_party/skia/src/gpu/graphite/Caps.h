@@ -8,7 +8,6 @@
 #ifndef skgpu_graphite_Caps_DEFINED
 #define skgpu_graphite_Caps_DEFINED
 
-#include "include/core/SkCapabilities.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "src/core/SkEnumBitMask.h"
@@ -16,22 +15,28 @@
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
-namespace SkSL {
-struct ShaderCaps;
-}
+class SkCapabilities;
+
+namespace SkSL { struct ShaderCaps; }
+
+namespace skgpu { class ShaderErrorHandler; }
 
 namespace skgpu::graphite {
 
+struct ContextOptions;
+class ComputePipelineDesc;
 class GraphicsPipelineDesc;
 class GraphiteResourceKey;
 struct RenderPassDesc;
 class TextureInfo;
 
-class Caps : public SkCapabilities {
+class Caps : public SkRefCnt {
 public:
     ~Caps() override;
 
     const SkSL::ShaderCaps* shaderCaps() const { return fShaderCaps.get(); }
+
+    sk_sp<SkCapabilities> capabilities() const;
 
     virtual TextureInfo getDefaultSampledTextureInfo(SkColorType,
                                                      uint32_t levelCount,
@@ -46,6 +51,7 @@ public:
 
     virtual UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                               const RenderPassDesc&) const = 0;
+    virtual UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const = 0;
 
     bool areColorTypeAndTextureInfoCompatible(SkColorType, const TextureInfo&) const;
 
@@ -64,6 +70,10 @@ public:
     // to a draw.
     size_t requiredUniformBufferAlignment() const { return fRequiredUniformBufferAlignment; }
 
+    // Returns the required alignment in bytes for the offset into a storage buffer when binding it
+    // to a draw.
+    size_t requiredStorageBufferAlignment() const { return fRequiredStorageBufferAlignment; }
+
     // Returns the alignment in bytes for the offset into a Buffer when using it
     // to transfer to or from a Texture with the given bytes per pixel.
     virtual size_t getTransferBufferAlignment(size_t bytesPerPixel) const = 0;
@@ -78,12 +88,22 @@ public:
     // SkColorType and TextureInfo.
     skgpu::Swizzle getWriteSwizzle(SkColorType, const TextureInfo&) const;
 
+    skgpu::ShaderErrorHandler* shaderErrorHandler() const { return fShaderErrorHandler; }
+
+    float minDistanceFieldFontSize() const { return fMinDistanceFieldFontSize; }
+    float glyphsAsPathsFontSize() const { return fGlyphsAsPathsFontSize; }
+
+    size_t glyphCacheTextureMaximumBytes() const { return fGlyphCacheTextureMaximumBytes; }
+
+    bool allowMultipleGlyphCacheTextures() const { return fAllowMultipleGlyphCacheTextures; }
+    bool supportBilerpFromGlyphAtlas() const { return fSupportBilerpFromGlyphAtlas; }
+
 protected:
     Caps();
 
     // Subclasses must call this at the end of their init method in order to do final processing on
     // the caps.
-    void finishInitialization();
+    void finishInitialization(const ContextOptions&);
 
     // TODO: This value should be set by some context option. For now just making it 4.
     uint32_t defaultMSAASamples() const { return 4; }
@@ -106,14 +126,37 @@ protected:
 
     int fMaxTextureSize = 0;
     size_t fRequiredUniformBufferAlignment = 0;
+    size_t fRequiredStorageBufferAlignment = 0;
 
     std::unique_ptr<SkSL::ShaderCaps> fShaderCaps;
 
     bool fClampToBorderSupport = true;
 
+    //////////////////////////////////////////////////////////////////////////////////////////
+    // Client-provided Caps
+
+    /**
+     * If present, use this object to report shader compilation failures. If not, report failures
+     * via SkDebugf and assert.
+     */
+    ShaderErrorHandler* fShaderErrorHandler = nullptr;
+
+#if GRAPHITE_TEST_UTILS
+    int  fMaxTextureAtlasSize = 2048;
+#endif
+    size_t fGlyphCacheTextureMaximumBytes = 2048 * 1024 * 4;
+
+    float fMinDistanceFieldFontSize = 18;
+    float fGlyphsAsPathsFontSize = 324;
+
+    bool fAllowMultipleGlyphCacheTextures = true;
+    bool fSupportBilerpFromGlyphAtlas = false;
+
 private:
     virtual bool onIsTexturable(const TextureInfo&) const = 0;
     virtual const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const = 0;
+
+    sk_sp<SkCapabilities> fCapabilities;
 };
 
 } // namespace skgpu::graphite

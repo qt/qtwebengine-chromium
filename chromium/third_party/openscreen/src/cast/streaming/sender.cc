@@ -95,6 +95,10 @@ FrameId Sender::GetNextFrameId() const {
   return last_enqueued_frame_id_ + 1;
 }
 
+Clock::duration Sender::GetCurrentRoundTripTime() const {
+  return round_trip_time_;
+}
+
 Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
   // Assume the fields of the |frame| have all been set correctly, with
   // monotonically increasing timestamps and a valid pointer to the data.

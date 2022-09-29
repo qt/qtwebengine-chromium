@@ -77,19 +77,19 @@ struct Rules140 {
         if (Cols != 1) {
             // This is a matrix or array of matrices. We return the stride between columns.
             SkASSERT(RowsOrVecLength > 1);
-            return Rules140<BaseType, RowsOrVecLength>::Stride(1);
+            return Rules140<BaseType, RowsOrVecLength>::Stride(SkUniform::kNonArray);
         }
+
+        // Get alignment of a single non-array vector of BaseType by Rule 1, 2, or 3.
+        int n = RowsOrVecLength == 3 ? 4 : RowsOrVecLength;
         if (count == 0) {
-            // Stride doesn't matter for a non-array.
-            return RowsOrVecLength * sizeof(BaseType);
+            return n * sizeof(BaseType);
         }
 
         // Rule 4.
 
         // Alignment of vec4 by Rule 2.
         constexpr size_t kVec4Alignment = tight_vec_size<float>(4);
-        // Get alignment of a single vector of BaseType by Rule 1, 2, or 3
-        int n = RowsOrVecLength == 3 ? 4 : RowsOrVecLength;
         size_t kElementAlignment = tight_vec_size<BaseType>(n);
         // Round kElementAlignment up to multiple of kVec4Alignment.
         size_t m = (kElementAlignment + kVec4Alignment - 1) / kVec4Alignment;
@@ -113,14 +113,17 @@ struct Rules430 {
         if (Cols != 1) {
             // This is a matrix or array of matrices. We return the stride between columns.
             SkASSERT(RowsOrVecLength > 1);
-            return Rules430<BaseType, RowsOrVecLength>::Stride(1);
+            return Rules430<BaseType, RowsOrVecLength>::Stride(SkUniform::kNonArray);
         }
+
+        // Get alignment of a single non-array vector of BaseType by Rule 1, 2, or 3.
+        int n = RowsOrVecLength == 3 ? 4 : RowsOrVecLength;
         if (count == 0) {
-            // Stride doesn't matter for a non-array.
-            return RowsOrVecLength * sizeof(BaseType);
+            return n * sizeof(BaseType);
         }
+
         // Rule 4 without the round up to a multiple of align-of vec4.
-        return tight_vec_size<BaseType>(RowsOrVecLength == 3 ? 4 : RowsOrVecLength);
+        return tight_vec_size<BaseType>(n);
     }
 };
 
@@ -133,16 +136,20 @@ struct RulesMetal {
         SkASSERT(count >= 1 || count == SkUniform::kNonArray);
         static_assert(RowsOrVecLength >= 1 && RowsOrVecLength <= 4);
         static_assert(Cols >= 1 && Cols <= 4);
+
         if (Cols != 1) {
             // This is a matrix or array of matrices. We return the stride between columns.
             SkASSERT(RowsOrVecLength > 1);
-            return RulesMetal<BaseType, RowsOrVecLength>::Stride(1);
+            return RulesMetal<BaseType, RowsOrVecLength>::Stride(SkUniform::kNonArray);
         }
+
+        // Get alignment of a single non-array vector of BaseType by Rule 1, 2, or 3.
+        int n = RowsOrVecLength == 3 ? 4 : RowsOrVecLength;
         if (count == 0) {
-            // Stride doesn't matter for a non-array.
-            return RowsOrVecLength * sizeof(BaseType);
+            return n * sizeof(BaseType);
         }
-        return tight_vec_size<BaseType>(RowsOrVecLength == 3 ? 4 : RowsOrVecLength);
+
+        return tight_vec_size<BaseType>(n);
     }
 };
 
@@ -164,6 +171,17 @@ private:
             SkHalf* halfBits = static_cast<SkHalf*>(dst);
             while (numUniforms-- > 0) {
                 *halfBits++ = SkFloatToHalf(*floatBits++);
+            }
+            return;
+        }
+
+        if constexpr (std::is_same<MemType, int32_t>::value &&
+                      std::is_same<UniformType, int16_t>::value) {
+            // Convert ints to short.
+            const int32_t* intBits = static_cast<const int32_t*>(src);
+            int16_t* shortBits = static_cast<int16_t*>(dst);
+            while (numUniforms-- > 0) {
+                *shortBits++ = int16_t(*intBits++);
             }
             return;
         }
@@ -227,6 +245,18 @@ public:
                                  const void *src) {
         SkASSERT(n >= 1 || n == SkUniform::kNonArray);
         switch (type) {
+            case SkSLType::kShort:
+                return Write<int32_t, int16_t>(dest, n, static_cast<const int32_t *>(src));
+
+            case SkSLType::kShort2:
+                return Write<int32_t, int16_t, 2>(dest, n, static_cast<const int32_t *>(src));
+
+            case SkSLType::kShort3:
+                return Write<int32_t, int16_t, 3>(dest, n, static_cast<const int32_t *>(src));
+
+            case SkSLType::kShort4:
+                return Write<int32_t, int16_t, 4>(dest, n, static_cast<const int32_t *>(src));
+
             case SkSLType::kInt:
                 return Write<int32_t, int32_t>(dest, n, static_cast<const int32_t *>(src));
 
@@ -299,7 +329,6 @@ public:
     }
 };
 
-#ifdef SK_DEBUG
 // To determine whether a current offset is aligned, we can just 'and' the lowest bits with the
 // alignment mask. A value of 0 means aligned, any other value is how many bytes past alignment we
 // are. This works since all alignments are powers of 2. The mask is always (alignment - 1).
@@ -368,8 +397,8 @@ static uint32_t sksltype_to_alignment_mask(SkSLType type) {
     SK_ABORT("Unexpected type");
 }
 
-/** Returns the size in bytes taken up in Metal buffers for SkSLTypes. */
-inline uint32_t sksltype_to_mtl_size(SkSLType type) {
+/** Returns the size in bytes taken up in uniform buffers for SkSLTypes. */
+inline uint32_t sksltype_to_size(SkSLType type) {
     switch (type) {
         case SkSLType::kInt:
         case SkSLType::kUInt:
@@ -438,60 +467,59 @@ inline uint32_t sksltype_to_mtl_size(SkSLType type) {
 // taking into consideration all alignment requirements. The uniformOffset is set to the offset for
 // the new uniform, and currentOffset is updated to be the offset to the end of the new uniform.
 static uint32_t get_ubo_aligned_offset(uint32_t* currentOffset,
-                                       uint32_t* maxAlignment,
                                        SkSLType type,
                                        int arrayCount) {
     uint32_t alignmentMask = sksltype_to_alignment_mask(type);
-    if (alignmentMask > *maxAlignment) {
-        *maxAlignment = alignmentMask;
-    }
     uint32_t offsetDiff = *currentOffset & alignmentMask;
     if (offsetDiff != 0) {
         offsetDiff = alignmentMask - offsetDiff + 1;
     }
     uint32_t uniformOffset = *currentOffset + offsetDiff;
-    SkASSERT(sizeof(float) == 4);
+
     if (arrayCount) {
-        *currentOffset = uniformOffset + sksltype_to_mtl_size(type) * arrayCount;
+        // TODO(skia:13478): array size calculations currently do not honor std140 layout.
+        *currentOffset = uniformOffset + sksltype_to_size(type) * arrayCount;
     } else {
-        *currentOffset = uniformOffset + sksltype_to_mtl_size(type);
+        *currentOffset = uniformOffset + sksltype_to_size(type);
     }
     return uniformOffset;
 }
-#endif // SK_DEBUG
 
-SkSLType UniformManager::getUniformTypeForLayout(SkSLType type) {
+SkSLType UniformOffsetCalculator::getUniformTypeForLayout(SkSLType type) {
     if (fLayout != Layout::kMetal) {
         // GL/Vk expect uniforms in 32-bit precision. Convert lower-precision types to 32-bit.
         switch (type) {
-            case SkSLType::kShort:            return SkSLType::kInt;
-            case SkSLType::kUShort:           return SkSLType::kUInt;
-            case SkSLType::kHalf:             return SkSLType::kFloat;
+            case SkSLType::kShort:      return SkSLType::kInt;
+            case SkSLType::kUShort:     return SkSLType::kUInt;
+            case SkSLType::kHalf:       return SkSLType::kFloat;
 
-            case SkSLType::kShort2:           return SkSLType::kInt2;
-            case SkSLType::kUShort2:          return SkSLType::kUInt2;
-            case SkSLType::kHalf2:            return SkSLType::kFloat2;
+            case SkSLType::kShort2:     return SkSLType::kInt2;
+            case SkSLType::kUShort2:    return SkSLType::kUInt2;
+            case SkSLType::kHalf2:      return SkSLType::kFloat2;
 
-            case SkSLType::kShort3:           return SkSLType::kInt3;
-            case SkSLType::kUShort3:          return SkSLType::kUInt3;
-            case SkSLType::kHalf3:            return SkSLType::kFloat3;
+            case SkSLType::kShort3:     return SkSLType::kInt3;
+            case SkSLType::kUShort3:    return SkSLType::kUInt3;
+            case SkSLType::kHalf3:      return SkSLType::kFloat3;
 
-            case SkSLType::kShort4:           return SkSLType::kInt4;
-            case SkSLType::kUShort4:          return SkSLType::kUInt4;
-            case SkSLType::kHalf4:            return SkSLType::kFloat4;
+            case SkSLType::kShort4:     return SkSLType::kInt4;
+            case SkSLType::kUShort4:    return SkSLType::kUInt4;
+            case SkSLType::kHalf4:      return SkSLType::kFloat4;
 
-            case SkSLType::kHalf2x2:          return SkSLType::kFloat2x2;
-            case SkSLType::kHalf3x3:          return SkSLType::kFloat3x3;
-            case SkSLType::kHalf4x4:          return SkSLType::kFloat4x4;
+            case SkSLType::kHalf2x2:    return SkSLType::kFloat2x2;
+            case SkSLType::kHalf3x3:    return SkSLType::kFloat3x3;
+            case SkSLType::kHalf4x4:    return SkSLType::kFloat4x4;
 
-            default:                        break;
+            default:                    break;
         }
     }
 
     return type;
 }
 
-UniformManager::UniformManager(Layout layout) : fLayout(layout) {
+UniformOffsetCalculator::UniformOffsetCalculator(Layout layout, uint32_t startingOffset)
+        : fLayout(layout)
+        , fOffset(startingOffset)
+        , fCurUBOOffset(startingOffset) {
 
     switch (layout) {
         case Layout::kStd140:
@@ -504,34 +532,41 @@ UniformManager::UniformManager(Layout layout) : fLayout(layout) {
             fWriteUniform = Writer<RulesMetal>::WriteUniform;
             break;
     }
+}
 
-    this->reset();
+size_t UniformOffsetCalculator::calculateOffset(SkSLType type, unsigned int count) {
+    SkSLType revisedType = this->getUniformTypeForLayout(type);
+
+    // Insert padding as needed to get the correct uniform alignment.
+    uint32_t alignedOffset = get_ubo_aligned_offset(&fCurUBOOffset, revisedType, count);
+    SkASSERT(alignedOffset >= fOffset);
+
+    // Append the uniform size to our offset, then return the uniform start position.
+    uint32_t uniformSize = fWriteUniform(revisedType, CType::kDefault,
+                                         /*dest=*/nullptr, count, /*src=*/nullptr);
+    fOffset = alignedOffset + uniformSize;
+    return alignedOffset;
 }
 
 SkUniformDataBlock UniformManager::peekData() const {
-    return SkUniformDataBlock(SkMakeSpan(fStorage.begin(), fStorage.count()));
+    return SkUniformDataBlock(SkSpan(fStorage.begin(), fStorage.count()));
 }
 
 void UniformManager::reset() {
-#ifdef SK_DEBUG
     fCurUBOOffset = 0;
-    fCurUBOMaxAlignment = 0;
-#endif
     fOffset = 0;
     fStorage.rewind();
 }
 
-#ifdef SK_DEBUG
 void UniformManager::checkReset() const {
     SkASSERT(fCurUBOOffset == 0);
-    SkASSERT(fCurUBOMaxAlignment == 0);
     SkASSERT(fOffset == 0);
     SkASSERT(fStorage.empty());
 }
 
 void UniformManager::setExpectedUniforms(SkSpan<const SkUniform> expectedUniforms) {
-    fExpectedUniforms = expectedUniforms;
-    fExpectedUniformIndex = 0;
+    SkDEBUGCODE(fExpectedUniforms = expectedUniforms;)
+    SkDEBUGCODE(fExpectedUniformIndex = 0;)
 }
 
 void UniformManager::checkExpected(SkSLType type, unsigned int count) {
@@ -541,27 +576,29 @@ void UniformManager::checkExpected(SkSLType type, unsigned int count) {
     SkASSERT(fExpectedUniforms[fExpectedUniformIndex].type() == type);
     SkASSERT((fExpectedUniforms[fExpectedUniformIndex].count() == 0 && count == 1) ||
              fExpectedUniforms[fExpectedUniformIndex].count() == count);
-    fExpectedUniformIndex++;
-
-    SkSLType revisedType = this->getUniformTypeForLayout(type);
-
-    uint32_t debugOffset = get_ubo_aligned_offset(&fCurUBOOffset,
-                                                  &fCurUBOMaxAlignment,
-                                                  revisedType,
-                                                  count);
-    SkASSERT(debugOffset == fOffset);
+    SkDEBUGCODE(fExpectedUniformIndex++;)
 }
 
 void UniformManager::doneWithExpectedUniforms() {
     SkASSERT(fExpectedUniformIndex == static_cast<int>(fExpectedUniforms.size()));
-    fExpectedUniforms = {};
+    SkDEBUGCODE(fExpectedUniforms = {};)
 }
-#endif // SK_DEBUG
 
 void UniformManager::write(SkSLType type, unsigned int count, const void* src) {
+    this->checkExpected(type, (count == SkUniform::kNonArray) ? 1 : count);
+
     SkSLType revisedType = this->getUniformTypeForLayout(type);
 
-    uint32_t bytesNeeded = fWriteUniform(revisedType, CType::kDefault, nullptr, count, nullptr);
+    // Insert padding as needed to get the correct uniform alignment.
+    uint32_t alignedOffset = get_ubo_aligned_offset(&fCurUBOOffset, revisedType, count);
+    SkASSERT(alignedOffset >= fOffset);
+    if (alignedOffset > fOffset) {
+        fStorage.append(alignedOffset - fOffset);
+        fOffset = alignedOffset;
+    }
+
+    uint32_t bytesNeeded = fWriteUniform(revisedType, CType::kDefault,
+                                         /*dest=*/nullptr, count, /*src=*/nullptr);
     char* dst = fStorage.append(bytesNeeded);
     uint32_t bytesWritten = fWriteUniform(revisedType, CType::kDefault, dst, count, src);
     SkASSERT(bytesNeeded == bytesWritten);
@@ -569,56 +606,47 @@ void UniformManager::write(SkSLType type, unsigned int count, const void* src) {
 }
 
 void UniformManager::write(const SkM44& mat) {
-    static const SkSLType kType = SkSLType::kFloat4x4;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kFloat4x4;
     this->write(kType, 1, &mat);
 }
 
 void UniformManager::write(const SkColor4f* colors, int count) {
-    static const SkSLType kType = SkSLType::kFloat4;
-    SkDEBUGCODE(this->checkExpected(kType, count);)
+    static constexpr SkSLType kType = SkSLType::kFloat4;
     this->write(kType, count, colors);
 }
 
 void UniformManager::write(const SkPMColor4f* premulColors, int count) {
-    static const SkSLType kType = SkSLType::kFloat4;
-    SkDEBUGCODE(this->checkExpected(kType, count);)
+    static constexpr SkSLType kType = SkSLType::kFloat4;
     this->write(kType, count, premulColors);
 }
 
 void UniformManager::write(const SkRect& rect) {
-    static const SkSLType kType = SkSLType::kFloat4;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kFloat4;
     this->write(kType, 1, &rect);
 }
 
 void UniformManager::write(SkPoint point) {
-    static const SkSLType kType = SkSLType::kFloat2;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kFloat2;
     this->write(kType, 1, &point);
 }
 
 void UniformManager::write(const float* floats, int count) {
-    static const SkSLType kType = SkSLType::kFloat;
-    SkDEBUGCODE(this->checkExpected(kType, count);)
+    static constexpr SkSLType kType = SkSLType::kFloat;
     this->write(kType, count, floats);
 }
 
 void UniformManager::write(int i) {
-    static const SkSLType kType = SkSLType::kInt;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kInt;
     this->write(kType, 1, &i);
 }
 
 void UniformManager::write(skvx::float2 v) {
-    static const SkSLType kType = SkSLType::kFloat2;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kFloat2;
     this->write(kType, 1, &v);
 }
 
 void UniformManager::write(skvx::float4 v) {
-    static const SkSLType kType = SkSLType::kFloat4;
-    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    static constexpr SkSLType kType = SkSLType::kFloat4;
     this->write(kType, 1, &v);
 }
 

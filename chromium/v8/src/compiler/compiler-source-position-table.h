@@ -7,7 +7,6 @@
 
 #include "src/base/compiler-specific.h"
 #include "src/codegen/source-position.h"
-#include "src/common/globals.h"
 #include "src/compiler/node-aux-data.h"
 
 namespace v8 {
@@ -50,6 +49,7 @@ class V8_EXPORT_PRIVATE SourcePositionTable final
   void RemoveDecorator();
 
   SourcePosition GetSourcePosition(Node* node) const;
+  SourcePosition GetSourcePosition(NodeId id) const;
   void SetSourcePosition(Node* node, SourcePosition position);
 
   void SetCurrentPosition(const SourcePosition& pos) {

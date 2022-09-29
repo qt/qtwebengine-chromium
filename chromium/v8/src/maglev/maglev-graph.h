@@ -25,7 +25,13 @@ class Graph final : public ZoneObject {
   static Graph* New(Zone* zone) { return zone->New<Graph>(zone); }
 
   // Shouldn't be used directly; public so that Zone::New can access it.
-  explicit Graph(Zone* zone) : blocks_(zone) {}
+  explicit Graph(Zone* zone)
+      : blocks_(zone),
+        root_(zone),
+        smi_(zone),
+        int_(zone),
+        float_(zone),
+        constants_(zone) {}
 
   BasicBlock* operator[](int i) { return blocks_[i]; }
   const BasicBlock* operator[](int i) const { return blocks_[i]; }
@@ -54,10 +60,29 @@ class Graph final : public ZoneObject {
     untagged_stack_slots_ = stack_slots;
   }
 
+  ZoneMap<RootIndex, RootConstant*>& root() { return root_; }
+  ZoneMap<int, SmiConstant*>& smi() { return smi_; }
+  ZoneMap<int, Int32Constant*>& int32() { return int_; }
+  ZoneMap<double, Float64Constant*>& float64() { return float_; }
+  ZoneVector<Constant*>& constants() { return constants_; }
+  Float64Constant* nan() const { return nan_; }
+  void set_nan(Float64Constant* nan) {
+    DCHECK_NULL(nan_);
+    nan_ = nan;
+  }
+
+  void AddConstant(Constant* constant) { constants_.emplace_back(constant); }
+
  private:
   uint32_t tagged_stack_slots_ = kMaxUInt32;
   uint32_t untagged_stack_slots_ = kMaxUInt32;
   ZoneVector<BasicBlock*> blocks_;
+  ZoneMap<RootIndex, RootConstant*> root_;
+  ZoneMap<int, SmiConstant*> smi_;
+  ZoneMap<int, Int32Constant*> int_;
+  ZoneMap<double, Float64Constant*> float_;
+  ZoneVector<Constant*> constants_;
+  Float64Constant* nan_ = nullptr;
 };
 
 }  // namespace maglev

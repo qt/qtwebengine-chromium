@@ -14,11 +14,13 @@
 
 #ifndef THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_IOS_BLUETOOTH_ADAPTER_H_
 #define THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_IOS_BLUETOOTH_ADAPTER_H_
+#ifdef __cplusplus
 
 #include <string>
 
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/bluetooth_adapter.h"
+#import "internal/platform/implementation/ios/Mediums/Ble/GNCMBleCentral.h"
 
 namespace location {
 namespace nearby {
@@ -31,6 +33,20 @@ class BlePeripheral : public api::ble_v2::BlePeripheral {
  public:
   std::string GetAddress() const override;
 
+  std::string GetPeripheralId() const { return peripheral_id_; }
+
+  void SetPeripheralId(const std::string& peripheral_id) {
+    peripheral_id_ = peripheral_id;
+  }
+
+  void SetConnectionRequester(GNCMBleConnectionRequester connection_requester) {
+    connection_requester_ = connection_requester;
+  }
+
+  GNCMBleConnectionRequester GetConnectionRequester() {
+    return connection_requester_;
+  }
+
  private:
   // Only BluetoothAdapter may instantiate BlePeripheral.
   friend class BluetoothAdapter;
@@ -38,6 +54,8 @@ class BlePeripheral : public api::ble_v2::BlePeripheral {
   explicit BlePeripheral(BluetoothAdapter* adapter) : adapter_(*adapter) {}
 
   BluetoothAdapter& adapter_;
+  std::string peripheral_id_;
+  GNCMBleConnectionRequester connection_requester_;
 };
 
 // Concrete BluetoothAdapter implementation.
@@ -56,7 +74,10 @@ class BluetoothAdapter : public api::BluetoothAdapter {
   ScanMode GetScanMode() const override { return mode_; }
   bool SetScanMode(ScanMode mode) override { return false; }
   std::string GetName() const override { return name_; }
-  bool SetName(absl::string_view name) override {
+  bool SetName(absl::string_view name) {
+    return SetName(name, /* persist= */ true);
+  }
+  bool SetName(absl::string_view name, bool persist) override {
     name_ = std::string(name);
     return true;
   }
@@ -79,4 +100,5 @@ class BluetoothAdapter : public api::BluetoothAdapter {
 }  // namespace nearby
 }  // namespace location
 
+#endif
 #endif  // THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_IOS_BLUETOOTH_ADAPTER_H_

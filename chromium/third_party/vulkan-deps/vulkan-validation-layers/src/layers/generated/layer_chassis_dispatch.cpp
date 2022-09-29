@@ -221,6 +221,51 @@ void WrapPnextChainHandles(ValidationObject *layer_data, const void *pNext) {
                     }
                 } break;
 
+#ifdef VK_USE_PLATFORM_METAL_EXT 
+            case VK_STRUCTURE_TYPE_EXPORT_METAL_BUFFER_INFO_EXT: {
+                    safe_VkExportMetalBufferInfoEXT *safe_struct = reinterpret_cast<safe_VkExportMetalBufferInfoEXT *>(cur_pnext);
+                    if (safe_struct->memory) {
+                        safe_struct->memory = layer_data->Unwrap(safe_struct->memory);
+                    }
+                } break;
+#endif // VK_USE_PLATFORM_METAL_EXT 
+
+#ifdef VK_USE_PLATFORM_METAL_EXT 
+            case VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT: {
+                    safe_VkExportMetalIOSurfaceInfoEXT *safe_struct = reinterpret_cast<safe_VkExportMetalIOSurfaceInfoEXT *>(cur_pnext);
+                    if (safe_struct->image) {
+                        safe_struct->image = layer_data->Unwrap(safe_struct->image);
+                    }
+                } break;
+#endif // VK_USE_PLATFORM_METAL_EXT 
+
+#ifdef VK_USE_PLATFORM_METAL_EXT 
+            case VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT: {
+                    safe_VkExportMetalSharedEventInfoEXT *safe_struct = reinterpret_cast<safe_VkExportMetalSharedEventInfoEXT *>(cur_pnext);
+                    if (safe_struct->semaphore) {
+                        safe_struct->semaphore = layer_data->Unwrap(safe_struct->semaphore);
+                    }
+                    if (safe_struct->event) {
+                        safe_struct->event = layer_data->Unwrap(safe_struct->event);
+                    }
+                } break;
+#endif // VK_USE_PLATFORM_METAL_EXT 
+
+#ifdef VK_USE_PLATFORM_METAL_EXT 
+            case VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT: {
+                    safe_VkExportMetalTextureInfoEXT *safe_struct = reinterpret_cast<safe_VkExportMetalTextureInfoEXT *>(cur_pnext);
+                    if (safe_struct->image) {
+                        safe_struct->image = layer_data->Unwrap(safe_struct->image);
+                    }
+                    if (safe_struct->imageView) {
+                        safe_struct->imageView = layer_data->Unwrap(safe_struct->imageView);
+                    }
+                    if (safe_struct->bufferView) {
+                        safe_struct->bufferView = layer_data->Unwrap(safe_struct->bufferView);
+                    }
+                } break;
+#endif // VK_USE_PLATFORM_METAL_EXT 
+
             default:
                 break;
         }
@@ -1449,6 +1494,61 @@ VkResult DispatchGetDeferredOperationResultKHR(
     return result;
 }
 
+VkResult DispatchBuildAccelerationStructuresKHR(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
+    const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.BuildAccelerationStructuresKHR(device, deferredOperation, infoCount, pInfos, ppBuildRangeInfos);
+    safe_VkAccelerationStructureBuildGeometryInfoKHR *local_pInfos = NULL;
+    {
+        deferredOperation = layer_data->Unwrap(deferredOperation);
+        if (pInfos) {
+            local_pInfos = new safe_VkAccelerationStructureBuildGeometryInfoKHR[infoCount];
+            for (uint32_t index0 = 0; index0 < infoCount; ++index0) {
+                local_pInfos[index0].initialize(&pInfos[index0], true, ppBuildRangeInfos[index0]);
+                if (pInfos[index0].srcAccelerationStructure) {
+                    local_pInfos[index0].srcAccelerationStructure = layer_data->Unwrap(pInfos[index0].srcAccelerationStructure);
+                }
+                if (pInfos[index0].dstAccelerationStructure) {
+                    local_pInfos[index0].dstAccelerationStructure = layer_data->Unwrap(pInfos[index0].dstAccelerationStructure);
+                }
+                for (uint32_t geometry_index = 0; geometry_index < local_pInfos[index0].geometryCount; ++geometry_index) {
+                    safe_VkAccelerationStructureGeometryKHR &geometry_info = local_pInfos[index0].pGeometries != nullptr ? local_pInfos[index0].pGeometries[geometry_index] : *(local_pInfos[index0].ppGeometries[geometry_index]);
+                    if (geometry_info.geometryType == VK_GEOMETRY_TYPE_INSTANCES_KHR) {
+                        if (geometry_info.geometry.instances.arrayOfPointers) {
+                            const uint8_t *byte_ptr = reinterpret_cast<const uint8_t*>(geometry_info.geometry.instances.data.hostAddress);
+                            VkAccelerationStructureInstanceKHR **instances = (VkAccelerationStructureInstanceKHR **)(byte_ptr + ppBuildRangeInfos[index0][geometry_index].primitiveOffset);
+                            for (uint32_t instance_index = 0; instance_index < ppBuildRangeInfos[index0][geometry_index].primitiveCount; ++instance_index) {
+                                instances[instance_index]->accelerationStructureReference = layer_data->Unwrap(instances[instance_index]->accelerationStructureReference);
+                            }
+                        } else {
+                            const uint8_t *byte_ptr = reinterpret_cast<const uint8_t*>(geometry_info.geometry.instances.data.hostAddress);
+                            VkAccelerationStructureInstanceKHR *instances = (VkAccelerationStructureInstanceKHR *)(byte_ptr + ppBuildRangeInfos[index0][geometry_index].primitiveOffset);
+                            for (uint32_t instance_index = 0; instance_index < ppBuildRangeInfos[index0][geometry_index].primitiveCount; ++instance_index) {
+                                instances[instance_index].accelerationStructureReference = layer_data->Unwrap(instances[instance_index].accelerationStructureReference);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.BuildAccelerationStructuresKHR(device, deferredOperation, infoCount, (const VkAccelerationStructureBuildGeometryInfoKHR*)local_pInfos, ppBuildRangeInfos);
+    if (local_pInfos) {
+        if (deferredOperation != VK_NULL_HANDLE) {
+            std::vector<std::function<void()>> cleanup{ [local_pInfos](){ delete[] local_pInfos; } };
+            layer_data->deferred_operation_post_completion.insert(deferredOperation, cleanup);
+        } else {
+            delete[] local_pInfos;
+        }
+    }
+    return result;
+}
+
 
 
 // Skip vkCreateInstance dispatch, manually generated
@@ -2516,6 +2616,7 @@ VkResult DispatchCreateComputePipelines(
                 if (pCreateInfos[index0].stage.module) {
                     local_pCreateInfos[index0].stage.module = layer_data->Unwrap(pCreateInfos[index0].stage.module);
                 }
+                WrapPnextChainHandles(layer_data, local_pCreateInfos[index0].stage.pNext);
                 if (pCreateInfos[index0].layout) {
                     local_pCreateInfos[index0].layout = layer_data->Unwrap(pCreateInfos[index0].layout);
                 }
@@ -9380,6 +9481,28 @@ void DispatchDestroyPrivateDataSlotEXT(
 
 // Skip vkGetPrivateDataEXT dispatch, manually generated
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+
+void DispatchExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.ExportMetalObjectsEXT(device, pMetalObjectsInfo);
+    safe_VkExportMetalObjectsInfoEXT var_local_pMetalObjectsInfo;
+    safe_VkExportMetalObjectsInfoEXT *local_pMetalObjectsInfo = NULL;
+    {
+        if (pMetalObjectsInfo) {
+            local_pMetalObjectsInfo = &var_local_pMetalObjectsInfo;
+            local_pMetalObjectsInfo->initialize(pMetalObjectsInfo);
+            WrapPnextChainHandles(layer_data, local_pMetalObjectsInfo->pNext);
+        }
+    }
+    layer_data->device_dispatch_table.ExportMetalObjectsEXT(device, (VkExportMetalObjectsInfoEXT*)local_pMetalObjectsInfo);
+
+}
+#endif // VK_USE_PLATFORM_METAL_EXT
+
 void DispatchCmdSetFragmentShadingRateEnumNV(
     VkCommandBuffer                             commandBuffer,
     VkFragmentShadingRateNV                     shadingRate,
@@ -9904,6 +10027,103 @@ void DispatchGetDescriptorSetHostMappingVALVE(
 
 }
 
+void DispatchGetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.GetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+    {
+        shaderModule = layer_data->Unwrap(shaderModule);
+    }
+    layer_data->device_dispatch_table.GetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+
+}
+
+void DispatchGetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.GetShaderModuleCreateInfoIdentifierEXT(device, pCreateInfo, pIdentifier);
+    safe_VkShaderModuleCreateInfo var_local_pCreateInfo;
+    safe_VkShaderModuleCreateInfo *local_pCreateInfo = NULL;
+    {
+        if (pCreateInfo) {
+            local_pCreateInfo = &var_local_pCreateInfo;
+            local_pCreateInfo->initialize(pCreateInfo);
+            WrapPnextChainHandles(layer_data, local_pCreateInfo->pNext);
+        }
+    }
+    layer_data->device_dispatch_table.GetShaderModuleCreateInfoIdentifierEXT(device, (const VkShaderModuleCreateInfo*)local_pCreateInfo, pIdentifier);
+
+}
+
+VkResult DispatchGetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.GetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties);
+    {
+        framebuffer = layer_data->Unwrap(framebuffer);
+    }
+    VkResult result = layer_data->device_dispatch_table.GetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties);
+
+    return result;
+}
+
+VkResult DispatchGetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties)
+{
+    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!wrap_handles) return layer_data->device_dispatch_table.GetDynamicRenderingTilePropertiesQCOM(device, pRenderingInfo, pProperties);
+    safe_VkRenderingInfo var_local_pRenderingInfo;
+    safe_VkRenderingInfo *local_pRenderingInfo = NULL;
+    {
+        if (pRenderingInfo) {
+            local_pRenderingInfo = &var_local_pRenderingInfo;
+            local_pRenderingInfo->initialize(pRenderingInfo);
+            if (local_pRenderingInfo->pColorAttachments) {
+                for (uint32_t index1 = 0; index1 < local_pRenderingInfo->colorAttachmentCount; ++index1) {
+                    if (pRenderingInfo->pColorAttachments[index1].imageView) {
+                        local_pRenderingInfo->pColorAttachments[index1].imageView = layer_data->Unwrap(pRenderingInfo->pColorAttachments[index1].imageView);
+                    }
+                    if (pRenderingInfo->pColorAttachments[index1].resolveImageView) {
+                        local_pRenderingInfo->pColorAttachments[index1].resolveImageView = layer_data->Unwrap(pRenderingInfo->pColorAttachments[index1].resolveImageView);
+                    }
+                }
+            }
+            if (local_pRenderingInfo->pDepthAttachment) {
+                if (pRenderingInfo->pDepthAttachment->imageView) {
+                    local_pRenderingInfo->pDepthAttachment->imageView = layer_data->Unwrap(pRenderingInfo->pDepthAttachment->imageView);
+                }
+                if (pRenderingInfo->pDepthAttachment->resolveImageView) {
+                    local_pRenderingInfo->pDepthAttachment->resolveImageView = layer_data->Unwrap(pRenderingInfo->pDepthAttachment->resolveImageView);
+                }
+            }
+            if (local_pRenderingInfo->pStencilAttachment) {
+                if (pRenderingInfo->pStencilAttachment->imageView) {
+                    local_pRenderingInfo->pStencilAttachment->imageView = layer_data->Unwrap(pRenderingInfo->pStencilAttachment->imageView);
+                }
+                if (pRenderingInfo->pStencilAttachment->resolveImageView) {
+                    local_pRenderingInfo->pStencilAttachment->resolveImageView = layer_data->Unwrap(pRenderingInfo->pStencilAttachment->resolveImageView);
+                }
+            }
+            WrapPnextChainHandles(layer_data, local_pRenderingInfo->pNext);
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.GetDynamicRenderingTilePropertiesQCOM(device, (const VkRenderingInfo*)local_pRenderingInfo, pProperties);
+
+    return result;
+}
+
 VkResult DispatchCreateAccelerationStructureKHR(
     VkDevice                                    device,
     const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
@@ -9961,7 +10181,7 @@ void DispatchCmdBuildAccelerationStructuresKHR(
         if (pInfos) {
             local_pInfos = new safe_VkAccelerationStructureBuildGeometryInfoKHR[infoCount];
             for (uint32_t index0 = 0; index0 < infoCount; ++index0) {
-                local_pInfos[index0].initialize(&pInfos[index0]);
+                local_pInfos[index0].initialize(&pInfos[index0], false, nullptr);
                 if (pInfos[index0].srcAccelerationStructure) {
                     local_pInfos[index0].srcAccelerationStructure = layer_data->Unwrap(pInfos[index0].srcAccelerationStructure);
                 }
@@ -9992,7 +10212,7 @@ void DispatchCmdBuildAccelerationStructuresIndirectKHR(
         if (pInfos) {
             local_pInfos = new safe_VkAccelerationStructureBuildGeometryInfoKHR[infoCount];
             for (uint32_t index0 = 0; index0 < infoCount; ++index0) {
-                local_pInfos[index0].initialize(&pInfos[index0]);
+                local_pInfos[index0].initialize(&pInfos[index0], false, nullptr);
                 if (pInfos[index0].srcAccelerationStructure) {
                     local_pInfos[index0].srcAccelerationStructure = layer_data->Unwrap(pInfos[index0].srcAccelerationStructure);
                 }
@@ -10008,42 +10228,7 @@ void DispatchCmdBuildAccelerationStructuresIndirectKHR(
     }
 }
 
-VkResult DispatchBuildAccelerationStructuresKHR(
-    VkDevice                                    device,
-    VkDeferredOperationKHR                      deferredOperation,
-    uint32_t                                    infoCount,
-    const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-    const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
-{
-    auto layer_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
-    if (!wrap_handles) return layer_data->device_dispatch_table.BuildAccelerationStructuresKHR(device, deferredOperation, infoCount, pInfos, ppBuildRangeInfos);
-    safe_VkAccelerationStructureBuildGeometryInfoKHR *local_pInfos = NULL;
-    {
-        deferredOperation = layer_data->Unwrap(deferredOperation);
-        if (pInfos) {
-            local_pInfos = new safe_VkAccelerationStructureBuildGeometryInfoKHR[infoCount];
-            for (uint32_t index0 = 0; index0 < infoCount; ++index0) {
-                local_pInfos[index0].initialize(&pInfos[index0]);
-                if (pInfos[index0].srcAccelerationStructure) {
-                    local_pInfos[index0].srcAccelerationStructure = layer_data->Unwrap(pInfos[index0].srcAccelerationStructure);
-                }
-                if (pInfos[index0].dstAccelerationStructure) {
-                    local_pInfos[index0].dstAccelerationStructure = layer_data->Unwrap(pInfos[index0].dstAccelerationStructure);
-                }
-            }
-        }
-    }
-    VkResult result = layer_data->device_dispatch_table.BuildAccelerationStructuresKHR(device, deferredOperation, infoCount, (const VkAccelerationStructureBuildGeometryInfoKHR*)local_pInfos, ppBuildRangeInfos);
-    if (local_pInfos) {
-        if (deferredOperation != VK_NULL_HANDLE) {
-            std::vector<std::function<void()>> cleanup{[local_pInfos](){ delete[] local_pInfos; }};
-            layer_data->deferred_operation_post_completion.insert(deferredOperation, cleanup);
-        } else {
-            delete[] local_pInfos;
-        }
-    }
-    return result;
-}
+// Skip vkBuildAccelerationStructuresKHR dispatch, manually generated
 
 VkResult DispatchCopyAccelerationStructureKHR(
     VkDevice                                    device,
@@ -10303,7 +10488,7 @@ void DispatchGetAccelerationStructureBuildSizesKHR(
     {
         if (pBuildInfo) {
             local_pBuildInfo = &var_local_pBuildInfo;
-            local_pBuildInfo->initialize(pBuildInfo);
+            local_pBuildInfo->initialize(pBuildInfo, false, nullptr);
             if (pBuildInfo->srcAccelerationStructure) {
                 local_pBuildInfo->srcAccelerationStructure = layer_data->Unwrap(pBuildInfo->srcAccelerationStructure);
             }

@@ -55,7 +55,7 @@ class CPDF_RenderContext {
               const CPDF_RenderOptions* pOptions,
               const CFX_Matrix* pLastMatrix);
 
-  void GetBackground(const RetainPtr<CFX_DIBitmap>& pBuffer,
+  void GetBackground(RetainPtr<CFX_DIBitmap> pBuffer,
                      const CPDF_PageObject* pObj,
                      const CPDF_RenderOptions* pOptions,
                      const CFX_Matrix& mtFinal);
@@ -64,10 +64,15 @@ class CPDF_RenderContext {
   Layer* GetLayer(uint32_t index) { return &m_Layers[index]; }
 
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
-  CPDF_Dictionary* GetPageResources() const { return m_pPageResources.Get(); }
+  const CPDF_Dictionary* GetPageResources() const {
+    return m_pPageResources.Get();
+  }
+  RetainPtr<CPDF_Dictionary> GetMutablePageResources() {
+    return m_pPageResources;
+  }
   CPDF_PageRenderCache* GetPageCache() const { return m_pPageCache.Get(); }
 
- protected:
+ private:
   UnownedPtr<CPDF_Document> const m_pDocument;
   RetainPtr<CPDF_Dictionary> const m_pPageResources;
   UnownedPtr<CPDF_PageRenderCache> const m_pPageCache;

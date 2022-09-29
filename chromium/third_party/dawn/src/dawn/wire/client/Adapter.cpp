@@ -19,8 +19,6 @@
 
 namespace dawn::wire::client {
 
-Adapter::Adapter(Client* c, uint32_t r, uint32_t i) : ObjectBase(c, r, i) {}
-
 Adapter::~Adapter() {
     mRequestDeviceRequests.CloseAll([](RequestDeviceData* request) {
         request->callback(WGPURequestDeviceStatus_Unknown, nullptr,
@@ -67,18 +65,19 @@ void Adapter::GetProperties(WGPUAdapterProperties* properties) const {
 void Adapter::RequestDevice(const WGPUDeviceDescriptor* descriptor,
                             WGPURequestDeviceCallback callback,
                             void* userdata) {
+    Client* client = GetClient();
     if (client->IsDisconnected()) {
         callback(WGPURequestDeviceStatus_Error, nullptr, "GPU connection lost", userdata);
         return;
     }
 
-    auto* allocation = client->DeviceAllocator().New(client);
-    uint64_t serial = mRequestDeviceRequests.Add({callback, allocation->object->id, userdata});
+    Device* device = client->Make<Device>();
+    uint64_t serial = mRequestDeviceRequests.Add({callback, device->GetWireId(), userdata});
 
     AdapterRequestDeviceCmd cmd;
-    cmd.adapterId = this->id;
+    cmd.adapterId = GetWireId();
     cmd.requestSerial = serial;
-    cmd.deviceObjectHandle = ObjectHandle(allocation->object->id, allocation->generation);
+    cmd.deviceObjectHandle = device->GetWireHandle();
     cmd.descriptor = descriptor;
 
     client->SerializeCommand(cmd);
@@ -110,12 +109,13 @@ bool Adapter::OnRequestDeviceCallback(uint64_t requestSerial,
         return false;
     }
 
-    Device* device = client->DeviceAllocator().GetObject(request.deviceObjectId);
+    Client* client = GetClient();
+    Device* device = client->Get<Device>(request.deviceObjectId);
 
     // If the return status is a failure we should give a null device to the callback and
     // free the allocation.
     if (status != WGPURequestDeviceStatus_Success) {
-        client->DeviceAllocator().Free(device);
+        client->Free(device);
         request.callback(status, nullptr, message, request.userdata);
         return true;
     }

@@ -13,11 +13,11 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ref_counted_object.h"
-#include "rtc_base/task_utils/to_queued_task.h"
-#include "rtc_base/thread.h"
 
 namespace webrtc {
 
@@ -58,7 +58,7 @@ bool GetDtmfCode(char tone, int* code) {
 }
 
 rtc::scoped_refptr<DtmfSender> DtmfSender::Create(
-    rtc::Thread* signaling_thread,
+    TaskQueueBase* signaling_thread,
     DtmfProviderInterface* provider) {
   if (!signaling_thread) {
     return nullptr;
@@ -66,7 +66,7 @@ rtc::scoped_refptr<DtmfSender> DtmfSender::Create(
   return rtc::make_ref_counted<DtmfSender>(signaling_thread, provider);
 }
 
-DtmfSender::DtmfSender(rtc::Thread* signaling_thread,
+DtmfSender::DtmfSender(TaskQueueBase* signaling_thread,
                        DtmfProviderInterface* provider)
     : observer_(nullptr),
       signaling_thread_(signaling_thread),
@@ -75,11 +75,14 @@ DtmfSender::DtmfSender(rtc::Thread* signaling_thread,
       inter_tone_gap_(kDtmfDefaultGapMs),
       comma_delay_(kDtmfDefaultCommaDelayMs) {
   RTC_DCHECK(signaling_thread_);
-  if (provider_) {
-    RTC_DCHECK(provider_->GetOnDestroyedSignal());
-    provider_->GetOnDestroyedSignal()->connect(
-        this, &DtmfSender::OnProviderDestroyed);
-  }
+  RTC_DCHECK(provider_);
+}
+
+void DtmfSender::OnDtmfProviderDestroyed() {
+  RTC_DCHECK_RUN_ON(signaling_thread_);
+  RTC_DLOG(LS_INFO) << "The Dtmf provider is deleted. Clear the sending queue.";
+  StopSending();
+  provider_ = nullptr;
 }
 
 DtmfSender::~DtmfSender() {
@@ -166,12 +169,12 @@ int DtmfSender::comma_delay() const {
 void DtmfSender::QueueInsertDtmf(const rtc::Location& posted_from,
                                  uint32_t delay_ms) {
   signaling_thread_->PostDelayedHighPrecisionTask(
-      ToQueuedTask(safety_flag_,
-                   [this] {
-                     RTC_DCHECK_RUN_ON(signaling_thread_);
-                     DoInsertDtmf();
-                   }),
-      delay_ms);
+      SafeTask(safety_flag_,
+               [this] {
+                 RTC_DCHECK_RUN_ON(signaling_thread_);
+                 DoInsertDtmf();
+               }),
+      TimeDelta::Millis(delay_ms));
 }
 
 void DtmfSender::DoInsertDtmf() {
@@ -230,14 +233,6 @@ void DtmfSender::DoInsertDtmf() {
 
   // Continue with the next tone.
   QueueInsertDtmf(RTC_FROM_HERE, tone_gap);
-}
-
-void DtmfSender::OnProviderDestroyed() {
-  RTC_DCHECK_RUN_ON(signaling_thread_);
-
-  RTC_LOG(LS_INFO) << "The Dtmf provider is deleted. Clear the sending queue.";
-  StopSending();
-  provider_ = nullptr;
 }
 
 void DtmfSender::StopSending() {

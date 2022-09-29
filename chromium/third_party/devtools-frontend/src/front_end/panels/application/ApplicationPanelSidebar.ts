@@ -50,19 +50,25 @@ import {BackgroundServiceView} from './BackgroundServiceView.js';
 import * as ApplicationComponents from './components/components.js';
 import resourcesSidebarStyles from './resourcesSidebar.css.js';
 
-import type {Database as DatabaseModelDatabase} from './DatabaseModel.js';
-import {DatabaseModel, Events as DatabaseModelEvents} from './DatabaseModel.js';
+import {DatabaseModel, Events as DatabaseModelEvents, type Database as DatabaseModelDatabase} from './DatabaseModel.js';
 import {DatabaseQueryView, Events as DatabaseQueryViewEvents} from './DatabaseQueryView.js';
 import {DatabaseTableView} from './DatabaseTableView.js';
-import type {DOMStorage} from './DOMStorageModel.js';
-import {DOMStorageModel, Events as DOMStorageModelEvents} from './DOMStorageModel.js';
-import type {Database as IndexedDBModelDatabase, DatabaseId, Index, ObjectStore} from './IndexedDBModel.js';
-import {Events as IndexedDBModelEvents, IndexedDBModel} from './IndexedDBModel.js';
+
+import {DOMStorageModel, Events as DOMStorageModelEvents, type DOMStorage} from './DOMStorageModel.js';
+
+import {
+  Events as IndexedDBModelEvents,
+  IndexedDBModel,
+  type Database as IndexedDBModelDatabase,
+  type DatabaseId,
+  type Index,
+  type ObjectStore,
+} from './IndexedDBModel.js';
 import {IDBDatabaseView, IDBDataView} from './IndexedDBViews.js';
 import {InterestGroupStorageModel, Events as InterestGroupModelEvents} from './InterestGroupStorageModel.js';
 import {InterestGroupTreeElement} from './InterestGroupTreeElement.js';
 import {OpenedWindowDetailsView, WorkerDetailsView} from './OpenedWindowDetailsView.js';
-import type {ResourcesPanel} from './ResourcesPanel.js';
+import {type ResourcesPanel} from './ResourcesPanel.js';
 import {ServiceWorkersView} from './ServiceWorkersView.js';
 import {StorageView} from './StorageView.js';
 import {TrustTokensTreeElement} from './TrustTokensTreeElement.js';
@@ -170,6 +176,20 @@ const UIStrings = {
   *@description Default name for worker
   */
   worker: 'worker',
+  /**
+   * @description Aria text for screen reader to announce they can scroll to top of manifest if invoked
+   */
+  onInvokeManifestAlert: 'Manifest: Invoke to scroll to the top of manifest',
+  /**
+   * @description Aria text for screen reader to announce they can scroll to a section if invoked
+   * @example {"Identity"} PH1
+   */
+  beforeInvokeAlert: '{PH1}: Invoke to scroll to this section in manifest',
+  /**
+   * @description Alert message for screen reader to announce which subsection is being scrolled to
+   * @example {"Identity"} PH1
+   */
+  onInvokeAlert: 'Scrolled to {PH1}',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/ApplicationPanelSidebar.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -233,6 +253,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     this.applicationTreeElement = this.addSidebarSection(applicationSectionTitle);
     const manifestTreeElement = new AppManifestTreeElement(panel);
     this.applicationTreeElement.appendChild(manifestTreeElement);
+    manifestTreeElement.generateChildren();
     this.serviceWorkersTreeElement = new ServiceWorkersTreeElement(panel);
     this.applicationTreeElement.appendChild(this.serviceWorkersTreeElement);
     const clearStorageTreeElement = new ClearStorageTreeElement(panel);
@@ -603,6 +624,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
   private addDOMStorage(domStorage: DOMStorage): void {
     console.assert(!this.domStorageTreeElements.get(domStorage));
+    console.assert(Boolean(domStorage.storageKey) || Boolean(domStorage.securityOrigin));
 
     const domStorageTreeElement = new DOMStorageTreeElement(this.panel, domStorage);
     this.domStorageTreeElements.set(domStorage, domStorageTreeElement);
@@ -929,11 +951,18 @@ export class ServiceWorkersTreeElement extends ApplicationPanelTreeElement {
 }
 
 export class AppManifestTreeElement extends ApplicationPanelTreeElement {
-  private view?: AppManifestView;
+  private view: AppManifestView;
   constructor(storagePanel: ResourcesPanel) {
-    super(storagePanel, i18nString(UIStrings.manifest), false);
+    super(storagePanel, i18nString(UIStrings.manifest), true);
     const icon = UI.Icon.Icon.create('mediumicon-manifest', 'resource-tree-item');
     this.setLeadingIcons([icon]);
+    self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
+    this.view = new AppManifestView();
+    UI.ARIAUtils.setAccessibleName(this.listItemElement, i18nString(UIStrings.onInvokeManifestAlert));
+    const handleExpansion = (evt: Event): void => {
+      this.setExpandable((evt as CustomEvent).detail);
+    };
+    this.view.contentElement.addEventListener('manifestDetection', handleExpansion);
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
@@ -942,12 +971,52 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
 
   onselect(selectedByUser?: boolean): boolean {
     super.onselect(selectedByUser);
-    if (!this.view) {
-      this.view = new AppManifestView();
-    }
     this.showView(this.view);
     Host.userMetrics.panelShown(Host.UserMetrics.PanelCodes[Host.UserMetrics.PanelCodes.app_manifest]);
     return false;
+  }
+
+  generateChildren(): void {
+    const staticSections = this.view.getStaticSections();
+    for (const section of staticSections) {
+      const sectionElement = section.getTitleElement();
+      const childTitle = section.title();
+      const child = new ManifestChildTreeElement(this.resourcesPanel, sectionElement, childTitle);
+      this.appendChild(child);
+    }
+  }
+
+  onInvoke(): void {
+    this.view.getManifestElement().scrollIntoView();
+    UI.ARIAUtils.alert(i18nString(UIStrings.onInvokeAlert, {PH1: this.listItemElement.title}));
+  }
+
+  showManifestView(): void {
+    this.showView(this.view);
+  }
+}
+
+export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
+  #sectionElement: Element;
+  constructor(storagePanel: ResourcesPanel, element: Element, childTitle: string) {
+    super(storagePanel, childTitle, false);
+    const icon = UI.Icon.Icon.create('mediumicon-manifest', 'resource-tree-item');
+    this.setLeadingIcons([icon]);
+    this.#sectionElement = element;
+    self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
+    UI.ARIAUtils.setAccessibleName(
+        this.listItemElement, i18nString(UIStrings.beforeInvokeAlert, {PH1: this.listItemElement.title}));
+  }
+
+  get itemURL(): Platform.DevToolsPath.UrlString {
+    return 'manifest://' + this.title as Platform.DevToolsPath.UrlString;
+  }
+
+  onInvoke(): void {
+    (this.parent as AppManifestTreeElement)?.showManifestView();
+    this.#sectionElement.scrollIntoView();
+    UI.ARIAUtils.alert(i18nString(UIStrings.onInvokeAlert, {PH1: this.listItemElement.title}));
+    Host.userMetrics.manifestSectionSelected(this.listItemElement.title);
   }
 }
 
@@ -1422,7 +1491,10 @@ export class DOMStorageTreeElement extends ApplicationPanelTreeElement {
   private readonly domStorage: DOMStorage;
   constructor(storagePanel: ResourcesPanel, domStorage: DOMStorage) {
     super(
-        storagePanel, domStorage.securityOrigin ? domStorage.securityOrigin : i18nString(UIStrings.localFiles), false);
+        storagePanel,
+        domStorage.securityOrigin ? domStorage.securityOrigin :
+                                    (domStorage.storageKey ? domStorage.storageKey : i18nString(UIStrings.localFiles)),
+        false);
     this.domStorage = domStorage;
     const icon = UI.Icon.Icon.create('mediumicon-table', 'resource-tree-item');
     this.setLeadingIcons([icon]);

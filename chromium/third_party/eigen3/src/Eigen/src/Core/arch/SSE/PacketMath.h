@@ -285,6 +285,10 @@ template<> EIGEN_STRONG_INLINE Packet4i padd<Packet4i>(const Packet4i& a, const 
 
 template<> EIGEN_STRONG_INLINE Packet16b padd<Packet16b>(const Packet16b& a, const Packet16b& b) { return _mm_or_si128(a,b); }
 
+template<typename Packet> EIGEN_STRONG_INLINE Packet padds(const Packet& a, const Packet& b);
+template<> EIGEN_STRONG_INLINE Packet4f padds<Packet4f>(const Packet4f& a, const Packet4f& b) { return _mm_add_ss(a,b); }
+template<> EIGEN_STRONG_INLINE Packet2d padds<Packet2d>(const Packet2d& a, const Packet2d& b) { return _mm_add_sd(a,b); }
+
 template<> EIGEN_STRONG_INLINE Packet4f psub<Packet4f>(const Packet4f& a, const Packet4f& b) { return _mm_sub_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet2d psub<Packet2d>(const Packet2d& a, const Packet2d& b) { return _mm_sub_pd(a,b); }
 template<> EIGEN_STRONG_INLINE Packet4i psub<Packet4i>(const Packet4i& a, const Packet4i& b) { return _mm_sub_epi32(a,b); }
@@ -370,6 +374,10 @@ template<> EIGEN_STRONG_INLINE Packet4f pnmadd(const Packet4f& a, const Packet4f
 template<> EIGEN_STRONG_INLINE Packet2d pnmadd(const Packet2d& a, const Packet2d& b, const Packet2d& c) { return _mm_fnmadd_pd(a,b,c); }
 template<> EIGEN_STRONG_INLINE Packet4f pnmsub(const Packet4f& a, const Packet4f& b, const Packet4f& c) { return _mm_fnmsub_ps(a,b,c); }
 template<> EIGEN_STRONG_INLINE Packet2d pnmsub(const Packet2d& a, const Packet2d& b, const Packet2d& c) { return _mm_fnmsub_pd(a,b,c); }
+
+template<typename Packet> EIGEN_STRONG_INLINE Packet pmadds(const Packet& a, const Packet& b, const Packet& c);
+template<> EIGEN_STRONG_INLINE Packet4f pmadds<Packet4f>(const Packet4f& a, const Packet4f& b, const Packet4f& c) { return _mm_fmadd_ss(a,b,c); }
+template<> EIGEN_STRONG_INLINE Packet2d pmadds<Packet2d>(const Packet2d& a, const Packet2d& b, const Packet2d& c) { return _mm_fmadd_sd(a,b,c); }
 #endif
 
 #ifdef EIGEN_VECTORIZE_SSE4_1
@@ -746,6 +754,15 @@ template<> EIGEN_STRONG_INLINE Packet16b ploadu<Packet16b>(const bool*     from)
   return _mm_loadu_si128(reinterpret_cast<const __m128i*>(from));
 }
 
+// Load lower part of packet zero extending.
+template<typename Packet> EIGEN_STRONG_INLINE Packet ploadl(const typename unpacket_traits<Packet>::type* from);
+template<> EIGEN_STRONG_INLINE Packet4f ploadl<Packet4f>(const float*  from) { EIGEN_DEBUG_UNALIGNED_LOAD return _mm_castpd_ps(_mm_load_sd(reinterpret_cast<const double*>(from))); }
+template<> EIGEN_STRONG_INLINE Packet2d ploadl<Packet2d>(const double* from) { EIGEN_DEBUG_UNALIGNED_LOAD return _mm_load_sd(from); }
+
+// Load scalar
+template<typename Packet> EIGEN_STRONG_INLINE Packet ploads(const typename unpacket_traits<Packet>::type* from);
+template<> EIGEN_STRONG_INLINE Packet4f ploads<Packet4f>(const float*  from) { EIGEN_DEBUG_UNALIGNED_LOAD return _mm_load_ss(from); }
+template<> EIGEN_STRONG_INLINE Packet2d ploads<Packet2d>(const double* from) { EIGEN_DEBUG_UNALIGNED_LOAD return _mm_load_sd(from); }
 
 template<> EIGEN_STRONG_INLINE Packet4f ploaddup<Packet4f>(const float*   from)
 {
@@ -786,6 +803,14 @@ template<> EIGEN_STRONG_INLINE void pstoreu<double>(double* to, const Packet2d& 
 template<> EIGEN_STRONG_INLINE void pstoreu<float>(float*   to, const Packet4f& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_storeu_ps(to, from); }
 template<> EIGEN_STRONG_INLINE void pstoreu<int>(int*       to, const Packet4i& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_storeu_si128(reinterpret_cast<__m128i*>(to), from); }
 template<> EIGEN_STRONG_INLINE void pstoreu<bool>(bool*     to, const Packet16b& from) { EIGEN_DEBUG_ALIGNED_STORE _mm_storeu_si128(reinterpret_cast<__m128i*>(to), from); }
+
+template<typename Scalar, typename Packet> EIGEN_STRONG_INLINE void pstorel(Scalar* to, const Packet& from);
+template<> EIGEN_STRONG_INLINE void pstorel(float*   to, const Packet4f& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_storel_pi(reinterpret_cast<__m64*>(to), from); }
+template<> EIGEN_STRONG_INLINE void pstorel(double*  to, const Packet2d& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_storel_pd(to, from); }
+
+template<typename Scalar, typename Packet> EIGEN_STRONG_INLINE void pstores(Scalar* to, const Packet& from);
+template<> EIGEN_STRONG_INLINE void pstores(float*   to, const Packet4f& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_store_ss(to, from); }
+template<> EIGEN_STRONG_INLINE void pstores(double*  to, const Packet2d& from) { EIGEN_DEBUG_UNALIGNED_STORE _mm_store_sd(to, from); }
 
 template<> EIGEN_DEVICE_FUNC inline Packet4f pgather<float, Packet4f>(const float* from, Index stride)
 {

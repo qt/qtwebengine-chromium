@@ -16,7 +16,11 @@ import * as m from 'mithril';
 
 import {assertExists, assertFalse, assertTrue} from '../base/logging';
 
-import {TOPBAR_HEIGHT, TRACK_SHELL_WIDTH} from './css_constants';
+import {
+  SELECTION_STROKE_COLOR,
+  TOPBAR_HEIGHT,
+  TRACK_SHELL_WIDTH,
+} from './css_constants';
 import {
   FlowEventsRenderer,
   FlowEventsRendererArgs,
@@ -37,7 +41,6 @@ import {TrackGroupAttrs} from './viewer_page';
 const SCROLLING_CANVAS_OVERDRAW_FACTOR = 1.2;
 
 // We need any here so we can accept vnodes with arbitrary attrs.
-// tslint:disable-next-line:no-any
 export type AnyAttrsVnode = m.Vnode<any, any>;
 
 export interface Attrs {
@@ -452,7 +455,7 @@ export class PanelContainer implements m.ClassComponent<Attrs> {
     selectedTracksMinY -= this.panelContainerTop;
     selectedTracksMaxY -= this.panelContainerTop;
     this.ctx.save();
-    this.ctx.strokeStyle = 'rgba(52,69,150)';
+    this.ctx.strokeStyle = SELECTION_STROKE_COLOR;
     this.ctx.lineWidth = 1;
     const canvasYStart =
         Math.floor(this.scrollTop - this.getCanvasOverdrawHeightPerSide());

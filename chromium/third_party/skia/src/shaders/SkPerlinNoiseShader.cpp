@@ -803,11 +803,11 @@ void GrPerlinNoise2Effect::Impl::emitCode(EmitArgs& args) {
     SkString noiseFuncName = fragBuilder->getMangledFunctionName("noiseFuncName");
     if (pne.stitchTiles()) {
         fragBuilder->emitFunction(SkSLType::kHalf, noiseFuncName.c_str(),
-                                  {gPerlinNoiseStitchArgs, SK_ARRAY_COUNT(gPerlinNoiseStitchArgs)},
+                                  {gPerlinNoiseStitchArgs, std::size(gPerlinNoiseStitchArgs)},
                                   noiseCode.c_str());
     } else {
         fragBuilder->emitFunction(SkSLType::kHalf, noiseFuncName.c_str(),
-                                  {gPerlinNoiseArgs, SK_ARRAY_COUNT(gPerlinNoiseArgs)},
+                                  {gPerlinNoiseArgs, std::size(gPerlinNoiseArgs)},
                                   noiseCode.c_str());
     }
 
@@ -955,8 +955,12 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
     const SkBitmap& permutationsBitmap = paintingData->getPermutationsBitmap();
     const SkBitmap& noiseBitmap        = paintingData->getNoiseBitmap();
 
-    auto permutationsView = std::get<0>(GrMakeCachedBitmapProxyView(context, permutationsBitmap));
-    auto noiseView        = std::get<0>(GrMakeCachedBitmapProxyView(context, noiseBitmap));
+    auto permutationsView = std::get<0>(GrMakeCachedBitmapProxyView(
+            context,
+            permutationsBitmap,
+            /*label=*/"PerlinNoiseShader_FragmentProcessor_PermutationsView"));
+    auto noiseView = std::get<0>(GrMakeCachedBitmapProxyView(
+            context, noiseBitmap, /*label=*/"PerlinNoiseShader_FragmentProcessor_NoiseView"));
 
     if (permutationsView && noiseView) {
         return GrPerlinNoise2Effect::Make(fType,

@@ -146,8 +146,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
       QuicConnectionIdLength source_connection_id_length, bool include_version,
       bool include_diversification_nonce,
       QuicPacketNumberLength packet_number_length,
-      QuicVariableLengthIntegerLength retry_token_length_length,
-      QuicVariableLengthIntegerLength length_length, QuicStreamOffset offset);
+      quiche::QuicheVariableLengthIntegerLength retry_token_length_length,
+      quiche::QuicheVariableLengthIntegerLength length_length,
+      QuicStreamOffset offset);
 
   // Returns false and flushes all pending frames if current open packet is
   // full.
@@ -303,11 +304,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Sets the encryption level that will be applied to new packets.
   void set_encryption_level(EncryptionLevel level);
   EncryptionLevel encryption_level() { return packet_.encryption_level; }
-
-  // Sets whether initial packets are protected with chaos.
-  void set_chaos_protection_enabled(bool chaos_protection_enabled) {
-    chaos_protection_enabled_ = chaos_protection_enabled;
-  }
 
   // packet number of the last created packet, or 0 if no packets have been
   // created.
@@ -583,7 +579,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns length of the retry token variable length integer to send over the
   // wire. Is non-zero for v99 IETF Initial packets.
-  QuicVariableLengthIntegerLength GetRetryTokenLengthLength() const;
+  quiche::QuicheVariableLengthIntegerLength GetRetryTokenLengthLength() const;
 
   // Returns the retry token to send over the wire, only sent in
   // v99 IETF Initial packets.
@@ -591,7 +587,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns length of the length variable length integer to send over the
   // wire. Is non-zero for v99 IETF Initial, 0-RTT or Handshake packets.
-  QuicVariableLengthIntegerLength GetLengthLength() const;
+  quiche::QuicheVariableLengthIntegerLength GetLengthLength() const;
 
   // Returns true if |frame| is a ClientHello.
   bool StreamFrameIsClientHello(const QuicStreamFrame& frame) const;
@@ -685,9 +681,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // accept. There is no limit for QUIC_CRYPTO connections, but QUIC+TLS
   // negotiates this during the handshake.
   QuicByteCount max_datagram_frame_size_;
-
-  // Whether to attempt protecting initial packets with chaos.
-  bool chaos_protection_enabled_;
 };
 
 }  // namespace quic

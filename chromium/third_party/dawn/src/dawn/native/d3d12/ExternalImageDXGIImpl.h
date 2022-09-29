@@ -30,13 +30,14 @@ namespace dawn::native::d3d12 {
 
 class D3D11on12ResourceCache;
 class Device;
-struct ExternalImageAccessDescriptorDXGIKeyedMutex;
+struct ExternalImageAccessDescriptorDXGISharedHandle;
 struct ExternalImageDescriptorDXGISharedHandle;
 
 class ExternalImageDXGIImpl : public LinkNode<ExternalImageDXGIImpl> {
   public:
     ExternalImageDXGIImpl(Device* backendDevice,
                           Microsoft::WRL::ComPtr<ID3D12Resource> d3d12Resource,
+                          Microsoft::WRL::ComPtr<ID3D12Fence> d3d12Fence,
                           const WGPUTextureDescriptor* descriptor);
     ~ExternalImageDXGIImpl();
 
@@ -47,11 +48,12 @@ class ExternalImageDXGIImpl : public LinkNode<ExternalImageDXGIImpl> {
 
     bool IsValid() const;
 
-    WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor);
+    WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGISharedHandle* descriptor);
 
   private:
     Device* mBackendDevice;
     Microsoft::WRL::ComPtr<ID3D12Resource> mD3D12Resource;
+    Microsoft::WRL::ComPtr<ID3D12Fence> mD3D12Fence;
     std::unique_ptr<D3D11on12ResourceCache> mD3D11on12ResourceCache;
 
     // Contents of WGPUTextureDescriptor are stored individually since the descriptor

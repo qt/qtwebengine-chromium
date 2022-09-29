@@ -45,11 +45,12 @@
 #include "common/using_std_string.h"
 
 using google_breakpad::Module;
+using google_breakpad::StringView;
 using std::stringstream;
 using std::vector;
 using testing::ContainerEq;
 
-static Module::Function* generate_duplicate_function(const string& name) {
+static Module::Function* generate_duplicate_function(StringView name) {
   const Module::Address DUP_ADDRESS = 0xd35402aac7a7ad5cULL;
   const Module::Address DUP_SIZE = 0x200b26e605f99071ULL;
   const Module::Address DUP_PARAMETER_SIZE = 0xf14ac4fed48c4a99ULL;
@@ -417,7 +418,10 @@ TEST(Construct, DuplicateFunctions) {
   Module::Function* function2 = generate_duplicate_function("_without_form");
 
   m.AddFunction(function1);
-  m.AddFunction(function2);
+  // If this succeeds, we'll have a double-free with the `delete` below. Avoid
+  // that.
+  ASSERT_FALSE(m.AddFunction(function2));
+  delete function2;
 
   m.Write(s, ALL_SYMBOL_DATA);
   string contents = s.str();

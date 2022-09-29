@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/font/cpdf_tounicodemap.h"
 
+#include <map>
+#include <set>
 #include <utility>
 
 #include "core/fpdfapi/font/cpdf_cid2unicodemap.h"
@@ -14,6 +16,7 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "third_party/base/containers/contains.h"
 #include "third_party/base/numerics/safe_conversions.h"
 
 namespace {
@@ -52,7 +55,7 @@ WideString CPDF_ToUnicodeMap::Lookup(uint32_t charcode) const {
         m_pBaseMap->UnicodeFromCID(static_cast<uint16_t>(charcode)));
   }
 
-  uint32_t value = it->second;
+  uint32_t value = *it->second.begin();
   wchar_t unicode = static_cast<wchar_t>(value & 0xffff);
   if (unicode != 0xffff)
     return WideString(unicode);
@@ -63,10 +66,16 @@ WideString CPDF_ToUnicodeMap::Lookup(uint32_t charcode) const {
 
 uint32_t CPDF_ToUnicodeMap::ReverseLookup(wchar_t unicode) const {
   for (const auto& pair : m_Multimap) {
-    if (pair.second == static_cast<uint32_t>(unicode))
+    if (pdfium::Contains(pair.second, static_cast<uint32_t>(unicode)))
       return pair.first;
   }
   return 0;
+}
+
+size_t CPDF_ToUnicodeMap::GetUnicodeCountByCharcodeForTesting(
+    uint32_t charcode) const {
+  auto it = m_Multimap.find(charcode);
+  return it != m_Multimap.end() ? it->second.size() : 0u;
 }
 
 // static
@@ -173,8 +182,10 @@ void CPDF_ToUnicodeMap::HandleBeginBFRange(CPDF_SimpleParser* pParser) {
 
     ByteStringView start = pParser->GetWord();
     if (start == "[") {
-      for (uint32_t code = lowcode; code <= highcode; code++)
-        SetCode(code, StringToWideString(pParser->GetWord()));
+      for (FX_SAFE_UINT32 code = lowcode;
+           code.IsValid() && code.ValueOrDie() <= highcode; code++) {
+        SetCode(code.ValueOrDie(), StringToWideString(pParser->GetWord()));
+      }
       pParser->GetWord();
       continue;
     }
@@ -186,13 +197,17 @@ void CPDF_ToUnicodeMap::HandleBeginBFRange(CPDF_SimpleParser* pParser) {
         return;
 
       uint32_t value = value_or_error.value();
-      for (uint32_t code = lowcode; code <= highcode; code++)
-        m_Multimap.emplace(code, value++);
+      for (FX_SAFE_UINT32 code = lowcode;
+           code.IsValid() && code.ValueOrDie() <= highcode; code++) {
+        InsertIntoMultimap(code.ValueOrDie(), value++);
+      }
     } else {
-      for (uint32_t code = lowcode; code <= highcode; code++) {
+      for (FX_SAFE_UINT32 code = lowcode;
+           code.IsValid() && code.ValueOrDie() <= highcode; code++) {
+        uint32_t code_value = code.ValueOrDie();
         WideString retcode =
-            code == lowcode ? destcode : StringDataAdd(destcode);
-        m_Multimap.emplace(code, GetMultiCharIndexIndicator());
+            code_value == lowcode ? destcode : StringDataAdd(destcode);
+        InsertIntoMultimap(code_value, GetMultiCharIndexIndicator());
         m_MultiCharVec.push_back(retcode);
         destcode = std::move(retcode);
       }
@@ -212,9 +227,19 @@ void CPDF_ToUnicodeMap::SetCode(uint32_t srccode, WideString destcode) {
     return;
 
   if (len == 1) {
-    m_Multimap.emplace(srccode, destcode[0]);
+    InsertIntoMultimap(srccode, destcode[0]);
   } else {
-    m_Multimap.emplace(srccode, GetMultiCharIndexIndicator());
+    InsertIntoMultimap(srccode, GetMultiCharIndexIndicator());
     m_MultiCharVec.push_back(destcode);
   }
+}
+
+void CPDF_ToUnicodeMap::InsertIntoMultimap(uint32_t code, uint32_t destcode) {
+  auto it = m_Multimap.find(code);
+  if (it == m_Multimap.end()) {
+    m_Multimap.emplace(code, std::set<uint32_t>{destcode});
+    return;
+  }
+
+  it->second.emplace(destcode);
 }

@@ -5,6 +5,7 @@
 import * as AccessibilityTreeNode from './AccessibilityTreeNode.js';
 import * as AdornerManager from './AdornerManager.js';
 import * as AdornerSettingsPane from './AdornerSettingsPane.js';
+import * as CSSHintDetailsView from './CSSHintDetailsView.js';
 import * as ComputedStyleProperty from './ComputedStyleProperty.js';
 import * as ComputedStyleTrace from './ComputedStyleTrace.js';
 import * as CSSPropertyIconResolver from './CSSPropertyIconResolver.js';
@@ -15,7 +16,6 @@ import * as ElementsPanelLink from './ElementsPanelLink.js';
 import * as Helper from './Helper.js';
 import * as LayoutPane from './LayoutPane.js';
 import * as LayoutPaneUtils from './LayoutPaneUtils.js';
-import * as NodeText from './NodeText.js';
 import * as QueryContainer from './QueryContainer.js';
 import * as StylePropertyEditor from './StylePropertyEditor.js';
 
@@ -23,6 +23,7 @@ export {
   AccessibilityTreeNode,
   AdornerManager,
   AdornerSettingsPane,
+  CSSHintDetailsView,
   ComputedStyleProperty,
   ComputedStyleTrace,
   CSSPropertyIconResolver,
@@ -33,7 +34,6 @@ export {
   Helper,
   LayoutPane,
   LayoutPaneUtils,
-  NodeText,
   QueryContainer,
   StylePropertyEditor,
 };

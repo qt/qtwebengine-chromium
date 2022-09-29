@@ -6,9 +6,12 @@
 
 #include "core/fpdfapi/page/cpdf_imageobject.h"
 
+#include <utility>
+
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fxcrt/fx_coordinates.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 
@@ -45,12 +48,13 @@ const CPDF_ImageObject* CPDF_ImageObject::AsImage() const {
 
 void CPDF_ImageObject::CalcBoundingBox() {
   static constexpr CFX_FloatRect kRect(0.0f, 0.0f, 1.0f, 1.0f);
+  SetOriginalRect(kRect);
   SetRect(m_Matrix.TransformRect(kRect));
 }
 
-void CPDF_ImageObject::SetImage(const RetainPtr<CPDF_Image>& pImage) {
+void CPDF_ImageObject::SetImage(RetainPtr<CPDF_Image> pImage) {
   MaybePurgeCache();
-  m_pImage = pImage;
+  m_pImage = std::move(pImage);
 }
 
 RetainPtr<CPDF_Image> CPDF_ImageObject::GetImage() const {
@@ -82,7 +86,7 @@ void CPDF_ImageObject::MaybePurgeCache() {
   if (!pPageData)
     return;
 
-  CPDF_Stream* pStream = m_pImage->GetStream();
+  const CPDF_Stream* pStream = m_pImage->GetStream();
   if (!pStream)
     return;
 

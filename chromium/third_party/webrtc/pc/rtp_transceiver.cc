@@ -30,7 +30,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -287,8 +286,8 @@ void RtpTransceiver::SetChannel(
     channel_->SetRtpTransport(transport_lookup(channel_->mid()));
     channel_->SetFirstPacketReceivedCallback(
         [thread = thread_, flag = signaling_thread_safety_, this]() mutable {
-          thread->PostTask(ToQueuedTask(std::move(flag),
-                                        [this]() { OnFirstPacketReceived(); }));
+          thread->PostTask(
+              SafeTask(std::move(flag), [this]() { OnFirstPacketReceived(); }));
         });
   });
   PushNewMediaChannelAndDeleteChannel(nullptr);

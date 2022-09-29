@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/async_resolver_factory.h"
@@ -81,14 +82,13 @@
 #include "rtc_base/firewall_socket_server.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/helpers.h"
-#include "rtc_base/location.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_certificate.h"
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
+#include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/test_certificate_verifier.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
@@ -2371,10 +2371,10 @@ TEST_P(PeerConnectionIntegrationTestWithFakeClock,
       turn_server_2_internal_address, turn_server_2_external_address);
   // Bypass permission check on received packets so media can be sent before
   // the candidate is signaled.
-  network_thread()->Invoke<void>(RTC_FROM_HERE, [turn_server_1] {
+  SendTask(network_thread(), [turn_server_1] {
     turn_server_1->set_enable_permission_checks(false);
   });
-  network_thread()->Invoke<void>(RTC_FROM_HERE, [turn_server_2] {
+  SendTask(network_thread(), [turn_server_2] {
     turn_server_2->set_enable_permission_checks(false);
   });
 
@@ -2417,6 +2417,80 @@ TEST_P(PeerConnectionIntegrationTestWithFakeClock,
   // If this is not done a DCHECK can be hit in ports.cc, because a large
   // negative number is calculated for the rtt due to the global clock changing.
   ClosePeerConnections();
+}
+
+TEST_P(PeerConnectionIntegrationTestWithFakeClock,
+       OnIceCandidateFlushesGetStatsCache) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  caller()->AddAudioTrack();
+
+  // Call getStats, assert there are no candidates.
+  rtc::scoped_refptr<const webrtc::RTCStatsReport> first_report =
+      caller()->NewGetStats();
+  ASSERT_TRUE(first_report);
+  auto first_candidate_stats =
+      first_report->GetStatsOfType<webrtc::RTCLocalIceCandidateStats>();
+  ASSERT_EQ(first_candidate_stats.size(), 0u);
+
+  // Create an offer at the caller and set it as remote description on the
+  // callee.
+  caller()->CreateAndSetAndSignalOffer();
+  // Call getStats again, assert there are candidates now.
+  rtc::scoped_refptr<const webrtc::RTCStatsReport> second_report =
+      caller()->NewGetStats();
+  ASSERT_TRUE(second_report);
+  auto second_candidate_stats =
+      second_report->GetStatsOfType<webrtc::RTCLocalIceCandidateStats>();
+  ASSERT_NE(second_candidate_stats.size(), 0u);
+
+  // The fake clock ensures that no time has passed so the cache must have been
+  // explicitly invalidated.
+  EXPECT_EQ(first_report->timestamp_us(), second_report->timestamp_us());
+}
+
+TEST_P(PeerConnectionIntegrationTestWithFakeClock,
+       AddIceCandidateFlushesGetStatsCache) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignalingForSdpOnly();
+  caller()->AddAudioTrack();
+
+  // Start candidate gathering and wait for it to complete. Candidates are not
+  // signalled.
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_SIMULATED_WAIT(caller()->IceGatheringStateComplete(),
+                             kDefaultTimeout, FakeClock());
+
+  // Call getStats, assert there are no candidates.
+  rtc::scoped_refptr<const webrtc::RTCStatsReport> first_report =
+      caller()->NewGetStats();
+  ASSERT_TRUE(first_report);
+  auto first_candidate_stats =
+      first_report->GetStatsOfType<webrtc::RTCRemoteIceCandidateStats>();
+  ASSERT_EQ(first_candidate_stats.size(), 0u);
+
+  // Add a "fake" candidate.
+  absl::optional<RTCError> result;
+  caller()->pc()->AddIceCandidate(
+      absl::WrapUnique(webrtc::CreateIceCandidate(
+          "", 0,
+          "candidate:2214029314 1 udp 2122260223 127.0.0.1 49152 typ host",
+          nullptr)),
+      [&result](RTCError r) { result = r; });
+  ASSERT_TRUE_WAIT(result.has_value(), kDefaultTimeout);
+  ASSERT_TRUE(result.value().ok());
+
+  // Call getStats again, assert there is a remote candidate now.
+  rtc::scoped_refptr<const webrtc::RTCStatsReport> second_report =
+      caller()->NewGetStats();
+  ASSERT_TRUE(second_report);
+  auto second_candidate_stats =
+      second_report->GetStatsOfType<webrtc::RTCRemoteIceCandidateStats>();
+  ASSERT_EQ(second_candidate_stats.size(), 1u);
+
+  // The fake clock ensures that no time has passed so the cache must have been
+  // explicitly invalidated.
+  EXPECT_EQ(first_report->timestamp_us(), second_report->timestamp_us());
 }
 
 #endif  // !defined(THREAD_SANITIZER)
@@ -2736,8 +2810,10 @@ TEST_P(PeerConnectionIntegrationTest, RtcEventLogOutputWriteCalled) {
 
   auto output = std::make_unique<testing::NiceMock<MockRtcEventLogOutput>>();
   ON_CALL(*output, IsActive()).WillByDefault(::testing::Return(true));
-  ON_CALL(*output, Write(::testing::_)).WillByDefault(::testing::Return(true));
-  EXPECT_CALL(*output, Write(::testing::_)).Times(::testing::AtLeast(1));
+  ON_CALL(*output, Write(::testing::A<absl::string_view>()))
+      .WillByDefault(::testing::Return(true));
+  EXPECT_CALL(*output, Write(::testing::A<absl::string_view>()))
+      .Times(::testing::AtLeast(1));
   EXPECT_TRUE(caller()->pc()->StartRtcEventLog(
       std::move(output), webrtc::RtcEventLog::kImmediateOutput));
 

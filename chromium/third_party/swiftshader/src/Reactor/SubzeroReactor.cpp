@@ -16,6 +16,7 @@
 #include "Print.hpp"
 #include "Reactor.hpp"
 #include "ReactorDebugInfo.hpp"
+#include "SIMD.hpp"
 
 #include "ExecutableMemory.hpp"
 #include "Optimizer.hpp"
@@ -341,6 +342,8 @@ static_assert(!subzeroEmitTextAsm, "Compile Subzero with ALLOW_DUMP=1 for subzer
 }  // anonymous namespace
 
 namespace rr {
+
+const int SIMD::Width = 4;
 
 std::string Caps::backendName()
 {
@@ -1331,7 +1334,7 @@ Value *Nucleus::createNeg(Value *v)
 Value *Nucleus::createFNeg(Value *v)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	double c[4] = { -0.0, -0.0, -0.0, -0.0 };
+	std::vector<double> c = { -0.0 };
 	Value *negativeZero = Ice::isVectorType(v->getType()) ? createConstantVector(c, T(v->getType())) : V(::context->getConstantFloat(-0.0f));
 
 	return createFSub(negativeZero, v);
@@ -1346,7 +1349,7 @@ Value *Nucleus::createNot(Value *v)
 	}
 	else  // Vector
 	{
-		int64_t c[16] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+		std::vector<int64_t> c = { -1 };
 		return createXor(v, createConstantVector(c, T(v->getType())));
 	}
 }
@@ -1683,7 +1686,7 @@ Value *Nucleus::createBitCast(Value *v, Type *destType)
 	// Bitcasts must be between types of the same logical size. But with emulated narrow vectors we need
 	// support for casting between scalars and wide vectors. For platforms where this is not supported,
 	// emulate them by writing to the stack and reading back as the destination type.
-	if(emulateMismatchedBitCast)
+	if(emulateMismatchedBitCast || (v->getType() == Ice::Type::IceType_i64))
 	{
 		if(!Ice::isVectorType(v->getType()) && Ice::isVectorType(T(destType)))
 		{
@@ -1889,18 +1892,19 @@ Value *Nucleus::createInsertElement(Value *vector, Value *element, int index)
 	return V(result);
 }
 
-Value *Nucleus::createShuffleVector(Value *V1, Value *V2, const int *select)
+Value *Nucleus::createShuffleVector(Value *V1, Value *V2, std::vector<int> select)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	ASSERT(V1->getType() == V2->getType());
 
-	int size = Ice::typeNumElements(V1->getType());
+	size_t size = Ice::typeNumElements(V1->getType());
 	auto result = ::function->makeVariable(V1->getType());
 	auto shuffle = Ice::InstShuffleVector::create(::function, result, V1, V2);
 
-	for(int i = 0; i < size; i++)
+	const size_t selectSize = select.size();
+	for(size_t i = 0; i < size; i++)
 	{
-		shuffle->addIndex(llvm::cast<Ice::ConstantInteger32>(::context->getConstantInt32(select[i])));
+		shuffle->addIndex(llvm::cast<Ice::ConstantInteger32>(::context->getConstantInt32(select[i % selectSize])));
 	}
 
 	::basicBlock->appendInst(shuffle);
@@ -2000,7 +2004,7 @@ Value *Nucleus::createNullValue(Type *Ty)
 	if(Ice::isVectorType(T(Ty)))
 	{
 		ASSERT(Ice::typeNumElements(T(Ty)) <= 16);
-		int64_t c[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+		std::vector<int64_t> c = { 0 };
 		return createConstantVector(c, Ty);
 	}
 	else
@@ -2074,15 +2078,15 @@ static Ice::Constant *IceConstantData(void const *data, size_t size, size_t alig
 	return sz::getConstantPointer(::context, ::routine->addConstantData(data, size, alignment));
 }
 
-Value *Nucleus::createConstantVector(const int64_t *constants, Type *type)
+Value *Nucleus::createConstantVector(std::vector<int64_t> constants, Type *type)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	const int vectorSize = 16;
 	ASSERT(Ice::typeWidthInBytes(T(type)) == vectorSize);
 	const int alignment = vectorSize;
 
-	const int64_t *i = constants;
-	const double *f = reinterpret_cast<const double *>(constants);
+	const auto &i = constants;
+	const size_t s = constants.size();
 
 	// TODO(b/148082873): Fix global variable constants when generating multiple functions
 	Ice::Constant *ptr = nullptr;
@@ -2092,66 +2096,53 @@ Value *Nucleus::createConstantVector(const int64_t *constants, Type *type)
 	case Ice::IceType_v4i32:
 	case Ice::IceType_v4i1:
 		{
-			const int initializer[4] = { (int)i[0], (int)i[1], (int)i[2], (int)i[3] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
-			ptr = IceConstantData(initializer, vectorSize, alignment);
-		}
-		break;
-	case Ice::IceType_v4f32:
-		{
-			const float initializer[4] = { (float)f[0], (float)f[1], (float)f[2], (float)f[3] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const int initializer[4] = { (int)i[0 % s], (int)i[1 % s], (int)i[2 % s], (int)i[3 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Ice::IceType_v8i16:
 	case Ice::IceType_v8i1:
 		{
-			const short initializer[8] = { (short)i[0], (short)i[1], (short)i[2], (short)i[3], (short)i[4], (short)i[5], (short)i[6], (short)i[7] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const short initializer[8] = { (short)i[0 % s], (short)i[1 % s], (short)i[2 % s], (short)i[3 % s], (short)i[4 % s], (short)i[5 % s], (short)i[6 % s], (short)i[7 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Ice::IceType_v16i8:
 	case Ice::IceType_v16i1:
 		{
-			const char initializer[16] = { (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7], (char)i[8], (char)i[9], (char)i[10], (char)i[11], (char)i[12], (char)i[13], (char)i[14], (char)i[15] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const char initializer[16] = { (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[4 % s], (char)i[5 % s], (char)i[6 % s], (char)i[7 % s],
+				                           (char)i[8 % s], (char)i[9 % s], (char)i[10 % s], (char)i[11 % s], (char)i[12 % s], (char)i[13 % s], (char)i[14 % s], (char)i[15 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Type_v2i32:
 		{
-			const int initializer[4] = { (int)i[0], (int)i[1], (int)i[0], (int)i[1] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
-			ptr = IceConstantData(initializer, vectorSize, alignment);
-		}
-		break;
-	case Type_v2f32:
-		{
-			const float initializer[4] = { (float)f[0], (float)f[1], (float)f[0], (float)f[1] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const int initializer[4] = { (int)i[0 % s], (int)i[1 % s], (int)i[0 % s], (int)i[1 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Type_v4i16:
 		{
-			const short initializer[8] = { (short)i[0], (short)i[1], (short)i[2], (short)i[3], (short)i[0], (short)i[1], (short)i[2], (short)i[3] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const short initializer[8] = { (short)i[0 % s], (short)i[1 % s], (short)i[2 % s], (short)i[3 % s], (short)i[0 % s], (short)i[1 % s], (short)i[2 % s], (short)i[3 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Type_v8i8:
 		{
-			const char initializer[16] = { (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[4], (char)i[5], (char)i[6], (char)i[7] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const char initializer[16] = { (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[4 % s], (char)i[5 % s], (char)i[6 % s], (char)i[7 % s], (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[4 % s], (char)i[5 % s], (char)i[6 % s], (char)i[7 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
 	case Type_v4i8:
 		{
-			const char initializer[16] = { (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3], (char)i[0], (char)i[1], (char)i[2], (char)i[3] };
-			static_assert(sizeof(initializer) == vectorSize, "!");
+			const char initializer[16] = { (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s], (char)i[0 % s], (char)i[1 % s], (char)i[2 % s], (char)i[3 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
 			ptr = IceConstantData(initializer, vectorSize, alignment);
 		}
 		break;
@@ -2165,9 +2156,43 @@ Value *Nucleus::createConstantVector(const int64_t *constants, Type *type)
 	return V(result);
 }
 
-Value *Nucleus::createConstantVector(const double *constants, Type *type)
+Value *Nucleus::createConstantVector(std::vector<double> constants, Type *type)
 {
-	return createConstantVector((const int64_t *)constants, type);
+	RR_DEBUG_INFO_UPDATE_LOC();
+	const int vectorSize = 16;
+	ASSERT(Ice::typeWidthInBytes(T(type)) == vectorSize);
+	const int alignment = vectorSize;
+
+	const auto &f = constants;
+	const size_t s = constants.size();
+
+	// TODO(b/148082873): Fix global variable constants when generating multiple functions
+	Ice::Constant *ptr = nullptr;
+
+	switch((int)reinterpret_cast<intptr_t>(type))
+	{
+	case Ice::IceType_v4f32:
+		{
+			const float initializer[4] = { (float)f[0 % s], (float)f[1 % s], (float)f[2 % s], (float)f[3 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
+			ptr = IceConstantData(initializer, vectorSize, alignment);
+		}
+		break;
+	case Type_v2f32:
+		{
+			const float initializer[4] = { (float)f[0 % s], (float)f[1 % s], (float)f[0 % s], (float)f[1 % s] };
+			static_assert(sizeof(initializer) == vectorSize);
+			ptr = IceConstantData(initializer, vectorSize, alignment);
+		}
+		break;
+	default:
+		UNREACHABLE("Unknown constant vector type: %d", (int)reinterpret_cast<intptr_t>(type));
+	}
+
+	ASSERT(ptr);
+
+	Ice::Variable *result = sz::createLoad(::function, ::basicBlock, ptr, T(type), alignment);
+	return V(result);
 }
 
 Value *Nucleus::createConstantString(const char *v)
@@ -2221,39 +2246,27 @@ Type *SByte4::type()
 	return T(Type_v4i8);
 }
 
-namespace {
-RValue<Byte> SaturateUnsigned(RValue<Short> x)
+static RValue<Byte> SaturateUnsigned(RValue<Short> x)
 {
 	return Byte(IfThenElse(Int(x) > 0xFF, Int(0xFF), IfThenElse(Int(x) < 0, Int(0), Int(x))));
 }
 
-RValue<Byte> Extract(RValue<Byte8> val, int i)
+static RValue<Byte> Extract(RValue<Byte8> val, int i)
 {
 	return RValue<Byte>(Nucleus::createExtractElement(val.value(), Byte::type(), i));
 }
 
-RValue<Byte8> Insert(RValue<Byte8> val, RValue<Byte> element, int i)
+static RValue<Byte8> Insert(RValue<Byte8> val, RValue<Byte> element, int i)
 {
 	return RValue<Byte8>(Nucleus::createInsertElement(val.value(), element.value(), i));
 }
-}  // namespace
 
 RValue<Byte8> AddSat(RValue<Byte8> x, RValue<Byte8> y)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Byte8 result;
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 0)) + Int(Extract(y, 0)))), 0);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 1)) + Int(Extract(y, 1)))), 1);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 2)) + Int(Extract(y, 2)))), 2);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 3)) + Int(Extract(y, 3)))), 3);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 4)) + Int(Extract(y, 4)))), 4);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 5)) + Int(Extract(y, 5)))), 5);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 6)) + Int(Extract(y, 6)))), 6);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 7)) + Int(Extract(y, 7)))), 7);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateUnsigned(Short(Int(a) + Int(b))); }, x, y);
 	}
 	else
 	{
@@ -2273,17 +2286,7 @@ RValue<Byte8> SubSat(RValue<Byte8> x, RValue<Byte8> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Byte8 result;
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 0)) - Int(Extract(y, 0)))), 0);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 1)) - Int(Extract(y, 1)))), 1);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 2)) - Int(Extract(y, 2)))), 2);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 3)) - Int(Extract(y, 3)))), 3);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 4)) - Int(Extract(y, 4)))), 4);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 5)) - Int(Extract(y, 5)))), 5);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 6)) - Int(Extract(y, 6)))), 6);
-		result = Insert(result, SaturateUnsigned(Short(Int(Extract(x, 7)) - Int(Extract(y, 7)))), 7);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateUnsigned(Short(Int(a) - Int(b))); }, x, y);
 	}
 	else
 	{
@@ -2315,17 +2318,7 @@ RValue<SByte8> operator>>(RValue<SByte8> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		SByte8 result;
-		result = Insert(result, Extract(lhs, 0) >> SByte(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> SByte(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> SByte(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> SByte(rhs), 3);
-		result = Insert(result, Extract(lhs, 4) >> SByte(rhs), 4);
-		result = Insert(result, Extract(lhs, 5) >> SByte(rhs), 5);
-		result = Insert(result, Extract(lhs, 6) >> SByte(rhs), 6);
-		result = Insert(result, Extract(lhs, 7) >> SByte(rhs), 7);
-
-		return result;
+		return Scalarize([rhs](auto a) { return a >> SByte(rhs); }, lhs);
 	}
 	else
 	{
@@ -2398,17 +2391,7 @@ RValue<SByte8> AddSat(RValue<SByte8> x, RValue<SByte8> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		SByte8 result;
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 0)) + Int(Extract(y, 0)))), 0);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 1)) + Int(Extract(y, 1)))), 1);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 2)) + Int(Extract(y, 2)))), 2);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 3)) + Int(Extract(y, 3)))), 3);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 4)) + Int(Extract(y, 4)))), 4);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 5)) + Int(Extract(y, 5)))), 5);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 6)) + Int(Extract(y, 6)))), 6);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 7)) + Int(Extract(y, 7)))), 7);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateSigned(Short(Int(a) + Int(b))); }, x, y);
 	}
 	else
 	{
@@ -2428,17 +2411,7 @@ RValue<SByte8> SubSat(RValue<SByte8> x, RValue<SByte8> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		SByte8 result;
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 0)) - Int(Extract(y, 0)))), 0);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 1)) - Int(Extract(y, 1)))), 1);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 2)) - Int(Extract(y, 2)))), 2);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 3)) - Int(Extract(y, 3)))), 3);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 4)) - Int(Extract(y, 4)))), 4);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 5)) - Int(Extract(y, 5)))), 5);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 6)) - Int(Extract(y, 6)))), 6);
-		result = Insert(result, SaturateSigned(Short(Int(Extract(x, 7)) - Int(Extract(y, 7)))), 7);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateSigned(Short(Int(a) - Int(b))); }, x, y);
 	}
 	else
 	{
@@ -2512,7 +2485,7 @@ Type *UShort2::type()
 
 Short4::Short4(RValue<Int4> cast)
 {
-	int select[8] = { 0, 2, 4, 6, 0, 2, 4, 6 };
+	std::vector<int> select = { 0, 2, 4, 6, 0, 2, 4, 6 };
 	Value *short8 = Nucleus::createBitCast(cast.value(), Short8::type());
 	Value *packed = Nucleus::createShuffleVector(short8, short8, select);
 
@@ -2539,13 +2512,7 @@ RValue<Short4> operator<<(RValue<Short4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short4 result;
-		result = Insert(result, Extract(lhs, 0) << Short(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << Short(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << Short(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << Short(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << Short(rhs); }, lhs);
 	}
 	else
 	{
@@ -2558,13 +2525,7 @@ RValue<Short4> operator>>(RValue<Short4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short4 result;
-		result = Insert(result, Extract(lhs, 0) >> Short(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> Short(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> Short(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> Short(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> Short(rhs); }, lhs);
 	}
 	else
 	{
@@ -2611,13 +2572,7 @@ RValue<Short4> AddSat(RValue<Short4> x, RValue<Short4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short4 result;
-		result = Insert(result, SaturateSigned(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateSigned(Int(a) + Int(b)); }, x, y);
 	}
 	else
 	{
@@ -2637,13 +2592,7 @@ RValue<Short4> SubSat(RValue<Short4> x, RValue<Short4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short4 result;
-		result = Insert(result, SaturateSigned(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
-		result = Insert(result, SaturateSigned(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateSigned(Int(a) - Int(b)); }, x, y);
 	}
 	else
 	{
@@ -2663,13 +2612,7 @@ RValue<Short4> MulHigh(RValue<Short4> x, RValue<Short4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short4 result;
-		result = Insert(result, Short((Int(Extract(x, 0)) * Int(Extract(y, 0))) >> 16), 0);
-		result = Insert(result, Short((Int(Extract(x, 1)) * Int(Extract(y, 1))) >> 16), 1);
-		result = Insert(result, Short((Int(Extract(x, 2)) * Int(Extract(y, 2))) >> 16), 2);
-		result = Insert(result, Short((Int(Extract(x, 3)) * Int(Extract(y, 3))) >> 16), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return Short((Int(a) * Int(b)) >> 16); }, x, y);
 	}
 	else
 	{
@@ -2822,15 +2765,8 @@ RValue<UShort4> operator<<(RValue<UShort4> lhs, unsigned char rhs)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
-
 	{
-		UShort4 result;
-		result = Insert(result, Extract(lhs, 0) << UShort(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << UShort(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << UShort(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << UShort(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << UShort(rhs); }, lhs);
 	}
 	else
 	{
@@ -2843,13 +2779,7 @@ RValue<UShort4> operator>>(RValue<UShort4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort4 result;
-		result = Insert(result, Extract(lhs, 0) >> UShort(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> UShort(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> UShort(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> UShort(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> UShort(rhs); }, lhs);
 	}
 	else
 	{
@@ -2895,13 +2825,7 @@ RValue<UShort4> AddSat(RValue<UShort4> x, RValue<UShort4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort4 result;
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 0)) + Int(Extract(y, 0))), 0);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 1)) + Int(Extract(y, 1))), 1);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 2)) + Int(Extract(y, 2))), 2);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 3)) + Int(Extract(y, 3))), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateUnsigned(Int(a) + Int(b)); }, x, y);
 	}
 	else
 	{
@@ -2921,13 +2845,7 @@ RValue<UShort4> SubSat(RValue<UShort4> x, RValue<UShort4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort4 result;
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 0)) - Int(Extract(y, 0))), 0);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 1)) - Int(Extract(y, 1))), 1);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 2)) - Int(Extract(y, 2))), 2);
-		result = Insert(result, SaturateUnsigned(Int(Extract(x, 3)) - Int(Extract(y, 3))), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return SaturateUnsigned(Int(a) - Int(b)); }, x, y);
 	}
 	else
 	{
@@ -2947,13 +2865,7 @@ RValue<UShort4> MulHigh(RValue<UShort4> x, RValue<UShort4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort4 result;
-		result = Insert(result, UShort((UInt(Extract(x, 0)) * UInt(Extract(y, 0))) >> 16), 0);
-		result = Insert(result, UShort((UInt(Extract(x, 1)) * UInt(Extract(y, 1))) >> 16), 1);
-		result = Insert(result, UShort((UInt(Extract(x, 2)) * UInt(Extract(y, 2))) >> 16), 2);
-		result = Insert(result, UShort((UInt(Extract(x, 3)) * UInt(Extract(y, 3))) >> 16), 3);
-
-		return result;
+		return Scalarize([](auto a, auto b) { return UShort((UInt(a) * UInt(b)) >> 16); }, x, y);
 	}
 	else
 	{
@@ -2973,14 +2885,7 @@ RValue<Int4> MulHigh(RValue<Int4> x, RValue<Int4> y)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	// TODO: For x86, build an intrinsics version of this which uses shuffles + pmuludq.
 
-	// Scalarized implementation.
-	Int4 result;
-	result = Insert(result, Int((Long(Extract(x, 0)) * Long(Extract(y, 0))) >> Long(Int(32))), 0);
-	result = Insert(result, Int((Long(Extract(x, 1)) * Long(Extract(y, 1))) >> Long(Int(32))), 1);
-	result = Insert(result, Int((Long(Extract(x, 2)) * Long(Extract(y, 2))) >> Long(Int(32))), 2);
-	result = Insert(result, Int((Long(Extract(x, 3)) * Long(Extract(y, 3))) >> Long(Int(32))), 3);
-
-	return result;
+	return Scalarize([](auto a, auto b) { return Int((Long(a) * Long(b)) >> Long(Int(32))); }, x, y);
 }
 
 RValue<UInt4> MulHigh(RValue<UInt4> x, RValue<UInt4> y)
@@ -3006,14 +2911,7 @@ RValue<UInt4> MulHigh(RValue<UInt4> x, RValue<UInt4> y)
 		return (xh * yh) + (xlyhh + xhylh) + oflow;
 	}
 
-	// Scalarized implementation.
-	Int4 result;
-	result = Insert(result, Int((Long(UInt(Extract(As<Int4>(x), 0))) * Long(UInt(Extract(As<Int4>(y), 0)))) >> Long(Int(32))), 0);
-	result = Insert(result, Int((Long(UInt(Extract(As<Int4>(x), 1))) * Long(UInt(Extract(As<Int4>(y), 1)))) >> Long(Int(32))), 1);
-	result = Insert(result, Int((Long(UInt(Extract(As<Int4>(x), 2))) * Long(UInt(Extract(As<Int4>(y), 2)))) >> Long(Int(32))), 2);
-	result = Insert(result, Int((Long(UInt(Extract(As<Int4>(x), 3))) * Long(UInt(Extract(As<Int4>(y), 3)))) >> Long(Int(32))), 3);
-
-	return As<UInt4>(result);
+	return Scalarize([](auto a, auto b) { return UInt((Long(a) * Long(b)) >> Long(Int(32))); }, x, y);
 }
 
 RValue<UShort4> Average(RValue<UShort4> x, RValue<UShort4> y)
@@ -3045,17 +2943,7 @@ RValue<Short8> operator<<(RValue<Short8> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short8 result;
-		result = Insert(result, Extract(lhs, 0) << Short(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << Short(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << Short(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << Short(rhs), 3);
-		result = Insert(result, Extract(lhs, 4) << Short(rhs), 4);
-		result = Insert(result, Extract(lhs, 5) << Short(rhs), 5);
-		result = Insert(result, Extract(lhs, 6) << Short(rhs), 6);
-		result = Insert(result, Extract(lhs, 7) << Short(rhs), 7);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << Short(rhs); }, lhs);
 	}
 	else
 	{
@@ -3068,17 +2956,7 @@ RValue<Short8> operator>>(RValue<Short8> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Short8 result;
-		result = Insert(result, Extract(lhs, 0) >> Short(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> Short(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> Short(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> Short(rhs), 3);
-		result = Insert(result, Extract(lhs, 4) >> Short(rhs), 4);
-		result = Insert(result, Extract(lhs, 5) >> Short(rhs), 5);
-		result = Insert(result, Extract(lhs, 6) >> Short(rhs), 6);
-		result = Insert(result, Extract(lhs, 7) >> Short(rhs), 7);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> Short(rhs); }, lhs);
 	}
 	else
 	{
@@ -3122,17 +3000,7 @@ RValue<UShort8> operator<<(RValue<UShort8> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort8 result;
-		result = Insert(result, Extract(lhs, 0) << UShort(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << UShort(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << UShort(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << UShort(rhs), 3);
-		result = Insert(result, Extract(lhs, 4) << UShort(rhs), 4);
-		result = Insert(result, Extract(lhs, 5) << UShort(rhs), 5);
-		result = Insert(result, Extract(lhs, 6) << UShort(rhs), 6);
-		result = Insert(result, Extract(lhs, 7) << UShort(rhs), 7);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << UShort(rhs); }, lhs);
 	}
 	else
 	{
@@ -3145,17 +3013,7 @@ RValue<UShort8> operator>>(RValue<UShort8> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UShort8 result;
-		result = Insert(result, Extract(lhs, 0) >> UShort(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> UShort(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> UShort(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> UShort(rhs), 3);
-		result = Insert(result, Extract(lhs, 4) >> UShort(rhs), 4);
-		result = Insert(result, Extract(lhs, 5) >> UShort(rhs), 5);
-		result = Insert(result, Extract(lhs, 6) >> UShort(rhs), 6);
-		result = Insert(result, Extract(lhs, 7) >> UShort(rhs), 7);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> UShort(rhs); }, lhs);
 	}
 	else
 	{
@@ -3312,11 +3170,7 @@ RValue<Int2> operator<<(RValue<Int2> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Int2 result;
-		result = Insert(result, Extract(lhs, 0) << Int(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << Int(rhs), 1);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
 	}
 	else
 	{
@@ -3329,11 +3183,7 @@ RValue<Int2> operator>>(RValue<Int2> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Int2 result;
-		result = Insert(result, Extract(lhs, 0) >> Int(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> Int(rhs), 1);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
 	}
 	else
 	{
@@ -3351,11 +3201,7 @@ RValue<UInt2> operator<<(RValue<UInt2> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UInt2 result;
-		result = Insert(result, Extract(lhs, 0) << UInt(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << UInt(rhs), 1);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
 	}
 	else
 	{
@@ -3368,11 +3214,7 @@ RValue<UInt2> operator>>(RValue<UInt2> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UInt2 result;
-		result = Insert(result, Extract(lhs, 0) >> UInt(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> UInt(rhs), 1);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
 	}
 	else
 	{
@@ -3393,11 +3235,11 @@ Int4::Int4(RValue<Byte4> cast)
 	Value *a = Nucleus::createInsertElement(loadValue(), x, 0);
 
 	Value *e;
-	int swizzle[16] = { 0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23 };
+	std::vector<int> swizzle = { 0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23 };
 	Value *b = Nucleus::createBitCast(a, Byte16::type());
 	Value *c = Nucleus::createShuffleVector(b, Nucleus::createNullValue(Byte16::type()), swizzle);
 
-	int swizzle2[8] = { 0, 8, 1, 9, 2, 10, 3, 11 };
+	std::vector<int> swizzle2 = { 0, 8, 1, 9, 2, 10, 3, 11 };
 	Value *d = Nucleus::createBitCast(c, Short8::type());
 	e = Nucleus::createShuffleVector(d, Nucleus::createNullValue(Short8::type()), swizzle2);
 
@@ -3412,11 +3254,11 @@ Int4::Int4(RValue<SByte4> cast)
 	Value *x = Nucleus::createBitCast(cast.value(), Int::type());
 	Value *a = Nucleus::createInsertElement(loadValue(), x, 0);
 
-	int swizzle[16] = { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 };
+	std::vector<int> swizzle = { 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 };
 	Value *b = Nucleus::createBitCast(a, Byte16::type());
 	Value *c = Nucleus::createShuffleVector(b, b, swizzle);
 
-	int swizzle2[8] = { 0, 0, 1, 1, 2, 2, 3, 3 };
+	std::vector<int> swizzle2 = { 0, 0, 1, 1, 2, 2, 3, 3 };
 	Value *d = Nucleus::createBitCast(c, Short8::type());
 	Value *e = Nucleus::createShuffleVector(d, d, swizzle2);
 
@@ -3427,7 +3269,7 @@ Int4::Int4(RValue<Short4> cast)
     : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	int swizzle[8] = { 0, 0, 1, 1, 2, 2, 3, 3 };
+	std::vector<int> swizzle = { 0, 0, 1, 1, 2, 2, 3, 3 };
 	Value *c = Nucleus::createShuffleVector(cast.value(), cast.value(), swizzle);
 
 	*this = As<Int4>(c) >> 16;
@@ -3437,7 +3279,7 @@ Int4::Int4(RValue<UShort4> cast)
     : XYZW(this)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	int swizzle[8] = { 0, 8, 1, 9, 2, 10, 3, 11 };
+	std::vector<int> swizzle = { 0, 8, 1, 9, 2, 10, 3, 11 };
 	Value *c = Nucleus::createShuffleVector(cast.value(), Short8(0, 0, 0, 0, 0, 0, 0, 0).loadValue(), swizzle);
 	Value *d = Nucleus::createBitCast(c, Int4::type());
 	storeValue(d);
@@ -3449,7 +3291,7 @@ Int4::Int4(RValue<Int> rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = Nucleus::createBitCast(rhs.value(), Int4::type());
 
-	int swizzle[4] = { 0, 0, 0, 0 };
+	std::vector<int> swizzle = { 0 };
 	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
 
 	storeValue(replicate);
@@ -3460,13 +3302,7 @@ RValue<Int4> operator<<(RValue<Int4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Int4 result;
-		result = Insert(result, Extract(lhs, 0) << Int(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << Int(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << Int(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << Int(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
 	}
 	else
 	{
@@ -3479,13 +3315,7 @@ RValue<Int4> operator>>(RValue<Int4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		Int4 result;
-		result = Insert(result, Extract(lhs, 0) >> Int(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> Int(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> Int(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> Int(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
 	}
 	else
 	{
@@ -3715,7 +3545,7 @@ UInt4::UInt4(RValue<UInt> rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = Nucleus::createBitCast(rhs.value(), UInt4::type());
 
-	int swizzle[4] = { 0, 0, 0, 0 };
+	std::vector<int> swizzle = { 0 };
 	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
 
 	storeValue(replicate);
@@ -3726,13 +3556,7 @@ RValue<UInt4> operator<<(RValue<UInt4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UInt4 result;
-		result = Insert(result, Extract(lhs, 0) << UInt(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) << UInt(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) << UInt(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) << UInt(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
 	}
 	else
 	{
@@ -3745,13 +3569,7 @@ RValue<UInt4> operator>>(RValue<UInt4> lhs, unsigned char rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	if(emulateIntrinsics)
 	{
-		UInt4 result;
-		result = Insert(result, Extract(lhs, 0) >> UInt(rhs), 0);
-		result = Insert(result, Extract(lhs, 1) >> UInt(rhs), 1);
-		result = Insert(result, Extract(lhs, 2) >> UInt(rhs), 2);
-		result = Insert(result, Extract(lhs, 3) >> UInt(rhs), 3);
-
-		return result;
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
 	}
 	else
 	{
@@ -3891,51 +3709,15 @@ Float4::Float4(RValue<Float> rhs)
 	RR_DEBUG_INFO_UPDATE_LOC();
 	Value *vector = Nucleus::createBitCast(rhs.value(), Float4::type());
 
-	int swizzle[4] = { 0, 0, 0, 0 };
+	std::vector<int> swizzle = { 0 };
 	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
 
 	storeValue(replicate);
 }
 
-// Call single arg function on a vector type
-template<typename Func, typename T>
-static RValue<T> call4(Func func, const RValue<T> &x)
-{
-	T result;
-	result = Insert(result, Call(func, Extract(x, 0)), 0);
-	result = Insert(result, Call(func, Extract(x, 1)), 1);
-	result = Insert(result, Call(func, Extract(x, 2)), 2);
-	result = Insert(result, Call(func, Extract(x, 3)), 3);
-	return result;
-}
-
-// Call two arg function on a vector type
-template<typename Func, typename T>
-static RValue<T> call4(Func func, const RValue<T> &x, const RValue<T> &y)
-{
-	T result;
-	result = Insert(result, Call(func, Extract(x, 0), Extract(y, 0)), 0);
-	result = Insert(result, Call(func, Extract(x, 1), Extract(y, 1)), 1);
-	result = Insert(result, Call(func, Extract(x, 2), Extract(y, 2)), 2);
-	result = Insert(result, Call(func, Extract(x, 3), Extract(y, 3)), 3);
-	return result;
-}
-
-// Call three arg function on a vector type
-template<typename Func, typename T>
-static RValue<T> call4(Func func, const RValue<T> &x, const RValue<T> &y, const RValue<T> &z)
-{
-	T result;
-	result = Insert(result, Call(func, Extract(x, 0), Extract(y, 0), Extract(z, 0)), 0);
-	result = Insert(result, Call(func, Extract(x, 1), Extract(y, 1), Extract(z, 1)), 1);
-	result = Insert(result, Call(func, Extract(x, 2), Extract(y, 2), Extract(z, 2)), 2);
-	result = Insert(result, Call(func, Extract(x, 3), Extract(y, 3), Extract(z, 3)), 3);
-	return result;
-}
-
 RValue<Float4> operator%(RValue<Float4> lhs, RValue<Float4> rhs)
 {
-	return call4(fmodf, lhs, rhs);
+	return ScalarizeCall(fmodf, lhs, rhs);
 }
 
 RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
@@ -3947,14 +3729,14 @@ RValue<Float4> MulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
 RValue<Float4> FMA(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z)
 {
 	// TODO(b/214591655): Use FMA instructions when available.
-	return call4(fmaf, x, y, z);
+	return ScalarizeCall(fmaf, x, y, z);
 }
 
 RValue<Float4> Abs(RValue<Float4> x)
 {
 	// TODO: Optimize.
 	Value *vector = Nucleus::createBitCast(x.value(), Int4::type());
-	int64_t constantVector[4] = { 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF };
+	std::vector<int64_t> constantVector = { 0x7FFFFFFF };
 	Value *result = Nucleus::createAnd(vector, Nucleus::createConstantVector(constantVector, Int4::type()));
 
 	return As<Float4>(result);
@@ -4202,7 +3984,7 @@ RValue<Float4> Frac(RValue<Float4> x)
 	{
 		frc = x - Float4(Int4(x));  // Signed fractional part.
 
-		frc += As<Float4>(As<Int4>(CmpNLE(Float4(0.0f), frc)) & As<Int4>(Float4(1, 1, 1, 1)));  // Add 1.0 if negative.
+		frc += As<Float4>(As<Int4>(CmpNLE(Float4(0.0f), frc)) & As<Int4>(Float4(1.0f)));  // Add 1.0 if negative.
 	}
 
 	// x - floor(x) can be 1.0 for very small negative x.
@@ -4321,7 +4103,7 @@ template<typename T>
 using UnderlyingTypeT = typename UnderlyingType<T>::Type;
 
 template<typename T, typename EL = UnderlyingTypeT<T>>
-static void gather(T &out, RValue<Pointer<EL>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes)
+static void gather(T &out, RValue<Pointer<EL>> base, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment, bool zeroMaskedLanes)
 {
 	constexpr bool atomic = false;
 	constexpr std::memory_order order = std::memory_order_relaxed;
@@ -4329,7 +4111,7 @@ static void gather(T &out, RValue<Pointer<EL>> base, RValue<Int4> offsets, RValu
 	Pointer<Byte> baseBytePtr = base;
 
 	out = T(0);
-	for(int i = 0; i < 4; i++)
+	for(int i = 0; i < SIMD::Width; i++)
 	{
 		If(Extract(mask, i) != 0)
 		{
@@ -4345,14 +4127,14 @@ static void gather(T &out, RValue<Pointer<EL>> base, RValue<Int4> offsets, RValu
 }
 
 template<typename T, typename EL = UnderlyingTypeT<T>>
-static void scatter(RValue<Pointer<EL>> base, RValue<T> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
+static void scatter(RValue<Pointer<EL>> base, RValue<T> val, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment)
 {
 	constexpr bool atomic = false;
 	constexpr std::memory_order order = std::memory_order_relaxed;
 
 	Pointer<Byte> baseBytePtr = base;
 
-	for(int i = 0; i < 4; i++)
+	for(int i = 0; i < SIMD::Width; i++)
 	{
 		If(Extract(mask, i) != 0)
 		{
@@ -4362,152 +4144,32 @@ static void scatter(RValue<Pointer<EL>> base, RValue<T> val, RValue<Int4> offset
 	}
 }
 
-RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
+RValue<SIMD::Float> Gather(RValue<Pointer<Float>> base, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	Float4 result{};
+	SIMD::Float result{};
 	gather(result, base, offsets, mask, alignment, zeroMaskedLanes);
 	return result;
 }
 
-RValue<Int4> Gather(RValue<Pointer<Int>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
+RValue<SIMD::Int> Gather(RValue<Pointer<Int>> base, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	Int4 result{};
+	SIMD::Int result{};
 	gather(result, base, offsets, mask, alignment, zeroMaskedLanes);
 	return result;
 }
 
-void Scatter(RValue<Pointer<Float>> base, RValue<Float4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
+void Scatter(RValue<Pointer<Float>> base, RValue<SIMD::Float> val, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
 	scatter(base, val, offsets, mask, alignment);
 }
 
-void Scatter(RValue<Pointer<Int>> base, RValue<Int4> val, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment)
+void Scatter(RValue<Pointer<Int>> base, RValue<SIMD::Int> val, RValue<SIMD::Int> offsets, RValue<SIMD::Int> mask, unsigned int alignment)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	scatter<Int4>(base, val, offsets, mask, alignment);
-}
-
-RValue<Float> Exp2(RValue<Float> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return Call(exp2f, x);
-}
-
-RValue<Float> Log2(RValue<Float> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return Call(log2f, x);
-}
-
-RValue<Float4> Sin(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(sinf, x);
-}
-
-RValue<Float4> Cos(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(cosf, x);
-}
-
-RValue<Float4> Tan(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(tanf, x);
-}
-
-RValue<Float4> Asin(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(asinf, x);
-}
-
-RValue<Float4> Acos(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(acosf, x);
-}
-
-RValue<Float4> Atan(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(atanf, x);
-}
-
-RValue<Float4> Sinh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(sinhf, x);
-}
-
-RValue<Float4> Cosh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(coshf, x);
-}
-
-RValue<Float4> Tanh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(tanhf, x);
-}
-
-RValue<Float4> Asinh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(asinhf, x);
-}
-
-RValue<Float4> Acosh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(acoshf, x);
-}
-
-RValue<Float4> Atanh(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(atanhf, x);
-}
-
-RValue<Float4> Atan2(RValue<Float4> x, RValue<Float4> y)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(atan2f, x, y);
-}
-
-RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(powf, x, y);
-}
-
-RValue<Float4> Exp(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(expf, x);
-}
-
-RValue<Float4> Log(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(logf, x);
-}
-
-RValue<Float4> Exp2(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(exp2f, x);
-}
-
-RValue<Float4> Log2(RValue<Float4> x)
-{
-	RR_DEBUG_INFO_UPDATE_LOC();
-	return call4(log2f, x);
+	scatter<SIMD::Int>(base, val, offsets, mask, alignment);
 }
 
 RValue<UInt> Ctlz(RValue<UInt> x, bool isZeroUndef)
@@ -4540,13 +4202,7 @@ RValue<UInt4> Ctlz(RValue<UInt4> x, bool isZeroUndef)
 	}
 	else
 	{
-		// TODO: implement vectorized version in Subzero
-		UInt4 result;
-		result = Insert(result, Ctlz(Extract(x, 0), isZeroUndef), 0);
-		result = Insert(result, Ctlz(Extract(x, 1), isZeroUndef), 1);
-		result = Insert(result, Ctlz(Extract(x, 2), isZeroUndef), 2);
-		result = Insert(result, Ctlz(Extract(x, 3), isZeroUndef), 3);
-		return result;
+		return Scalarize([isZeroUndef](auto a) { return Ctlz(a, isZeroUndef); }, x);
 	}
 }
 
@@ -4562,9 +4218,9 @@ RValue<UInt> Cttz(RValue<UInt> x, bool isZeroUndef)
 	{
 		Ice::Variable *result = ::function->makeVariable(Ice::IceType_i32);
 		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Cttz, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
-		auto ctlz = Ice::InstIntrinsic::create(::function, 1, result, intrinsic);
-		ctlz->addArg(x.value());
-		::basicBlock->appendInst(ctlz);
+		auto cttz = Ice::InstIntrinsic::create(::function, 1, result, intrinsic);
+		cttz->addArg(x.value());
+		::basicBlock->appendInst(cttz);
 
 		return RValue<UInt>(V(result));
 	}
@@ -4580,13 +4236,7 @@ RValue<UInt4> Cttz(RValue<UInt4> x, bool isZeroUndef)
 	}
 	else
 	{
-		// TODO: implement vectorized version in Subzero
-		UInt4 result;
-		result = Insert(result, Cttz(Extract(x, 0), isZeroUndef), 0);
-		result = Insert(result, Cttz(Extract(x, 1), isZeroUndef), 1);
-		result = Insert(result, Cttz(Extract(x, 2), isZeroUndef), 2);
-		result = Insert(result, Cttz(Extract(x, 3), isZeroUndef), 3);
-		return result;
+		return Scalarize([isZeroUndef](auto a) { return Cttz(a, isZeroUndef); }, x);
 	}
 }
 
@@ -5080,6 +4730,608 @@ Nucleus::CoroutineHandle Nucleus::invokeCoroutineBegin(Routine &routine, std::fu
 		// For regular routines, just invoke the begin func directly
 		return func();
 	}
+}
+
+SIMD::Int::Int(RValue<scalar::Int> rhs)
+    : XYZW(this)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Value *vector = Nucleus::createBitCast(rhs.value(), SIMD::Int::type());
+
+	std::vector<int> swizzle = { 0 };
+	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
+
+	storeValue(replicate);
+}
+
+RValue<SIMD::Int> operator<<(RValue<SIMD::Int> lhs, unsigned char rhs)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics)
+	{
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
+	}
+	else
+	{
+		return RValue<SIMD::Int>(Nucleus::createShl(lhs.value(), V(::context->getConstantInt32(rhs))));
+	}
+}
+
+RValue<SIMD::Int> operator>>(RValue<SIMD::Int> lhs, unsigned char rhs)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics)
+	{
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
+	}
+	else
+	{
+		return RValue<SIMD::Int>(Nucleus::createAShr(lhs.value(), V(::context->getConstantInt32(rhs))));
+	}
+}
+
+RValue<SIMD::Int> CmpEQ(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpEQ(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpLT(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpSLT(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpLE(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpSLE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNEQ(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpNE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNLT(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpSGE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNLE(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createICmpSGT(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> Abs(RValue<SIMD::Int> x)
+{
+	// TODO: Optimize.
+	auto negative = x >> 31;
+	return (x ^ negative) - negative;
+}
+
+RValue<SIMD::Int> Max(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sle, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+	auto select = Ice::InstSelect::create(::function, result, condition, y.value(), x.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::Int>(V(result));
+}
+
+RValue<SIMD::Int> Min(RValue<SIMD::Int> x, RValue<SIMD::Int> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Sgt, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+	auto select = Ice::InstSelect::create(::function, result, condition, y.value(), x.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::Int>(V(result));
+}
+
+RValue<SIMD::Int> RoundInt(RValue<SIMD::Float> cast)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics || CPUID::ARM)
+	{
+		// Push the fractional part off the mantissa. Accurate up to +/-2^22.
+		return SIMD::Int((cast + SIMD::Float(0x00C00000)) - SIMD::Float(0x00C00000));
+	}
+	else
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Nearbyint, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto nearbyint = Ice::InstIntrinsic::create(::function, 1, result, intrinsic);
+		nearbyint->addArg(cast.value());
+		::basicBlock->appendInst(nearbyint);
+
+		return RValue<SIMD::Int>(V(result));
+	}
+}
+
+RValue<SIMD::Int> RoundIntClamped(RValue<SIMD::Float> cast)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+
+	// cvtps2dq produces 0x80000000, a negative value, for input larger than
+	// 2147483520.0, so clamp to 2147483520. Values less than -2147483520.0
+	// saturate to 0x80000000.
+	RValue<SIMD::Float> clamped = Min(cast, SIMD::Float(0x7FFFFF80));
+
+	if(emulateIntrinsics || CPUID::ARM)
+	{
+		// Push the fractional part off the mantissa. Accurate up to +/-2^22.
+		return SIMD::Int((clamped + SIMD::Float(0x00C00000)) - SIMD::Float(0x00C00000));
+	}
+	else
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Nearbyint, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto nearbyint = Ice::InstIntrinsic::create(::function, 1, result, intrinsic);
+		nearbyint->addArg(clamped.value());
+		::basicBlock->appendInst(nearbyint);
+
+		return RValue<SIMD::Int>(V(result));
+	}
+}
+
+RValue<Int4> Extract128(RValue<SIMD::Int> val, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<Int4>(val);
+}
+
+RValue<SIMD::Int> Insert128(RValue<SIMD::Int> val, RValue<Int4> element, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<SIMD::Int>(element);
+}
+
+Type *SIMD::Int::type()
+{
+	return T(Ice::IceType_v4i32);
+}
+
+SIMD::UInt::UInt(RValue<SIMD::Float> cast)
+    : XYZW(this)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	// Smallest positive value representable in UInt, but not in Int
+	const unsigned int ustart = 0x80000000u;
+	const float ustartf = float(ustart);
+
+	// Check if the value can be represented as an Int
+	SIMD::Int uiValue = CmpNLT(cast, SIMD::Float(ustartf));
+	// If the value is too large, subtract ustart and re-add it after conversion.
+	uiValue = (uiValue & As<SIMD::Int>(As<SIMD::UInt>(SIMD::Int(cast - SIMD::Float(ustartf))) + SIMD::UInt(ustart))) |
+	          // Otherwise, just convert normally
+	          (~uiValue & SIMD::Int(cast));
+	// If the value is negative, store 0, otherwise store the result of the conversion
+	storeValue((~(As<SIMD::Int>(cast) >> 31) & uiValue).value());
+}
+
+SIMD::UInt::UInt(RValue<scalar::UInt> rhs)
+    : XYZW(this)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Value *vector = Nucleus::createBitCast(rhs.value(), SIMD::UInt::type());
+
+	std::vector<int> swizzle = { 0 };
+	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
+
+	storeValue(replicate);
+}
+
+RValue<SIMD::UInt> operator<<(RValue<SIMD::UInt> lhs, unsigned char rhs)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics)
+	{
+		return Scalarize([rhs](auto x) { return x << rhs; }, lhs);
+	}
+	else
+	{
+		return RValue<SIMD::UInt>(Nucleus::createShl(lhs.value(), V(::context->getConstantInt32(rhs))));
+	}
+}
+
+RValue<SIMD::UInt> operator>>(RValue<SIMD::UInt> lhs, unsigned char rhs)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics)
+	{
+		return Scalarize([rhs](auto x) { return x >> rhs; }, lhs);
+	}
+	else
+	{
+		return RValue<SIMD::UInt>(Nucleus::createLShr(lhs.value(), V(::context->getConstantInt32(rhs))));
+	}
+}
+
+RValue<SIMD::UInt> CmpEQ(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpEQ(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> CmpLT(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpULT(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> CmpLE(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpULE(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> CmpNEQ(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpNE(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> CmpNLT(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpUGE(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> CmpNLE(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::UInt>(Nucleus::createICmpUGT(x.value(), y.value()));
+}
+
+RValue<SIMD::UInt> Max(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ule, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+	auto select = Ice::InstSelect::create(::function, result, condition, y.value(), x.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::UInt>(V(result));
+}
+
+RValue<SIMD::UInt> Min(RValue<SIMD::UInt> x, RValue<SIMD::UInt> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstIcmp::create(::function, Ice::InstIcmp::Ugt, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4i32);
+	auto select = Ice::InstSelect::create(::function, result, condition, y.value(), x.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::UInt>(V(result));
+}
+
+RValue<UInt4> Extract128(RValue<SIMD::UInt> val, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<UInt4>(val);
+}
+
+RValue<SIMD::UInt> Insert128(RValue<SIMD::UInt> val, RValue<UInt4> element, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<SIMD::UInt>(element);
+}
+
+Type *SIMD::UInt::type()
+{
+	return T(Ice::IceType_v4i32);
+}
+
+SIMD::Float::Float(RValue<scalar::Float> rhs)
+    : XYZW(this)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Value *vector = Nucleus::createBitCast(rhs.value(), SIMD::Float::type());
+
+	std::vector<int> swizzle = { 0 };
+	Value *replicate = Nucleus::createShuffleVector(vector, vector, swizzle);
+
+	storeValue(replicate);
+}
+
+RValue<SIMD::Float> operator%(RValue<SIMD::Float> lhs, RValue<SIMD::Float> rhs)
+{
+	return ScalarizeCall(fmodf, lhs, rhs);
+}
+
+RValue<SIMD::Float> MulAdd(RValue<SIMD::Float> x, RValue<SIMD::Float> y, RValue<SIMD::Float> z)
+{
+	// TODO(b/214591655): Use FMA when available.
+	return x * y + z;
+}
+
+RValue<SIMD::Float> FMA(RValue<SIMD::Float> x, RValue<SIMD::Float> y, RValue<SIMD::Float> z)
+{
+	// TODO(b/214591655): Use FMA instructions when available.
+	return ScalarizeCall(fmaf, x, y, z);
+}
+
+RValue<SIMD::Float> Abs(RValue<SIMD::Float> x)
+{
+	// TODO: Optimize.
+	Value *vector = Nucleus::createBitCast(x.value(), SIMD::Int::type());
+	std::vector<int64_t> constantVector = { 0x7FFFFFFF };
+	Value *result = Nucleus::createAnd(vector, Nucleus::createConstantVector(constantVector, SIMD::Int::type()));
+
+	return As<SIMD::Float>(result);
+}
+
+RValue<SIMD::Float> Max(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstFcmp::create(::function, Ice::InstFcmp::Ogt, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+	auto select = Ice::InstSelect::create(::function, result, condition, x.value(), y.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::Float>(V(result));
+}
+
+RValue<SIMD::Float> Min(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	Ice::Variable *condition = ::function->makeVariable(Ice::IceType_v4i1);
+	auto cmp = Ice::InstFcmp::create(::function, Ice::InstFcmp::Olt, condition, x.value(), y.value());
+	::basicBlock->appendInst(cmp);
+
+	Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+	auto select = Ice::InstSelect::create(::function, result, condition, x.value(), y.value());
+	::basicBlock->appendInst(select);
+
+	return RValue<SIMD::Float>(V(result));
+}
+
+RValue<SIMD::Float> Sqrt(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics || CPUID::ARM)
+	{
+		return Scalarize([](auto a) { return Sqrt(a); }, x);
+	}
+	else
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Sqrt, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto sqrt = Ice::InstIntrinsic::create(::function, 1, result, intrinsic);
+		sqrt->addArg(x.value());
+		::basicBlock->appendInst(sqrt);
+
+		return RValue<SIMD::Float>(V(result));
+	}
+}
+
+RValue<SIMD::Int> CmpEQ(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpOEQ(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpLT(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpOLT(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpLE(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpOLE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNEQ(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpONE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNLT(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpOGE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpNLE(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpOGT(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpUEQ(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpUEQ(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpULT(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpULT(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpULE(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpULE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpUNEQ(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpUNE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpUNLT(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpUGE(x.value(), y.value()));
+}
+
+RValue<SIMD::Int> CmpUNLE(RValue<SIMD::Float> x, RValue<SIMD::Float> y)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	return RValue<SIMD::Int>(Nucleus::createFCmpUGT(x.value(), y.value()));
+}
+
+RValue<SIMD::Float> Round(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(emulateIntrinsics || CPUID::ARM)
+	{
+		// Push the fractional part off the mantissa. Accurate up to +/-2^22.
+		return (x + SIMD::Float(0x00C00000)) - SIMD::Float(0x00C00000);
+	}
+	else if(CPUID::SSE4_1)
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto round = Ice::InstIntrinsic::create(::function, 2, result, intrinsic);
+		round->addArg(x.value());
+		round->addArg(::context->getConstantInt32(0));
+		::basicBlock->appendInst(round);
+
+		return RValue<SIMD::Float>(V(result));
+	}
+	else
+	{
+		return SIMD::Float(RoundInt(x));
+	}
+}
+
+RValue<SIMD::Float> Trunc(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(CPUID::SSE4_1)
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto round = Ice::InstIntrinsic::create(::function, 2, result, intrinsic);
+		round->addArg(x.value());
+		round->addArg(::context->getConstantInt32(3));
+		::basicBlock->appendInst(round);
+
+		return RValue<SIMD::Float>(V(result));
+	}
+	else
+	{
+		return SIMD::Float(SIMD::Int(x));
+	}
+}
+
+RValue<SIMD::Float> Frac(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	SIMD::Float frc;
+
+	if(CPUID::SSE4_1)
+	{
+		frc = x - Floor(x);
+	}
+	else
+	{
+		frc = x - SIMD::Float(SIMD::Int(x));  // Signed fractional part.
+
+		frc += As<SIMD::Float>(As<SIMD::Int>(CmpNLE(SIMD::Float(0.0f), frc)) & As<SIMD::Int>(SIMD::Float(1.0f)));  // Add 1.0 if negative.
+	}
+
+	// x - floor(x) can be 1.0 for very small negative x.
+	// Clamp against the value just below 1.0.
+	return Min(frc, As<SIMD::Float>(SIMD::Int(0x3F7FFFFF)));
+}
+
+RValue<SIMD::Float> Floor(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(CPUID::SSE4_1)
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto round = Ice::InstIntrinsic::create(::function, 2, result, intrinsic);
+		round->addArg(x.value());
+		round->addArg(::context->getConstantInt32(1));
+		::basicBlock->appendInst(round);
+
+		return RValue<SIMD::Float>(V(result));
+	}
+	else
+	{
+		return x - Frac(x);
+	}
+}
+
+RValue<SIMD::Float> Ceil(RValue<SIMD::Float> x)
+{
+	RR_DEBUG_INFO_UPDATE_LOC();
+	if(CPUID::SSE4_1)
+	{
+		Ice::Variable *result = ::function->makeVariable(Ice::IceType_v4f32);
+		const Ice::Intrinsics::IntrinsicInfo intrinsic = { Ice::Intrinsics::Round, Ice::Intrinsics::SideEffects_F, Ice::Intrinsics::ReturnsTwice_F, Ice::Intrinsics::MemoryWrite_F };
+		auto round = Ice::InstIntrinsic::create(::function, 2, result, intrinsic);
+		round->addArg(x.value());
+		round->addArg(::context->getConstantInt32(2));
+		::basicBlock->appendInst(round);
+
+		return RValue<SIMD::Float>(V(result));
+	}
+	else
+	{
+		return -Floor(-x);
+	}
+}
+
+RValue<Float4> Extract128(RValue<SIMD::Float> val, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<Float4>(val);
+}
+
+RValue<SIMD::Float> Insert128(RValue<SIMD::Float> val, RValue<Float4> element, int i)
+{
+	ASSERT(SIMD::Width == 4);
+	ASSERT(i == 0);
+
+	return As<SIMD::Float>(element);
+}
+
+Type *SIMD::Float::type()
+{
+	return T(Ice::IceType_v4f32);
 }
 
 }  // namespace rr

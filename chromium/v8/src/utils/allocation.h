@@ -8,8 +8,6 @@
 #include "include/v8-platform.h"
 #include "src/base/address-region.h"
 #include "src/base/compiler-specific.h"
-#include "src/base/platform/platform.h"
-#include "src/common/globals.h"
 #include "src/init/v8.h"
 
 namespace v8 {
@@ -33,11 +31,15 @@ class V8_EXPORT_PRIVATE Malloced {
   static void operator delete(void* p);
 };
 
+// Function that may release reserved memory regions to allow failed allocations
+// to succeed.
+V8_EXPORT_PRIVATE void OnCriticalMemoryPressure();
+
 template <typename T>
 T* NewArray(size_t size) {
   T* result = new (std::nothrow) T[size];
-  if (result == nullptr) {
-    V8::GetCurrentPlatform()->OnCriticalMemoryPressure();
+  if (V8_UNLIKELY(result == nullptr)) {
+    OnCriticalMemoryPressure();
     result = new (std::nothrow) T[size];
     if (result == nullptr) V8::FatalProcessOutOfMemory(nullptr, "NewArray");
   }
@@ -133,10 +135,6 @@ V8_EXPORT_PRIVATE size_t AllocatePageSize();
 // Gets the granularity at which the permissions and release calls can be made.
 V8_EXPORT_PRIVATE size_t CommitPageSize();
 
-// Sets the random seed so that GetRandomMmapAddr() will generate repeatable
-// sequences of random mmap addresses.
-V8_EXPORT_PRIVATE void SetRandomMmapSeed(int64_t seed);
-
 // Generate a random address to be used for hinting allocation calls.
 V8_EXPORT_PRIVATE void* GetRandomMmapAddr();
 
@@ -177,11 +175,6 @@ inline bool SetPermissions(v8::PageAllocator* page_allocator, Address address,
   return SetPermissions(page_allocator, reinterpret_cast<void*>(address), size,
                         access);
 }
-
-// Function that may release reserved memory regions to allow failed allocations
-// to succeed. |length| is the amount of memory needed. Returns |true| if memory
-// could be released, false otherwise.
-V8_EXPORT_PRIVATE bool OnCriticalMemoryPressure(size_t length);
 
 // Defines whether the address space reservation is going to be used for
 // allocating executable pages.

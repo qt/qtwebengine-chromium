@@ -344,6 +344,8 @@ enum LogSource {
   OEM_DEVICES = 4;
   // Represents the device for debugging.
   DEBUG_DEVICES = 5;
+  // Represents the device for Nearby Module Food.
+  NEARBY_MODULE_FOOD_DEVICES = 6;
 }
 
 // The Fast Share server action name.
@@ -467,4 +469,13 @@ enum PermissionRequestType {
   PERMISSION_WIFI = 2;
   PERMISSION_BLUETOOTH = 3;
   PERMISSION_LOCATION = 4;
+}
+
+enum SharingUseCase {
+  USE_CASE_UNKNOWN = 0;
+
+  USE_CASE_NEARBY_SHARE = 1;
+  USE_CASE_REMOTE_COPY_PASTE = 2;
+  USE_CASE_WIFI_CREDENTIAL = 3;
+  USE_CASE_APP_SHARE = 4;
 }

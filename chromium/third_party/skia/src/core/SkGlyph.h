@@ -226,48 +226,49 @@ SkGlyphRect rect_union(SkGlyphRect, SkGlyphRect);
 SkGlyphRect rect_intersection(SkGlyphRect, SkGlyphRect);
 }  // namespace skglyph
 
-// SkGlyphRect encodes rectangles with coordinates on [-32767, 32767]. It is specialized for
+// SkGlyphRect encodes rectangles with coordinates using SkScalar. It is specialized for
 // rectangle union and intersection operations.
 class SkGlyphRect {
 public:
     SkGlyphRect() = default;
-    SkGlyphRect(int16_t left, int16_t top, int16_t right, int16_t bottom)
-            : fRect{(int16_t)-left, (int16_t)-top, right, bottom} {
-        SkDEBUGCODE(const int32_t min = std::numeric_limits<int16_t>::min());
-        SkASSERT(left != min && top != min && right != min && bottom != min);
-    }
+    SkGlyphRect(SkScalar left, SkScalar top, SkScalar right, SkScalar bottom)
+            : fRect{-left, -top, right, bottom} { }
     bool empty() const {
         return -fRect[0] >= fRect[2] || -fRect[1] >= fRect[3];
     }
     SkRect rect() const {
         return SkRect::MakeLTRB(-fRect[0], -fRect[1], fRect[2], fRect[3]);
     }
-    SkIRect iRect() const {
-        return SkIRect::MakeLTRB(-fRect[0], -fRect[1], fRect[2], fRect[3]);
+    SkGlyphRect offset(SkScalar x, SkScalar y) const {
+        return SkGlyphRect{fRect + Storage{-x, -y, x, y}};
     }
-    SkGlyphRect offset(int16_t x, int16_t y) const {
-        return SkGlyphRect{fRect + Storage{SkTo<int16_t>(-x), SkTo<int16_t>(-y), x, y}};
+    SkGlyphRect scaleAndOffset(SkScalar scale, SkPoint offset) const {
+        auto [x, y] = offset;
+        return fRect * scale + Storage{-x, -y, x, y};
     }
-    skvx::Vec<2, int16_t> leftTop() const { return -this->negLeftTop(); }
-    skvx::Vec<2, int16_t> rightBottom() const { return {fRect[2], fRect[3]}; }
-    skvx::Vec<2, int16_t> widthHeight() const { return this->rightBottom() + negLeftTop(); }
+    SkGlyphRect inset(SkScalar dx, SkScalar dy) const {
+        return fRect - Storage{dx, dy, dx, dy};
+    }
+    SkPoint leftTop() const { return -this->negLeftTop(); }
+    SkPoint rightBottom() const { return {fRect[2], fRect[3]}; }
+    SkPoint widthHeight() const { return this->rightBottom() + negLeftTop(); }
     friend SkGlyphRect skglyph::rect_union(SkGlyphRect, SkGlyphRect);
     friend SkGlyphRect skglyph::rect_intersection(SkGlyphRect, SkGlyphRect);
 
 private:
-    skvx::Vec<2, int16_t> negLeftTop() const { return {fRect[0], fRect[1]}; }
-    using Storage = skvx::Vec<4, int16_t>;
+    SkPoint negLeftTop() const { return {fRect[0], fRect[1]}; }
+    using Storage = skvx::Vec<4, SkScalar>;
     SkGlyphRect(Storage rect) : fRect{rect} { }
     Storage fRect;
 };
 
 namespace skglyph {
 inline SkGlyphRect empty_rect() {
-    constexpr int16_t max = std::numeric_limits<int16_t>::max();
+    constexpr SkScalar max = std::numeric_limits<SkScalar>::max();
     return {max, max, -max, -max};
 }
 inline SkGlyphRect full_rect() {
-    constexpr int16_t max = std::numeric_limits<int16_t>::max();
+    constexpr SkScalar max = std::numeric_limits<SkScalar>::max();
     return {-max, -max, max, max};
 }
 inline SkGlyphRect rect_union(SkGlyphRect a, SkGlyphRect b) {
@@ -278,6 +279,7 @@ inline SkGlyphRect rect_intersection(SkGlyphRect a, SkGlyphRect b) {
 }
 }  // namespace skglyph
 
+
 class SkGlyph;
 
 // SkGlyphDigest contains a digest of information for making GPU drawing decisions. It can be
@@ -285,26 +287,42 @@ class SkGlyph;
 // SkGlyphDigest is the only information that needs to be stored in the cache.
 class SkGlyphDigest {
 public:
+    // An atlas consists of plots, and plots hold glyphs. The minimum a plot can be is 256x256.
+    // This means that the maximum size a glyph can be is 256x256.
+    static constexpr uint16_t kSkSideTooBigForAtlas = 256;
+
     // Default ctor is only needed for the hash table.
     SkGlyphDigest() = default;
     SkGlyphDigest(size_t index, const SkGlyph& glyph);
-    int index()          const { return fIndex;         }
-    bool isEmpty()       const { return fIsEmpty;       }
-    bool isColor()       const { return fIsColor;       }
+    int index()          const { return fIndex; }
+    bool isEmpty()       const { return fIsEmpty; }
+    bool isColor()       const { return fFormat == SkMask::kARGB32_Format; }
     bool canDrawAsMask() const { return fCanDrawAsMask; }
     bool canDrawAsSDFT() const { return fCanDrawAsSDFT; }
+    SkMask::Format maskFormat() const { return static_cast<SkMask::Format>(fFormat); }
     uint16_t maxDimension()  const {
         return std::max(fWidth, fHeight);
     }
 
+    SkGlyphRect bounds() const {
+        return SkGlyphRect(fLeft, fTop, (SkScalar)fLeft + fWidth, (SkScalar)fTop + fHeight);
+    }
+
+    // Common categories for glyph types used by GPU.
+    static bool CanDrawAsMask(const SkGlyph& glyph);
+    static bool CanDrawAsSDFT(const SkGlyph& glyph);
+    static bool CanDrawAsPath(const SkGlyph& glyph);
+    static bool FitsInAtlas(const SkGlyph& glyph);
+
 private:
     static_assert(SkPackedGlyphID::kEndData == 20);
+    static_assert(SkMask::kCountMaskFormats <= 8);
     struct {
         uint32_t fIndex         : SkPackedGlyphID::kEndData;
         uint32_t fIsEmpty       : 1;
-        uint32_t fIsColor       : 1;
         uint32_t fCanDrawAsMask : 1;
         uint32_t fCanDrawAsSDFT : 1;
+        uint32_t fFormat        : 3;
     };
     int16_t fLeft, fTop;
     uint16_t fWidth, fHeight;
@@ -403,8 +421,7 @@ public:
     SkIRect iRect() const { return SkIRect::MakeXYWH(fLeft, fTop, fWidth, fHeight); }
     SkRect rect()   const { return SkRect::MakeXYWH(fLeft, fTop, fWidth, fHeight);  }
     SkGlyphRect glyphRect() const {
-        return {fLeft, fTop,
-                SkTo<int16_t>(fLeft + fWidth), SkTo<int16_t>(fTop + fHeight)};
+        return SkGlyphRect(fLeft, fTop, fLeft + fWidth, fTop + fHeight);
     }
     int left()   const { return fLeft;   }
     int top()    const { return fTop;    }

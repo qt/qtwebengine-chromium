@@ -124,6 +124,10 @@ bool Object::IsNullOrUndefined(Isolate* isolate) const {
   return IsNullOrUndefined(ReadOnlyRoots(isolate));
 }
 
+bool Object::IsNullOrUndefined(LocalIsolate* local_isolate) const {
+  return IsNullOrUndefined(ReadOnlyRoots(local_isolate));
+}
+
 bool Object::IsNullOrUndefined(ReadOnlyRoots roots) const {
   return IsNull(roots) || IsUndefined(roots);
 }
@@ -344,16 +348,6 @@ DEF_GETTER(HeapObject, IsOSROptimizedCodeCache, bool) {
   return IsWeakFixedArray(cage_base);
 }
 
-bool HeapObject::IsAbstractCode() const {
-  // TODO(v8:11880): Either make AbstractCode be ByteArray|CodeT or
-  // ensure this version is not called for hot code.
-  PtrComprCageBase cage_base = GetPtrComprCageBaseSlow(*this);
-  return HeapObject::IsAbstractCode(cage_base);
-}
-bool HeapObject::IsAbstractCode(PtrComprCageBase cage_base) const {
-  return IsBytecodeArray(cage_base) || IsCode(cage_base);
-}
-
 DEF_GETTER(HeapObject, IsStringWrapper, bool) {
   return IsJSPrimitiveWrapper(cage_base) &&
          JSPrimitiveWrapper::cast(*this).value().IsString(cage_base);
@@ -399,14 +393,6 @@ DEF_GETTER(HeapObject, IsObjectHashTable, bool) {
 }
 
 DEF_GETTER(HeapObject, IsHashTableBase, bool) { return IsHashTable(cage_base); }
-
-#if V8_ENABLE_WEBASSEMBLY
-DEF_GETTER(HeapObject, IsWasmExceptionPackage, bool) {
-  // It is not possible to check for the existence of certain properties on the
-  // underlying {JSReceiver} here because that requires calling handlified code.
-  return IsJSReceiver(cage_base);
-}
-#endif  // V8_ENABLE_WEBASSEMBLY
 
 bool Object::IsPrimitive() const {
   if (IsSmi()) return true;
@@ -676,24 +662,22 @@ void Object::WriteSandboxedPointerField(size_t offset, Isolate* isolate,
                                 PtrComprCageBase(isolate), value);
 }
 
+template <ExternalPointerTag tag>
 void Object::InitExternalPointerField(size_t offset, Isolate* isolate,
-                                      ExternalPointerTag tag) {
-  i::InitExternalPointerField(field_address(offset), isolate, tag);
+                                      Address value) {
+  i::InitExternalPointerField<tag>(field_address(offset), isolate, value);
 }
 
-void Object::InitExternalPointerField(size_t offset, Isolate* isolate,
-                                      Address value, ExternalPointerTag tag) {
-  i::InitExternalPointerField(field_address(offset), isolate, value, tag);
+template <ExternalPointerTag tag>
+Address Object::ReadExternalPointerField(size_t offset,
+                                         Isolate* isolate) const {
+  return i::ReadExternalPointerField<tag>(field_address(offset), isolate);
 }
 
-Address Object::ReadExternalPointerField(size_t offset, Isolate* isolate,
-                                         ExternalPointerTag tag) const {
-  return i::ReadExternalPointerField(field_address(offset), isolate, tag);
-}
-
+template <ExternalPointerTag tag>
 void Object::WriteExternalPointerField(size_t offset, Isolate* isolate,
-                                       Address value, ExternalPointerTag tag) {
-  i::WriteExternalPointerField(field_address(offset), isolate, value, tag);
+                                       Address value) {
+  i::WriteExternalPointerField<tag>(field_address(offset), isolate, value);
 }
 
 ObjectSlot HeapObject::RawField(int byte_offset) const {
@@ -708,8 +692,8 @@ CodeObjectSlot HeapObject::RawCodeField(int byte_offset) const {
   return CodeObjectSlot(field_address(byte_offset));
 }
 
-ExternalPointer_t HeapObject::RawExternalPointerField(int byte_offset) const {
-  return ReadRawExternalPointerField(field_address(byte_offset));
+ExternalPointerSlot HeapObject::RawExternalPointerField(int byte_offset) const {
+  return ExternalPointerSlot(field_address(byte_offset));
 }
 
 MapWord MapWord::FromMap(const Map map) {
@@ -860,7 +844,7 @@ void HeapObject::set_map(Map value, MemoryOrder order, VerificationMode mode) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (!value.is_null()) {
     if (emit_write_barrier == EmitWriteBarrier::kYes) {
-      WriteBarrier::Marking(*this, map_slot(), value);
+      CombinedWriteBarrier(*this, map_slot(), value, UPDATE_WRITE_BARRIER);
     } else {
       DCHECK_EQ(emit_write_barrier, EmitWriteBarrier::kNo);
       SLOW_DCHECK(!WriteBarrier::IsRequired(*this, value));
@@ -875,7 +859,7 @@ void HeapObject::set_map_after_allocation(Map value, WriteBarrierMode mode) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
   if (mode != SKIP_WRITE_BARRIER) {
     DCHECK(!value.is_null());
-    WriteBarrier::Marking(*this, map_slot(), value);
+    CombinedWriteBarrier(*this, map_slot(), value, mode);
   } else {
     SLOW_DCHECK(!WriteBarrier::IsRequired(*this, value));
   }
@@ -1012,6 +996,12 @@ AllocationAlignment HeapObject::RequiredAlignment(Map map) {
     if (instance_type == HEAP_NUMBER_TYPE) return kDoubleUnaligned;
   }
   return kTaggedAligned;
+}
+
+bool HeapObject::CheckRequiredAlignment(PtrComprCageBase cage_base) const {
+  AllocationAlignment alignment = HeapObject::RequiredAlignment(map(cage_base));
+  CHECK_EQ(0, Heap::GetFillToAlign(address(), alignment));
+  return true;
 }
 
 Address HeapObject::GetFieldAddress(int field_offset) const {
@@ -1179,8 +1169,10 @@ bool Object::IsShared() const {
   switch (object.map().instance_type()) {
     case SHARED_STRING_TYPE:
     case SHARED_ONE_BYTE_STRING_TYPE:
+    case JS_SHARED_ARRAY_TYPE:
     case JS_SHARED_STRUCT_TYPE:
     case JS_ATOMICS_MUTEX_TYPE:
+    case JS_ATOMICS_CONDITION_TYPE:
       DCHECK(object.InSharedHeap());
       return true;
     case INTERNALIZED_STRING_TYPE:

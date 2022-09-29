@@ -9,10 +9,9 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/math.h>
 #include <xnnpack/gemm.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qc8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
@@ -46,8 +45,8 @@ void xnn_qc8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
   }
 
   do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
+    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
+    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
     int32_t vacc1x0 = vacc0x0;
     int32_t vacc1x1 = vacc0x1;
     w = (const void*) ((const int32_t*) w + 2);
@@ -90,11 +89,10 @@ void xnn_qc8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     float vfpacc1x0 = (float) vacc1x0;
     float vfpacc1x1 = (float) vacc1x1;
 
-    typedef XNN_UNALIGNED float unaligned_float;
-    const float vscale0 = ((const unaligned_float*) w)[0];
+    const float vscale0 = unaligned_indexed_load_f32(w, 0);
     vfpacc0x0 *= vscale0;
     vfpacc1x0 *= vscale0;
-    const float vscale1 = ((const unaligned_float*) w)[1];
+    const float vscale1 = unaligned_indexed_load_f32(w, 1);
     vfpacc0x1 *= vscale1;
     vfpacc1x1 *= vscale1;
     w = (const void*) ((const float*) w + 2);
@@ -105,10 +103,10 @@ void xnn_qc8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
     vfpacc1x0 += vmagic_bias;
     vfpacc1x1 += vmagic_bias;
 
-    int32_t vout0x0 = (int32_t) fp32_to_bits(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) fp32_to_bits(vfpacc0x1);
-    int32_t vout1x0 = (int32_t) fp32_to_bits(vfpacc1x0);
-    int32_t vout1x1 = (int32_t) fp32_to_bits(vfpacc1x1);
+    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
+    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
+    int32_t vout1x0 = (int32_t) float_as_uint32(vfpacc1x0);
+    int32_t vout1x1 = (int32_t) float_as_uint32(vfpacc1x1);
 
     const int32_t vmagic_min = params->scalar_imagic.magic_min;
     vout0x0 = math_max_s32(vout0x0, vmagic_min);

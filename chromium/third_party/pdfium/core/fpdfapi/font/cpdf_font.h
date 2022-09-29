@@ -22,9 +22,9 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/freetype/fx_freetype.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class CFX_DIBitmap;
-class CFX_SubstFont;
 class CPDF_CIDFont;
 class CPDF_Document;
 class CPDF_TrueTypeFont;
@@ -55,15 +55,15 @@ class CPDF_Font : public Retainable, public Observable {
 
     virtual std::unique_ptr<FormIface> CreateForm(
         CPDF_Document* pDocument,
-        CPDF_Dictionary* pPageResources,
-        CPDF_Stream* pFormStream) = 0;
+        RetainPtr<CPDF_Dictionary> pPageResources,
+        RetainPtr<CPDF_Stream> pFormStream) = 0;
   };
 
   static constexpr uint32_t kInvalidCharCode = static_cast<uint32_t>(-1);
 
   // |pFactory| only required for Type3 fonts.
   static RetainPtr<CPDF_Font> Create(CPDF_Document* pDoc,
-                                     CPDF_Dictionary* pFontDict,
+                                     RetainPtr<CPDF_Dictionary> pFontDict,
                                      FormFactoryIface* pFactory);
   static RetainPtr<CPDF_Font> GetStockFont(CPDF_Document* pDoc,
                                            ByteStringView fontname);
@@ -98,9 +98,10 @@ class CPDF_Font : public Retainable, public Observable {
   virtual bool HasFontWidths() const;
 
   ByteString GetBaseFontName() const { return m_BaseFontName; }
-  CFX_SubstFont* GetSubstFont() const { return m_Font.GetSubstFont(); }
+  absl::optional<FX_Charset> GetSubstFontCharset() const;
   bool IsEmbedded() const { return IsType3Font() || m_pFontFile != nullptr; }
-  CPDF_Dictionary* GetFontDict() const { return m_pFontDict.Get(); }
+  RetainPtr<CPDF_Dictionary> GetMutableFontDict() { return m_pFontDict; }
+  const CPDF_Dictionary* GetFontDict() const { return m_pFontDict.Get(); }
   void ClearFontDict() { m_pFontDict = nullptr; }
   bool IsStandardFont() const;
   bool HasFace() const { return !!m_Font.GetFaceRec(); }
@@ -129,7 +130,7 @@ class CPDF_Font : public Retainable, public Observable {
   CFX_Font* GetFontFallback(int position);
 
  protected:
-  CPDF_Font(CPDF_Document* pDocument, CPDF_Dictionary* pFontDict);
+  CPDF_Font(CPDF_Document* pDocument, RetainPtr<CPDF_Dictionary> pFontDict);
 
   static int TT2PDF(FT_Pos m, FXFT_FaceRec* face);
 

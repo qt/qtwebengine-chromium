@@ -9,10 +9,9 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/math.h>
 #include <xnnpack/gemm.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qc8_gemm_minmax_fp32_ukernel_4x2__wasm_fmagic(
@@ -54,8 +53,8 @@ void xnn_qc8_gemm_minmax_fp32_ukernel_4x2__wasm_fmagic(
   }
 
   do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
+    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
+    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
     int32_t vacc1x0 = vacc0x0;
     int32_t vacc1x1 = vacc0x1;
     int32_t vacc2x0 = vacc0x0;
@@ -96,13 +95,12 @@ void xnn_qc8_gemm_minmax_fp32_ukernel_4x2__wasm_fmagic(
     float vfpacc3x0 = (float) vacc3x0;
     float vfpacc3x1 = (float) vacc3x1;
 
-    typedef XNN_UNALIGNED float unaligned_float;
-    const float vscale0 = ((const unaligned_float*) w)[0];
+    const float vscale0 = unaligned_indexed_load_f32(w, 0);
     vfpacc0x0 *= vscale0;
     vfpacc1x0 *= vscale0;
     vfpacc2x0 *= vscale0;
     vfpacc3x0 *= vscale0;
-    const float vscale1 = ((const unaligned_float*) w)[1];
+    const float vscale1 = unaligned_indexed_load_f32(w, 1);
     vfpacc0x1 *= vscale1;
     vfpacc1x1 *= vscale1;
     vfpacc2x1 *= vscale1;
@@ -140,14 +138,14 @@ void xnn_qc8_gemm_minmax_fp32_ukernel_4x2__wasm_fmagic(
     vfpacc3x1 += vmagic_bias;
 
     const int32_t vmagic_bias_less_output_zero_point = params->scalar_fmagic.magic_bias_less_output_zero_point;
-    int32_t vout0x0 = (int32_t) fp32_to_bits(vfpacc0x0) - vmagic_bias_less_output_zero_point;
-    int32_t vout0x1 = (int32_t) fp32_to_bits(vfpacc0x1) - vmagic_bias_less_output_zero_point;
-    int32_t vout1x0 = (int32_t) fp32_to_bits(vfpacc1x0) - vmagic_bias_less_output_zero_point;
-    int32_t vout1x1 = (int32_t) fp32_to_bits(vfpacc1x1) - vmagic_bias_less_output_zero_point;
-    int32_t vout2x0 = (int32_t) fp32_to_bits(vfpacc2x0) - vmagic_bias_less_output_zero_point;
-    int32_t vout2x1 = (int32_t) fp32_to_bits(vfpacc2x1) - vmagic_bias_less_output_zero_point;
-    int32_t vout3x0 = (int32_t) fp32_to_bits(vfpacc3x0) - vmagic_bias_less_output_zero_point;
-    int32_t vout3x1 = (int32_t) fp32_to_bits(vfpacc3x1) - vmagic_bias_less_output_zero_point;
+    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0) - vmagic_bias_less_output_zero_point;
+    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1) - vmagic_bias_less_output_zero_point;
+    int32_t vout1x0 = (int32_t) float_as_uint32(vfpacc1x0) - vmagic_bias_less_output_zero_point;
+    int32_t vout1x1 = (int32_t) float_as_uint32(vfpacc1x1) - vmagic_bias_less_output_zero_point;
+    int32_t vout2x0 = (int32_t) float_as_uint32(vfpacc2x0) - vmagic_bias_less_output_zero_point;
+    int32_t vout2x1 = (int32_t) float_as_uint32(vfpacc2x1) - vmagic_bias_less_output_zero_point;
+    int32_t vout3x0 = (int32_t) float_as_uint32(vfpacc3x0) - vmagic_bias_less_output_zero_point;
+    int32_t vout3x1 = (int32_t) float_as_uint32(vfpacc3x1) - vmagic_bias_less_output_zero_point;
 
     if XNN_LIKELY(nc >= 2) {
       c0[0] = (int8_t) vout0x0;

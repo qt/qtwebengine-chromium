@@ -20,11 +20,27 @@ class InnerPointerToCodeCache {
   struct InnerPointerToCodeCacheEntry {
     Address inner_pointer;
     CodeLookupResult code;
-    SafepointEntry safepoint_entry;
+    union {
+      SafepointEntry safepoint_entry;
+      MaglevSafepointEntry maglev_safepoint_entry;
+    };
+    InnerPointerToCodeCacheEntry() : safepoint_entry() {}
   };
+
+  static void FlushCallback(LocalIsolate*, GCType, GCCallbackFlags,
+                            void* data) {
+    static_cast<InnerPointerToCodeCache*>(data)->Flush();
+  }
 
   explicit InnerPointerToCodeCache(Isolate* isolate) : isolate_(isolate) {
     Flush();
+    isolate_->main_thread_local_heap()->AddGCEpilogueCallback(
+        FlushCallback, this, GCType::kGCTypeMarkSweepCompact);
+  }
+
+  ~InnerPointerToCodeCache() {
+    isolate_->main_thread_local_heap()->RemoveGCEpilogueCallback(FlushCallback,
+                                                                 this);
   }
 
   InnerPointerToCodeCache(const InnerPointerToCodeCache&) = delete;

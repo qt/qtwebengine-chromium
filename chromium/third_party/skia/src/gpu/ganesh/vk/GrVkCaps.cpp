@@ -62,6 +62,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
 
     fTransferFromBufferToTextureSupport = true;
     fTransferFromSurfaceToBufferSupport = true;
+    fTransferFromBufferToBufferSupport  = true;
 
     fMaxRenderTargetSize = 4096; // minimum required by spec
     fMaxTextureSize = 4096; // minimum required by spec
@@ -583,6 +584,15 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
         fTextureBarrierSupport = false;
     }
 
+#ifdef SK_BUILD_FOR_WIN
+    // Gen 12 Intel devices running on windows has issues using barriers for dst reads. This is seen
+    // when running the unit tests SkRuntimeEffect_Blender_GPU and DMSAA_aa_dst_read_after_dmsaa.
+    if (kIntel_VkVendor == properties.vendorID &&
+        GetIntelGen(GetIntelGPUType(properties.deviceID)) == 12) {
+        fTextureBarrierSupport = false;
+    }
+#endif
+
     // On ARM indirect draws are broken on Android 9 and earlier. This was tested on a P30 and
     // Mate 20x running android 9.
     if (properties.vendorID == kARM_VkVendor && androidAPIVersion <= 28) {
@@ -595,6 +605,12 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
 
     if (kImagination_VkVendor == properties.vendorID) {
         fShaderCaps->fAtan2ImplementedAsAtanYOverX = true;
+    }
+
+    // ARM GPUs calculate `matrix * vector` in SPIR-V at full precision, even when the inputs are
+    // RelaxedPrecision. Rewriting the multiply as a sum of vector*scalar fixes this. (skia:11769)
+    if (kARM_VkVendor == properties.vendorID) {
+        fShaderCaps->fRewriteMatrixVectorMultiply = true;
     }
 }
 
@@ -692,10 +708,6 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
     shaderCaps->fSampleMaskSupport = true;
 
     shaderCaps->fShaderDerivativeSupport = true;
-
-    // ARM GPUs calculate `matrix * vector` in SPIR-V at full precision, even when the inputs are
-    // RelaxedPrecision. Rewriting the multiply as a sum of vector*scalar fixes this. (skia:11769)
-    shaderCaps->fRewriteMatrixVectorMultiply = (kARM_VkVendor == properties.vendorID);
 
     shaderCaps->fDualSourceBlendingSupport = features.features.dualSrcBlend;
 
@@ -812,9 +824,9 @@ const GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) const {
 }
 
 GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) {
-    static_assert(SK_ARRAY_COUNT(kVkFormats) == GrVkCaps::kNumVkFormats,
+    static_assert(std::size(kVkFormats) == GrVkCaps::kNumVkFormats,
                   "Size of VkFormats array must match static value in header");
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kVkFormats); ++i) {
+    for (size_t i = 0; i < std::size(kVkFormats); ++i) {
         if (kVkFormats[i] == format) {
             return fFormatTable[i];
         }
@@ -825,7 +837,7 @@ GrVkCaps::FormatInfo& GrVkCaps::getFormatInfo(VkFormat format) {
 
 void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice physDev,
                                const VkPhysicalDeviceProperties& properties) {
-    static_assert(SK_ARRAY_COUNT(kVkFormats) == GrVkCaps::kNumVkFormats,
+    static_assert(std::size(kVkFormats) == GrVkCaps::kNumVkFormats,
                   "Size of VkFormats array must match static value in header");
 
     std::fill_n(fColorTypeToFormatTable, kGrColorTypeCnt, VK_FORMAT_UNDEFINED);
@@ -1913,6 +1925,43 @@ GrInternalSurfaceFlags GrVkCaps::getExtraSurfaceFlagsForDeferredRT() const {
 VkShaderStageFlags GrVkCaps::getPushConstantStageFlags() const {
     VkShaderStageFlags stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     return stageFlags;
+}
+
+template <size_t N>
+static bool intel_deviceID_present(const std::array<uint32_t, N>& array, uint32_t deviceID) {
+    return std::find(array.begin(), array.end(), deviceID) != array.end();
+}
+
+GrVkCaps::IntelGPUType GrVkCaps::GetIntelGPUType(uint32_t deviceID) {
+    // Some common Intel GPU models, currently we cover ICL/RKL/TGL/ADL
+    // Referenced from the following Mesa source files:
+    // https://github.com/mesa3d/mesa/blob/master/include/pci_ids/i965_pci_ids.h
+    // https://github.com/mesa3d/mesa/blob/master/include/pci_ids/iris_pci_ids.h
+    static constexpr std::array<uint32_t, 14> kIceLakeIDs = {
+        {0x8A50, 0x8A51, 0x8A52, 0x8A53, 0x8A54, 0x8A56, 0x8A57,
+         0x8A58, 0x8A59, 0x8A5A, 0x8A5B, 0x8A5C, 0x8A5D, 0x8A71}};
+    static constexpr  std::array<uint32_t, 5> kRocketLakeIDs = {
+        {0x4c8a, 0x4c8b, 0x4c8c, 0x4c90, 0x4c9a}};
+    static constexpr  std::array<uint32_t, 11> kTigerLakeIDs = {
+        {0x9A40, 0x9A49, 0x9A59, 0x9A60, 0x9A68, 0x9A70,
+         0x9A78, 0x9AC0, 0x9AC9, 0x9AD9, 0x9AF8}};
+    static constexpr  std::array<uint32_t, 10> kAlderLakeIDs = {
+        {0x4680, 0x4681, 0x4682, 0x4683, 0x4690,
+         0x4691, 0x4692, 0x4693, 0x4698, 0x4699}};
+
+    if (intel_deviceID_present(kIceLakeIDs, deviceID)) {
+        return IntelGPUType::kIceLake;
+    }
+    if (intel_deviceID_present(kRocketLakeIDs, deviceID)) {
+        return IntelGPUType::kRocketLake;
+    }
+    if (intel_deviceID_present(kTigerLakeIDs, deviceID)) {
+        return IntelGPUType::kTigerLake;
+    }
+    if (intel_deviceID_present(kAlderLakeIDs, deviceID)) {
+        return IntelGPUType::kAlderLake;
+    }
+    return IntelGPUType::kOther;
 }
 
 #if GR_TEST_UTILS

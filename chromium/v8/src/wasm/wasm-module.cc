@@ -8,17 +8,10 @@
 #include <memory>
 
 #include "src/api/api-inl.h"
-#include "src/base/platform/wrappers.h"
-#include "src/codegen/assembler-inl.h"
 #include "src/compiler/wasm-compiler.h"
-#include "src/debug/interface-types.h"
-#include "src/execution/frames-inl.h"
-#include "src/execution/simulator.h"
-#include "src/init/v8.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/objects.h"
-#include "src/objects/property-descriptor.h"
-#include "src/snapshot/snapshot.h"
+#include "src/wasm/jump-table-assembler.h"
 #include "src/wasm/module-decoder.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-init-expr.h"
@@ -27,21 +20,47 @@
 #include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-subtyping.h"
 
-namespace v8 {
-namespace internal {
-namespace wasm {
+namespace v8::internal::wasm {
+
+template <class Value>
+void AdaptiveMap<Value>::FinishInitialization() {
+  uint32_t count = 0;
+  uint32_t max = 0;
+  DCHECK_EQ(mode_, kInitializing);
+  for (const auto& entry : *map_) {
+    count++;
+    max = std::max(max, entry.first);
+  }
+  if (count >= (max + 1) / kLoadFactor) {
+    mode_ = kDense;
+    vector_.resize(max + 1);
+    for (auto& entry : *map_) {
+      vector_[entry.first] = std::move(entry.second);
+    }
+    map_.reset();
+  } else {
+    mode_ = kSparse;
+  }
+}
+template void NameMap::FinishInitialization();
+template void IndirectNameMap::FinishInitialization();
 
 WireBytesRef LazilyGeneratedNames::LookupFunctionName(
-    const ModuleWireBytes& wire_bytes, uint32_t function_index) const {
+    const ModuleWireBytes& wire_bytes, uint32_t function_index) {
   base::MutexGuard lock(&mutex_);
-  if (!function_names_) {
-    function_names_.reset(new std::unordered_map<uint32_t, WireBytesRef>());
-    DecodeFunctionNames(wire_bytes.start(), wire_bytes.end(),
-                        function_names_.get());
+  if (!has_functions_) {
+    has_functions_ = true;
+    DecodeFunctionNames(wire_bytes.start(), wire_bytes.end(), function_names_);
   }
-  auto it = function_names_->find(function_index);
-  if (it == function_names_->end()) return WireBytesRef();
-  return it->second;
+  const WireBytesRef* result = function_names_.Get(function_index);
+  if (!result) return WireBytesRef();
+  return *result;
+}
+
+bool LazilyGeneratedNames::Has(uint32_t function_index) {
+  DCHECK(has_functions_);
+  base::MutexGuard lock(&mutex_);
+  return function_names_.Get(function_index) != nullptr;
 }
 
 // static
@@ -66,7 +85,8 @@ int GetExportWrapperIndex(const WasmModule* module, const FunctionSig* sig,
 
 int GetExportWrapperIndex(const WasmModule* module, uint32_t sig_index,
                           bool is_import) {
-  uint32_t canonical_sig_index = module->canonicalized_type_ids[sig_index];
+  uint32_t canonical_sig_index =
+      module->per_module_canonical_type_ids[sig_index];
   return GetExportWrapperIndexInternal(module, canonical_sig_index, is_import);
 }
 
@@ -130,10 +150,7 @@ int GetSubtypingDepth(const WasmModule* module, uint32_t type_index) {
 void LazilyGeneratedNames::AddForTesting(int function_index,
                                          WireBytesRef name) {
   base::MutexGuard lock(&mutex_);
-  if (!function_names_) {
-    function_names_.reset(new std::unordered_map<uint32_t, WireBytesRef>());
-  }
-  function_names_->insert(std::make_pair(function_index, name));
+  function_names_.Put(function_index, name);
 }
 
 AsmJsOffsetInformation::AsmJsOffsetInformation(
@@ -236,6 +253,13 @@ bool IsWasmCodegenAllowed(Isolate* isolate, Handle<Context> context) {
          codegen_callback(
              v8::Utils::ToLocal(context),
              v8::Utils::ToLocal(isolate->factory()->empty_string()));
+}
+
+Handle<String> ErrorStringForCodegen(Isolate* isolate,
+                                     Handle<Context> context) {
+  Handle<Object> error = context->ErrorMessageForWasmCodeGeneration();
+  DCHECK(!error.is_null());
+  return Object::NoSideEffectsToString(isolate, error);
 }
 
 namespace {
@@ -625,7 +649,8 @@ size_t EstimateStoredSize(const WasmModule* module) {
          (module->signature_zone ? module->signature_zone->allocation_size()
                                  : 0) +
          VectorSize(module->types) +
-         VectorSize(module->canonicalized_type_ids) +
+         VectorSize(module->per_module_canonical_type_ids) +
+         VectorSize(module->isorecursive_canonical_type_ids) +
          VectorSize(module->functions) + VectorSize(module->data_segments) +
          VectorSize(module->tables) + VectorSize(module->import_table) +
          VectorSize(module->export_table) + VectorSize(module->tags) +
@@ -652,6 +677,9 @@ size_t PrintSignature(base::Vector<char> buffer, const wasm::FunctionSig* sig,
   return old_size - buffer.size();
 }
 
-}  // namespace wasm
-}  // namespace internal
-}  // namespace v8
+int JumpTableOffset(const WasmModule* module, int func_index) {
+  return JumpTableAssembler::JumpSlotIndexToOffset(
+      declared_function_index(module, func_index));
+}
+
+}  // namespace v8::internal::wasm

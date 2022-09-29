@@ -45,7 +45,7 @@ import * as SourceFrame from '../../ui/legacy/components/source_frame/source_fra
 import * as UI from '../../ui/legacy/legacy.js';
 import type * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 
-import {AddSourceMapURLDialog} from './AddSourceMapURLDialog.js';
+import {AddDebugInfoURLDialog} from './AddSourceMapURLDialog.js';
 import {BreakpointEditDialog, LogpointPrefix} from './BreakpointEditDialog.js';
 import {Plugin} from './Plugin.js';
 import {ScriptFormatterEditorAction} from './ScriptFormatterEditorAction.js';
@@ -109,6 +109,10 @@ const UIStrings = {
   *@description Text in Debugger Plugin of the Sources panel
   */
   addSourceMap: 'Add source map…',
+  /**
+  *@description Text in Debugger Plugin of the Sources panel
+  */
+  addWasmDebugInfo: 'Add DWARF debug info…',
   /**
   *@description Text in Debugger Plugin of the Sources panel
   */
@@ -179,7 +183,7 @@ export class DebuggerPlugin extends Plugin {
   private readonly breakpointManager: Bindings.BreakpointManager.BreakpointManager;
   // Manages pop-overs shown when the debugger is active and the user
   // hovers over an expression
-  private readonly popoverHelper: UI.PopoverHelper.PopoverHelper;
+  private popoverHelper: UI.PopoverHelper.PopoverHelper|null = null;
   private scriptFileForDebuggerModel:
       Map<SDK.DebuggerModel.DebuggerModel, Bindings.ResourceScriptMapping.ResourceScriptFile>;
   // The current set of breakpoints for this file. The locations in
@@ -214,12 +218,6 @@ export class DebuggerPlugin extends Plugin {
     this.scriptsPanel = SourcesPanel.instance();
     this.breakpointManager = Bindings.BreakpointManager.BreakpointManager.instance();
 
-    this.popoverHelper =
-        new UI.PopoverHelper.PopoverHelper(this.scriptsPanel.element, this.getPopoverRequest.bind(this));
-    this.popoverHelper.setDisableOnClick(true);
-    this.popoverHelper.setTimeout(250, 250);
-    this.popoverHelper.setHasPadding(true);
-
     this.breakpointManager.addEventListener(
         Bindings.BreakpointManager.Events.BreakpointAdded, this.breakpointChange, this);
     this.breakpointManager.addEventListener(
@@ -236,6 +234,9 @@ export class DebuggerPlugin extends Plugin {
         .addChangeListener(this.showIgnoreListInfobarIfNeeded, this);
     Common.Settings.Settings.instance()
         .moduleSetting('skipContentScripts')
+        .addChangeListener(this.showIgnoreListInfobarIfNeeded, this);
+    Common.Settings.Settings.instance()
+        .moduleSetting('automaticallyIgnoreListKnownThirdPartyScripts')
         .addChangeListener(this.showIgnoreListInfobarIfNeeded, this);
 
     UI.Context.Context.instance().addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.callFrameChanged, this);
@@ -349,6 +350,12 @@ export class DebuggerPlugin extends Plugin {
       void this.refreshBreakpoints();
     }
     void this.callFrameChanged();
+
+    this.popoverHelper?.dispose();
+    this.popoverHelper = new UI.PopoverHelper.PopoverHelper(editor, this.getPopoverRequest.bind(this));
+    this.popoverHelper.setDisableOnClick(true);
+    this.popoverHelper.setTimeout(250, 250);
+    this.popoverHelper.setHasPadding(true);
   }
 
   static accepts(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
@@ -361,7 +368,7 @@ export class DebuggerPlugin extends Plugin {
       return;
     }
     const projectType = uiSourceCode.project().type();
-    if (!Bindings.IgnoreListManager.IgnoreListManager.instance().isIgnoreListedUISourceCode(uiSourceCode)) {
+    if (!Bindings.IgnoreListManager.IgnoreListManager.instance().isUserIgnoreListedURL(uiSourceCode.url())) {
       this.hideIgnoreListInfobar();
       return;
     }
@@ -422,7 +429,7 @@ export class DebuggerPlugin extends Plugin {
   }
 
   willHide(): void {
-    this.popoverHelper.hidePopover();
+    this.popoverHelper?.hidePopover();
   }
 
   populateLineGutterContextMenu(contextMenu: UI.ContextMenu.ContextMenu, editorLineNumber: number): void {
@@ -480,7 +487,8 @@ export class DebuggerPlugin extends Plugin {
 
   populateTextAreaContextMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
     function addSourceMapURL(scriptFile: Bindings.ResourceScriptMapping.ResourceScriptFile): void {
-      const dialog = new AddSourceMapURLDialog(addSourceMapURLDialogCallback.bind(null, scriptFile));
+      const dialog =
+          AddDebugInfoURLDialog.createAddSourceMapURLDialog(addSourceMapURLDialogCallback.bind(null, scriptFile));
       dialog.show();
     }
 
@@ -492,13 +500,34 @@ export class DebuggerPlugin extends Plugin {
       scriptFile.addSourceMapURL(url);
     }
 
+    function addDebugInfoURL(scriptFile: Bindings.ResourceScriptMapping.ResourceScriptFile): void {
+      const dialog =
+          AddDebugInfoURLDialog.createAddDWARFSymbolsURLDialog(addDebugInfoURLDialogCallback.bind(null, scriptFile));
+      dialog.show();
+    }
+
+    function addDebugInfoURLDialogCallback(
+        scriptFile: Bindings.ResourceScriptMapping.ResourceScriptFile, url: Platform.DevToolsPath.UrlString): void {
+      if (!url) {
+        return;
+      }
+      scriptFile.addDebugInfoURL(url);
+    }
+
     if (this.uiSourceCode.project().type() === Workspace.Workspace.projectTypes.Network &&
         Common.Settings.Settings.instance().moduleSetting('jsSourceMapsEnabled').get() &&
-        !Bindings.IgnoreListManager.IgnoreListManager.instance().isIgnoreListedUISourceCode(this.uiSourceCode)) {
+        !Bindings.IgnoreListManager.IgnoreListManager.instance().isUserIgnoreListedURL(this.uiSourceCode.url())) {
       if (this.scriptFileForDebuggerModel.size) {
-        const scriptFile = this.scriptFileForDebuggerModel.values().next().value;
+        const scriptFile: Bindings.ResourceScriptMapping.ResourceScriptFile =
+            this.scriptFileForDebuggerModel.values().next().value;
         const addSourceMapURLLabel = i18nString(UIStrings.addSourceMap);
         contextMenu.debugSection().appendItem(addSourceMapURLLabel, addSourceMapURL.bind(null, scriptFile));
+        if (scriptFile.script?.isWasm() &&
+            !Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().pluginManager?.hasPluginForScript(
+                scriptFile.script)) {
+          contextMenu.debugSection().appendItem(
+              i18nString(UIStrings.addWasmDebugInfo), addDebugInfoURL.bind(null, scriptFile));
+        }
       }
     }
   }
@@ -739,7 +768,7 @@ export class DebuggerPlugin extends Plugin {
       this.setControlDown(false);
     }
     if (event.key === Platform.KeyboardUtilities.ESCAPE_KEY) {
-      if (this.popoverHelper.isPopoverVisible()) {
+      if (this.popoverHelper && this.popoverHelper.isPopoverVisible()) {
         this.popoverHelper.hidePopover();
         event.consume();
         return true;
@@ -1000,7 +1029,7 @@ export class DebuggerPlugin extends Plugin {
   // Highlight the locations the debugger can continue to (when
   // Control is held)
   private async showContinueToLocations(): Promise<void> {
-    this.popoverHelper.hidePopover();
+    this.popoverHelper?.hidePopover();
     const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!executionContext || !this.editor) {
       return;
@@ -1581,8 +1610,8 @@ export class DebuggerPlugin extends Plugin {
     }
     this.scriptFileForDebuggerModel.clear();
 
-    this.popoverHelper.hidePopover();
-    this.popoverHelper.dispose();
+    this.popoverHelper?.hidePopover();
+    this.popoverHelper?.dispose();
 
     this.breakpointManager.removeEventListener(
         Bindings.BreakpointManager.Events.BreakpointAdded, this.breakpointChange, this);
@@ -1598,6 +1627,9 @@ export class DebuggerPlugin extends Plugin {
         .removeChangeListener(this.showIgnoreListInfobarIfNeeded, this);
     Common.Settings.Settings.instance()
         .moduleSetting('skipContentScripts')
+        .removeChangeListener(this.showIgnoreListInfobarIfNeeded, this);
+    Common.Settings.Settings.instance()
+        .moduleSetting('automaticallyIgnoreListKnownThirdPartyScripts')
         .removeChangeListener(this.showIgnoreListInfobarIfNeeded, this);
     super.dispose();
 

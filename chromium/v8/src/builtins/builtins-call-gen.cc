@@ -420,7 +420,7 @@ void CallOrConstructBuiltinsAssembler::CallOrConstructWithSpread(
 
     BIND(&if_iterator_fn_not_callable);
     message_id = SmiConstant(
-        static_cast<int>(MessageTemplate::kIteratorSymbolNonCallable)),
+        static_cast<int>(MessageTemplate::kSpreadIteratorSymbolNonCallable)),
     Goto(&throw_spread_error);
 
     BIND(&if_iterator_is_null_or_undefined);
@@ -733,9 +733,7 @@ void CallOrConstructBuiltinsAssembler::CallFunctionTemplate(
   // Perform the actual API callback invocation via CallApiCallback.
   TNode<CallHandlerInfo> call_handler_info = LoadObjectField<CallHandlerInfo>(
       function_template_info, FunctionTemplateInfo::kCallCodeOffset);
-  TNode<Foreign> foreign = LoadObjectField<Foreign>(
-      call_handler_info, CallHandlerInfo::kJsCallbackOffset);
-  TNode<RawPtrT> callback = LoadForeignForeignAddressPtr(foreign);
+  TNode<RawPtrT> callback = LoadCallHandlerInfoJsCallbackPtr(call_handler_info);
   TNode<Object> call_data =
       LoadObjectField<Object>(call_handler_info, CallHandlerInfo::kDataOffset);
   TailCallStub(CodeFactory::CallApiCallback(isolate()), context, callback,

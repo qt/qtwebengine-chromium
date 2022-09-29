@@ -1,5 +1,16 @@
 import { unreachable } from '../../common/util/util.js';
 
+export const kDefaultVertexShaderCode = `
+@vertex fn main() -> @builtin(position) vec4<f32> {
+  return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+}
+`;
+
+export const kDefaultFragmentShaderCode = `
+@fragment fn main() -> @location(0) vec4<f32>  {
+  return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+}`;
+
 const kPlainTypeInfo = {
   i32: {
     suffix: '',
@@ -37,7 +48,8 @@ export function getPlainTypeInfo(sampleType: GPUTextureSampleType): keyof typeof
 
 /**
  * Build a fragment shader based on output value and types
- * e.g. write to color target 0 a vec4<f32>(1.0, 0.0, 1.0, 1.0) and color target 2 a vec2<u32>(1, 2)
+ * e.g. write to color target 0 a `vec4<f32>(1.0, 0.0, 1.0, 1.0)` and color target 2 a `vec2<u32>(1, 2)`
+ * ```
  * outputs: [
  *   {
  *     values: [1, 0, 1, 1],,
@@ -51,15 +63,18 @@ export function getPlainTypeInfo(sampleType: GPUTextureSampleType): keyof typeof
  *     componentCount: 2,
  *   },
  * ]
+ * ```
  *
  * return:
+ * ```
  * struct Outputs {
- *     @location(0) o1 : vec4<f32>;
- *     @location(2) o3 : vec2<u32>;
+ *     @location(0) o1 : vec4<f32>,
+ *     @location(2) o3 : vec2<u32>,
  * }
  * @fragment fn main() -> Outputs {
  *     return Outputs(vec4<f32>(1.0, 0.0, 1.0, 1.0), vec4<u32>(1, 2));
  * }
+ * ```
  * @param outputs the shader outputs for each location attribute
  * @returns the fragment shader string
  */
@@ -124,4 +139,42 @@ export function getFragmentShaderCodeWithOutput(
     @fragment fn main() -> Outputs {
         return Outputs(${resultStrings.join(',')});
     }`;
+}
+
+export type TShaderStage = 'compute' | 'vertex' | 'fragment' | 'empty';
+
+/**
+ * Return a foo shader of the given stage with the given entry point
+ * @param shaderStage
+ * @param entryPoint
+ * @returns the shader string
+ */
+export function getShaderWithEntryPoint(shaderStage: TShaderStage, entryPoint: string): string {
+  let code;
+  switch (shaderStage) {
+    case 'compute': {
+      code = `@compute @workgroup_size(1) fn ${entryPoint}() {}`;
+      break;
+    }
+    case 'vertex': {
+      code = `
+      @vertex fn ${entryPoint}() -> @builtin(position) vec4<f32> {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+      }`;
+      break;
+    }
+    case 'fragment': {
+      code = `
+      @fragment fn ${entryPoint}() -> @location(0) vec4<f32> {
+        return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+      }`;
+      break;
+    }
+    case 'empty':
+    default: {
+      code = '';
+      break;
+    }
+  }
+  return code;
 }

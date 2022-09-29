@@ -99,6 +99,11 @@ MaybeError ValidateVertexBufferLayout(
     DAWN_INVALID_IF(buffer->arrayStride % 4 != 0,
                     "Vertex buffer arrayStride (%u) is not a multiple of 4.", buffer->arrayStride);
 
+    DAWN_INVALID_IF(
+        buffer->stepMode == wgpu::VertexStepMode::VertexBufferNotUsed && buffer->attributeCount > 0,
+        "attributeCount (%u) is not zero although vertex buffer stepMode is %s.",
+        buffer->attributeCount, wgpu::VertexStepMode::VertexBufferNotUsed);
+
     for (uint32_t i = 0; i < buffer->attributeCount; ++i) {
         DAWN_TRY_CONTEXT(ValidateVertexAttribute(device, &buffer->attributes[i], metadata,
                                                  buffer->arrayStride, attributesSetMask),
@@ -148,13 +153,11 @@ MaybeError ValidateVertexState(DeviceBase* device,
 }
 
 MaybeError ValidatePrimitiveState(const DeviceBase* device, const PrimitiveState* descriptor) {
-    DAWN_TRY(
-        ValidateSingleSType(descriptor->nextInChain, wgpu::SType::PrimitiveDepthClampingState));
-    const PrimitiveDepthClampingState* clampInfo = nullptr;
-    FindInChain(descriptor->nextInChain, &clampInfo);
-    if (clampInfo && !device->IsFeatureEnabled(Feature::DepthClamping)) {
-        return DAWN_VALIDATION_ERROR("The depth clamping feature is not supported");
-    }
+    DAWN_TRY(ValidateSingleSType(descriptor->nextInChain, wgpu::SType::PrimitiveDepthClipControl));
+    const PrimitiveDepthClipControl* depthClipControl = nullptr;
+    FindInChain(descriptor->nextInChain, &depthClipControl);
+    DAWN_INVALID_IF(depthClipControl && !device->IsFeatureEnabled(Feature::DepthClipControl),
+                    "%s is not supported", wgpu::FeatureName::DepthClipControl);
     DAWN_TRY(ValidatePrimitiveTopology(descriptor->topology));
     DAWN_TRY(ValidateIndexFormat(descriptor->stripIndexFormat));
     DAWN_TRY(ValidateFrontFace(descriptor->frontFace));
@@ -321,7 +324,8 @@ MaybeError ValidateColorTargetState(
 
 MaybeError ValidateFragmentState(DeviceBase* device,
                                  const FragmentState* descriptor,
-                                 const PipelineLayoutBase* layout) {
+                                 const PipelineLayoutBase* layout,
+                                 bool alphaToCoverageEnabled) {
     DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr.");
 
     DAWN_TRY_CONTEXT(ValidateProgrammableStage(device, descriptor->module, descriptor->entryPoint,
@@ -330,9 +334,10 @@ MaybeError ValidateFragmentState(DeviceBase* device,
                      "validating fragment stage (module: %s, entryPoint: %s).", descriptor->module,
                      descriptor->entryPoint);
 
-    DAWN_INVALID_IF(descriptor->targetCount > kMaxColorAttachments,
+    uint32_t maxColorAttachments = device->GetLimits().v1.maxColorAttachments;
+    DAWN_INVALID_IF(descriptor->targetCount > maxColorAttachments,
                     "Number of targets (%u) exceeds the maximum (%u).", descriptor->targetCount,
-                    kMaxColorAttachments);
+                    maxColorAttachments);
 
     const EntryPointMetadata& fragmentMetadata =
         descriptor->module->GetEntryPoint(descriptor->entryPoint);
@@ -350,6 +355,11 @@ MaybeError ValidateFragmentState(DeviceBase* device,
                             static_cast<uint8_t>(i));
         }
     }
+
+    DAWN_INVALID_IF(fragmentMetadata.usesSampleMaskOutput && alphaToCoverageEnabled,
+                    "alphaToCoverageEnabled is true when the sample_mask builtin is a "
+                    "pipeline output of fragment stage of %s.",
+                    descriptor->module);
 
     return {};
 }
@@ -441,7 +451,8 @@ MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                      "validating multisample state.");
 
     if (descriptor->fragment != nullptr) {
-        DAWN_TRY_CONTEXT(ValidateFragmentState(device, descriptor->fragment, descriptor->layout),
+        DAWN_TRY_CONTEXT(ValidateFragmentState(device, descriptor->fragment, descriptor->layout,
+                                               descriptor->multisample.alphaToCoverageEnabled),
                          "validating fragment state.");
 
         DAWN_INVALID_IF(descriptor->fragment->targetCount == 0 && !descriptor->depthStencil,
@@ -548,11 +559,12 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     }
 
     mPrimitive = descriptor->primitive;
-    const PrimitiveDepthClampingState* clampInfo = nullptr;
-    FindInChain(mPrimitive.nextInChain, &clampInfo);
-    if (clampInfo) {
-        mClampDepth = clampInfo->clampDepth;
+    const PrimitiveDepthClipControl* depthClipControl = nullptr;
+    FindInChain(mPrimitive.nextInChain, &depthClipControl);
+    if (depthClipControl) {
+        mUnclippedDepth = depthClipControl->unclippedDepth;
     }
+
     mMultisample = descriptor->multisample;
 
     if (mAttachmentState->HasDepthStencilAttachment()) {
@@ -610,7 +622,7 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     TrackInDevice();
 
     // Initialize the cache key to include the cache type and device information.
-    mCacheKey.Record(CacheKey::Type::RenderPipeline, device->GetCacheKey());
+    StreamIn(&mCacheKey, CacheKey::Type::RenderPipeline, device->GetCacheKey());
 }
 
 RenderPipelineBase::RenderPipelineBase(DeviceBase* device) : PipelineBase(device) {
@@ -747,9 +759,9 @@ float RenderPipelineBase::GetDepthBiasClamp() const {
     return mDepthStencil.depthBiasClamp;
 }
 
-bool RenderPipelineBase::ShouldClampDepth() const {
+bool RenderPipelineBase::HasUnclippedDepth() const {
     ASSERT(!IsError());
-    return mClampDepth;
+    return mUnclippedDepth;
 }
 
 ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments>
@@ -856,7 +868,7 @@ size_t RenderPipelineBase::ComputeContentHash() {
 
     // Record primitive state
     recorder.Record(mPrimitive.topology, mPrimitive.stripIndexFormat, mPrimitive.frontFace,
-                    mPrimitive.cullMode, mClampDepth);
+                    mPrimitive.cullMode, mUnclippedDepth);
 
     // Record multisample state
     // Sample count hashed as part of the attachment state
@@ -973,7 +985,7 @@ bool RenderPipelineBase::EqualityFunc::operator()(const RenderPipelineBase* a,
         if (stateA.topology != stateB.topology ||
             stateA.stripIndexFormat != stateB.stripIndexFormat ||
             stateA.frontFace != stateB.frontFace || stateA.cullMode != stateB.cullMode ||
-            a->mClampDepth != b->mClampDepth) {
+            a->mUnclippedDepth != b->mUnclippedDepth) {
             return false;
         }
     }

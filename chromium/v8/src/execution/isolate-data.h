@@ -39,6 +39,7 @@ class Isolate;
   V(kFastCCallCallerPCOffset, kSystemPointerSize, fast_c_call_caller_pc)      \
   V(kFastApiCallTargetOffset, kSystemPointerSize, fast_api_call_target)       \
   V(kLongTaskStatsCounterOffset, kSizetSize, long_task_stats_counter)         \
+  ISOLATE_DATA_FIELDS_POINTER_COMPRESSION(V)                                  \
   /* Full tables (arbitrary size, potentially slower access). */              \
   V(kRootsTableOffset, RootsTable::kEntriesCount* kSystemPointerSize,         \
     roots_table)                                                              \
@@ -52,16 +53,18 @@ class Isolate;
   /* Linear allocation areas for the heap's new and old space */              \
   V(kNewAllocationInfo, LinearAllocationArea::kSize, new_allocation_info)     \
   V(kOldAllocationInfo, LinearAllocationArea::kSize, old_allocation_info)     \
-  ISOLATE_DATA_FIELDS_SANDBOXED_EXTERNAL_POINTERS(V)                          \
-  V(kStackIsIterableOffset, kUInt8Size, stack_is_iterable)
+  V(kStackIsIterableOffset, kUInt8Size, stack_is_iterable)                    \
+  V(kIsMarkingFlag, kUInt8Size, is_marking_flag)
 
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
-#define ISOLATE_DATA_FIELDS_SANDBOXED_EXTERNAL_POINTERS(V)    \
+#ifdef V8_COMPRESS_POINTERS
+#define ISOLATE_DATA_FIELDS_POINTER_COMPRESSION(V)            \
   V(kExternalPointerTableOffset, ExternalPointerTable::kSize, \
-    external_pointer_table)
+    external_pointer_table)                                   \
+  V(kSharedExternalPointerTableOffset, kSystemPointerSize,    \
+    shared_external_pointer_table)
 #else
-#define ISOLATE_DATA_FIELDS_SANDBOXED_EXTERNAL_POINTERS(V)
-#endif  // V8_SANDBOXED_EXTERNAL_POINTERS
+#define ISOLATE_DATA_FIELDS_POINTER_COMPRESSION(V)
+#endif  // V8_COMPRESS_POINTERS
 
 // This class contains a collection of data accessible from both C++ runtime
 // and compiled code (including builtins, interpreter bytecode handlers and
@@ -193,6 +196,12 @@ class IsolateData final {
   // long tasks.
   size_t long_task_stats_counter_ = 0;
 
+  // Table containing pointers to external objects.
+#ifdef V8_COMPRESS_POINTERS
+  ExternalPointerTable external_pointer_table_;
+  ExternalPointerTable* shared_external_pointer_table_;
+#endif
+
   RootsTable roots_table_;
   ExternalReferenceTable external_reference_table_;
 
@@ -209,14 +218,11 @@ class IsolateData final {
   LinearAllocationArea new_allocation_info_;
   LinearAllocationArea old_allocation_info_;
 
-  // Table containing pointers to external objects.
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
-  ExternalPointerTable external_pointer_table_;
-#endif
-
   // Whether the SafeStackFrameIterator can successfully iterate the current
   // stack. Only valid values are 0 or 1.
   uint8_t stack_is_iterable_ = 1;
+
+  bool is_marking_flag_ = false;
 
   // Ensure the size is 8-byte aligned in order to make alignment of the field
   // following the IsolateData field predictable. This solves the issue with
@@ -251,7 +257,7 @@ void IsolateData::AssertPredictableLayout() {
   static_assert(sizeof(IsolateData) == IsolateData::kSize);
 }
 
-#undef ISOLATE_DATA_FIELDS_SANDBOXED_EXTERNAL_POINTERS
+#undef ISOLATE_DATA_FIELDS_POINTER_COMPRESSION
 #undef ISOLATE_DATA_FIELDS
 
 }  // namespace internal

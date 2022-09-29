@@ -5,6 +5,9 @@
 #ifndef V8_COMPILER_TURBOSHAFT_RECREATE_SCHEDULE_H_
 #define V8_COMPILER_TURBOSHAFT_RECREATE_SCHEDULE_H_
 
+#include "src/compiler/compiler-source-position-table.h"
+#include "src/compiler/node-origin-table.h"
+#include "src/compiler/node.h"
 namespace v8::internal {
 class Zone;
 }
@@ -23,7 +26,9 @@ struct RecreateScheduleResult {
 
 RecreateScheduleResult RecreateSchedule(const Graph& graph,
                                         CallDescriptor* call_descriptor,
-                                        Zone* graph_zone, Zone* phase_zone);
+                                        Zone* graph_zone, Zone* phase_zone,
+                                        SourcePositionTable* source_positions,
+                                        NodeOriginTable* origins);
 
 }  // namespace v8::internal::compiler::turboshaft
 

@@ -7,10 +7,12 @@
 
 #include "src/gpu/graphite/RecorderPriv.h"
 
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/Gpu.h"
+#include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TaskGraph.h"
+#include "src/sksl/SkSLUtil.h"
 
 namespace skgpu::graphite {
 
@@ -29,11 +31,11 @@ TextureDataCache* RecorderPriv::textureDataCache() const {
 }
 
 const Caps* RecorderPriv::caps() const {
-    return fRecorder->fGpu->caps();
+    return fRecorder->fSharedContext->caps();
 }
 
 sk_sp<const Caps> RecorderPriv::refCaps() const {
-    return fRecorder->fGpu->refCaps();
+    return fRecorder->fSharedContext->refCaps();
 }
 
 DrawBufferManager* RecorderPriv::drawBufferManager() const {
@@ -42,6 +44,31 @@ DrawBufferManager* RecorderPriv::drawBufferManager() const {
 
 UploadBufferManager* RecorderPriv::uploadBufferManager() const {
     return fRecorder->fUploadBufferManager.get();
+}
+
+AtlasManager* RecorderPriv::atlasManager() {
+    return fRecorder->fAtlasManager.get();
+}
+
+TokenTracker* RecorderPriv::tokenTracker() {
+    return fRecorder->fTokenTracker.get();
+}
+
+sktext::gpu::StrikeCache* RecorderPriv::strikeCache() {
+    return fRecorder->fStrikeCache.get();
+}
+
+sktext::gpu::TextBlobRedrawCoordinator* RecorderPriv::textBlobCache() {
+    return fRecorder->fTextBlobCache.get();
+}
+
+sktext::gpu::SDFTControl RecorderPriv::getSDFTControl(bool useSDFTForSmallText) const {
+    return sktext::gpu::SDFTControl{
+            this->caps()->shaderCaps()->supportsDistanceFieldText(),
+            useSDFTForSmallText,
+            this->caps()->minDistanceFieldFontSize(),
+            this->caps()->glyphsAsPathsFontSize(),
+            false /*forcePaths*/};
 }
 
 void RecorderPriv::add(sk_sp<Task> task) {

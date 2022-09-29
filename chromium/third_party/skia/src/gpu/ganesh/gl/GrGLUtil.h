@@ -196,8 +196,6 @@ enum class GrGLRenderer {
 
     kGalliumLLVM,
 
-    kVirgl,
-
     kMali4xx,
     /** G-3x, G-5x, or G-7x */
     kMaliG,
@@ -230,6 +228,7 @@ enum class GrGLANGLEBackend {
     kUnknown,
     kD3D9,
     kD3D11,
+    kMetal,
     kOpenGL
 };
 
@@ -312,6 +311,9 @@ struct GrGLDriverInfo {
 
     // Are we running over the Chrome interprocess command buffer?
     bool fIsOverCommandBuffer = false;
+
+    // Running over virgl guest driver.
+    bool fIsRunningOverVirgl = false;
 };
 
 GrGLDriverInfo GrGLGetDriverInfo(const GrGLInterface*);

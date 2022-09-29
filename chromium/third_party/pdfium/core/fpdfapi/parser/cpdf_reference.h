@@ -22,12 +22,10 @@ class CPDF_Reference final : public CPDF_Object {
   // CPDF_Object:
   Type GetType() const override;
   RetainPtr<CPDF_Object> Clone() const override;
-  CPDF_Object* GetDirect() override;
   const CPDF_Object* GetDirect() const override;
   ByteString GetString() const override;
   float GetNumber() const override;
   int GetInteger() const override;
-  CPDF_Dictionary* GetDict() override;
   const CPDF_Dictionary* GetDict() const override;
   bool IsReference() const override;
   CPDF_Reference* AsReference() override;
@@ -37,7 +35,6 @@ class CPDF_Reference final : public CPDF_Object {
   RetainPtr<CPDF_Object> MakeReference(
       CPDF_IndirectObjectHolder* holder) const override;
 
-  CPDF_IndirectObjectHolder* GetObjList() const { return m_pObjList.Get(); }
   uint32_t GetRefObjNum() const { return m_RefObjNum; }
   void SetRef(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum);
 
@@ -61,6 +58,10 @@ inline CPDF_Reference* ToReference(CPDF_Object* obj) {
 
 inline const CPDF_Reference* ToReference(const CPDF_Object* obj) {
   return obj ? obj->AsReference() : nullptr;
+}
+
+inline RetainPtr<CPDF_Reference> ToReference(RetainPtr<CPDF_Object> obj) {
+  return RetainPtr<CPDF_Reference>(ToReference(obj.Get()));
 }
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_REFERENCE_H_

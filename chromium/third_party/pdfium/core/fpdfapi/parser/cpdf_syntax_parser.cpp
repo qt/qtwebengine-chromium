@@ -24,7 +24,6 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/autorestorer.h"
-#include "core/fxcrt/cfx_binarybuf.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/check.h"
@@ -94,10 +93,9 @@ CPDF_SyntaxParser::CPDF_SyntaxParser(
           pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr),
           0) {}
 
-CPDF_SyntaxParser::CPDF_SyntaxParser(
-    const RetainPtr<CPDF_ReadValidator>& validator,
-    FX_FILESIZE HeaderOffset)
-    : m_pFileAccess(validator),
+CPDF_SyntaxParser::CPDF_SyntaxParser(RetainPtr<CPDF_ReadValidator> validator,
+                                     FX_FILESIZE HeaderOffset)
+    : m_pFileAccess(std::move(validator)),
       m_HeaderOffset(HeaderOffset),
       m_FileLen(m_pFileAccess->GetSize()) {
   DCHECK(m_HeaderOffset <= m_FileLen);
@@ -789,7 +787,7 @@ RetainPtr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
   RetainPtr<CPDF_Stream> pStream;
   if (data) {
     pStream = pdfium::MakeRetain<CPDF_Stream>();
-    pStream->InitStreamFromFile(data, std::move(pDict));
+    pStream->InitStreamFromFile(std::move(data), std::move(pDict));
   } else {
     DCHECK(!len);
     pStream = pdfium::MakeRetain<CPDF_Stream>(pdfium::span<const uint8_t>(),
@@ -822,6 +820,10 @@ uint32_t CPDF_SyntaxParser::GetDirectNum() {
 
   m_WordBuffer[m_WordSize] = 0;
   return FXSYS_atoui(reinterpret_cast<const char*>(m_WordBuffer));
+}
+
+RetainPtr<CPDF_ReadValidator> CPDF_SyntaxParser::GetValidator() const {
+  return m_pFileAccess;
 }
 
 bool CPDF_SyntaxParser::IsWholeWord(FX_FILESIZE startpos,

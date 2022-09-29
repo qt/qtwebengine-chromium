@@ -16,6 +16,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "include/core/SkVertices.h"
 #include "src/core/SkUniform.h"
 
 #include <array>
@@ -26,11 +27,21 @@
 
 enum class SkPathFillType;
 class SkPipelineDataGatherer;
+class SkTextureDataBlock;
+
+namespace skgpu { enum class MaskFormat; }
 
 namespace skgpu::graphite {
+
 class DrawWriter;
-class DrawGeometry;
+class DrawParams;
 class ResourceProvider;
+
+struct Varying {
+    const char* fName;
+    SkSLType fType;
+    // TODO: add modifier (e.g., flat and noperspective) support
+};
 
 class RenderStep {
 public:
@@ -39,22 +50,19 @@ public:
     // The DrawWriter is configured with the vertex and instance strides of the RenderStep, and its
     // primitive type. The recorded draws will be executed with a graphics pipeline compatible with
     // this RenderStep.
-    virtual void writeVertices(DrawWriter*, const DrawGeometry&) const = 0;
+    virtual void writeVertices(DrawWriter*, const DrawParams&, int ssboIndex) const = 0;
 
-    // Write out the uniform values (aligned for the layout). These values will be de-duplicated
-    // across all draws using the RenderStep before uploading to the GPU, but it can be assumed the
-    // uniforms will be bound before the draws recorded in 'writeVertices' are executed.
+    // Write out the uniform values (aligned for the layout), textures, and samplers. The uniform
+    // values will be de-duplicated across all draws using the RenderStep before uploading to the
+    // GPU, but it can be assumed the uniforms will be bound before the draws recorded in
+    // 'writeVertices' are executed.
     // TODO: We definitely want this to return CPU memory since it's better for the caller to handle
     // the de-duplication and GPU upload/binding (DrawPass tracks all this). However, a RenderStep's
     // uniforms aren't going to change, and the Layout won't change during a process, so it would be
     // nice if we could remember the offsets for the layout/gpu and reuse them across draws.
     // Similarly, it would be nice if this could write into reusable storage and then DrawPass or
     // UniformCache handles making an sk_sp if we need to assign a new unique ID to the uniform data
-    virtual void writeUniforms(const DrawGeometry&, SkPipelineDataGatherer*) const = 0;
-
-    // Returns a name formatted as "Subclass[variant]", where "Subclass" matches the C++ class name
-    // and variant is a unique term describing instance's specific configuration.
-    const char* name() const { return fName.c_str(); }
+    virtual void writeUniformsAndTextures(const DrawParams&, SkPipelineDataGatherer*) const = 0;
 
     // TODO: This is only temporary. Eventually the RenderStep will define its logic in SkSL and
     // be able to have code operate in both the vertex and fragment shaders. Ideally the RenderStep
@@ -62,23 +70,56 @@ public:
     // although we could go as far as allowing RenderStep to handle composing the final SkSL if
     // given the paint combination's SkSL.
 
-    // Returns the body of a vertex function, which must define a float4 devPosition variable.
-    // It has access to the variables declared by vertexAttributes(), instanceAttributes(),
-    // and uniforms(). The 'devPosition' variable's z must store the PaintDepth normalized to a
-    // float from [0, 1], for each processed draw although the RenderStep can choose to upload it
-    // as attributes or uniforms.
+    // Returns the body of a vertex function, which must define a float4 devPosition variable and
+    // can optionally define a float2 stepLocalCoords variable. It has access to the variables
+    // declared by vertexAttributes(), instanceAttributes(), and uniforms(). The 'devPosition'
+    // variable's z must store the PaintDepth normalized to a float from [0, 1], for each processed
+    // draw although the RenderStep can choose to upload it as attributes or uniforms.
     //
     // NOTE: The above contract is mainly so that the entire SkSL program can be created by just str
     // concatenating struct definitions generated from the RenderStep and paint Combination
     // and then including the function bodies returned here.
     virtual const char* vertexSkSL() const = 0;
 
-    bool          requiresMSAA()    const { return fFlags & Flags::kRequiresMSAA;    }
-    bool          performsShading() const { return fFlags & Flags::kPerformsShading; }
+    // Emits code to set up textures and samplers. Should only be defined if hasTextures is true.
+    virtual std::string texturesAndSamplersSkSL(int startBinding) const { return R"()"; }
 
-    PrimitiveType primitiveType()   const { return fPrimitiveType;  }
-    size_t        vertexStride()    const { return fVertexStride;   }
-    size_t        instanceStride()  const { return fInstanceStride; }
+    // Emits code to set up coverage value. Should only be defined if overridesCoverage is true.
+    // When implemented the returned SkSL fragment should write its coverage into a
+    // 'half4 outputCoverage' variable (defined in the calling code) with the actual
+    // coverage splatted out into all four channels.
+    virtual const char* fragmentCoverageSkSL() const { return R"()"; }
+
+    // Emits code to set up a primitive color value. Should only be defined if emitsPrimitiveColor
+    // is true. When implemented, the returned SkSL fragment should write its color into a
+    // 'half4 primitiveColor' variable (defined in the calling code).
+    virtual const char* fragmentColorSkSL() const { return R"()"; }
+
+    // Returns a name formatted as "Subclass[variant]", where "Subclass" matches the C++ class name
+    // and variant is a unique term describing instance's specific configuration.
+    const char* name() const { return fName.c_str(); }
+
+    bool requiresMSAA()          const { return fFlags & Flags::kRequiresMSAA;          }
+    bool performsShading()       const { return fFlags & Flags::kPerformsShading;       }
+    bool hasTextures()           const { return fFlags & Flags::kHasTextures;           }
+    bool emitsCoverage()         const { return fFlags & Flags::kEmitsCoverage;         }
+    bool emitsPrimitiveColor()   const { return fFlags & Flags::kEmitsPrimitiveColor;   }
+
+    PrimitiveType primitiveType()  const { return fPrimitiveType;  }
+    size_t        vertexStride()   const { return fVertexStride;   }
+    size_t        instanceStride() const { return fInstanceStride; }
+
+    size_t numUniforms()           const { return fUniforms.size();      }
+    size_t numVertexAttributes()   const { return fVertexAttrs.size();   }
+    size_t numInstanceAttributes() const { return fInstanceAttrs.size(); }
+    size_t numVaryings()           const { return fVaryings.size();      }
+
+    // The uniforms of a RenderStep are bound to the kRenderStep slot, the rest of the pipeline
+    // may still use uniforms bound to other slots.
+    SkSpan<const SkUniform> uniforms()           const { return SkSpan(fUniforms);      }
+    SkSpan<const Attribute> vertexAttributes()   const { return SkSpan(fVertexAttrs);   }
+    SkSpan<const Attribute> instanceAttributes() const { return SkSpan(fInstanceAttrs); }
+    SkSpan<const Varying>   varyings()           const { return SkSpan(fVaryings);      }
 
     const DepthStencilSettings& depthStencilSettings() const { return fDepthStencilSettings; }
 
@@ -89,17 +130,6 @@ public:
                         ? DepthStencilFlags::kDepth : DepthStencilFlags::kNone);
     }
 
-    size_t numUniforms()            const { return fUniforms.size();      }
-    size_t numVertexAttributes()    const { return fVertexAttrs.size();   }
-    size_t numInstanceAttributes()  const { return fInstanceAttrs.size(); }
-
-    // The uniforms of a RenderStep are bound to the kRenderStep slot, the rest of the pipeline
-    // may still use uniforms bound to other slots.
-    SkSpan<const SkUniform> uniforms()           const { return SkMakeSpan(fUniforms);      }
-    SkSpan<const Attribute> vertexAttributes()   const { return SkMakeSpan(fVertexAttrs);   }
-    SkSpan<const Attribute> instanceAttributes() const { return SkMakeSpan(fInstanceAttrs); }
-
-
     // TODO: Actual API to do things
     // 6. Some Renderers benefit from being able to share vertices between RenderSteps. Must find a
     //    way to support that. It may mean that RenderSteps get state per draw.
@@ -107,12 +137,14 @@ public:
     //    - Does DrawList->DrawPass conversion build a separate array of blind data that the
     //      stateless Renderstep can refer to for {draw,step} pairs?
     //    - Does each DrawList::Draw have extra space (e.g. 8 bytes) that steps can cache data in?
-    // 7. Painter's order for the draw sent as uniform or attribute
 protected:
     enum class Flags : unsigned {
-        kNone            = 0b000,
-        kRequiresMSAA    = 0b001,
-        kPerformsShading = 0b010,
+        kNone                  = 0b00000,
+        kRequiresMSAA          = 0b00001,
+        kPerformsShading       = 0b00010,
+        kHasTextures           = 0b00100,
+        kEmitsCoverage         = 0b01000,
+        kEmitsPrimitiveColor   = 0b10000,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(Flags);
 
@@ -126,13 +158,15 @@ protected:
                PrimitiveType primitiveType,
                DepthStencilSettings depthStencilSettings,
                std::initializer_list<Attribute> vertexAttrs,
-               std::initializer_list<Attribute> instanceAttrs)
+               std::initializer_list<Attribute> instanceAttrs,
+               std::initializer_list<Varying> varyings = {})
             : fFlags(flags)
             , fPrimitiveType(primitiveType)
             , fDepthStencilSettings(depthStencilSettings)
             , fUniforms(uniforms)
             , fVertexAttrs(vertexAttrs)
             , fInstanceAttrs(instanceAttrs)
+            , fVaryings(varyings)
             , fVertexStride(0)
             , fInstanceStride(0)
             , fName(className) {
@@ -168,6 +202,7 @@ private:
     std::vector<SkUniform> fUniforms;
     std::vector<Attribute> fVertexAttrs;
     std::vector<Attribute> fInstanceAttrs;
+    std::vector<Varying>   fVaryings;
 
     size_t fVertexStride;   // derived from vertex attribute set
     size_t fInstanceStride; // derived from instance attribute set
@@ -205,8 +240,15 @@ public:
 
     static const Renderer& TessellatedStrokes();
 
-    // TODO: Add renderers for primitives (rect, rrect, etc.), special draws (atlas, vertices, text)
-    // and support inverse filled strokes.
+    static const Renderer& TextDirect(bool isA8);
+
+    static const Renderer& TextSDF(bool useLCDText);
+
+    static const Renderer& Vertices(SkVertices::VertexMode, bool hasColors, bool hasTexCoords);
+
+
+    // TODO: Add renderers for primitives (rect, rrect, etc.) and atlas draws; add support for
+    // inverse filled strokes.
 
     // The maximum number of render steps that any Renderer is allowed to have.
     static constexpr int kMaxRenderSteps = 4;
@@ -215,9 +257,11 @@ public:
         return {&fSteps.front(), static_cast<size_t>(fStepCount) };
     }
 
-    const char* name()            const { return fName.c_str();    }
-    int         numRenderSteps()  const { return fStepCount;       }
-    bool        requiresMSAA()    const { return fRequiresMSAA;    }
+    const char* name()                const { return fName.c_str();        }
+    int         numRenderSteps()      const { return fStepCount;           }
+    bool        requiresMSAA()        const { return fRequiresMSAA;        }
+    bool        emitsCoverage()       const { return fEmitsCoverage;       }
+    bool        emitsPrimitiveColor() const { return fEmitsPrimitiveColor; }
 
     SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const { return fDepthStencilFlags; }
 
@@ -245,7 +289,9 @@ private:
         for (int i = 0 ; i < fStepCount; ++i) {
             fSteps[i] = steps[i];
             fRequiresMSAA |= fSteps[i]->requiresMSAA();
+            fEmitsCoverage |= fSteps[i]->emitsCoverage();
             fDepthStencilFlags |= fSteps[i]->depthStencilFlags();
+            fEmitsPrimitiveColor |= fSteps[i]->emitsPrimitiveColor();
             SkDEBUGCODE(performsShading |= fSteps[i]->performsShading());
         }
         SkASSERT(performsShading); // at least one step needs to actually shade
@@ -260,6 +306,8 @@ private:
     SkString fName;
     int      fStepCount;
     bool     fRequiresMSAA = false;
+    bool     fEmitsCoverage = false;
+    bool     fEmitsPrimitiveColor = false;
 
     SkEnumBitMask<DepthStencilFlags> fDepthStencilFlags = DepthStencilFlags::kNone;
 };

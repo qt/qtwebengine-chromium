@@ -235,7 +235,7 @@ uint8_t D3D12RenderTargetWriteMask(wgpu::ColorWriteMask writeMask) {
 }
 
 D3D12_RENDER_TARGET_BLEND_DESC ComputeColorDesc(const ColorTargetState* state) {
-    D3D12_RENDER_TARGET_BLEND_DESC blendDesc;
+    D3D12_RENDER_TARGET_BLEND_DESC blendDesc = {};
     blendDesc.BlendEnable = state->blend != nullptr;
     if (blendDesc.BlendEnable) {
         blendDesc.SrcBlend = D3D12Blend(state->blend->color.srcFactor);
@@ -273,7 +273,7 @@ D3D12_STENCIL_OP StencilOp(wgpu::StencilOperation op) {
 }
 
 D3D12_DEPTH_STENCILOP_DESC StencilOpDesc(const StencilFaceState& descriptor) {
-    D3D12_DEPTH_STENCILOP_DESC desc;
+    D3D12_DEPTH_STENCILOP_DESC desc = {};
 
     desc.StencilFailOp = StencilOp(descriptor.failOp);
     desc.StencilDepthFailOp = StencilOp(descriptor.depthFailOp);
@@ -284,23 +284,23 @@ D3D12_DEPTH_STENCILOP_DESC StencilOpDesc(const StencilFaceState& descriptor) {
 }
 
 D3D12_DEPTH_STENCIL_DESC ComputeDepthStencilDesc(const DepthStencilState* descriptor) {
-    D3D12_DEPTH_STENCIL_DESC mDepthStencilDescriptor;
-    mDepthStencilDescriptor.DepthEnable =
+    D3D12_DEPTH_STENCIL_DESC depthStencilDescriptor = {};
+    depthStencilDescriptor.DepthEnable =
         (descriptor->depthCompare == wgpu::CompareFunction::Always &&
          !descriptor->depthWriteEnabled)
             ? FALSE
             : TRUE;
-    mDepthStencilDescriptor.DepthWriteMask =
+    depthStencilDescriptor.DepthWriteMask =
         descriptor->depthWriteEnabled ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-    mDepthStencilDescriptor.DepthFunc = ToD3D12ComparisonFunc(descriptor->depthCompare);
+    depthStencilDescriptor.DepthFunc = ToD3D12ComparisonFunc(descriptor->depthCompare);
 
-    mDepthStencilDescriptor.StencilEnable = StencilTestEnabled(descriptor) ? TRUE : FALSE;
-    mDepthStencilDescriptor.StencilReadMask = static_cast<UINT8>(descriptor->stencilReadMask);
-    mDepthStencilDescriptor.StencilWriteMask = static_cast<UINT8>(descriptor->stencilWriteMask);
+    depthStencilDescriptor.StencilEnable = StencilTestEnabled(descriptor) ? TRUE : FALSE;
+    depthStencilDescriptor.StencilReadMask = static_cast<UINT8>(descriptor->stencilReadMask);
+    depthStencilDescriptor.StencilWriteMask = static_cast<UINT8>(descriptor->stencilWriteMask);
 
-    mDepthStencilDescriptor.FrontFace = StencilOpDesc(descriptor->stencilFront);
-    mDepthStencilDescriptor.BackFace = StencilOpDesc(descriptor->stencilBack);
-    return mDepthStencilDescriptor;
+    depthStencilDescriptor.FrontFace = StencilOpDesc(descriptor->stencilFront);
+    depthStencilDescriptor.BackFace = StencilOpDesc(descriptor->stencilBack);
+    return depthStencilDescriptor;
 }
 
 D3D12_INDEX_BUFFER_STRIP_CUT_VALUE ComputeIndexBufferStripCutValue(
@@ -389,7 +389,7 @@ MaybeError RenderPipeline::Initialize() {
     descriptorD3D12.RasterizerState.DepthBias = GetDepthBias();
     descriptorD3D12.RasterizerState.DepthBiasClamp = GetDepthBiasClamp();
     descriptorD3D12.RasterizerState.SlopeScaledDepthBias = GetDepthBiasSlopeScale();
-    descriptorD3D12.RasterizerState.DepthClipEnable = TRUE;
+    descriptorD3D12.RasterizerState.DepthClipEnable = !HasUnclippedDepth();
     descriptorD3D12.RasterizerState.MultisampleEnable = (GetSampleCount() > 1) ? TRUE : FALSE;
     descriptorD3D12.RasterizerState.AntialiasedLineEnable = FALSE;
     descriptorD3D12.RasterizerState.ForcedSampleCount = 0;
@@ -402,9 +402,6 @@ MaybeError RenderPipeline::Initialize() {
     static_assert(kMaxColorAttachments == 8);
     for (uint8_t i = 0; i < kMaxColorAttachments; i++) {
         descriptorD3D12.RTVFormats[i] = DXGI_FORMAT_UNKNOWN;
-        descriptorD3D12.BlendState.RenderTarget[i].BlendEnable = false;
-        descriptorD3D12.BlendState.RenderTarget[i].RenderTargetWriteMask = 0;
-        descriptorD3D12.BlendState.RenderTarget[i].LogicOpEnable = false;
         descriptorD3D12.BlendState.RenderTarget[i].LogicOp = D3D12_LOGIC_OP_NOOP;
     }
     ColorAttachmentIndex highestColorAttachmentIndexPlusOne =
@@ -430,7 +427,7 @@ MaybeError RenderPipeline::Initialize() {
 
     mD3d12PrimitiveTopology = D3D12PrimitiveTopology(GetPrimitiveTopology());
 
-    mCacheKey.Record(descriptorD3D12, *layout->GetRootSignatureBlob());
+    StreamIn(&mCacheKey, descriptorD3D12, *layout->GetRootSignatureBlob());
 
     // Try to see if we have anything in the blob cache.
     Blob blob = device->LoadCachedBlob(GetCacheKey());

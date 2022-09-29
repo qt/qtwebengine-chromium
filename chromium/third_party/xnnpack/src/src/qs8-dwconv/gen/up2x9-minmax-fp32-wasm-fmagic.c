@@ -9,10 +9,9 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/dwconv.h>
 #include <xnnpack/math.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic(
@@ -86,8 +85,8 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic(
     size_t c = channels;
     const void* w = weights;
     for (; c >= 2; c -= 2) {
-      int32_t vacc0 = ((const int32_t*) w)[0];
-      int32_t vacc1 = ((const int32_t*) w)[1];
+      int32_t vacc0 = unaligned_indexed_load_s32(w, 0);
+      int32_t vacc1 = unaligned_indexed_load_s32(w, 1);
 
 
       const int32_t vi0x0 = (int32_t) i0[0];
@@ -197,15 +196,15 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic(
       vfpacc0 += vmagic_bias;
       vfpacc1 += vmagic_bias;
 
-      int32_t vout0 = (int32_t) fp32_to_bits(vfpacc0) - vmagic_bias_less_output_zero_point;
-      int32_t vout1 = (int32_t) fp32_to_bits(vfpacc1) - vmagic_bias_less_output_zero_point;
+      int32_t vout0 = (int32_t) float_as_uint32(vfpacc0) - vmagic_bias_less_output_zero_point;
+      int32_t vout1 = (int32_t) float_as_uint32(vfpacc1) - vmagic_bias_less_output_zero_point;
 
       output[0] = (int8_t) vout0;
       output[1] = (int8_t) vout1;
       output += 2;
     }
     if XNN_UNLIKELY(c != 0) {
-      int32_t vacc = *((const int32_t*) w);
+      int32_t vacc = unaligned_load_s32(w);
 
       const int32_t vi0 = (int32_t) *i0;
       const int32_t vk0 = (int32_t) ((const int8_t*) ((uintptr_t) w + 2 * sizeof(int32_t)))[0];
@@ -240,7 +239,7 @@ void xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic(
       vfpacc = __builtin_wasm_max_f32(vfpacc, voutput_min_less_zero_point);
       vfpacc = __builtin_wasm_min_f32(vfpacc, voutput_max_less_zero_point);
       vfpacc += vmagic_bias;
-      int32_t vout = (int32_t) fp32_to_bits(vfpacc) - vmagic_bias_less_output_zero_point;
+      int32_t vout = (int32_t) float_as_uint32(vfpacc) - vmagic_bias_less_output_zero_point;
 
       *output++ = (int8_t) vout;
     }

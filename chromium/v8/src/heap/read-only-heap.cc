@@ -8,7 +8,9 @@
 #include <cstring>
 
 #include "src/base/lazy-instance.h"
+#include "src/base/macros.h"
 #include "src/base/platform/mutex.h"
+#include "src/common/globals.h"
 #include "src/common/ptr-compr-inl.h"
 #include "src/heap/basic-memory-chunk.h"
 #include "src/heap/heap-write-barrier-inl.h"
@@ -76,8 +78,8 @@ void ReadOnlyHeap::SetUp(Isolate* isolate,
         artifacts = InitializeSharedReadOnlyArtifacts();
         artifacts->InitializeChecksum(read_only_snapshot_data);
         ro_heap = CreateInitalHeapForBootstrapping(isolate, artifacts);
-        ro_heap->DeseralizeIntoIsolate(isolate, read_only_snapshot_data,
-                                       can_rehash);
+        ro_heap->DeserializeIntoIsolate(isolate, read_only_snapshot_data,
+                                        can_rehash);
         read_only_heap_created = true;
       } else {
         // With pointer compression, there is one ReadOnlyHeap per Isolate.
@@ -104,15 +106,15 @@ void ReadOnlyHeap::SetUp(Isolate* isolate,
     auto* ro_heap = new ReadOnlyHeap(new ReadOnlySpace(isolate->heap()));
     isolate->SetUpFromReadOnlyArtifacts(nullptr, ro_heap);
     if (read_only_snapshot_data != nullptr) {
-      ro_heap->DeseralizeIntoIsolate(isolate, read_only_snapshot_data,
-                                     can_rehash);
+      ro_heap->DeserializeIntoIsolate(isolate, read_only_snapshot_data,
+                                      can_rehash);
     }
   }
 }
 
-void ReadOnlyHeap::DeseralizeIntoIsolate(Isolate* isolate,
-                                         SnapshotData* read_only_snapshot_data,
-                                         bool can_rehash) {
+void ReadOnlyHeap::DeserializeIntoIsolate(Isolate* isolate,
+                                          SnapshotData* read_only_snapshot_data,
+                                          bool can_rehash) {
   DCHECK_NOT_NULL(read_only_snapshot_data);
   ReadOnlyDeserializer des(isolate, read_only_snapshot_data, can_rehash);
   des.DeserializeIntoIsolate();
@@ -297,6 +299,13 @@ HeapObject ReadOnlyHeapObjectIterator::Next() {
       continue;
     }
     HeapObject object = HeapObject::FromAddress(current_addr_);
+    if (V8_COMPRESS_POINTERS_8GB_BOOL &&
+        !IsAligned(current_addr_, kObjectAlignment8GbHeap) &&
+        !object.IsFreeSpace()) {
+      current_addr_ = RoundUp<kObjectAlignment8GbHeap>(current_addr_);
+      continue;
+    }
+
     const int object_size = object.Size();
     current_addr_ += object_size;
 

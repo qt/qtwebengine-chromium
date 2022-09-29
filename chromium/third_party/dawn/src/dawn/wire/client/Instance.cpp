@@ -18,8 +18,6 @@
 
 namespace dawn::wire::client {
 
-Instance::Instance(Client* c, uint32_t r, uint32_t i) : ObjectBase(c, r, i) {}
-
 Instance::~Instance() {
     mRequestAdapterRequests.CloseAll([](RequestAdapterData* request) {
         request->callback(WGPURequestAdapterStatus_Unknown, nullptr,
@@ -37,18 +35,19 @@ void Instance::CancelCallbacksForDisconnect() {
 void Instance::RequestAdapter(const WGPURequestAdapterOptions* options,
                               WGPURequestAdapterCallback callback,
                               void* userdata) {
+    Client* client = GetClient();
     if (client->IsDisconnected()) {
         callback(WGPURequestAdapterStatus_Error, nullptr, "GPU connection lost", userdata);
         return;
     }
 
-    auto* allocation = client->AdapterAllocator().New(client);
-    uint64_t serial = mRequestAdapterRequests.Add({callback, allocation->object->id, userdata});
+    Adapter* adapter = client->Make<Adapter>();
+    uint64_t serial = mRequestAdapterRequests.Add({callback, adapter->GetWireId(), userdata});
 
     InstanceRequestAdapterCmd cmd;
-    cmd.instanceId = this->id;
+    cmd.instanceId = GetWireId();
     cmd.requestSerial = serial;
-    cmd.adapterObjectHandle = ObjectHandle(allocation->object->id, allocation->generation);
+    cmd.adapterObjectHandle = adapter->GetWireHandle();
     cmd.options = options;
 
     client->SerializeCommand(cmd);
@@ -82,12 +81,13 @@ bool Instance::OnRequestAdapterCallback(uint64_t requestSerial,
         return false;
     }
 
-    Adapter* adapter = client->AdapterAllocator().GetObject(request.adapterObjectId);
+    Client* client = GetClient();
+    Adapter* adapter = client->Get<Adapter>(request.adapterObjectId);
 
     // If the return status is a failure we should give a null adapter to the callback and
     // free the allocation.
     if (status != WGPURequestAdapterStatus_Success) {
-        client->AdapterAllocator().Free(adapter);
+        client->Free(adapter);
         request.callback(status, nullptr, message, request.userdata);
         return true;
     }

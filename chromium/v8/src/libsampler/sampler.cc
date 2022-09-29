@@ -19,7 +19,11 @@
 #include <sys/syscall.h>
 #endif
 
-#if V8_OS_DARWIN
+#if V8_OS_AIX || V8_TARGET_ARCH_S390X
+
+#include "src/base/platform/time.h"
+
+#elif V8_OS_DARWIN
 #include <mach/mach.h>
 // OpenBSD doesn't have <ucontext.h>. ucontext_t lives in <signal.h>
 // and is a typedef for struct sigcontext. There is no uc_mcontext.
@@ -343,8 +347,14 @@ class SignalHandler {
 
   static void Restore() {
     if (signal_handler_installed_) {
-      sigaction(SIGPROF, &old_signal_handler_, nullptr);
       signal_handler_installed_ = false;
+#if V8_OS_AIX || V8_TARGET_ARCH_S390X
+      // On Aix, IBMi & zLinux SIGPROF can sometimes arrive after the
+      // default signal handler is restored, resulting in intermittent test
+      // failure when profiling is enabled (https://crbug.com/v8/12952)
+      base::OS::Sleep(base::TimeDelta::FromMicroseconds(10));
+#endif
+      sigaction(SIGPROF, &old_signal_handler_, nullptr);
     }
   }
 
@@ -449,7 +459,7 @@ void SignalHandler::FillRegisterState(void* context, RegisterState* state) {
   state->sp = reinterpret_cast<void*>(ucontext->uc_mcontext.gregs[15]);
   state->fp = reinterpret_cast<void*>(ucontext->uc_mcontext.gregs[11]);
   state->lr = reinterpret_cast<void*>(ucontext->uc_mcontext.gregs[14]);
-#elif V8_HOST_ARCH_RISCV64
+#elif V8_HOST_ARCH_RISCV64 || V8_HOST_ARCH_RISCV32
   // Spec CH.25 RISC-V Assembly Programmer’s Handbook
   state->pc = reinterpret_cast<void*>(mcontext.__gregs[REG_PC]);
   state->sp = reinterpret_cast<void*>(mcontext.__gregs[REG_SP]);

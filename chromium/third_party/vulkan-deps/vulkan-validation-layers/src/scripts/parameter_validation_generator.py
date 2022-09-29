@@ -173,6 +173,9 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             'vkCreateRayTracingPipelinesKHR',
             'vkCreateSampler',
             'vkCreateDescriptorSetLayout',
+            'vkCreateBufferView',
+            'vkCreateSemaphore',
+            'vkCreateEvent',
             'vkFreeDescriptorSets',
             'vkUpdateDescriptorSets',
             'vkBeginCommandBuffer',
@@ -233,8 +236,10 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             'vkCopyMemoryToAccelerationStructureKHR',
             'vkCmdCopyMemoryToAccelerationStructureKHR',
             'vkCmdDrawIndirectCount',
+            'vkCmdDrawIndirectCountAMD',
             'vkCmdDrawIndirectCountKHR',
             'vkCmdDrawIndexedIndirectCount',
+            'vkCmdDrawIndexedIndirectCountAMD',
             'vkCmdDrawIndexedIndirectCountKHR',
             'vkCmdWriteAccelerationStructuresPropertiesKHR',
             'vkWriteAccelerationStructuresPropertiesKHR',
@@ -262,7 +267,6 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             'vkCmdSetVertexInputEXT',
             'vkCmdPushConstants',
             'vkMergePipelineCaches',
-            'vkGetPhysicalDeviceVideoFormatPropertiesKHR',
             'vkCmdClearColorImage',
             'vkCmdBeginRenderPass',
             'vkCmdBeginRenderPass2KHR',
@@ -278,6 +282,7 @@ class ParameterValidationOutputGenerator(OutputGenerator):
             'vkGetPhysicalDeviceSurfaceCapabilities2KHR',
             'vkGetPhysicalDeviceSurfaceFormats2KHR',
             'vkGetPhysicalDeviceSurfacePresentModes2EXT',
+            'vkExportMetalObjectsEXT',
             ]
 
         # Commands to ignore
@@ -1171,6 +1176,9 @@ class ParameterValidationOutputGenerator(OutputGenerator):
         if value.extstructs:
             extStructVar = 'allowed_structs_{}'.format(struct_type_name)
             extStructCount = 'ARRAY_SIZE({})'.format(extStructVar)
+            if struct_type_name == 'VkInstanceCreateInfo':
+                value.extstructs.append('VkInstanceLayerSettingsEXT')
+                self.structTypes['VkInstanceLayerSettingsEXT'] = 'static_cast<VkStructureType>(VK_STRUCTURE_TYPE_INSTANCE_LAYER_SETTINGS_EXT)'
             extStructNames = '"' + ', '.join(value.extstructs) + '"'
             checkExpr.append('const VkStructureType {}[] = {{ {} }};\n'.format(extStructVar, ', '.join([self.structTypes[s] for s in value.extstructs])))
         checkExpr.append('skip |= validate_struct_pnext("{}", {ppp}"{}"{pps}, {}, {}{}, {}, {}, GeneratedVulkanHeaderVersion, {}, {});\n'.format(

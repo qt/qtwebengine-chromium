@@ -536,9 +536,29 @@ ResultOrError<ResourceHeapAllocation> Device::AllocateMemory(
 
 std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
     const ExternalImageDescriptorDXGISharedHandle* descriptor) {
+    // ExternalImageDXGIImpl holds a weak reference to the device. If the device is destroyed before
+    // the image is created, the image will have a dangling reference to the device which can cause
+    // a use-after-free.
+    if (ConsumedError(ValidateIsAlive())) {
+        return nullptr;
+    }
+
+    // Use sharedHandle as a fallback until Chromium code is changed to set textureSharedHandle.
+    HANDLE textureSharedHandle = descriptor->textureSharedHandle;
+    if (!textureSharedHandle) {
+        textureSharedHandle = descriptor->sharedHandle;
+    }
+
     Microsoft::WRL::ComPtr<ID3D12Resource> d3d12Resource;
-    if (FAILED(GetD3D12Device()->OpenSharedHandle(descriptor->sharedHandle,
+    if (FAILED(GetD3D12Device()->OpenSharedHandle(textureSharedHandle,
                                                   IID_PPV_ARGS(&d3d12Resource)))) {
+        return nullptr;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Fence> d3d12Fence;
+    if (descriptor->fenceSharedHandle &&
+        FAILED(GetD3D12Device()->OpenSharedHandle(descriptor->fenceSharedHandle,
+                                                  IID_PPV_ARGS(&d3d12Fence)))) {
         return nullptr;
     }
 
@@ -568,8 +588,8 @@ std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
         }
     }
 
-    auto impl = std::make_unique<ExternalImageDXGIImpl>(this, std::move(d3d12Resource),
-                                                        descriptor->cTextureDescriptor);
+    auto impl = std::make_unique<ExternalImageDXGIImpl>(
+        this, std::move(d3d12Resource), std::move(d3d12Fence), descriptor->cTextureDescriptor);
     mExternalImageList.Append(impl.get());
     return impl;
 }
@@ -577,13 +597,17 @@ std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
 Ref<TextureBase> Device::CreateD3D12ExternalTexture(
     const TextureDescriptor* descriptor,
     ComPtr<ID3D12Resource> d3d12Texture,
+    ComPtr<ID3D12Fence> d3d12Fence,
     Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
+    uint64_t fenceWaitValue,
+    uint64_t fenceSignalValue,
     bool isSwapChainTexture,
     bool isInitialized) {
     Ref<Texture> dawnTexture;
-    if (ConsumedError(Texture::CreateExternalImage(this, descriptor, std::move(d3d12Texture),
-                                                   std::move(d3d11on12Resource), isSwapChainTexture,
-                                                   isInitialized),
+    if (ConsumedError(Texture::CreateExternalImage(
+                          this, descriptor, std::move(d3d12Texture), std::move(d3d12Fence),
+                          std::move(d3d11on12Resource), fenceWaitValue, fenceSignalValue,
+                          isSwapChainTexture, isInitialized),
                       &dawnTexture)) {
         return nullptr;
     }
@@ -620,6 +644,15 @@ void Device::InitTogglesFromDriver() {
     SetToggle(Toggle::UseD3D12RenderPass, GetDeviceInfo().supportsRenderPass);
     SetToggle(Toggle::UseD3D12ResidencyManagement, true);
     SetToggle(Toggle::UseDXC, false);
+    SetToggle(Toggle::D3D12AlwaysUseTypelessFormatsForCastableTexture,
+              !GetDeviceInfo().supportsCastingFullyTypedFormat);
+    SetToggle(Toggle::ApplyClearBigIntegerColorValueWithDraw, true);
+
+    // The restriction on the source box specifying a portion of the depth stencil texture in
+    // CopyTextureRegion() is only available on the D3D12 platforms which doesn't support
+    // programmable sample positions.
+    SetToggle(Toggle::D3D12UseTempBufferInDepthStencilTextureAndBufferCopyWithNonZeroBufferOffset,
+              GetDeviceInfo().programmableSamplePositionsTier == 0);
 
     // Disable optimizations when using FXC
     // See https://crbug.com/dawn/1203
@@ -631,22 +664,42 @@ void Device::InitTogglesFromDriver() {
     uint32_t deviceId = GetAdapter()->GetDeviceId();
     uint32_t vendorId = GetAdapter()->GetVendorId();
 
-    // Currently this workaround is only needed on Intel Gen9 and Gen9.5 GPUs.
+    // Currently this workaround is only needed on Intel Gen9, Gen9.5 and Gen11 GPUs.
     // See http://crbug.com/1161355 for more information.
-    if (gpu_info::IsIntelGen9(vendorId, deviceId)) {
-        constexpr gpu_info::D3DDriverVersion kFirstDriverVersionWithFix = {30, 0, 100, 9864};
-        if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
-                                              kFirstDriverVersionWithFix) < 0) {
-            SetToggle(
-                Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
-                true);
-        }
+    if (gpu_info::IsIntelGen9(vendorId, deviceId) || gpu_info::IsIntelGen11(vendorId, deviceId)) {
+        SetToggle(Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
+                  true);
+    }
+
+    // Currently this workaround is only needed on Intel GPUs.
+    // See http://crbug.com/dawn/1487 for more information.
+    if (gpu_info::IsIntel(vendorId)) {
+        SetToggle(Toggle::D3D12ForceClearCopyableDepthStencilTextureOnCreation, true);
+    }
+
+    // Currently this workaround is only needed on Intel Gen12 GPUs.
+    // See http://crbug.com/dawn/1487 for more information.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId) ||
+        gpu_info::IsIntelGen12HP(vendorId, deviceId)) {
+        SetToggle(Toggle::D3D12DontSetClearValueOnDepthTextureCreation, true);
     }
 
     // Currently this workaround is needed on any D3D12 backend for some particular situations.
     // But we may need to limit it if D3D12 runtime fixes the bug on its new release. See
     // https://crbug.com/dawn/1289 for more information.
+    // TODO(dawn:1289): Unset this toggle when we skip the split on the buffer-texture copy
+    // on the platforms where UnrestrictedBufferTextureCopyPitchSupported is true.
     SetToggle(Toggle::D3D12SplitBufferTextureCopyForRowsPerImagePaddings, true);
+
+    // This workaround is only needed on Intel Gen12LP with driver prior to 30.0.101.1960.
+    // See http://crbug.com/dawn/949 for more information.
+    if (gpu_info::IsIntelGen12LP(vendorId, deviceId)) {
+        const gpu_info::D3DDriverVersion version = {30, 0, 101, 1960};
+        if (gpu_info::CompareD3DDriverVersion(vendorId, ToBackend(GetAdapter())->GetDriverVersion(),
+                                              version) == -1) {
+            SetToggle(Toggle::D3D12AllocateExtraMemoryFor2DArrayTexture, true);
+        }
+    }
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
@@ -851,6 +904,19 @@ bool Device::MayRequireDuplicationOfIndirectParameters() const {
 bool Device::ShouldDuplicateParametersForDrawIndirect(
     const RenderPipelineBase* renderPipelineBase) const {
     return ToBackend(renderPipelineBase)->UsesVertexOrInstanceIndex();
+}
+
+uint64_t Device::GetBufferCopyOffsetAlignmentForDepthStencil() const {
+    // On the D3D12 platforms where programmable MSAA is not supported, the source box specifying a
+    // portion of the depth texture must all be 0, or an error and a device lost will occur, so on
+    // these platforms the buffer copy offset must be a multiple of 512 when the texture is created
+    // with D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL. See https://crbug.com/dawn/727 for more
+    // details.
+    if (IsToggleEnabled(
+            Toggle::D3D12UseTempBufferInDepthStencilTextureAndBufferCopyWithNonZeroBufferOffset)) {
+        return D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
+    }
+    return DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil();
 }
 
 }  // namespace dawn::native::d3d12

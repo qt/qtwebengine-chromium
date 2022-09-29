@@ -6,6 +6,7 @@
 #include "absl/strings/string_view.h"
 #include "quiche/common/platform/api/quiche_bug_tracker.h"
 #include "quiche/common/platform/api/quiche_logging.h"
+#include "quiche/spdy/core/http2_header_block.h"
 #include "quiche/spdy/core/spdy_protocol.h"
 
 // Convenience macros for printing function arguments in log lines in the
@@ -58,12 +59,12 @@ auto LogContainer(const T& container, ItemLogger item_logger)
 
 namespace http2 {
 
+using spdy::Http2HeaderBlock;
 using spdy::SettingsMap;
 using spdy::SpdyAltSvcIR;
 using spdy::SpdyContinuationIR;
 using spdy::SpdyDataIR;
 using spdy::SpdyGoAwayIR;
-using spdy::SpdyHeaderBlock;
 using spdy::SpdyHeadersIR;
 using spdy::SpdyPingIR;
 using spdy::SpdyPriorityIR;
@@ -76,10 +77,10 @@ using spdy::SpdyWindowUpdateIR;
 
 namespace {
 
-// Defines how elements of SpdyHeaderBlocks are logged.
+// Defines how elements of Http2HeaderBlocks are logged.
 struct LogHeaderBlockEntry {
   void Log(std::ostream& out,
-           const SpdyHeaderBlock::value_type& entry) const {  // NOLINT
+           const Http2HeaderBlock::value_type& entry) const {  // NOLINT
     out << "\"" << entry.first << "\": \"" << entry.second << "\"";
   }
 };
@@ -331,6 +332,24 @@ bool Http2TraceLogger::OnUnknownFrame(SpdyStreamId stream_id,
       << "OnUnknownFrame:" << FORMAT_ARG(connection_id_)
       << FORMAT_ARG(stream_id) << FORMAT_INT_ARG(frame_type);
   return wrapped_->OnUnknownFrame(stream_id, frame_type);
+}
+
+void Http2TraceLogger::OnUnknownFrameStart(spdy::SpdyStreamId stream_id,
+                                           size_t length, uint8_t type,
+                                           uint8_t flags) {
+  HTTP2_TRACE_LOG(perspective_, is_enabled_)
+      << "OnUnknownFrameStart:" << FORMAT_ARG(connection_id_)
+      << FORMAT_ARG(stream_id) << FORMAT_ARG(length) << FORMAT_INT_ARG(type)
+      << FORMAT_INT_ARG(flags);
+  wrapped_->OnUnknownFrameStart(stream_id, length, type, flags);
+}
+
+void Http2TraceLogger::OnUnknownFramePayload(spdy::SpdyStreamId stream_id,
+                                             absl::string_view payload) {
+  HTTP2_TRACE_LOG(perspective_, is_enabled_)
+      << "OnUnknownFramePayload:" << FORMAT_ARG(connection_id_)
+      << FORMAT_ARG(stream_id) << " length=" << payload.size();
+  wrapped_->OnUnknownFramePayload(stream_id, payload);
 }
 
 void Http2TraceLogger::LogReceivedHeaders() const {

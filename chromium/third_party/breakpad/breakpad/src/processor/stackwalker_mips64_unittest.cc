@@ -645,8 +645,10 @@ struct CFIFixture: public StackwalkerMIPSFixture {
     EXPECT_EQ(0x00405000U, frame1->function_base);
   }
 
-  // The values we expect to find for the caller's registers.
-  MDRawContextMIPS expected;
+  // The values we expect to find for the caller's registers. Forcibly
+  // default-init it, since it's POD and not all bits are always overwritten by
+  // the constructor.
+  MDRawContextMIPS expected{};
 
   // The validity mask for expected.
   int expected_validity;

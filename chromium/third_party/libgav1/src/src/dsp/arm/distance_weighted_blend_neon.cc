@@ -55,15 +55,17 @@ inline uint8x8_t ComputeWeightedAverage8(const int16x8_t pred0,
   return vqrshrun_n_s16(upscaled_average, kInterPostRoundBit);
 }
 
-template <int width, int height>
+template <int width>
 inline void DistanceWeightedBlendSmall_NEON(
     const int16_t* LIBGAV1_RESTRICT prediction_0,
-    const int16_t* LIBGAV1_RESTRICT prediction_1, const int16x8_t weight,
-    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t dest_stride) {
+    const int16_t* LIBGAV1_RESTRICT prediction_1, const int height,
+    const int16x8_t weight, void* LIBGAV1_RESTRICT const dest,
+    const ptrdiff_t dest_stride) {
   auto* dst = static_cast<uint8_t*>(dest);
   constexpr int step = 16 / width;
 
-  for (int y = 0; y < height; y += step) {
+  int y = height;
+  do {
     const int16x8_t src_00 = vld1q_s16(prediction_0);
     const int16x8_t src_10 = vld1q_s16(prediction_1);
     prediction_0 += 8;
@@ -92,7 +94,8 @@ inline void DistanceWeightedBlendSmall_NEON(
       vst1_u8(dst, result1);
       dst += dest_stride;
     }
-  }
+    y -= step;
+  } while (y != 0);
 }
 
 inline void DistanceWeightedBlendLarge_NEON(
@@ -135,44 +138,16 @@ inline void DistanceWeightedBlend_NEON(
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   // Upscale the weight for vqdmulh.
   const int16x8_t weight = vdupq_n_s16(weight_0 << 11);
-  // TODO(johannkoenig): Investigate the branching. May be fine to call with a
-  // variable height.
   if (width == 4) {
-    if (height == 4) {
-      DistanceWeightedBlendSmall_NEON<4, 4>(pred_0, pred_1, weight, dest,
-                                            dest_stride);
-    } else if (height == 8) {
-      DistanceWeightedBlendSmall_NEON<4, 8>(pred_0, pred_1, weight, dest,
-                                            dest_stride);
-    } else {
-      assert(height == 16);
-      DistanceWeightedBlendSmall_NEON<4, 16>(pred_0, pred_1, weight, dest,
-                                             dest_stride);
-    }
+    DistanceWeightedBlendSmall_NEON<4>(pred_0, pred_1, height, weight, dest,
+                                       dest_stride);
     return;
   }
 
   if (width == 8) {
-    switch (height) {
-      case 4:
-        DistanceWeightedBlendSmall_NEON<8, 4>(pred_0, pred_1, weight, dest,
-                                              dest_stride);
-        return;
-      case 8:
-        DistanceWeightedBlendSmall_NEON<8, 8>(pred_0, pred_1, weight, dest,
-                                              dest_stride);
-        return;
-      case 16:
-        DistanceWeightedBlendSmall_NEON<8, 16>(pred_0, pred_1, weight, dest,
-                                               dest_stride);
-        return;
-      default:
-        assert(height == 32);
-        DistanceWeightedBlendSmall_NEON<8, 32>(pred_0, pred_1, weight, dest,
-                                               dest_stride);
-
-        return;
-    }
+    DistanceWeightedBlendSmall_NEON<8>(pred_0, pred_1, height, weight, dest,
+                                       dest_stride);
+    return;
   }
 
   DistanceWeightedBlendLarge_NEON(pred_0, pred_1, weight, width, height, dest,

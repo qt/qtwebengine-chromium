@@ -21,6 +21,7 @@
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/file_utils.h"
+#include "perfetto/ext/base/pipe.h"
 #include "perfetto/ext/base/string_utils.h"
 
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
@@ -105,11 +106,14 @@ CheckCpuOptimizations() {
   //  Volume 2A: Instruction Set Reference, A-M CPUID).
   PERFETTO_GETCPUID(eax, ebx, ecx, edx, 7, 0);
   const bool have_avx2 = have_avx && ((ebx >> 5) & 0x1);
+  const bool have_bmi = (ebx >> 3) & 0x1;
+  const bool have_bmi2 = (ebx >> 8) & 0x1;
 
-  if (!have_sse4_2 || !have_popcnt || !have_avx2) {
+  if (!have_sse4_2 || !have_popcnt || !have_avx2 || !have_bmi || !have_bmi2) {
     fprintf(
         stderr,
-        "This executable requires a X86_64 cpu that supports SSE4.2 and AVX2.\n"
+        "This executable requires a x86_64 cpu that supports SSE4.2, BMI2 and "
+        "AVX2.\n"
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
         "On MacOS, this might be caused by running x86_64 binaries on arm64.\n"
         "See https://github.com/google/perfetto/issues/294 for more.\n"
@@ -187,6 +191,7 @@ void Daemonize(std::function<int()> parent_cb) {
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
+  Pipe pipe = Pipe::Create(Pipe::kBothBlock);
   pid_t pid;
   switch (pid = fork()) {
     case -1:
@@ -202,12 +207,24 @@ void Daemonize(std::function<int()> parent_cb) {
       // Do not accidentally close stdin/stdout/stderr.
       if (*null <= 2)
         null.release();
+      WriteAll(*pipe.wr, "1", 1);
       break;
     }
-    default:
+    default: {
+      // Wait for the child process to have reached the setsid() call. This is
+      // to avoid that 'adb shell perfetto -D' destroys the terminal (hence
+      // sending a SIGHUP to the child) before the child has detached from the
+      // terminal (see b/238644870).
+
+      // This is to unblock the read() below (with EOF, which will fail the
+      // CHECK) in the unlikely case of the child crashing before WriteAll("1").
+      pipe.wr.reset();
+      char one = '\0';
+      PERFETTO_CHECK(Read(*pipe.rd, &one, sizeof(one)) == 1 && one == '1');
       printf("%d\n", pid);
       int err = parent_cb();
       exit(err);
+    }
   }
 #else
   // Avoid -Wunreachable warnings.

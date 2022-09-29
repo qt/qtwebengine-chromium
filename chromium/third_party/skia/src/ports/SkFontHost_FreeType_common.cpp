@@ -93,6 +93,12 @@ const char* SkTraceFtrGetError(int e) {
 bool operator==(const FT_OpaquePaint& a, const FT_OpaquePaint& b) {
     return a.p == b.p && a.insert_root_transform == b.insert_root_transform;
 }
+
+// The stop_offset field is being upgraded to a larger representation in FreeType, and changed from
+// 2.14 to 16.16. Adjust the shift factor depending on size type.
+static_assert(sizeof(FT_Fixed) != sizeof(FT_F2Dot14));
+constexpr float kColorStopShift =
+    sizeof(FT_ColorStop::stop_offset) == sizeof(FT_F2Dot14) ? 1 << 14 : 1 << 16;
 #endif
 
 namespace {
@@ -551,7 +557,7 @@ bool colrv1_configure_skpaint(FT_Face face,
         FT_ColorStopIterator mutable_color_stop_iterator = colorStopIterator;
         while (FT_Get_Colorline_Stops(face, &color_stop, &mutable_color_stop_iterator)) {
             FT_UInt index = mutable_color_stop_iterator.current_color_stop - 1;
-            colorStopsSorted[index].pos = color_stop.stop_offset / float(1 << 14);
+            colorStopsSorted[index].pos = color_stop.stop_offset / kColorStopShift;
             FT_UInt16& palette_index = color_stop.color.palette_index;
             if (palette_index == kForegroundColorPaletteIndex) {
                 U8CPU newAlpha = SkColorGetA(foregroundColor) *
@@ -692,6 +698,44 @@ bool colrv1_configure_skpaint(FT_Face face,
                 return true;
             }
 
+            SkScalar colorStopRange = stops.back() - stops.front();
+            if (colorStopRange != 1 || stops.front() != 0.f) {
+                // For the Skia two-point caonical shader to understand the
+                // COLRv1 color stops we need to scale stops to 0 to 1 range and
+                // interpolate new centers and radii. Otherwise the shader
+                // clamps stops outside the range to 0 and 1 (larger interval)
+                // or repeats the outer stops at 0 and 1 if the (smaller
+                // interval).
+                SkVector startToEnd = end - start;
+                SkScalar radiusDiff = endRadius - startRadius;
+                SkScalar scaleFactor = 1 / colorStopRange;
+                SkScalar stopsStartOffset = stops.front();
+
+                SkVector startOffset = startToEnd;
+                startOffset.scale(stops.front());
+                SkVector endOffset = startToEnd;
+                endOffset.scale(stops.back());
+
+                // The order of the following computations is important in order to avoid
+                // overwriting start or startRadius before the second reassignment.
+                end = start + endOffset;
+                start = start + startOffset;
+                endRadius = startRadius + radiusDiff * stops.back();
+                startRadius = startRadius + radiusDiff * stops.front();
+
+                for (auto& stop : stops) {
+                    stop = (stop - stopsStartOffset) * scaleFactor;
+                }
+            }
+
+            // TODO(https://crbug.com/skia/13653): Interpolate a zero radius
+            // circle with manual color interpolation or upgrade the
+            // MakeTwoPointConical shader to understand negative radii.
+            if (startRadius < 0 || endRadius < 0) {
+                paint->setColor(SK_ColorTRANSPARENT);
+                return true;
+            }
+
             // An opaque color is needed to ensure the gradient is not modulated by alpha.
             paint->setColor(SK_ColorBLACK);
 
@@ -704,8 +748,16 @@ bool colrv1_configure_skpaint(FT_Face face,
             const FT_PaintSweepGradient& sweepGradient = colrPaint.u.sweep_gradient;
             SkPoint center = SkPoint::Make( SkFixedToScalar(sweepGradient.center.x),
                                            -SkFixedToScalar(sweepGradient.center.y));
+
+
             SkScalar startAngle = SkFixedToScalar(sweepGradient.start_angle * 180.0f);
             SkScalar endAngle = SkFixedToScalar(sweepGradient.end_angle * 180.0f);
+            if (SkGraphics::GetVariableColrV1Enabled()) {
+                // OpenType 1.9.1 adds a shift to the angle to ease specification of a 0 to 360
+                // degree sweep. We want to release that in sync with releasing variable COLRv1.
+                startAngle += 180.0f;
+                endAngle += 180.0f;
+            }
 
             std::vector<SkScalar> stops;
             std::vector<SkColor> colors;
@@ -721,35 +773,108 @@ bool colrv1_configure_skpaint(FT_Face face,
             // An opaque color is needed to ensure the gradient is not modulated by alpha.
             paint->setColor(SK_ColorBLACK);
 
-            // Prepare angles to be within range for the shader.
-            auto clampAngleToRange = [](SkScalar angle) {
-                SkScalar clampedAngle = SkScalarMod(angle, 360.f);
-                if (clampedAngle < 0) {
-                    return clampedAngle + 360.f;
+            if (SkGraphics::GetVariableColrV1Enabled()) {
+                // New (Var)SweepGradient implementation compliant with OpenType 1.9.1 from here.
+                // The plan is to release this in sync with variable COLRv1 support.
+
+                // The shader expects stops from 0 to 1, so we need to account for
+                // minimum and maximum stop positions being different from 0 and
+                // 1. We do that by scaling minimum and maximum stop positions to
+                // the 0 to 1 interval and scaling the angles inverse proportionally.
+
+                // 1) Scale angles to their equivalent positions if stops were from 0 to 1.
+
+                SkScalar sectorAngle = endAngle - startAngle;
+                SkTileMode tileMode = ToSkTileMode(sweepGradient.colorline.extend);
+                if (sectorAngle == 0 && tileMode != SkTileMode::kClamp) {
+                    // "If the ColorLine's extend mode is reflect or repeat and start and end angle
+                    // are equal, nothing is drawn.".
+                    paint->setColor(SK_ColorTRANSPARENT);
+                    return true;
                 }
-                return clampedAngle;
-            };
-            startAngle = clampAngleToRange(startAngle);
-            endAngle = clampAngleToRange(endAngle);
-            SkScalar sectorAngle =
-                    endAngle > startAngle ? endAngle - startAngle : endAngle + 360.0f - startAngle;
 
-            /* https://docs.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients
-             * "The angles are expressed in counter-clockwise degrees from the
-             * direction of the positive x-axis on the design grid. [...]  The
-             * color line progresses from the start angle to the end angle in
-             * the counter-clockwise direction;"
-             */
 
-            SkMatrix localMatrix;
-            localMatrix.postRotate(startAngle, center.x(), center.y());
-            /* Mirror along x-axis to change angle direction. */
-            localMatrix.postScale(1, -1, center.x(), center.y());
-            SkTileMode tileMode = ToSkTileMode(sweepGradient.colorline.extend);
+                SkScalar startAngleScaled = startAngle + sectorAngle * stops.front();
+                SkScalar endAngleScaled = startAngle + sectorAngle * stops.back();
 
-            paint->setShader(SkGradientShader::MakeSweep(
-                    center.x(), center.y(), colors.data(), stops.data(), stops.size(),
-                    tileMode, 0, sectorAngle, 0, &localMatrix));
+                // 2) Scale stops accordingly to 0 to 1 range.
+                SkScalar scaleFactor = 1 / (stops.back() - stops.front());
+                SkScalar startOffset = stops.front();
+
+                for (SkScalar& stop : stops) {
+                    stop = (stop - startOffset) * scaleFactor;
+                }
+
+                // 3) If start angle is larger then end angle, the scaler won't accept it and will
+                // return nullptr. In order to draw this and make the shader accept it, need to swap
+                // start and end angle and reverse the list of colors.
+                if (startAngleScaled > endAngleScaled) {
+                    std::swap(startAngleScaled, endAngleScaled);
+                    std::reverse(colors.begin(), colors.end());
+                }
+                /* https://docs.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients
+                 * "The angles are expressed in counter-clockwise degrees from the
+                 * direction of the positive x-axis on the design grid. [...]  The
+                 * color line progresses from the start angle to the end angle in
+                 * the counter-clockwise direction;" - convert angles and stops from
+                 * counter-clockwise to clockwise for the shader. */
+                std::swap(startAngleScaled, endAngleScaled);
+                startAngleScaled = 360.f - startAngleScaled;
+                endAngleScaled = 360.f - endAngleScaled;
+                std::reverse(stops.begin(), stops.end());
+                std::reverse(colors.begin(), colors.end());
+                for (auto& stop : stops) {
+                    stop = 1.0f - stop;
+                }
+
+                paint->setShader(SkGradientShader::MakeSweep(center.x(), center.y(),
+                                                             colors.data(),
+                                                             stops.data(), stops.size(),
+                                                             tileMode,
+                                                             startAngleScaled,
+                                                             endAngleScaled,
+                                                             0, nullptr));
+
+            } else {
+                // Old (Var)SweepGradient implementation, which is aiming to be compliant with
+                // OpenType 1.9. but ambiguities and issues were found in the spec resolved in
+                // 1.9.1. see above. TODO(drott): This else block is to be removed when the new
+                // implementation has shipped in Chrome.
+
+                // Prepare angles to be within range for the shader.
+                auto clampAngleToRange = [](SkScalar angle) {
+                    SkScalar clampedAngle = SkScalarMod(angle, 360.f);
+                    if (clampedAngle < 0) {
+                        return clampedAngle + 360.f;
+                    }
+                    return clampedAngle;
+                };
+                startAngle = clampAngleToRange(startAngle);
+                endAngle = clampAngleToRange(endAngle);
+                SkScalar sectorAngle = endAngle > startAngle ? endAngle - startAngle
+                                                             : endAngle + 360.0f - startAngle;
+
+                /* https://docs.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients
+                 * "The angles are expressed in counter-clockwise degrees from the
+                 * direction of the positive x-axis on the design grid. [...]  The
+                 * color line progresses from the start angle to the end angle in
+                 * the counter-clockwise direction;"
+                 */
+
+                SkMatrix localMatrix;
+                localMatrix.postRotate(startAngle, center.x(), center.y());
+                /* Mirror along x-axis to change angle direction. */
+                localMatrix.postScale(1, -1, center.x(), center.y());
+                SkTileMode tileMode = ToSkTileMode(sweepGradient.colorline.extend);
+
+                paint->setShader(SkGradientShader::MakeSweep(center.x(), center.y(),
+                                                             colors.data(),
+                                                             stops.data(), stops.size(),
+                                                             tileMode,
+                                                             0,
+                                                             sectorAngle,
+                                                             0, &localMatrix));
+            }
             return true;
         }
         default: {

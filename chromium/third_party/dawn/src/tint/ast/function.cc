@@ -23,14 +23,15 @@ TINT_INSTANTIATE_TYPEINFO(tint::ast::Function);
 namespace tint::ast {
 
 Function::Function(ProgramID pid,
+                   NodeID nid,
                    const Source& src,
                    Symbol sym,
-                   VariableList parameters,
+                   utils::VectorRef<const Parameter*> parameters,
                    const Type* return_ty,
                    const BlockStatement* b,
-                   AttributeList attrs,
-                   AttributeList return_type_attrs)
-    : Base(pid, src),
+                   utils::VectorRef<const Attribute*> attrs,
+                   utils::VectorRef<const Attribute*> return_type_attrs)
+    : Base(pid, nid, src),
       symbol(sym),
       params(std::move(parameters)),
       return_type(return_ty),
@@ -40,7 +41,7 @@ Function::Function(ProgramID pid,
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, symbol, program_id);
     TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, body, program_id);
     for (auto* param : params) {
-        TINT_ASSERT(AST, param && param->is_const);
+        TINT_ASSERT(AST, tint::Is<Parameter>(param));
         TINT_ASSERT_PROGRAM_IDS_EQUAL_IF_VALID(AST, param, program_id);
     }
     TINT_ASSERT(AST, symbol.IsValid());

@@ -144,9 +144,6 @@ void GrDirectContext::abandonContext() {
 
     fGpu->disconnect(GrGpu::DisconnectType::kAbandon);
 
-    // Must be after GrResourceCache::abandonAll().
-    fMappedBufferManager.reset();
-
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
     }
@@ -546,7 +543,7 @@ static bool update_texture_with_pixmaps(GrDirectContext* context,
 
     skgpu::Swizzle swizzle = context->priv().caps()->getReadSwizzle(format, ct);
     GrSurfaceProxyView view(std::move(proxy), textureOrigin, swizzle);
-    skgpu::SurfaceContext surfaceContext(context, std::move(view), src[0].info().colorInfo());
+    skgpu::v1::SurfaceContext surfaceContext(context, std::move(view), src[0].info().colorInfo());
     SkAutoSTArray<15, GrCPixmap> tmpSrc(numLevels);
     for (int i = 0; i < numLevels; ++i) {
         tmpSrc[i] = src[i];
@@ -968,7 +965,7 @@ SkString GrDirectContext::dump() const {
     SkJSONWriter writer(&stream, SkJSONWriter::Mode::kPretty);
     writer.beginObject();
 
-    writer.appendString("backend", GrBackendApiToStr(this->backend()));
+    writer.appendCString("backend", GrBackendApiToStr(this->backend()));
 
     writer.appendName("caps");
     this->caps()->dumpJSON(&writer);

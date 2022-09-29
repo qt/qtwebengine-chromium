@@ -30,10 +30,10 @@
 #include "include/ports/SkImageGeneratorWIC.h"
 #include "include/private/SkImageInfoPriv.h"
 #include "include/private/SkTLogic.h"
-#include "include/third_party/skcms/skcms.h"
 #include "include/utils/SkNullCanvas.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "include/utils/SkRandom.h"
+#include "modules/skcms/skcms.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "src/codec/SkCodecImageGenerator.h"
 #include "src/codec/SkSwizzler.h"
@@ -41,8 +41,8 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkOpts.h"
-#include "src/core/SkPictureCommon.h"
 #include "src/core/SkPictureData.h"
+#include "src/core/SkPicturePriv.h"
 #include "src/core/SkRecordDraw.h"
 #include "src/core/SkRecorder.h"
 #include "src/core/SkTLazy.h"
@@ -57,6 +57,7 @@
 #include "tools/DDLTileHelper.h"
 #include "tools/Resources.h"
 #include "tools/RuntimeBlendUtils.h"
+#include "tools/ToolUtils.h"
 #include "tools/UrlDataManager.h"
 #include "tools/debugger/DebugCanvas.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
@@ -1261,7 +1262,7 @@ Result SkottieSrc::draw(GrDirectContext*, SkCanvas* canvas) const {
     // frame progression. The film strip will still be in order left-to-right,
     // top-down, just not drawn in that order.
     static constexpr int frameOrder[] = { 4, 0, 3, 1, 2 };
-    static_assert(SK_ARRAY_COUNT(frameOrder) == kTileCount, "");
+    static_assert(std::size(frameOrder) == kTileCount, "");
 
     for (int i = 0; i < kTileCount; ++i) {
         const SkScalar y = frameOrder[i] * kTileSize;
@@ -2150,7 +2151,8 @@ Result GraphiteSink::draw(const Src& src,
         return Result::Fatal("Could not create a context.");
     }
 
-    std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
+    std::unique_ptr<skgpu::graphite::Recorder> recorder =
+                                context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
     if (!recorder) {
         return Result::Fatal("Could not create a recorder.");
     }
@@ -2167,7 +2169,7 @@ Result GraphiteSink::draw(const Src& src,
             return result;
         }
 
-        // For now we cast and call directly into Surface. Once we have a been idea of
+        // For now we cast and call directly into Surface. Once we have a better idea of
         // what the public API for synchronous graphite readPixels we can update this call to use
         // that instead.
         SkPixmap pm;

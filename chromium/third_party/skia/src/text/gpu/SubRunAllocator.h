@@ -88,12 +88,18 @@ public:
     template <int size>
     using Storage = std::array<char, PlatformMinimumSizeWithOverhead(size, 1)>;
 
+    // Returns true if n * sizeof(T) will fit in an allocation block.
+    template <typename T>
+    static bool WillCountFit(int n) {
+        constexpr int kMaxN = kMaxByteSize / sizeof(T);
+        return 0 <= n && n < kMaxN;
+    }
+
     // Returns a pointer to memory suitable for holding n Ts.
     template <typename T> char* allocateBytesFor(int n = 1) {
         static_assert(alignof(T) <= kMaxAlignment, "Alignment is too big for arena");
         static_assert(sizeof(T) < kMaxByteSize, "Size is too big for arena");
-        constexpr int kMaxN = kMaxByteSize / sizeof(T);
-        SkASSERT_RELEASE(0 <= n && n < kMaxN);
+        SkASSERT_RELEASE(WillCountFit<T>(n));
 
         int size = n ? n * sizeof(T) : 1;
         return this->allocateBytes(size, alignof(T));
@@ -286,6 +292,20 @@ private:
     BagOfBytes fAlloc;
 };
 
+// Helper for defining allocators with inline/reserved storage.
+// For argument declarations, stick to the base type (SubRunAllocator).
+// Note: Inheriting from the storage first means the storage will outlive the
+// SubRunAllocator, letting ~SubRunAllocator read it as it calls destructors.
+// (This is mostly only relevant for strict tools like MSAN.)
+template <size_t InlineStorageSize, size_t InlineStorageAlignment>
+class STSubRunAllocator : private std::array<char,
+                                             BagOfBytes::PlatformMinimumSizeWithOverhead(
+                                                     InlineStorageSize, InlineStorageAlignment)>,
+                          public SubRunAllocator {
+public:
+    explicit STSubRunAllocator(size_t firstHeapAllocation = InlineStorageSize)
+            : SubRunAllocator{this->data(), SkToInt(this->size()), SkToInt(firstHeapAllocation)} {}
+};
 }  // namespace sktext::gpu
 
 #endif // sktext_gpu_SubRunAllocator_DEFINED

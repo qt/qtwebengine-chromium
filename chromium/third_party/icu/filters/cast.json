@@ -873,8 +873,7 @@
         "-/ExemplarCharactersNumbers",
         "-/ExemplarCharactersPunctuation",
         "-/measurementSystemNames",
-        "-/NumberElements/minimalPairs",
-        "-/delimiters"
+        "-/NumberElements/minimalPairs"
       ]
     },
 // Based on filter_display_language_names

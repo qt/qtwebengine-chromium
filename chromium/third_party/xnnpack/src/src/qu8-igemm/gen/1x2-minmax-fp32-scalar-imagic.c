@@ -9,10 +9,9 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/math.h>
 #include <xnnpack/gemm.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qu8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
@@ -43,8 +42,8 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
 
   const int32_t vb_zero_point = params->fp32_scalar_imagic.kernel_zero_point;
   do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
+    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
+    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
     w = (const void*) ((const int32_t*) w + 2);
 
     size_t p = ks;
@@ -83,8 +82,8 @@ void xnn_qu8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
     vfpacc0x0 += vmagic_bias;
     vfpacc0x1 += vmagic_bias;
 
-    int32_t vout0x0 = (int32_t) fp32_to_bits(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) fp32_to_bits(vfpacc0x1);
+    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
+    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
 
     const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
     vout0x0 = math_max_s32(vout0x0, vmagic_min);

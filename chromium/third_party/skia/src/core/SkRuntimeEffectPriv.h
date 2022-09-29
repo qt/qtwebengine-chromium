@@ -17,23 +17,33 @@
 #ifdef SK_ENABLE_SKSL
 
 namespace SkSL {
-class Variable;
 class Context;
+class Variable;
+struct Program;
 }
 
+class SkCapabilities;
 struct SkColorSpaceXformSteps;
 
 class SkRuntimeEffectPriv {
 public:
     // Helper function when creating an effect for a GrSkSLFP that verifies an effect will
     // implement the constant output for constant input optimization flag.
-    static bool SupportsConstantOutputForConstantInput(sk_sp<SkRuntimeEffect> effect) {
+    static bool SupportsConstantOutputForConstantInput(const SkRuntimeEffect* effect) {
         return effect->getFilterColorProgram();
+    }
+
+    static uint32_t Hash(const SkRuntimeEffect& effect) {
+        return effect.hash();
+    }
+
+    static const SkSL::Program& Program(const SkRuntimeEffect& effect) {
+        return *effect.fBaseProgram;
     }
 
     static SkRuntimeEffect::Options ES3Options() {
         SkRuntimeEffect::Options options;
-        options.enforceES2Restrictions = false;
+        options.maxVersionAllowed = SkSL::Version::k300;
         return options;
     }
 
@@ -53,6 +63,9 @@ public:
     static sk_sp<const SkData> TransformUniforms(SkSpan<const SkRuntimeEffect::Uniform> uniforms,
                                                  sk_sp<const SkData> originalData,
                                                  const SkColorSpace* dstCS);
+
+    static bool CanDraw(const SkCapabilities*, const SkSL::Program*);
+    static bool CanDraw(const SkCapabilities*, const SkRuntimeEffect*);
 };
 
 // These internal APIs for creating runtime effects vary from the public API in two ways:
@@ -72,49 +85,17 @@ inline sk_sp<SkRuntimeEffect> SkMakeCachedRuntimeEffect(SkRuntimeEffect::Result 
 }
 
 // Internal API that assumes (and asserts) that the shader code is valid, but does no internal
-// caching. Used when the caller will cache the result in a static variable.
-inline sk_sp<SkRuntimeEffect> SkMakeRuntimeEffect(
+// caching. Used when the caller will cache the result in a static variable. Ownership is passed to
+// the caller; the effect will be leaked if it the pointer is not stored or explicitly deleted.
+inline SkRuntimeEffect* SkMakeRuntimeEffect(
         SkRuntimeEffect::Result (*make)(SkString, const SkRuntimeEffect::Options&),
         const char* sksl,
         SkRuntimeEffect::Options options = SkRuntimeEffect::Options{}) {
     SkRuntimeEffectPriv::UsePrivateRTShaderModule(&options);
     auto result = make(SkString{sksl}, options);
     SkASSERTF(result.effect, "%s", result.errorText.c_str());
-    return result.effect;
+    return result.effect.release();
 }
-
-// This is mostly from skvm's rgb->hsl code, with some GPU-related finesse pulled from
-// GrHighContrastFilterEffect.fp, see next comment.
-inline constexpr char kRGB_to_HSL_sksl[] =
-    "half3 rgb_to_hsl(half3 c) {"
-        "half mx = max(max(c.r,c.g),c.b),"
-        "     mn = min(min(c.r,c.g),c.b),"
-        "      d = mx-mn,                "
-        "   invd = 1.0 / d,              "
-        " g_lt_b = c.g < c.b ? 6.0 : 0.0;"
-
-        // We'd prefer to write these tests like `mx == c.r`, but on some GPUs max(x,y) is
-        // not always equal to either x or y.  So we use long form, c.r >= c.g && c.r >= c.b.
-        "half h = (1/6.0) * (mx == mn                 ? 0.0 :"
-        "     /*mx==c.r*/    c.r >= c.g && c.r >= c.b ? invd * (c.g - c.b) + g_lt_b :"
-        "     /*mx==c.g*/    c.g >= c.b               ? invd * (c.b - c.r) + 2.0  "
-        "     /*mx==c.b*/                             : invd * (c.r - c.g) + 4.0);"
-
-        "half sum = mx+mn,"
-        "       l = sum * 0.5,"
-        "       s = mx == mn ? 0.0"
-        "                    : d / (l > 0.5 ? 2.0 - sum : sum);"
-        "return half3(h,s,l);"
-    "}";
-
-//This is straight out of GrHSLToRGBFilterEffect.fp.
-inline constexpr char kHSL_to_RGB_sksl[] =
-    "half3 hsl_to_rgb(half3 hsl) {"
-        "half  C = (1 - abs(2 * hsl.z - 1)) * hsl.y;"
-        "half3 p = hsl.xxx + half3(0, 2/3.0, 1/3.0);"
-        "half3 q = saturate(abs(fract(p) * 6 - 3) - 1);"
-        "return (q - 0.5) * C + hsl.z;"
-    "}";
 
 /**
  * Runtime effects are often long lived & cached. Individual color filters or FPs created from them

@@ -1125,8 +1125,6 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
       }
     }
 
-    // TODO(nisse): Introduce some buffer cache or buffer pool, to reduce
-    // allocations and/or copy operations.
     auto buffer = EncodedImageBuffer::Create(encoded_size);
 
     iter = NULL;
@@ -1156,10 +1154,15 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
         encoded_images_[encoder_idx].SetSpatialIndex(stream_idx);
         PopulateCodecSpecific(&codec_specific, *pkt, stream_idx, encoder_idx,
                               input_image.timestamp());
+        if (codec_specific.codecSpecific.VP8.temporalIdx != kNoTemporalIdx) {
+          encoded_images_[encoder_idx].SetTemporalIndex(
+              codec_specific.codecSpecific.VP8.temporalIdx);
+        }
         break;
       }
     }
     encoded_images_[encoder_idx].SetTimestamp(input_image.timestamp());
+    encoded_images_[encoder_idx].SetColorSpace(input_image.color_space());
     encoded_images_[encoder_idx].SetRetransmissionAllowed(
         retransmission_allowed);
 

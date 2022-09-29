@@ -18,6 +18,7 @@
 #include "include/private/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLGLSL.h"
@@ -28,6 +29,7 @@
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArrayCast.h"
+#include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -205,8 +207,10 @@ void GLSLCodeGenerator::writeExpression(const Expression& expr, Precedence paren
         case Expression::Kind::kConstructorArrayCast:
             this->writeExpression(*expr.as<ConstructorArrayCast>().argument(), parentPrecedence);
             break;
-        case Expression::Kind::kConstructorArray:
         case Expression::Kind::kConstructorCompound:
+            this->writeConstructorCompound(expr.as<ConstructorCompound>(), parentPrecedence);
+            break;
+        case Expression::Kind::kConstructorArray:
         case Expression::Kind::kConstructorMatrixResize:
         case Expression::Kind::kConstructorSplat:
         case Expression::Kind::kConstructorStruct:
@@ -732,6 +736,43 @@ void GLSLCodeGenerator::writeConstructorDiagonalMatrix(const ConstructorDiagonal
     this->writeAnyConstructor(c, parentPrecedence);
 }
 
+void GLSLCodeGenerator::writeConstructorCompound(const ConstructorCompound& c,
+                                                 Precedence parentPrecedence) {
+    // If this is a 2x2 matrix constructor containing a single argument...
+    if (c.type().isMatrix() && c.arguments().size() == 1) {
+        // ... and that argument is a vec4...
+        const Expression& expr = *c.arguments().front();
+        if (expr.type().isVector() && expr.type().columns() == 4) {
+            // ... let's rewrite the cast to dodge issues on very old GPUs. (skia:13559)
+            if (Analysis::IsTrivialExpression(expr)) {
+                this->writeType(c.type());
+                this->write("(");
+                this->writeExpression(expr, Precedence::kPostfix);
+                this->write(".xy, ");
+                this->writeExpression(expr, Precedence::kPostfix);
+                this->write(".zw)");
+            } else {
+                std::string tempVec = "_tempVec" + std::to_string(fVarCount++);
+                this->fFunctionHeader += std::string("    ") + this->getTypePrecision(expr.type()) +
+                                         this->getTypeName(expr.type()) + " " + tempVec + ";\n";
+                this->write("((");
+                this->write(tempVec);
+                this->write(" = ");
+                this->writeExpression(expr, Precedence::kAssignment);
+                this->write("), ");
+                this->writeType(c.type());
+                this->write("(");
+                this->write(tempVec);
+                this->write(".xy, ");
+                this->write(tempVec);
+                this->write(".zw))");
+            }
+            return;
+        }
+    }
+    this->writeAnyConstructor(c, parentPrecedence);
+}
+
 void GLSLCodeGenerator::writeCastConstructor(const AnyConstructor& c, Precedence parentPrecedence) {
     const auto arguments = c.argumentSpan();
     SkASSERT(arguments.size() == 1);
@@ -839,7 +880,7 @@ void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
             }
             break;
         default:
-            this->write(ref.variable()->name());
+            this->write(ref.variable()->mangledName());
             break;
     }
 }
@@ -1063,7 +1104,7 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
         }
         this->writeTypePrecision(*type);
         this->writeType(*type);
-        this->write(" " + std::string(param->name()));
+        this->write(" " + std::string(param->mangledName()));
         for (int s : sizes) {
             this->write("[" + std::to_string(s) + "]");
         }
@@ -1143,6 +1184,15 @@ void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
         }
     }
 
+    if (modifiers.fFlags & Modifiers::kReadOnly_Flag) {
+        this->write("readonly ");
+    }
+    if (modifiers.fFlags & Modifiers::kWriteOnly_Flag) {
+        this->write("writeonly ");
+    }
+    if (modifiers.fFlags & Modifiers::kBuffer_Flag) {
+        this->write("buffer ");
+    }
 }
 
 void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
@@ -1220,7 +1270,7 @@ void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool glob
     this->writeTypePrecision(var.baseType());
     this->writeType(var.baseType());
     this->write(" ");
-    this->write(var.var().name());
+    this->write(var.var().mangledName());
     if (var.arraySize() > 0) {
         this->write("[");
         this->write(std::to_string(var.arraySize()));

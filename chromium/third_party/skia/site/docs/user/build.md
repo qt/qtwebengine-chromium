@@ -123,9 +123,10 @@ If you do not have an NDK and have access to CIPD, you can use one of these
 commands to fetch the NDK our bots use:
 
 ```
-./bin/sk asset download android_ndk_linux /tmp/ndk
-./bin/sk asset download android_ndk_darwin /tmp/ndk
-./bin/sk.exe asset download android_ndk_windows C:/ndk
+./bin/fetch-sk
+./bin/sk asset download android_ndk_linux /tmp/ndk     # on Linux
+./bin/sk asset download android_ndk_darwin /tmp/ndk    # on Mac
+./bin/sk.exe asset download android_ndk_windows C:/ndk # on Windows
 ```
 
 When generating your GN build files, pass the path to your `ndk` and your
@@ -254,6 +255,9 @@ sudo mount -i -o remount,exec /home/chronos
 
 Mac users may want to pass `--ide=xcode` to `bin/gn gen` to generate an Xcode
 project.
+
+Googlers should see [go/skia-corp-xcode](http://go/skia-corp-xcode) for
+instructions on setting up Xcode on a corp machine.
 
 ## iOS
 

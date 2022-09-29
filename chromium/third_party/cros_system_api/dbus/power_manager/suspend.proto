@@ -86,7 +86,7 @@ message SuspendImminent {
 // a suspend request. Each SuspendImminent signal will be followed by a
 // SuspendDone signal.
 message SuspendDone {
-  // Next ID to use: 4
+  // Next ID to use: 5
 
   enum WakeupType {
     UNKNOWN = 0;
@@ -97,6 +97,14 @@ message SuspendDone {
     // Resume is triggered by non-input devices (RTC for example).
     OTHER = 3;
   }
+
+  enum SuspendState {
+    // Suspended to RAM, S0ix or S3.
+    TO_RAM = 0;
+    // Hibernated to disk, S4 or lower.
+    TO_DISK = 1;
+  }
+
   // Unique ID corresponding to the suspend request.
   optional int32 suspend_id = 1;
 
@@ -104,8 +112,11 @@ message SuspendDone {
   // base::TimeDelta::ToInternalValue().
   optional int64 suspend_duration = 2;
 
-   // Type of wakeup source.
+  // Type of wakeup source.
   optional WakeupType wakeup_type = 3;
+
+  // Deepest suspend state that occurred.
+  optional SuspendState deepest_state = 4;
 }
 
 // Included in calls to powerd's RegisterSuspendDelay method.

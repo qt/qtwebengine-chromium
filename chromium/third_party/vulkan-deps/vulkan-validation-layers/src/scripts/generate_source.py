@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021 The Khronos Group Inc.
-# Copyright (c) 2021 Valve Corporation
-# Copyright (c) 2021 LunarG, Inc.
-# Copyright (c) 2021 Google Inc.
+# Copyright (c) 2021-2022 The Khronos Group Inc.
+# Copyright (c) 2021-2022 Valve Corporation
+# Copyright (c) 2021-2022 LunarG, Inc.
+# Copyright (c) 2021-2022 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,8 +30,7 @@ import difflib
 import common_codegen
 
 # files to exclude from --verify check
-verify_exclude = ['.clang-format',
-                  'gpu_pre_draw_shader.h'] # Requires glslangvalidator, so updated manually when needed
+verify_exclude = ['.clang-format']
 
 def main(argv):
     parser = argparse.ArgumentParser(description='Generate source code for this repository')
@@ -45,7 +44,6 @@ def main(argv):
     gen_cmds = [*[[common_codegen.repo_relative('scripts/lvl_genvk.py'),
                    '-registry', os.path.abspath(os.path.join(args.registry,  'vk.xml')),
                    '-grammar', os.path.abspath(os.path.join(args.grammar,  'spirv.core.grammar.json')),
-                   '-warnExtensions', 'VK_KHR_dynamic_rendering',
                    '-quiet',
                    filename] for filename in ["chassis.cpp",
                                               "chassis.h",
@@ -120,7 +118,11 @@ def main(argv):
         for filename in sorted((temp_files | repo_files) - set(verify_exclude)):
             temp_filename = os.path.join(temp_dir, filename)
             repo_filename = os.path.join(repo_dir, filename)
-            if filename not in repo_files:
+            if filename.startswith('gpu_'):
+                # The shaders requires glslangvalidator,
+                # so updated manually with generate_spirv when needed
+                continue
+            elif filename not in repo_files:
                 print('ERROR: Missing repo file', filename)
                 files_match = False
             elif filename not in temp_files:

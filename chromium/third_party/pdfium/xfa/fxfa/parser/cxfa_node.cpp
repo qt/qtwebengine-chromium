@@ -7,6 +7,7 @@
 #include "xfa/fxfa/parser/cxfa_node.h"
 
 #include <math.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <map>
@@ -17,6 +18,7 @@
 
 #include "core/fxcrt/autorestorer.h"
 #include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/stl_util.h"
@@ -388,9 +390,9 @@ inline uint8_t GetInvBase64(uint8_t x) {
   return (x & 128) == 0 ? kInvBase64[x] : 255;
 }
 
-std::vector<uint8_t, FxAllocAllocator<uint8_t>> XFA_RemoveBase64Whitespace(
+DataVector<uint8_t> XFA_RemoveBase64Whitespace(
     pdfium::span<const uint8_t> spStr) {
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> result;
+  DataVector<uint8_t> result;
   result.reserve(spStr.size());
   for (uint8_t ch : spStr) {
     if (GetInvBase64(ch) != 255 || ch == '=')
@@ -399,14 +401,12 @@ std::vector<uint8_t, FxAllocAllocator<uint8_t>> XFA_RemoveBase64Whitespace(
   return result;
 }
 
-std::vector<uint8_t, FxAllocAllocator<uint8_t>> XFA_Base64Decode(
-    const ByteString& bsStr) {
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> result;
+DataVector<uint8_t> XFA_Base64Decode(const ByteString& bsStr) {
+  DataVector<uint8_t> result;
   if (bsStr.IsEmpty())
     return result;
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> buffer =
-      XFA_RemoveBase64Whitespace(bsStr.raw_span());
+  DataVector<uint8_t> buffer = XFA_RemoveBase64Whitespace(bsStr.raw_span());
   result.reserve(3 * (buffer.size() / 4));
 
   uint32_t dwLimb = 0;
@@ -482,7 +482,7 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageData(CXFA_FFDoc* pDoc,
   ByteString bsData;  // Must outlive |pImageFileRead|.
 
   // Must outlive |pImageFileRead|.
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> buffer;
+  DataVector<uint8_t> buffer;
 
   RetainPtr<IFX_SeekableReadStream> pImageFileRead;
   if (wsImage.GetLength() > 0) {
@@ -876,8 +876,8 @@ class CXFA_ImageLayoutData final : public CXFA_WidgetLayoutData {
     if (!image)
       return false;
 
-    pNode->SetImageImage(XFA_LoadImageData(doc, image, m_bNamedImage,
-                                           m_iImageXDpi, m_iImageYDpi));
+    pNode->SetLayoutImage(XFA_LoadImageData(doc, image, m_bNamedImage,
+                                            m_iImageXDpi, m_iImageYDpi));
     return !!m_pDIBitmap;
   }
 
@@ -959,8 +959,8 @@ class CXFA_ImageEditData final : public CXFA_FieldLayoutData {
     if (!image)
       return false;
 
-    pNode->SetImageEditImage(XFA_LoadImageData(doc, image, m_bNamedImage,
-                                               m_iImageXDpi, m_iImageYDpi));
+    pNode->SetEditImage(XFA_LoadImageData(doc, image, m_bNamedImage,
+                                          m_iImageXDpi, m_iImageYDpi));
     return !!m_pDIBitmap;
   }
 
@@ -3395,50 +3395,50 @@ CFX_SizeF CXFA_Node::CalculateImageSize(float img_width,
 }
 
 bool CXFA_Node::CalculateImageAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize) {
-  if (!GetImageImage())
-    LoadImageImage(doc);
+  if (!GetLayoutImage())
+    LoadLayoutImage(doc);
 
   pSize->clear();
-  RetainPtr<CFX_DIBitmap> pBitmap = GetImageImage();
+  RetainPtr<CFX_DIBitmap> pBitmap = GetLayoutImage();
   if (!pBitmap)
     return CalculateWidgetAutoSize(pSize);
 
   *pSize = CalculateImageSize(pBitmap->GetWidth(), pBitmap->GetHeight(),
-                              GetImageDpi());
+                              GetLayoutImageDpi());
   return CalculateWidgetAutoSize(pSize);
 }
 
 bool CXFA_Node::CalculateImageEditAutoSize(CXFA_FFDoc* doc, CFX_SizeF* pSize) {
-  if (!GetImageEditImage())
-    LoadImageEditImage(doc);
+  if (!GetEditImage())
+    LoadEditImage(doc);
 
   pSize->clear();
-  RetainPtr<CFX_DIBitmap> pBitmap = GetImageEditImage();
+  RetainPtr<CFX_DIBitmap> pBitmap = GetEditImage();
   if (!pBitmap)
     return CalculateFieldAutoSize(doc, pSize);
 
   *pSize = CalculateImageSize(pBitmap->GetWidth(), pBitmap->GetHeight(),
-                              GetImageEditDpi());
+                              GetEditImageDpi());
   return CalculateFieldAutoSize(doc, pSize);
 }
 
-bool CXFA_Node::LoadImageImage(CXFA_FFDoc* doc) {
+bool CXFA_Node::LoadLayoutImage(CXFA_FFDoc* doc) {
   InitLayoutData(doc);
   return m_pLayoutData->AsImageLayoutData()->LoadImageData(doc, this);
 }
 
-bool CXFA_Node::LoadImageEditImage(CXFA_FFDoc* doc) {
+bool CXFA_Node::LoadEditImage(CXFA_FFDoc* doc) {
   InitLayoutData(doc);
   return m_pLayoutData->AsFieldLayoutData()->AsImageEditData()->LoadImageData(
       doc, this);
 }
 
-CFX_Size CXFA_Node::GetImageDpi() const {
+CFX_Size CXFA_Node::GetLayoutImageDpi() const {
   CXFA_ImageLayoutData* pData = m_pLayoutData->AsImageLayoutData();
   return CFX_Size(pData->m_iImageXDpi, pData->m_iImageYDpi);
 }
 
-CFX_Size CXFA_Node::GetImageEditDpi() const {
+CFX_Size CXFA_Node::GetEditImageDpi() const {
   CXFA_ImageEditData* pData =
       m_pLayoutData->AsFieldLayoutData()->AsImageEditData();
   return CFX_Size(pData->m_iImageXDpi, pData->m_iImageYDpi);
@@ -3897,29 +3897,29 @@ CXFA_TextLayout* CXFA_Node::GetTextLayout() {
                        : nullptr;
 }
 
-RetainPtr<CFX_DIBitmap> CXFA_Node::GetImageImage() {
+RetainPtr<CFX_DIBitmap> CXFA_Node::GetLayoutImage() {
   return m_pLayoutData ? m_pLayoutData->AsImageLayoutData()->m_pDIBitmap
                        : nullptr;
 }
 
-RetainPtr<CFX_DIBitmap> CXFA_Node::GetImageEditImage() {
+RetainPtr<CFX_DIBitmap> CXFA_Node::GetEditImage() {
   return m_pLayoutData ? m_pLayoutData->AsFieldLayoutData()
                              ->AsImageEditData()
                              ->m_pDIBitmap
                        : nullptr;
 }
 
-void CXFA_Node::SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage) {
+void CXFA_Node::SetLayoutImage(RetainPtr<CFX_DIBitmap> newImage) {
   CXFA_ImageLayoutData* pData = m_pLayoutData->AsImageLayoutData();
   if (pData->m_pDIBitmap != newImage)
-    pData->m_pDIBitmap = newImage;
+    pData->m_pDIBitmap = std::move(newImage);
 }
 
-void CXFA_Node::SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage) {
+void CXFA_Node::SetEditImage(RetainPtr<CFX_DIBitmap> newImage) {
   CXFA_ImageEditData* pData =
       m_pLayoutData->AsFieldLayoutData()->AsImageEditData();
   if (pData->m_pDIBitmap != newImage)
-    pData->m_pDIBitmap = newImage;
+    pData->m_pDIBitmap = std::move(newImage);
 }
 
 RetainPtr<CFGAS_GEFont> CXFA_Node::GetFGASFont(CXFA_FFDoc* doc) {

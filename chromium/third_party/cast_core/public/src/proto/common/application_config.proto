@@ -35,10 +35,6 @@ message ApplicationConfig {
     NativeApplicationConfig native_app_config = 5;
   }
 
-  // Cast features requested by the application.
-  // TODO(b/232254267): Remove this field as all data moves to extra_features.
-  repeated CastFeature cast_features = 6;
-
   // Cast features. The keys in the dictionary must be well defined to allow
   // easy data expantion.
   cast.common.Dictionary extra_features = 7;
@@ -86,25 +82,4 @@ message NativeApplicationConfig {
   // NOTE: this field is added ONLY FOR TESTING purposes. Proper integration
   // with native runtimes is still TBD.
   string url = 1;
-}
-
-// A Cast feature definition.
-message CastFeature {
-  message Value {
-    // Value key.
-    string key = 1;
-
-    // Actual value.
-    oneof value {
-      bool flag = 2;
-      string text = 3;
-    }
-  }
-
-  // Feature name.
-  string name = 1;
-
-  // Optional list of feature values. If not specified, the feature is
-  // considered enabled.
-  repeated Value values = 2;
 }

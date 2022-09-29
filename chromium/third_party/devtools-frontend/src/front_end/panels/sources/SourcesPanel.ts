@@ -46,7 +46,7 @@ import {CallStackSidebarPane} from './CallStackSidebarPane.js';
 import {DebuggerPausedMessage} from './DebuggerPausedMessage.js';
 import sourcesPanelStyles from './sourcesPanel.css.js';
 
-import type {NavigatorView} from './NavigatorView.js';
+import {type NavigatorView} from './NavigatorView.js';
 import {
   ContentScriptsNavigatorView,
   FilesNavigatorView,
@@ -111,6 +111,10 @@ const UIStrings = {
   *@description Text in Sources Panel of the Sources panel
   */
   groupByAuthored: 'Group by Authored/Deployed',
+  /**
+  *@description Text in Sources Panel of the Sources panel
+  */
+  hideIgnoreListed: 'Hide ignore-listed sources',
   /**
   *@description Text for pausing the debugger on exceptions
   */
@@ -315,6 +319,8 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerPaused, this.debuggerPaused, this);
     SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebugInfoAttached, this.debugInfoAttached, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerResumed,
         event => this.debuggerResumed(event.data));
     SDK.TargetManager.TargetManager.instance().addModelListener(
@@ -474,6 +480,18 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     }
   }
 
+  private debugInfoAttached(event: Common.EventTarget.EventTargetEvent<SDK.Script.Script>): void {
+    const {debuggerModel} = event.data;
+    if (!debuggerModel.isPaused()) {
+      return;
+    }
+
+    const details = debuggerModel.debuggerPausedDetails();
+    if (details && UI.Context.Context.instance().flavor(SDK.Target.Target) === debuggerModel.target()) {
+      this.showDebuggerPausedDetails(details);
+    }
+  }
+
   private showDebuggerPausedDetails(details: SDK.DebuggerModel.DebuggerPausedDetails): void {
     this.pausedInternal = true;
     void this.updateDebuggerButtonsAndStatus();
@@ -549,18 +567,30 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     }
   }
 
-  private toggleAuthoredDeployedExperiment(): void {
-    const experiment = Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING;
-    const checked = Root.Runtime.experiments.isEnabled(experiment);
-    Root.Runtime.experiments.setEnabled(experiment, !checked);
-    Host.userMetrics.experimentChanged(experiment, checked);
-    // Need to signal to the NavigatorView that grouping has changed. Unfortunately,
-    // it can't listen to an experiment, and this class doesn't directly interact
-    // with it, so we will convince it a different grouping setting changed. When we switch
-    // from using an experiment to a setting, it will listen to that setting and we
-    // won't need to do this.
-    const groupByFolderSetting = Common.Settings.Settings.instance().moduleSetting('navigatorGroupByFolder');
-    groupByFolderSetting.set(groupByFolderSetting.get());
+  private addExperimentMenuItem(
+      menuSection: UI.ContextMenu.Section, experiment: string, menuItem: Common.UIString.LocalizedString): void {
+    // menu handler
+    function toggleExperiment(): void {
+      const checked = Root.Runtime.experiments.isEnabled(experiment);
+      Root.Runtime.experiments.setEnabled(experiment, !checked);
+      Host.userMetrics.experimentChanged(experiment, checked);
+      // Need to signal to the NavigatorView that grouping has changed. Unfortunately,
+      // it can't listen to an experiment, and this class doesn't directly interact
+      // with it, so we will convince it a different grouping setting changed. When we switch
+      // from using an experiment to a setting, it will listen to that setting and we
+      // won't need to do this.
+      const groupByFolderSetting = Common.Settings.Settings.instance().moduleSetting('navigatorGroupByFolder');
+      groupByFolderSetting.set(groupByFolderSetting.get());
+    }
+
+    const previewIcon = new IconButton.Icon.Icon();
+    previewIcon.data = {
+      iconName: 'ic_preview_feature',
+      color: 'var(--icon-color)',
+      width: '14px',
+    };
+    menuSection.appendCheckboxItem(
+        menuItem, toggleExperiment, Root.Runtime.experiments.isEnabled(experiment), false, previewIcon);
   }
 
   private populateNavigatorMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
@@ -569,16 +599,12 @@ export class SourcesPanel extends UI.Panel.Panel implements UI.ContextMenu.Provi
     contextMenu.viewSection().appendCheckboxItem(
         i18nString(UIStrings.groupByFolder), () => groupByFolderSetting.set(!groupByFolderSetting.get()),
         groupByFolderSetting.get());
-    const previewIcon = new IconButton.Icon.Icon();
-    const experiment = Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING;
-    previewIcon.data = {
-      iconName: 'ic_preview_feature',
-      color: 'var(--icon-color)',
-      width: '14px',
-    };
-    contextMenu.viewSection().appendCheckboxItem(
-        i18nString(UIStrings.groupByAuthored), this.toggleAuthoredDeployedExperiment,
-        Root.Runtime.experiments.isEnabled(experiment), false, previewIcon);
+
+    this.addExperimentMenuItem(
+        contextMenu.viewSection(), Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING,
+        i18nString(UIStrings.groupByAuthored));
+    this.addExperimentMenuItem(
+        contextMenu.viewSection(), Root.Runtime.ExperimentName.JUST_MY_CODE, i18nString(UIStrings.hideIgnoreListed));
   }
 
   setIgnoreExecutionLineEvents(ignoreExecutionLineEvents: boolean): void {

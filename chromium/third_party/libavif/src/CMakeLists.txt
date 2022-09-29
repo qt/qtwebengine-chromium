@@ -1,7 +1,7 @@
 # Copyright 2019 Joe Drago. All rights reserved.
 # SPDX-License-Identifier: BSD-2-Clause
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.13)
 
 # Specify search path for CMake modules to be loaded by include() and find_package()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -50,6 +50,9 @@ option(AVIF_LOCAL_RAV1E "Build the rav1e codec by providing your own copy of the
 )
 option(AVIF_LOCAL_SVT
        "Build the SVT-AV1 codec by providing your own copy of the repo in ext/SVT-AV1 (see Local Builds in README)" OFF
+)
+option(AVIF_LOCAL_GTEST
+       "Build the GoogleTest framework by providing your own copy of the repo in ext/googletest (see Local Builds in README)" OFF
 )
 
 if(AVIF_LOCAL_LIBGAV1)
@@ -122,7 +125,7 @@ endif()
 include(CheckCCompilerFlag)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
     message(STATUS "libavif: Enabling warnings for Clang")
-    add_definitions(-Wall -Wextra)
+    add_definitions(-Wall -Wextra -Wshorten-64-to-32)
 elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
     message(STATUS "libavif: Enabling warnings for GCC")
     add_definitions(-Wall -Wextra)
@@ -410,7 +413,7 @@ if(BUILD_SHARED_LIBS)
     endif()
 endif()
 
-option(AVIF_BUILD_EXAMPLES "Build avif Examples." OFF)
+option(AVIF_BUILD_EXAMPLES "Build avif examples." OFF)
 if(AVIF_BUILD_EXAMPLES)
     set(AVIF_EXAMPLES avif_example_decode_memory avif_example_decode_file avif_example_decode_streaming avif_example_encode)
 
@@ -437,21 +440,21 @@ endif()
 
 option(AVIF_BUILD_APPS "Build avif apps." OFF)
 option(AVIF_BUILD_TESTS "Build avif tests." OFF)
+option(AVIF_ENABLE_GTEST
+       "Build avif C++ tests, which depend on GoogleTest. Requires GoogleTest. Has no effect unless AVIF_BUILD_TESTS is ON." ON
+)
 
-if(AVIF_BUILD_APPS OR AVIF_BUILD_TESTS)
+if(AVIF_BUILD_APPS OR (AVIF_BUILD_TESTS AND AVIF_ENABLE_GTEST))
     find_package(ZLIB REQUIRED)
     find_package(PNG REQUIRED)
     find_package(JPEG REQUIRED)
 
     add_library(
-        avif_apps STATIC # Static so it does not have to be installed.
-        apps/shared/avifjpeg.c apps/shared/iccjpeg.c apps/shared/avifpng.c apps/shared/avifutil.c apps/shared/y4m.c
+        avif_apps OBJECT apps/shared/avifjpeg.c apps/shared/iccjpeg.c apps/shared/avifpng.c apps/shared/avifutil.c
+                         apps/shared/y4m.c
     )
-    target_link_libraries(avif_apps avif ${PNG_LIBRARY} ${ZLIB_LIBRARY} ${JPEG_LIBRARY})
-    target_include_directories(
-        avif_apps PRIVATE $<TARGET_PROPERTY:avif,INTERFACE_INCLUDE_DIRECTORIES> ${PNG_PNG_INCLUDE_DIR} ${JPEG_INCLUDE_DIR}
-        INTERFACE apps/shared
-    )
+    target_link_libraries(avif_apps avif ${AVIF_PLATFORM_LIBRARIES} ${PNG_LIBRARY} ${ZLIB_LIBRARY} ${JPEG_LIBRARY})
+    target_include_directories(avif_apps PRIVATE ${PNG_PNG_INCLUDE_DIR} ${JPEG_INCLUDE_DIR} INTERFACE apps/shared)
 endif()
 
 if(AVIF_BUILD_APPS)
@@ -459,12 +462,12 @@ if(AVIF_BUILD_APPS)
     if(AVIF_LOCAL_LIBGAV1 OR AVIF_CODEC_LIBRARIES MATCHES vmaf)
         set_target_properties(avifenc PROPERTIES LINKER_LANGUAGE "CXX")
     endif()
-    target_link_libraries(avifenc avif avif_apps ${AVIF_PLATFORM_LIBRARIES})
+    target_link_libraries(avifenc avif_apps)
     add_executable(avifdec apps/avifdec.c)
     if(AVIF_LOCAL_LIBGAV1 OR AVIF_CODEC_LIBRARIES MATCHES vmaf)
         set_target_properties(avifdec PROPERTIES LINKER_LANGUAGE "CXX")
     endif()
-    target_link_libraries(avifdec avif avif_apps ${AVIF_PLATFORM_LIBRARIES})
+    target_link_libraries(avifdec avif_apps)
 
     if(NOT SKIP_INSTALL_APPS AND NOT SKIP_INSTALL_ALL)
         install(

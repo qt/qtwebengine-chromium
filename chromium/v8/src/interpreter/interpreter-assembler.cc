@@ -10,11 +10,9 @@
 #include "src/codegen/code-factory.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/machine-type.h"
-#include "src/execution/frames.h"
 #include "src/interpreter/bytecodes.h"
 #include "src/interpreter/interpreter.h"
 #include "src/objects/objects-inl.h"
-#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -1450,7 +1448,8 @@ void InterpreterAssembler::TraceBytecodeDispatch(TNode<WordT> target_bytecode) {
 
 // static
 bool InterpreterAssembler::TargetSupportsUnalignedAccess() {
-#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_RISCV64
+#if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_RISCV64 || \
+    V8_TARGET_ARCH_RISCV32
   return false;
 #elif V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_S390 || \
     V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_PPC ||   \

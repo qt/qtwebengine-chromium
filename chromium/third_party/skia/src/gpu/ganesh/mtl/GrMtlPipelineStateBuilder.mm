@@ -71,7 +71,7 @@ static constexpr SkFourByteTag kSKSL_Tag = SkSetFourByteTag('S', 'K', 'S', 'L');
 
 void GrMtlPipelineStateBuilder::storeShadersInCache(const std::string shaders[],
                                                     const SkSL::Program::Inputs inputs[],
-                                                    SkSL::Program::Settings* settings,
+                                                    SkSL::ProgramSettings* settings,
                                                     sk_sp<SkData> pipelineData,
                                                     bool isSkSL) {
     sk_sp<SkData> key = SkData::MakeWithoutCopy(this->desc().asKey(),
@@ -322,7 +322,7 @@ static MTLBlendOperation blend_equation_to_mtl_blend_op(skgpu::BlendEquation equ
         MTLBlendOperationSubtract,         // skgpu::BlendEquation::kSubtract
         MTLBlendOperationReverseSubtract,  // skgpu::BlendEquation::kReverseSubtract
     };
-    static_assert(SK_ARRAY_COUNT(gTable) == (int)skgpu::BlendEquation::kFirstAdvanced);
+    static_assert(std::size(gTable) == (int)skgpu::BlendEquation::kFirstAdvanced);
     static_assert(0 == (int)skgpu::BlendEquation::kAdd);
     static_assert(1 == (int)skgpu::BlendEquation::kSubtract);
     static_assert(2 == (int)skgpu::BlendEquation::kReverseSubtract);
@@ -542,7 +542,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
 
         this->finalizeShaders();
 
-        SkSL::Program::Settings settings;
+        SkSL::ProgramSettings settings;
         settings.fSharpenTextures = true;
         SkASSERT(!this->fragColorIsInOut());
 
@@ -738,7 +738,7 @@ bool GrMtlPipelineStateBuilder::PrecompileShaders(GrMtlGpu* gpu, const SkData& c
 
     auto errorHandler = gpu->getContext()->priv().getShaderErrorHandler();
 
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     settings.fSharpenTextures = true;
     GrPersistentCacheUtils::ShaderMetadata meta;
     meta.fSettings = &settings;

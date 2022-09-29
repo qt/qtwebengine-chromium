@@ -18,7 +18,7 @@ import * as m from 'mithril';
 import {Actions} from '../common/actions';
 import {TrackState} from '../common/state';
 
-import {TRACK_SHELL_WIDTH} from './css_constants';
+import {SELECTION_FILL_COLOR, TRACK_SHELL_WIDTH} from './css_constants';
 import {PerfettoMouseEvent} from './events';
 import {globals} from './globals';
 import {drawGridLines} from './gridline_helper';
@@ -93,6 +93,7 @@ class TrackShell implements m.ClassComponent<TrackShellAttrs> {
             ),
         m('.track-buttons',
           attrs.track.getTrackShellButtons(),
+          attrs.track.getContextMenu(),
           m(TrackButton, {
             action: () => {
               globals.dispatch(
@@ -101,6 +102,7 @@ class TrackShell implements m.ClassComponent<TrackShellAttrs> {
             i: isPinned(attrs.trackState.id) ? STAR : STAR_BORDER,
             tooltip: isPinned(attrs.trackState.id) ? 'Unpin' : 'Pin to top',
             showButton: isPinned(attrs.trackState.id),
+            fullHeight: true,
           }),
           globals.state.currentSelection !== null &&
                   globals.state.currentSelection.kind === 'AREA' ?
@@ -265,13 +267,18 @@ export interface TrackButtonAttrs {
   i: string;
   tooltip: string;
   showButton: boolean;
+  fullHeight?: boolean;
 }
 export class TrackButton implements m.ClassComponent<TrackButtonAttrs> {
   view({attrs}: m.CVnode<TrackButtonAttrs>) {
     return m(
         'i.material-icons.track-button',
         {
-          class: `${attrs.showButton ? 'show' : ''}`,
+          class: [
+            (attrs.showButton ? 'show' : ''),
+            (attrs.fullHeight ? 'full-height' : ''),
+          ].filter(Boolean)
+                     .join(' '),
           onclick: attrs.action,
           title: attrs.tooltip,
         },
@@ -343,7 +350,7 @@ export class TrackPanel extends Panel<TrackPanelAttrs> {
     const selectedArea = globals.state.areas[selection.areaId];
     if (selectedArea.tracks.includes(trackState.id)) {
       const timeScale = localState.timeScale;
-      ctx.fillStyle = 'rgba(131, 152, 230, 0.3)';
+      ctx.fillStyle = SELECTION_FILL_COLOR;
       ctx.fillRect(
           timeScale.timeToPx(selectedArea.startSec) + TRACK_SHELL_WIDTH,
           0,

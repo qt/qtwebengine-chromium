@@ -16,6 +16,7 @@ export const kBuiltins = [
   { name: 'position', stage: 'vertex', io: 'out', type: 'vec4<f32>' },
   { name: 'position', stage: 'fragment', io: 'in', type: 'vec4<f32>' },
   { name: 'front_facing', stage: 'fragment', io: 'in', type: 'bool' },
+  { name: 'frag_depth', stage: 'fragment', io: 'out', type: 'f32' },
   { name: 'local_invocation_id', stage: 'compute', io: 'in', type: 'vec3<u32>' },
   { name: 'local_invocation_index', stage: 'compute', io: 'in', type: 'u32' },
   { name: 'global_invocation_id', stage: 'compute', io: 'in', type: 'vec3<u32>' },
@@ -70,7 +71,7 @@ g.test('stage_inout')
     u
       .combineWithParams(kBuiltins)
       .combine('use_struct', [true, false] as const)
-      .combine('target_stage', ['vertex', 'fragment', 'compute'] as const)
+      .combine('target_stage', ['', 'vertex', 'fragment', 'compute'] as const)
       .combine('target_io', ['in', 'out'] as const)
       .beginSubcases()
   )
@@ -87,8 +88,9 @@ g.test('stage_inout')
     const expectation = kBuiltins.some(
       x =>
         x.name === t.params.name &&
-        x.stage === t.params.target_stage &&
-        x.io === t.params.target_io &&
+        (x.stage === t.params.target_stage ||
+          (t.params.use_struct && t.params.target_stage === '')) &&
+        (x.io === t.params.target_io || t.params.target_stage === '') &&
         x.type === t.params.type
     );
     t.expectCompileResult(expectation, code);
@@ -249,4 +251,27 @@ g.test('missing_vertex_position')
 
     // Expect to pass only when using @builtin(position).
     t.expectCompileResult(t.params.attribute === '@builtin(position)', code);
+  });
+
+g.test('reuse_builtin_name')
+  .desc(`Test that a builtin name can be used in different contexts`)
+  .params(u =>
+    u
+      .combineWithParams(kBuiltins)
+      .combine('use', ['type_name', 'struct', 'function', 'module-var', 'function-var'])
+  )
+  .fn(t => {
+    let code = '';
+    if (t.params.use === 'type_name') {
+      code += `type ${t.params.name} = i32;`;
+    } else if (t.params.use === `struct`) {
+      code += `struct ${t.params.name} { i: f32, }`;
+    } else if (t.params.use === `function`) {
+      code += `fn ${t.params.name}() {}`;
+    } else if (t.params.use === `module-var`) {
+      code += `const ${t.params.name} = 1;`;
+    } else if (t.params.use === `function-var`) {
+      code += `fn test() { let ${t.params.name} = 1; }`;
+    }
+    t.expectCompileResult(true, code);
   });

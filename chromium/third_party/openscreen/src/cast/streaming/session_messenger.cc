@@ -16,6 +16,8 @@ namespace cast {
 
 namespace {
 
+constexpr char kAnyDestination[] = "*";
+
 void ReplyIfTimedOut(
     int sequence_number,
     ReceiverMessage::Type reply_type,
@@ -125,7 +127,7 @@ Error SenderSessionMessenger::SendRequest(SenderMessage message,
 void SenderSessionMessenger::OnMessage(const std::string& source_id,
                                        const std::string& message_namespace,
                                        const std::string& message) {
-  if (source_id != receiver_id_) {
+  if (source_id != receiver_id_ && source_id != kAnyDestination) {
     OSP_DLOG_WARN << "Received message from unknown/incorrect Cast Receiver "
                   << source_id << ". Currently connected to " << receiver_id_;
     return;
@@ -134,7 +136,7 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
   if (message_namespace != kCastWebrtcNamespace &&
       message_namespace != kCastRemotingNamespace) {
     OSP_DLOG_WARN << "Received message from unknown namespace: "
-                  << message_namespace;
+                  << message_namespace << ". Message was " << message;
     return;
   }
 

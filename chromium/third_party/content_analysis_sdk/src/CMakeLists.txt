@@ -46,7 +46,11 @@ add_custom_command(
 )
 # Define proto target. Compile this target exclusively by calling:
 # `cmake --build <build_dir> --target proto`
-add_custom_target(proto ALL DEPENDS ${PROJECT_BINARY_DIR}/gen/content_analysis/sdk/analysis.pb.cc)
+add_custom_target(proto
+  ALL
+  DEPENDS
+  ${PROJECT_BINARY_DIR}/gen/content_analysis/sdk/analysis.pb.cc
+)
 
 # The include directory contains the header files needed by the demo code.
 # The gen directory contains generated protobuf headers describing the request
@@ -67,32 +71,38 @@ set(BROWSER_INCLUDES
 # platform being built.
 if(WIN)
   set(PLATFORM_AGENT_CODE
+    ./agent/src/agent_utils_win.cc
+    ./agent/src/agent_utils_win.h
     ./agent/src/agent_win.cc
     ./agent/src/agent_win.h
-    ./agent/src/session_win.cc
-    ./agent/src/session_win.h
+    ./agent/src/event_win.cc
+    ./agent/src/event_win.h
     ./common/utils_win.cc
     ./common/utils_win.h
   )
-  set(PLATFORM_QUEUED_AGENT_DEMO_CODE
-    ./demo/queued_agent_win.cc
+  set(PLATFORM_TEST_CODE
+    ./agent/src/agent_win_unittest.cc
+    ./agent/src/event_win_unittest.cc
   )
 elseif(MAC)
   set(PLATFORM_AGENT_CODE
     ./agent/src/agent_mac.cc
     ./agent/src/agent_mac.h
-    ./agent/src/session_mac.cc
-    ./agent/src/session_mac.h
+    ./agent/src/event_mac.cc
+    ./agent/src/event_mac.h
+  )
+  set(PLATFORM_TEST_CODE
+    ./agent/src/event_mac_unittest.cc
   )
 elseif(LINUX)
   set(PLATFORM_AGENT_CODE
     ./agent/src/agent_posix.cc
     ./agent/src/agent_posix.h
-    ./agent/src/session_posix.cc
-    ./agent/src/session_posix.h
+    ./agent/src/event_posix.cc
+    ./agent/src/event_posix.h
   )
-  set(PLATFORM_QUEUED_AGENT_DEMO_CODE
-    ./demo/queued_agent_posix.cc
+  set(PLATFORM_TEST_CODE
+    ./agent/src/event_posix_unittest.cc
   )
 endif()
 
@@ -126,34 +136,46 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
-add_executable(
-  agent_test_shell
-  ../agent/src/agent_test_shell.cc
+add_executable(unit_tests
+  ${PLATFORM_TEST_CODE}
 )
-target_link_libraries(
-  agent_test_shell
+set_property(TARGET unit_tests PROPERTY CXX_STANDARD 20)
+target_include_directories(unit_tests
+  PRIVATE
+  ${AGENT_INCLUDES}
+  ${BROWSER_INCLUDES}
+)
+target_link_libraries(unit_tests
   PUBLIC 
+  cac_agent
+  cac_browser
   GTest::gtest GTest::gtest_main
 )
 
-gtest_discover_tests(agent_test_shell) 
+gtest_discover_tests(unit_tests) 
 
-# Builds the content analysis connector agent linker library.  This library is linked
-# into the agent in order to listen for and process content analysis requests
-# from Google Chrome.
+# Builds the content analysis connector agent linker library.  This library
+# is linked into the agent in order to listen for and process content analysis
+# requests from Google Chrome.
 add_library(cac_agent
   ./agent/include/content_analysis/sdk/analysis_agent.h
+  ./agent/include/content_analysis/sdk/result_codes.h
   ./agent/src/agent_base.cc
   ./agent/src/agent_base.h
-  ./agent/src/session_base.cc
-  ./agent/src/session_base.h
+  ./agent/src/event_base.cc
+  ./agent/src/event_base.h
   ${PLATFORM_AGENT_CODE}
   ${PROJECT_BINARY_DIR}/gen/content_analysis/sdk/analysis.pb.cc
 )
-target_link_libraries(cac_agent PUBLIC protobuf::libprotoc protobuf::libprotobuf protobuf::libprotobuf-lite)
+target_link_libraries(cac_agent
+  PUBLIC
+  protobuf::libprotoc
+  protobuf::libprotobuf
+  protobuf::libprotobuf-lite)
 target_include_directories(cac_agent PRIVATE ${AGENT_INCLUDES})
-# Builds the content analysis connector browser linker library.  This library is linked
-# into the client in order to send content analysis requests to the agent.
+# Builds the content analysis connector browser linker library.  This library
+# is linked into the client in order to send content analysis requests to the
+# agent.
 add_library(cac_browser
   ./browser/include/content_analysis/sdk/analysis_client.h
   ./browser/src/client_base.cc
@@ -162,16 +184,27 @@ add_library(cac_browser
   ${PROJECT_BINARY_DIR}/gen/content_analysis/sdk/analysis.pb.cc
 )
 target_include_directories(cac_browser PRIVATE ${BROWSER_INCLUDES})
-target_link_libraries(cac_browser PUBLIC protobuf::libprotoc protobuf::libprotobuf protobuf::libprotobuf-lite)
+target_link_libraries(cac_browser
+  PUBLIC
+  protobuf::libprotoc
+  protobuf::libprotobuf
+  protobuf::libprotobuf-lite)
 
 # The demo agent executable.
-add_executable(agent ./demo/agent.cc)
+add_executable(agent
+  ./demo/agent.cc
+  ./demo/handler.h
+)
 target_include_directories(agent PRIVATE ${AGENT_INCLUDES})
 target_link_libraries(agent PRIVATE cac_agent)
 
 # A demo agent that queues up requests for a background thread.
 if (WIN OR LINUX)
-  add_executable(queued_agent ${PLATFORM_QUEUED_AGENT_DEMO_CODE})
+  add_executable(queued_agent
+    ./demo/queued_agent.cc
+    ./demo/handler.h
+    ./demo/request_queue.h
+  )
   target_include_directories(queued_agent PRIVATE ${AGENT_INCLUDES})
   target_link_libraries(queued_agent PRIVATE cac_agent)
 endif()
@@ -180,3 +213,4 @@ endif()
 add_executable(browser ./demo/client.cc)
 target_include_directories(browser PRIVATE ${BROWSER_INCLUDES})
 target_link_libraries(browser PRIVATE cac_browser)
+

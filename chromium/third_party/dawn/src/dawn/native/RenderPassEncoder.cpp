@@ -20,6 +20,7 @@
 
 #include "dawn/common/Constants.h"
 #include "dawn/native/Buffer.h"
+#include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
@@ -55,7 +56,6 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
                                      EncodingContext* encodingContext,
                                      RenderPassResourceUsageTracker usageTracker,
                                      Ref<AttachmentState> attachmentState,
-                                     std::vector<TimestampWrite> timestampWritesAtEnd,
                                      uint32_t renderTargetWidth,
                                      uint32_t renderTargetHeight,
                                      bool depthReadOnly,
@@ -69,9 +69,13 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
       mCommandEncoder(commandEncoder),
       mRenderTargetWidth(renderTargetWidth),
       mRenderTargetHeight(renderTargetHeight),
-      mOcclusionQuerySet(descriptor->occlusionQuerySet),
-      mTimestampWritesAtEnd(std::move(timestampWritesAtEnd)) {
+      mOcclusionQuerySet(descriptor->occlusionQuerySet) {
     mUsageTracker = std::move(usageTracker);
+    const RenderPassDescriptorMaxDrawCount* maxDrawCountInfo = nullptr;
+    FindInChain(descriptor->nextInChain, &maxDrawCountInfo);
+    if (maxDrawCountInfo) {
+        mMaxDrawCount = maxDrawCountInfo->maxDrawCount;
+    }
     TrackInDevice();
 }
 
@@ -82,15 +86,14 @@ Ref<RenderPassEncoder> RenderPassEncoder::Create(DeviceBase* device,
                                                  EncodingContext* encodingContext,
                                                  RenderPassResourceUsageTracker usageTracker,
                                                  Ref<AttachmentState> attachmentState,
-                                                 std::vector<TimestampWrite> timestampWritesAtEnd,
                                                  uint32_t renderTargetWidth,
                                                  uint32_t renderTargetHeight,
                                                  bool depthReadOnly,
                                                  bool stencilReadOnly) {
     return AcquireRef(new RenderPassEncoder(device, descriptor, commandEncoder, encodingContext,
                                             std::move(usageTracker), std::move(attachmentState),
-                                            std::move(timestampWritesAtEnd), renderTargetWidth,
-                                            renderTargetHeight, depthReadOnly, stencilReadOnly));
+                                            renderTargetWidth, renderTargetHeight, depthReadOnly,
+                                            stencilReadOnly));
 }
 
 RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
@@ -140,12 +143,13 @@ void RenderPassEncoder::APIEnd() {
                     mOcclusionQueryActive,
                     "Render pass %s ended with incomplete occlusion query index %u of %s.", this,
                     mCurrentOcclusionQueryIndex, mOcclusionQuerySet.Get());
+
+                DAWN_INVALID_IF(mDrawCount > mMaxDrawCount,
+                                "The drawCount (%u) of %s is greater than the maxDrawCount (%u).",
+                                mDrawCount, this, mMaxDrawCount);
             }
 
-            EndRenderPassCmd* cmd = allocator->Allocate<EndRenderPassCmd>(Command::EndRenderPass);
-            // The query availability has already been updated at the beginning of render
-            // pass, and no need to do update here.
-            cmd->timestampWrites = std::move(mTimestampWritesAtEnd);
+            allocator->Allocate<EndRenderPassCmd>(Command::EndRenderPass);
 
             DAWN_TRY(mEncodingContext->ExitRenderPass(this, std::move(mUsageTracker),
                                                       mCommandEncoder.Get(),
@@ -320,6 +324,8 @@ void RenderPassEncoder::APIExecuteBundles(uint32_t count, RenderBundleBase* cons
                 if (IsValidationEnabled()) {
                     mIndirectDrawMetadata.AddBundle(renderBundles[i]);
                 }
+
+                mDrawCount += bundles[i]->GetDrawCount();
             }
 
             return {};

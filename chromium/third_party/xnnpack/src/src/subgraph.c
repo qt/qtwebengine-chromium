@@ -47,7 +47,8 @@ enum xnn_status xnn_create_subgraph(
 
   subgraph->values = xnn_allocate_zero_memory(external_value_ids * sizeof(struct xnn_value));
   if (subgraph->values == NULL) {
-    xnn_log_error("failed to allocate %zu bytes for subgraph values", external_value_ids * sizeof(struct xnn_value));
+    xnn_log_error("failed to allocate %zu bytes for subgraph values",
+      (size_t) external_value_ids * sizeof(struct xnn_value));
     goto error;
   }
   for (size_t i = 0; i < external_value_ids; i++) {
@@ -740,7 +741,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       case xnn_node_type_subtract:
         for (uint32_t i = 0; i < node->num_inputs; i++) {
           if (subgraph->values[node->inputs[i]].data != NULL) {
-            xnn_log_warning("FP16 rewrite aborted: node #%" PRIu32 " (%s) has static input %i",
+            xnn_log_warning("FP16 rewrite aborted: node #%" PRIu32 " (%s) has static input %" PRIu32,
               n, xnn_node_type_to_string(node->type), i);
             return false;
           }
@@ -754,6 +755,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
       case xnn_node_type_deconvolution_2d:
       case xnn_node_type_depthwise_convolution_2d:
       case xnn_node_type_depth_to_space:
+      case xnn_node_type_elu:
       case xnn_node_type_even_split2:
       case xnn_node_type_even_split3:
       case xnn_node_type_even_split4:
@@ -856,7 +858,7 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
     node->compute_type = xnn_compute_type_fp16;
     if (node->type == xnn_node_type_static_constant_pad) {
       node->params.static_pad.padding_value =
-        fp16_ieee_from_fp32_value(fp32_from_bits(node->params.static_pad.padding_value));
+        fp16_ieee_from_fp32_value(uint32_as_float(node->params.static_pad.padding_value));
     }
     for (uint32_t i = 0; i < node->num_inputs; i++) {
       const uint32_t fp16_id = subgraph->values[node->inputs[i]].fp16_id;
@@ -948,24 +950,9 @@ bool xnn_subgraph_rewrite_for_fp16(xnn_subgraph_t subgraph)
   return true;
 }
 
-enum xnn_status xnn_subgraph_optimize(
-  xnn_subgraph_t subgraph,
-  uint32_t flags)
+enum xnn_status xnn_subgraph_fusion(
+    xnn_subgraph_t subgraph)
 {
-  xnn_subgraph_analyze_consumers_and_producers(subgraph);
-
-  // Remove unreferenced values.
-  for (uint32_t i = 0; i < subgraph->num_values; i++) {
-    struct xnn_value* value = &subgraph->values[i];
-    if (value->type == xnn_value_type_invalid) {
-      continue;
-    }
-
-    if ((value->flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) == 0 && value->num_consumers == 0) {
-      xnn_value_clear(value);
-    }
-  }
-
   // Fuse Nodes where possible
   for (uint32_t i = 0; i < subgraph->num_values; i++) {
     struct xnn_value* value = &subgraph->values[i];
@@ -1094,6 +1081,32 @@ enum xnn_status xnn_subgraph_optimize(
         }
       }
     }
+  }
+
+  return xnn_status_success;
+}
+
+enum xnn_status xnn_subgraph_optimize(
+  xnn_subgraph_t subgraph,
+  uint32_t flags)
+{
+  xnn_subgraph_analyze_consumers_and_producers(subgraph);
+
+  // Remove unreferenced values.
+  for (uint32_t i = 0; i < subgraph->num_values; i++) {
+    struct xnn_value* value = &subgraph->values[i];
+    if (value->type == xnn_value_type_invalid) {
+      continue;
+    }
+
+    if ((value->flags & XNN_VALUE_FLAG_EXTERNAL_INPUT) == 0 && value->num_consumers == 0) {
+      xnn_value_clear(value);
+    }
+  }
+
+
+  if (!(flags & XNN_FLAG_NO_OPERATOR_FUSION)) {
+    xnn_subgraph_fusion(subgraph);
   }
 
   #if XNN_ENABLE_SPARSE

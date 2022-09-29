@@ -1541,7 +1541,6 @@ static int wavpack_decode_block(AVCodecContext *avctx, int block_no,
             }
             ff_thread_release_ext_buffer(avctx, &wc->curr_frame);
         }
-        av_channel_layout_uninit(&avctx->ch_layout);
         av_channel_layout_copy(&avctx->ch_layout, &new_ch_layout);
         avctx->sample_rate         = new_samplerate;
         avctx->sample_fmt          = sample_fmt;
@@ -1715,6 +1714,6 @@ const FFCodec ff_wavpack_decoder = {
     .update_thread_context = ONLY_IF_THREADS_ENABLED(update_thread_context),
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS |
                       AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_CHANNEL_CONF,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP |
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP |
                       FF_CODEC_CAP_ALLOCATE_PROGRESS,
 };

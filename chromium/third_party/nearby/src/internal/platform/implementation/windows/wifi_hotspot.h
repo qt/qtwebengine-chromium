@@ -17,12 +17,14 @@
 
 // Standard C/C++ headers
 #include <functional>
+#include <optional>
 #include <string>
 
 // Nearby connections headers
 #include "internal/platform/implementation/wifi_hotspot.h"
 
 // WinRT headers
+#include "absl/types/optional.h"
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Devices.Enumeration.h"
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Devices.WiFi.h"
 #include "internal/platform/implementation/windows/generated/winrt/Windows.Devices.WiFiDirect.h"
@@ -51,6 +53,8 @@ using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionListener;
 using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionRequest;
 using ::winrt::Windows::Devices::WiFiDirect::
     WiFiDirectConnectionRequestedEventArgs;
+using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectDevice;
+using ::winrt::Windows::Devices::WiFiDirect::WiFiDirectConnectionStatus;
 
 using ::winrt::Windows::Devices::WiFi::WiFiAccessStatus;
 using ::winrt::Windows::Devices::WiFi::WiFiAdapter;
@@ -71,11 +75,15 @@ using ::winrt::Windows::Security::Cryptography::CryptographicBuffer;
 
 using ::winrt::Windows::Networking::HostName;
 using ::winrt::Windows::Networking::HostNameType;
+using ::winrt::Windows::Networking::Connectivity::ConnectionProfile;
+using ::winrt::Windows::Networking::Connectivity::ConnectionProfileDeleteStatus;
 using ::winrt::Windows::Networking::Connectivity::NetworkInformation;
 using ::winrt::Windows::Networking::Sockets::StreamSocket;
 using ::winrt::Windows::Networking::Sockets::StreamSocketListener;
 using ::winrt::Windows::Networking::Sockets::
     StreamSocketListenerConnectionReceivedEventArgs;
+
+// using winrt::Windows::Foundation::IInspectable;
 
 // WifiHotspotSocket wraps the socket functions to read and write stream.
 // In WiFi HOTSPOT, A WifiHotspotSocket will be passed to
@@ -228,7 +236,7 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
   std::unique_ptr<api::WifiHotspotServerSocket> ListenForService(
       int port) override;
 
-  // Advertiser start WiFi Hotspot with specific Crendentials
+  // Advertiser start WiFi Hotspot with specific Credentials.
   bool StartWifiHotspot(HotspotCredentials* hotspot_credentials_) override;
   // Advertiser stop the current WiFi Hotspot
   bool StopWifiHotspot() override;
@@ -243,12 +251,15 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
   }
 
  private:
-  enum Value:char {
+  enum Value : char {
     kMediumStatusIdle = 0,
     kMediumStatusAccepting = (1 << 0),
     kMediumStatusBeaconing = (1 << 1),
     kMediumStatusConnected = (1 << 2),
   };
+
+  // Implemented the disconnection to WiFi hotspot, and used to avoid deadlock.
+  bool InternalDisconnectWifiHotspot();
 
   bool IsIdle() { return medium_status_ == kMediumStatusIdle; }
   // Advertiser is accepting connection on server socket
@@ -260,6 +271,7 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
 
   WiFiDirectAdvertisementPublisher publisher_{nullptr};
   WiFiDirectConnectionListener listener_{nullptr};
+  WiFiDirectDevice wifi_direct_device_{nullptr};
 
   fire_and_forget OnStatusChanged(
       WiFiDirectAdvertisementPublisher sender,
@@ -272,15 +284,13 @@ class WifiHotspotMedium : public api::WifiHotspotMedium {
   winrt::event_token connection_requested_token_;
 
   WiFiAdapter wifi_adapter_{nullptr};
+  WiFiAvailableNetwork wifi_connected_network_{nullptr};
 
   // Gets error message from exception pointer
   std::string GetErrorMessage(std::exception_ptr eptr);
 
   // Protects to access some members
   absl::Mutex mutex_;
-
-  // If the WiFi Adaptor supports to start a Hotspot interface.
-  bool hotspot_interface_valid_;
 
   // Medium Status
   int medium_status_ = kMediumStatusIdle;

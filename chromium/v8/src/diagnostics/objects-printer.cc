@@ -16,6 +16,7 @@
 #include "src/interpreter/bytecodes.h"
 #include "src/objects/all-objects-inl.h"
 #include "src/objects/code-kind.h"
+#include "src/objects/instance-type.h"
 #include "src/regexp/regexp.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/utils/ostreams.h"
@@ -204,6 +205,9 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {
       break;
     case WASM_VALUE_OBJECT_TYPE:
       WasmValueObject::cast(*this).WasmValueObjectPrint(os);
+      break;
+    case WASM_EXCEPTION_PACKAGE_TYPE:
+      WasmExceptionPackage::cast(*this).WasmExceptionPackagePrint(os);
       break;
 #endif  // V8_ENABLE_WEBASSEMBLY
     case CODE_TYPE:
@@ -520,7 +524,8 @@ void JSObject::PrintElements(std::ostream& os) {
     case PACKED_FROZEN_ELEMENTS:
     case PACKED_SEALED_ELEMENTS:
     case PACKED_NONEXTENSIBLE_ELEMENTS:
-    case FAST_STRING_WRAPPER_ELEMENTS: {
+    case FAST_STRING_WRAPPER_ELEMENTS:
+    case SHARED_ARRAY_ELEMENTS: {
       PrintFixedArrayElements(os, FixedArray::cast(elements()));
       break;
     }
@@ -621,6 +626,12 @@ void JSObject::JSObjectPrint(std::ostream& os) {
   JSObjectPrintBody(os, *this);
 }
 
+void JSExternalObject::JSExternalObjectPrint(std::ostream& os) {
+  JSObjectPrintHeader(os, *this, nullptr);
+  os << "\n - external value: " << value();
+  JSObjectPrintBody(os, *this);
+}
+
 void JSGeneratorObject::JSGeneratorObjectPrint(std::ostream& os) {
   JSObjectPrintHeader(os, *this, "JSGeneratorObject");
   os << "\n - function: " << Brief(function());
@@ -702,11 +713,11 @@ void JSPromise::JSPromisePrint(std::ostream& os) {
 }
 
 void JSRegExp::JSRegExpPrint(std::ostream& os) {
-  Isolate* isolate = GetIsolate();
   JSObjectPrintHeader(os, *this, "JSRegExp");
   os << "\n - data: " << Brief(data());
   os << "\n - source: " << Brief(source());
-  os << "\n - flags: " << Brief(*JSRegExp::StringFromFlags(isolate, flags()));
+  FlagsBuffer buffer;
+  os << "\n - flags: " << JSRegExp::FlagsToString(flags(), &buffer);
   JSObjectPrintBody(os, *this);
 }
 
@@ -824,7 +835,7 @@ const char* SideEffectType2String(SideEffectType type) {
 }  // namespace
 
 void AccessorInfo::AccessorInfoPrint(std::ostream& os) {
-  TorqueGeneratedAccessorInfo<AccessorInfo, Struct>::AccessorInfoPrint(os);
+  TorqueGeneratedAccessorInfo<AccessorInfo, HeapObject>::AccessorInfoPrint(os);
   os << " - all_can_read: " << all_can_read();
   os << "\n - all_can_write: " << all_can_write();
   os << "\n - is_special_data_property: " << is_special_data_property();
@@ -835,6 +846,9 @@ void AccessorInfo::AccessorInfoPrint(std::ostream& os) {
   os << "\n - setter_side_effect_type: "
      << SideEffectType2String(setter_side_effect_type());
   os << "\n - initial_attributes: " << initial_property_attributes();
+  os << "\n - getter: " << reinterpret_cast<void*>(getter());
+  os << "\n - js_getter: " << reinterpret_cast<void*>(js_getter());
+  os << "\n - setter: " << reinterpret_cast<void*>(setter());
   os << '\n';
 }
 
@@ -1455,6 +1469,14 @@ void JSFinalizationRegistry::JSFinalizationRegistryPrint(std::ostream& os) {
   JSObjectPrintBody(os, *this);
 }
 
+void JSSharedArray::JSSharedArrayPrint(std::ostream& os) {
+  JSObjectPrintHeader(os, *this, "JSSharedArray");
+  Isolate* isolate = GetIsolateFromWritableObject(*this);
+  os << "\n - isolate: " << isolate;
+  if (isolate->is_shared()) os << " (shared)";
+  JSObjectPrintBody(os, *this);
+}
+
 void JSSharedStruct::JSSharedStructPrint(std::ostream& os) {
   JSObjectPrintHeader(os, *this, "JSSharedStruct");
   Isolate* isolate = GetIsolateFromWritableObject(*this);
@@ -1470,6 +1492,15 @@ void JSAtomicsMutex::JSAtomicsMutexPrint(std::ostream& os) {
   if (isolate->is_shared()) os << " (shared)";
   os << "\n - state: " << this->state();
   os << "\n - owner_thread_id: " << this->owner_thread_id();
+  JSObjectPrintBody(os, *this);
+}
+
+void JSAtomicsCondition::JSAtomicsConditionPrint(std::ostream& os) {
+  JSObjectPrintHeader(os, *this, "JSAtomicsCondition");
+  Isolate* isolate = GetIsolateFromWritableObject(*this);
+  os << "\n - isolate: " << isolate;
+  if (isolate->is_shared()) os << " (shared)";
+  os << "\n - state: " << this->state();
   JSObjectPrintBody(os, *this);
 }
 
@@ -1725,12 +1756,17 @@ void Code::CodePrint(std::ostream& os) {
 
 void CodeDataContainer::CodeDataContainerPrint(std::ostream& os) {
   PrintHeader(os, "CodeDataContainer");
-  os << "\n - kind_specific_flags: " << kind_specific_flags(kRelaxedLoad);
-  if (V8_EXTERNAL_CODE_SPACE_BOOL) {
-    os << "\n - code: " << Brief(code());
-    os << "\n - code_entry_point: "
-       << reinterpret_cast<void*>(code_entry_point());
+#ifdef V8_EXTERNAL_CODE_SPACE
+  os << "\n - kind: " << CodeKindToString(kind());
+  if (is_builtin()) {
+    os << "\n - builtin: " << Builtins::name(builtin_id());
   }
+  os << "\n - is_off_heap_trampoline: " << is_off_heap_trampoline();
+  os << "\n - code: " << Brief(raw_code());
+  os << "\n - code_entry_point: "
+     << reinterpret_cast<void*>(code_entry_point());
+#endif  // V8_EXTERNAL_CODE_SPACE
+  os << "\n - kind_specific_flags: " << kind_specific_flags(kRelaxedLoad);
   os << "\n";
 }
 
@@ -1825,9 +1861,12 @@ void AsmWasmData::AsmWasmDataPrint(std::ostream& os) {
 
 void WasmTypeInfo::WasmTypeInfoPrint(std::ostream& os) {
   PrintHeader(os, "WasmTypeInfo");
-  os << "\n - type address: " << reinterpret_cast<void*>(foreign_address());
-  os << "\n - supertypes: " << Brief(supertypes());
-  os << "\n - subtypes: " << Brief(subtypes());
+  os << "\n - type address: " << reinterpret_cast<void*>(native_type());
+  // TODO(manoskouk): Print supertype info.
+  os << "\n - supertypes: ";
+  for (int i = 0; i < supertypes_length(); i++) {
+    os << "\n  - " << Brief(supertypes(i));
+  }
   os << "\n - instance: " << Brief(instance());
   os << "\n";
 }
@@ -1861,7 +1900,7 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {
         os << base::ReadUnalignedValue<int16_t>(field_address);
         break;
       case wasm::kRef:
-      case wasm::kOptRef:
+      case wasm::kRefNull:
       case wasm::kRtt: {
         Tagged_t raw = base::ReadUnalignedValue<Tagged_t>(field_address);
 #if V8_COMPRESS_POINTERS
@@ -1887,7 +1926,7 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {
   PrintHeader(os, "WasmArray");
   wasm::ArrayType* array_type = type();
   uint32_t len = length();
-  os << "\n - type: " << array_type->element_type().name();
+  os << "\n - element type: " << array_type->element_type().name();
   os << "\n - length: " << len;
   Address data_ptr = ptr() + WasmArray::kHeaderSize - kHeapObjectTag;
   switch (array_type->element_type().kind()) {
@@ -1917,7 +1956,7 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {
       break;
     case wasm::kS128:
     case wasm::kRef:
-    case wasm::kOptRef:
+    case wasm::kRefNull:
     case wasm::kRtt:
       os << "\n   Printing elements of this type is unimplemented, sorry";
       // TODO(7748): Implement.
@@ -1988,6 +2027,8 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_size, +);
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_sig_ids, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_targets, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(isorecursive_canonical_types,
+                            reinterpret_cast<const uint32_t*>);
   PRINT_WASM_INSTANCE_FIELD(jump_table_start, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(data_segment_starts, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(data_segment_sizes, to_void_ptr);
@@ -2006,6 +2047,7 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
 void WasmFunctionData::WasmFunctionDataPrint(std::ostream& os) {
   os << "\n - internal: " << Brief(internal());
   os << "\n - wrapper_code: " << Brief(TorqueGeneratedClass::wrapper_code());
+  os << "\n - js_promise_flags: " << js_promise_flags();
 }
 
 void WasmExportedFunctionData::WasmExportedFunctionDataPrint(std::ostream& os) {
@@ -2015,7 +2057,6 @@ void WasmExportedFunctionData::WasmExportedFunctionDataPrint(std::ostream& os) {
   os << "\n - function_index: " << function_index();
   os << "\n - signature: " << Brief(signature());
   os << "\n - wrapper_budget: " << wrapper_budget();
-  os << "\n - suspender: " << suspender();
   os << "\n";
 }
 
@@ -2028,8 +2069,8 @@ void WasmJSFunctionData::WasmJSFunctionDataPrint(std::ostream& os) {
   os << "\n";
 }
 
-void WasmOnFulfilledData::WasmOnFulfilledDataPrint(std::ostream& os) {
-  PrintHeader(os, "WasmOnFulfilledData");
+void WasmResumeData::WasmResumeDataPrint(std::ostream& os) {
+  PrintHeader(os, "WasmResumeData");
   os << "\n - suspender: " << Brief(suspender());
   os << '\n';
 }
@@ -2039,13 +2080,14 @@ void WasmApiFunctionRef::WasmApiFunctionRefPrint(std::ostream& os) {
   os << "\n - isolate_root: " << reinterpret_cast<void*>(isolate_root());
   os << "\n - native_context: " << Brief(native_context());
   os << "\n - callable: " << Brief(callable());
-  os << "\n - suspender: " << Brief(suspender());
+  os << "\n - suspend: " << suspend();
   os << "\n";
 }
 
 void WasmInternalFunction::WasmInternalFunctionPrint(std::ostream& os) {
   PrintHeader(os, "WasmInternalFunction");
-  os << "\n - call target: " << reinterpret_cast<void*>(foreign_address());
+  Isolate* isolate = GetIsolateForSandbox(*this);
+  os << "\n - call target: " << reinterpret_cast<void*>(call_target(isolate));
   os << "\n - ref: " << Brief(ref());
   os << "\n - external: " << Brief(external());
   os << "\n - code: " << Brief(code());
@@ -2057,6 +2099,11 @@ void WasmCapiFunctionData::WasmCapiFunctionDataPrint(std::ostream& os) {
   WasmFunctionDataPrint(os);
   os << "\n - embedder_data: " << Brief(embedder_data());
   os << "\n - serialized_signature: " << Brief(serialized_signature());
+  os << "\n";
+}
+
+void WasmExceptionPackage::WasmExceptionPackagePrint(std::ostream& os) {
+  PrintHeader(os, "WasmExceptionPackage");
   os << "\n";
 }
 
@@ -2143,8 +2190,8 @@ void StoreHandler::StoreHandlerPrint(std::ostream& os) {
 
 void CallHandlerInfo::CallHandlerInfoPrint(std::ostream& os) {
   PrintHeader(os, "CallHandlerInfo");
-  os << "\n - callback: " << Brief(callback());
-  os << "\n - js_callback: " << Brief(js_callback());
+  os << "\n - callback: " << reinterpret_cast<void*>(callback());
+  os << "\n - js_callback: " << reinterpret_cast<void*>(js_callback());
   os << "\n - data: " << Brief(data());
   os << "\n - side_effect_free: "
      << (IsSideEffectFreeCallHandlerInfo() ? "true" : "false");
@@ -2223,14 +2270,16 @@ void Script::ScriptPrint(std::ostream& os) {
   PrintHeader(os, "Script");
   os << "\n - source: " << Brief(source());
   os << "\n - name: " << Brief(name());
-  os << "\n - source_url: " << Brief(source_url());
   os << "\n - line_offset: " << line_offset();
   os << "\n - column_offset: " << column_offset();
-  os << "\n - type: " << type();
-  os << "\n - id: " << id();
   os << "\n - context data: " << Brief(context_data());
-  os << "\n - compilation type: " << compilation_type();
+  os << "\n - type: " << type();
   os << "\n - line ends: " << Brief(line_ends());
+  os << "\n - id: " << id();
+  os << "\n - source_url: " << Brief(source_url());
+  os << "\n - source_mapping_url: " << Brief(source_mapping_url());
+  os << "\n - host_defined_options: " << Brief(host_defined_options());
+  os << "\n - compilation type: " << compilation_type();
   bool is_wasm = false;
 #if V8_ENABLE_WEBASSEMBLY
   if ((is_wasm = (type() == TYPE_WASM))) {
@@ -2909,10 +2958,9 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-  if (!isolate->heap()->InSpaceSlow(address, i::CODE_SPACE) &&
-      !isolate->heap()->InSpaceSlow(address, i::CODE_LO_SPACE) &&
-      !i::OffHeapInstructionStream::PcIsOffHeap(isolate, address) &&
-      !i::ReadOnlyHeap::Contains(address)) {
+  i::CodeLookupResult lookup_result =
+      isolate->heap()->GcSafeFindCodeForInnerPointerForPrinting(address);
+  if (!lookup_result.IsFound()) {
     i::PrintF(
         "%p is not within the current isolate's code, read_only or embedded "
         "spaces\n",
@@ -2920,19 +2968,20 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
     return;
   }
 
-  i::CodeLookupResult lookup_result = isolate->FindCodeObject(address);
-  if (!lookup_result.IsFound()) {
-    i::PrintF("No code object found containing %p\n", object);
-    return;
-  }
-
-  i::Code code = lookup_result.ToCode();
-
 #ifdef ENABLE_DISASSEMBLER
   i::StdoutStream os;
-  code.Disassemble(nullptr, os, isolate, address);
+  if (lookup_result.IsCodeDataContainer()) {
+    i::CodeT code = i::CodeT::cast(lookup_result.code_data_container());
+    code.Disassemble(nullptr, os, isolate, address);
+  } else {
+    lookup_result.code().Disassemble(nullptr, os, isolate, address);
+  }
 #else   // ENABLE_DISASSEMBLER
-  code.Print();
+  if (lookup_result.IsCodeDataContainer()) {
+    lookup_result.code_data_container().Print();
+  } else {
+    lookup_result.code().Print();
+  }
 #endif  // ENABLE_DISASSEMBLER
 }
 

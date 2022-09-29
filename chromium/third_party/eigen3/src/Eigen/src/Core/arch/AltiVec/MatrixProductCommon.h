@@ -11,7 +11,7 @@ namespace Eigen {
 
 namespace internal {
 
-template<typename Scalar, typename Packet, typename DataMapper, typename Index, const Index accRows, const Index accCols>
+template<typename Scalar, typename Packet, typename DataMapper, const Index accRows, const Index accCols>
 EIGEN_ALWAYS_INLINE void gemm_extra_row(
   const DataMapper& res,
   const Scalar* lhs_base,
@@ -26,7 +26,7 @@ EIGEN_ALWAYS_INLINE void gemm_extra_row(
   const Packet& pAlpha,
   const Packet& pMask);
 
-template<typename Scalar, typename Packet, typename DataMapper, typename Index, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<typename Scalar, typename Packet, typename DataMapper, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 EIGEN_STRONG_INLINE void gemm_extra_cols(
   const DataMapper& res,
   const Scalar* blockA,
@@ -43,10 +43,10 @@ EIGEN_STRONG_INLINE void gemm_extra_cols(
   const Packet& pAlpha,
   const Packet& pMask);
 
-template<typename Packet, typename Index>
+template<typename Packet>
 EIGEN_ALWAYS_INLINE Packet bmask(const Index remaining_rows);
 
-template<typename Scalar, typename Packet, typename Packetc, typename DataMapper, typename Index, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<typename Scalar, typename Packet, typename Packetc, typename DataMapper, const Index accRows, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 EIGEN_ALWAYS_INLINE void gemm_complex_extra_row(
   const DataMapper& res,
   const Scalar* lhs_base,
@@ -62,7 +62,7 @@ EIGEN_ALWAYS_INLINE void gemm_complex_extra_row(
   const Packet& pAlphaImag,
   const Packet& pMask);
 
-template<typename Scalar, typename Packet, typename Packetc, typename DataMapper, typename Index, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
+template<typename Scalar, typename Packet, typename Packetc, typename DataMapper, const Index accCols, bool ConjugateLhs, bool ConjugateRhs, bool LhsIsReal, bool RhsIsReal>
 EIGEN_STRONG_INLINE void gemm_complex_extra_cols(
   const DataMapper& res,
   const Scalar* blockA,
@@ -83,10 +83,10 @@ EIGEN_STRONG_INLINE void gemm_complex_extra_cols(
 template<typename Packet>
 EIGEN_ALWAYS_INLINE Packet ploadLhs(const __UNPACK_TYPE__(Packet)* lhs);
 
-template<typename DataMapper, typename Packet, typename Index, const Index accCols, int StorageOrder, bool Complex, int N, bool full = true>
+template<typename DataMapper, typename Packet, const Index accCols, int StorageOrder, bool Complex, int N, bool full = true>
 EIGEN_ALWAYS_INLINE void bload(PacketBlock<Packet,N*(Complex?2:1)>& acc, const DataMapper& res, Index row, Index col);
 
-template<typename DataMapper, typename Packet, typename Index, int N>
+template<typename DataMapper, typename Packet, int N>
 EIGEN_ALWAYS_INLINE void bstore(PacketBlock<Packet,N>& acc, const DataMapper& res, Index row);
 
 template<typename Packet, int N, bool mask>

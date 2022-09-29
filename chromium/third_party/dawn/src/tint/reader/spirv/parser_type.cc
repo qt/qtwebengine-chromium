@@ -21,6 +21,7 @@
 #include "src/tint/program_builder.h"
 #include "src/tint/utils/hash.h"
 #include "src/tint/utils/map.h"
+#include "src/tint/utils/string.h"
 #include "src/tint/utils/unique_allocator.h"
 
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Type);
@@ -162,6 +163,12 @@ const ast::Type* F32::Build(ProgramBuilder& b) const {
 const ast::Type* I32::Build(ProgramBuilder& b) const {
     return b.ty.i32();
 }
+
+Type::Type() = default;
+Type::Type(const Type&) = default;
+Type::~Type() = default;
+
+Texture::~Texture() = default;
 
 Pointer::Pointer(const Type* t, ast::StorageClass s) : type(t), storage_class(s) {}
 Pointer::Pointer(const Pointer&) = default;
@@ -512,13 +519,13 @@ std::string I32::String() const {
 
 std::string Pointer::String() const {
     std::stringstream ss;
-    ss << "ptr<" << std::string(ast::ToString(storage_class)) << ", " << type->String() + ">";
+    ss << "ptr<" << utils::ToString(storage_class) << ", " << type->String() + ">";
     return ss.str();
 }
 
 std::string Reference::String() const {
     std::stringstream ss;
-    ss << "ref<" + std::string(ast::ToString(storage_class)) << ", " << type->String() << ">";
+    ss << "ref<" + utils::ToString(storage_class) << ", " << type->String() << ">";
     return ss.str();
 }
 

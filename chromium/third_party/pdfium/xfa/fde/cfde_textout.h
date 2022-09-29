@@ -36,7 +36,7 @@ class CFDE_TextOut {
   CFDE_TextOut();
   ~CFDE_TextOut();
 
-  void SetFont(const RetainPtr<CFGAS_GEFont>& pFont);
+  void SetFont(RetainPtr<CFGAS_GEFont> pFont);
   void SetFontSize(float fFontSize);
   void SetTextColor(FX_ARGB color) { m_TxtColor = color; }
   void SetStyles(const FDE_TextStyle& dwStyles);
@@ -48,7 +48,7 @@ class CFDE_TextOut {
   void CalcLogicSize(WideStringView str, CFX_SizeF* pSize);
   void CalcLogicSize(WideStringView str, CFX_RectF* pRect);
   void DrawLogicText(CFX_RenderDevice* device,
-                     WideStringView str,
+                     const WideString& str,
                      const CFX_RectF& rect);
   int32_t GetTotalLines() const { return m_iTotalLines; }
 
@@ -115,7 +115,7 @@ class CFDE_TextOut {
   WideString m_wsText;
   CFX_Matrix m_Matrix;
   std::deque<Line> m_ttoLines;
-  int32_t m_iCurLine = 0;
+  size_t m_iCurLine = 0;
   size_t m_iCurPiece = 0;
   int32_t m_iTotalLines = 0;
   std::vector<TextCharPos> m_CharPos;

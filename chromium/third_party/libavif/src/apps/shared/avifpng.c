@@ -127,9 +127,14 @@ avifBool avifPNGRead(const char * inputFilename, avifImage * avif, avifPixelForm
     avif->height = rawHeight;
     avif->yuvFormat = requestedFormat;
     if (avif->yuvFormat == AVIF_PIXEL_FORMAT_NONE) {
-        // Identity is only valid with YUV444.
-        avif->yuvFormat = (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) ? AVIF_PIXEL_FORMAT_YUV444
-                                                                                          : AVIF_APP_DEFAULT_PIXEL_FORMAT;
+        if (avif->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) {
+            // Identity is only valid with YUV444.
+            avif->yuvFormat = AVIF_PIXEL_FORMAT_YUV444;
+        } else if ((rawColorType == PNG_COLOR_TYPE_GRAY) || (rawColorType == PNG_COLOR_TYPE_GRAY_ALPHA)) {
+            avif->yuvFormat = AVIF_PIXEL_FORMAT_YUV400;
+        } else {
+            avif->yuvFormat = AVIF_APP_DEFAULT_PIXEL_FORMAT;
+        }
     }
     avif->depth = requestedDepth;
     if (avif->depth == 0) {
@@ -190,6 +195,11 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
 
     avifRGBImageSetDefaults(&rgb, avif);
     rgb.depth = rgbDepth;
+    int colorType = PNG_COLOR_TYPE_RGBA;
+    if (!avif->alphaPlane) {
+        colorType = PNG_COLOR_TYPE_RGB;
+        rgb.format = AVIF_RGB_FORMAT_RGB;
+    }
     rgb.chromaUpsampling = chromaUpsampling;
     avifRGBImageAllocatePixels(&rgb);
     if (avifImageYUVToRGB(avif, &rgb) != AVIF_RESULT_OK) {
@@ -231,7 +241,7 @@ avifBool avifPNGWrite(const char * outputFilename, const avifImage * avif, uint3
         png_set_compression_level(png, compressionLevel);
     }
 
-    png_set_IHDR(png, info, avif->width, avif->height, rgb.depth, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+    png_set_IHDR(png, info, avif->width, avif->height, rgb.depth, colorType, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
     if (avif->icc.data && (avif->icc.size > 0)) {
         png_set_iCCP(png, info, "libavif", 0, (png_iccp_datap)avif->icc.data, (png_uint_32)avif->icc.size);
     }

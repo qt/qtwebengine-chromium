@@ -20,7 +20,6 @@
 #include "dawn/common/GPUInfo.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/SystemUtils.h"
-#include "dawn/common/Version_autogen.h"
 #include "dawn/native/ChainUtils_autogen.h"
 #include "dawn/native/ErrorData.h"
 #include "dawn/native/Surface.h"
@@ -95,8 +94,8 @@ BackendsBitset GetEnabledBackends() {
 }
 
 dawn::platform::CachingInterface* GetCachingInterface(dawn::platform::Platform* platform) {
-    if (platform != nullptr && dawn::kGitHash.size() > 0) {
-        return platform->GetCachingInterface(dawn::kGitHash.data(), dawn::kGitHash.size());
+    if (platform != nullptr) {
+        return platform->GetCachingInterface();
     }
     return nullptr;
 }
@@ -104,7 +103,7 @@ dawn::platform::CachingInterface* GetCachingInterface(dawn::platform::Platform* 
 }  // anonymous namespace
 
 InstanceBase* APICreateInstance(const InstanceDescriptor* descriptor) {
-    return InstanceBase::Create().Detach();
+    return InstanceBase::Create(descriptor).Detach();
 }
 
 // InstanceBase
@@ -181,7 +180,14 @@ ResultOrError<Ref<AdapterBase>> InstanceBase::RequestAdapterInternal(
         if (GetEnabledBackends()[wgpu::BackendType::Vulkan]) {
             dawn_native::vulkan::AdapterDiscoveryOptions vulkanOptions;
             vulkanOptions.forceSwiftShader = true;
-            DAWN_TRY(DiscoverAdaptersInternal(&vulkanOptions));
+
+            MaybeError result = DiscoverAdaptersInternal(&vulkanOptions);
+            if (result.IsError()) {
+                dawn::WarningLog()
+                    << "Skipping Vulkan Swiftshader adapter because initialization failed: "
+                    << result.AcquireError()->GetFormattedMessage();
+                return Ref<AdapterBase>(nullptr);
+            }
         }
 #else
         return Ref<AdapterBase>(nullptr);
@@ -277,7 +283,16 @@ void InstanceBase::DiscoverDefaultAdapters() {
 
 // This is just a wrapper around the real logic that uses Error.h error handling.
 bool InstanceBase::DiscoverAdapters(const AdapterDiscoveryOptionsBase* options) {
-    return !ConsumedError(DiscoverAdaptersInternal(options));
+    MaybeError result = DiscoverAdaptersInternal(options);
+
+    if (result.IsError()) {
+        dawn::WarningLog() << "Skipping " << options->backendType
+                           << " adapter because initialization failed: "
+                           << result.AcquireError()->GetFormattedMessage();
+        return false;
+    }
+
+    return true;
 }
 
 const ToggleInfo* InstanceBase::GetToggleInfo(const char* toggleName) {
@@ -387,10 +402,7 @@ MaybeError InstanceBase::DiscoverAdaptersInternal(const AdapterDiscoveryOptionsB
 
 bool InstanceBase::ConsumedError(MaybeError maybeError) {
     if (maybeError.IsError()) {
-        std::unique_ptr<ErrorData> error = maybeError.AcquireError();
-
-        ASSERT(error != nullptr);
-        dawn::ErrorLog() << error->GetFormattedMessage();
+        ConsumeError(maybeError.AcquireError());
         return true;
     }
     return false;
@@ -451,6 +463,11 @@ void InstanceBase::DecrementDeviceCountForTesting() {
 
 const std::vector<std::string>& InstanceBase::GetRuntimeSearchPaths() const {
     return mRuntimeSearchPaths;
+}
+
+void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error) {
+    ASSERT(error != nullptr);
+    dawn::ErrorLog() << error->GetFormattedMessage();
 }
 
 const XlibXcbFunctions* InstanceBase::GetOrCreateXlibXcbFunctions() {

@@ -19,17 +19,17 @@
 #include "third_party/base/check_op.h"
 #include "third_party/base/containers/contains.h"
 
-CPDF_Page::CPDF_Page(CPDF_Document* pDocument, CPDF_Dictionary* pPageDict)
-    : CPDF_PageObjectHolder(pDocument, pPageDict, nullptr, nullptr),
+CPDF_Page::CPDF_Page(CPDF_Document* pDocument,
+                     RetainPtr<CPDF_Dictionary> pPageDict)
+    : CPDF_PageObjectHolder(pDocument, std::move(pPageDict), nullptr, nullptr),
       m_PageSize(100, 100),
       m_pPDFDocument(pDocument) {
-  DCHECK(pPageDict);
-
   // Cannot initialize |m_pResources| and |m_pPageResources| via the
   // CPDF_PageObjectHolder ctor because GetPageAttr() requires
   // CPDF_PageObjectHolder to finish initializing first.
-  CPDF_Object* pPageAttr = GetPageAttr(pdfium::page_object::kResources);
-  m_pResources.Reset(pPageAttr ? pPageAttr->GetDict() : nullptr);
+  RetainPtr<CPDF_Object> pPageAttr =
+      GetMutablePageAttr(pdfium::page_object::kResources);
+  m_pResources = pPageAttr ? pPageAttr->GetMutableDict() : nullptr;
   m_pPageResources = m_pResources;
 
   UpdateDimensions();
@@ -48,7 +48,7 @@ CPDFXFA_Page* CPDF_Page::AsXFAPage() {
 }
 
 CPDF_Document* CPDF_Page::GetDocument() const {
-  return GetPDFDocument();
+  return m_pPDFDocument.Get();
 }
 
 float CPDF_Page::GetPageWidth() const {
@@ -74,24 +74,27 @@ void CPDF_Page::ParseContent() {
   ContinueParse(nullptr);
 }
 
-CPDF_Object* CPDF_Page::GetPageAttr(const ByteString& name) const {
-  CPDF_Dictionary* pPageDict = GetDict();
-  std::set<CPDF_Dictionary*> visited;
-  while (true) {
-    visited.insert(pPageDict);
-    if (CPDF_Object* pObj = pPageDict->GetDirectObjectFor(name))
+RetainPtr<CPDF_Object> CPDF_Page::GetMutablePageAttr(const ByteString& name) {
+  return pdfium::WrapRetain(const_cast<CPDF_Object*>(GetPageAttr(name)));
+}
+
+const CPDF_Object* CPDF_Page::GetPageAttr(const ByteString& name) const {
+  std::set<const CPDF_Dictionary*> visited;
+  const CPDF_Dictionary* pPageDict = GetDict();
+  while (pPageDict && !pdfium::Contains(visited, pPageDict)) {
+    const CPDF_Object* pObj = pPageDict->GetDirectObjectFor(name);
+    if (pObj)
       return pObj;
 
+    visited.insert(pPageDict);
     pPageDict = pPageDict->GetDictFor(pdfium::page_object::kParent);
-    if (!pPageDict || pdfium::Contains(visited, pPageDict))
-      break;
   }
   return nullptr;
 }
 
 CFX_FloatRect CPDF_Page::GetBox(const ByteString& name) const {
   CFX_FloatRect box;
-  CPDF_Array* pBox = ToArray(GetPageAttr(name));
+  const CPDF_Array* pBox = ToArray(GetPageAttr(name));
   if (pBox) {
     box = pBox->GetRect();
     box.Normalize();
@@ -173,7 +176,7 @@ CFX_Matrix CPDF_Page::GetDisplayMatrix(const FX_RECT& rect, int iRotate) const {
 }
 
 int CPDF_Page::GetPageRotation() const {
-  CPDF_Object* pRotate = GetPageAttr(pdfium::page_object::kRotate);
+  const CPDF_Object* pRotate = GetPageAttr(pdfium::page_object::kRotate);
   int rotate = pRotate ? (pRotate->GetInteger() / 90) % 4 : 0;
   return (rotate < 0) ? (rotate + 4) : rotate;
 }
@@ -186,6 +189,11 @@ void CPDF_Page::SetRenderContext(std::unique_ptr<RenderContextIface> pContext) {
 
 void CPDF_Page::ClearRenderContext() {
   m_pRenderContext.reset();
+}
+
+void CPDF_Page::ClearView() {
+  if (m_pView)
+    m_pView->ClearPage(this);
 }
 
 void CPDF_Page::UpdateDimensions() {
@@ -225,5 +233,6 @@ CPDF_Page::RenderContextClearer::RenderContextClearer(CPDF_Page* pPage)
     : m_pPage(pPage) {}
 
 CPDF_Page::RenderContextClearer::~RenderContextClearer() {
-  m_pPage->ClearRenderContext();
+  if (m_pPage)
+    m_pPage->ClearRenderContext();
 }

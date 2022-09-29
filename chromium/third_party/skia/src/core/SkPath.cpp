@@ -1145,6 +1145,8 @@ SkPath& SkPath::arcTo(const SkRect& oval, SkScalar startAngle, SkScalar sweepAng
         return *this;
     }
 
+    startAngle = SkScalarMod(startAngle, 360.0f);
+
     if (fPathRef->countVerbs() == 0) {
         forceMoveTo = true;
     }
@@ -1256,7 +1258,7 @@ SkPath& SkPath::arcTo(SkScalar rx, SkScalar ry, SkScalar angle, SkPath::ArcSize 
     pointTransform.preRotate(-angle);
 
     SkPoint unitPts[2];
-    pointTransform.mapPoints(unitPts, srcPts, (int) SK_ARRAY_COUNT(unitPts));
+    pointTransform.mapPoints(unitPts, srcPts, (int) std::size(unitPts));
     SkVector delta = unitPts[1] - unitPts[0];
 
     SkScalar d = delta.fX * delta.fX + delta.fY * delta.fY;
@@ -1318,7 +1320,7 @@ SkPath& SkPath::arcTo(SkScalar rx, SkScalar ry, SkScalar angle, SkPath::ArcSize 
         unitPts[0] = unitPts[1];
         unitPts[0].offset(t * sinEndTheta, -t * cosEndTheta);
         SkPoint mapped[2];
-        pointTransform.mapPoints(mapped, unitPts, (int) SK_ARRAY_COUNT(unitPts));
+        pointTransform.mapPoints(mapped, unitPts, (int) std::size(unitPts));
         /*
         Computing the arc width introduces rounding errors that cause arcs to start
         outside their marks. A round rect may lose convexity as a result. If the input

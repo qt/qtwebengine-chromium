@@ -1,7 +1,16 @@
 Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
+version <next>:
+- Radiance HDR image support
+- ddagrab (Desktop Duplication) video capture filter
+- ffmpeg -shortest_buf_duration option
+- ffmpeg now requires threading to be built
+- ffmpeg now runs every muxer in a separate thread
+
+
 version 5.1:
+- add ipfs/ipns protocol support
 - dialogue enhance audio filter
 - dropped obsolete XvMC hwaccel
 - pcm-bluray encoder
@@ -13,9 +22,17 @@ version 5.1:
 - pixelize video filter
 - colormap video filter
 - colorchart video source filter
-- blurdetect filter
 - multiply video filter
 - PGS subtitle frame merge bitstream filter
+- blurdetect filter
+- tiltshelf audio filter
+- QOI image format support
+- ffprobe -o option
+- virtualbass audio filter
+- VDPAU AV1 hwaccel
+- PHM image format support
+- remap_opencl filter
+- added chromakey_cuda filter
 
 
 version 5.0:

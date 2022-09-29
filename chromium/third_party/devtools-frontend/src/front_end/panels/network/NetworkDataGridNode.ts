@@ -51,7 +51,7 @@ import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import type {NetworkTimeCalculator} from './NetworkTimeCalculator.js';
+import {type NetworkTimeCalculator} from './NetworkTimeCalculator.js';
 
 import {imageNameForResourceType} from '../utils/utils.js';
 
@@ -1043,8 +1043,7 @@ export class NetworkRequestNode extends NetworkNode {
         const secondIconElement = document.createElement('img');
         secondIconElement.classList.add('icon');
         secondIconElement.alt = i18nString(UIStrings.webBundleInnerRequest);
-        secondIconElement.src = 'Images/ic_file_webbundle_inner_request.svg';
-        new URL('../../Images/ic_file_webbundle_inner_request.svg', import.meta.url).toString();
+        secondIconElement.src = new URL('../../Images/ic_file_webbundle_inner_request.svg', import.meta.url).toString();
 
         const networkManager = SDK.NetworkManager.NetworkManager.forRequest(this.requestInternal);
         if (webBundleInnerRequestInfo.bundleRequestId && networkManager) {

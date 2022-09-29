@@ -12,12 +12,11 @@
 
 #include <memory>
 #include <utility>
-#include <vector>
 
 #include "core/fxcodec/fx_codec_def.h"
 #include "core/fxcodec/jpeg/jpegmodule.h"
 #include "core/fxcodec/progressive_decoder_iface.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/cstretchengine.h"
 #include "core/fxge/dib/fx_dib.h"
@@ -137,8 +136,9 @@ class ProgressiveDecoder final :
                                             pixel * m_ItemSize);
     }
 
+   private:
     int m_ItemSize;
-    std::vector<uint8_t, FxAllocAllocator<uint8_t>> m_pWeightTables;
+    DataVector<uint8_t> m_pWeightTables;
   };
 
   class VertTable {
@@ -151,22 +151,24 @@ class ProgressiveDecoder final :
       return reinterpret_cast<PixelWeight*>(m_pWeightTables.data() +
                                             pixel * m_ItemSize);
     }
+
+   private:
     int m_ItemSize;
-    std::vector<uint8_t, FxAllocAllocator<uint8_t>> m_pWeightTables;
+    DataVector<uint8_t> m_pWeightTables;
   };
 
 #ifdef PDF_ENABLE_XFA_BMP
   bool BmpReadMoreData(ProgressiveDecoderIface::Context* pBmpContext,
                        FXCODEC_STATUS* err_status);
   bool BmpDetectImageTypeInBuffer(CFX_DIBAttribute* pAttribute);
-  FXCODEC_STATUS BmpStartDecode(const RetainPtr<CFX_DIBitmap>& pDIBitmap);
+  FXCODEC_STATUS BmpStartDecode();
   FXCODEC_STATUS BmpContinueDecode();
 #endif  // PDF_ENABLE_XFA_BMP
 
 #ifdef PDF_ENABLE_XFA_GIF
   bool GifReadMoreData(FXCODEC_STATUS* err_status);
   bool GifDetectImageTypeInBuffer();
-  FXCODEC_STATUS GifStartDecode(const RetainPtr<CFX_DIBitmap>& pDIBitmap);
+  FXCODEC_STATUS GifStartDecode();
   FXCODEC_STATUS GifContinueDecode();
   void GifDoubleLineResampleVert(const RetainPtr<CFX_DIBitmap>& pDeviceBitmap,
                                  double scale_y,
@@ -179,7 +181,7 @@ class ProgressiveDecoder final :
                                 uint8_t* src_scan,
                                 FXCodec_Format src_format);
   bool PngDetectImageTypeInBuffer(CFX_DIBAttribute* pAttribute);
-  FXCODEC_STATUS PngStartDecode(const RetainPtr<CFX_DIBitmap>& pDIBitmap);
+  FXCODEC_STATUS PngStartDecode();
   FXCODEC_STATUS PngContinueDecode();
 #endif  // PDF_ENABLE_XFA_PNG
 
@@ -190,7 +192,7 @@ class ProgressiveDecoder final :
 
   bool JpegReadMoreData(FXCODEC_STATUS* err_status);
   bool JpegDetectImageTypeInBuffer(CFX_DIBAttribute* pAttribute);
-  FXCODEC_STATUS JpegStartDecode(const RetainPtr<CFX_DIBitmap>& pDIBitmap);
+  FXCODEC_STATUS JpegStartDecode(FXDIB_Format format);
   FXCODEC_STATUS JpegContinueDecode();
 
   bool DetectImageType(FXCODEC_IMAGE_TYPE imageType,
@@ -222,8 +224,8 @@ class ProgressiveDecoder final :
   RetainPtr<IFX_SeekableReadStream> m_pFile;
   RetainPtr<CFX_DIBitmap> m_pDeviceBitmap;
   RetainPtr<CFX_CodecMemory> m_pCodecMemory;
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> m_DecodeBuf;
-  std::vector<FX_ARGB, FxAllocAllocator<FX_ARGB>> m_SrcPalette;
+  DataVector<uint8_t> m_DecodeBuf;
+  DataVector<FX_ARGB> m_SrcPalette;
   std::unique_ptr<ProgressiveDecoderIface::Context> m_pJpegContext;
 #ifdef PDF_ENABLE_XFA_BMP
   std::unique_ptr<ProgressiveDecoderIface::Context> m_pBmpContext;

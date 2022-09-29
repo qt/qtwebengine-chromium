@@ -39,7 +39,8 @@ public:
                                               SkISize dimensions,
                                               id<MTLTexture>,
                                               UsageFlags attachmentUsages,
-                                              GrWrapCacheable);
+                                              GrWrapCacheable,
+                                              std::string_view label);
 
     ~GrMtlAttachment() override;
 
@@ -85,6 +86,8 @@ private:
                     std::string_view label);
 
     GrMtlGpu* getMtlGpu() const;
+
+    void onSetLabel() override;
 
     id<MTLTexture> fTexture;
 };

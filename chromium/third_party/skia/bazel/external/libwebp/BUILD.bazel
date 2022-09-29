@@ -11,6 +11,16 @@ config_setting(
 )
 
 WEBP_SRCS = [
+    "sharpyuv/sharpyuv.c",
+    "sharpyuv/sharpyuv.h",
+    "sharpyuv/sharpyuv_csp.c",
+    "sharpyuv/sharpyuv_csp.h",
+    "sharpyuv/sharpyuv_dsp.c",
+    "sharpyuv/sharpyuv_dsp.h",
+    "sharpyuv/sharpyuv_gamma.c",
+    "sharpyuv/sharpyuv_gamma.h",
+    "sharpyuv/sharpyuv_neon.c",
+    "sharpyuv/sharpyuv_sse2.c",
     "src/dec/alpha_dec.c",
     "src/dec/alphai_dec.h",
     "src/dec/buffer_dec.c",
@@ -41,6 +51,7 @@ WEBP_SRCS = [
     "src/dsp/cost_neon.c",
     "src/dsp/cost_sse2.c",
     "src/dsp/cpu.c",
+    "src/dsp/cpu.h",
     "src/dsp/dec.c",
     "src/dsp/dec_clip_tables.c",
     "src/dsp/dec_mips32.c",
@@ -172,7 +183,6 @@ WEBP_SRCS = [
 
 WEBP_COPTS = [
     "-Wno-unused-but-set-variable",
-    "-isystem third_party/",
 ] + select({
     "@platforms//cpu:x86_64": ["-msse4.1"],
     ":cpu_wasm": [],  # not sure why wasm doesn't use default
@@ -197,7 +207,7 @@ cc_library(
         "src/webp/types.h",
     ],
     copts = WEBP_COPTS,
+    includes = ["src"],
     local_defines = WEBP_DEFINES,
-    strip_include_prefix = "src/",
     visibility = ["//visibility:public"],
 )

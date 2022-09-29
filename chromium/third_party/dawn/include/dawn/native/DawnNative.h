@@ -86,7 +86,6 @@ class DAWN_NATIVE_EXPORT Adapter {
 
     std::vector<const char*> GetSupportedExtensions() const;
     std::vector<const char*> GetSupportedFeatures() const;
-    WGPUDeviceProperties GetAdapterProperties() const;
     bool GetLimits(WGPUSupportedLimits* limits) const;
 
     void SetUseTieredLimits(bool useTieredLimits);
@@ -237,13 +236,13 @@ struct DAWN_NATIVE_EXPORT ExternalImageDescriptor {
 
 struct DAWN_NATIVE_EXPORT ExternalImageAccessDescriptor {
   public:
-    bool isInitialized;  // Whether the texture is initialized on import
-    WGPUTextureUsageFlags usage;
+    bool isInitialized = false;  // Whether the texture is initialized on import
+    WGPUTextureUsageFlags usage = WGPUTextureUsage_None;
 };
 
 struct DAWN_NATIVE_EXPORT ExternalImageExportInfo {
   public:
-    bool isInitialized;  // Whether the texture is initialized after export
+    bool isInitialized = false;  // Whether the texture is initialized after export
     ExternalImageType GetType() const;
 
   protected:

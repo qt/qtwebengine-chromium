@@ -1,10 +1,10 @@
-load("//bazel:macros.bzl", "cc_library", "exports_files_legacy", "py_binary")
+load("//bazel:macros.bzl", "exports_files_legacy", "py_binary", "skia_cc_library")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
-cc_library(
+skia_cc_library(
     name = "tool_utils",
     testonly = True,
     srcs = [
@@ -12,9 +12,11 @@ cc_library(
         "ToolUtils.cpp",
         "ResourceFactory.h",
         "Resources.h",
-        "//tools/flags:core_srcs",
+        "//tools/flags",
         # TODO(kjlubick, bungeman): We should split out the font stuff into its own set of files
         "//tools/fonts:test_font_manager_srcs",
+        "SkMetaData.h",
+        "SkMetaData.cpp",
     ],
     hdrs = [
         "ToolUtils.h",

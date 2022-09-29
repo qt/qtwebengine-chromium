@@ -17,7 +17,8 @@
 #include "src/utils/SkJSON.h"
 #include "src/utils/SkJSONWriter.h"
 
-#include <stdio.h>
+#include <cstddef>
+#include <cstdio>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -78,7 +79,7 @@ std::string SkVMDebugTrace::slotValueToString(int slotIndex, double value) const
         }
         default: {
             char buffer[32];
-            snprintf(buffer, SK_ARRAY_COUNT(buffer), "%.8g", value);
+            snprintf(buffer, std::size(buffer), "%.8g", value);
             return buffer;
         }
     }
@@ -204,11 +205,11 @@ void SkVMDebugTrace::writeTrace(SkWStream* w) const {
     SkJSONWriter json(w);
 
     json.beginObject(); // root
-    json.appendString("version", kTraceVersion);
+    json.appendNString("version", kTraceVersion);
     json.beginArray("source");
 
     for (const std::string& line : fSource) {
-        json.appendString(line.c_str());
+        json.appendString(line);
     }
 
     json.endArray(); // code
@@ -218,7 +219,7 @@ void SkVMDebugTrace::writeTrace(SkWStream* w) const {
         const SkVMSlotInfo& info = fSlotInfo[index];
 
         json.beginObject();
-        json.appendString("name", info.name.c_str());
+        json.appendString("name", info.name.data(), info.name.size());
         json.appendS32("columns", info.columns);
         json.appendS32("rows", info.rows);
         json.appendS32("index", info.componentIndex);
@@ -240,7 +241,7 @@ void SkVMDebugTrace::writeTrace(SkWStream* w) const {
         const SkVMFunctionInfo& info = fFuncInfo[index];
 
         json.beginObject();
-        json.appendString("name", info.name.c_str());
+        json.appendString("name", info.name);
         json.endObject();
     }
 
@@ -253,7 +254,7 @@ void SkVMDebugTrace::writeTrace(SkWStream* w) const {
         json.appendS32((int)trace.op);
 
         // Skip trailing zeros in the data (since most ops only use one value).
-        int lastDataIdx = SK_ARRAY_COUNT(trace.data) - 1;
+        int lastDataIdx = std::size(trace.data) - 1;
         while (lastDataIdx >= 0 && !trace.data[lastDataIdx]) {
             --lastDataIdx;
         }
@@ -367,7 +368,7 @@ bool SkVMDebugTrace::readTrace(SkStream* r) {
         fTraceInfo.push_back(SkVMTraceInfo{});
         SkVMTraceInfo& info = fTraceInfo.back();
 
-        if (!element || element->size() < 1 || element->size() > (1 + SK_ARRAY_COUNT(info.data))) {
+        if (!element || element->size() < 1 || element->size() > (1 + std::size(info.data))) {
             return false;
         }
         const skjson::NumberValue* opVal = (*element)[0];

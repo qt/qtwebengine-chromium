@@ -698,6 +698,9 @@ AM_BACKSLASH
 AM_DEFAULT_VERBOSITY
 AM_DEFAULT_V
 AM_V
+CSCOPE
+ETAGS
+CTAGS
 am__untar
 am__tar
 AMTAR
@@ -782,6 +785,7 @@ enable_tools
 enable_system_test_libs
 enable_selftest
 with_rustc_demangle
+enable_system_rustc_demangle
 with_tests_as_root
 '
       ac_precious_vars='build_alias
@@ -1451,6 +1455,12 @@ Optional Features:
                           the local copies (default is local)
   --enable-selftest       Run extra tests with "make check" (may conflict with
                           optimizations) (default is no)
+  --enable-system-rustc-demangle
+                          Link against the rustc-demangle library to demangle
+                          Rust language symbols during symbol dumping (default
+                          is no). This assumes that rustc-demangle is
+                          installed in your sysroot, and all headers from it
+                          are available in your standard include path
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -2587,12 +2597,7 @@ program_transform_name=`$as_echo "$program_transform_name" | sed "$ac_script"`
 am_aux_dir=`cd "$ac_aux_dir" && pwd`
 
 if test x"${MISSING+set}" != xset; then
-  case $am_aux_dir in
-  *\ * | *\	*)
-    MISSING="\${SHELL} \"$am_aux_dir/missing\"" ;;
-  *)
-    MISSING="\${SHELL} $am_aux_dir/missing" ;;
-  esac
+  MISSING="\${SHELL} '$am_aux_dir/missing'"
 fi
 # Use eval to expand $SHELL
 if eval "$MISSING --is-lightweight"; then
@@ -3061,6 +3066,20 @@ $as_echo "$am_cv_prog_tar_ustar" >&6; }
 
 
 
+
+
+# Variables for tags utilities; see am/tags.am
+if test -z "$CTAGS"; then
+  CTAGS=ctags
+fi
+
+if test -z "$ETAGS"; then
+  ETAGS=etags
+fi
+
+if test -z "$CSCOPE"; then
+  CSCOPE=cscope
+fi
 
 
 
@@ -5820,23 +5839,15 @@ fi
 
 # Check whether --enable-m32 was given.
 if test "${enable_m32+set}" = set; then :
-  enableval=$enable_m32; case "${enableval}" in
-                 yes)
-                   CFLAGS="${CFLAGS} -m32"
-                   CXXFLAGS="${CXXFLAGS} -m32"
-                   usem32=true
-                   ;;
-                 no)
-                   usem32=false
-                   ;;
-                 *)
-                   as_fn_error $? "bad value ${enableval} for --enable-m32" "$LINENO" 5
-                   ;;
-               esac
+  enableval=$enable_m32;
 else
-  usem32=false
+  enable_m32=no
 fi
 
+if test "x$enable_m32" = xyes; then
+  CFLAGS="${CFLAGS} -m32"
+  CXXFLAGS="${CXXFLAGS} -m32"
+fi
 
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for grep that handles long lines and -e" >&5
@@ -7572,22 +7583,12 @@ fi
 
 # Check whether --enable-processor was given.
 if test "${enable_processor+set}" = set; then :
-  enableval=$enable_processor; case "${enableval}" in
-                 yes)
-                   disable_processor=false
-                   ;;
-                 no)
-                   disable_processor=true
-                   ;;
-                 *)
-                   as_fn_error $? "bad value ${enableval} for --disable-processor" "$LINENO" 5
-                   ;;
-               esac
+  enableval=$enable_processor;
 else
-  disable_processor=false
+  enable_processor=yes
 fi
 
- if test x$disable_processor = xtrue; then
+ if test "x$enable_processor" != xyes; then
   DISABLE_PROCESSOR_TRUE=
   DISABLE_PROCESSOR_FALSE='#'
 else
@@ -7598,22 +7599,12 @@ fi
 
 # Check whether --enable-tools was given.
 if test "${enable_tools+set}" = set; then :
-  enableval=$enable_tools; case "${enableval}" in
-                 yes)
-                   disable_tools=false
-                   ;;
-                 no)
-                   disable_tools=true
-                   ;;
-                 *)
-                   as_fn_error $? "bad value ${enableval} for --disable-tools" "$LINENO" 5
-                   ;;
-               esac
+  enableval=$enable_tools;
 else
-  disable_tools=false
+  enable_tools=yes
 fi
 
- if test x$disable_tools = xtrue; then
+ if test "x$enable_tools" != xyes; then
   DISABLE_TOOLS_TRUE=
   DISABLE_TOOLS_FALSE='#'
 else
@@ -7622,28 +7613,18 @@ else
 fi
 
 
-if test x$LINUX_HOST = xfalse -a x$disable_processor = xtrue -a x$disable_tools = xtrue; then
-   as_fn_error $? "--disable-processor and --disable-tools were specified, and not building for Linux. Nothing to build!" "$LINENO" 5
+if test x$LINUX_HOST = xfalse -a "x$enable_processor" != xyes -a "x$enable_tools" != xyes; then
+  as_fn_error $? "--disable-processor and --disable-tools were specified, and not building for Linux. Nothing to build!" "$LINENO" 5
 fi
 
 # Check whether --enable-system-test-libs was given.
 if test "${enable_system_test_libs+set}" = set; then :
-  enableval=$enable_system_test_libs; case "${enableval}" in
-                 yes)
-                   system_test_libs=true
-                   ;;
-                 no)
-                   system_test_libs=false
-                   ;;
-                 *)
-                   as_fn_error $? "bad value ${enableval} for --enable-system-test-libs" "$LINENO" 5
-                   ;;
-               esac
+  enableval=$enable_system_test_libs;
 else
-  system_test_libs=false
+  enable_system_test_libs=no
 fi
 
- if test x$system_test_libs = xtrue; then
+ if test "x$enable_system_test_libs" = xyes; then
   SYSTEM_TEST_LIBS_TRUE=
   SYSTEM_TEST_LIBS_FALSE='#'
 else
@@ -7656,7 +7637,7 @@ fi
 
 
 
-if test x$system_test_libs = xtrue; then
+if test "x$enable_system_test_libs" = xyes; then
   : "${GMOCK_CFLAGS:=-pthread}"
   : "${GMOCK_LIBS:=-lgmock -lgtest -pthread -lpthread}"
   : "${GTEST_CFLAGS:=-pthread}"
@@ -7665,22 +7646,12 @@ fi
 
 # Check whether --enable-selftest was given.
 if test "${enable_selftest+set}" = set; then :
-  enableval=$enable_selftest; case "${enableval}" in
-                 yes)
-                   selftest=true
-                   ;;
-                 no)
-                   selftest=false
-                   ;;
-                 *)
-                   as_fn_error $? "bad value ${enableval} for --enable-selftest" "$LINENO" 5
-                   ;;
-               esac
+  enableval=$enable_selftest;
 else
-  selftest=false
+  enable_selftest=no
 fi
 
- if test x$selftest = xtrue; then
+ if test "x$enable_selftest" = xyes; then
   SELFTEST_TRUE=
   SELFTEST_FALSE='#'
 else
@@ -7692,23 +7663,100 @@ fi
 
 # Check whether --with-rustc-demangle was given.
 if test "${with_rustc_demangle+set}" = set; then :
-  withval=$with_rustc_demangle; case "${withval}" in
-               yes)
-                 as_fn_error $? "You must pass the path to the rustc-demangle crate for --with-rustc-demangle" "$LINENO" 5
-                 ;;
-               no)
-                 rustc_demangle=false
-                 ;;
-               *)
-                 if ! test -f "${withval}/Cargo.toml"; then
-                   as_fn_error $? "You must pass the path to the rustc-demangle crate for --with-rustc-demangle" "$LINENO" 5
-                 fi
-                 RUSTC_DEMANGLE_CFLAGS="-DHAVE_RUSTC_DEMANGLE -I${withval}/crates/capi/include"
-                 RUSTC_DEMANGLE_LIBS="-L${withval}/target/release -lrustc_demangle -lpthread -ldl"
-                 ;;
-             esac
+  withval=$with_rustc_demangle;
 else
-  rustc_demangle=false
+  with_rustc_demangle=no
+fi
+
+
+RUSTC_DEMANGLE_BASE_CFLAGS="-DHAVE_RUSTC_DEMANGLE"
+RUSTC_DEMANGLE_BASE_LIBS="-lrustc_demangle -lpthread -ldl"
+
+if test "x${with_rustc_demangle}" != xno; then
+  if ! test -f "${with_rustc_demangle}/Cargo.toml"; then
+    as_fn_error $? "You must pass the path to the rustc-demangle crate for --with-rustc-demangle" "$LINENO" 5
+  fi
+  RUSTC_DEMANGLE_CFLAGS="-I${with_rustc_demangle}/crates/capi/include ${RUSTC_DEMANGLE_BASE_CFLAGS}"
+  RUSTC_DEMANGLE_LIBS="-L${with_rustc_demangle}/target/release ${RUSTC_DEMANGLE_BASE_LIBS}"
+fi
+
+# Check whether --enable-system-rustc-demangle was given.
+if test "${enable_system_rustc_demangle+set}" = set; then :
+  enableval=$enable_system_rustc_demangle;
+else
+  enable_system_rustc_demangle=no
+fi
+
+
+if test "x${enable_system_rustc_demangle}" != xno; then
+  if test "x${with_rustc_demangle}" != xno; then
+    as_fn_error $? "--enable-system-rustc-demangle and --with-rustc-demangle are mutually exclusive." "$LINENO" 5
+  fi
+
+  RUSTC_DEMANGLE_CFLAGS="${RUSTC_DEMANGLE_BASE_CFLAGS}"
+  RUSTC_DEMANGLE_LIBS="${RUSTC_DEMANGLE_BASE_LIBS}"
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for rustc_demangle in -lrustc_demangle" >&5
+$as_echo_n "checking for rustc_demangle in -lrustc_demangle... " >&6; }
+if ${ac_cv_lib_rustc_demangle_rustc_demangle+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lrustc_demangle $RUSTC_DEMANGLE_LIBS $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char rustc_demangle ();
+int
+main ()
+{
+return rustc_demangle ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_rustc_demangle_rustc_demangle=yes
+else
+  ac_cv_lib_rustc_demangle_rustc_demangle=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_rustc_demangle_rustc_demangle" >&5
+$as_echo "$ac_cv_lib_rustc_demangle_rustc_demangle" >&6; }
+if test "x$ac_cv_lib_rustc_demangle_rustc_demangle" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBRUSTC_DEMANGLE 1
+_ACEOF
+
+  LIBS="-lrustc_demangle $LIBS"
+
+else
+  as_fn_error $? "librustc_demangle.a must be present when --enable-system-rustc-demangle is specified" "$LINENO" 5
+fi
+
+  for ac_header in rustc_demangle.h
+do :
+  ac_fn_c_check_header_mongrel "$LINENO" "rustc_demangle.h" "ac_cv_header_rustc_demangle_h" "$ac_includes_default"
+if test "x$ac_cv_header_rustc_demangle_h" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_RUSTC_DEMANGLE_H 1
+_ACEOF
+
+else
+  as_fn_error $? "rustc_demangle.h must be present when --enable-system-rustc-demangle is specified" "$LINENO" 5
+fi
+
+done
+
 fi
 
 
@@ -7717,22 +7765,12 @@ fi
 
 # Check whether --with-tests-as-root was given.
 if test "${with_tests_as_root+set}" = set; then :
-  withval=$with_tests_as_root; case "${withval}" in
-               yes)
-                 tests_as_root=true
-                 ;;
-               no)
-                 tests_as_root=false
-                 ;;
-               *)
-                 as_fn_error $? "--with-tests-as-root can only be \"yes\" or \"no\"" "$LINENO" 5
-                 ;;
-             esac
+  withval=$with_tests_as_root;
 else
-  tests_as_root=false
+  with_tests_as_root=no
 fi
 
- if test x$tests_as_root = xtrue; then
+ if test "x$with_tests_as_root" = xyes; then
   TESTS_AS_ROOT_TRUE=
   TESTS_AS_ROOT_FALSE='#'
 else

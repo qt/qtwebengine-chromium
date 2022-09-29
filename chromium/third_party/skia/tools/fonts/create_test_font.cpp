@@ -254,7 +254,7 @@ static void output_font(sk_sp<SkTypeface> face, const char* identifier, FILE* ou
     widthsStr = strip_final(widthsStr);
     fprintf(out, "%s\n};\n\n", widthsStr.c_str());
 
-    fprintf(out, "const size_t %sCharCodesCount = SK_ARRAY_COUNT(%sCharCodes);\n\n",
+    fprintf(out, "const size_t %sCharCodesCount = std::size(%sCharCodes);\n\n",
             identifier, identifier);
 
     SkFontMetrics metrics;
@@ -403,12 +403,12 @@ int main(int , char * const []) {
     };
 
     static constexpr FontFamilyDesc kFamiliesData[] = {
-        {"monospace",  "Liberation Mono",  "LiberationMono",  SkMakeSpan(kMonoFonts)},
-        {"sans-serif", "Liberation Sans",  "LiberationSans",  SkMakeSpan(kSansFonts)},
-        {"serif",      "Liberation Serif", "LiberationSerif", SkMakeSpan(kSerifFonts)},
+        {"monospace",  "Liberation Mono",  "LiberationMono",  kMonoFonts},
+        {"sans-serif", "Liberation Sans",  "LiberationSans",  kSansFonts},
+        {"serif",      "Liberation Serif", "LiberationSerif", kSerifFonts},
     };
 
-    static constexpr SkSpan<const FontFamilyDesc> kFamilies(SkMakeSpan(kFamiliesData));
+    static constexpr SkSpan<const FontFamilyDesc> kFamilies(kFamiliesData);
 
 #ifdef SK_BUILD_FOR_UNIX
     generate_fonts("/usr/share/fonts/truetype/liberation/", kFamilies);

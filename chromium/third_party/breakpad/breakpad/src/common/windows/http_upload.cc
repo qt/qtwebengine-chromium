@@ -357,10 +357,10 @@ namespace {
     return header;
   }
 
-  bool AppendFileToRequestBody(
-      const wstring& file_part_name,
-      const wstring& filename,
-      string* request_body) {
+  bool AppendFileToRequestBody(const wstring& file_part_name,
+                               const wstring& filename,
+                               string* request_body,
+                               bool set_content_type = true) {
     string file_part_name_utf8 = WideToUTF8(file_part_name);
     if (file_part_name_utf8.empty()) {
       return false;
@@ -371,11 +371,17 @@ namespace {
       return false;
     }
 
-    request_body->append("Content-Disposition: form-data; "
-        "name=\"" + file_part_name_utf8 + "\"; "
-        "filename=\"" + filename_utf8 + "\"\r\n");
-    request_body->append("Content-Type: application/octet-stream\r\n");
-    request_body->append("\r\n");
+    if (set_content_type) {
+      request_body->append(
+          "Content-Disposition: form-data; "
+          "name=\"" +
+          file_part_name_utf8 +
+          "\"; "
+          "filename=\"" +
+          filename_utf8 + "\"\r\n");
+      request_body->append("Content-Type: application/octet-stream\r\n");
+      request_body->append("\r\n");
+    }
 
     vector<char> contents;
     if (!GetFileContents(filename, &contents)) {
@@ -432,7 +438,11 @@ namespace google_breakpad {
       wstring* response_body,
       int* response_code) {
     string request_body;
-    if (!AppendFileToRequestBody(L"symbol_file", path, &request_body)) {
+    // Turn off content-type in the body. If content-type is set then binary
+    // files uploaded to GCS end up with the it prepended to the file
+    // contents.
+    if (!AppendFileToRequestBody(L"symbol_file", path, &request_body,
+                                 /*set_content_type=*/false)) {
       return false;
     }
 

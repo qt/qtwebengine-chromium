@@ -8,7 +8,11 @@
 namespace vm_tools {
 
 constexpr int kMaitredPort = 8888;
+
+// Static port number that vm_cicerone (running in the host) listens on, and
+// garcon (in the container) connects to.
 constexpr int kGarconPort = 8889;
+
 constexpr int kTremplinPort = 8890;
 constexpr int kVshPort = 9001;
 constexpr int kArcHostClockServicePort = 9901;
@@ -16,6 +20,9 @@ constexpr int kArcHostClockServicePort = 9901;
 constexpr int kDefaultStartupListenerPort = 7777;
 constexpr int kTremplinListenerPort = 7778;
 constexpr int kCrashListenerPort = 7779;
+
+// Static port number that ARCVM runs sftp-server on.
+constexpr int kSftpServerPort = 7780;
 
 constexpr int kLmkdKillDecisionPort = 7781;
 

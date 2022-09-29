@@ -7,6 +7,7 @@
 #include "core/fpdfapi/page/cpdf_colorspace.h"
 
 #include <math.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <limits>
@@ -31,7 +32,8 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcodec/icc/icc_transform.h"
+#include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/scoped_set_insertion.h"
@@ -245,7 +247,7 @@ class CPDF_ICCBasedCS final : public CPDF_BasedCS {
                                       uint32_t nComponents);
 
   RetainPtr<CPDF_IccProfile> m_pProfile;
-  mutable std::vector<uint8_t, FxAllocAllocator<uint8_t>> m_pCache;
+  mutable DataVector<uint8_t> m_pCache;
   std::vector<float> m_pRanges;
 };
 
@@ -941,9 +943,9 @@ bool CPDF_ICCBasedCS::GetRGB(pdfium::span<const float> pBuf,
     *B = pBuf[2];
     return true;
   }
-  if (m_pProfile->transform()) {
+  if (m_pProfile->IsSupported()) {
     float rgb[3];
-    m_pProfile->transform()->Translate(pBuf.first(CountComponents()), rgb);
+    m_pProfile->Translate(pBuf.first(CountComponents()), rgb);
     *R = rgb[0];
     *G = rgb[1];
     *B = rgb[2];
@@ -968,7 +970,7 @@ void CPDF_ICCBasedCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
     fxcodec::ReverseRGB(dest_span.data(), src_span.data(), pixels);
     return;
   }
-  if (!m_pProfile->transform()) {
+  if (!m_pProfile->IsSupported()) {
     if (m_pBaseCS) {
       m_pBaseCS->TranslateImageLine(dest_span, src_span, pixels, image_width,
                                     image_height, false);
@@ -990,8 +992,8 @@ void CPDF_ICCBasedCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
     if (nPixelCount.IsValid())
       bTranslate = nPixelCount.ValueOrDie() < nMaxColors * 3 / 2;
   }
-  if (bTranslate && m_pProfile->transform()) {
-    m_pProfile->transform()->TranslateScanline(dest_span, src_span, pixels);
+  if (bTranslate && m_pProfile->IsSupported()) {
+    m_pProfile->TranslateScanline(dest_span, src_span, pixels);
     return;
   }
   if (m_pCache.empty()) {
@@ -1009,9 +1011,8 @@ void CPDF_ICCBasedCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
         order /= 52;
       }
     }
-    if (m_pProfile->transform()) {
-      m_pProfile->transform()->TranslateScanline(m_pCache, temp_src,
-                                                 nMaxColors);
+    if (m_pProfile->IsSupported()) {
+      m_pProfile->TranslateScanline(m_pCache, temp_src, nMaxColors);
     }
   }
   uint8_t* pDestBuf = dest_span.data();
@@ -1032,8 +1033,8 @@ void CPDF_ICCBasedCS::TranslateImageLine(pdfium::span<uint8_t> dest_span,
 bool CPDF_ICCBasedCS::IsNormal() const {
   if (m_pProfile->IsSRGB())
     return true;
-  if (m_pProfile->transform())
-    return m_pProfile->transform()->IsNormal();
+  if (m_pProfile->IsSupported())
+    return m_pProfile->IsNormal();
   if (m_pBaseCS)
     return m_pBaseCS->IsNormal();
   return false;
@@ -1113,7 +1114,7 @@ uint32_t CPDF_SeparationCS::v_Load(CPDF_Document* pDoc,
     return 1;
 
   const CPDF_Object* pAltArray = pArray->GetDirectObjectAt(2);
-  if (pAltArray == m_pArray)
+  if (pAltArray == GetArray())
     return 0;
 
   m_pBaseCS = Load(pDoc, pAltArray, pVisited);
@@ -1186,7 +1187,7 @@ uint32_t CPDF_DeviceNCS::v_Load(CPDF_Document* pDoc,
     return 0;
 
   const CPDF_Object* pAltCS = pArray->GetDirectObjectAt(2);
-  if (!pAltCS || pAltCS == m_pArray)
+  if (!pAltCS || pAltCS == GetArray())
     return 0;
 
   m_pBaseCS = Load(pDoc, pAltCS, pVisited);

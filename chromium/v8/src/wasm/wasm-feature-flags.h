@@ -18,6 +18,11 @@
   /* V8 side owner: clemensb */                                                \
   V(compilation_hints, "compilation hints section", false)                     \
                                                                                \
+  /* Instruction Tracing tool convention (early prototype, might change) */    \
+  /* Tool convention: https://github.com/WebAssembly/tool-conventions */       \
+  /* V8 side owner: jabraham */                                                \
+  V(instruction_tracing, "instruction tracing section", false)                 \
+                                                                               \
   /* GC proposal (early prototype, might change dramatically) */               \
   /* Official proposal: https://github.com/WebAssembly/gc */                   \
   /* Prototype engineering spec: https://bit.ly/3cWcm6Q */                     \
@@ -26,12 +31,6 @@
                                                                                \
   /* Non-specified, V8-only experimental additions to the GC proposal */       \
   /* V8 side owner: jkummerow */                                               \
-  V(nn_locals,                                                                 \
-    "allow non-defaultable/non-nullable locals, validated with 'until end of " \
-    "block' semantics",                                                        \
-    false)                                                                     \
-  V(unsafe_nn_locals,                                                          \
-    "allow non-defaultable/non-nullable locals, no validation", false)         \
   V(assume_ref_cast_succeeds,                                                  \
     "assume ref.cast always succeeds and skip the related type check "         \
     "(unsafe)",                                                                \

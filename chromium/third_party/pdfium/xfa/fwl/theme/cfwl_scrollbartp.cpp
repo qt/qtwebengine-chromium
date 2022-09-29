@@ -24,7 +24,7 @@ void CFWL_ScrollBarTP::DrawBackground(const CFWL_ThemeBackground& pParams) {
   CFWL_Widget* pWidget = pParams.GetWidget();
   CFGAS_GEGraphics* pGraphics = pParams.GetGraphics();
   bool bVert = !!pWidget->GetStyleExts();
-  switch (pParams.m_iPart) {
+  switch (pParams.GetPart()) {
     case CFWL_ThemePart::Part::kForeArrow: {
       DrawMaxMinBtn(pGraphics, pParams.m_PartRect,
                     bVert ? FWLTHEME_DIRECTION::kUp : FWLTHEME_DIRECTION::kLeft,
@@ -79,14 +79,12 @@ void CFWL_ScrollBarTP::DrawThumbBtn(CFGAS_GEGraphics* pGraphics,
                 m_pThemeData->clrBtnBK[static_cast<size_t>(eState) - 1][1],
                 rect, matrix);
 
-  pGraphics->SaveGraphState();
-
+  CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
   CFGAS_GEPath path;
   path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
   pGraphics->SetStrokeColor(CFGAS_GEColor(
       m_pThemeData->clrBtnBorder[static_cast<size_t>(eState) - 1]));
   pGraphics->StrokePath(path, matrix);
-  pGraphics->RestoreGraphState();
 }
 
 void CFWL_ScrollBarTP::DrawTrack(CFGAS_GEGraphics* pGraphics,
@@ -98,22 +96,24 @@ void CFWL_ScrollBarTP::DrawTrack(CFGAS_GEGraphics* pGraphics,
   if (eState < FWLTHEME_STATE::kNormal || eState > FWLTHEME_STATE::kDisable)
     return;
 
-  pGraphics->SaveGraphState();
-  CFGAS_GEPath path;
-  float fRight = rect.right();
-  float fBottom = rect.bottom();
-  if (bVert) {
-    path.AddRectangle(rect.left, rect.top, 1, rect.height);
-    path.AddRectangle(fRight - 1, rect.top, 1, rect.height);
-  } else {
-    path.AddRectangle(rect.left, rect.top, rect.width, 1);
-    path.AddRectangle(rect.left, fBottom - 1, rect.width, 1);
+  {
+    CFGAS_GEGraphics::StateRestorer restorer(pGraphics);
+    CFGAS_GEPath path;
+    float fRight = rect.right();
+    float fBottom = rect.bottom();
+    if (bVert) {
+      path.AddRectangle(rect.left, rect.top, 1, rect.height);
+      path.AddRectangle(fRight - 1, rect.top, 1, rect.height);
+    } else {
+      path.AddRectangle(rect.left, rect.top, rect.width, 1);
+      path.AddRectangle(rect.left, fBottom - 1, rect.width, 1);
+    }
+    pGraphics->SetFillColor(CFGAS_GEColor(ArgbEncode(255, 238, 237, 229)));
+    pGraphics->FillPath(path, CFX_FillRenderOptions::FillType::kWinding,
+                        matrix);
+    path.Clear();
+    path.AddRectangle(rect.left + 1, rect.top, rect.width - 2, rect.height);
   }
-  pGraphics->SetFillColor(CFGAS_GEColor(ArgbEncode(255, 238, 237, 229)));
-  pGraphics->FillPath(path, CFX_FillRenderOptions::FillType::kWinding, matrix);
-  path.Clear();
-  path.AddRectangle(rect.left + 1, rect.top, rect.width - 2, rect.height);
-  pGraphics->RestoreGraphState();
   FillSolidRect(pGraphics, m_pThemeData->clrTrackBKEnd, rect, matrix);
 }
 

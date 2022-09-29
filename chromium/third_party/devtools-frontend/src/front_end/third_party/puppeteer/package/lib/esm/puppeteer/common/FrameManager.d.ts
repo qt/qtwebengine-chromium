@@ -13,19 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import { Protocol } from 'devtools-protocol';
+import { CDPSession } from './Connection.js';
+import { DOMWorld, WaitForSelectorOptions } from './DOMWorld.js';
+import { ElementHandle } from './ElementHandle.js';
 import { EventEmitter } from './EventEmitter.js';
 import { ExecutionContext } from './ExecutionContext.js';
-import { PuppeteerLifeCycleEvent } from './LifecycleWatcher.js';
-import { DOMWorld, WaitForSelectorOptions } from './DOMWorld.js';
-import { NetworkManager } from './NetworkManager.js';
-import { TimeoutSettings } from './TimeoutSettings.js';
-import { CDPSession } from './Connection.js';
-import { JSHandle, ElementHandle } from './JSHandle.js';
-import { MouseButton } from './Input.js';
-import { Page } from './Page.js';
 import { HTTPResponse } from './HTTPResponse.js';
-import { Protocol } from 'devtools-protocol';
-import { SerializableOrJSHandle, EvaluateHandleFn, WrapElementHandle, EvaluateFn, EvaluateFnReturnType, UnwrapPromiseLike } from './EvalTypes.js';
+import { MouseButton } from './Input.js';
+import { PuppeteerLifeCycleEvent } from './LifecycleWatcher.js';
+import { NetworkManager } from './NetworkManager.js';
+import { Page } from './Page.js';
+import { Target } from './Target.js';
+import { TimeoutSettings } from './TimeoutSettings.js';
+import { EvaluateFunc, HandleFor, NodeFor } from './types.js';
 /**
  * We use symbols to prevent external parties listening to these events.
  * They are internal to Puppeteer.
@@ -46,17 +47,18 @@ export declare const FrameManagerEmittedEvents: {
  * @internal
  */
 export declare class FrameManager extends EventEmitter {
-    _client: CDPSession;
-    private _page;
-    private _networkManager;
-    _timeoutSettings: TimeoutSettings;
-    private _frames;
-    private _contextIdToContext;
-    private _isolatedWorlds;
-    private _mainFrame;
+    #private;
+    /**
+     * @internal
+     */
+    get _timeoutSettings(): TimeoutSettings;
+    /**
+     * @internal
+     */
+    get _client(): CDPSession;
     constructor(client: CDPSession, page: Page, ignoreHTTPSErrors: boolean, timeoutSettings: TimeoutSettings);
     private setupEventListeners;
-    initialize(client?: CDPSession): Promise<void>;
+    initialize(targetId: string, client?: CDPSession): Promise<void>;
     networkManager(): NetworkManager;
     navigateFrame(frame: Frame, url: string, options?: {
         referer?: string;
@@ -67,26 +69,14 @@ export declare class FrameManager extends EventEmitter {
         timeout?: number;
         waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
     }): Promise<HTTPResponse | null>;
-    private _onAttachedToTarget;
-    private _onDetachedFromTarget;
-    _onLifecycleEvent(event: Protocol.Page.LifecycleEventEvent): void;
-    _onFrameStartedLoading(frameId: string): void;
-    _onFrameStoppedLoading(frameId: string): void;
-    _handleFrameTree(session: CDPSession, frameTree: Protocol.Page.FrameTree): void;
+    onAttachedToTarget(target: Target): Promise<void>;
+    onDetachedFromTarget(target: Target): Promise<void>;
     page(): Page;
     mainFrame(): Frame;
     frames(): Frame[];
     frame(frameId: string): Frame | null;
-    _onFrameAttached(session: CDPSession, frameId: string, parentFrameId?: string): void;
-    _onFrameNavigated(framePayload: Protocol.Page.Frame): void;
     _ensureIsolatedWorld(session: CDPSession, name: string): Promise<void>;
-    _onFrameNavigatedWithinDocument(frameId: string, url: string): void;
-    _onFrameDetached(frameId: string, reason: Protocol.Page.FrameDetachedEventReason): void;
-    _onExecutionContextCreated(contextPayload: Protocol.Runtime.ExecutionContextDescription, session: CDPSession): void;
-    private _onExecutionContextDestroyed;
-    private _onExecutionContextsCleared;
     executionContextById(contextId: number, session?: CDPSession): ExecutionContext;
-    private _removeFramesRecursively;
 }
 /**
  * @public
@@ -175,7 +165,7 @@ export interface FrameAddStyleTagOptions {
  * @Example
  * An example of dumping frame tree:
  *
- * ```js
+ * ```ts
  * const puppeteer = require('puppeteer');
  *
  * (async () => {
@@ -197,7 +187,7 @@ export interface FrameAddStyleTagOptions {
  * @Example
  * An example of getting text from an iframe element:
  *
- * ```js
+ * ```ts
  * const frame = page.frames().find(frame => frame.name() === 'myframe');
  * const text = await frame.$eval('.selector', element => element.textContent);
  * console.log(text);
@@ -206,17 +196,15 @@ export interface FrameAddStyleTagOptions {
  * @public
  */
 export declare class Frame {
+    #private;
     /**
      * @internal
      */
     _frameManager: FrameManager;
-    private _parentFrame?;
     /**
      * @internal
      */
     _id: string;
-    private _url;
-    private _detached;
     /**
      * @internal
      */
@@ -248,15 +236,15 @@ export declare class Frame {
     /**
      * @internal
      */
-    _client: CDPSession;
-    /**
-     * @internal
-     */
     constructor(frameManager: FrameManager, parentFrame: Frame | null, frameId: string, client: CDPSession);
     /**
      * @internal
      */
     _updateClient(client: CDPSession): void;
+    /**
+     * @returns a page associated with the frame.
+     */
+    page(): Page;
     /**
      * @remarks
      *
@@ -313,7 +301,7 @@ export declare class Frame {
      * you run code which will indirectly cause the frame to navigate. Consider
      * this example:
      *
-     * ```js
+     * ```ts
      * const [response] = await Promise.all([
      *   // The navigation promise resolves after navigation has finished
      *   frame.waitForNavigation(),
@@ -334,7 +322,7 @@ export declare class Frame {
     /**
      * @internal
      */
-    client(): CDPSession;
+    _client(): CDPSession;
     /**
      * @returns a promise that resolves to the frame's default execution context.
      */
@@ -352,7 +340,7 @@ export declare class Frame {
      * @param pageFunction - a function that is run within the frame
      * @param args - arguments to be passed to the pageFunction
      */
-    evaluateHandle<HandlerType extends JSHandle = JSHandle>(pageFunction: EvaluateHandleFn, ...args: SerializableOrJSHandle[]): Promise<HandlerType>;
+    evaluateHandle<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(pageFunction: Func | string, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
     /**
      * @remarks
      *
@@ -362,7 +350,7 @@ export declare class Frame {
      * @param pageFunction - a function that is run within the frame
      * @param args - arguments to be passed to the pageFunction
      */
-    evaluate<T extends EvaluateFn>(pageFunction: T, ...args: SerializableOrJSHandle[]): Promise<UnwrapPromiseLike<EvaluateFnReturnType<T>>>;
+    evaluate<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(pageFunction: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>>;
     /**
      * This method queries the frame for the given selector.
      *
@@ -370,13 +358,20 @@ export declare class Frame {
      * @returns A promise which resolves to an `ElementHandle` pointing at the
      * element, or `null` if it was not found.
      */
-    $<T extends Element = Element>(selector: string): Promise<ElementHandle<T> | null>;
+    $<Selector extends string>(selector: Selector): Promise<ElementHandle<NodeFor<Selector>> | null>;
+    /**
+     * This runs `document.querySelectorAll` in the frame and returns the result.
+     *
+     * @param selector - a selector to search for
+     * @returns An array of element handles pointing to the found frame elements.
+     */
+    $$<Selector extends string>(selector: Selector): Promise<Array<ElementHandle<NodeFor<Selector>>>>;
     /**
      * This method evaluates the given XPath expression and returns the results.
      *
      * @param expression - the XPath expression to evaluate.
      */
-    $x(expression: string): Promise<ElementHandle[]>;
+    $x(expression: string): Promise<Array<ElementHandle<Node>>>;
     /**
      * @remarks
      *
@@ -388,7 +383,7 @@ export declare class Frame {
      *
      * @example
      *
-     * ```js
+     * ```ts
      * const searchValue = await frame.$eval('#search', el => el.value);
      * ```
      *
@@ -396,7 +391,10 @@ export declare class Frame {
      * @param pageFunction - the function to be evaluated in the frame's context
      * @param args - additional arguments to pass to `pageFunction`
      */
-    $eval<ReturnType>(selector: string, pageFunction: (element: Element, ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
+    $eval<Selector extends string, Params extends unknown[], Func extends EvaluateFunc<[
+        ElementHandle<NodeFor<Selector>>,
+        ...Params
+    ]> = EvaluateFunc<[ElementHandle<NodeFor<Selector>>, ...Params]>>(selector: Selector, pageFunction: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>>;
     /**
      * @remarks
      *
@@ -408,7 +406,7 @@ export declare class Frame {
      *
      * @example
      *
-     * ```js
+     * ```ts
      * const divsCounts = await frame.$$eval('div', divs => divs.length);
      * ```
      *
@@ -416,14 +414,10 @@ export declare class Frame {
      * @param pageFunction - the function to be evaluated in the frame's context
      * @param args - additional arguments to pass to `pageFunction`
      */
-    $$eval<ReturnType>(selector: string, pageFunction: (elements: Element[], ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
-    /**
-     * This runs `document.querySelectorAll` in the frame and returns the result.
-     *
-     * @param selector - a selector to search for
-     * @returns An array of element handles pointing to the found frame elements.
-     */
-    $$<T extends Element = Element>(selector: string): Promise<Array<ElementHandle<T>>>;
+    $$eval<Selector extends string, Params extends unknown[], Func extends EvaluateFunc<[
+        Array<NodeFor<Selector>>,
+        ...Params
+    ]> = EvaluateFunc<[Array<NodeFor<Selector>>, ...Params]>>(selector: Selector, pageFunction: Func | string, ...args: Params): Promise<Awaited<ReturnType<Func>>>;
     /**
      * @returns the full HTML contents of the frame, including the doctype.
      */
@@ -475,7 +469,7 @@ export declare class Frame {
      * `onload` event fires or when the script content was injected into the
      * frame.
      */
-    addScriptTag(options: FrameAddScriptTagOptions): Promise<ElementHandle>;
+    addScriptTag(options: FrameAddScriptTagOptions): Promise<ElementHandle<HTMLScriptElement>>;
     /**
      * Adds a `<link rel="stylesheet">` tag into the page with the desired url or
      * a `<style type="text/css">` tag with the content.
@@ -486,7 +480,7 @@ export declare class Frame {
      * `onload` event fires or when the CSS content was injected into the
      * frame.
      */
-    addStyleTag(options: FrameAddStyleTagOptions): Promise<ElementHandle>;
+    addStyleTag(options: FrameAddStyleTagOptions): Promise<ElementHandle<Node>>;
     /**
      *
      * This method clicks the first element found that matches `selector`.
@@ -548,7 +542,7 @@ export declare class Frame {
      * method throws an error.
      *
      * @example
-     * ```js
+     * ```ts
      * frame.select('select#colors', 'blue'); // single selection
      * frame.select('select#colors', 'red', 'green', 'blue'); // multiple selections
      * ```
@@ -582,7 +576,7 @@ export declare class Frame {
      * {@link Keyboard.press}.
      *
      * @example
-     * ```js
+     * ```ts
      * await frame.type('#mytextarea', 'Hello'); // Types instantly
      * await frame.type('#mytextarea', 'World', {delay: 100}); // Types slower, like a user
      * ```
@@ -598,32 +592,6 @@ export declare class Frame {
     type(selector: string, text: string, options?: {
         delay: number;
     }): Promise<void>;
-    /**
-     * @remarks
-     *
-     * This method behaves differently depending on the first parameter. If it's a
-     * `string`, it will be treated as a `selector` or `xpath` (if the string
-     * starts with `//`). This method then is a shortcut for
-     * {@link Frame.waitForSelector} or {@link Frame.waitForXPath}.
-     *
-     * If the first argument is a function this method is a shortcut for
-     * {@link Frame.waitForFunction}.
-     *
-     * If the first argument is a `number`, it's treated as a timeout in
-     * milliseconds and the method returns a promise which resolves after the
-     * timeout.
-     *
-     * @param selectorOrFunctionOrTimeout - a selector, predicate or timeout to
-     * wait for.
-     * @param options - optional waiting parameters.
-     * @param args - arguments to pass to `pageFunction`.
-     *
-     * @deprecated Don't use this method directly. Instead use the more explicit
-     * methods available: {@link Frame.waitForSelector},
-     * {@link Frame.waitForXPath}, {@link Frame.waitForFunction} or
-     * {@link Frame.waitForTimeout}.
-     */
-    waitFor(selectorOrFunctionOrTimeout: string | number | Function, options?: Record<string, unknown>, ...args: SerializableOrJSHandle[]): Promise<JSHandle | null>;
     /**
      * Causes your script to wait for the given number of milliseconds.
      *
@@ -655,7 +623,7 @@ export declare class Frame {
      * This method works across navigations.
      *
      * @example
-     * ```js
+     * ```ts
      * const puppeteer = require('puppeteer');
      *
      * (async () => {
@@ -678,7 +646,7 @@ export declare class Frame {
      * @returns a promise which resolves when an element matching the selector
      * string is added to the DOM.
      */
-    waitForSelector(selector: string, options?: WaitForSelectorOptions): Promise<ElementHandle | null>;
+    waitForSelector<Selector extends string>(selector: Selector, options?: WaitForSelectorOptions): Promise<ElementHandle<NodeFor<Selector>> | null>;
     /**
      * @remarks
      * Wait for the `xpath` to appear in page. If at the moment of calling the
@@ -694,14 +662,14 @@ export declare class Frame {
      * @param options  - options to configure the visiblity of the element and how
      * long to wait before timing out.
      */
-    waitForXPath(xpath: string, options?: WaitForSelectorOptions): Promise<ElementHandle | null>;
+    waitForXPath(xpath: string, options?: WaitForSelectorOptions): Promise<ElementHandle<Node> | null>;
     /**
      * @remarks
      *
      * @example
      *
      * The `waitForFunction` can be used to observe viewport size change:
-     * ```js
+     * ```ts
      * const puppeteer = require('puppeteer');
      *
      * (async () => {
@@ -716,7 +684,7 @@ export declare class Frame {
      *
      * To pass arguments from Node.js to the predicate of `page.waitForFunction` function:
      *
-     * ```js
+     * ```ts
      * const selector = '.foo';
      * await frame.waitForFunction(
      *   selector => !!document.querySelector(selector),
@@ -730,7 +698,7 @@ export declare class Frame {
      * @param args - arguments to pass to the `pageFunction`.
      * @returns the promise which resolve when the `pageFunction` returns a truthy value.
      */
-    waitForFunction(pageFunction: Function | string, options?: FrameWaitForFunctionOptions, ...args: SerializableOrJSHandle[]): Promise<JSHandle>;
+    waitForFunction<Params extends unknown[], Func extends EvaluateFunc<Params> = EvaluateFunc<Params>>(pageFunction: Func | string, options?: FrameWaitForFunctionOptions, ...args: Params): Promise<HandleFor<Awaited<ReturnType<Func>>>>;
     /**
      * @returns the frame's title.
      */

@@ -32,6 +32,8 @@ TINT_INSTANTIATE_TYPEINFO(tint::transform::ZeroInitWorkgroupMemory);
 
 namespace tint::transform {
 
+using StatementList = utils::Vector<const ast::Statement*, 8>;
+
 /// PIMPL state for the ZeroInitWorkgroupMemory transform
 struct ZeroInitWorkgroupMemory::State {
     /// The clone context
@@ -73,7 +75,7 @@ struct ZeroInitWorkgroupMemory::State {
     };
 
     /// A list of unique ArrayIndex
-    using ArrayIndices = utils::UniqueVector<ArrayIndex, ArrayIndex::Hasher>;
+    using ArrayIndices = utils::UniqueVector<ArrayIndex, 4, ArrayIndex::Hasher>;
 
     /// Expression holds information about an expression that is being built for a
     /// statement will zero workgroup values.
@@ -137,7 +139,7 @@ struct ZeroInitWorkgroupMemory::State {
         std::function<const ast::Expression*()> local_index;
         for (auto* param : fn->params) {
             if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes)) {
-                if (builtin->builtin == ast::Builtin::kLocalInvocationIndex) {
+                if (builtin->builtin == ast::BuiltinValue::kLocalInvocationIndex) {
                     local_index = [=] { return b.Expr(ctx.Clone(param->symbol)); };
                     break;
                 }
@@ -147,7 +149,7 @@ struct ZeroInitWorkgroupMemory::State {
                 for (auto* member : str->Members()) {
                     if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(
                             member->Declaration()->attributes)) {
-                        if (builtin->builtin == ast::Builtin::kLocalInvocationIndex) {
+                        if (builtin->builtin == ast::BuiltinValue::kLocalInvocationIndex) {
                             local_index = [=] {
                                 auto* param_expr = b.Expr(ctx.Clone(param->symbol));
                                 auto member_name = ctx.Clone(member->Declaration()->symbol);
@@ -162,7 +164,9 @@ struct ZeroInitWorkgroupMemory::State {
         if (!local_index) {
             // No existing local index parameter. Append one to the entry point.
             auto* param = b.Param(b.Symbols().New("local_invocation_index"), b.ty.u32(),
-                                  {b.Builtin(ast::Builtin::kLocalInvocationIndex)});
+                                  utils::Vector{
+                                      b.Builtin(ast::BuiltinValue::kLocalInvocationIndex),
+                                  });
             ctx.InsertBack(fn->params, param);
             local_index = [=] { return b.Expr(param->symbol); };
         }
@@ -189,7 +193,7 @@ struct ZeroInitWorkgroupMemory::State {
             ArrayIndices array_indices;
             for (auto& s : stmts) {
                 for (auto& idx : s.array_indices) {
-                    array_indices.add(idx);
+                    array_indices.Add(idx);
                 }
             }
 
@@ -216,7 +220,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto block =
                     DeclareArrayIndices(num_iterations, array_indices, [&] { return b.Expr(idx); });
                 for (auto& s : stmts) {
-                    block.emplace_back(s.stmt);
+                    block.Push(s.stmt);
                 }
                 auto* for_loop = b.For(init, cond, cont, b.Block(block));
                 ctx.InsertFront(fn->body->statements, for_loop);
@@ -232,7 +236,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto block = DeclareArrayIndices(num_iterations, array_indices,
                                                  [&] { return b.Expr(local_index()); });
                 for (auto& s : stmts) {
-                    block.emplace_back(s.stmt);
+                    block.Push(s.stmt);
                 }
                 auto* if_stmt = b.If(cond, b.Block(block));
                 ctx.InsertFront(fn->body->statements, if_stmt);
@@ -246,7 +250,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto block = DeclareArrayIndices(num_iterations, array_indices,
                                                  [&] { return b.Expr(local_index()); });
                 for (auto& s : stmts) {
-                    block.emplace_back(s.stmt);
+                    block.Push(s.stmt);
                 }
                 ctx.InsertFront(fn->body->statements, b.Block(block));
             }
@@ -307,7 +311,7 @@ struct ZeroInitWorkgroupMemory::State {
                 auto division = num_values;
                 auto a = get_expr(modulo);
                 auto array_indices = a.array_indices;
-                array_indices.add(ArrayIndex{modulo, division});
+                array_indices.Add(ArrayIndex{modulo, division});
                 auto index = utils::GetOrCreate(array_index_names, ArrayIndex{modulo, division},
                                                 [&] { return b.Symbols().New("i"); });
                 return Expression{b.IndexAccessor(a.expr, index), a.num_iterations, array_indices};
@@ -327,11 +331,10 @@ struct ZeroInitWorkgroupMemory::State {
     /// @param iteration a function that returns the index of the current
     ///         iteration.
     /// @returns the list of `let` statements that declare the array indices
-    ast::StatementList DeclareArrayIndices(
-        uint32_t num_iterations,
-        const ArrayIndices& array_indices,
-        const std::function<const ast::Expression*()>& iteration) {
-        ast::StatementList stmts;
+    StatementList DeclareArrayIndices(uint32_t num_iterations,
+                                      const ArrayIndices& array_indices,
+                                      const std::function<const ast::Expression*()>& iteration) {
+        StatementList stmts;
         std::map<Symbol, ArrayIndex> indices_by_name;
         for (auto index : array_indices) {
             auto name = array_index_names.at(index);
@@ -341,7 +344,7 @@ struct ZeroInitWorkgroupMemory::State {
                             : iteration();
             auto* div = (index.division != 1u) ? b.Div(mod, u32(index.division)) : mod;
             auto* decl = b.Decl(b.Let(name, b.ty.u32(), div));
-            stmts.emplace_back(decl);
+            stmts.Push(decl);
         }
         return stmts;
     }
@@ -358,8 +361,8 @@ struct ZeroInitWorkgroupMemory::State {
                 continue;
             }
             auto* sem = ctx.src->Sem().Get(expr);
-            if (auto c = sem->ConstantValue()) {
-                workgroup_size_const *= c.Element<AInt>(0).value;
+            if (auto* c = sem->ConstantValue()) {
+                workgroup_size_const *= c->As<AInt>();
                 continue;
             }
             // Constant value could not be found. Build expression instead.
@@ -416,8 +419,8 @@ ZeroInitWorkgroupMemory::ZeroInitWorkgroupMemory() = default;
 ZeroInitWorkgroupMemory::~ZeroInitWorkgroupMemory() = default;
 
 bool ZeroInitWorkgroupMemory::ShouldRun(const Program* program, const DataMap&) const {
-    for (auto* decl : program->AST().GlobalDeclarations()) {
-        if (auto* var = decl->As<ast::Variable>()) {
+    for (auto* global : program->AST().GlobalVariables()) {
+        if (auto* var = global->As<ast::Var>()) {
             if (var->declared_storage_class == ast::StorageClass::kWorkgroup) {
                 return true;
             }

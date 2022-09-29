@@ -17,12 +17,12 @@ class AccelerateImpl;
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is Lower | Symmetric.
+  * \tparam UpLo_ additional information about the matrix structure. Default is Lower.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateLLT
   */
-template <typename MatrixType, int UpLo = Lower | Symmetric>
-using AccelerateLLT = AccelerateImpl<MatrixType, UpLo, SparseFactorizationCholesky, true>;
+template <typename MatrixType, int UpLo = Lower>
+using AccelerateLLT = AccelerateImpl<MatrixType, UpLo | Symmetric, SparseFactorizationCholesky, true>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateLDLT
@@ -31,12 +31,12 @@ using AccelerateLLT = AccelerateImpl<MatrixType, UpLo, SparseFactorizationCholes
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is Lower | Symmetric.
+  * \tparam UpLo_ additional information about the matrix structure. Default is Lower.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateLDLT
   */
-template <typename MatrixType, int UpLo = Lower | Symmetric>
-using AccelerateLDLT = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLDLT, true>;
+template <typename MatrixType, int UpLo = Lower>
+using AccelerateLDLT = AccelerateImpl<MatrixType, UpLo | Symmetric, SparseFactorizationLDLT, true>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateLDLTUnpivoted
@@ -45,12 +45,12 @@ using AccelerateLDLT = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLDLT,
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is Lower | Symmetric.
+  * \tparam UpLo_ additional information about the matrix structure. Default is Lower.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateLDLTUnpivoted
   */
-template <typename MatrixType, int UpLo = Lower | Symmetric>
-using AccelerateLDLTUnpivoted = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLDLTUnpivoted, true>;
+template <typename MatrixType, int UpLo = Lower>
+using AccelerateLDLTUnpivoted = AccelerateImpl<MatrixType, UpLo | Symmetric, SparseFactorizationLDLTUnpivoted, true>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateLDLTSBK
@@ -59,12 +59,12 @@ using AccelerateLDLTUnpivoted = AccelerateImpl<MatrixType, UpLo, SparseFactoriza
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is Lower | Symmetric.
+  * \tparam UpLo_ additional information about the matrix structure. Default is Lower.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateLDLTSBK
   */
-template <typename MatrixType, int UpLo = Lower | Symmetric>
-using AccelerateLDLTSBK = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLDLTSBK, true>;
+template <typename MatrixType, int UpLo = Lower>
+using AccelerateLDLTSBK = AccelerateImpl<MatrixType, UpLo | Symmetric, SparseFactorizationLDLTSBK, true>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateLDLTTPP
@@ -73,12 +73,12 @@ using AccelerateLDLTSBK = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLD
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is Lower | Symmetric.
+  * \tparam UpLo_ additional information about the matrix structure. Default is Lower.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateLDLTTPP
   */
-template <typename MatrixType, int UpLo = Lower | Symmetric>
-using AccelerateLDLTTPP = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLDLTTPP, true>;
+template <typename MatrixType, int UpLo = Lower>
+using AccelerateLDLTTPP = AccelerateImpl<MatrixType, UpLo | Symmetric, SparseFactorizationLDLTTPP, true>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateQR
@@ -87,12 +87,11 @@ using AccelerateLDLTTPP = AccelerateImpl<MatrixType, UpLo, SparseFactorizationLD
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is 0.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateQR
   */
-template <typename MatrixType, int UpLo = 0>
-using AccelerateQR = AccelerateImpl<MatrixType, UpLo, SparseFactorizationQR, false>;
+template <typename MatrixType>
+using AccelerateQR = AccelerateImpl<MatrixType, 0, SparseFactorizationQR, false>;
 
 /** \ingroup AccelerateSupport_Module
   * \class AccelerateCholeskyAtA
@@ -101,12 +100,11 @@ using AccelerateQR = AccelerateImpl<MatrixType, UpLo, SparseFactorizationQR, fal
   * \warning Only single and double precision real scalar types are supported by Accelerate
   * 
   * \tparam MatrixType_ the type of the sparse matrix A, it must be a SparseMatrix<>
-  * \tparam UpLo_ additional information about the matrix structure. Default is 0.
   *
   * \sa \ref TutorialSparseSolverConcept, class AccelerateCholeskyAtA
   */
-template <typename MatrixType, int UpLo = 0>
-using AccelerateCholeskyAtA = AccelerateImpl<MatrixType, UpLo, SparseFactorizationCholeskyAtA, false>;
+template <typename MatrixType>
+using AccelerateCholeskyAtA = AccelerateImpl<MatrixType, 0, SparseFactorizationCholeskyAtA, false>;
 
 namespace internal {
 template <typename T>

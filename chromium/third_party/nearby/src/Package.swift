@@ -7,9 +7,13 @@ let package = Package(
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
+      name: "NearbyCoreAdapter",
+      targets: ["NearbyCoreAdapter"]
+    ),
+    .library(
       name: "NearbyConnections",
       targets: ["NearbyConnections"]
-    )
+    ),
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
@@ -360,7 +364,7 @@ let package = Package(
       ]
     ),
     .target(
-      name: "NearbyConnections",
+      name: "NearbyCoreAdapter",
       dependencies: [
         "google-toolbox-for-mac",
         "smhasher",
@@ -373,10 +377,15 @@ let package = Package(
         "presence",
         "embedded",
         "connections/clients/windows",
+        "connections/clients/ios",
+        "connections/clients/swift/NearbyConnections",
+        "connections/clients/swift/NearbyCoreAdapter/BUILD",
+        "connections/clients/swift/NearbyCoreAdapter/Tests",
         "connections/samples",
         "docs",
         "internal/platform/implementation/g3",
         "internal/platform/implementation/ios/Tests",
+        "internal/platform/implementation/ios/Mediums/Ble/Sockets/Tests",
         "internal/platform/implementation/windows",
         "third_party",
         "CONTRIBUTING.md",
@@ -384,31 +393,25 @@ let package = Package(
         "README.md",
         "WORKSPACE",
         // build files
-        "connections/clients/ios/BUILD",
         "connections/implementation/analytics/BUILD",
-        "connections/implementation/proto/BUILD",
-        "connections/implementation/proto/CMakeLists.txt",
         "connections/implementation/mediums/ble_v2/BUILD",
         "connections/implementation/mediums/BUILD",
         "connections/implementation/BUILD",
         "connections/implementation/fuzzers",
         "connections/BUILD",
-        "internal/proto/analytics/BUILD",
+        "internal/crypto/BUILD",
+        "internal/crypto/BUILD.gn",
         "internal/platform/implementation/shared/BUILD",
         "internal/platform/implementation/ios/Mediums/BUILD",
+        "internal/platform/implementation/ios/Mediums/Ble/Sockets/BUILD",
         "internal/platform/implementation/ios/Tests/BUILD",
         "internal/platform/implementation/ios/BUILD",
         "internal/platform/implementation/BUILD",
         "internal/platform/BUILD",
         "internal/analytics/BUILD",
-        "proto/mediums/BUILD",
-        "proto/errorcode/BUILD",
-        "proto/BUILD",
-        "proto/CMakeLists.txt",
         // tests
         "connections/listeners_test.cc",
         "connections/strategy_test.cc",
-        "connections/clients/ios/BuildTests",
         "connections/implementation/offline_frames_test.cc",
         "connections/implementation/offline_service_controller_test.cc",
         "connections/implementation/encryption_runner_test.cc",
@@ -424,7 +427,6 @@ let package = Package(
         "connections/implementation/analytics/analytics_recorder_test.cc",
         "connections/implementation/mediums/ble_v2_test.cc",
         "connections/implementation/mediums/ble_v2/bloom_filter_test.cc",
-        "connections/implementation/mediums/ble_v2/ble_peripheral_test.cc",
         "connections/implementation/mediums/ble_v2/ble_packet_test.cc",
         "connections/implementation/mediums/ble_v2/ble_advertisement_test.cc",
         "connections/implementation/mediums/ble_v2/advertisement_read_result_test.cc",
@@ -452,6 +454,17 @@ let package = Package(
         "connections/core_test.cc",
         "connections/status_test.cc",
         "connections/payload_test.cc",
+        "internal/crypto/aead_unittest.cc",
+        "internal/crypto/ec_private_key_unittest.cc",
+        "internal/crypto/ec_signature_creator_unittest.cc",
+        "internal/crypto/encryptor_unittest.cc",
+        "internal/crypto/hmac_unittest.cc",
+        "internal/crypto/random_unittest.cc",
+        "internal/crypto/rsa_private_key_unittest.cc",
+        "internal/crypto/secure_hash_unittest.cc",
+        "internal/crypto/sha2_unittest.cc",
+        "internal/crypto/signature_verifier_unittest.cc",
+        "internal/crypto/symmetric_key_unittest.cc",
         "internal/proto/analytics/connections_log_test.cc",
         "internal/platform/feature_flags_test.cc",
         "internal/platform/cancelable_alarm_test.cc",
@@ -494,19 +507,9 @@ let package = Package(
         "connections/implementation/offline_simulation_user.cc",
         "connections/implementation/simulation_user.cc",
         // proto
-        "connections/implementation/proto/offline_wire_formats.proto",
-        "connections/implementation/proto/offline_wire_formats_proto_config.asciipb",
-        "internal/proto/analytics/connections_log.proto",
-        "proto/connections_enums.proto",
-        "proto/connections_enums_proto_config.asciipb",
-        "proto/mediums/nfc_frames.proto",
-        "proto/mediums/ble_frames.proto",
-        "proto/mediums/ble_frames_portable_proto_config.asciipb",
-        "proto/mediums/web_rtc_signaling_frames.proto",
-        "proto/mediums/wifi_aware_frames.proto",
-        "proto/errorcode/error_code_enums.proto",
-        "proto/errorcode/error_code_enums_proto_config.asciipb",
-        "proto/sharing_enums.proto",
+        "connections/implementation/proto",
+        "internal/proto",
+        "proto",
         // webrtc
         "connections/implementation/webrtc_bwu_handler.cc",
         "connections/implementation/webrtc_endpoint_channel.cc",
@@ -515,6 +518,9 @@ let package = Package(
         "connections/implementation/mediums/webrtc",
         // This breaks the build, but seems to work fine without it?
         "internal/platform/medium_environment.cc",
+        // This file breaks the build:
+        // TODO: compile the proto and upload it to github. Then remove this file from exclude list.
+        "internal/platform/credential_storage.cc",
       ],
       sources: [
         "compiled_proto",
@@ -522,23 +528,64 @@ let package = Package(
         "internal",
         "proto",
       ],
-      publicHeadersPath: "connections/clients/ios/Public",
+      publicHeadersPath: "connections/clients/swift/NearbyCoreAdapter/Sources/Public",
       cSettings: [
         .headerSearchPath("./"),
         .headerSearchPath("compiled_proto/"),
         .define("NO_WEBRTC"),
         .define("NEARBY_SWIFTPM"),
+      ]
+    ),
+    .target(
+      name: "NearbyConnections",
+      dependencies: ["NearbyCoreAdapter"],
+      path: ".",
+      exclude: [
+        "compiled_proto",
+        "connections/clients/windows",
+        "connections/clients/ios",
+        "connections/clients/swift/NearbyCoreAdapter",
+        "connections/clients/swift/NearbyConnections/BUILD",
+        "connections/clients/swift/NearbyConnections/Tests",
+        "connections/BUILD",
+        "connections/discovery_options.cc",
+        "connections/status.cc",
+        "connections/listeners_test.cc",
+        "connections/advertising_options.cc",
+        "connections/payload.cc",
+        "connections/strategy_test.cc",
+        "connections/connection_options.cc",
+        "connections/core_test.cc",
+        "connections/status_test.cc",
+        "connections/core.cc",
+        "connections/strategy.cc",
+        "connections/payload_test.cc",
+        "connections/implementation",
+        "connections/samples",
+        "docs",
+        "embedded",
+        "internal",
+        "presence",
+        "proto",
+        "third_party",
+        "CONTRIBUTING.md",
+        "LICENSE",
+        "README.md",
+        "WORKSPACE",
       ],
-      linkerSettings: [
-        .linkedLibrary("c++"),
-        .linkedFramework("CoreBluetooth"),
-        .linkedFramework("CoreFoundation"),
+      sources: [
+        "connections/clients/swift/NearbyConnections/Sources"
       ]
     ),
     .testTarget(
-      name: "BuildTests",
+      name: "NearbyCoreAdapterTests",
+      dependencies: ["NearbyCoreAdapter"],
+      path: "connections/clients/swift/NearbyCoreAdapter/Tests"
+    ),
+    .testTarget(
+      name: "NearbyConnectionsTests",
       dependencies: ["NearbyConnections"],
-      path: "connections/clients/ios/BuildTests"
+      path: "connections/clients/swift/NearbyConnections/Tests"
     ),
   ],
   cLanguageStandard: .c99,

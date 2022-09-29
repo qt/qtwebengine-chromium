@@ -749,6 +749,8 @@ following image formats are supported:
     @tab OpenEXR
 @item FITS         @tab X @tab X
     @tab Flexible Image Transport System
+@item HDR          @tab X @tab X
+    @tab Radiance HDR RGBE Image format
 @item IMG          @tab   @tab X
     @tab GEM Raster image
 @item JPEG         @tab X @tab X
@@ -775,6 +777,8 @@ following image formats are supported:
     @tab PGM with U and V components in YUV 4:2:0
 @item PGX          @tab   @tab X
     @tab PGX file decoder
+@item PHM          @tab X @tab X
+    @tab Portable HalfFloatMap image
 @item PIC          @tab @tab X
     @tab Pictor/PC Paint
 @item PNG          @tab X @tab X
@@ -785,6 +789,8 @@ following image formats are supported:
     @tab Photoshop
 @item PTX          @tab   @tab X
     @tab V.Flash PTX format
+@item QOI          @tab X @tab X
+    @tab Quite OK Image format
 @item SGI          @tab X @tab X
     @tab SGI RGB image format
 @item Sun Rasterfile  @tab X @tab X

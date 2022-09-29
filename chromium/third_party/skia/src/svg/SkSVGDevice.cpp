@@ -48,14 +48,14 @@
 #include "src/core/SkClipStack.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkFontPriv.h"
-#include "src/core/SkGlyphRun.h"
 #include "src/core/SkTLazy.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkShaderBase.h"
+#include "src/text/GlyphRun.h"
 #include "src/xml/SkXMLWriter.h"
 
-#include <string>
 #include <memory>
+#include <string>
 #include <utility>
 
 #if SK_SUPPORT_GPU
@@ -130,10 +130,10 @@ static const char* cap_map[]  = {
     "round", // kRound_Cap
     "square" // kSquare_Cap
 };
-static_assert(SK_ARRAY_COUNT(cap_map) == SkPaint::kCapCount, "missing_cap_map_entry");
+static_assert(std::size(cap_map) == SkPaint::kCapCount, "missing_cap_map_entry");
 
 static const char* svg_cap(SkPaint::Cap cap) {
-    SkASSERT(cap < SK_ARRAY_COUNT(cap_map));
+    SkASSERT(static_cast<size_t>(cap) < std::size(cap_map));
     return cap_map[cap];
 }
 
@@ -143,10 +143,10 @@ static const char* join_map[] = {
     "round", // kRound_Join
     "bevel"  // kBevel_Join
 };
-static_assert(SK_ARRAY_COUNT(join_map) == SkPaint::kJoinCount, "missing_join_map_entry");
+static_assert(std::size(join_map) == SkPaint::kJoinCount, "missing_join_map_entry");
 
 static const char* svg_join(SkPaint::Join join) {
-    SkASSERT(join < SK_ARRAY_COUNT(join_map));
+    SkASSERT(join < std::size(join_map));
     return join_map[join];
 }
 
@@ -208,7 +208,7 @@ bool RequiresViewportReset(const SkPaint& paint) {
   return false;
 }
 
-void AddPath(const SkGlyphRun& glyphRun, const SkPoint& offset, SkPath* path) {
+void AddPath(const sktext::GlyphRun& glyphRun, const SkPoint& offset, SkPath* path) {
     struct Rec {
         SkPath*        fPath;
         const SkPoint  fOffset;
@@ -1017,7 +1017,7 @@ void SkSVGDevice::drawImageRect(const SkImage* image, const SkRect* src, const S
 
 class SVGTextBuilder : SkNoncopyable {
 public:
-    SVGTextBuilder(SkPoint origin, const SkGlyphRun& glyphRun)
+    SVGTextBuilder(SkPoint origin, const sktext::GlyphRun& glyphRun)
             : fOrigin(origin) {
         auto runSize = glyphRun.runSize();
         SkAutoSTArray<64, SkUnichar> unichars(runSize);
@@ -1105,7 +1105,7 @@ private:
 };
 
 void SkSVGDevice::onDrawGlyphRunList(SkCanvas* canvas,
-                                     const SkGlyphRunList& glyphRunList,
+                                     const sktext::GlyphRunList& glyphRunList,
                                      const SkPaint& initialPaint,
                                      const SkPaint& drawingPaint)  {
     SkASSERT(!glyphRunList.hasRSXForm());

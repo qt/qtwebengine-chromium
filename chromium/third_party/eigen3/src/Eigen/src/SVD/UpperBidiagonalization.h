@@ -53,7 +53,7 @@ template<typename MatrixType_> class UpperBidiagonalization
     * The default constructor is useful in cases in which the user intends to
     * perform decompositions via Bidiagonalization::compute(const MatrixType&).
     */
-    UpperBidiagonalization() : m_householder(), m_bidiagonal(), m_isInitialized(false) {}
+    UpperBidiagonalization() : m_householder(), m_bidiagonal(0, 0), m_isInitialized(false) {}
 
     explicit UpperBidiagonalization(const MatrixType& matrix)
       : m_householder(matrix.rows(), matrix.cols()),
@@ -62,7 +62,13 @@ template<typename MatrixType_> class UpperBidiagonalization
     {
       compute(matrix);
     }
-    
+
+    UpperBidiagonalization(Index rows, Index cols)
+      : m_householder(rows, cols),
+        m_bidiagonal(cols, cols),
+        m_isInitialized(false)
+    {}
+
     UpperBidiagonalization& compute(const MatrixType& matrix);
     UpperBidiagonalization& computeUnblocked(const MatrixType& matrix);
     

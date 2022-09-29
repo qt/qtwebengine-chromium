@@ -112,14 +112,17 @@ cc_library(
     visibility = [
         "//connections:__subpackages__",
         "//internal/analytics:__subpackages__",
+        "//internal/crypto:__subpackages__",
         "//internal/platform:__subpackages__",
         "//internal/proto/analytics:__subpackages__",
         "//location/nearby/cpp/sharing:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         ":comm",
         ":crypto",  # build_cleaner: keep
         ":types",
+        "//file/base:path",
         "//internal/platform:test_util",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation:platform",

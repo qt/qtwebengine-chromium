@@ -18,6 +18,8 @@ const char kSetDebugMode[] = "SetDebugMode";
 const char kErrorResultFailure[] = "org.chromium.Modemfwd.Error.Failure";
 const char kErrorResultInitFailure[] =
     "org.chromium.Modemfwd.Error.InitFailure";
+const char kErrorResultInitFailureNonLteSku[] =
+    "org.chromium.Modemfwd.Error.InitFailureNonLteSku";
 const char kErrorResultInitManifestFailure[] =
     "org.chromium.Modemfwd.Error.InitManifestFailure";
 const char kErrorResultInitJournalFailure[] =

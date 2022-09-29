@@ -23,9 +23,12 @@ rtc_library("av1_svc_config") {
     "../../svc:scalability_structures",
     "../../svc:scalable_video_controller",
   ]
+
+  absl_deps = [ "//third_party/abseil-cpp/absl/container:inlined_vector" ]
 }
 
 rtc_library("dav1d_decoder") {
+  visibility = [ "*" ]
   poisonous = [ "software_video_codecs" ]
   public = [ "dav1d_decoder.h" ]
   sources = [ "dav1d_decoder.cc" ]
@@ -89,6 +92,7 @@ rtc_library("libaom_av1_encoder") {
   ]
   absl_deps = [
     "//third_party/abseil-cpp/absl/algorithm:container",
+    "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/strings:strings",
     "//third_party/abseil-cpp/absl/types:optional",
   ]

@@ -1637,9 +1637,9 @@ void CFX_SkiaDeviceDriver::PaintStroke(SkPaint* spaint,
 }
 
 CFX_SkiaDeviceDriver::CFX_SkiaDeviceDriver(
-    const RetainPtr<CFX_DIBitmap>& pBitmap,
+    RetainPtr<CFX_DIBitmap> pBitmap,
     bool bRgbByteOrder,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap,
+    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout)
     : m_pBitmap(pBitmap),
       m_pBackdropBitmap(pBackdropBitmap),
@@ -1981,7 +1981,8 @@ void CFX_SkiaDeviceDriver::SetClipMask(const FX_RECT& clipBox,
   SkPaint paint;
   paint.setAntiAlias(!m_FillOptions.aliased_path);
   canvas->drawPath(path, paint);
-  m_pClipRgn->IntersectMaskF(path_rect.left, path_rect.top, pThisLayer);
+  m_pClipRgn->IntersectMaskF(path_rect.left, path_rect.top,
+                             std::move(pThisLayer));
 }
 #endif  // defined(_SKIA_SUPPORT_PATHS_)
 
@@ -2309,7 +2310,7 @@ bool CFX_SkiaDeviceDriver::DrawShading(const CPDF_ShadingPattern* pPattern,
     if (!skClip.isEmpty())
       m_pCanvas->clipPath(skClip, SkClipOp::kIntersect, true);
     m_pCanvas->concat(skMatrix);
-    while (!stream.BitStream()->IsEOF()) {
+    while (!stream.IsEOF()) {
       uint32_t flag = stream.ReadFlag();
       int iStartPoint = flag ? 4 : 0;
       int iStartColor = flag ? 2 : 0;
@@ -2764,16 +2765,17 @@ SkPictureRecorder* CFX_DefaultRenderDevice::CreateRecorder(int size_x,
 }
 #endif  // defined(_SKIA_SUPPORT_)
 
-bool CFX_DefaultRenderDevice::Attach(
-    const RetainPtr<CFX_DIBitmap>& pBitmap,
+bool CFX_DefaultRenderDevice::AttachImpl(
+    RetainPtr<CFX_DIBitmap> pBitmap,
     bool bRgbByteOrder,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap,
+    RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout) {
   if (!pBitmap)
     return false;
   SetBitmap(pBitmap);
   SetDeviceDriver(std::make_unique<CFX_SkiaDeviceDriver>(
-      pBitmap, bRgbByteOrder, pBackdropBitmap, bGroupKnockout));
+      std::move(pBitmap), bRgbByteOrder, std::move(pBackdropBitmap),
+      bGroupKnockout));
   return true;
 }
 
@@ -2786,18 +2788,17 @@ bool CFX_DefaultRenderDevice::AttachRecorder(SkPictureRecorder* recorder) {
 }
 #endif
 
-bool CFX_DefaultRenderDevice::Create(
-    int width,
-    int height,
-    FXDIB_Format format,
-    const RetainPtr<CFX_DIBitmap>& pBackdropBitmap) {
+bool CFX_DefaultRenderDevice::Create(int width,
+                                     int height,
+                                     FXDIB_Format format,
+                                     RetainPtr<CFX_DIBitmap> pBackdropBitmap) {
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  if (!pBitmap->Create(width, height, format)) {
+  if (!pBitmap->Create(width, height, format))
     return false;
-  }
+
   SetBitmap(pBitmap);
   SetDeviceDriver(std::make_unique<CFX_SkiaDeviceDriver>(
-      pBitmap, false, pBackdropBitmap, false));
+      std::move(pBitmap), false, std::move(pBackdropBitmap), false));
   return true;
 }
 
@@ -2824,9 +2825,12 @@ bool CFX_DefaultRenderDevice::SetBitsWithMask(
     BlendMode blend_type) {
   CFX_SkiaDeviceDriver* skDriver =
       static_cast<CFX_SkiaDeviceDriver*>(GetDeviceDriver());
-  if (skDriver)
+  if (skDriver) {
+    // Finish painting before drawing masks.
+    Flush(false);
     return skDriver->SetBitsWithMask(pBitmap, pMask, left, top, bitmap_alpha,
                                      blend_type);
+  }
   return false;
 }
 #endif  // defined(_SKIA_SUPPORT_)

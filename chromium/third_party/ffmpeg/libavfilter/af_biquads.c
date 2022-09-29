@@ -85,6 +85,7 @@ enum FilterType {
     lowpass,
     lowshelf,
     highshelf,
+    tiltshelf,
 };
 
 enum WidthType {
@@ -690,7 +691,7 @@ static void convert_dir2zdf(BiquadsContext *s, int sample_rate)
     case lowshelf:
         A = ff_exp10(s->gain / 40.);
         g = tan(M_PI * s->frequency / sample_rate) / sqrt(A);
-        k = 1. / (Q * A);
+        k = 1. / Q;
         a[0] = 1. / (1. + g * (g + k));
         a[1] = g * a[0];
         a[2] = g * a[1];
@@ -698,11 +699,22 @@ static void convert_dir2zdf(BiquadsContext *s, int sample_rate)
         m[1] = k * (A - 1.);
         m[2] = A * A - 1.;
         break;
+    case tiltshelf:
+        A = ff_exp10(s->gain / 20.);
+        g = tan(M_PI * s->frequency / sample_rate) / sqrt(A);
+        k = 1. / Q;
+        a[0] = 1. / (1. + g * (g + k));
+        a[1] = g * a[0];
+        a[2] = g * a[1];
+        m[0] = 1./ A;
+        m[1] = k * (A - 1.) / A;
+        m[2] = (A * A - 1.) / A;
+        break;
     case treble:
     case highshelf:
         A = ff_exp10(s->gain / 40.);
         g = tan(M_PI * s->frequency / sample_rate) / sqrt(A);
-        k = 1. / (Q * A);
+        k = 1. / Q;
         a[0] = 1. / (1. + g * (g + k));
         a[1] = g * a[0];
         a[2] = g * a[1];
@@ -777,7 +789,8 @@ static int config_filter(AVFilterLink *outlink, int reset)
     AVFilterContext *ctx    = outlink->src;
     BiquadsContext *s       = ctx->priv;
     AVFilterLink *inlink    = ctx->inputs[0];
-    double A = ff_exp10(s->gain / 40);
+    double gain = s->gain * ((s->filter_type == tiltshelf) + 1.);
+    double A = ff_exp10(gain / 40);
     double w0 = 2 * M_PI * s->frequency / inlink->sample_rate;
     double K = tan(w0 / 2.);
     double alpha, beta;
@@ -835,9 +848,10 @@ static int config_filter(AVFilterLink *outlink, int reset)
         break;
     case bass:
         beta = sqrt((A * A + 1) - (A - 1) * (A - 1));
+    case tiltshelf:
     case lowshelf:
         if (s->poles == 1) {
-            double A = ff_exp10(s->gain / 20);
+            double A = ff_exp10(gain / 20);
             double ro = -sin(w0 / 2. - M_PI_4) / sin(w0 / 2. + M_PI_4);
             double n = (A + 1) / (A - 1);
             double alpha1 = A == 1. ? 0. : n - FFSIGN(n) * sqrt(n * n - 1);
@@ -863,7 +877,7 @@ static int config_filter(AVFilterLink *outlink, int reset)
         beta = sqrt((A * A + 1) - (A - 1) * (A - 1));
     case highshelf:
         if (s->poles == 1) {
-            double A = ff_exp10(s->gain / 20);
+            double A = ff_exp10(gain / 20);
             double ro = sin(w0 / 2. - M_PI_4) / sin(w0 / 2. + M_PI_4);
             double n = (A + 1) / (A - 1);
             double alpha1 = A == 1. ? 0. : n - FFSIGN(n) * sqrt(n * n - 1);
@@ -983,6 +997,14 @@ static int config_filter(AVFilterLink *outlink, int reset)
         s->b0 *= factor;
         s->b1 *= factor;
         s->b2 *= factor;
+    }
+
+    switch (s->filter_type) {
+    case tiltshelf:
+        s->b0 /= A;
+        s->b1 /= A;
+        s->b2 /= A;
+        break;
     }
 
     s->cache = av_realloc_f(s->cache, sizeof(ChanCache), inlink->ch_layout.nb_channels);
@@ -1431,45 +1453,63 @@ const AVFilter ff_af_##name_ = {                         \
     AVFILTER_DEFINE_CLASS(name);                                        \
     DEFINE_BIQUAD_FILTER_2(name, description, name)
 
+#define WIDTH_OPTION(x)                                                                       \
+    {"width", "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=x}, 0, 99999, FLAGS}, \
+    {"w",     "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=x}, 0, 99999, FLAGS}
+
+#define WIDTH_TYPE_OPTION(x)                                                                                                        \
+    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=x}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"}, \
+    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=x}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"}, \
+    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},                                                     \
+    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},                                             \
+    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},                                                \
+    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},                                                  \
+    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"}
+
+#define MIX_CHANNELS_NORMALIZE_OPTION(x, y, z)                                                                \
+    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=x}, 0, 1, FLAGS},                               \
+    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=x}, 0, 1, FLAGS},                               \
+    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str=y}, 0, 0, FLAGS}, \
+    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str=y}, 0, 0, FLAGS}, \
+    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=z}, 0, 1, FLAGS},      \
+    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=z}, 0, 1, FLAGS}
+
+#define TRANSFORM_OPTION(x)                                                                                                      \
+    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=x}, 0, NB_TTYPE-1, AF, "transform_type"}, \
+    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=x}, 0, NB_TTYPE-1, AF, "transform_type"}, \
+    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},                                     \
+    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},                                    \
+    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},                        \
+    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},                        \
+    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},                              \
+    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},                        \
+    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"}
+
+#define PRECISION_OPTION(x)                                                                                           \
+    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=x}, -1, 3, AF, "precision"},   \
+    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=x}, -1, 3, AF, "precision"},   \
+    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},                         \
+    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},                         \
+    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},                         \
+    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},                         \
+    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"}
+
+#define BLOCKSIZE_OPTION(x)                                                                              \
+    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=x}, 0, 32768, AF}, \
+    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=x}, 0, 32768, AF}
+
 #if CONFIG_EQUALIZER_FILTER
 static const AVOption equalizer_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=0}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 99999, FLAGS},
-    {"w",     "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(1.0),
     {"gain", "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
     {"g",    "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1479,43 +1519,16 @@ DEFINE_BIQUAD_FILTER(equalizer, "Apply two-pole peaking equalization (EQ) filter
 static const AVOption bass_lowshelf_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=100}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=100}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set shelf transition steep", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
-    {"w",     "set shelf transition steep", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.5),
     {"gain", "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
     {"g",    "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
     {"poles", "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
     {"p",     "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1528,51 +1541,24 @@ DEFINE_BIQUAD_FILTER_2(bass, "Boost or cut lower frequencies.", bass_lowshelf);
 DEFINE_BIQUAD_FILTER_2(lowshelf, "Apply a low shelf filter.", bass_lowshelf);
 #endif  /* CONFIG_LOWSHELF_FILTER */
 #endif  /* CONFIG_BASS_FILTER || CONFIG LOWSHELF_FILTER */
-#if CONFIG_TREBLE_FILTER || CONFIG_HIGHSHELF_FILTER
+#if CONFIG_TREBLE_FILTER || CONFIG_HIGHSHELF_FILTER || CONFIG_TILTSHELF_FILTER
 static const AVOption treble_highshelf_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set shelf transition steep", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
-    {"w",     "set shelf transition steep", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.5),
     {"gain", "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
     {"g",    "set gain", OFFSET(gain), AV_OPT_TYPE_DOUBLE, {.dbl=0}, -900, 900, FLAGS},
     {"poles", "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
     {"p",     "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
-AVFILTER_DEFINE_CLASS_EXT(treble_highshelf, "treble/highshelf",
+AVFILTER_DEFINE_CLASS_EXT(treble_highshelf, "treble/high/tiltshelf",
                           treble_highshelf_options);
 
 #if CONFIG_TREBLE_FILTER
@@ -1582,45 +1568,23 @@ DEFINE_BIQUAD_FILTER_2(treble, "Boost or cut upper frequencies.", treble_highshe
 #if CONFIG_HIGHSHELF_FILTER
 DEFINE_BIQUAD_FILTER_2(highshelf, "Apply a high shelf filter.", treble_highshelf);
 #endif  /* CONFIG_HIGHSHELF_FILTER */
-#endif  /* CONFIG_TREBLE_FILTER || CONFIG_HIGHSHELF_FILTER */
+
+#if CONFIG_TILTSHELF_FILTER
+DEFINE_BIQUAD_FILTER_2(tiltshelf, "Apply a tilt shelf filter.", treble_highshelf);
+#endif
+#endif  /* CONFIG_TREBLE_FILTER || CONFIG_HIGHSHELF_FILTER || CONFIG_TILTSHELF_FILTER */
+
 #if CONFIG_BANDPASS_FILTER
 static const AVOption bandpass_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
-    {"w",     "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.5),
     {"csg",   "use constant skirt gain", OFFSET(csg), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1630,39 +1594,12 @@ DEFINE_BIQUAD_FILTER(bandpass, "Apply a two-pole Butterworth band-pass filter.")
 static const AVOption bandreject_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
-    {"w",     "set band-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.5}, 0, 99999, FLAGS},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.5),
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1672,41 +1609,14 @@ DEFINE_BIQUAD_FILTER(bandreject, "Apply a two-pole Butterworth band-reject filte
 static const AVOption lowpass_options[] = {
     {"frequency", "set frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=500}, 0, 999999, FLAGS},
     {"f",         "set frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=500}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.707}, 0, 99999, FLAGS},
-    {"w",     "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.707}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.707),
     {"poles", "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
     {"p",     "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1716,41 +1626,14 @@ DEFINE_BIQUAD_FILTER(lowpass, "Apply a low-pass filter with 3dB point frequency.
 static const AVOption highpass_options[] = {
     {"frequency", "set frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
     {"f",         "set frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=QFACTOR}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.707}, 0, 99999, FLAGS},
-    {"w",     "set width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=0.707}, 0, 99999, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.707),
     {"poles", "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
     {"p",     "set number of poles", OFFSET(poles), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, AF},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 
@@ -1760,39 +1643,13 @@ DEFINE_BIQUAD_FILTER(highpass, "Apply a high-pass filter with 3dB point frequenc
 static const AVOption allpass_options[] = {
     {"frequency", "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
     {"f",         "set central frequency", OFFSET(frequency), AV_OPT_TYPE_DOUBLE, {.dbl=3000}, 0, 999999, FLAGS},
-    {"width_type", "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=HERTZ}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"t",          "set filter-width type", OFFSET(width_type), AV_OPT_TYPE_INT, {.i64=HERTZ}, HERTZ, NB_WTYPE-1, FLAGS, "width_type"},
-    {"h", "Hz", 0, AV_OPT_TYPE_CONST, {.i64=HERTZ}, 0, 0, FLAGS, "width_type"},
-    {"q", "Q-Factor", 0, AV_OPT_TYPE_CONST, {.i64=QFACTOR}, 0, 0, FLAGS, "width_type"},
-    {"o", "octave", 0, AV_OPT_TYPE_CONST, {.i64=OCTAVE}, 0, 0, FLAGS, "width_type"},
-    {"s", "slope", 0, AV_OPT_TYPE_CONST, {.i64=SLOPE}, 0, 0, FLAGS, "width_type"},
-    {"k", "kHz", 0, AV_OPT_TYPE_CONST, {.i64=KHERTZ}, 0, 0, FLAGS, "width_type"},
-    {"width", "set filter-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=707.1}, 0, 99999, FLAGS},
-    {"w",     "set filter-width", OFFSET(width), AV_OPT_TYPE_DOUBLE, {.dbl=707.1}, 0, 99999, FLAGS},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
+    WIDTH_TYPE_OPTION(QFACTOR),
+    WIDTH_OPTION(0.707),
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
     {"order", "set filter order", OFFSET(order), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, FLAGS},
     {"o",     "set filter order", OFFSET(order), AV_OPT_TYPE_INT, {.i64=2}, 1, 2, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
     {NULL}
 };
 
@@ -1806,30 +1663,10 @@ static const AVOption biquad_options[] = {
     {"b0", NULL, OFFSET(ob0), AV_OPT_TYPE_DOUBLE, {.dbl=0}, INT32_MIN, INT32_MAX, FLAGS},
     {"b1", NULL, OFFSET(ob1), AV_OPT_TYPE_DOUBLE, {.dbl=0}, INT32_MIN, INT32_MAX, FLAGS},
     {"b2", NULL, OFFSET(ob2), AV_OPT_TYPE_DOUBLE, {.dbl=0}, INT32_MIN, INT32_MAX, FLAGS},
-    {"mix", "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"m",   "set mix", OFFSET(mix), AV_OPT_TYPE_DOUBLE, {.dbl=1}, 0, 1, FLAGS},
-    {"channels", "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"c",        "set channels to filter", OFFSET(ch_layout_str), AV_OPT_TYPE_STRING, {.str="all"}, 0, 0, FLAGS},
-    {"normalize", "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"n",         "normalize coefficients", OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=0}, 0, 1, FLAGS},
-    {"transform", "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"a",         "set transform type", OFFSET(transform_type), AV_OPT_TYPE_INT, {.i64=0}, 0, NB_TTYPE-1, AF, "transform_type"},
-    {"di",   "direct form I",  0, AV_OPT_TYPE_CONST, {.i64=DI}, 0, 0, AF, "transform_type"},
-    {"dii",  "direct form II", 0, AV_OPT_TYPE_CONST, {.i64=DII}, 0, 0, AF, "transform_type"},
-    {"tdi",  "transposed direct form I",  0, AV_OPT_TYPE_CONST, {.i64=TDI},  0, 0, AF, "transform_type"},
-    {"tdii", "transposed direct form II", 0, AV_OPT_TYPE_CONST, {.i64=TDII}, 0, 0, AF, "transform_type"},
-    {"latt", "lattice-ladder form", 0, AV_OPT_TYPE_CONST, {.i64=LATT}, 0, 0, AF, "transform_type"},
-    {"svf",  "state variable filter form", 0, AV_OPT_TYPE_CONST, {.i64=SVF}, 0, 0, AF, "transform_type"},
-    {"zdf",  "zero-delay filter form", 0, AV_OPT_TYPE_CONST, {.i64=ZDF}, 0, 0, AF, "transform_type"},
-    {"precision", "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"r",         "set filtering precision", OFFSET(precision), AV_OPT_TYPE_INT, {.i64=-1}, -1, 3, AF, "precision"},
-    {"auto", "automatic",            0, AV_OPT_TYPE_CONST, {.i64=-1}, 0, 0, AF, "precision"},
-    {"s16", "signed 16-bit",         0, AV_OPT_TYPE_CONST, {.i64=0},  0, 0, AF, "precision"},
-    {"s32", "signed 32-bit",         0, AV_OPT_TYPE_CONST, {.i64=1},  0, 0, AF, "precision"},
-    {"f32", "floating-point single", 0, AV_OPT_TYPE_CONST, {.i64=2},  0, 0, AF, "precision"},
-    {"f64", "floating-point double", 0, AV_OPT_TYPE_CONST, {.i64=3},  0, 0, AF, "precision"},
-    {"blocksize", "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
-    {"b",         "set the block size", OFFSET(block_samples), AV_OPT_TYPE_INT, {.i64=0}, 0, 32768, AF},
+    MIX_CHANNELS_NORMALIZE_OPTION(1, "all", 0),
+    TRANSFORM_OPTION(DI),
+    PRECISION_OPTION(-1),
+    BLOCKSIZE_OPTION(0),
     {NULL}
 };
 

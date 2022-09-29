@@ -7,6 +7,7 @@
 #include "src/builtins/accessors.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/compiler.h"
+#include "src/codegen/reloc-info.h"
 #include "src/codegen/script-details.h"
 #include "src/common/globals.h"
 #include "src/debug/debug-frames.h"
@@ -18,7 +19,6 @@
 #include "src/interpreter/bytecodes.h"
 #include "src/objects/code-inl.h"
 #include "src/objects/contexts.h"
-#include "src/snapshot/snapshot.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/debug/debug-wasm-objects.h"
@@ -1107,6 +1107,7 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtin caller,
     case Builtin::kExtractFastJSArray:
     case Builtin::kFastNewObject:
     case Builtin::kFindOrderedHashMapEntry:
+    case Builtin::kFindOrderedHashSetEntry:
     case Builtin::kFlatMapIntoArray:
     case Builtin::kFlattenIntoArray:
     case Builtin::kGetProperty:
@@ -1224,8 +1225,9 @@ void DebugEvaluate::VerifyTransitiveBuiltins(Isolate* isolate) {
     }
   }
   CHECK(!failed);
-#if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64) || \
-    defined(V8_TARGET_ARCH_MIPS64)
+#if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64) ||      \
+    defined(V8_TARGET_ARCH_MIPS64) || defined(V8_TARGET_ARCH_RISCV32) || \
+    defined(V8_TARGET_ARCH_RISCV64)
   // Isolate-independent builtin calls and jumps do not emit reloc infos
   // on PPC. We try to avoid using PC relative code due to performance
   // issue with especially older hardwares.

@@ -7,33 +7,92 @@
 
 #include "include/gpu/graphite/Recorder.h"
 
+#include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/graphite/BackendTexture.h"
+#include "include/gpu/graphite/GraphiteTypes.h"
+#include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
 #include "src/core/SkPipelineData.h"
+#include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/DrawBufferManager.h"
 #include "src/gpu/graphite/GlobalCache.h"
-#include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/PipelineDataCache.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TaskGraph.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
+#include "src/gpu/graphite/text/AtlasManager.h"
+#include "src/image/SkImage_Base.h"
+#include "src/text/gpu/StrikeCache.h"
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 namespace skgpu::graphite {
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
 
-Recorder::Recorder(sk_sp<Gpu> gpu, sk_sp<GlobalCache> globalCache)
-        : fGpu(std::move(gpu))
+/*
+ * The default image provider doesn't perform any conversion so, by default, Graphite won't
+ * draw any non-Graphite-backed images.
+ */
+class DefaultImageProvider final : public ImageProvider {
+public:
+    static sk_sp<DefaultImageProvider> Make() {
+        return sk_ref_sp(new DefaultImageProvider);
+    }
+
+    sk_sp<SkImage> findOrCreate(Recorder* recorder,
+                                const SkImage* image,
+                                SkImage::RequiredImageProperties) override {
+        SkASSERT(!as_IB(image)->isGraphiteBacked());
+
+        return nullptr;
+    }
+
+private:
+    DefaultImageProvider() {}
+};
+
+/**************************************************************************************************/
+RecorderOptions::~RecorderOptions() = default;
+
+/**************************************************************************************************/
+static int32_t next_id() {
+    static std::atomic<int32_t> nextID{1};
+    int32_t id;
+    do {
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
+    } while (id == SK_InvalidGenID);
+    return id;
+}
+
+Recorder::Recorder(sk_sp<SharedContext> sharedContext,
+                   sk_sp<GlobalCache> globalCache,
+                   const RecorderOptions& options)
+        : fSharedContext(std::move(sharedContext))
         , fGraph(new TaskGraph)
         , fUniformDataCache(new UniformDataCache)
-        , fTextureDataCache(new TextureDataCache) {
+        , fTextureDataCache(new TextureDataCache)
+        , fRecorderID(next_id())
+        , fAtlasManager(std::make_unique<AtlasManager>(this))
+        , fTokenTracker(std::make_unique<TokenTracker>())
+        , fStrikeCache(std::make_unique<sktext::gpu::StrikeCache>())
+        , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fRecorderID)) {
 
-    fResourceProvider = fGpu->makeResourceProvider(std::move(globalCache), this->singleOwner());
-    fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(),
-                                                   fGpu->caps()->requiredUniformBufferAlignment()));
+    fClientImageProvider = options.fImageProvider;
+    if (!fClientImageProvider) {
+        fClientImageProvider = DefaultImageProvider::Make();
+    }
+
+    fResourceProvider = fSharedContext->makeResourceProvider(std::move(globalCache),
+                                                             this->singleOwner());
+    fDrawBufferManager.reset(
+            new DrawBufferManager(fResourceProvider.get(),
+                                  fSharedContext->caps()->requiredUniformBufferAlignment(),
+                                  fSharedContext->caps()->requiredStorageBufferAlignment()));
     fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get()));
     SkASSERT(fResourceProvider);
 }
@@ -43,7 +102,12 @@ Recorder::~Recorder() {
     for (auto& device : fTrackedDevices) {
         device->abandonRecorder();
     }
+
+    // TODO: needed?
+    fStrikeCache->freeAll();
 }
+
+BackendApi Recorder::backend() const { return fSharedContext->backend(); }
 
 std::unique_ptr<Recording> Recorder::snap() {
     ASSERT_SINGLE_OWNER
@@ -57,37 +121,23 @@ std::unique_ptr<Recording> Recorder::snap() {
     if (!fGraph->prepareResources(fResourceProvider.get())) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
-        size_t requiredAlignment = fGpu->caps()->requiredUniformBufferAlignment();
-        fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(), requiredAlignment));
+        fDrawBufferManager.reset(
+                new DrawBufferManager(fResourceProvider.get(),
+                                      fSharedContext->caps()->requiredUniformBufferAlignment(),
+                                      fSharedContext->caps()->requiredStorageBufferAlignment()));
         fTextureDataCache = std::make_unique<TextureDataCache>();
         // We leave the UniformDataCache alone
         fGraph->reset();
+        fResourceProvider->resetAfterSnap();
         return nullptr;
     }
 
-    // TODO: Adding commands to a CommandBuffer should all take place in the Context when we insert
-    // a Recording.
-    auto commandBuffer = fResourceProvider->createCommandBuffer();
+    std::unique_ptr<Recording> recording(new Recording(std::move(fGraph)));
+    fDrawBufferManager->transferToRecording(recording.get());
+    fUploadBufferManager->transferToRecording(recording.get());
 
-    if (!fGraph->addCommands(fResourceProvider.get(), commandBuffer.get())) {
-        // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
-        // attached to extant SkSurfaces.
-        size_t requiredAlignment = fGpu->caps()->requiredUniformBufferAlignment();
-        fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(), requiredAlignment));
-        fTextureDataCache = std::make_unique<TextureDataCache>();
-        // We leave the UniformDataCache alone
-        fGraph->reset();
-        return nullptr;
-    }
-
-    // TODO: These buffer refs will need to be stored on Recording before they eventually get passed
-    // onto the CommandBuffer.
-    fDrawBufferManager->transferToCommandBuffer(commandBuffer.get());
-    fUploadBufferManager->transferToCommandBuffer(commandBuffer.get());
-
-    fGraph->reset();
-    std::unique_ptr<Recording> recording(new Recording(std::move(commandBuffer),
-                                                       std::move(fTextureDataCache)));
+    fGraph = std::make_unique<TaskGraph>();
+    fResourceProvider->resetAfterSnap();
     fTextureDataCache = std::make_unique<TextureDataCache>();
     return recording;
 }
@@ -118,5 +168,23 @@ bool Recorder::deviceIsRegistered(Device* device) {
     return false;
 }
 #endif
+
+BackendTexture Recorder::createBackendTexture(SkISize dimensions, const TextureInfo& info) {
+    ASSERT_SINGLE_OWNER
+
+    if (!info.isValid() || info.backend() != this->backend()) {
+        return {};
+    }
+    return fResourceProvider->createBackendTexture(dimensions, info);
+}
+
+void Recorder::deleteBackendTexture(BackendTexture& texture) {
+    ASSERT_SINGLE_OWNER
+
+    if (!texture.isValid() || texture.backend() != this->backend()) {
+        return;
+    }
+    fResourceProvider->deleteBackendTexture(texture);
+}
 
 } // namespace skgpu::graphite

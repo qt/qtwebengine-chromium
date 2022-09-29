@@ -13,6 +13,7 @@ syntax = "proto3";
 option optimize_for = LITE_RUNTIME;
 
 package user_data_auth;
+option go_package = "chromiumos/system_api/user_data_auth_proto";
 
 import "auth_factor.proto";
 import "fido.proto";
@@ -89,6 +90,8 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_ERROR_UNAUTHENTICATED_AUTH_SESSION = 51;
   CRYPTOHOME_ERROR_UNKNOWN_LEGACY = 52;
   CRYPTOHOME_ERROR_UNUSABLE_VAULT = 53;
+  CRYPTOHOME_REMOVE_CREDENTIALS_FAILED = 54;
+  CRYPTOHOME_UPDATE_CREDENTIALS_FAILED = 55;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -292,6 +295,12 @@ message UnmountRequest {
 message UnmountReply {
   // Indicates an error if |error| is not empty.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 // Input parameters to Mount()
@@ -357,6 +366,11 @@ message RemoveRequest {
 message RemoveReply {
   // Indicate an error when |error| is not empty.
   CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 // Input parameters to ListKeys()
@@ -376,6 +390,11 @@ message ListKeysReply {
   CryptohomeErrorCode error = 1;
   // The labels of the Vault Keyset. This will be empty on error.
   repeated string labels = 2;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 // Input parameters to GetKeyData()
@@ -561,7 +580,11 @@ message GetWebAuthnSecretHashReply {
 // Input parameters to GetHibernateSecret()
 message GetHibernateSecretRequest {
   // This represents the "single user" that the secret belongs to.
+  // This mechanism is deprecated in favor of the auth_session_id below.
   cryptohome.AccountIdentifier account_id = 1;
+  // Serialized form of token that is used to identify Auth Session in
+  // progress.
+  bytes auth_session_id = 2;
 }
 
 // Output parameters for GetHibernateSecret()
@@ -710,8 +733,9 @@ message StartAuthSessionReply {
   // Map to return label and public key data for the authentication credential
   // to be sent in. This will be empty if user_exists is set to false.
   map<string, cryptohome.KeyData> key_label_data = 4;
-  // List of AuthFactors to return all the AuthFactors available for user
-  // authentication. This will be empty if user_exists is set to false.
+
+  // List of AuthFactors configured and available for authentication in the
+  // context of this session.
   repeated AuthFactor auth_factors = 5;
 
   // Indicate an error if this field exists.
@@ -719,6 +743,10 @@ message StartAuthSessionReply {
   // which field to use and the process on the migration, see comment in
   // CryptohomeErrorInfo.
   CryptohomeErrorInfo error_info = 6;
+
+  // Deprecated. Use ListAuthFactors to determine this. Was never actually
+  // implemented on StartAuthSession.
+  repeated AuthFactorType supported_auth_factors = 7;
 }
 
 message AddCredentialsRequest {
@@ -1021,34 +1049,6 @@ message GetCurrentSpaceForArcProjectIdReply {
   // Will be a negative number if the request fails. See
   // cryptohome/arc_disk_quota.h for more details.
   int64 cur_space = 1;
-}
-
-// Type of paths that are allowed for SetProjectId.
-enum SetProjectIdAllowedPathType {
-  // /home/user/<obfuscated_username>/MyFiles/Downloads/
-  PATH_DOWNLOADS = 0;
-  // /home/root/<obfuscated_username>/android-data/
-  PATH_ANDROID_DATA = 1;
-}
-
-// Input parameters to SetProjectId().
-message SetProjectIdRequest {
-  // The project ID.
-  uint32 project_id = 1;
-
-  // |parent_path|, |child_path| and |account_id| are used for constructing the
-  // target path. (e.g.
-  // /home/user/<obfuscated_username>/MyFiles/Downloads/<child_path> for
-  // parent_path=PATH_DOWNLOADS)
-  SetProjectIdAllowedPathType parent_path = 2;
-  string child_path = 3;
-  cryptohome.AccountIdentifier account_id = 4;
-}
-
-// Output parameters for SetProjectId().
-message SetProjectIdReply {
-  // Set to true if ioctl syscall for setting the project ID succeeds.
-  bool success = 1;
 }
 
 // Input parameters to SetMediaRWDataFileProjectId().
@@ -1457,7 +1457,7 @@ message AuthenticateAuthFactorRequest {
   // The AuthFactor label would be used to determine the AuthFactor that
   // needs to be authenticated. If the label does not exist, the call would
   // return an error.
-  bytes auth_factor_label = 2;
+  string auth_factor_label = 2;
   // In some cases, such as password, the secret would be user supplied. In
   // those cases the secret can be passed here.
   AuthInput auth_input = 3;
@@ -1478,7 +1478,7 @@ message AuthenticateAuthFactorReply {
 }
 
 // UpdateAuthFactorRequest is built when a user is trying to
-// update an AuthFactor for a user. old_auth_factor_label would identify
+// update an AuthFactor for a user. auth_factor_label would identify
 // the AuthFactor that the request is trying to update. When the call is made,
 // AuthSession is in an authenticated state. After the operation the
 // AuthSession would still be in an authenticated state.
@@ -1487,12 +1487,12 @@ message UpdateAuthFactorRequest {
   // AuthSession running. This id would be used to associate the AuthFactor to
   // an AuthSession.
   bytes auth_session_id = 1;
-  // Label to identify the existing AuthFactor.
-  string old_auth_factor_label = 2;
+  // Label to identify the existing AuthFactor. Updated auth factor will be
+  // associated with the same label.
+  string auth_factor_label = 2;
   // The AuthFactor that we will replace the existing AuthFactor with. The full
   // structure should be populated with factor specific data and metadata. The
-  // new label should either be same as old_auth_factor_label or be different
-  // than anything else that exist for a user already.
+  // type of the AuthFactor should match the existing one.
   AuthFactor auth_factor = 3;
   // In some cases, such as password, the secret would be user supplied. In
   // those cases the secret can be passed here
@@ -1502,6 +1502,11 @@ message UpdateAuthFactorRequest {
 message UpdateAuthFactorReply {
   // Return the status of the request.
   CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 // RemoveAuthFactorRequest is built when a user is trying to
@@ -1524,6 +1529,32 @@ message RemoveAuthFactorRequest {
 message RemoveAuthFactorReply {
   // Return the status of the request.
   CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+}
+
+// List all of the auth factors that are configured, as well as the set of auth
+// factor types which are supported.
+message ListAuthFactorsRequest {
+  // The account of a user.
+  cryptohome.AccountIdentifier account_id = 1;
+}
+
+message ListAuthFactorsReply {
+  // Return the status of the request.
+  CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+  // All of the auth factors configured for the user.
+  repeated AuthFactor configured_auth_factors = 3;
+  // All of the auth factor types supported for this user.
+  repeated AuthFactorType supported_auth_factors = 4;
 }
 
 // GetRecoveryRequestRequest is built when a user is trying to get the

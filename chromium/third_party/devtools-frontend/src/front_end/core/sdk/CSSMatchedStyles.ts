@@ -7,11 +7,11 @@ import * as TextUtils from '../../models/text_utils/text_utils.js';
 
 import {cssMetadata, CustomVariableRegex, VariableRegex} from './CSSMetadata.js';
 
-import type {CSSModel} from './CSSModel.js';
-import type {CSSProperty} from './CSSProperty.js';
+import {type CSSModel} from './CSSModel.js';
+import {type CSSProperty} from './CSSProperty.js';
 import {CSSKeyframesRule, CSSStyleRule} from './CSSRule.js';
 import {CSSStyleDeclaration, Type} from './CSSStyleDeclaration.js';
-import type {DOMNode} from './DOMModel.js';
+import {type DOMNode} from './DOMModel.js';
 
 export class CSSMatchedStyles {
   readonly #cssModelInternal: CSSModel;
@@ -25,13 +25,14 @@ export class CSSMatchedStyles {
   readonly #pseudoDOMCascades: Map<Protocol.DOM.PseudoType, DOMInheritanceCascade>;
   readonly #customHighlightPseudoDOMCascades: Map<string, DOMInheritanceCascade>;
   readonly #styleToDOMCascade: Map<CSSStyleDeclaration, DOMInheritanceCascade>;
+  readonly #parentLayoutNodeId: Protocol.DOM.NodeId|undefined;
 
   constructor(
       cssModel: CSSModel, node: DOMNode, inlinePayload: Protocol.CSS.CSSStyle|null,
       attributesPayload: Protocol.CSS.CSSStyle|null, matchedPayload: Protocol.CSS.RuleMatch[],
       pseudoPayload: Protocol.CSS.PseudoElementMatches[], inheritedPayload: Protocol.CSS.InheritedStyleEntry[],
       inheritedPseudoPayload: Protocol.CSS.InheritedPseudoElementMatches[],
-      animationsPayload: Protocol.CSS.CSSKeyframesRule[]) {
+      animationsPayload: Protocol.CSS.CSSKeyframesRule[], parentLayoutNodeId: Protocol.DOM.NodeId|undefined) {
     this.#cssModelInternal = cssModel;
     this.#nodeInternal = node;
     this.#addedStyles = new Map();
@@ -40,6 +41,7 @@ export class CSSMatchedStyles {
     if (animationsPayload) {
       this.#keyframesInternal = animationsPayload.map(rule => new CSSKeyframesRule(cssModel, rule));
     }
+    this.#parentLayoutNodeId = parentLayoutNodeId;
 
     this.#nodeForStyleInternal = new Map();
     this.#inheritedStyles = new Set();
@@ -411,6 +413,10 @@ export class CSSMatchedStyles {
     return matchingSelectors.length > 0 && this.queryMatches(rule.style);
   }
 
+  getParentLayoutNodeId(): Protocol.DOM.NodeId|undefined {
+    return this.#parentLayoutNodeId;
+  }
+
   getMatchingSelectors(rule: CSSStyleRule): number[] {
     const node = this.nodeForStyle(rule.style);
     if (!node || typeof node.id !== 'number') {
@@ -491,7 +497,7 @@ export class CSSMatchedStyles {
       return true;
     }
     const parentRule = style.parentRule as CSSStyleRule;
-    const queries = [...parentRule.media, ...parentRule.containerQueries, ...parentRule.supports];
+    const queries = [...parentRule.media, ...parentRule.containerQueries, ...parentRule.supports, ...parentRule.scopes];
     for (const query of queries) {
       if (!query.active()) {
         return false;

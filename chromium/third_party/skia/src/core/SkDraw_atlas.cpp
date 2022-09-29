@@ -9,6 +9,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRSXform.h"
 #include "src/core/SkBlendModePriv.h"
+#include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCoreBlitters.h"
@@ -17,10 +18,8 @@
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkScan.h"
-#include "src/core/SkScan.h"
 #include "src/core/SkVM.h"
 #include "src/core/SkVMBlitter.h"
-#include "src/shaders/SkComposeShader.h"
 #include "src/shaders/SkShaderBase.h"
 
 static void fill_rect(const SkMatrix& ctm, const SkRasterClip& rc,
@@ -107,13 +106,15 @@ void SkDraw::drawAtlas(const SkRSXform xform[],
 
     auto rpblit = [&]() {
         SkRasterPipeline pipeline(&alloc);
+        SkSurfaceProps props = SkSurfacePropsCopyOrDefault(fProps);
         SkStageRec rec = {&pipeline,
                           &alloc,
                           fDst.colorType(),
                           fDst.colorSpace(),
                           p,
                           nullptr,
-                          *fMatrixProvider};
+                          *fMatrixProvider,
+                          props};
 
         SkStageUpdater* updator = as_SB(atlasShader.get())->appendUpdatableStages(rec);
         if (!updator) {
@@ -184,17 +185,18 @@ void SkDraw::drawAtlas(const SkRSXform xform[],
     };
 
     if (gUseSkVMBlitter || !rpblit()) {
-        auto updateShader = as_SB(atlasShader)->updatableShader(&alloc);
+        SkUpdatableShader* updateShader = as_SB(atlasShader)->updatableShader(&alloc);
         UpdatableColorShader* colorShader = nullptr;
-        SkShaderBase* shader = nullptr;
+        sk_sp<SkShader> shader;
         if (colors) {
             colorShader = alloc.make<UpdatableColorShader>(fDst.colorSpace());
-            shader = alloc.make<SkShader_Blend>(
-                    std::move(blender), sk_ref_sp(colorShader), sk_ref_sp(updateShader));
+            shader = SkShaders::Blend(std::move(blender),
+                                      sk_ref_sp(colorShader),
+                                      sk_ref_sp(updateShader));
         } else {
-            shader = as_SB(updateShader);
+            shader = sk_ref_sp(updateShader);
         }
-        p.setShader(sk_ref_sp(shader));
+        p.setShader(std::move(shader));
         if (auto blitter = SkVMBlitter::Make(fDst, p, *fMatrixProvider, &alloc,
                                              fRC->clipShader())) {
             SkPath scratchPath;

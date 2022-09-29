@@ -171,6 +171,13 @@
       }
     }
   },
+  'mac11_or_mac12': {
+    'swarming': {
+      'dimensions': {
+        'os': 'Mac-11|Mac-12'
+      }
+    }
+  },
   'mac_12_beta_arm64': {
     'swarming': {
       'dimensions': {
@@ -315,17 +322,10 @@
       }
     }
   },
-  'win10-1703': {
+  'win10': {
     'swarming': {
       'dimensions': {
-        'os': 'Windows-10-15063'
-      }
-    }
-  },
-  'win7': {
-    'swarming': {
-      'dimensions': {
-        'os': 'Windows-7-SP1'
+        'os': 'Windows-10-19042'
       }
     }
   },

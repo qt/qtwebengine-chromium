@@ -14,6 +14,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfdoc/cpdf_defaultappearance.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
@@ -26,7 +27,6 @@
 class CFieldTree;
 class CFDF_Document;
 class CPDF_Document;
-class CPDF_Dictionary;
 class CPDF_Font;
 class CPDF_FormControl;
 class CPDF_Page;
@@ -58,7 +58,7 @@ class CPDF_InteractiveForm {
 
   size_t CountFields(const WideString& csFieldName) const;
   CPDF_FormField* GetField(size_t index, const WideString& csFieldName) const;
-  CPDF_FormField* GetFieldByDict(CPDF_Dictionary* pFieldDict) const;
+  CPDF_FormField* GetFieldByDict(const CPDF_Dictionary* pFieldDict) const;
 
   const CPDF_FormControl* GetControlAtPoint(const CPDF_Page* pPage,
                                             const CFX_PointF& point,
@@ -91,16 +91,17 @@ class CPDF_InteractiveForm {
 
   NotifierIface* GetFormNotify() const { return m_pFormNotify.Get(); }
   CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
-  CPDF_Dictionary* GetFormDict() const { return m_pFormDict.Get(); }
+  const CPDF_Dictionary* GetFormDict() const { return m_pFormDict.Get(); }
+  RetainPtr<CPDF_Dictionary> GetMutableFormDict() { return m_pFormDict; }
 
   const std::vector<UnownedPtr<CPDF_FormControl>>& GetControlsForField(
       const CPDF_FormField* pField);
 
  private:
-  void LoadField(CPDF_Dictionary* pFieldDict, int nLevel);
-  void AddTerminalField(CPDF_Dictionary* pFieldDict);
+  void LoadField(RetainPtr<CPDF_Dictionary> pFieldDict, int nLevel);
+  void AddTerminalField(RetainPtr<CPDF_Dictionary> pFieldDict);
   CPDF_FormControl* AddControl(CPDF_FormField* pField,
-                               CPDF_Dictionary* pWidgetDict);
+                               RetainPtr<CPDF_Dictionary> pWidgetDict);
 
   static bool s_bUpdateAP;
 

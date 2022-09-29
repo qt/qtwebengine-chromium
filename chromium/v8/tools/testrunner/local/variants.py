@@ -17,6 +17,7 @@ ALL_VARIANT_FLAGS = {
     "sparkplug": [["--sparkplug"]],
     # TODO(v8:v8:7700): Support concurrent compilation and remove flag.
     "maglev": [["--maglev", "--no-concurrent-recompilation"]],
+    "turboshaft": [["--turboshaft"]],
     "concurrent_sparkplug": [["--concurrent-sparkplug", "--sparkplug"]],
     "always_sparkplug": [["--always-sparkplug", "--sparkplug"]],
     "minor_mc": [["--minor-mc"]],
@@ -31,7 +32,7 @@ ALL_VARIANT_FLAGS = {
     "slow_path": [["--force-slow-path"]],
     "stress": [[
         "--stress-opt", "--no-liftoff", "--stress-lazy-source-positions",
-        "--no-wasm-generic-wrapper"
+        "--no-wasm-generic-wrapper", "--no-wasm-lazy-compilation"
     ]],
     "stress_concurrent_allocation": [["--stress-concurrent-allocation"]],
     "stress_concurrent_inlining": [["--stress-concurrent-inlining"]],

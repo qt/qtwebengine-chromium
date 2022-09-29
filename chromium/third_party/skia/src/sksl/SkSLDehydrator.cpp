@@ -56,12 +56,13 @@
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLUnresolvedFunction.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
-#include <map>
+#include <algorithm>
+
+#define SYMBOL_DEBUGF(...) //SkDebugf(__VA_ARGS__)
 
 namespace SkSL {
 
@@ -169,20 +170,9 @@ void Dehydrator::write(const Symbol& s) {
             this->write(f.name());
             this->writeU8(f.parameters().size());
             for (const Variable* p : f.parameters()) {
-                this->writeU16(this->symbolId(p));
+                this->write(*p);
             }
             this->write(f.returnType());
-            break;
-        }
-        case Symbol::Kind::kUnresolvedFunction: {
-            this->allocSymbolId(&s);
-            const UnresolvedFunction& f = s.as<UnresolvedFunction>();
-            this->writeCommand(Rehydrator::kUnresolvedFunction_Command);
-            this->writeId(&f);
-            this->writeU8(f.functions().size());
-            for (const FunctionDeclaration* funcDecl : f.functions()) {
-                this->write(*funcDecl);
-            }
             break;
         }
         case Symbol::Kind::kType: {
@@ -241,40 +231,80 @@ void Dehydrator::write(const Symbol& s) {
 }
 
 void Dehydrator::write(const SymbolTable& symbols) {
+    auto symbolIsReferenced = [&](const Symbol& sym) -> bool {
+        if (sym.is<Variable>()) {
+            // Only dehydrate Variables that haven't been optimized away.
+            return sym.as<Variable>().storage() != VariableStorage::kEliminated;
+        }
+        return true;
+    };
+
     this->writeCommand(Rehydrator::kSymbolTable_Command);
     this->writeU8(symbols.isBuiltin());
-    this->writeU16(symbols.fOwnedSymbols.size());
 
-    // write owned symbols
+    // Make a list of all the owned symbols which are referenced.
+    std::vector<const Symbol*> ownedSymbols;
     for (const std::unique_ptr<const Symbol>& s : symbols.fOwnedSymbols) {
+        if (symbolIsReferenced(*s)) {
+            ownedSymbols.push_back(s.get());
+        }
+    }
+    // Write the owned symbols.
+    SYMBOL_DEBUGF("\nOwned symbols in Dehydrator:\n\n\n");
+    this->writeU16(ownedSymbols.size());
+    for (const Symbol* s : ownedSymbols) {
         this->write(*s);
+        SYMBOL_DEBUGF("%s\n", s->description().c_str());
     }
 
-    // write symbols
-    this->writeU16(symbols.fSymbols.count());
-    std::map<std::string_view, const Symbol*> ordered;
+    // Make an ordered list of every referenced symbol in the symbol-table, owned or not.
+    std::vector<const Symbol*> ordered;
     symbols.foreach([&](std::string_view name, const Symbol* symbol) {
-        ordered.insert({name, symbol});
+        if (symbolIsReferenced(*symbol)) {
+            if (!symbol->is<FunctionDeclaration>()) {
+                // Copy over the symbol as-is.
+                ordered.push_back(symbol);
+            } else {
+                // For functions, we actually want to copy over the entire overload chain from this
+                // symbol table. This will allow the rehydrator to recreate the overload chain in
+                // the proper order. If we don't do this, at rehydration time, we only add in one
+                // overload for the function, and the others are forgotten.
+                for (const std::unique_ptr<const Symbol>& owned : symbols.fOwnedSymbols) {
+                    if (owned->is<FunctionDeclaration>() && owned->name() == symbol->name()) {
+                        ordered.push_back(owned.get());
+                    }
+                }
+            }
+        }
     });
-    for (std::pair<std::string_view, const Symbol*> p : ordered) {
+    std::stable_sort(ordered.begin(), ordered.end(), [](const Symbol* a, const Symbol* b) {
+        return a->name() < b->name();
+    });
+
+    // List the symbols in named order.
+    SYMBOL_DEBUGF("\nOrdered symbols in Dehydrator:\n\n\n");
+    this->writeU16(ordered.size());
+    for (const Symbol* symbol : ordered) {
         bool found = false;
-        for (size_t i = 0; i < symbols.fOwnedSymbols.size(); ++i) {
-            if (symbols.fOwnedSymbols[i].get() == p.second) {
+        for (size_t i = 0; i < ownedSymbols.size(); ++i) {
+            if (ownedSymbols[i] == symbol) {
                 fCommandBreaks.add(fBody.bytesWritten());
                 this->writeU16(i);
                 found = true;
                 break;
             }
         }
-        if (!found) {
+        if (found) {
+            SYMBOL_DEBUGF("%s\n", symbol->description().c_str());
+        } else {
             // we should only fail to find builtin types
-            SkASSERT(p.second->is<Type>() && p.second->as<Type>().isInBuiltinTypes());
+            SYMBOL_DEBUGF("(builtin symbol) %s\n", symbol->description().c_str());
+            SkASSERT(symbol->is<Type>() && symbol->as<Type>().isInBuiltinTypes());
             this->writeU16(Rehydrator::kBuiltin_Symbol);
-            this->write(p.second->name());
+            this->write(symbol->name());
         }
     }
 }
-
 
 void Dehydrator::writeExpressionSpan(const SkSpan<const std::unique_ptr<Expression>>& span) {
     this->writeU8(span.size());

@@ -11,4 +11,4 @@ protoc-rust = "2.3"
 
 [dependencies]
 dbus = "0.9"
-protobuf = "2.3"
+protobuf = "2.24"

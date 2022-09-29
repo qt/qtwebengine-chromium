@@ -114,6 +114,7 @@ class MockCallFrameInfoHandler: public CallFrameInfo::Handler {
   MOCK_METHOD3(ValExpressionRule, bool(uint64_t address, int reg,
                                        const string& expression));
   MOCK_METHOD0(End, bool());
+  MOCK_METHOD0(Architecture, string());
   MOCK_METHOD2(PersonalityRoutine, bool(uint64_t address, bool indirect));
   MOCK_METHOD2(LanguageSpecificDataArea, bool(uint64_t address, bool indirect));
   MOCK_METHOD0(SignalHandler, bool());
@@ -1538,6 +1539,8 @@ TEST_F(CFIInsn, DW_CFA_GNU_window_save) {
   section
       .D8(google_breakpad::DW_CFA_GNU_window_save)
       .FinishEntry();
+
+  EXPECT_CALL(handler, Architecture()).WillRepeatedly(Return("sparc"));
 
   // Don't include all the rules in any particular sequence.
 

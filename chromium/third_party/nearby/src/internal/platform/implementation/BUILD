@@ -39,9 +39,10 @@ cc_library(
     visibility = [
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//location/nearby/analytics/cpp:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
-        "//connections/clients/windows:types",
         "//internal/platform:base",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
@@ -56,6 +57,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "credential_storage.h",
         "server_sync.h",
         "wifi.h",
         "wifi_hotspot.h",
@@ -66,17 +68,17 @@ cc_library(
         "//connections/implementation:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//presence:__pkg__",
+        "//presence/implementation:__pkg__",
     ],
     deps = [
-        "//connections/clients/windows:types",
         "//connections/implementation/proto:offline_wire_formats_cc_proto",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
         "//internal/platform:uuid",
+        "//internal/proto:credential_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -91,6 +93,7 @@ cc_library(
         "//googlemac/iPhone/Shared/Nearby/Connections:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//location/nearby/analytics/cpp:__subpackages__",
     ],
     deps = [
         ":comm",

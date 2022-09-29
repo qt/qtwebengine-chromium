@@ -130,6 +130,7 @@ EXTRA_PROGRAMS =
 CLEANFILES =
 
 check_LIBRARIES += src/testing/libtesting.a
+check_PROGRAMS += src/common/safe_math_unittest
 
 if !SYSTEM_TEST_LIBS
 src_testing_libtesting_a_SOURCES = \
@@ -689,6 +690,15 @@ src_tools_mac_dump_syms_dump_syms_mac_CXXFLAGS= \
 	-DHAVE_MACH_O_NLIST_H
 src_tools_mac_dump_syms_dump_syms_mac_LDADD= \
 	$(RUSTC_DEMANGLE_LIBS)
+
+src_common_safe_math_unittest_SOURCES = \
+	src/common/safe_math.h \
+	src/common/safe_math_unittest.cc
+src_common_safe_math_unittest_CPPFLAGS = \
+	$(AM_CPPFLAGS) $(TEST_CFLAGS)
+src_common_safe_math_unittest_LDADD = \
+	$(TEST_LIBS) \
+	$(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
 
 src_common_dumper_unittest_SOURCES = \
 	src/common/byte_cursor_unittest.cc \

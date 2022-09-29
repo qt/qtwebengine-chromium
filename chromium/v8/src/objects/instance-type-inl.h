@@ -79,8 +79,18 @@ V8_INLINE constexpr bool IsThinString(InstanceType instance_type) {
   return (instance_type & kStringRepresentationMask) == kThinStringTag;
 }
 
+V8_INLINE constexpr bool IsAbstractCode(InstanceType instance_type) {
+  return IsBytecodeArray(instance_type) || IsCode(instance_type) ||
+         (V8_REMOVE_BUILTINS_CODE_OBJECTS &&
+          IsCodeDataContainer(instance_type));
+}
+
 V8_INLINE constexpr bool IsFreeSpaceOrFiller(InstanceType instance_type) {
   return instance_type == FREE_SPACE_TYPE || instance_type == FILLER_TYPE;
+}
+
+V8_INLINE constexpr bool IsCodeT(InstanceType instance_type) {
+  return instance_type == CODET_TYPE;
 }
 
 }  // namespace InstanceTypeChecker

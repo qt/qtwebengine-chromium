@@ -26,8 +26,6 @@ CORE_FILES = [
     "SkAutoPixmapStorage.cpp",
     "SkAutoPixmapStorage.h",
     "SkBBHFactory.cpp",
-    "SkBigPicture.cpp",
-    "SkBigPicture.h",
     "SkBitmap.cpp",
     "SkBitmapCache.cpp",
     "SkBitmapCache.h",
@@ -74,7 +72,6 @@ CORE_FILES = [
     "SkColorFilterBase.h",
     "SkColorFilterPriv.h",
     "SkColorFilter_Matrix.cpp",
-    "SkColorFilter_Matrix.h",
     "SkColorSpace.cpp",
     "SkColorSpacePriv.h",
     "SkColorSpaceXformSteps.cpp",
@@ -134,6 +131,7 @@ CORE_FILES = [
     "SkFontDescriptor.cpp",
     "SkFontDescriptor.h",
     "SkFontMgr.cpp",
+    "SkFontMgrPriv.h",
     "SkFontPriv.h",
     "SkFontStream.cpp",
     "SkFontStream.h",
@@ -148,8 +146,6 @@ CORE_FILES = [
     "SkGlyph.h",
     "SkGlyphBuffer.cpp",
     "SkGlyphBuffer.h",
-    "SkGlyphRun.cpp",
-    "SkGlyphRun.h",
     "SkGlyphRunPainter.cpp",
     "SkGlyphRunPainter.h",
     "SkGpuBlurUtils.cpp",
@@ -206,15 +202,12 @@ CORE_FILES = [
     "SkMesh.cpp",
     "SkMeshPriv.h",
     "SkMessageBus.h",
-    "SkMiniRecorder.cpp",
-    "SkMiniRecorder.h",
     "SkMipmap.cpp",
     "SkMipmap.h",
     "SkMipmapAccessor.cpp",
     "SkMipmapAccessor.h",
     "SkMipmapBuilder.h",
     "SkModeColorFilter.cpp",
-    "SkModeColorFilter.h",
     "SkNextID.h",
     "SkOSFile.h",
     "SkOpts.cpp",
@@ -235,20 +228,7 @@ CORE_FILES = [
     "SkPathPriv.h",
     "SkPathRef.cpp",
     "SkPath_serial.cpp",
-    "SkPicture.cpp",
-    "SkPictureCommon.h",
-    "SkPictureData.cpp",
-    "SkPictureData.h",
-    "SkPictureFlat.cpp",
-    "SkPictureFlat.h",
-    "SkPictureImageGenerator.cpp",
-    "SkPicturePlayback.cpp",
-    "SkPicturePlayback.h",
     "SkPicturePriv.h",
-    "SkPictureRecord.cpp",
-    "SkPictureRecord.h",
-    "SkPictureRecorder.cpp",
-    "SkPipelineData.h",
     "SkPixelRef.cpp",
     "SkPixelRefPriv.h",
     "SkPixmap.cpp",
@@ -280,10 +260,6 @@ CORE_FILES = [
     "SkRecordOpts.cpp",
     "SkRecordOpts.h",
     "SkRecordPattern.h",
-    "SkRecordedDrawable.cpp",
-    "SkRecordedDrawable.h",
-    "SkRecorder.cpp",
-    "SkRecorder.h",
     "SkRecords.cpp",
     "SkRecords.h",
     "SkRect.cpp",
@@ -293,6 +269,7 @@ CORE_FILES = [
     "SkRegion_path.cpp",
     "SkResourceCache.cpp",
     "SkResourceCache.h",
+    "SkRuntimeEffectDictionary.h",
     "SkRuntimeEffectPriv.h",
     "SkSafeMath.h",
     "SkSafeRange.h",
@@ -311,6 +288,7 @@ CORE_FILES = [
     "SkScan_Antihair.cpp",
     "SkScan_Hairline.cpp",
     "SkScan_Path.cpp",
+    "SkScopeExit.h",
     "SkSemaphore.cpp",
     "SkSharedMutex.cpp",
     "SkSharedMutex.h",
@@ -326,8 +304,6 @@ CORE_FILES = [
     "SkStreamPriv.h",
     "SkStrikeCache.cpp",
     "SkStrikeCache.h",
-    "SkStrikeForGPU.cpp",
-    "SkStrikeForGPU.h",
     "SkStrikeSpec.cpp",
     "SkStrikeSpec.h",
     "SkString.cpp",
@@ -406,15 +382,17 @@ split_srcs_and_hdrs(
 
 # These files are only needed if SkSL is enabled (GPU backend or SkVM).
 SKSL_FILES = [
-    "SkCombinationBuilder.cpp",
+    "SkKeyContext.cpp",
     "SkKeyContext.h",
     "SkKeyHelpers.cpp",
     "SkKeyHelpers.h",
     "SkPaintParamsKey.cpp",
     "SkPaintParamsKey.h",
+    "SkPipelineData.cpp",
+    "SkPipelineData.h",
     "SkRuntimeEffect.cpp",
+    "SkSLTypeShared.cpp",
     "SkSLTypeShared.h",
-    "SkScopeExit.h",
     "SkShaderCodeDictionary.cpp",
     "SkShaderCodeDictionary.h",
     "SkUniform.h",
@@ -425,10 +403,50 @@ split_srcs_and_hdrs(
     files = SKSL_FILES,
 )
 
+# Mapped to skia_precompile_sources variable in //gn/core.gni.
+PRECOMPILE_FILES = [
+    "SkCombinationBuilder.cpp",
+    "SkFactoryFunctions.cpp",
+    "SkFactoryFunctions.h",
+    "SkPrecompile.h",
+]
+
+split_srcs_and_hdrs(
+    name = "precompile",
+    files = PRECOMPILE_FILES,
+)
+
+# SkPicture files are maintained as a separate filegroups for backward compatability
+# with GNI files. This allows the generation of skia_skpicture_sources GNI file list.
+SKPICTURE_FILES = [
+    "SkBigPicture.cpp",
+    "SkBigPicture.h",
+    "SkPicture.cpp",
+    "SkPictureData.cpp",
+    "SkPictureData.h",
+    "SkPictureFlat.cpp",
+    "SkPictureFlat.h",
+    "SkPictureImageGenerator.cpp",
+    "SkPicturePlayback.cpp",
+    "SkPicturePlayback.h",
+    "SkPictureRecord.cpp",
+    "SkPictureRecord.h",
+    "SkPictureRecorder.cpp",
+    "SkRecordedDrawable.cpp",
+    "SkRecordedDrawable.h",
+    "SkRecorder.cpp",
+    "SkRecorder.h",
+]
+
+split_srcs_and_hdrs(
+    name = "skpicture",
+    files = SKPICTURE_FILES,
+)
+
 filegroup(
     name = "srcs",
-    srcs = [":core_srcs"] + select({
-        "//bazel/common_config_settings:needs_sksl": [
+    srcs = [":core_srcs"] + [":skpicture_srcs"] + select({
+        "//src/sksl:needs_sksl": [
             ":sksl_srcs",
         ],
         "//conditions:default": [],
@@ -438,8 +456,8 @@ filegroup(
 
 filegroup(
     name = "private_hdrs",
-    srcs = [":core_hdrs"] + select({
-        "//bazel/common_config_settings:needs_sksl": [
+    srcs = [":core_hdrs"] + [":skpicture_hdrs"] + select({
+        "//src/sksl:needs_sksl": [
             ":sksl_hdrs",
         ],
         "//conditions:default": [],

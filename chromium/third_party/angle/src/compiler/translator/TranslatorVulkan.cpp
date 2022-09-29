@@ -189,15 +189,15 @@ bool DeclareDefaultUniforms(TCompiler *compiler,
 }
 
 // Replaces a builtin variable with a version that is rotated and corrects the X and Y coordinates.
-ANGLE_NO_DISCARD bool RotateAndFlipBuiltinVariable(TCompiler *compiler,
-                                                   TIntermBlock *root,
-                                                   TIntermSequence *insertSequence,
-                                                   TIntermTyped *swapXY,
-                                                   TIntermTyped *flipXY,
-                                                   TSymbolTable *symbolTable,
-                                                   const TVariable *builtin,
-                                                   const ImmutableString &flippedVariableName,
-                                                   TIntermTyped *pivot)
+[[nodiscard]] bool RotateAndFlipBuiltinVariable(TCompiler *compiler,
+                                                TIntermBlock *root,
+                                                TIntermSequence *insertSequence,
+                                                TIntermTyped *swapXY,
+                                                TIntermTyped *flipXY,
+                                                TSymbolTable *symbolTable,
+                                                const TVariable *builtin,
+                                                const ImmutableString &flippedVariableName,
+                                                TIntermTyped *pivot)
 {
     // Create a symbol reference to 'builtin'.
     TIntermSymbol *builtinRef = new TIntermSymbol(builtin);
@@ -250,10 +250,10 @@ TIntermSequence *GetMainSequence(TIntermBlock *root)
 }
 
 // Declares a new variable to replace gl_DepthRange, its values are fed from a driver uniform.
-ANGLE_NO_DISCARD bool ReplaceGLDepthRangeWithDriverUniform(TCompiler *compiler,
-                                                           TIntermBlock *root,
-                                                           const DriverUniform *driverUniforms,
-                                                           TSymbolTable *symbolTable)
+[[nodiscard]] bool ReplaceGLDepthRangeWithDriverUniform(TCompiler *compiler,
+                                                        TIntermBlock *root,
+                                                        const DriverUniform *driverUniforms,
+                                                        TSymbolTable *symbolTable)
 {
     // Create a symbol reference to "gl_DepthRange"
     const TVariable *depthRangeVar = static_cast<const TVariable *>(
@@ -268,10 +268,10 @@ ANGLE_NO_DISCARD bool ReplaceGLDepthRangeWithDriverUniform(TCompiler *compiler,
 
 // Declares a new variable to replace gl_BoundingBoxEXT, its values are fed from a global temporary
 // variable.
-ANGLE_NO_DISCARD bool ReplaceGLBoundingBoxWithGlobal(TCompiler *compiler,
-                                                     TIntermBlock *root,
-                                                     TSymbolTable *symbolTable,
-                                                     int shaderVersion)
+[[nodiscard]] bool ReplaceGLBoundingBoxWithGlobal(TCompiler *compiler,
+                                                  TIntermBlock *root,
+                                                  TSymbolTable *symbolTable,
+                                                  int shaderVersion)
 {
     // Declare the replacement bounding box variable type
     TType *emulatedBoundingBoxDeclType = new TType(EbtFloat, EbpHigh, EvqGlobal, 4);
@@ -321,10 +321,10 @@ ANGLE_NO_DISCARD bool ReplaceGLBoundingBoxWithGlobal(TCompiler *compiler,
     return replacementResult;
 }
 
-ANGLE_NO_DISCARD bool AddXfbEmulationSupport(TCompiler *compiler,
-                                             TIntermBlock *root,
-                                             TSymbolTable *symbolTable,
-                                             const DriverUniform *driverUniforms)
+[[nodiscard]] bool AddXfbEmulationSupport(TCompiler *compiler,
+                                          TIntermBlock *root,
+                                          TSymbolTable *symbolTable,
+                                          const DriverUniform *driverUniforms)
 {
     // Generate the following function and place it before main().  This function takes a "strides"
     // parameter that is determined at link time, and calculates for each transform feedback buffer
@@ -480,10 +480,10 @@ ANGLE_NO_DISCARD bool AddXfbEmulationSupport(TCompiler *compiler,
     return compiler->validateAST(root);
 }
 
-ANGLE_NO_DISCARD bool AddXfbExtensionSupport(TCompiler *compiler,
-                                             TIntermBlock *root,
-                                             TSymbolTable *symbolTable,
-                                             const DriverUniform *driverUniforms)
+[[nodiscard]] bool AddXfbExtensionSupport(TCompiler *compiler,
+                                          TIntermBlock *root,
+                                          TSymbolTable *symbolTable,
+                                          const DriverUniform *driverUniforms)
 {
     // Generate the following output varying declaration used to capture transform feedback output
     // from gl_Position, as it can't be captured directly due to changes that are applied to it for
@@ -522,12 +522,12 @@ ANGLE_NO_DISCARD bool AddXfbExtensionSupport(TCompiler *compiler,
     return compiler->validateAST(root);
 }
 
-ANGLE_NO_DISCARD bool AddVertexTransformationSupport(TCompiler *compiler,
-                                                     ShCompileOptions compileOptions,
-                                                     TIntermBlock *root,
-                                                     TSymbolTable *symbolTable,
-                                                     SpecConst *specConst,
-                                                     const DriverUniform *driverUniforms)
+[[nodiscard]] bool AddVertexTransformationSupport(TCompiler *compiler,
+                                                  const ShCompileOptions &compileOptions,
+                                                  TIntermBlock *root,
+                                                  TSymbolTable *symbolTable,
+                                                  SpecConst *specConst,
+                                                  const DriverUniform *driverUniforms)
 {
     // In GL the viewport transformation is slightly different - see the GL 2.0 spec section "2.12.1
     // Controlling the Viewport".  In Vulkan the corresponding spec section is currently "23.4.
@@ -576,7 +576,7 @@ ANGLE_NO_DISCARD bool AddVertexTransformationSupport(TCompiler *compiler,
     TIntermTyped *w = new TIntermSwizzle(positionSymbol->deepCopy(), {3});
 
     TIntermTyped *transformedDepth = z;
-    if ((compileOptions & SH_ADD_VULKAN_DEPTH_CORRECTION) != 0)
+    if (compileOptions.addVulkanDepthCorrection)
     {
         TIntermBinary *zPlusW = new TIntermBinary(EOpAdd, z, w->deepCopy());
         TIntermBinary *halfZPlusW =
@@ -614,7 +614,7 @@ ANGLE_NO_DISCARD bool AddVertexTransformationSupport(TCompiler *compiler,
 
     // Create a call to ANGLETransformPosition, for the sole purpose of preventing it from being
     // culled as unused by glslang.
-    if ((compileOptions & SH_GENERATE_SPIRV_THROUGH_GLSLANG) != 0)
+    if (compileOptions.generateSpirvThroughGlslang)
     {
         TIntermSequence vec4Zero;
         vec4Zero.push_back(CreateZeroNode(*vec4Type));
@@ -629,13 +629,13 @@ ANGLE_NO_DISCARD bool AddVertexTransformationSupport(TCompiler *compiler,
     return compiler->validateAST(root);
 }
 
-ANGLE_NO_DISCARD bool InsertFragCoordCorrection(TCompiler *compiler,
-                                                ShCompileOptions compileOptions,
-                                                TIntermBlock *root,
-                                                TIntermSequence *insertSequence,
-                                                TSymbolTable *symbolTable,
-                                                SpecConst *specConst,
-                                                const DriverUniform *driverUniforms)
+[[nodiscard]] bool InsertFragCoordCorrection(TCompiler *compiler,
+                                             const ShCompileOptions &compileOptions,
+                                             TIntermBlock *root,
+                                             TIntermSequence *insertSequence,
+                                             TSymbolTable *symbolTable,
+                                             SpecConst *specConst,
+                                             const DriverUniform *driverUniforms)
 {
     TIntermTyped *flipXY = driverUniforms->getFlipXY(symbolTable, DriverUniformFlip::Fragment);
     TIntermTyped *pivot  = driverUniforms->getHalfRenderArea();
@@ -667,7 +667,7 @@ TranslatorVulkan::TranslatorVulkan(sh::GLenum type, ShShaderSpec spec)
 
 bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
                                      TIntermBlock *root,
-                                     ShCompileOptions compileOptions,
+                                     const ShCompileOptions &compileOptions,
                                      PerformanceDiagnostics * /*perfDiagnostics*/,
                                      SpecConst *specConst,
                                      DriverUniform *driverUniforms)
@@ -733,7 +733,12 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
     // - It dramatically simplifies future transformations w.r.t to samplers in structs, array of
     //   arrays of opaque types, atomic counters etc.
     // - Avoids the need for shader*ArrayDynamicIndexing Vulkan features.
-    if (!MonomorphizeUnsupportedFunctions(this, root, &getSymbolTable(), compileOptions))
+    UnsupportedFunctionArgsBitSet args{UnsupportedFunctionArgs::StructContainingSamplers,
+                                       UnsupportedFunctionArgs::ArrayOfArrayOfSamplerOrImage,
+                                       UnsupportedFunctionArgs::AtomicCounter,
+                                       UnsupportedFunctionArgs::SamplerCubeEmulation,
+                                       UnsupportedFunctionArgs::Image};
+    if (!MonomorphizeUnsupportedFunctions(this, root, &getSymbolTable(), compileOptions, args))
     {
         return false;
     }
@@ -764,7 +769,7 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
 
     // Rewrite samplerCubes as sampler2DArrays.  This must be done after rewriting struct samplers
     // as it doesn't expect that.
-    if ((compileOptions & SH_EMULATE_SEAMFUL_CUBE_MAP_SAMPLING) != 0)
+    if (compileOptions.emulateSeamfulCubeMapSampling)
     {
         if (!RewriteCubeMapSamplersAs2DArray(this, root, &getSymbolTable(),
                                              getShaderType() == GL_FRAGMENT_SHADER))
@@ -874,7 +879,7 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
 
     if (gl::ShaderTypeSupportsTransformFeedback(packedShaderType))
     {
-        if ((compileOptions & SH_ADD_VULKAN_XFB_EXTENSION_SUPPORT_CODE) != 0)
+        if (compileOptions.addVulkanXfbExtensionSupportCode)
         {
             // Add support code for transform feedback extension.
             if (!AddXfbExtensionSupport(this, root, &getSymbolTable(), driverUniforms))
@@ -1023,9 +1028,10 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
             // check the existing input attachment variables and if there is no existing input
             // attachment variable then create a new one.
             if (getAdvancedBlendEquations().any() &&
-                (compileOptions & SH_ADD_ADVANCED_BLEND_EQUATIONS_EMULATION) != 0 &&
-                !EmulateAdvancedBlendEquations(this, root, &getSymbolTable(), driverUniforms,
-                                               &mUniforms, getAdvancedBlendEquations()))
+                compileOptions.addAdvancedBlendEquationsEmulation &&
+                !EmulateAdvancedBlendEquations(this, compileOptions, root, &getSymbolTable(),
+                                               driverUniforms, &mUniforms,
+                                               getAdvancedBlendEquations()))
             {
                 return false;
             }
@@ -1087,7 +1093,7 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
 
         case gl::ShaderType::Vertex:
         {
-            if ((compileOptions & SH_ADD_VULKAN_XFB_EMULATION_SUPPORT_CODE) != 0)
+            if (compileOptions.addVulkanXfbEmulationSupportCode)
             {
                 // Add support code for transform feedback emulation.  Only applies to vertex shader
                 // as tessellation and geometry shader transform feedback capture require
@@ -1169,7 +1175,8 @@ bool TranslatorVulkan::translateImpl(TInfoSinkBase &sink,
     return true;
 }
 
-void TranslatorVulkan::writeExtensionBehavior(ShCompileOptions compileOptions, TInfoSinkBase &sink)
+void TranslatorVulkan::writeExtensionBehavior(const ShCompileOptions &compileOptions,
+                                              TInfoSinkBase &sink)
 {
     const TExtensionBehavior &extBehavior = getExtensionBehavior();
     TBehavior multiviewBehavior           = EBhUndefined;
@@ -1209,7 +1216,7 @@ void TranslatorVulkan::writeExtensionBehavior(ShCompileOptions compileOptions, T
 }
 
 bool TranslatorVulkan::translate(TIntermBlock *root,
-                                 ShCompileOptions compileOptions,
+                                 const ShCompileOptions &compileOptions,
                                  PerformanceDiagnostics *perfDiagnostics)
 {
     TInfoSinkBase sink;
@@ -1219,8 +1226,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
     DriverUniform driverUniforms(DriverUniformMode::InterfaceBlock);
     DriverUniformExtended driverUniformsExt(DriverUniformMode::InterfaceBlock);
 
-    const bool useExtendedDriverUniforms =
-        (compileOptions & SH_ADD_VULKAN_XFB_EMULATION_SUPPORT_CODE) != 0;
+    const bool useExtendedDriverUniforms = compileOptions.addVulkanXfbEmulationSupportCode;
 
     DriverUniform *uniforms = useExtendedDriverUniforms ? &driverUniformsExt : &driverUniforms;
 
@@ -1230,7 +1236,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
     }
 
 #if defined(ANGLE_ENABLE_SPIRV_GENERATION_THROUGH_GLSLANG)
-    if ((compileOptions & SH_GENERATE_SPIRV_THROUGH_GLSLANG) != 0)
+    if (compileOptions.generateSpirvThroughGlslang)
     {
         // When generating text, glslang cannot know the precision of folded constants so it may
         // infer the wrong precisions.  The following transformation gives constants names with
@@ -1241,7 +1247,7 @@ bool TranslatorVulkan::translate(TIntermBlock *root,
             return false;
         }
 
-        const bool enablePrecision = (compileOptions & SH_IGNORE_PRECISION_QUALIFIERS) == 0;
+        const bool enablePrecision = !compileOptions.ignorePrecisionQualifiers;
 
         // Write translated shader.
         TOutputVulkanGLSL outputGLSL(this, sink, enablePrecision, compileOptions);

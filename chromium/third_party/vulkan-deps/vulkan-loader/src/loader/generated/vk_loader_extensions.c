@@ -929,6 +929,11 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->SetPrivateDataEXT = (PFN_vkSetPrivateDataEXT)gdpa(dev, "vkSetPrivateDataEXT");
     table->GetPrivateDataEXT = (PFN_vkGetPrivateDataEXT)gdpa(dev, "vkGetPrivateDataEXT");
 
+    // ---- VK_EXT_metal_objects extension commands
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    table->ExportMetalObjectsEXT = (PFN_vkExportMetalObjectsEXT)gdpa(dev, "vkExportMetalObjectsEXT");
+#endif // VK_USE_PLATFORM_METAL_EXT
+
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     table->CmdSetFragmentShadingRateEnumNV = (PFN_vkCmdSetFragmentShadingRateEnumNV)gdpa(dev, "vkCmdSetFragmentShadingRateEnumNV");
 
@@ -1004,6 +1009,14 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     // ---- VK_VALVE_descriptor_set_host_mapping extension commands
     table->GetDescriptorSetLayoutHostMappingInfoVALVE = (PFN_vkGetDescriptorSetLayoutHostMappingInfoVALVE)gdpa(dev, "vkGetDescriptorSetLayoutHostMappingInfoVALVE");
     table->GetDescriptorSetHostMappingVALVE = (PFN_vkGetDescriptorSetHostMappingVALVE)gdpa(dev, "vkGetDescriptorSetHostMappingVALVE");
+
+    // ---- VK_EXT_shader_module_identifier extension commands
+    table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT)gdpa(dev, "vkGetShaderModuleIdentifierEXT");
+    table->GetShaderModuleCreateInfoIdentifierEXT = (PFN_vkGetShaderModuleCreateInfoIdentifierEXT)gdpa(dev, "vkGetShaderModuleCreateInfoIdentifierEXT");
+
+    // ---- VK_QCOM_tile_properties extension commands
+    table->GetFramebufferTilePropertiesQCOM = (PFN_vkGetFramebufferTilePropertiesQCOM)gdpa(dev, "vkGetFramebufferTilePropertiesQCOM");
+    table->GetDynamicRenderingTilePropertiesQCOM = (PFN_vkGetDynamicRenderingTilePropertiesQCOM)gdpa(dev, "vkGetDynamicRenderingTilePropertiesQCOM");
 
     // ---- VK_KHR_acceleration_structure extension commands
     table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)gdpa(dev, "vkCreateAccelerationStructureKHR");
@@ -1875,6 +1888,11 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "SetPrivateDataEXT")) return (void *)table->SetPrivateDataEXT;
     if (!strcmp(name, "GetPrivateDataEXT")) return (void *)table->GetPrivateDataEXT;
 
+    // ---- VK_EXT_metal_objects extension commands
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    if (!strcmp(name, "ExportMetalObjectsEXT")) return (void *)table->ExportMetalObjectsEXT;
+#endif // VK_USE_PLATFORM_METAL_EXT
+
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     if (!strcmp(name, "CmdSetFragmentShadingRateEnumNV")) return (void *)table->CmdSetFragmentShadingRateEnumNV;
 
@@ -1950,6 +1968,14 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     // ---- VK_VALVE_descriptor_set_host_mapping extension commands
     if (!strcmp(name, "GetDescriptorSetLayoutHostMappingInfoVALVE")) return (void *)table->GetDescriptorSetLayoutHostMappingInfoVALVE;
     if (!strcmp(name, "GetDescriptorSetHostMappingVALVE")) return (void *)table->GetDescriptorSetHostMappingVALVE;
+
+    // ---- VK_EXT_shader_module_identifier extension commands
+    if (!strcmp(name, "GetShaderModuleIdentifierEXT")) return (void *)table->GetShaderModuleIdentifierEXT;
+    if (!strcmp(name, "GetShaderModuleCreateInfoIdentifierEXT")) return (void *)table->GetShaderModuleCreateInfoIdentifierEXT;
+
+    // ---- VK_QCOM_tile_properties extension commands
+    if (!strcmp(name, "GetFramebufferTilePropertiesQCOM")) return (void *)table->GetFramebufferTilePropertiesQCOM;
+    if (!strcmp(name, "GetDynamicRenderingTilePropertiesQCOM")) return (void *)table->GetDynamicRenderingTilePropertiesQCOM;
 
     // ---- VK_KHR_acceleration_structure extension commands
     if (!strcmp(name, "CreateAccelerationStructureKHR")) return (void *)table->CreateAccelerationStructureKHR;
@@ -5881,6 +5907,24 @@ VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(
 }
 
 
+// ---- VK_EXT_metal_objects extension trampoline/terminators
+
+#ifdef VK_USE_PLATFORM_METAL_EXT
+VKAPI_ATTR void VKAPI_CALL ExportMetalObjectsEXT(
+    VkDevice                                    device,
+    VkExportMetalObjectsInfoEXT*                pMetalObjectsInfo) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkExportMetalObjectsEXT: Invalid device "
+                   "[VUID-vkExportMetalObjectsEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->ExportMetalObjectsEXT(device, pMetalObjectsInfo);
+}
+
+#endif // VK_USE_PLATFORM_METAL_EXT
+
 // ---- VK_NV_fragment_shading_rate_enums extension trampoline/terminators
 
 VKAPI_ATTR void VKAPI_CALL CmdSetFragmentShadingRateEnumNV(
@@ -6402,6 +6446,69 @@ VKAPI_ATTR void VKAPI_CALL GetDescriptorSetHostMappingVALVE(
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp->GetDescriptorSetHostMappingVALVE(device, descriptorSet, ppData);
+}
+
+
+// ---- VK_EXT_shader_module_identifier extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL GetShaderModuleIdentifierEXT(
+    VkDevice                                    device,
+    VkShaderModule                              shaderModule,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetShaderModuleIdentifierEXT: Invalid device "
+                   "[VUID-vkGetShaderModuleIdentifierEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetShaderModuleIdentifierEXT(device, shaderModule, pIdentifier);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetShaderModuleCreateInfoIdentifierEXT(
+    VkDevice                                    device,
+    const VkShaderModuleCreateInfo*             pCreateInfo,
+    VkShaderModuleIdentifierEXT*                pIdentifier) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetShaderModuleCreateInfoIdentifierEXT: Invalid device "
+                   "[VUID-vkGetShaderModuleCreateInfoIdentifierEXT-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->GetShaderModuleCreateInfoIdentifierEXT(device, pCreateInfo, pIdentifier);
+}
+
+
+// ---- VK_QCOM_tile_properties extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL GetFramebufferTilePropertiesQCOM(
+    VkDevice                                    device,
+    VkFramebuffer                               framebuffer,
+    uint32_t*                                   pPropertiesCount,
+    VkTilePropertiesQCOM*                       pProperties) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetFramebufferTilePropertiesQCOM: Invalid device "
+                   "[VUID-vkGetFramebufferTilePropertiesQCOM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetFramebufferTilePropertiesQCOM(device, framebuffer, pPropertiesCount, pProperties);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
+    VkDevice                                    device,
+    const VkRenderingInfo*                      pRenderingInfo,
+    VkTilePropertiesQCOM*                       pProperties) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetDynamicRenderingTilePropertiesQCOM: Invalid device "
+                   "[VUID-vkGetDynamicRenderingTilePropertiesQCOM-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetDynamicRenderingTilePropertiesQCOM(device, pRenderingInfo, pProperties);
 }
 
 
@@ -7928,6 +8035,14 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_EXT_metal_objects extension commands
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    if (!strcmp("vkExportMetalObjectsEXT", name)) {
+        *addr = (void *)ExportMetalObjectsEXT;
+        return true;
+    }
+#endif // VK_USE_PLATFORM_METAL_EXT
+
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     if (!strcmp("vkCmdSetFragmentShadingRateEnumNV", name)) {
         *addr = (void *)CmdSetFragmentShadingRateEnumNV;
@@ -8099,6 +8214,26 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
     if (!strcmp("vkGetDescriptorSetHostMappingVALVE", name)) {
         *addr = (void *)GetDescriptorSetHostMappingVALVE;
+        return true;
+    }
+
+    // ---- VK_EXT_shader_module_identifier extension commands
+    if (!strcmp("vkGetShaderModuleIdentifierEXT", name)) {
+        *addr = (void *)GetShaderModuleIdentifierEXT;
+        return true;
+    }
+    if (!strcmp("vkGetShaderModuleCreateInfoIdentifierEXT", name)) {
+        *addr = (void *)GetShaderModuleCreateInfoIdentifierEXT;
+        return true;
+    }
+
+    // ---- VK_QCOM_tile_properties extension commands
+    if (!strcmp("vkGetFramebufferTilePropertiesQCOM", name)) {
+        *addr = (void *)GetFramebufferTilePropertiesQCOM;
+        return true;
+    }
+    if (!strcmp("vkGetDynamicRenderingTilePropertiesQCOM", name)) {
+        *addr = (void *)GetDynamicRenderingTilePropertiesQCOM;
         return true;
     }
 

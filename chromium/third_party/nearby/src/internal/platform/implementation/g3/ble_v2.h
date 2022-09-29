@@ -196,7 +196,7 @@ class BleV2Medium : public api::ble_v2::BleMedium {
   BluetoothAdapter& GetAdapter() { return *adapter_; }
 
  private:
-  // A concrete implemenation for GattServer.
+  // A concrete implementation for GattServer.
   class GattServer : public api::ble_v2::GattServer {
    public:
     std::optional<api::ble_v2::GattCharacteristic> CreateCharacteristic(
@@ -213,10 +213,12 @@ class BleV2Medium : public api::ble_v2::BleMedium {
     void Stop() override;
   };
 
-  // A concrete implemenation for GattClient.
+  // A concrete implementation for GattClient.
   class GattClient : public api::ble_v2::GattClient {
    public:
-    bool DiscoverService(const Uuid& service_uuid) override;
+    bool DiscoverServiceAndCharacteristics(
+        const Uuid& service_uuid,
+        const std::vector<Uuid>& characteristic_uuids) override;
 
     std::optional<api::ble_v2::GattCharacteristic> GetCharacteristic(
         const Uuid& service_uuid, const Uuid& characteristic_uuid) override;

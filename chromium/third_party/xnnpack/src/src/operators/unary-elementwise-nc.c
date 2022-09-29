@@ -15,7 +15,7 @@
 #include <xnnpack/allocator.h>
 #include <xnnpack/log.h>
 #include <xnnpack/operator.h>
-#include <xnnpack/params-init.h>
+#include <xnnpack/microparams-init.h>
 #include <xnnpack/params.h>
 
 
@@ -550,6 +550,51 @@ enum xnn_status xnn_create_convert_nc_f32_qu8(
     convert_op_out);
 }
 
+enum xnn_status xnn_create_convert_nc_qs8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float input_scale,
+  int8_t input_zero_point,
+  float output_scale,
+  int8_t output_zero_point,
+  uint32_t flags,
+  xnn_operator_t* convert_op_out)
+{
+  if (input_scale <= 0.0f || !isnormal(input_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qs8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (output_scale <= 0.0f || !isnormal(output_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qs8), output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float input_output_scale = input_scale / output_scale;
+  if (input_output_scale < 0x1.0p-8f || input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input-to-output scale ratio: scale ratio must be in [2**-8, 2**7] range",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qs8), input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  union xnn_qs8_cvt_params params;
+  if (xnn_params.vcvt.qs8.init.qs8_cvt != NULL) {
+    xnn_params.vcvt.qs8.init.qs8_cvt(&params, input_output_scale, input_zero_point, output_zero_point);
+  }
+  return create_unary_elementwise_nc(
+    channels, input_stride, output_stride, flags,
+    &params, sizeof(params), XNN_INIT_FLAG_VCVT,
+    xnn_operator_type_convert_nc_qs8,
+    xnn_params.vcvt.qs8.ukernel,
+    convert_op_out);
+}
+
 enum xnn_status xnn_create_convert_nc_qs8_f32(
   size_t channels,
   size_t input_stride,
@@ -575,6 +620,51 @@ enum xnn_status xnn_create_convert_nc_qs8_f32(
     &params, sizeof(params), XNN_INIT_FLAG_VCVT,
     xnn_operator_type_convert_nc_qs8_f32,
     xnn_params.vcvt.qs8_to_f32.ukernel,
+    convert_op_out);
+}
+
+enum xnn_status xnn_create_convert_nc_qu8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float input_scale,
+  uint8_t input_zero_point,
+  float output_scale,
+  uint8_t output_zero_point,
+  uint32_t flags,
+  xnn_operator_t* convert_op_out)
+{
+  if (input_scale <= 0.0f || !isnormal(input_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qu8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (output_scale <= 0.0f || !isnormal(output_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qu8), output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float input_output_scale = input_scale / output_scale;
+  if (input_output_scale < 0x1.0p-8f || input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input-to-output scale ratio: scale ratio must be in [2**-8, 2**7] range",
+      xnn_operator_type_to_string(xnn_operator_type_convert_nc_qu8), input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  union xnn_qu8_cvt_params params;
+  if (xnn_params.vcvt.qu8.init.qu8_cvt != NULL) {
+    xnn_params.vcvt.qu8.init.qu8_cvt(&params, input_output_scale, input_zero_point, output_zero_point);
+  }
+  return create_unary_elementwise_nc(
+    channels, input_stride, output_stride, flags,
+    &params, sizeof(params), XNN_INIT_FLAG_VCVT,
+    xnn_operator_type_convert_nc_qu8,
+    xnn_params.vcvt.qu8.ukernel,
     convert_op_out);
 }
 
@@ -649,6 +739,36 @@ enum xnn_status xnn_create_copy_nc_x32(
     xnn_operator_type_copy_nc_x32,
     xnn_params.xx.copy,
     copy_op_out);
+}
+
+enum xnn_status xnn_create_elu_nc_f16(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float alpha,
+  uint32_t flags,
+  xnn_operator_t* elu_op_out)
+{
+  const uint16_t alpha_as_half = fp16_ieee_from_fp32_value(alpha);
+  alpha = fp16_ieee_to_fp32_value(alpha_as_half);
+  if (alpha <= 0.0f || !isnormal(alpha)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g alpha parameter: alpha must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_elu_nc_f16), alpha);
+    return xnn_status_invalid_parameter;
+  }
+
+  union xnn_f16_elu_params params;
+  if (xnn_params.f16.elu.init.f16_elu != NULL) {
+    xnn_params.f16.elu.init.f16_elu(&params,
+      UINT16_C(0x3C00)  /* prescale = 1.0h */, alpha_as_half, UINT16_C(0x3C00)  /* beta = 1.0h */);
+  }
+  return create_unary_elementwise_nc(
+    channels, input_stride, output_stride, flags,
+    &params, sizeof(params), XNN_INIT_FLAG_F16,
+    xnn_operator_type_elu_nc_f16,
+    xnn_params.f16.elu.ukernel,
+    elu_op_out);
 }
 
 enum xnn_status xnn_create_elu_nc_f32(
@@ -805,6 +925,144 @@ enum xnn_status xnn_create_leaky_relu_nc_f32(
     &params, sizeof(params), XNN_INIT_FLAG_F32,
     xnn_operator_type_leaky_relu_nc_f32,
     xnn_params.f32.lrelu.ukernel,
+    leaky_relu_op_out);
+}
+
+enum xnn_status xnn_create_leaky_relu_nc_qs8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float negative_slope,
+  int8_t input_zero_point,
+  float input_scale,
+  int8_t output_zero_point,
+  float output_scale,
+  uint32_t flags,
+  xnn_operator_t* leaky_relu_op_out)
+{
+  if (!isfinite(negative_slope)) {
+    xnn_log_error(
+      "failed to create %s operator with %f negative slope: finite number expected",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8),
+      negative_slope);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (input_scale <= 0.0f || !isnormal(input_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (output_scale <= 0.0f || !isnormal(output_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g output scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float positive_input_output_scale = input_scale / output_scale;
+  if (positive_input_output_scale < 0x1.0p-8f || positive_input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g positive-input-to-output scale ratio: scale ratio must be in [2**-8, 2**7] range",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8), positive_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float negative_input_output_scale = positive_input_output_scale * negative_slope;
+  if (negative_input_output_scale < -0x1.FFFC00p+6f || negative_input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g negative-input-to-output scale ratio: scale ratio must be in (-2**7, 2**7] range and ",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8), negative_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (fabsf(negative_input_output_scale) < 0x1.0p-8f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g negative-input-to-output scale ratio: scale ratio must be at least 2**-8 in absolute value",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qs8), negative_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  union xnn_qs8_lrelu_params params;
+  if (xnn_params.qs8.lrelu.init.qs8_lrelu != NULL) {
+    xnn_params.qs8.lrelu.init.qs8_lrelu(&params, positive_input_output_scale, negative_input_output_scale, input_zero_point, output_zero_point);
+  }
+  return create_unary_elementwise_nc(
+    channels, input_stride, output_stride, flags,
+    &params, sizeof(params), XNN_INIT_FLAG_QS8,
+    xnn_operator_type_leaky_relu_nc_qs8,
+    xnn_params.qs8.lrelu.ukernel,
+    leaky_relu_op_out);
+}
+
+enum xnn_status xnn_create_leaky_relu_nc_qu8(
+  size_t channels,
+  size_t input_stride,
+  size_t output_stride,
+  float negative_slope,
+  uint8_t input_zero_point,
+  float input_scale,
+  uint8_t output_zero_point,
+  float output_scale,
+  uint32_t flags,
+  xnn_operator_t* leaky_relu_op_out)
+{
+  if (!isfinite(negative_slope)) {
+    xnn_log_error(
+      "failed to create %s operator with %f negative slope: finite number expected",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8),
+      negative_slope);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (input_scale <= 0.0f || !isnormal(input_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g input scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (output_scale <= 0.0f || !isnormal(output_scale)) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g output scale parameter: scale must be finite, normalized, and positive",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8), input_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float positive_input_output_scale = input_scale / output_scale;
+  if (positive_input_output_scale < 0x1.0p-8f || positive_input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g positive-input-to-output scale ratio: scale ratio must be in [2**-8, 2**7] range",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8), positive_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  const float negative_input_output_scale = positive_input_output_scale * negative_slope;
+  if (negative_input_output_scale < -0x1.FFFC00p+6f || negative_input_output_scale > 0x1.0p+7f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g negative-input-to-output scale ratio: scale ratio must be in (-2**7, 2**7] range and ",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8), negative_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (fabsf(negative_input_output_scale) < 0x1.0p-8f) {
+    xnn_log_error(
+      "failed to create %s operator with %.7g negative-input-to-output scale ratio: scale ratio must be at least 2**-8 in absolute value",
+      xnn_operator_type_to_string(xnn_operator_type_leaky_relu_nc_qu8), negative_input_output_scale);
+    return xnn_status_invalid_parameter;
+  }
+
+  union xnn_qu8_lrelu_params params;
+  if (xnn_params.qu8.lrelu.init.qu8_lrelu != NULL) {
+    xnn_params.qu8.lrelu.init.qu8_lrelu(&params, positive_input_output_scale, negative_input_output_scale, input_zero_point, output_zero_point);
+  }
+  return create_unary_elementwise_nc(
+    channels, input_stride, output_stride, flags,
+    &params, sizeof(params), XNN_INIT_FLAG_QU8,
+    xnn_operator_type_leaky_relu_nc_qu8,
+    xnn_params.qu8.lrelu.ukernel,
     leaky_relu_op_out);
 }
 
@@ -1216,6 +1474,22 @@ enum xnn_status xnn_setup_convert_nc_f32_qu8(
     pthreadpool_get_threads_count(threadpool));
 }
 
+enum xnn_status xnn_setup_convert_nc_qs8(
+  xnn_operator_t convert_op,
+  size_t batch_size,
+  const int8_t* input,
+  int8_t* output,
+  pthreadpool_t threadpool)
+{
+  return setup_unary_elementwise_nc(
+    convert_op, xnn_operator_type_convert_nc_qs8,
+    batch_size, input, output,
+    0 /* log2(sizeof(int8_t)) */,
+    0 /* log2(sizeof(int8_t)) */,
+    &convert_op->params.qs8_cvt, sizeof(convert_op->params.qs8_cvt),
+    pthreadpool_get_threads_count(threadpool));
+}
+
 enum xnn_status xnn_setup_convert_nc_qs8_f32(
   xnn_operator_t convert_op,
   size_t batch_size,
@@ -1229,6 +1503,22 @@ enum xnn_status xnn_setup_convert_nc_qs8_f32(
     0 /* log2(sizeof(int8_t)) */,
     2 /* log2(sizeof(float)) */,
     &convert_op->params.qs8_f32_cvt, sizeof(convert_op->params.qs8_f32_cvt),
+    pthreadpool_get_threads_count(threadpool));
+}
+
+enum xnn_status xnn_setup_convert_nc_qu8(
+  xnn_operator_t convert_op,
+  size_t batch_size,
+  const uint8_t* input,
+  uint8_t* output,
+  pthreadpool_t threadpool)
+{
+  return setup_unary_elementwise_nc(
+    convert_op, xnn_operator_type_convert_nc_qu8,
+    batch_size, input, output,
+    0 /* log2(sizeof(uint8_t)) */,
+    0 /* log2(sizeof(uint8_t)) */,
+    &convert_op->params.qu8_cvt, sizeof(convert_op->params.qu8_cvt),
     pthreadpool_get_threads_count(threadpool));
 }
 
@@ -1293,6 +1583,22 @@ enum xnn_status xnn_setup_copy_nc_x32(
     2 /* log2(sizeof(uint32_t)) */,
     2 /* log2(sizeof(uint32_t)) */,
     NULL, 0,
+    pthreadpool_get_threads_count(threadpool));
+}
+
+enum xnn_status xnn_setup_elu_nc_f16(
+    xnn_operator_t elu_op,
+    size_t batch_size,
+    const void* input,
+    void* output,
+    pthreadpool_t threadpool)
+{
+  return setup_unary_elementwise_nc(
+    elu_op, xnn_operator_type_elu_nc_f16,
+    batch_size, input, output,
+    1 /* log2(sizeof(half)) */,
+    1 /* log2(sizeof(half)) */,
+    &elu_op->params.f16_elu, sizeof(elu_op->params.f16_elu),
     pthreadpool_get_threads_count(threadpool));
 }
 
@@ -1405,6 +1711,38 @@ enum xnn_status xnn_setup_leaky_relu_nc_f32(
     2 /* log2(sizeof(float)) */,
     2 /* log2(sizeof(float)) */,
     &leaky_relu_op->params.f32_lrelu, sizeof(leaky_relu_op->params.f32_lrelu),
+    pthreadpool_get_threads_count(threadpool));
+}
+
+enum xnn_status xnn_setup_leaky_relu_nc_qs8(
+  xnn_operator_t leaky_relu_op,
+  size_t batch_size,
+  const int8_t* input,
+  int8_t* output,
+  pthreadpool_t threadpool)
+{
+  return setup_unary_elementwise_nc(
+    leaky_relu_op, xnn_operator_type_leaky_relu_nc_qs8,
+    batch_size, input, output,
+    0 /* log2(sizeof(int8_t)) */,
+    0 /* log2(sizeof(int8_t)) */,
+    &leaky_relu_op->params.qs8_lrelu, sizeof(leaky_relu_op->params.qs8_lrelu),
+    pthreadpool_get_threads_count(threadpool));
+}
+
+enum xnn_status xnn_setup_leaky_relu_nc_qu8(
+  xnn_operator_t leaky_relu_op,
+  size_t batch_size,
+  const uint8_t* input,
+  uint8_t* output,
+  pthreadpool_t threadpool)
+{
+  return setup_unary_elementwise_nc(
+    leaky_relu_op, xnn_operator_type_leaky_relu_nc_qu8,
+    batch_size, input, output,
+    0 /* log2(sizeof(uint8_t)) */,
+    0 /* log2(sizeof(uint8_t)) */,
+    &leaky_relu_op->params.qu8_lrelu, sizeof(leaky_relu_op->params.qu8_lrelu),
     pthreadpool_get_threads_count(threadpool));
 }
 

@@ -20,6 +20,7 @@
 #include "api/adaptation/resource.h"
 #include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/data_rate.h"
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_rotation.h"
@@ -41,7 +42,6 @@
 #include "rtc_base/race_checker.h"
 #include "rtc_base/rate_statistics.h"
 #include "rtc_base/task_queue.h"
-#include "rtc_base/task_utils/pending_task_safety_flag.h"
 #include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/clock.h"
 #include "video/adaptation/video_stream_encoder_resource_manager.h"
@@ -128,7 +128,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
  protected:
   // Used for testing. For example the `ScalingObserverInterface` methods must
   // be called on `encoder_queue_`.
-  rtc::TaskQueue* encoder_queue() { return &encoder_queue_; }
+  TaskQueueBase* encoder_queue() { return encoder_queue_.Get(); }
 
   void OnVideoSourceRestrictionsUpdated(
       VideoSourceRestrictions restrictions,
@@ -450,12 +450,15 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
 
   const absl::optional<int> vp9_low_tier_core_threshold_;
 
+  // Used to cancel any potentially pending tasks to the worker thread.
+  // Refrenced by tasks running on `encoder_queue_` so need to be destroyed
+  // after stopping that queue. Must be created and destroyed on
+  // `worker_queue_`.
+  ScopedTaskSafety task_safety_;
+
   // Public methods are proxied to the task queues. The queues must be destroyed
   // first to make sure no tasks run that use other members.
   rtc::TaskQueue encoder_queue_;
-
-  // Used to cancel any potentially pending tasks to the worker thread.
-  ScopedTaskSafety task_safety_;
 };
 
 }  // namespace webrtc

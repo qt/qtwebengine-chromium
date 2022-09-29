@@ -211,6 +211,16 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       this.navigatorGroupByAuthoredExperiment = Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING;
     }
 
+    Common.Settings.Settings.instance()
+        .moduleSetting('skipStackFramesPattern')
+        .addChangeListener(this.ignoreListChanged.bind(this));
+    Common.Settings.Settings.instance()
+        .moduleSetting('skipContentScripts')
+        .addChangeListener(this.ignoreListChanged.bind(this));
+    Common.Settings.Settings.instance()
+        .moduleSetting('automaticallyIgnoreListKnownThirdPartyScripts')
+        .addChangeListener(this.ignoreListChanged.bind(this));
+
     this.initGrouping();
 
     Persistence.Persistence.PersistenceImpl.instance().addEventListener(
@@ -443,6 +453,12 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   }
 
   private addUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): void {
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.JUST_MY_CODE) &&
+        Bindings.IgnoreListManager.IgnoreListManager.instance().isUserOrSourceMapIgnoreListedUISourceCode(
+            uiSourceCode)) {
+      return;
+    }
+
     if (!this.acceptsUISourceCode(uiSourceCode)) {
       return;
     }
@@ -578,12 +594,17 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       project: Workspace.Workspace.Project, target: SDK.Target.Target|null,
       frame: SDK.ResourceTreeModel.ResourceTreeFrame|null, projectOrigin: string, isFromSourceMap: boolean,
       path: Platform.DevToolsPath.EncodedPathString): string {
-    let targetId = target && !(this.groupByAuthored && isFromSourceMap) ? target.id() : '';
     const projectId = project.type() === Workspace.Workspace.projectTypes.FileSystem ? project.id() : '';
+    let targetId = target && !(this.groupByAuthored && isFromSourceMap) ? target.id() : '';
+    let frameId = this.groupByFrame && frame ? frame.id : '';
     if (this.groupByAuthored) {
-      targetId = isFromSourceMap ? 'Authored' : 'Deployed:' + targetId;
+      if (isFromSourceMap) {
+        targetId = 'Authored';
+        frameId = '';
+      } else {
+        targetId = 'Deployed:' + targetId;
+      }
     }
-    const frameId = this.groupByFrame && frame ? frame.id : '';
     return targetId + ':' + projectId + ':' + frameId + ':' + projectOrigin + ':' + path;
   }
 
@@ -1018,19 +1039,18 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     }
   }
 
-  /**
-   * Subclasses can override to listen to grouping changes.
-   */
-  onGroupingChanged(): void {
-  }
-
   private groupingChanged(): void {
     this.reset(true);
     this.initGrouping();
     // Reset the workspace to repopulate filesystem folders.
-    this.onGroupingChanged();
     this.resetWorkspace(Workspace.Workspace.WorkspaceImpl.instance());
     this.workspaceInternal.uiSourceCodes().forEach(this.addUISourceCode.bind(this));
+  }
+
+  private ignoreListChanged(): void {
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.JUST_MY_CODE)) {
+      this.groupingChanged();
+    }
   }
 
   private initGrouping(): void {

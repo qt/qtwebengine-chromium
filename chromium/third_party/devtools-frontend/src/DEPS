@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 use_relative_paths = True
+gclient_gn_args_file = 'build/config/gclient_args.gni'
+gclient_gn_args = [
+]
 
 vars = {
   'build_with_chromium': False,
@@ -11,40 +14,40 @@ vars = {
   'checkout_reclient': False,
 
   'build_url': 'https://chromium.googlesource.com/chromium/src/build.git',
-  'build_revision': 'a789781b39e57f5b40ceaafdf4a20903d29916a5',
+  'build_revision': '138d9667f4dd99742d3d47618e6d9f47ad0d78ea',
 
   'buildtools_url': 'https://chromium.googlesource.com/chromium/src/buildtools.git',
-  'buildtools_revision': '8b16338d17cd71b04a6ba28da7322ab6739892c2',
+  'buildtools_revision': '2c110db04251fd39d54c5f0de824819ab120ca99',
 
   'depot_tools_url': 'https://chromium.googlesource.com/chromium/tools/depot_tools.git',
-  'depot_tools_revision': 'b3579d428a79e0425f4d3d9be58d76470f96fb6b',
+  'depot_tools_revision': 'd14f65eba90cc352b76ff0743a307ce22450d823',
 
   'inspector_protocol_url': 'https://chromium.googlesource.com/deps/inspector_protocol',
-  'inspector_protocol_revision': 'd8c621ec67006b4b23b7b40ae18817e99ebc7d98',
+  'inspector_protocol_revision': '530a32375f50dac763e51f5c2bcbf31bdec0b8de',
 
   'clang_format_url': 'https://chromium.googlesource.com/external/github.com/llvm/llvm-project/clang/tools/clang-format.git',
-  'clang_format_revision': 'e435ad79c17b1888b34df88d6a30a094936e3836',
+  'clang_format_revision': '8b525d2747f2584fc35d8c7e612e66f377858df7',
 
-  'emscripten_tag': '6ab7fc5622a67e6111d07c4ba61c8d3c8fc33ed2',
+  'emscripten_tag': 'ade9d780ff17c88d81aa13860361743e3c1e1396',
 
   # GN CIPD package version.
-  'gn_version': 'git_revision:fd6cae41bd7d5d255dc2fb96004a8bf74ac9d972',
+  'gn_version': 'git_revision:0bcd37bd2b83f1a9ee17088037ebdfe6eab6d31a',
 
   # reclient CIPD package version
   'reclient_version': 're_client_version:0.19.2.319f839',
 
   # Chromium build number for unit tests. It should be regularly updated to
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/LAST_CHANGE
-  'chromium_linux': '1012351',
+  'chromium_linux': '1036501',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE
-  'chromium_win': '1012333',
+  'chromium_win': '1036455',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/LAST_CHANGE
-  'chromium_mac': '1012344',
+  'chromium_mac': '1036494',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.
 # If you need to add a new host, contact chrome infrastracture team.
-allowed_hosts = [ 'chromium.googlesource.com' ]
+allowed_hosts = [ 'chromium.googlesource.com', 'chrome-infra-packages.appspot.com' ]
 
 deps = {
   'buildtools/clang_format/script': {

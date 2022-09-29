@@ -207,7 +207,7 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDFPage_New(FPDF_DOCUMENT document,
     return nullptr;
 
   page_index = pdfium::clamp(page_index, 0, pDoc->GetPageCount());
-  CPDF_Dictionary* pPageDict = pDoc->CreateNewPage(page_index);
+  RetainPtr<CPDF_Dictionary> pPageDict(pDoc->CreateNewPage(page_index));
   if (!pPageDict)
     return nullptr;
 
@@ -485,8 +485,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT page_object) {
   if (pPageObj->m_GeneralState.GetBlendType() != BlendMode::kNormal)
     return true;
 
-  const CPDF_Dictionary* pSMaskDict =
-      ToDictionary(pPageObj->m_GeneralState.GetSoftMask());
+  const CPDF_Dictionary* pSMaskDict = pPageObj->m_GeneralState.GetSoftMask();
   if (pSMaskDict)
     return true;
 
@@ -701,8 +700,8 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_TransformAnnots(FPDF_PAGE page,
                       (float)f);
     CFX_FloatRect rect = matrix.TransformRect(pAnnot->GetRect());
 
-    CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
-    CPDF_Array* pRectArray = pAnnotDict->GetArrayFor("Rect");
+    RetainPtr<CPDF_Dictionary> pAnnotDict = pAnnot->GetMutableAnnotDict();
+    RetainPtr<CPDF_Array> pRectArray = pAnnotDict->GetMutableArrayFor("Rect");
     if (pRectArray)
       pRectArray->Clear();
     else
@@ -724,8 +723,8 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_SetRotation(FPDF_PAGE page,
     return;
 
   rotate %= 4;
-  pPage->GetDict()->SetNewFor<CPDF_Number>(pdfium::page_object::kRotate,
-                                           rotate * 90);
+  pPage->GetMutableDict()->SetNewFor<CPDF_Number>(pdfium::page_object::kRotate,
+                                                  rotate * 90);
   pPage->UpdateDimensions();
 }
 
@@ -782,6 +781,44 @@ FPDFPageObj_GetBounds(FPDF_PAGEOBJECT page_object,
   *bottom = bbox.bottom;
   *right = bbox.right;
   *top = bbox.top;
+  return true;
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetRotatedBounds(FPDF_PAGEOBJECT page_object,
+                             FS_QUADPOINTSF* quad_points) {
+  CPDF_PageObject* cpage_object = CPDFPageObjectFromFPDFPageObject(page_object);
+  if (!cpage_object || !quad_points)
+    return false;
+
+  CFX_Matrix matrix;
+  switch (cpage_object->GetType()) {
+    case CPDF_PageObject::Type::kText:
+      matrix = cpage_object->AsText()->GetTextMatrix();
+      break;
+    case CPDF_PageObject::Type::kImage:
+      matrix = cpage_object->AsImage()->matrix();
+      break;
+    default:
+      // TODO(crbug.com/pdfium/1840): Support more object types.
+      return false;
+  }
+
+  const CFX_FloatRect& bbox = cpage_object->GetOriginalRect();
+  const CFX_PointF bottom_left = matrix.Transform({bbox.left, bbox.bottom});
+  const CFX_PointF bottom_right = matrix.Transform({bbox.right, bbox.bottom});
+  const CFX_PointF top_right = matrix.Transform({bbox.right, bbox.top});
+  const CFX_PointF top_left = matrix.Transform({bbox.left, bbox.top});
+
+  // See PDF 32000-1:2008, figure 64 for the QuadPoints ordering.
+  quad_points->x1 = bottom_left.x;
+  quad_points->y1 = bottom_left.y;
+  quad_points->x2 = bottom_right.x;
+  quad_points->y2 = bottom_right.y;
+  quad_points->x3 = top_right.x;
+  quad_points->y3 = top_right.y;
+  quad_points->x4 = top_left.x;
+  quad_points->y4 = top_left.y;
   return true;
 }
 

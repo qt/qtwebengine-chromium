@@ -116,6 +116,15 @@ void TransportFeedback::LastChunk::Add(DeltaSize delta_size) {
   has_large_delta_ = has_large_delta_ || delta_size == kLarge;
 }
 
+void TransportFeedback::LastChunk::AddMissingPackets(size_t num_missing) {
+  RTC_DCHECK_EQ(size_, 0);
+  RTC_DCHECK(all_same_);
+  RTC_DCHECK(!has_large_delta_);
+  RTC_DCHECK_LT(num_missing, kMaxRunLengthCapacity);
+  absl::c_fill(delta_sizes_, DeltaSize(0));
+  size_ = num_missing;
+}
+
 uint16_t TransportFeedback::LastChunk::Emit() {
   RTC_DCHECK(!CanAdd(0) || !CanAdd(1) || !CanAdd(2));
   if (all_same_) {
@@ -160,7 +169,8 @@ void TransportFeedback::LastChunk::AppendTo(
   if (all_same_) {
     deltas->insert(deltas->end(), size_, delta_sizes_[0]);
   } else {
-    deltas->insert(deltas->end(), delta_sizes_, delta_sizes_ + size_);
+    deltas->insert(deltas->end(), delta_sizes_.begin(),
+                   delta_sizes_.begin() + size_);
   }
 }
 
@@ -342,11 +352,13 @@ bool TransportFeedback::AddReceivedPacket(uint16_t sequence_number,
     uint16_t last_seq_no = next_seq_no - 1;
     if (!IsNewerSequenceNumber(sequence_number, last_seq_no))
       return false;
-    for (; next_seq_no != sequence_number; ++next_seq_no) {
-      if (!AddDeltaSize(0))
-        return false;
-      if (include_lost_)
+    uint16_t num_missing_packets = sequence_number - next_seq_no;
+    if (!AddMissingPackets(num_missing_packets))
+      return false;
+    if (include_lost_) {
+      for (; next_seq_no != sequence_number; ++next_seq_no) {
         all_packets_.emplace_back(next_seq_no);
+      }
     }
   }
 
@@ -387,40 +399,15 @@ Timestamp TransportFeedback::BaseTime() const {
          int64_t{base_time_ticks_} * kBaseTimeTick;
 }
 
-int64_t TransportFeedback::GetBaseTimeUs() const {
-  // Historically BaseTime was stored as signed integer and could be negative.
-  // However with new api it is not possible, but for compatibility with legacy
-  // tests return base time as negative when it used to be negative.
-  int64_t base_time_us = BaseTime().us() % kTimeWrapPeriod.us();
-  if (base_time_us >= kTimeWrapPeriod.us() / 2) {
-    return base_time_us - kTimeWrapPeriod.us();
-  } else {
-    return base_time_us;
-  }
-}
-
-namespace {
-TimeDelta CompensateForWrapAround(TimeDelta delta) {
+TimeDelta TransportFeedback::GetBaseDelta(Timestamp prev_timestamp) const {
+  TimeDelta delta = BaseTime() - prev_timestamp;
+  // Compensate for wrap around.
   if ((delta - kTimeWrapPeriod).Abs() < delta.Abs()) {
     delta -= kTimeWrapPeriod;  // Wrap backwards.
   } else if ((delta + kTimeWrapPeriod).Abs() < delta.Abs()) {
     delta += kTimeWrapPeriod;  // Wrap forwards.
   }
   return delta;
-}
-}  // namespace
-
-int64_t TransportFeedback::GetBaseDeltaUs(int64_t prev_timestamp_us) const {
-  int64_t delta_us = GetBaseTimeUs() - prev_timestamp_us;
-  return CompensateForWrapAround(TimeDelta::Micros(delta_us)).us();
-}
-
-TimeDelta TransportFeedback::GetBaseDelta(TimeDelta prev_timestamp) const {
-  return CompensateForWrapAround(GetBaseTime() - prev_timestamp);
-}
-
-TimeDelta TransportFeedback::GetBaseDelta(Timestamp prev_timestamp) const {
-  return CompensateForWrapAround(BaseTime() - prev_timestamp);
 }
 
 // De-serialize packet.
@@ -723,5 +710,38 @@ bool TransportFeedback::AddDeltaSize(DeltaSize delta_size) {
   return true;
 }
 
+bool TransportFeedback::AddMissingPackets(size_t num_missing_packets) {
+  size_t new_num_seq_no = num_seq_no_ + num_missing_packets;
+  if (new_num_seq_no > kMaxReportedPackets) {
+    return false;
+  }
+
+  if (!last_chunk_.Empty()) {
+    while (num_missing_packets > 0 && last_chunk_.CanAdd(0)) {
+      last_chunk_.Add(0);
+      --num_missing_packets;
+    }
+    if (num_missing_packets == 0) {
+      num_seq_no_ = new_num_seq_no;
+      return true;
+    }
+    encoded_chunks_.push_back(last_chunk_.Emit());
+  }
+  RTC_DCHECK(last_chunk_.Empty());
+  size_t full_chunks = num_missing_packets / LastChunk::kMaxRunLengthCapacity;
+  size_t partial_chunk = num_missing_packets % LastChunk::kMaxRunLengthCapacity;
+  size_t num_chunks = full_chunks + (partial_chunk > 0 ? 1 : 0);
+  if (size_bytes_ + kChunkSizeBytes * num_chunks > kMaxSizeBytes) {
+    num_seq_no_ = (new_num_seq_no - num_missing_packets);
+    return false;
+  }
+  size_bytes_ += kChunkSizeBytes * num_chunks;
+  // T = 0, S = 0, run length = kMaxRunLengthCapacity, see EncodeRunLength().
+  encoded_chunks_.insert(encoded_chunks_.end(), full_chunks,
+                         LastChunk::kMaxRunLengthCapacity);
+  last_chunk_.AddMissingPackets(partial_chunk);
+  num_seq_no_ = new_num_seq_no;
+  return true;
+}
 }  // namespace rtcp
 }  // namespace webrtc

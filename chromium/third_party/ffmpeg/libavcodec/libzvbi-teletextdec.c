@@ -581,7 +581,7 @@ static void handler(vbi_event *ev, void *user_data)
     vbi_unref_page(&page);
 }
 
-static int slice_to_vbi_lines(TeletextContext *ctx, uint8_t* buf, int size)
+static int slice_to_vbi_lines(TeletextContext *ctx, const uint8_t *buf, int size)
 {
     int lines = 0;
     while (size >= 2 && lines < MAX_SLICES) {
@@ -819,6 +819,7 @@ const FFCodec ff_libzvbi_teletext_decoder = {
     .p.capabilities = AV_CODEC_CAP_DELAY,
     .p.priv_class   = &teletext_class,
     .p.wrapper_name = "libzvbi",
+    .caps_internal  = FF_CODEC_CAP_NOT_INIT_THREADSAFE,
     .priv_data_size = sizeof(TeletextContext),
     .init      = teletext_init_decoder,
     .close     = teletext_close_decoder,

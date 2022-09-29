@@ -2272,6 +2272,7 @@ SYSTEM_FUNCS="
     fcntl
     getaddrinfo
     getauxval
+    getenv
     gethrtime
     getopt
     GetModuleHandle
@@ -2351,6 +2352,8 @@ TOOLCHAIN_FEATURES="
 "
 
 TYPES_LIST="
+    DPI_AWARENESS_CONTEXT
+    IDXGIOutput5
     kCMVideoCodecType_HEVC
     kCMVideoCodecType_HEVCWithAlpha
     kCMVideoCodecType_VP9
@@ -3025,6 +3028,8 @@ av1_nvdec_hwaccel_deps="nvdec CUVIDAV1PICPARAMS"
 av1_nvdec_hwaccel_select="av1_decoder"
 av1_vaapi_hwaccel_deps="vaapi VADecPictureParameterBufferAV1_bit_depth_idx"
 av1_vaapi_hwaccel_select="av1_decoder"
+av1_vdpau_hwaccel_deps="vdpau VdpPictureInfoAV1"
+av1_vdpau_hwaccel_select="av1_decoder"
 h263_vaapi_hwaccel_deps="vaapi"
 h263_vaapi_hwaccel_select="h263_decoder"
 h263_videotoolbox_hwaccel_deps="videotoolbox"
@@ -3130,7 +3135,6 @@ wmv3_vdpau_hwaccel_select="vc1_vdpau_hwaccel"
 
 # hardware-accelerated codecs
 mediafoundation_deps="mftransform_h MFCreateAlignedMemoryBuffer"
-mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids"
 omx_deps="libdl pthreads"
 omx_rpi_select="omx"
 qsv_deps="libmfx"
@@ -3140,6 +3144,8 @@ qsvvpp_select="qsv"
 vaapi_encode_deps="vaapi"
 v4l2_m2m_deps="linux_videodev2_h sem_timedwait"
 
+chromakey_cuda_filter_deps="ffnvcodec"
+chromakey_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 hwupload_cuda_filter_deps="ffnvcodec"
 scale_npp_filter_deps="ffnvcodec libnpp"
 scale2ref_npp_filter_deps="ffnvcodec libnpp"
@@ -3151,6 +3157,8 @@ transpose_npp_filter_deps="ffnvcodec libnpp"
 overlay_cuda_filter_deps="ffnvcodec"
 overlay_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 sharpen_npp_filter_deps="ffnvcodec libnpp"
+
+ddagrab_filter_deps="d3d11va IDXGIOutput1"
 
 amf_deps_any="libdl LoadLibrary"
 nvenc_deps="ffnvcodec"
@@ -3325,6 +3333,7 @@ libcodec2_encoder_deps="libcodec2"
 libdav1d_decoder_deps="libdav1d"
 libdav1d_decoder_select="atsc_a53"
 libdavs2_decoder_deps="libdavs2"
+libdavs2_decoder_select="avs2_parser"
 libfdk_aac_decoder_deps="libfdk_aac"
 libfdk_aac_encoder_deps="libfdk_aac"
 libfdk_aac_encoder_select="audio_frame_queue"
@@ -3441,7 +3450,7 @@ mlp_demuxer_select="mlp_parser"
 mmf_muxer_select="riffenc"
 mov_demuxer_select="iso_media riffdec"
 mov_demuxer_suggest="zlib"
-mov_muxer_select="iso_media riffenc rtpenc_chain vp9_superframe_bsf aac_adtstoasc_bsf"
+mov_muxer_select="iso_media riffenc rtpenc_chain vp9_superframe_bsf aac_adtstoasc_bsf ac3_parser"
 mp3_demuxer_select="mpegaudio_parser"
 mp3_muxer_select="mpegaudioheader"
 mp4_muxer_select="mov_muxer"
@@ -3703,6 +3712,7 @@ prewitt_opencl_filter_deps="opencl"
 procamp_vaapi_filter_deps="vaapi"
 program_opencl_filter_deps="opencl"
 pullup_filter_deps="gpl"
+remap_opencl_filter_deps="opencl"
 removelogo_filter_deps="avcodec avformat swscale"
 repeatfields_filter_deps="gpl"
 roberts_opencl_filter_deps="opencl"
@@ -3809,7 +3819,7 @@ avfilter_extralibs="pthreads_extralibs"
 avutil_extralibs="d3d11va_extralibs nanosleep_extralibs pthreads_extralibs vaapi_drm_extralibs vaapi_x11_extralibs vdpau_x11_extralibs"
 
 # programs
-ffmpeg_deps="avcodec avfilter avformat"
+ffmpeg_deps="avcodec avfilter avformat threads"
 ffmpeg_select="aformat_filter anull_filter atrim_filter format_filter
                hflip_filter null_filter
                transpose_filter trim_filter vflip_filter"
@@ -6395,13 +6405,17 @@ check_struct "sys/time.h sys/resource.h" "struct rusage" ru_maxrss
 check_type "windows.h dxva.h" "DXVA_PicParams_AV1" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
 check_type "windows.h dxva.h" "DXVA_PicParams_HEVC" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
 check_type "windows.h dxva.h" "DXVA_PicParams_VP9" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
+check_type "windows.h dxgi1_2.h" "IDXGIOutput1"
+check_type "windows.h dxgi1_5.h" "IDXGIOutput5"
 check_type "windows.h d3d11.h" "ID3D11VideoDecoder"
 check_type "windows.h d3d11.h" "ID3D11VideoContext"
+check_type "windows.h" "DPI_AWARENESS_CONTEXT" -D_WIN32_WINNT=0x0A00
 check_type "d3d9.h dxva2api.h" DXVA2_ConfigPictureDecode -D_WIN32_WINNT=0x0602
 check_func_headers mfapi.h MFCreateAlignedMemoryBuffer -lmfplat
 
 check_type "vdpau/vdpau.h" "VdpPictureInfoHEVC"
 check_type "vdpau/vdpau.h" "VdpPictureInfoVP9"
+check_type "vdpau/vdpau.h" "VdpPictureInfoAV1"
 
 if [ -z "$nvccflags" ]; then
     nvccflags=$nvccflags_default
@@ -6576,8 +6590,11 @@ enabled liblensfun        && require_pkg_config liblensfun lensfun lensfun.h lf_
 # Media SDK or Intel Media Server Studio, these don't come with
 # pkg-config support.  Instead, users should make sure that the build
 # can find the libraries and headers through other means.
-enabled libmfx            && { check_pkg_config libmfx libmfx "mfx/mfxvideo.h" MFXInit ||
-                               { require libmfx "mfx/mfxvideo.h" MFXInit "-llibmfx $advapi32_extralibs" && warn "using libmfx without pkg-config"; } }
+enabled libmfx            && { check_pkg_config libmfx "libmfx >= 1.28" "mfx/mfxvideo.h" MFXInit ||
+                               { require libmfx "mfx/mfxvideo.h mfx/mfxdefs.h" MFXInit "-llibmfx $advapi32_extralibs" &&
+                                 { test_cpp_condition mfx/mfxdefs.h "MFX_VERSION >= 1028" || die "ERROR: libmfx version must be >= 1.28"; }  &&
+                                 warn "using libmfx without pkg-config"; } }
+
 if enabled libmfx; then
    check_cc MFX_CODEC_VP9 "mfx/mfxvp9.h mfx/mfxstructures.h" "MFX_CODEC_VP9"
 fi
@@ -6613,7 +6630,7 @@ enabled libplacebo        && require_pkg_config libplacebo "libplacebo >= 4.192.
 enabled libpulse          && require_pkg_config libpulse libpulse pulse/pulseaudio.h pa_context_new
 enabled librabbitmq       && require_pkg_config librabbitmq "librabbitmq >= 0.7.1" amqp.h amqp_new_connection
 enabled librav1e          && require_pkg_config librav1e "rav1e >= 0.4.0" rav1e.h rav1e_context_new
-enabled librist           && require_pkg_config librist "librist >= 0.2" librist/librist.h rist_receiver_create
+enabled librist           && require_pkg_config librist "librist >= 0.2.7" librist/librist.h rist_receiver_create
 enabled librsvg           && require_pkg_config librsvg librsvg-2.0 librsvg-2.0/librsvg/rsvg.h rsvg_handle_render_cairo
 enabled librtmp           && require_pkg_config librtmp librtmp librtmp/rtmp.h RTMP_Socket
 enabled librubberband     && require_pkg_config librubberband "rubberband >= 1.8.1" rubberband/rubberband-c.h rubberband_new -lstdc++ && append librubberband_extralibs "-lstdc++"
@@ -6667,10 +6684,10 @@ enabled libvpx            && {
 enabled libwebp           && {
     enabled libwebp_encoder      && require_pkg_config libwebp "libwebp >= 0.2.0" webp/encode.h WebPGetEncoderVersion
     enabled libwebp_anim_encoder && check_pkg_config libwebp_anim_encoder "libwebpmux >= 0.4.0" webp/mux.h WebPAnimEncoderOptionsInit; }
-enabled libx264           && { check_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode ||
-                               { require libx264 "stdint.h x264.h" x264_encoder_encode "-lx264 $pthreads_extralibs $libm_extralibs" &&
-                                 warn "using libx264 without pkg-config"; } } &&
-                             require_cpp_condition libx264 x264.h "X264_BUILD >= 118" &&
+enabled libx264           && require_pkg_config libx264 x264 "stdint.h x264.h" x264_encoder_encode &&
+                             require_cpp_condition libx264 x264.h "X264_BUILD >= 118" && {
+                             [ "$toolchain" != "msvc" ] ||
+                             require_cpp_condition libx264 x264.h "X264_BUILD >= 158"; } &&
                              check_cpp_condition libx262 x264.h "X264_MPEG2"
 enabled libx265           && require_pkg_config libx265 x265 x265.h x265_api_get &&
                              require_cpp_condition libx265 x265.h "X265_BUILD >= 70"
@@ -6759,7 +6776,7 @@ if enabled sdl2; then
         sdl2_cflags=$("${SDL2_CONFIG}" --cflags)
         sdl2_extralibs=$("${SDL2_CONFIG}" --libs)
         test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) >= 0x020001" $sdl2_cflags &&
-        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x020100" $sdl2_cflags &&
+        test_cpp_condition SDL.h "(SDL_MAJOR_VERSION<<16 | SDL_MINOR_VERSION<<8 | SDL_PATCHLEVEL) < 0x030000" $sdl2_cflags &&
         check_func_headers SDL_events.h SDL_PollEvent $sdl2_extralibs $sdl2_cflags &&
             enable sdl2
     fi
@@ -6886,6 +6903,9 @@ test_cpp <<EOF && enable uwp && d3d11va_extralibs="-ldxgi -ld3d11"
 #error no family set
 #endif
 EOF
+
+# mediafoundation requires linking directly to mfplat if building for uwp target
+enabled uwp && mediafoundation_extralibs="-lmfplat -lmfuuid -lole32 -lstrmiids" || mediafoundation_extralibs="-lmfuuid -lole32 -lstrmiids"
 
 enabled libdrm &&
     check_pkg_config libdrm_getfb2 libdrm "xf86drmMode.h" drmModeGetFB2

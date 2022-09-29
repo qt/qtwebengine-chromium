@@ -86,7 +86,7 @@ public:
     SkTArray<Cluster, true> fClusters;
     SkTArray<size_t, true> fClustersIndexFromCodeUnit;
     // ICU results
-    SkTArray<CodeUnitFlags> fCodeUnitProperties;
+    SkTArray<SkUnicode::CodeUnitFlags, true> fCodeUnitProperties;
     std::vector<size_t> fWords;
     std::vector<SkUnicode::BidiRegion> fBidiRegions;
     SkTArray<TextIndex, true> fUTF8IndexForUTF16Index;
@@ -144,6 +144,7 @@ uint32_t ParagraphCacheKey::computeHash() const {
 
     hash = mix(hash, SkGoodHash()(relax(fParagraphStyle.getHeight())));
     hash = mix(hash, SkGoodHash()(fParagraphStyle.getTextDirection()));
+    hash = mix(hash, SkGoodHash()(fParagraphStyle.getReplaceTabCharacters() ? 1 : 0));
 
     auto& strutStyle = fParagraphStyle.getStrutStyle();
     if (strutStyle.getStrutEnabled()) {
@@ -189,6 +190,10 @@ bool ParagraphCacheKey::operator==(const ParagraphCacheKey& other) const {
     }
 
     if (!(fParagraphStyle.getStrutStyle() == other.fParagraphStyle.getStrutStyle())) {
+        return false;
+    }
+
+    if (!(fParagraphStyle.getReplaceTabCharacters() == other.fParagraphStyle.getReplaceTabCharacters())) {
         return false;
     }
 

@@ -165,9 +165,10 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
   }
 
   void Generate() final {
-    __ CheckPageFlag(value_, scratch0_,
-                     MemoryChunk::kPointersToHereAreInterestingMask, eq,
-                     exit());
+    __ CheckPageFlag(
+        value_, scratch0_,
+        MemoryChunk::kPointersToHereAreInterestingOrInSharedHeapMask, eq,
+        exit());
     __ Daddu(scratch1_, object_, index_);
     SaveFPRegsMode const save_fp_mode = frame()->DidAllocateDoubleRegisters()
                                             ? SaveFPRegsMode::kSave
@@ -1462,6 +1463,16 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       // Other arches use round to zero here, so we follow.
       __ trunc_w_d(scratch, i.InputDoubleRegister(0));
       __ mfc1(i.OutputRegister(), scratch);
+      if (instr->OutputCount() > 1) {
+        // Check for inputs below INT32_MIN and NaN.
+        __ li(i.OutputRegister(1), 1);
+        __ Move(i.TempDoubleRegister(0), static_cast<double>(INT32_MIN));
+        __ CompareF64(LE, i.TempDoubleRegister(0), i.InputDoubleRegister(0));
+        __ LoadZeroIfNotFPUCondition(i.OutputRegister(1));
+        __ Move(i.TempDoubleRegister(0), static_cast<double>(INT32_MAX) + 1);
+        __ CompareF64(LE, i.TempDoubleRegister(0), i.InputDoubleRegister(0));
+        __ LoadZeroIfFPUCondition(i.OutputRegister(1));
+      }
       break;
     }
     case kMips64FloorWS: {
@@ -1546,6 +1557,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kMips64TruncUwD: {
       FPURegister scratch = kScratchDoubleReg;
       __ Trunc_uw_d(i.OutputRegister(), i.InputDoubleRegister(0), scratch);
+      if (instr->OutputCount() > 1) {
+        __ li(i.OutputRegister(1), 1);
+        __ Move(i.TempDoubleRegister(0), static_cast<double>(-1.0));
+        __ CompareF64(LT, i.TempDoubleRegister(0), i.InputDoubleRegister(0));
+        __ LoadZeroIfNotFPUCondition(i.OutputRegister(1));
+        __ Move(i.TempDoubleRegister(0), static_cast<double>(UINT32_MAX) + 1);
+        __ CompareF64(LE, i.TempDoubleRegister(0), i.InputDoubleRegister(0));
+        __ LoadZeroIfFPUCondition(i.OutputRegister(1));
+      }
       break;
     }
     case kMips64TruncUwS: {

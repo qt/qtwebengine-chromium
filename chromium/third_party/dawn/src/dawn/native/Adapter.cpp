@@ -33,6 +33,8 @@ AdapterBase::AdapterBase(InstanceBase* instance, wgpu::BackendType backend)
 
 MaybeError AdapterBase::Initialize() {
     DAWN_TRY_CONTEXT(InitializeImpl(), "initializing adapter (backend=%s)", mBackend);
+    InitializeVendorArchitectureImpl();
+
     DAWN_TRY_CONTEXT(
         InitializeSupportedFeaturesImpl(),
         "gathering supported features for \"%s\" - \"%s\" (vendorId=%#06x deviceId=%#06x "
@@ -44,12 +46,11 @@ MaybeError AdapterBase::Initialize() {
         "backend=%s type=%s)",
         mName, mDriverDescription, mVendorId, mDeviceId, mBackend, mAdapterType);
 
-    mVendorName = gpu_info::GetVendorName(mVendorId);
-    mArchitectureName = gpu_info::GetArchitectureName(mVendorId, mDeviceId);
-
     // Enforce internal Dawn constants.
     mLimits.v1.maxVertexBufferArrayStride =
         std::min(mLimits.v1.maxVertexBufferArrayStride, kMaxVertexBufferArrayStride);
+    mLimits.v1.maxColorAttachments =
+        std::min(mLimits.v1.maxColorAttachments, uint32_t(kMaxColorAttachments));
     mLimits.v1.maxBindGroups = std::min(mLimits.v1.maxBindGroups, kMaxBindGroups);
     mLimits.v1.maxVertexAttributes =
         std::min(mLimits.v1.maxVertexAttributes, uint32_t(kMaxVertexAttributes));
@@ -138,6 +139,11 @@ void AdapterBase::APIRequestDevice(const DeviceDescriptor* descriptor,
     callback(status, ToAPI(device.Detach()), nullptr, userdata);
 }
 
+void AdapterBase::InitializeVendorArchitectureImpl() {
+    mVendorName = gpu_info::GetVendorName(mVendorId);
+    mArchitectureName = gpu_info::GetArchitectureName(mVendorId, mDeviceId);
+}
+
 uint32_t AdapterBase::GetVendorId() const {
     return mVendorId;
 }
@@ -166,22 +172,6 @@ bool AdapterBase::SupportsAllRequiredFeatures(
         }
     }
     return true;
-}
-
-WGPUDeviceProperties AdapterBase::GetAdapterProperties() const {
-    WGPUDeviceProperties adapterProperties = {};
-    adapterProperties.deviceID = mDeviceId;
-    adapterProperties.vendorID = mVendorId;
-    adapterProperties.adapterType = static_cast<WGPUAdapterType>(mAdapterType);
-
-    mSupportedFeatures.InitializeDeviceProperties(&adapterProperties);
-    // This is OK for now because there are no limit feature structs.
-    // If we add additional structs, the caller will need to provide memory
-    // to store them (ex. by calling GetLimits directly instead). Currently,
-    // we keep this function as it's only used internally in Chromium to
-    // send the adapter properties across the wire.
-    GetLimits(FromAPI(&adapterProperties.limits));
-    return adapterProperties;
 }
 
 bool AdapterBase::GetLimits(SupportedLimits* limits) const {

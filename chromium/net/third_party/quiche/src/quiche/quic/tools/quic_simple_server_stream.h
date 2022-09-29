@@ -14,6 +14,7 @@
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/tools/quic_backend_response.h"
 #include "quiche/quic/tools/quic_simple_server_backend.h"
+#include "quiche/spdy/core/http2_header_block.h"
 #include "quiche/spdy/core/spdy_framer.h"
 
 namespace quic {
@@ -35,8 +36,6 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
   // QuicSpdyStream
   void OnInitialHeadersComplete(bool fin, size_t frame_len,
                                 const QuicHeaderList& header_list) override;
-  void OnTrailingHeadersComplete(bool fin, size_t frame_len,
-                                 const QuicHeaderList& header_list) override;
   void OnCanWrite() override;
 
   // QuicStream implementation called by the sequencer when there is
@@ -61,6 +60,8 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
   void OnResponseBackendComplete(const QuicBackendResponse* response) override;
   void SendStreamData(absl::string_view data, bool close_stream) override;
   void TerminateStreamWithError(QuicResetStreamError error) override;
+
+  void Respond(const QuicBackendResponse* response);
 
  protected:
   // Handles fresh body data whenever received when method is CONNECT.
@@ -107,6 +108,8 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
     quic_simple_server_backend_ = backend;
   }
 
+  bool response_sent() const { return response_sent_; }
+
   // The parsed headers received from the client.
   spdy::Http2HeaderBlock request_headers_;
   int64_t content_length_;
@@ -116,6 +119,8 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
   uint64_t generate_bytes_length_;
   // Whether response headers have already been sent.
   bool response_sent_ = false;
+
+  std::unique_ptr<QuicAlarm> delayed_response_alarm_;
 
   QuicSimpleServerBackend* quic_simple_server_backend_;  // Not owned.
 };

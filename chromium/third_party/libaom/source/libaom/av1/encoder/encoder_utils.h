@@ -872,7 +872,7 @@ static AOM_INLINE void copy_frame_prob_info(AV1_COMP *cpi) {
              default_switchable_interp_probs);
   }
 
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
   if (cpi->ppi->fpmt_unit_test_cfg == PARALLEL_SIMULATION_ENCODE) {
     FrameProbInfo *const temp_frame_probs = &cpi->ppi->temp_frame_probs;
     if (cpi->sf.tx_sf.tx_type_search.prune_tx_type_using_stats) {
@@ -1046,6 +1046,26 @@ void av1_save_all_coding_context(AV1_COMP *cpi);
 #if DUMP_RECON_FRAMES == 1
 void av1_dump_filtered_recon_frames(AV1_COMP *cpi);
 #endif
+
+static AOM_INLINE int av1_get_enc_border_size(bool resize, bool all_intra,
+                                              BLOCK_SIZE sb_size) {
+  // For allintra encoding mode, inter-frame motion search is not applicable and
+  // the intraBC motion vectors are restricted within the tile boundaries. Hence
+  // a smaller frame border size (AOM_ENC_ALLINTRA_BORDER) is used in this case.
+  if (resize) {
+    return AOM_BORDER_IN_PIXELS;
+  }
+  if (all_intra) {
+    return AOM_ENC_ALLINTRA_BORDER;
+  }
+  return block_size_wide[sb_size] + 32;
+}
+
+static AOM_INLINE bool av1_is_resize_needed(const AV1EncoderConfig *oxcf) {
+  const ResizeCfg *resize_cfg = &oxcf->resize_cfg;
+  const SuperResCfg *superres_cfg = &oxcf->superres_cfg;
+  return resize_cfg->resize_mode || superres_cfg->superres_mode;
+}
 
 #ifdef __cplusplus
 }  // extern "C"

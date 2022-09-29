@@ -17,16 +17,18 @@
 #include "src/core/SkTInternalLList.h"
 #include "src/text/gpu/SubRunContainer.h"
 
-class SkGlyphRunList;
 class SkMatrixProvider;
 class SkStrikeClient;
 class SkSurfaceProps;
 class SkTextBlob;
 class SkTextBlobRunIterator;
 
-namespace sktext::gpu {
-class Glyph;
-class StrikeCache;
+namespace sktext {
+class GlyphRunList;
+    namespace gpu {
+    class Glyph;
+    class StrikeCache;
+    }
 }
 
 #if SK_SUPPORT_GPU  // Ganesh support
@@ -60,7 +62,7 @@ public:
     // Key is not used as part of a hash map, so the hash is never taken. It's only used in a
     // list search using operator =().
     struct Key {
-        static std::tuple<bool, Key> Make(const SkGlyphRunList& glyphRunList,
+        static std::tuple<bool, Key> Make(const GlyphRunList& glyphRunList,
                                           const SkPaint& paint,
                                           const SkMatrix& drawMatrix,
                                           const SkStrikeDeviceInfo& strikeDevice);
@@ -88,11 +90,11 @@ public:
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(TextBlob);
 
     // Make a TextBlob and its sub runs.
-    static sk_sp<TextBlob> Make(const SkGlyphRunList& glyphRunList,
+    static sk_sp<TextBlob> Make(const sktext::GlyphRunList& glyphRunList,
                                 const SkPaint& paint,
                                 const SkMatrix& positionMatrix,
                                 SkStrikeDeviceInfo strikeDeviceInfo,
-                                SkStrikeForGPUCacheInterface* strikeCache);
+                                StrikeForGPUCacheInterface* strikeCache);
 
     TextBlob(SubRunAllocator&& alloc,
              SubRunContainerOwner subRuns,
@@ -125,6 +127,12 @@ public:
               const SkPaint& paint,
               skgpu::v1::SurfaceDrawContext* sdc);
 #endif
+#if defined(SK_GRAPHITE_ENABLED)
+    void draw(SkCanvas*,
+              SkPoint drawOrigin,
+              const SkPaint& paint,
+              skgpu::graphite::Device* device);
+#endif
     const AtlasSubRun* testingOnlyFirstSubRun() const;
 
 private:
@@ -140,18 +148,16 @@ private:
     const SkColor fInitialLuminance;
 
     Key fKey;
-
-    bool fSomeGlyphsExcluded{false};
 };
 
 }  // namespace sktext::gpu
 
 namespace skgpu::v1 {
 sk_sp<sktext::gpu::Slug> MakeSlug(const SkMatrixProvider& drawMatrix,
-                                  const SkGlyphRunList& glyphRunList,
+                                  const sktext::GlyphRunList& glyphRunList,
                                   const SkPaint& initialPaint,
                                   const SkPaint& drawingPaint,
                                   SkStrikeDeviceInfo strikeDeviceInfo,
-                                  SkStrikeForGPUCacheInterface* strikeCache);
+                                  sktext::StrikeForGPUCacheInterface* strikeCache);
 }  // namespace skgpu::v1
 #endif  // sktext_gpu_TextBlob_DEFINED

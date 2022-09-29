@@ -126,7 +126,6 @@ namespace internal {
     function_template_info)                                                    \
   V(_, OBJECT_TEMPLATE_INFO_TYPE, ObjectTemplateInfo, object_template_info)    \
   V(_, ACCESS_CHECK_INFO_TYPE, AccessCheckInfo, access_check_info)             \
-  V(_, ACCESSOR_INFO_TYPE, AccessorInfo, accessor_info)                        \
   V(_, ACCESSOR_PAIR_TYPE, AccessorPair, accessor_pair)                        \
   V(_, ALIASED_ARGUMENTS_ENTRY_TYPE, AliasedArgumentsEntry,                    \
     aliased_arguments_entry)                                                   \
@@ -166,8 +165,6 @@ namespace internal {
   V(_, TEMPLATE_OBJECT_DESCRIPTION_TYPE, TemplateObjectDescription,            \
     template_object_description)                                               \
   V(_, TUPLE2_TYPE, Tuple2, tuple2)                                            \
-  IF_WASM(V, _, WASM_CONTINUATION_OBJECT_TYPE, WasmContinuationObject,         \
-          wasm_continuation_object)                                            \
   IF_WASM(V, _, WASM_EXCEPTION_TAG_TYPE, WasmExceptionTag, wasm_exception_tag) \
   IF_WASM(V, _, WASM_INDIRECT_FUNCTION_TABLE_TYPE, WasmIndirectFunctionTable,  \
           wasm_indirect_function_table)

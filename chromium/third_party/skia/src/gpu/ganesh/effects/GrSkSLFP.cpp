@@ -12,6 +12,7 @@
 #include "include/private/gpu/ganesh/GrContext_Base.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/core/SkVM.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrBaseContextPriv.h"
@@ -21,6 +22,7 @@
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
 class GrSkSLFP::Impl : public ProgramImpl {
@@ -70,7 +72,7 @@ public:
 
                 if (*fSpecialized++ == Specialized::kYes) {
                     SkASSERTF(!isArray, "specializing array uniforms is not allowed");
-                    std::string value = GrGLSLTypeString(gpuType);
+                    std::string value = SkSLTypeString(gpuType);
                     value.append("(");
 
                     bool isFloat = SkSLTypeIsFloatType(gpuType);
@@ -252,8 +254,8 @@ private:
                    const GrFragmentProcessor& _proc) override {
         const GrSkSLFP& outer = _proc.cast<GrSkSLFP>();
         pdman.setRuntimeEffectUniforms(outer.fEffect->uniforms(),
-                                       SkMakeSpan(fUniformHandles),
-                                       SkMakeSpan(outer.specialized(), outer.uniformCount()),
+                                       SkSpan(fUniformHandles),
+                                       SkSpan(outer.specialized(), outer.uniformCount()),
                                        outer.uniformData());
     }
 
@@ -397,7 +399,7 @@ void GrSkSLFP::onAddToKey(const GrShaderCaps& caps, skgpu::KeyBuilder* b) const 
         bool specialize = specialized[i] == Specialized::kYes;
         b->addBool(specialize, "specialize");
         if (specialize) {
-            b->addBytes(iter->sizeInBytes(), uniformData + iter->offset, iter->name.c_str());
+            b->addBytes(iter->sizeInBytes(), uniformData + iter->offset, iter->name);
         }
     }
 }
@@ -450,8 +452,9 @@ std::unique_ptr<GrFragmentProcessor> GrSkSLFP::TestCreate(GrProcessorTestData* d
         c = d->fRandom->nextU();
     }
     auto filter = SkOverdrawColorFilter::MakeWithSkColors(colors);
+    SkSurfaceProps props; // default props for testing
     auto [success, fp] = as_CFB(filter)->asFragmentProcessor(/*inputFP=*/nullptr, d->context(),
-                                                             GrColorInfo{});
+                                                             GrColorInfo{}, props);
     SkASSERT(success);
     return std::move(fp);
 }

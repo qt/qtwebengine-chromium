@@ -10,6 +10,11 @@
 class CJX_ObjectEmbedderTest : public XFAJSEmbedderTest {};
 
 // Should not crash, but document is not valid.
-TEST_F(CJX_ObjectEmbedderTest, BUG_1327884) {
+TEST_F(CJX_ObjectEmbedderTest, Bug1327884) {
   ASSERT_FALSE(OpenDocument("bug_1327884.pdf"));
+}
+
+// Should not CHECK(), but document is uninteresting.
+TEST_F(CJX_ObjectEmbedderTest, Bug1333298) {
+  ASSERT_TRUE(OpenDocument("bug_1333298.pdf"));
 }

@@ -22,11 +22,11 @@ import {publishConnectedFlows, publishSelectedFlows} from '../frontend/publish';
 import {
   ACTUAL_FRAMES_SLICE_TRACK_KIND,
   Config as ActualConfig,
-} from '../tracks/actual_frames/common';
+} from '../tracks/actual_frames';
 import {
   Config as SliceConfig,
   SLICE_TRACK_KIND,
-} from '../tracks/chrome_slices/common';
+} from '../tracks/chrome_slices';
 
 import {Controller} from './controller';
 import {globals} from './globals';
@@ -51,6 +51,31 @@ export class FlowEventsController extends Controller<'main'> {
 
   constructor(private args: FlowEventsControllerArgs) {
     super('main');
+
+    // Create |CHROME_CUSTOME_SLICE_NAME| helper, which combines slice name
+    // and args for some slices (scheduler tasks and mojo messages) for more
+    // helpful messages.
+    // In the future, it should be replaced with this a more scalable and
+    // customisable solution.
+    // Note that a function here is significantly faster than a join.
+    this.args.engine.query(`
+      SELECT CREATE_FUNCTION(
+        'CHROME_CUSTOM_SLICE_NAME(slice_id LONG)',
+        'STRING',
+        'select case
+           when name="Receive mojo message" then
+            printf("Receive mojo message (interface=%s, hash=%s)",
+              EXTRACT_ARG(arg_set_id,
+                          "chrome_mojo_event_info.mojo_interface_tag"),
+              EXTRACT_ARG(arg_set_id, "chrome_mojo_event_info.ipc_hash"))
+           when name="ThreadControllerImpl::RunTask" or
+                name="ThreadPool_RunTask" then
+            printf("RunTask(posted_from=%s:%s)",
+             EXTRACT_ARG(arg_set_id, "task.posted_from.file_name"),
+             EXTRACT_ARG(arg_set_id, "task.posted_from.function_name"))
+         end
+         from slice where id=$slice_id'
+    );`);
   }
 
   queryFlowEvents(query: string, callback: (flows: Flow[]) => void) {
@@ -60,6 +85,7 @@ export class FlowEventsController extends Controller<'main'> {
         beginSliceId: NUM,
         beginTrackId: NUM,
         beginSliceName: STR_NULL,
+        beginSliceChromeCustomName: STR_NULL,
         beginSliceCategory: STR_NULL,
         beginSliceStartTs: NUM,
         beginSliceEndTs: NUM,
@@ -69,6 +95,7 @@ export class FlowEventsController extends Controller<'main'> {
         endSliceId: NUM,
         endTrackId: NUM,
         endSliceName: STR_NULL,
+        endSliceChromeCustomName: STR_NULL,
         endSliceCategory: STR_NULL,
         endSliceStartTs: NUM,
         endSliceEndTs: NUM,
@@ -84,6 +111,10 @@ export class FlowEventsController extends Controller<'main'> {
         const beginTrackId = it.beginTrackId;
         const beginSliceName =
             it.beginSliceName === null ? 'NULL' : it.beginSliceName;
+        const beginSliceChromeCustomName =
+            it.beginSliceChromeCustomName === null ?
+            undefined :
+            it.beginSliceChromeCustomName;
         const beginSliceCategory =
             it.beginSliceCategory === null ? 'NULL' : it.beginSliceCategory;
         const beginSliceStartTs = fromNs(it.beginSliceStartTs);
@@ -98,6 +129,9 @@ export class FlowEventsController extends Controller<'main'> {
         const endTrackId = it.endTrackId;
         const endSliceName =
             it.endSliceName === null ? 'NULL' : it.endSliceName;
+        const endSliceChromeCustomName = it.endSliceChromeCustomName === null ?
+            undefined :
+            it.endSliceChromeCustomName;
         const endSliceCategory =
             it.endSliceCategory === null ? 'NULL' : it.endSliceCategory;
         const endSliceStartTs = fromNs(it.endSliceStartTs);
@@ -120,6 +154,7 @@ export class FlowEventsController extends Controller<'main'> {
             trackId: beginTrackId,
             sliceId: beginSliceId,
             sliceName: beginSliceName,
+            sliceChromeCustomName: beginSliceChromeCustomName,
             sliceCategory: beginSliceCategory,
             sliceStartTs: beginSliceStartTs,
             sliceEndTs: beginSliceEndTs,
@@ -131,6 +166,7 @@ export class FlowEventsController extends Controller<'main'> {
             trackId: endTrackId,
             sliceId: endSliceId,
             sliceName: endSliceName,
+            sliceChromeCustomName: endSliceChromeCustomName,
             sliceCategory: endSliceCategory,
             sliceStartTs: endSliceStartTs,
             sliceEndTs: endSliceEndTs,
@@ -168,6 +204,7 @@ export class FlowEventsController extends Controller<'main'> {
       f.slice_out as beginSliceId,
       t1.track_id as beginTrackId,
       t1.name as beginSliceName,
+      CHROME_CUSTOM_SLICE_NAME(t1.slice_id) as beginSliceChromeCustomName,
       t1.category as beginSliceCategory,
       t1.ts as beginSliceStartTs,
       (t1.ts+t1.dur) as beginSliceEndTs,
@@ -177,6 +214,7 @@ export class FlowEventsController extends Controller<'main'> {
       f.slice_in as endSliceId,
       t2.track_id as endTrackId,
       t2.name as endSliceName,
+      CHROME_CUSTOM_SLICE_NAME(t2.slice_id) as endSliceChromeCustomName,
       t2.category as endSliceCategory,
       t2.ts as endSliceStartTs,
       (t2.ts+t2.dur) as endSliceEndTs,
@@ -239,6 +277,7 @@ export class FlowEventsController extends Controller<'main'> {
       f.slice_out as beginSliceId,
       t1.track_id as beginTrackId,
       t1.name as beginSliceName,
+      CHROME_CUSTOM_SLICE_NAME(t1.slice_id) as beginSliceChromeCustomName,
       t1.category as beginSliceCategory,
       t1.ts as beginSliceStartTs,
       (t1.ts+t1.dur) as beginSliceEndTs,
@@ -248,6 +287,7 @@ export class FlowEventsController extends Controller<'main'> {
       f.slice_in as endSliceId,
       t2.track_id as endTrackId,
       t2.name as endSliceName,
+      CHROME_CUSTOM_SLICE_NAME(t2.slice_id) as endSliceChromeCustomName,
       t2.category as endSliceCategory,
       t2.ts as endSliceStartTs,
       (t2.ts+t2.dur) as endSliceEndTs,

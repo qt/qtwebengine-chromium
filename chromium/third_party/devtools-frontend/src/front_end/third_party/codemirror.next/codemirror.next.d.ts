@@ -168,6 +168,7 @@ interface SyntaxNodeRef {
     readonly name: string;
     readonly tree: Tree | null;
     readonly node: SyntaxNode;
+    matchContext(context: readonly string[]): boolean;
 }
 interface SyntaxNode extends SyntaxNodeRef {
     parent: SyntaxNode | null;
@@ -234,7 +235,6 @@ declare class InputStream {
     pos: number;
     private rangeIndex;
     private range;
-    resolveOffset(offset: number, assoc: -1 | 1): number;
     peek(offset: number): any;
     acceptToken(token: number, endOffset?: number): void;
     private getChunk;
@@ -242,14 +242,12 @@ declare class InputStream {
     advance(n?: number): number;
     private setDone;
 }
-interface Tokenizer {
-}
 interface ExternalOptions {
     contextual?: boolean;
     fallback?: boolean;
     extend?: boolean;
 }
-declare class ExternalTokenizer implements Tokenizer {
+declare class ExternalTokenizer {
     constructor(token: (input: InputStream, stack: Stack) => void, options?: ExternalOptions);
 }
 
@@ -271,6 +269,10 @@ interface ParserConfig {
         from: ExternalTokenizer;
         to: ExternalTokenizer;
     }[];
+    specializers?: {
+        from: (value: string, stack: Stack) => number;
+        to: (value: string, stack: Stack) => number;
+    }[];
     contextTracker?: ContextTracker<any>;
     strict?: boolean;
     wrap?: ParseWrapper;
@@ -286,6 +288,7 @@ declare class LRParser extends Parser {
     hasWrappers(): boolean;
     getName(term: number): string;
     get topNode(): NodeType;
+    static deserialize(spec: any): LRParser;
 }
 
 /**
@@ -553,6 +556,7 @@ stores the document length, and can only be applied to documents
 with exactly that length.
 */
 declare class ChangeSet extends ChangeDesc {
+    private constructor();
     /**
     Apply the changes to a document, returning the modified
     document.
@@ -638,6 +642,7 @@ declare class SelectionRange {
     */
     readonly to: number;
     private flags;
+    private constructor();
     /**
     The anchor of the range—the side that doesn't move when you
     extend it.
@@ -708,6 +713,7 @@ declare class EditorSelection {
     usually the range that was added last).
     */
     readonly mainIndex: number;
+    private constructor();
     /**
     Map a selection through a change. Used to adjust the selection
     position for changes.
@@ -792,13 +798,14 @@ declare type FacetConfig<Input, Output> = {
     */
     static?: boolean;
     /**
-    If given, these extension(s) will be added to any state where
-    this facet is provided. (Note that, while a facet's default
-    value can be read from a state even if the facet wasn't present
-    in the state at all, these extensions won't be added in that
+    If given, these extension(s) (or the result of calling the given
+    function with the facet) will be added to any state where this
+    facet is provided. (Note that, while a facet's default value can
+    be read from a state even if the facet wasn't present in the
+    state at all, these extensions won't be added in that
     situation.)
     */
-    enables?: Extension;
+    enables?: Extension | ((self: Facet<Input, Output>) => Extension);
 };
 /**
 A facet is a labeled value that is associated with an editor
@@ -1175,6 +1182,7 @@ declare class Transaction {
     transaction is dispatched.
     */
     readonly scrollIntoView: boolean;
+    private constructor();
     /**
     The new document produced by the transaction. Contrary to
     [`.state`](https://codemirror.net/6/docs/ref/#state.Transaction.state)`.doc`, accessing this won't
@@ -1332,6 +1340,7 @@ declare class EditorState {
     The current selection.
     */
     readonly selection: EditorSelection;
+    private constructor();
     /**
     Retrieve the value of a [state field](https://codemirror.net/6/docs/ref/#state.StateField). Throws
     an error when the state doesn't have that field, unless you pass
@@ -1493,8 +1502,13 @@ declare class EditorState {
     Look up a translation for the given phrase (via the
     [`phrases`](https://codemirror.net/6/docs/ref/#state.EditorState^phrases) facet), or return the
     original string if no translation is found.
+
+    If additional arguments are passed, they will be inserted in
+    place of markers like `$1` (for the first value) and `$2`, etc.
+    A single `$` is equivalent to `$1`, and `$$` will produce a
+    literal dollar sign.
     */
-    phrase(phrase: string): string;
+    phrase(phrase: string, ...insert: any[]): string;
     /**
     A facet used to register [language
     data](https://codemirror.net/6/docs/ref/#state.EditorState.languageDataAt) providers.
@@ -1647,6 +1661,7 @@ declare class Range<T extends RangeValue> {
     The value associated with this range.
     */
     readonly value: T;
+    private constructor();
 }
 /**
 Collection of methods used when comparing range sets.
@@ -1747,6 +1762,7 @@ way that makes them efficient to [map](https://codemirror.net/6/docs/ref/#state.
 structure.
 */
 declare class RangeSet<T extends RangeValue> {
+    private constructor();
     /**
     The number of ranges in the set.
     */
@@ -2089,6 +2105,25 @@ declare abstract class Decoration extends RangeValue {
     your decoration.
     */
     readonly spec: any;
+    protected constructor(
+    /**
+    @internal
+    */
+    startSide: number,
+    /**
+    @internal
+    */
+    endSide: number,
+    /**
+    @internal
+    */
+    widget: WidgetType | null,
+    /**
+    The config object used to create this decoration. You can
+    include additional properties in there to store metadata about
+    your decoration.
+    */
+    spec: any);
     abstract eq(other: Decoration): boolean;
     /**
     Create a mark decoration, which influences the styling of the
@@ -2186,10 +2221,10 @@ interface PluginSpec<V extends PluginValue> {
     provide?: (plugin: ViewPlugin<V>) => Extension;
     /**
     Allow the plugin to provide decorations. When given, this should
-    a function that take the plugin value and return a [decoration
-    set](https://codemirror.net/6/docs/ref/#view.DecorationSet). See also the caveat about
-    [layout-changing decorations](https://codemirror.net/6/docs/ref/#view.EditorView^decorations)
-    that depend on the view.
+    be a function that take the plugin value and return a
+    [decoration set](https://codemirror.net/6/docs/ref/#view.DecorationSet). See also the caveat about
+    [layout-changing decorations](https://codemirror.net/6/docs/ref/#view.EditorView^decorations) that
+    depend on the view.
     */
     decorations?: (value: V) => DecorationSet;
 }
@@ -2260,6 +2295,7 @@ declare class ViewUpdate {
     The previous editor state.
     */
     readonly startState: EditorState;
+    private constructor();
     /**
     Tells you whether the [viewport](https://codemirror.net/6/docs/ref/#view.EditorView.viewport) or
     [visible ranges](https://codemirror.net/6/docs/ref/#view.EditorView.visibleRanges) changed in this
@@ -2401,10 +2437,16 @@ declare class BidiSpan {
     get dir(): Direction;
 }
 
-interface EditorConfig {
+/**
+The type of object given to the [`EditorView`](https://codemirror.net/6/docs/ref/#view.EditorView)
+constructor.
+*/
+interface EditorViewConfig extends EditorStateConfig {
     /**
-    The view's initial state. Defaults to an extension-less state
-    with an empty document.
+    The view's initial state. If not given, a new state is created
+    by passing this configuration object to
+    [`EditorState.create`](https://codemirror.net/6/docs/ref/#state.EditorState^create), using its
+    `doc`, `selection`, and `extensions` field (if provided).
     */
     state?: EditorState;
     /**
@@ -2483,10 +2525,11 @@ declare class EditorView {
     */
     get compositionStarted(): boolean;
     private _dispatch;
+    private _root;
     /**
     The document or shadow root that the view lives in.
     */
-    readonly root: DocumentOrShadowRoot;
+    get root(): DocumentOrShadowRoot;
     /**
     The DOM element that wraps the entire editor view.
     */
@@ -2518,11 +2561,7 @@ declare class EditorView {
     option, or put `view.dom` into your document after creating a
     view, so that the user can see the editor.
     */
-    constructor(
-    /**
-    Initialization options.
-    */
-    config?: EditorConfig);
+    constructor(config?: EditorViewConfig);
     /**
     All regular editor state updates should go through this. It
     takes a transaction or transaction spec and updates the view to
@@ -2592,13 +2631,14 @@ declare class EditorView {
     /**
     Find the text line or block widget at the given vertical
     position (which is interpreted as relative to the [top of the
-    document](https://codemirror.net/6/docs/ref/#view.EditorView.documentTop)
+    document](https://codemirror.net/6/docs/ref/#view.EditorView.documentTop)).
     */
     elementAtHeight(height: number): BlockInfo;
     /**
     Find the line block (see
     [`lineBlockAt`](https://codemirror.net/6/docs/ref/#view.EditorView.lineBlockAt) at the given
-    height.
+    height, again interpreted relative to the [top of the
+    document](https://codemirror.net/6/docs/ref/#view.EditorView.documentTop).
     */
     lineBlockAtHeight(height: number): BlockInfo;
     /**
@@ -2761,6 +2801,11 @@ declare class EditorView {
     */
     focus(): void;
     /**
+    Update the [root](https://codemirror.net/6/docs/ref/##view.EditorViewConfig.root) in which the editor lives. This is only
+    necessary when moving the editor's existing DOM to a new window or shadow root.
+    */
+    setRoot(root: Document | ShadowRoot): void;
+    /**
     Clean up this editor view, removing its element from the
     document, unregistering event handlers, and notifying
     plugins. The view instance can no longer be used after
@@ -2830,8 +2875,8 @@ declare class EditorView {
     /**
     By default, the editor assumes all its content has the same
     [text direction](https://codemirror.net/6/docs/ref/#view.Direction). Configure this with a `true`
-    value to make it read and store the text direction of every
-    (rendered) line separately.
+    value to make it read the text direction of every (rendered)
+    line separately.
     */
     static perLineTextDirection: Facet<boolean, boolean>;
     /**
@@ -2973,6 +3018,11 @@ declare class EditorView {
     search match).
     */
     static announce: StateEffectType<string>;
+    /**
+    Retrieve an editor view instance from the view's DOM
+    representation.
+    */
+    static findFromDOM(dom: HTMLElement): EditorView | null;
 }
 /**
 Helper type that maps event names to event object types, or the
@@ -3174,7 +3224,7 @@ represent a matching configuration.
 */
 declare class MatchDecorator {
     private regexp;
-    private getDeco;
+    private addMatch;
     private boundary;
     private maxLength;
     /**
@@ -3191,7 +3241,18 @@ declare class MatchDecorator {
         The decoration to apply to matches, either directly or as a
         function of the match.
         */
-        decoration: Decoration | ((match: RegExpExecArray, view: EditorView, pos: number) => Decoration);
+        decoration?: Decoration | ((match: RegExpExecArray, view: EditorView, pos: number) => Decoration);
+        /**
+        Customize the way decorations are added for matches. This
+        function, when given, will be called for matches and should
+        call `add` to create decorations for them. Note that the
+        decorations should appear *in* the given range, and the
+        function should have no side effects beyond calling `add`.
+
+        The `decoration` option is ignored when `decorate` is
+        provided.
+        */
+        decorate?: (add: (from: number, to: number, decoration: Decoration) => void, from: number, to: number, match: RegExpExecArray, view: EditorView) => void;
         /**
         By default, changed lines are re-matched entirely. You can
         provide a boundary expression, which should match single
@@ -3994,6 +4055,11 @@ interface FoldGutterConfig {
     Supply event handlers for DOM events on this gutter.
     */
     domEventHandlers?: Handlers;
+    /**
+    When given, if this returns true for a given view update,
+    recompute the fold markers.
+    */
+    foldingChanged?: (update: ViewUpdate) => boolean;
 }
 /**
 Create an extension that registers a fold gutter, which shows a
@@ -4179,6 +4245,18 @@ declare class StringStream {
     private lastColumnPos;
     private lastColumnValue;
     /**
+    Create a stream.
+    */
+    constructor(
+    /**
+    The line.
+    */
+    string: string, tabSize: number,
+    /**
+    The current indent unit size.
+    */
+    indentUnit: number);
+    /**
     True if we are at the end of the line.
     */
     eol(): boolean;
@@ -4328,6 +4406,15 @@ interface CompletionConfig {
     */
     activateOnTyping?: boolean;
     /**
+    By default, when completion opens, the first option is selected
+    and can be confirmed with
+    [`acceptCompletion`](https://codemirror.net/6/docs/ref/#autocomplete.acceptCompletion). When this
+    is set to false, the completion widget starts with no completion
+    selected, and the user has to explicitly move to a completion
+    before you can confirm one.
+    */
+    selectOnOpen?: boolean;
+    /**
     Override the completion sources used. By default, they will be
     taken from the `"autocomplete"` [language
     data](https://codemirror.net/6/docs/ref/#state.EditorState.languageDataAt) (which should hold
@@ -4335,6 +4422,11 @@ interface CompletionConfig {
     of [completions](https://codemirror.net/6/docs/ref/#autocomplete.Completion)).
     */
     override?: readonly CompletionSource[] | null;
+    /**
+    Determines whether the completion tooltip is closed when the
+    editor loses focus. Defaults to true.
+    */
+    closeOnBlur?: boolean;
     /**
     The maximum number of options to render to the DOM.
     */
@@ -4376,6 +4468,12 @@ interface CompletionConfig {
         render: (completion: Completion, state: EditorState) => Node | null;
         position: number;
     }[];
+    /**
+    The comparison function to use when sorting completions with the same
+    match score. Defaults to using
+    [`localeCompare`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/localeCompare).
+    */
+    compareCompletions?: (a: Completion, b: Completion) => number;
 }
 
 /**
@@ -4551,6 +4649,14 @@ interface CompletionResult {
     */
     filter?: boolean;
     /**
+    When [`filter`](https://codemirror.net/6/docs/ref/#autocomplete.CompletionResult.filter) is set to
+    `false`, this may be provided to compute the ranges on the label
+    that match the input. Should return an array of numbers where
+    each pair of adjacent numbers provide the start and end of a
+    range.
+    */
+    getMatch?: (completion: Completion) => readonly number[];
+    /**
     Synchronously update the completion result after typing or
     deletion. If given, this should not do any expensive work, since
     it will be called during editor state updates. The function
@@ -4667,6 +4773,9 @@ interface AttrSpec {
     */
     completion?: Partial<Completion>;
 }
+/**
+Create a completion source for the given schema.
+*/
 declare function completeFromSchema(eltSpecs: readonly ElementSpec[], attrSpecs: readonly AttrSpec[]): CompletionSource;
 
 /**
@@ -4935,12 +5044,14 @@ declare function markdown$1(config?: {
     */
     defaultCodeLanguage?: Language | LanguageSupport;
     /**
-    A collection of language descriptions to search through for a
-    matching language (with
-    [`LanguageDescription.matchLanguageName`](https://codemirror.net/6/docs/ref/#language.LanguageDescription^matchLanguageName))
-    when a fenced code block has an info string.
+    A source of language support for highlighting fenced code
+    blocks. When it is an array, the parser will use
+    [`LanguageDescription.matchLanguageName`](https://codemirror.net/6/docs/ref/#language.LanguageDescription^matchLanguageName)
+    with the fenced code info to find a matching language. When it
+    is a function, will be called with the info string and may
+    return a language or `LanguageDescription` object.
     */
-    codeLanguages?: readonly LanguageDescription[];
+    codeLanguages?: readonly LanguageDescription[] | ((info: string) => Language | LanguageDescription | null);
     /**
     Set this to false to disable installation of the Markdown
     [keymap](https://codemirror.net/6/docs/ref/#lang-markdown.markdownKeymap).
@@ -5003,6 +5114,11 @@ interface Diagnostic {
     The message associated with this diagnostic.
     */
     message: string;
+    /**
+    An optional custom rendering function that displays the message
+    as a DOM node.
+    */
+    renderMessage?: () => Node;
     /**
     An optional array of actions that can be taken on this
     diagnostic.
@@ -5132,7 +5248,7 @@ declare const redoSelection: StateCommand;
 Default key bindings for the undo history.
 
 - Mod-z: [`undo`](https://codemirror.net/6/docs/ref/#commands.undo).
-- Mod-y (Mod-Shift-z on macOS): [`redo`](https://codemirror.net/6/docs/ref/#commands.redo).
+- Mod-y (Mod-Shift-z on macOS) + Ctrl-Shift-z on Linux: [`redo`](https://codemirror.net/6/docs/ref/#commands.redo).
 - Mod-u: [`undoSelection`](https://codemirror.net/6/docs/ref/#commands.undoSelection).
 - Alt-u (Mod-Shift-u on macOS): [`redoSelection`](https://codemirror.net/6/docs/ref/#commands.redoSelection).
 */
@@ -5244,10 +5360,40 @@ declare namespace index_d$2 {
 }
 
 /**
+Type used to specify tags to complete.
+*/
+interface TagSpec {
+    /**
+    Define tag-specific attributes. Property names are attribute
+    names, and property values can be null to indicate free-form
+    attributes, or a list of strings for suggested attribute values.
+    */
+    attrs?: Record<string, null | readonly string[]>;
+    /**
+    Can be used to specify a list of child tags that are valid
+    inside this tag. The default is to allow any tag.
+    */
+    children?: readonly string[];
+}
+/**
 HTML tag completion. Opens and closes tags and attributes in a
 context-aware way.
 */
 declare function htmlCompletionSource(context: CompletionContext): CompletionResult | null;
+/**
+Create a completion source for HTML extended with additional tags
+or attributes.
+*/
+declare function htmlCompletionSourceWith(config: {
+    /**
+    Define extra tag names to complete.
+    */
+    extraTags?: Record<string, TagSpec>;
+    /**
+    Add global attributes that are available on all tags.
+    */
+    extraGlobalAttributes?: Record<string, null | readonly string[]>;
+}): (context: CompletionContext) => CompletionResult | null;
 
 /**
 A language provider based on the [Lezer HTML
@@ -5274,6 +5420,14 @@ declare function html(config?: {
     is included in the support extensions. Defaults to true.
     */
     autoCloseTags?: boolean;
+    /**
+    Add additional tags that can be completed.
+    */
+    extraTags?: Record<string, TagSpec>;
+    /**
+    Add additional completable attributes to all tags.
+    */
+    extraGlobalAttributes?: Record<string, null | readonly string[]>;
 }): LanguageSupport;
 /**
 Extension that will automatically insert close tags when a `>` or
@@ -5281,14 +5435,18 @@ Extension that will automatically insert close tags when a `>` or
 */
 declare const autoCloseTags$1: Extension;
 
+type index_d$1_TagSpec = TagSpec;
 declare const index_d$1_html: typeof html;
 declare const index_d$1_htmlCompletionSource: typeof htmlCompletionSource;
+declare const index_d$1_htmlCompletionSourceWith: typeof htmlCompletionSourceWith;
 declare const index_d$1_htmlLanguage: typeof htmlLanguage;
 declare namespace index_d$1 {
   export {
+    index_d$1_TagSpec as TagSpec,
     autoCloseTags$1 as autoCloseTags,
     index_d$1_html as html,
     index_d$1_htmlCompletionSource as htmlCompletionSource,
+    index_d$1_htmlCompletionSourceWith as htmlCompletionSourceWith,
     index_d$1_htmlLanguage as htmlLanguage,
   };
 }
@@ -5347,11 +5505,18 @@ packages may help with that.
 */
 declare function esLint(eslint: any, config?: any): (view: EditorView) => Diagnostic[];
 
+/**
+Completion source that looks up locally defined names in
+JavaScript code.
+*/
+declare function localCompletionSource(context: CompletionContext): CompletionResult | null;
+
 declare const index_d_autoCloseTags: typeof autoCloseTags;
 declare const index_d_esLint: typeof esLint;
 declare const index_d_javascript: typeof javascript;
 declare const index_d_javascriptLanguage: typeof javascriptLanguage;
 declare const index_d_jsxLanguage: typeof jsxLanguage;
+declare const index_d_localCompletionSource: typeof localCompletionSource;
 declare const index_d_snippets: typeof snippets;
 declare const index_d_tsxLanguage: typeof tsxLanguage;
 declare const index_d_typescriptLanguage: typeof typescriptLanguage;
@@ -5362,6 +5527,7 @@ declare namespace index_d {
     index_d_javascript as javascript,
     index_d_javascriptLanguage as javascriptLanguage,
     index_d_jsxLanguage as jsxLanguage,
+    index_d_localCompletionSource as localCompletionSource,
     index_d_snippets as snippets,
     index_d_tsxLanguage as tsxLanguage,
     index_d_typescriptLanguage as typescriptLanguage,

@@ -1,24 +1,126 @@
 Unreleased:
   Tracing service and probes:
+    *
+  Trace Processor:
+    *
+  UI:
+    *
+  SDK:
+    * Added support for startup tracing. Tracing can be started in an app
+      before it connects to the tracing service.
+      The data sources which are started for startup tracing, will
+      be automatically adopted to normal tracing session once we start
+      normal tracing session.
+
+
+v28.0 - 2022-08-02:
+  Tracing service and probes:
+    * Add android.statsd datasource.
+    * Removed log spam about sys.trace.traced_started in standalone builds.
+    * Changed kallsyms parsing in traced_probes (ftrace) to be always
+      synchronous (when starting the trace, rather than on the first batch).
+    * Added ksyms_mem_policy = KSYMS_RETAIN_FOREVER config to avoid destroying
+      and re-parsing kallsysm repeatedly in benchmark runs.
+    * Improve heap profiling shutdown: now the shared memory buffer where
+      alloc/free records are stored is properly flushed when stopping the data
+      source.
+    * Fixed race condition in the daemonization path of perfetto --background.
+      It would cause daemonization failures if the TTY is destroyed immediately.
+  Trace Processor:
+    * Deprecate calling NotifyEndOfFile more than once: Flush should instead be
+      used for all but the final call.
+    * Added ingestion and visualization of I2C transactions.
+  UI:
+    * Changed callstack sampling selection: selecting one sample now only shows
+      one stacktrace, selecting multiple samples shows the aggregation.
+  SDK:
+    * Fixed a bug (b/239725760) that would cause abstract sockets using the
+      "@name" syntax in PERFETTO_CONSUMER_SOCK_NAME/PERFETTO_PRODUCER_SOCK_NAME
+      to have a trailing \0 in the socket name. This breaks interoperability
+      with adb forwarding. This is a tracing protocol breaking change. Nobody
+      seems to be relying on @abstract syntax across different versions of
+      client vs service.
+    * Changed the mangling scheme for protozero enums nested in another message:
+      instead of OuterClass_Enum_VALUE, the enum values will be just named
+      VALUE with the enum itself wrapped in a perfetto_pbzero_enum_OuterClass
+      namespace to prevent naming collisions. This will allow the users
+      to alias the enum directly and use throughout their code.
+      The exact name mangling scheme is a carry-over from libprotobuf and
+      an internal implementation detail, so nobody should be relying on that.
+    * Added protozero::EnumToString() to convert enum keys to string literals.
+
+
+v27.1 - 2022-07-11:
+  SDK:
+    * Added an API for shutting down Perfetto.
+
+
+v27.0 - 2022-07-01:
+  Tracing service and probes:
+    * Fix rare crash due to watchdog timeout being too short.
+  Trace Processor:
+    * Removed enable_perfetto_x64_cpu_opt by default for x64 MacOS
+      since it caused issues for CIs.
+    * Improved performance of filtering and sorting on most queries.
+  UI:
+    * Changed sorting of process groups to take slice count and presence of
+      perf profiles into account.
+  SDK:
+    * 
+
+
+v26.1 - 2022-06-13:
+  Trace Processor:
+    * Fixed build failures on Windows.
+
+
+v26.0 - 2022-06-13:
+  Tracing service and probes:
     * Added wildcard (*) support when targeting processes by their command line
       in the Android perf profiler ("linux.perf" data source) and Java heap
       snapshots ("android.java_hprof").
     * Added support for kernel thread sampling, and kernel-only callstacks in
       the Android perf profiler.
+    * Fixed rare crash when parsing zero-length ftrace __data_loc strings.
+    * Fixed rare crash on 4.19 kernel when encountering unexpected zero-padded
+      ftrace pages.
+    * Removed capturing of thread_time_in_state (per-UID, per-OOM-adj time).
+      The data was unused and subsumed by correlating sched data with power
+      rail monitors.
   Trace Processor:
+    * Added CREATE_VIEW_FUNCTION operator to define a SQL function that can
+      return a temporary table and yield multiple rows and columns.
     * Changed kernel threads to be represented as single-thread processes in
       Linux system traces. The (incorrect) legacy behaviour was to treat them
       as threads of the kthreadd process.
     * Added ABS_TIME_STR function which converts a trace timestamp to
       an ISO8601 string.
+    * Added ingestion for phase='R' events, used by performance.{now,mark}().
     * Changed 'trace_to_text' to be named 'traceconv'. The source
       location also moved from 'tools/trace_to_text' to 'src/traceconv'.
     * Changed compiler flags, added -mavx2. The previous patch in v22.0 was
       supposed to add AVX2 support but added only AVX.
+    * Changed the handling of the last per-cpu sched slices: rather than
+      extending the last event to the end of the trace, the last scheduling
+      event has a -1 duration. UIs are supposed to deal with visual extension.
+    * Removed android_thread_time_in_state metric. It was an experiment and was
+      unused.
+    * Removed `instant` table. All instant events are now 0-duration events in
+      the `slice` table.
+    * Removed the /raw_query REST endpoint from --httpd. This will break very
+      old clients that have not switched over the new streaming-based /query
+      endoint or even newer /websocket.
   UI:
-    *
+    * Changed detail panel to separate slice args from generic slice properties.
+    * Automatically enabled sched_compact when generating trace configs for 
+      Android S+ targets.
   SDK:
-    *
+    * Added option for recording thread CPU times at the beginning and end of
+      each slice.
+    * Added perfetto::DynamicString() to use non-literal strings as event names
+      in the TRACE_EVENT API.
+    * Remove the pre-SDK consumer_api_deprecated interface. It was introduced
+      for iorapd, now deleted from the Android tree.
 
 
 v25.0 - 2022-04-01:

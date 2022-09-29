@@ -83,6 +83,7 @@ class Ticker;
 
 class ExistingCodeLogger {
  public:
+  using CodeTag = LogEventListener::CodeTag;
   explicit ExistingCodeLogger(Isolate* isolate,
                               LogEventListener* listener = nullptr)
       : isolate_(isolate), listener_(listener) {}
@@ -93,8 +94,8 @@ class ExistingCodeLogger {
   void LogCompiledFunctions();
   void LogExistingFunction(
       Handle<SharedFunctionInfo> shared, Handle<AbstractCode> code,
-      LogEventListener::LogEventsAndTags tag = LogEventListener::FUNCTION_TAG);
-  void LogCodeObject(Object object);
+      LogEventListener::CodeTag tag = LogEventListener::CodeTag::kFunction);
+  void LogCodeObject(AbstractCode object);
 
  private:
   Isolate* isolate_;
@@ -167,18 +168,18 @@ class V8FileLogger : public LogEventListener {
   V8_EXPORT_PRIVATE void RemoveLogEventListener(LogEventListener* listener);
 
   // LogEventListener implementation.
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        const char* name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<Name> name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name, int line, int column) override;
 #if V8_ENABLE_WEBASSEMBLY
-  void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
+  void CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                        wasm::WasmName name, const char* source_url,
                        int code_offset, int script_id) override;
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -234,13 +235,6 @@ class V8FileLogger : public LogEventListener {
 
   V8_EXPORT_PRIVATE void TimerEvent(v8::LogEventStatus se, const char* name);
 
-  void BasicBlockCounterEvent(const char* name, int block_id, uint32_t count);
-
-  void BasicBlockBranchEvent(const char* name, int true_block_id,
-                             int false_block_id);
-
-  void BuiltinHashEvent(const char* name, int hash);
-
   static void EnterExternal(Isolate* isolate);
   static void LeaveExternal(Isolate* isolate);
 
@@ -283,8 +277,7 @@ class V8FileLogger : public LogEventListener {
   void LogAllMaps();
 
   // Converts tag to a corresponding NATIVE_... if the script is native.
-  V8_INLINE static LogEventListener::LogEventsAndTags ToNativeByScript(
-      LogEventListener::LogEventsAndTags, Script);
+  V8_INLINE static CodeTag ToNativeByScript(CodeTag tag, Script script);
 
  private:
   void UpdateIsLogging(bool value);
@@ -297,11 +290,10 @@ class V8FileLogger : public LogEventListener {
                              Address entry_point);
 
   // Internal configurable move event.
-  void MoveEventInternal(LogEventListener::LogEventsAndTags event, Address from,
-                         Address to);
+  void MoveEventInternal(Event event, Address from, Address to);
 
   // Helper method. It resets name_buffer_ and add tag name into it.
-  void InitNameBuffer(LogEventListener::LogEventsAndTags tag);
+  void InitNameBuffer(Event tag);
 
   // Emits a profiler tick event. Used by the profiler thread.
   void TickEvent(TickSample* sample, bool overflow);
@@ -352,7 +344,7 @@ class V8FileLogger : public LogEventListener {
 #ifdef ENABLE_GDB_JIT_INTERFACE
   std::unique_ptr<JitLogger> gdb_jit_logger_;
 #endif
-#if defined(V8_OS_WIN) && defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
+#if defined(V8_OS_WIN) && defined(V8_ENABLE_ETW_STACK_WALKING)
   std::unique_ptr<JitLogger> etw_jit_logger_;
 #endif
   std::set<int> logged_source_code_;
@@ -409,18 +401,18 @@ class V8_EXPORT_PRIVATE CodeEventLogger : public LogEventListener {
   explicit CodeEventLogger(Isolate* isolate);
   ~CodeEventLogger() override;
 
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        const char* name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<Name> name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> script_name, int line, int column) override;
 #if V8_ENABLE_WEBASSEMBLY
-  void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
+  void CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                        wasm::WasmName name, const char* source_url,
                        int code_offset, int script_id) override;
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -477,18 +469,18 @@ class ExternalLogEventListener : public LogEventListener {
   explicit ExternalLogEventListener(Isolate* isolate);
   ~ExternalLogEventListener() override;
 
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        const char* comment) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<Name> name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared,
                        Handle<Name> name) override;
-  void CodeCreateEvent(LogEventsAndTags tag, Handle<AbstractCode> code,
+  void CodeCreateEvent(CodeTag tag, Handle<AbstractCode> code,
                        Handle<SharedFunctionInfo> shared, Handle<Name> source,
                        int line, int column) override;
 #if V8_ENABLE_WEBASSEMBLY
-  void CodeCreateEvent(LogEventsAndTags tag, const wasm::WasmCode* code,
+  void CodeCreateEvent(CodeTag tag, const wasm::WasmCode* code,
                        wasm::WasmName name, const char* source_url,
                        int code_offset, int script_id) override;
 #endif  // V8_ENABLE_WEBASSEMBLY

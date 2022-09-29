@@ -28,7 +28,8 @@ class SharedArrayBufferBuiltinsAssembler : public CodeStubAssembler {
                                  TNode<Context> context,
                                  TNode<Int32T>* out_elements_kind,
                                  TNode<RawPtrT>* out_backing_store,
-                                 Label* detached);
+                                 Label* detached,
+                                 Label* shared_struct_or_shared_array);
 
   TNode<UintPtrT> ValidateAtomicAccess(TNode<JSTypedArray> array,
                                        TNode<Object> index,
@@ -52,21 +53,21 @@ class SharedArrayBufferBuiltinsAssembler : public CodeStubAssembler {
 
 // https://tc39.es/ecma262/#sec-validateintegertypedarray
 void SharedArrayBufferBuiltinsAssembler::ValidateIntegerTypedArray(
-    TNode<Object> maybe_array, TNode<Context> context,
+    TNode<Object> maybe_array_or_shared_object, TNode<Context> context,
     TNode<Int32T>* out_elements_kind, TNode<RawPtrT>* out_backing_store,
-    Label* detached) {
+    Label* detached, Label* is_shared_struct_or_shared_array = nullptr) {
   Label not_float_or_clamped(this), invalid(this);
 
   // The logic of TypedArrayBuiltinsAssembler::ValidateTypedArrayBuffer is
   // inlined to avoid duplicate error branches.
 
   // Fail if it is not a heap object.
-  GotoIf(TaggedIsSmi(maybe_array), &invalid);
+  GotoIf(TaggedIsSmi(maybe_array_or_shared_object), &invalid);
 
   // Fail if the array's instance type is not JSTypedArray.
-  TNode<Map> map = LoadMap(CAST(maybe_array));
+  TNode<Map> map = LoadMap(CAST(maybe_array_or_shared_object));
   GotoIfNot(IsJSTypedArrayMap(map), &invalid);
-  TNode<JSTypedArray> array = CAST(maybe_array);
+  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_object);
 
   // Fail if the array's JSArrayBuffer is detached / out of bounds.
   GotoIf(IsJSArrayBufferViewDetachedOrOutOfBoundsBoolean(array), detached);
@@ -89,8 +90,14 @@ void SharedArrayBufferBuiltinsAssembler::ValidateIntegerTypedArray(
 
   BIND(&invalid);
   {
+    if (is_shared_struct_or_shared_array) {
+      GotoIf(IsJSSharedStruct(maybe_array_or_shared_object),
+             is_shared_struct_or_shared_array);
+      GotoIf(IsJSSharedArray(maybe_array_or_shared_object),
+             is_shared_struct_or_shared_array);
+    }
     ThrowTypeError(context, MessageTemplate::kNotIntegerTypedArray,
-                   maybe_array);
+                   maybe_array_or_shared_object);
   }
 
   BIND(&not_float_or_clamped);
@@ -183,22 +190,19 @@ TNode<BigInt> SharedArrayBufferBuiltinsAssembler::BigIntFromUnsigned64(
 
 // https://tc39.es/ecma262/#sec-atomicload
 TF_BUILTIN(AtomicsLoad, SharedArrayBufferBuiltinsAssembler) {
-  auto maybe_array_or_shared_struct =
-      Parameter<Object>(Descriptor::kArrayOrSharedStruct);
+  auto maybe_array_or_shared_object =
+      Parameter<Object>(Descriptor::kArrayOrSharedObject);
   auto index_or_field_name = Parameter<Object>(Descriptor::kIndexOrFieldName);
   auto context = Parameter<Context>(Descriptor::kContext);
 
-  Label shared_struct(this);
-  GotoIf(IsJSSharedStruct(maybe_array_or_shared_struct), &shared_struct);
-
   // 1. Let buffer be ? ValidateIntegerTypedArray(typedArray).
-  Label detached_or_out_of_bounds(this);
+  Label detached_or_out_of_bounds(this), is_shared_struct_or_shared_array(this);
   TNode<Int32T> elements_kind;
   TNode<RawPtrT> backing_store;
-  ValidateIntegerTypedArray(maybe_array_or_shared_struct, context,
-                            &elements_kind, &backing_store,
-                            &detached_or_out_of_bounds);
-  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_struct);
+  ValidateIntegerTypedArray(
+      maybe_array_or_shared_object, context, &elements_kind, &backing_store,
+      &detached_or_out_of_bounds, &is_shared_struct_or_shared_array);
+  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_object);
 
   // 2. Let i be ? ValidateAtomicAccess(typedArray, index).
   TNode<UintPtrT> index_word =
@@ -247,7 +251,7 @@ TF_BUILTIN(AtomicsLoad, SharedArrayBufferBuiltinsAssembler) {
   BIND(&u32);
   Return(ChangeUint32ToTagged(AtomicLoad<Uint32T>(
       AtomicMemoryOrder::kSeqCst, backing_store, WordShl(index_word, 2))));
-#if V8_TARGET_ARCH_MIPS && !_MIPS_ARCH_MIPS32R6
+#if (V8_TARGET_ARCH_MIPS && !_MIPS_ARCH_MIPS32R6)
   BIND(&i64);
   Goto(&u64);
 
@@ -264,7 +268,7 @@ TF_BUILTIN(AtomicsLoad, SharedArrayBufferBuiltinsAssembler) {
   BIND(&u64);
   Return(BigIntFromUnsigned64(AtomicLoad64<AtomicUint64>(
       AtomicMemoryOrder::kSeqCst, backing_store, WordShl(index_word, 3))));
-#endif
+#endif  //(V8_TARGET_ARCH_MIPS && !_MIPS_ARCH_MIPS32R6)
 
   // This shouldn't happen, we've already validated the type.
   BIND(&other);
@@ -276,32 +280,29 @@ TF_BUILTIN(AtomicsLoad, SharedArrayBufferBuiltinsAssembler) {
                    "Atomics.load");
   }
 
-  BIND(&shared_struct);
+  BIND(&is_shared_struct_or_shared_array);
   {
-    Return(CallRuntime(Runtime::kAtomicsLoadSharedStructField, context,
-                       maybe_array_or_shared_struct, index_or_field_name));
+    Return(CallRuntime(Runtime::kAtomicsLoadSharedStructOrArray, context,
+                       maybe_array_or_shared_object, index_or_field_name));
   }
 }
 
 // https://tc39.es/ecma262/#sec-atomics.store
 TF_BUILTIN(AtomicsStore, SharedArrayBufferBuiltinsAssembler) {
-  auto maybe_array_or_shared_struct =
-      Parameter<Object>(Descriptor::kArrayOrSharedStruct);
+  auto maybe_array_or_shared_object =
+      Parameter<Object>(Descriptor::kArrayOrSharedObject);
   auto index_or_field_name = Parameter<Object>(Descriptor::kIndexOrFieldName);
   auto value = Parameter<Object>(Descriptor::kValue);
   auto context = Parameter<Context>(Descriptor::kContext);
 
-  Label shared_struct(this);
-  GotoIf(IsJSSharedStruct(maybe_array_or_shared_struct), &shared_struct);
-
   // 1. Let buffer be ? ValidateIntegerTypedArray(typedArray).
-  Label detached_or_out_of_bounds(this);
+  Label detached_or_out_of_bounds(this), is_shared_struct_or_shared_array(this);
   TNode<Int32T> elements_kind;
   TNode<RawPtrT> backing_store;
-  ValidateIntegerTypedArray(maybe_array_or_shared_struct, context,
-                            &elements_kind, &backing_store,
-                            &detached_or_out_of_bounds);
-  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_struct);
+  ValidateIntegerTypedArray(
+      maybe_array_or_shared_object, context, &elements_kind, &backing_store,
+      &detached_or_out_of_bounds, &is_shared_struct_or_shared_array);
+  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_object);
 
   // 2. Let i be ? ValidateAtomicAccess(typedArray, index).
   TNode<UintPtrT> index_word =
@@ -390,36 +391,33 @@ TF_BUILTIN(AtomicsStore, SharedArrayBufferBuiltinsAssembler) {
                    "Atomics.store");
   }
 
-  BIND(&shared_struct);
+  BIND(&is_shared_struct_or_shared_array);
   {
-    Return(CallRuntime(Runtime::kAtomicsStoreSharedStructField, context,
-                       maybe_array_or_shared_struct, index_or_field_name,
+    Return(CallRuntime(Runtime::kAtomicsStoreSharedStructOrArray, context,
+                       maybe_array_or_shared_object, index_or_field_name,
                        value));
   }
 }
 
 // https://tc39.es/ecma262/#sec-atomics.exchange
 TF_BUILTIN(AtomicsExchange, SharedArrayBufferBuiltinsAssembler) {
-  auto maybe_array_or_shared_struct =
-      Parameter<Object>(Descriptor::kArrayOrSharedStruct);
+  auto maybe_array_or_shared_object =
+      Parameter<Object>(Descriptor::kArrayOrSharedObject);
   auto index_or_field_name = Parameter<Object>(Descriptor::kIndexOrFieldName);
   auto value = Parameter<Object>(Descriptor::kValue);
   auto context = Parameter<Context>(Descriptor::kContext);
-
-  Label shared_struct(this);
-  GotoIf(IsJSSharedStruct(maybe_array_or_shared_struct), &shared_struct);
 
   // Inlines AtomicReadModifyWrite
   // https://tc39.es/ecma262/#sec-atomicreadmodifywrite
 
   // 1. Let buffer be ? ValidateIntegerTypedArray(typedArray).
-  Label detached_or_out_of_bounds(this);
+  Label detached_or_out_of_bounds(this), is_shared_struct_or_shared_array(this);
   TNode<Int32T> elements_kind;
   TNode<RawPtrT> backing_store;
-  ValidateIntegerTypedArray(maybe_array_or_shared_struct, context,
-                            &elements_kind, &backing_store,
-                            &detached_or_out_of_bounds);
-  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_struct);
+  ValidateIntegerTypedArray(
+      maybe_array_or_shared_object, context, &elements_kind, &backing_store,
+      &detached_or_out_of_bounds, &is_shared_struct_or_shared_array);
+  TNode<JSTypedArray> array = CAST(maybe_array_or_shared_object);
 
   // 2. Let i be ? ValidateAtomicAccess(typedArray, index).
   TNode<UintPtrT> index_word =
@@ -525,8 +523,7 @@ TF_BUILTIN(AtomicsExchange, SharedArrayBufferBuiltinsAssembler) {
   // This shouldn't happen, we've already validated the type.
   BIND(&other);
   Unreachable();
-#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 ||
-        // V8_TARGET_ARCH_RISCV64
+#endif  // V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64
 
   BIND(&detached_or_out_of_bounds);
   {
@@ -534,10 +531,10 @@ TF_BUILTIN(AtomicsExchange, SharedArrayBufferBuiltinsAssembler) {
                    "Atomics.exchange");
   }
 
-  BIND(&shared_struct);
+  BIND(&is_shared_struct_or_shared_array);
   {
-    Return(CallRuntime(Runtime::kAtomicsExchangeSharedStructField, context,
-                       maybe_array_or_shared_struct, index_or_field_name,
+    Return(CallRuntime(Runtime::kAtomicsExchangeSharedStructOrArray, context,
+                       maybe_array_or_shared_object, index_or_field_name,
                        value));
   }
 }

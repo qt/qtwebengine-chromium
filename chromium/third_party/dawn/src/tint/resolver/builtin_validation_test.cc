@@ -24,8 +24,8 @@ using ResolverBuiltinValidationTest = ResolverTest;
 
 TEST_F(ResolverBuiltinValidationTest, FunctionTypeMustMatchReturnStatementType_void_fail) {
     // fn func { return workgroupBarrier(); }
-    Func("func", {}, ty.void_(),
-         {
+    Func("func", utils::Empty, ty.void_(),
+         utils::Vector{
              Return(Call(Source{Source::Location{12, 34}}, "workgroupBarrier")),
          });
 
@@ -36,10 +36,18 @@ TEST_F(ResolverBuiltinValidationTest, FunctionTypeMustMatchReturnStatementType_v
 TEST_F(ResolverBuiltinValidationTest, InvalidPipelineStageDirect) {
     // @compute @workgroup_size(1) fn func { return dpdx(1.0); }
 
-    auto* dpdx =
-        create<ast::CallExpression>(Source{{3, 4}}, Expr("dpdx"), ast::ExpressionList{Expr(1_f)});
-    Func(Source{{1, 2}}, "func", ast::VariableList{}, ty.void_(), {CallStmt(dpdx)},
-         {Stage(ast::PipelineStage::kCompute), WorkgroupSize(1_i)});
+    auto* dpdx = create<ast::CallExpression>(Source{{3, 4}}, Expr("dpdx"),
+                                             utils::Vector{
+                                                 Expr(1_f),
+                                             });
+    Func(Source{{1, 2}}, "func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(dpdx),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "3:4 error: built-in cannot be used by compute pipeline stage");
@@ -51,16 +59,33 @@ TEST_F(ResolverBuiltinValidationTest, InvalidPipelineStageIndirect) {
     // fn f2 { f1(); }
     // @compute @workgroup_size(1) fn main { return f2(); }
 
-    auto* dpdx =
-        create<ast::CallExpression>(Source{{3, 4}}, Expr("dpdx"), ast::ExpressionList{Expr(1_f)});
-    Func(Source{{1, 2}}, "f0", {}, ty.void_(), {CallStmt(dpdx)});
+    auto* dpdx = create<ast::CallExpression>(Source{{3, 4}}, Expr("dpdx"),
+                                             utils::Vector{
+                                                 Expr(1_f),
+                                             });
+    Func(Source{{1, 2}}, "f0", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(dpdx),
+         });
 
-    Func(Source{{3, 4}}, "f1", {}, ty.void_(), {CallStmt(Call("f0"))});
+    Func(Source{{3, 4}}, "f1", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("f0")),
+         });
 
-    Func(Source{{5, 6}}, "f2", {}, ty.void_(), {CallStmt(Call("f1"))});
+    Func(Source{{5, 6}}, "f2", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("f1")),
+         });
 
-    Func(Source{{7, 8}}, "main", {}, ty.void_(), {CallStmt(Call("f2"))},
-         {Stage(ast::PipelineStage::kCompute), WorkgroupSize(1_i)});
+    Func(Source{{7, 8}}, "main", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call("f2")),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kCompute),
+             WorkgroupSize(1_i),
+         });
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -72,27 +97,28 @@ TEST_F(ResolverBuiltinValidationTest, InvalidPipelineStageIndirect) {
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsFunction) {
-    Func(Source{{12, 34}}, "mix", {}, ty.i32(), {});
+    Func(Source{{12, 34}}, "mix", utils::Empty, ty.i32(), {});
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
               R"(12:34 error: 'mix' is a builtin and cannot be redeclared as a function)");
 }
 
-TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalLet) {
+TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalConst) {
     GlobalConst(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i));
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: 'mix' is a builtin and cannot be redeclared as a module-scope let)");
+              R"(12:34 error: 'mix' is a builtin and cannot be redeclared as a 'const')");
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsGlobalVar) {
-    Global(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), ast::StorageClass::kPrivate);
+    GlobalVar(Source{{12, 34}}, "mix", ty.i32(), Expr(1_i), ast::StorageClass::kPrivate);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: 'mix' is a builtin and cannot be redeclared as a module-scope var)");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: 'mix' is a builtin and cannot be redeclared as a module-scope 'var')");
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsAlias) {
@@ -104,7 +130,10 @@ TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsAlias) {
 }
 
 TEST_F(ResolverBuiltinValidationTest, BuiltinRedeclaredAsStruct) {
-    Structure(Source{{12, 34}}, "mix", {Member("m", ty.i32())});
+    Structure(Source{{12, 34}}, "mix",
+              utils::Vector{
+                  Member("m", ty.i32()),
+              });
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -225,7 +254,7 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, Immediate) {
     overload.BuildSamplerVariable(this);
 
     auto args = overload.args(this);
-    auto*& arg_to_replace = (param.position == Position::kFirst) ? args.front() : args.back();
+    auto*& arg_to_replace = (param.position == Position::kFirst) ? args.Front() : args.Back();
 
     // BuildTextureVariable() uses a Literal for scalars, and a CallExpression for
     // a vector constructor.
@@ -238,8 +267,13 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, Immediate) {
     arg_to_replace = expr(Source{{12, 34}}, *this);
 
     // Call the builtin with the constexpr argument replaced
-    Func("func", {}, ty.void_(), {CallStmt(Call(overload.function, args))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call(overload.function, args)),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     if (expr.invalid_index == Constexpr::kValid) {
         EXPECT_TRUE(r()->Resolve()) << r()->error();
@@ -250,11 +284,11 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, Immediate) {
             err << "12:34 error: each component of the " << param.name
                 << " argument must be at least " << param.min << " and at most " << param.max
                 << ". " << param.name << " component " << expr.invalid_index << " is "
-                << std::to_string(expr.values[expr.invalid_index]);
+                << std::to_string(expr.values[static_cast<size_t>(expr.invalid_index)]);
         } else {
             err << "12:34 error: the " << param.name << " argument must be at least " << param.min
                 << " and at most " << param.max << ". " << param.name << " is "
-                << std::to_string(expr.values[expr.invalid_index]);
+                << std::to_string(expr.values[static_cast<size_t>(expr.invalid_index)]);
         }
         EXPECT_EQ(r()->error(), err.str());
     }
@@ -270,11 +304,11 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, GlobalConst) {
     overload.BuildTextureVariable(this);
     overload.BuildSamplerVariable(this);
 
-    // Build the module-scope let 'G' with the offset value
+    // Build the module-scope const 'G' with the offset value
     GlobalConst("G", nullptr, expr({}, *this));
 
     auto args = overload.args(this);
-    auto*& arg_to_replace = (param.position == Position::kFirst) ? args.front() : args.back();
+    auto*& arg_to_replace = (param.position == Position::kFirst) ? args.Front() : args.Back();
 
     // Make the expression to be replaced, reachable. This keeps the resolver
     // happy.
@@ -283,15 +317,19 @@ TEST_P(BuiltinTextureConstExprArgValidationTest, GlobalConst) {
     arg_to_replace = Expr(Source{{12, 34}}, "G");
 
     // Call the builtin with the constexpr argument replaced
-    Func("func", {}, ty.void_(), {CallStmt(Call(overload.function, args))},
-         {Stage(ast::PipelineStage::kFragment)});
+    Func("func", utils::Empty, ty.void_(),
+         utils::Vector{
+             CallStmt(Call(overload.function, args)),
+         },
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     EXPECT_FALSE(r()->Resolve());
     std::stringstream err;
     err << "12:34 error: the " << param.name << " argument must be a const_expression";
     EXPECT_EQ(r()->error(), err.str());
 }
-
 INSTANTIATE_TEST_SUITE_P(
     Offset2D,
     BuiltinTextureConstExprArgValidationTest,
@@ -378,12 +416,12 @@ using ResolverDP4aExtensionValidationTest = ResolverTest;
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithExtension) {
     // enable chromium_experimental_dp4a;
     // fn func { return dot4I8Packed(1u, 2u); }
-    Enable(ast::Extension::kChromiumExperimentalDP4a);
+    Enable(ast::Extension::kChromiumExperimentalDp4A);
 
-    Func("func", {}, ty.i32(),
-         {
+    Func("func", utils::Empty, ty.i32(),
+         utils::Vector{
              Return(Call(Source{Source::Location{12, 34}}, "dot4I8Packed",
-                         ast::ExpressionList{Expr(1_u), Expr(2_u)})),
+                         utils::Vector{Expr(1_u), Expr(2_u)})),
          });
 
     EXPECT_TRUE(r()->Resolve());
@@ -391,10 +429,10 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithExtension) {
 
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithoutExtension) {
     // fn func { return dot4I8Packed(1u, 2u); }
-    Func("func", {}, ty.i32(),
-         {
+    Func("func", utils::Empty, ty.i32(),
+         utils::Vector{
              Return(Call(Source{Source::Location{12, 34}}, "dot4I8Packed",
-                         ast::ExpressionList{Expr(1_u), Expr(2_u)})),
+                         utils::Vector{Expr(1_u), Expr(2_u)})),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -406,12 +444,12 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4I8PackedWithoutExtension) {
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithExtension) {
     // enable chromium_experimental_dp4a;
     // fn func { return dot4U8Packed(1u, 2u); }
-    Enable(ast::Extension::kChromiumExperimentalDP4a);
+    Enable(ast::Extension::kChromiumExperimentalDp4A);
 
-    Func("func", {}, ty.u32(),
-         {
+    Func("func", utils::Empty, ty.u32(),
+         utils::Vector{
              Return(Call(Source{Source::Location{12, 34}}, "dot4U8Packed",
-                         ast::ExpressionList{Expr(1_u), Expr(2_u)})),
+                         utils::Vector{Expr(1_u), Expr(2_u)})),
          });
 
     EXPECT_TRUE(r()->Resolve());
@@ -419,10 +457,10 @@ TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithExtension) {
 
 TEST_F(ResolverDP4aExtensionValidationTest, Dot4U8PackedWithoutExtension) {
     // fn func { return dot4U8Packed(1u, 2u); }
-    Func("func", {}, ty.u32(),
-         {
+    Func("func", utils::Empty, ty.u32(),
+         utils::Vector{
              Return(Call(Source{Source::Location{12, 34}}, "dot4U8Packed",
-                         ast::ExpressionList{Expr(1_u), Expr(2_u)})),
+                         utils::Vector{Expr(1_u), Expr(2_u)})),
          });
 
     EXPECT_FALSE(r()->Resolve());

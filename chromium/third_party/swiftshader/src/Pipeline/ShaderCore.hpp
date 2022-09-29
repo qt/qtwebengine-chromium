@@ -17,6 +17,7 @@
 
 #include "Reactor/Print.hpp"
 #include "Reactor/Reactor.hpp"
+#include "Reactor/SIMD.hpp"
 #include "System/Debug.hpp"
 
 #include <array>
@@ -75,42 +76,48 @@ public:
 	Int4 w;
 };
 
-// SIMD contains types that represent multiple scalars packed into a single
-// vector data type. Types in the SIMD namespace provide a semantic hint
-// that the data should be treated as a per-execution-lane scalar instead of
-// a typical euclidean-style vector type.
 namespace SIMD {
 
-// Width is the number of per-lane scalars packed into each SIMD vector.
-static constexpr int Width = 4;
+using namespace rr::SIMD;
 
-using Float = rr::Float4;
-using Int = rr::Int4;
-using UInt = rr::UInt4;
-using Pointer = rr::Pointer4;
+struct Float4
+{
+	SIMD::Float x;
+	SIMD::Float y;
+	SIMD::Float z;
+	SIMD::Float w;
+};
+
+struct Int4
+{
+	SIMD::Int x;
+	SIMD::Int y;
+	SIMD::Int z;
+	SIMD::Int w;
+};
 
 }  // namespace SIMD
 
 // Vulkan 'SPIR-V Extended Instructions for GLSL' (GLSL.std.450) compliant transcendental functions
-RValue<Float4> Sin(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Cos(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Tan(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Asin(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Acos(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Atan(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Atan2(RValue<Float4> y, RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Exp2(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Log2(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Exp(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Log(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y, bool relaxedPrecision);
-RValue<Float4> Sinh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Cosh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Tanh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Asinh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Acosh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Atanh(RValue<Float4> x, bool relaxedPrecision);
-RValue<Float4> Sqrt(RValue<Float4> x, bool relaxedPrecision);
+RValue<SIMD::Float> Sin(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Cos(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Tan(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Asin(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Acos(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Atan(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Atan2(RValue<SIMD::Float> y, RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Exp2(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Log2(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Exp(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Log(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Pow(RValue<SIMD::Float> x, RValue<SIMD::Float> y, bool relaxedPrecision);
+RValue<SIMD::Float> Sinh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Cosh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Tanh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Asinh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Acosh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Atanh(RValue<SIMD::Float> x, bool relaxedPrecision);
+RValue<SIMD::Float> Sqrt(RValue<SIMD::Float> x, bool relaxedPrecision);
 
 // Math functions with uses outside of shaders can be invoked using a verbose template argument instead
 // of a Boolean argument to indicate precision. For example Sqrt<Mediump>(x) equals Sqrt(x, true).
@@ -122,19 +129,38 @@ enum Precision
 };
 
 // clang-format off
-template<Precision precision> RValue<Float4> Sqrt(RValue<Float4> x);
-template<> inline RValue<Float4> Sqrt<Highp>(RValue<Float4> x) { return Sqrt(x, false); }
-template<> inline RValue<Float4> Sqrt<Mediump>(RValue<Float4> x) { return Sqrt(x, true); }
+template<Precision precision> RValue<SIMD::Float> Pow(RValue<SIMD::Float> x, RValue<SIMD::Float> y);
+template<> inline RValue<SIMD::Float> Pow<Highp>(RValue<SIMD::Float> x, RValue<SIMD::Float> y) { return Pow(x, y, false); }
+template<> inline RValue<SIMD::Float> Pow<Mediump>(RValue<SIMD::Float> x, RValue<SIMD::Float> y) { return Pow(x, y, true); }
 
+template<Precision precision> RValue<SIMD::Float> Sqrt(RValue<SIMD::Float> x);
+template<> inline RValue<SIMD::Float> Sqrt<Highp>(RValue<SIMD::Float> x) { return Sqrt(x, false); }
+template<> inline RValue<SIMD::Float> Sqrt<Mediump>(RValue<SIMD::Float> x) { return Sqrt(x, true); }
+// clang-format on
+
+SIMD::UInt halfToFloatBits(SIMD::UInt halfBits);
+SIMD::UInt floatToHalfBits(SIMD::UInt floatBits, bool storeInUpperBits);
+SIMD::Float linearToSRGB(const SIMD::Float &c);
+SIMD::Float sRGBtoLinear(const SIMD::Float &c);
+
+RValue<Float4> reciprocal(RValue<Float4> x, bool pp = false, bool exactAtPow2 = false);
+RValue<SIMD::Float> reciprocal(RValue<SIMD::Float> x, bool pp = false, bool exactAtPow2 = false);
+RValue<Float4> reciprocalSquareRoot(RValue<Float4> x, bool abs, bool pp = false);
+
+RValue<SIMD::Float> mulAdd(RValue<SIMD::Float> x, RValue<SIMD::Float> y, RValue<SIMD::Float> z);  // TODO(chromium:1299047)
+
+RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y, bool relaxedPrecision);
+RValue<Float4> Sqrt(RValue<Float4> x, bool relaxedPrecision);
+
+// clang-format off
 template<Precision precision> RValue<Float4> Pow(RValue<Float4> x, RValue<Float4> y);
 template<> inline RValue<Float4> Pow<Highp>(RValue<Float4> x, RValue<Float4> y) { return Pow(x, y, false); }
 template<> inline RValue<Float4> Pow<Mediump>(RValue<Float4> x, RValue<Float4> y) { return Pow(x, y, true); }
+
+template<Precision precision> RValue<Float4> Sqrt(RValue<Float4> x);
+template<> inline RValue<Float4> Sqrt<Highp>(RValue<Float4> x) { return Sqrt(x, false); }
+template<> inline RValue<Float4> Sqrt<Mediump>(RValue<Float4> x) { return Sqrt(x, true); }
 // clang-format on
-
-RValue<Float4> reciprocal(RValue<Float4> x, bool pp = false, bool exactAtPow2 = false);
-RValue<Float4> reciprocalSquareRoot(RValue<Float4> x, bool abs, bool pp = false);
-
-RValue<Float4> mulAdd(RValue<Float4> x, RValue<Float4> y, RValue<Float4> z);  // TODO(chromium:1299047)
 
 void transpose4x4(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
 void transpose4x3(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
@@ -145,8 +171,8 @@ void transpose4x1(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3);
 void transpose2x4(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3);
 void transpose4xN(Float4 &row0, Float4 &row1, Float4 &row2, Float4 &row3, int N);
 
-sw::SIMD::UInt halfToFloatBits(sw::SIMD::UInt halfBits);
-sw::SIMD::UInt floatToHalfBits(sw::SIMD::UInt floatBits, bool storeInUpperBits);
+UInt4 halfToFloatBits(RValue<UInt4> halfBits);
+UInt4 floatToHalfBits(RValue<UInt4> floatBits, bool storeInUpperBits);
 Float4 r11g11b10Unpack(UInt r11g11b10bits);
 UInt r11g11b10Pack(const Float4 &value);
 Float4 linearToSRGB(const Float4 &c);
@@ -158,78 +184,78 @@ inline rr::RValue<T> AndAll(rr::RValue<T> const &mask);
 template<typename T>
 inline rr::RValue<T> OrAll(rr::RValue<T> const &mask);
 
-rr::RValue<sw::SIMD::Float> Sign(rr::RValue<sw::SIMD::Float> const &val);
+rr::RValue<SIMD::Float> Sign(rr::RValue<SIMD::Float> const &val);
 
 // Returns the <whole, frac> of val.
 // Both whole and frac will have the same sign as val.
-std::pair<rr::RValue<sw::SIMD::Float>, rr::RValue<sw::SIMD::Float>>
-Modf(rr::RValue<sw::SIMD::Float> const &val);
+std::pair<rr::RValue<SIMD::Float>, rr::RValue<SIMD::Float>>
+Modf(rr::RValue<SIMD::Float> const &val);
 
 // Returns the number of 1s in bits, per lane.
-sw::SIMD::UInt CountBits(rr::RValue<sw::SIMD::UInt> const &bits);
+SIMD::UInt CountBits(rr::RValue<SIMD::UInt> const &bits);
 
 // Returns 1 << bits.
 // If the resulting bit overflows a 32 bit integer, 0 is returned.
-rr::RValue<sw::SIMD::UInt> NthBit32(rr::RValue<sw::SIMD::UInt> const &bits);
+rr::RValue<SIMD::UInt> NthBit32(rr::RValue<SIMD::UInt> const &bits);
 
 // Returns bitCount number of of 1's starting from the LSB.
-rr::RValue<sw::SIMD::UInt> Bitmask32(rr::RValue<sw::SIMD::UInt> const &bitCount);
+rr::RValue<SIMD::UInt> Bitmask32(rr::RValue<SIMD::UInt> const &bitCount);
 
 // Computes `a * b + c`, which may be fused into one operation to produce a higher-precision result.
-rr::RValue<sw::SIMD::Float> FMA(
-    rr::RValue<sw::SIMD::Float> const &a,
-    rr::RValue<sw::SIMD::Float> const &b,
-    rr::RValue<sw::SIMD::Float> const &c);
+rr::RValue<SIMD::Float> FMA(
+    rr::RValue<SIMD::Float> const &a,
+    rr::RValue<SIMD::Float> const &b,
+    rr::RValue<SIMD::Float> const &c);
 
 // Returns the exponent of the floating point number f.
 // Assumes IEEE 754
-rr::RValue<sw::SIMD::Int> Exponent(rr::RValue<sw::SIMD::Float> f);
+rr::RValue<SIMD::Int> Exponent(rr::RValue<SIMD::Float> f);
 
 // Returns y if y < x; otherwise result is x.
 // If one operand is a NaN, the other operand is the result.
 // If both operands are NaN, the result is a NaN.
-rr::RValue<sw::SIMD::Float> NMin(rr::RValue<sw::SIMD::Float> const &x, rr::RValue<sw::SIMD::Float> const &y);
+rr::RValue<SIMD::Float> NMin(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::Float> const &y);
 
 // Returns y if y > x; otherwise result is x.
 // If one operand is a NaN, the other operand is the result.
 // If both operands are NaN, the result is a NaN.
-rr::RValue<sw::SIMD::Float> NMax(rr::RValue<sw::SIMD::Float> const &x, rr::RValue<sw::SIMD::Float> const &y);
+rr::RValue<SIMD::Float> NMax(rr::RValue<SIMD::Float> const &x, rr::RValue<SIMD::Float> const &y);
 
 // Returns the determinant of a 2x2 matrix.
-rr::RValue<sw::SIMD::Float> Determinant(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b,
-    rr::RValue<sw::SIMD::Float> const &c, rr::RValue<sw::SIMD::Float> const &d);
+rr::RValue<SIMD::Float> Determinant(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b,
+    rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d);
 
 // Returns the determinant of a 3x3 matrix.
-rr::RValue<sw::SIMD::Float> Determinant(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b, rr::RValue<sw::SIMD::Float> const &c,
-    rr::RValue<sw::SIMD::Float> const &d, rr::RValue<sw::SIMD::Float> const &e, rr::RValue<sw::SIMD::Float> const &f,
-    rr::RValue<sw::SIMD::Float> const &g, rr::RValue<sw::SIMD::Float> const &h, rr::RValue<sw::SIMD::Float> const &i);
+rr::RValue<SIMD::Float> Determinant(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c,
+    rr::RValue<SIMD::Float> const &d, rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f,
+    rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h, rr::RValue<SIMD::Float> const &i);
 
 // Returns the determinant of a 4x4 matrix.
-rr::RValue<sw::SIMD::Float> Determinant(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b, rr::RValue<sw::SIMD::Float> const &c, rr::RValue<sw::SIMD::Float> const &d,
-    rr::RValue<sw::SIMD::Float> const &e, rr::RValue<sw::SIMD::Float> const &f, rr::RValue<sw::SIMD::Float> const &g, rr::RValue<sw::SIMD::Float> const &h,
-    rr::RValue<sw::SIMD::Float> const &i, rr::RValue<sw::SIMD::Float> const &j, rr::RValue<sw::SIMD::Float> const &k, rr::RValue<sw::SIMD::Float> const &l,
-    rr::RValue<sw::SIMD::Float> const &m, rr::RValue<sw::SIMD::Float> const &n, rr::RValue<sw::SIMD::Float> const &o, rr::RValue<sw::SIMD::Float> const &p);
+rr::RValue<SIMD::Float> Determinant(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d,
+    rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f, rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h,
+    rr::RValue<SIMD::Float> const &i, rr::RValue<SIMD::Float> const &j, rr::RValue<SIMD::Float> const &k, rr::RValue<SIMD::Float> const &l,
+    rr::RValue<SIMD::Float> const &m, rr::RValue<SIMD::Float> const &n, rr::RValue<SIMD::Float> const &o, rr::RValue<SIMD::Float> const &p);
 
 // Returns the inverse of a 2x2 matrix.
-std::array<rr::RValue<sw::SIMD::Float>, 4> MatrixInverse(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b,
-    rr::RValue<sw::SIMD::Float> const &c, rr::RValue<sw::SIMD::Float> const &d);
+std::array<rr::RValue<SIMD::Float>, 4> MatrixInverse(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b,
+    rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d);
 
 // Returns the inverse of a 3x3 matrix.
-std::array<rr::RValue<sw::SIMD::Float>, 9> MatrixInverse(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b, rr::RValue<sw::SIMD::Float> const &c,
-    rr::RValue<sw::SIMD::Float> const &d, rr::RValue<sw::SIMD::Float> const &e, rr::RValue<sw::SIMD::Float> const &f,
-    rr::RValue<sw::SIMD::Float> const &g, rr::RValue<sw::SIMD::Float> const &h, rr::RValue<sw::SIMD::Float> const &i);
+std::array<rr::RValue<SIMD::Float>, 9> MatrixInverse(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c,
+    rr::RValue<SIMD::Float> const &d, rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f,
+    rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h, rr::RValue<SIMD::Float> const &i);
 
 // Returns the inverse of a 4x4 matrix.
-std::array<rr::RValue<sw::SIMD::Float>, 16> MatrixInverse(
-    rr::RValue<sw::SIMD::Float> const &a, rr::RValue<sw::SIMD::Float> const &b, rr::RValue<sw::SIMD::Float> const &c, rr::RValue<sw::SIMD::Float> const &d,
-    rr::RValue<sw::SIMD::Float> const &e, rr::RValue<sw::SIMD::Float> const &f, rr::RValue<sw::SIMD::Float> const &g, rr::RValue<sw::SIMD::Float> const &h,
-    rr::RValue<sw::SIMD::Float> const &i, rr::RValue<sw::SIMD::Float> const &j, rr::RValue<sw::SIMD::Float> const &k, rr::RValue<sw::SIMD::Float> const &l,
-    rr::RValue<sw::SIMD::Float> const &m, rr::RValue<sw::SIMD::Float> const &n, rr::RValue<sw::SIMD::Float> const &o, rr::RValue<sw::SIMD::Float> const &p);
+std::array<rr::RValue<SIMD::Float>, 16> MatrixInverse(
+    rr::RValue<SIMD::Float> const &a, rr::RValue<SIMD::Float> const &b, rr::RValue<SIMD::Float> const &c, rr::RValue<SIMD::Float> const &d,
+    rr::RValue<SIMD::Float> const &e, rr::RValue<SIMD::Float> const &f, rr::RValue<SIMD::Float> const &g, rr::RValue<SIMD::Float> const &h,
+    rr::RValue<SIMD::Float> const &i, rr::RValue<SIMD::Float> const &j, rr::RValue<SIMD::Float> const &k, rr::RValue<SIMD::Float> const &l,
+    rr::RValue<SIMD::Float> const &m, rr::RValue<SIMD::Float> const &n, rr::RValue<SIMD::Float> const &o, rr::RValue<SIMD::Float> const &p);
 
 ////////////////////////////////////////////////////////////////////////////
 // Inline functions

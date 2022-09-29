@@ -48,12 +48,16 @@ CPDF_Annot* CPDFSDK_BAAnnot::GetPDFPopupAnnot() const {
   return m_pAnnot->GetPopupAnnot();
 }
 
-CPDF_Dictionary* CPDFSDK_BAAnnot::GetAnnotDict() const {
+const CPDF_Dictionary* CPDFSDK_BAAnnot::GetAnnotDict() const {
   return m_pAnnot->GetAnnotDict();
 }
 
-CPDF_Dictionary* CPDFSDK_BAAnnot::GetAPDict() const {
-  return GetOrCreateDict(GetAnnotDict(), pdfium::annotation::kAP);
+RetainPtr<CPDF_Dictionary> CPDFSDK_BAAnnot::GetMutableAnnotDict() {
+  return m_pAnnot->GetMutableAnnotDict();
+}
+
+RetainPtr<CPDF_Dictionary> CPDFSDK_BAAnnot::GetAPDict() {
+  return GetMutableAnnotDict()->GetOrCreateDictFor(pdfium::annotation::kAP);
 }
 
 void CPDFSDK_BAAnnot::ClearCachedAnnotAP() {
@@ -63,7 +67,7 @@ void CPDFSDK_BAAnnot::ClearCachedAnnotAP() {
 bool CPDFSDK_BAAnnot::IsFocusableAnnot(
     const CPDF_Annot::Subtype& annot_type) const {
   return pdfium::Contains(
-      m_pPageView->GetFormFillEnv()->GetFocusableAnnotSubtypes(), annot_type);
+      GetPageView()->GetFormFillEnv()->GetFocusableAnnotSubtypes(), annot_type);
 }
 
 CFX_FloatRect CPDFSDK_BAAnnot::GetRect() const {
@@ -77,7 +81,7 @@ CPDF_Annot::Subtype CPDFSDK_BAAnnot::GetAnnotSubtype() const {
 void CPDFSDK_BAAnnot::DrawAppearance(CFX_RenderDevice* pDevice,
                                      const CFX_Matrix& mtUser2Device,
                                      CPDF_Annot::AppearanceMode mode) {
-  m_pAnnot->DrawAppearance(m_pPageView->GetPDFPage(), pDevice, mtUser2Device,
+  m_pAnnot->DrawAppearance(GetPageView()->GetPDFPage(), pDevice, mtUser2Device,
                            mode);
 }
 
@@ -86,7 +90,7 @@ bool CPDFSDK_BAAnnot::IsAppearanceValid() {
 }
 
 void CPDFSDK_BAAnnot::SetAnnotName(const WideString& sName) {
-  CPDF_Dictionary* pDict = GetAnnotDict();
+  RetainPtr<CPDF_Dictionary> pDict = GetMutableAnnotDict();
   if (sName.IsEmpty()) {
     pDict->RemoveFor(pdfium::annotation::kNM);
     return;
@@ -99,8 +103,8 @@ WideString CPDFSDK_BAAnnot::GetAnnotName() const {
 }
 
 void CPDFSDK_BAAnnot::SetFlags(uint32_t nFlags) {
-  GetAnnotDict()->SetNewFor<CPDF_Number>(pdfium::annotation::kF,
-                                         static_cast<int>(nFlags));
+  GetMutableAnnotDict()->SetNewFor<CPDF_Number>(pdfium::annotation::kF,
+                                                static_cast<int>(nFlags));
 }
 
 uint32_t CPDFSDK_BAAnnot::GetFlags() const {
@@ -108,7 +112,7 @@ uint32_t CPDFSDK_BAAnnot::GetFlags() const {
 }
 
 void CPDFSDK_BAAnnot::SetAppStateOff() {
-  CPDF_Dictionary* pDict = GetAnnotDict();
+  RetainPtr<CPDF_Dictionary> pDict = GetMutableAnnotDict();
   pDict->SetNewFor<CPDF_String>(pdfium::annotation::kAS, "Off", false);
 }
 
@@ -117,30 +121,32 @@ ByteString CPDFSDK_BAAnnot::GetAppState() const {
 }
 
 void CPDFSDK_BAAnnot::SetBorderWidth(int nWidth) {
-  CPDF_Array* pBorder =
-      GetAnnotDict()->GetArrayFor(pdfium::annotation::kBorder);
+  RetainPtr<CPDF_Dictionary> pAnnotDict = GetMutableAnnotDict();
+  RetainPtr<CPDF_Array> pBorder =
+      pAnnotDict->GetMutableArrayFor(pdfium::annotation::kBorder);
   if (pBorder) {
     pBorder->SetNewAt<CPDF_Number>(2, nWidth);
-  } else {
-    CPDF_Dictionary* pBSDict = GetOrCreateDict(GetAnnotDict(), "BS");
-    pBSDict->SetNewFor<CPDF_Number>("W", nWidth);
+    return;
   }
+  pAnnotDict->GetOrCreateDictFor("BS")->SetNewFor<CPDF_Number>("W", nWidth);
 }
 
 int CPDFSDK_BAAnnot::GetBorderWidth() const {
-  if (const CPDF_Array* pBorder =
-          GetAnnotDict()->GetArrayFor(pdfium::annotation::kBorder)) {
+  const CPDF_Array* pBorder =
+      GetAnnotDict()->GetArrayFor(pdfium::annotation::kBorder);
+  if (pBorder)
     return pBorder->GetIntegerAt(2);
-  }
 
-  if (CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS"))
+  const CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS");
+  if (pBSDict)
     return pBSDict->GetIntegerFor("W", 1);
 
   return 1;
 }
 
 void CPDFSDK_BAAnnot::SetBorderStyle(BorderStyle nStyle) {
-  CPDF_Dictionary* pBSDict = GetOrCreateDict(GetAnnotDict(), "BS");
+  RetainPtr<CPDF_Dictionary> pBSDict =
+      GetMutableAnnotDict()->GetOrCreateDictFor("BS");
   const char* name = nullptr;
   switch (nStyle) {
     case BorderStyle::kSolid:
@@ -165,7 +171,7 @@ void CPDFSDK_BAAnnot::SetBorderStyle(BorderStyle nStyle) {
 }
 
 BorderStyle CPDFSDK_BAAnnot::GetBorderStyle() const {
-  CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS");
+  const CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS");
   if (pBSDict) {
     ByteString sBorderStyle = pBSDict->GetStringFor("S", "S");
     if (sBorderStyle == "S")
@@ -246,7 +252,7 @@ void CPDFSDK_BAAnnot::InvalidateRect() {
   view_bounding_box.Inflate(1, 1);
   view_bounding_box.Normalize();
   FX_RECT rect = view_bounding_box.GetOuterRect();
-  m_pPageView->GetFormFillEnv()->Invalidate(GetPage(), rect);
+  GetPageView()->GetFormFillEnv()->Invalidate(GetPage(), rect);
 }
 
 int CPDFSDK_BAAnnot::GetLayoutOrder() const {
@@ -269,7 +275,7 @@ void CPDFSDK_BAAnnot::OnDraw(CFX_RenderDevice* pDevice,
   }
 
   if (!is_focused_ || !IsFocusableAnnot(annot_type) ||
-      this != m_pPageView->GetFormFillEnv()->GetFocusAnnot()) {
+      this != GetPageView()->GetFormFillEnv()->GetFocusAnnot()) {
     return;
   }
 
@@ -350,7 +356,7 @@ bool CPDFSDK_BAAnnot::OnKeyDown(FWL_VKEYCODE nKeyCode,
   }
 
   CPDF_Action action = GetAAction(CPDF_AAction::kKeyStroke);
-  CPDFSDK_FormFillEnvironment* env = m_pPageView->GetFormFillEnv();
+  CPDFSDK_FormFillEnvironment* env = GetPageView()->GetFormFillEnv();
   if (action.GetDict()) {
     return env->DoActionLink(action, CPDF_AAction::kKeyStroke, nFlags);
   }
@@ -420,6 +426,6 @@ CPDF_Dest CPDFSDK_BAAnnot::GetDestination() const {
 
   // Link annotations can have "Dest" entry defined as an explicit array.
   // See ISO 32000-1:2008 spec, section 12.3.2.1.
-  return CPDF_Dest::Create(m_pPageView->GetPDFDocument(),
+  return CPDF_Dest::Create(GetPageView()->GetPDFDocument(),
                            GetAnnotDict()->GetDirectObjectFor("Dest"));
 }

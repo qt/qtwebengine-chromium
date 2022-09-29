@@ -40,6 +40,8 @@ const char kSetNetworkThrottlingFunction[] = "SetNetworkThrottlingStatus";
 const char kSetDNSProxyDOHProvidersFunction[] = "SetDNSProxyDOHProviders";
 const char kAddPasspointCredentialsFunction[] = "AddPasspointCredentials";
 const char kRemovePasspointCredentialsFunction[] = "RemovePasspointCredentials";
+const char kSetTetheringEnabledFunction[] = "SetTetheringEnabled";
+const char kCheckTetheringReadinessFunction[] = "CheckTetheringReadiness";
 
 // Service function names.
 const char kClearPropertiesFunction[] = "ClearProperties";
@@ -92,7 +94,8 @@ const char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
 const char kDisableWiFiVHTProperty[] = "DisableWiFiVHT";
 const char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 const char kEnabledTechnologiesProperty[] = "EnabledTechnologies";
-const char kPortalFallbackUrlsStringProperty[] = "PortalFallbackUrlsString";
+const char kPortalFallbackHttpUrlsProperty[] = "PortalFallbackHttpUrls";
+const char kPortalFallbackHttpsUrlsProperty[] = "PortalFallbackHttpsUrls";
 const char kPortalHttpUrlProperty[] = "PortalHttpUrl";
 const char kPortalHttpsUrlProperty[] = "PortalHttpsUrl";
 const char kProfilesProperty[] = "Profiles";
@@ -100,6 +103,10 @@ const char kServiceCompleteListProperty[] = "ServiceCompleteList";
 const char kServiceWatchListProperty[] = "ServiceWatchList";
 const char kServicesProperty[] = "Services";  // Also used for Profile.
 const char kSupportedVPNTypesProperty[] = "SupportedVPNTypes";
+const char kTetheringAllowedProperty[] = "TetheringAllowed";
+const char kTetheringCapabilitiesProperty[] = "TetheringCapabilities";
+const char kTetheringConfigProperty[] = "TetheringConfig";
+const char kTetheringStatusProperty[] = "TetheringStatus";
 const char kUninitializedTechnologiesProperty[] = "UninitializedTechnologies";
 const char kWakeOnLanEnabledProperty[] = "WakeOnLanEnabled";
 const char kWifiGlobalFTEnabledProperty[] = "WiFi.GlobalFTEnabled";
@@ -605,18 +612,36 @@ const char kTypeVPN[] = "vpn";
 // Flimflam mode options.
 const char kModeManaged[] = "managed";
 
-// Flimflam security options.
+// WiFi SecurityClass options.
+const char kSecurityClassNone[] = "none";
+const char kSecurityClassWep[] = "wep";
+const char kSecurityClassPsk[] = "psk";
+const char kSecurityClass8021x[] = "802_1x";
+// These two are deprecated.  Use kSecurityClass* equivalents above.
+// TODO(b/226138492) Remove this once references in Chrome and Shill are
+// removed.
+const char kSecurityPsk[] = "psk";
+const char kSecurity8021x[] = "802_1x";
+
+// WiFi Security options.
 const char kSecurityNone[] = "none";
 const char kSecurityWep[] = "wep";
-const char kSecurityPsk[] = "psk";
 const char kSecurityWpa[] = "wpa";
+const char kSecurityWpaWpa2[] = "wpa+wpa2";
+const char kSecurityWpaAll[] = "wpa-all";
 // Deprecated.  Use kSecurityWpa2 instead.
 // TODO(b/226138492) Remove this once references in Chrome and Shill are
 // removed.
 const char kSecurityRsn[] = "rsn";
 const char kSecurityWpa2[] = "wpa2";
+const char kSecurityWpa2Wpa3[] = "wpa2+wpa3";
 const char kSecurityWpa3[] = "wpa3";
-const char kSecurity8021x[] = "802_1x";
+const char kSecurityWpaEnterprise[] = "wpa-ent";
+const char kSecurityWpaWpa2Enterprise[] = "wpa+wpa2-ent";
+const char kSecurityWpaAllEnterprise[] = "wpa-all-ent";
+const char kSecurityWpa2Enterprise[] = "wpa2-ent";
+const char kSecurityWpa2Wpa3Enterprise[] = "wpa2+wpa3-ent";
+const char kSecurityWpa3Enterprise[] = "wpa3-ent";
 
 // Compress option values as expected by OpenVPN.
 const char kOpenVPNCompressFramingOnly[] = "";
@@ -744,8 +769,11 @@ const char kEapSubjectAlternativeNameMatchTypeURI[] = "URI";
 
 // WiFi Device kLinkStatisticsProperty sub-property names.
 const char kAverageReceiveSignalDbmProperty[] = "AverageReceiveSignalDbm";
+const char kByteReceiveSuccessesProperty[] = "ByteReceiveSuccesses";
+const char kByteTransmitSuccessesProperty[] = "ByteTransmitSuccesses";
 const char kInactiveTimeMillisecondsProperty[] = "InactiveTimeMilliseconds";
 const char kLastReceiveSignalDbmProperty[] = "LastReceiveSignalDbm";
+const char kPacketReceiveDropProperty[] = "PacketReceiveDrops";
 const char kPacketReceiveSuccessesProperty[] = "PacketReceiveSuccesses";
 const char kPacketTransmitFailuresProperty[] = "PacketTransmitFailures";
 const char kPacketTransmitSuccessesProperty[] = "PacketTrasmitSuccesses";
@@ -862,6 +890,53 @@ const char kTrafficCounterSourcePluginvm[] = "pluginvm";
 const char kTrafficCounterSourceUpdateEngine[] = "update_engine";
 const char kTrafficCounterSourceVpn[] = "vpn";
 const char kTrafficCounterSourceSystem[] = "system";
+
+// Manager kTetheringConfigProperty dictionary key names.
+const char kTetheringConfAutoDisableProperty[] = "auto_disable";
+const char kTetheringConfBandProperty[] = "band";
+const char kTetheringConfPassphraseProperty[] = "passphrase";
+const char kTetheringConfSecurityProperty[] = "security";
+const char kTetheringConfSSIDProperty[] = "ssid";
+const char kTetheringConfUpstreamTech[] = "upstream_technology";
+
+// Manager kTetheringCapabilitiesProperty dictionary key names.
+const char kTetheringCapBandProperty[] = "wifi_bands";
+const char kTetheringCapDownstreamProperty[] = "downstream_technologies";
+const char kTetheringCapSecurityProperty[] = "wifi_security_modes";
+const char kTetheringCapUpstreamProperty[] = "upstream_technologies";
+
+// Manager kTetheringStatusProperty dictionary key names.
+const char kTetheringStatusChannelProperty[] = "channel";
+const char kTetheringStatusClientHostnameProperty[] = "hostname";
+const char kTetheringStatusClientIPv4Property[] = "IPv4";
+const char kTetheringStatusClientIPv6Property[] = "IPv6";
+const char kTetheringStatusClientMACProperty[] = "MAC";
+const char kTetheringStatusClientsProperty[] = "active_clients";
+const char kTetheringStatusDownstreamTechProperty[] = "downstream_technology";
+const char kTetheringStatusErrorProperty[] = "error";
+const char kTetheringStatusStateProperty[] = "state";
+const char kTetheringStatusUpstreamTechProperty[] = "upstream_technology";
+const char kTetheringStatusUpstreamServiceProperty[] = "upstream_service";
+
+// kTetheringStatusStateProperty values
+const char kTetheringStateActive[] = "active";
+const char kTetheringStateFailure[] = "failure";
+const char kTetheringStateIdle[] = "idle";
+const char kTetheringStateStarting[] = "starting";
+const char kTetheringStateStopping[] = "stopping";
+
+// kTetheringStatusErrorProperty values
+const char kTetheringErrorDownstreamFailure[] = "downstream_failure";
+const char kTetheringErrorInvalid[] = "invalid_properties";
+const char kTetheringErrorNetworkFailure[] = "network_failure";
+const char kTetheringErrorNotAllowed[] = "not_allowed";
+const char kTetheringErrorNoUpstream[] = "no_upstream";
+const char kTetheringErrorUpstreamFailure[] = "upstream_failure";
+const char kTetheringErrorUpstreamNotReady[] = "upstream_not_ready";
+
+// kCheckTetheringReadinessFunction return status
+const char kTetheringReadinessReady[] = "ready";
+const char kTetheringReadinessNotAllowed[] = "not_allowed";
 
 }  // namespace shill
 

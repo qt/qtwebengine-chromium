@@ -78,6 +78,8 @@ enum class PatchAttribs {
     kColor = 1 << 3,  // [ubyte4 or float4] Used when patches have different colors.
     kPaintDepth = 1 << 4, // [float] Used in Graphite to specify depth attachment value for draw.
     kExplicitCurveType = 1 << 5,  // [float] Used when GPU can't infer curve type based on infinity.
+    kSsboIndex = 1 << 7,  // [int] Used to index into a shared storage buffer for this patch's
+                          //       uniform values.
 
     // Extra flags.
     kWideColorIfEnabled = 1 << 6,  // If kColor is set, specifies it to be float4 wide color.
@@ -87,9 +89,9 @@ GR_MAKE_BITFIELD_CLASS_OPS(PatchAttribs)
 
 // When PatchAttribs::kExplicitCurveType is set, these are the values that tell the GPU what type of
 // curve is being drawn.
-constexpr static float kCubicCurveType SK_MAYBE_UNUSED = 0;
-constexpr static float kConicCurveType SK_MAYBE_UNUSED = 1;
-constexpr static float kTriangularConicCurveType SK_MAYBE_UNUSED = 2;  // Conic curve with w=Inf.
+constexpr static float kCubicCurveType [[maybe_unused]] = 0;
+constexpr static float kConicCurveType [[maybe_unused]] = 1;
+constexpr static float kTriangularConicCurveType [[maybe_unused]] = 2;  // Conic curve with w=Inf.
 
 // Returns the packed size in bytes of the attribs portion of tessellation patches (or instances) in
 // GPU buffers.
@@ -101,7 +103,8 @@ constexpr size_t PatchAttribsStride(PatchAttribs attribs) {
                     ? (attribs & PatchAttribs::kWideColorIfEnabled ? sizeof(float)
                                                                    : sizeof(uint8_t)) * 4 : 0) +
            (attribs & PatchAttribs::kPaintDepth ? sizeof(float) : 0) +
-           (attribs & PatchAttribs::kExplicitCurveType ? sizeof(float) : 0);
+           (attribs & PatchAttribs::kExplicitCurveType ? sizeof(float) : 0) +
+           (attribs & PatchAttribs::kSsboIndex ? (sizeof(int)) : 0);
 }
 constexpr size_t PatchStride(PatchAttribs attribs) {
     return 4*sizeof(SkPoint) + PatchAttribsStride(attribs);

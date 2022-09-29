@@ -28,6 +28,10 @@ service CastCoreService {
   // Unregisters a Cast Runtime. Usually called by platform.
   rpc UnregisterRuntime(UnregisterRuntimeRequest)
       returns (UnregisterRuntimeResponse);
+
+  // Updates the PrelaunchType of runtime.
+  rpc UpdatePrelaunchType(UpdatePrelaunchTypeRequest)
+      returns (UpdatePrelaunchTypeResponse);
 }
 
 message RegisterRuntimeRequest {
@@ -47,3 +51,13 @@ message UnregisterRuntimeRequest {
 }
 
 message UnregisterRuntimeResponse {}
+
+// Request to update the PrelaunchType of the runtime.
+message UpdatePrelaunchTypeRequest {
+  // Runtime id.
+  string runtime_id = 1;
+  // Prelaunch type.
+  cast.common.PrelaunchType.Type prelaunch_type = 2;
+}
+
+message UpdatePrelaunchTypeResponse {}

@@ -123,8 +123,9 @@ ExternalTextureBase::ExternalTextureBase(DeviceBase* device)
     TrackInDevice();
 }
 
+// Error external texture cannot be used in bind group.
 ExternalTextureBase::ExternalTextureBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-    : ApiObjectBase(device, tag) {}
+    : ApiObjectBase(device, tag), mState(ExternalTextureState::Destroyed) {}
 
 ExternalTextureBase::~ExternalTextureBase() = default;
 
@@ -151,6 +152,8 @@ MaybeError ExternalTextureBase::Initialize(DeviceBase* device,
 
     ExternalTextureParams params;
     params.numPlanes = descriptor->plane1 == nullptr ? 1 : 2;
+
+    params.doYuvToRgbConversionOnly = descriptor->doYuvToRgbConversionOnly ? 1 : 0;
 
     // YUV-to-RGB conversion is performed by multiplying the source YUV values with a 4x3 matrix
     // passed from Chromium. The matrix was originally sourced from /skia/src/core/SkYUVMath.cpp.

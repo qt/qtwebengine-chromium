@@ -99,6 +99,9 @@ message ContainerStartedSignal {
 
   // The IPv4 address of the container.
   string ipv4_address = 6;
+
+  // The vsock port that sftp-server runs on.
+  uint32 sftp_vsock_port = 7;
 }
 
 // Message used in the signal for when a container has shut down.
@@ -111,6 +114,12 @@ message ContainerShutdownSignal {
 
   // The owner of the VM and container.
   string owner_id = 3;
+}
+
+enum ContainerFeature {
+  UNKNOWN = 0;
+  ENABLE_GTK3_IME_SUPPORT = 1;
+  ENABLE_VIRTUAL_KEYBOARD_SUPPORT = 2;
 }
 
 // Request to launch on application in the specified VM/container. Used with the
@@ -145,6 +154,9 @@ message LaunchContainerApplicationRequest {
 
   // Display scaling requested.
   DisplayScaling display_scaling = 6;
+
+  // Features to enable in the container.
+  repeated ContainerFeature container_features = 7;
 }
 
 // Response sent back by vm_cicerone when it receives a
@@ -218,6 +230,9 @@ message LaunchVshdRequest {
 
   // The owner of the VM and container.
   string owner_id = 4;
+
+  // Features to enable in the container.
+  repeated ContainerFeature container_features = 5;
 }
 
 // Response sent back by vm_cicerone when it receives a LaunchVshd
@@ -1287,6 +1302,9 @@ message ApplyAnsiblePlaybookProgressSignal {
 
   // Contains a textual reason for the failure in case of a FAILED status.
   string failure_details = 5;
+
+  // Displays details of the current progress of the Ansible process.
+  repeated string status_string = 6;
 }
 
 message ConfigureForArcSideloadRequest {
@@ -1725,4 +1743,138 @@ message FileSelectedSignal {
 
   // Files selected by user in SelectFile dialog.
   repeated string files = 5;
+}
+
+// Sent by chrome to attach a USB device in a VM to a container.
+message AttachUsbToContainerRequest {
+  // Name of the VM.
+  string vm_name = 1;
+
+  // Name of the container within the VM to attach to.
+  string container_name = 2;
+
+  // The owner of the VM and container.
+  string owner_id = 3;
+
+  // Attach USB devices on to this port.
+  int32 port_num = 4;
+}
+
+message AttachUsbToContainerResponse {
+  enum Status {
+    // The status is unknown.
+    UNKNOWN = 0;
+
+    // The USB port will be attached.
+    OK = 1;
+
+    // The container doesn't exist.
+    NO_SUCH_CONTAINER = 2;
+
+    // Failed to attach.
+    FAILED = 3;
+  }
+
+  // The status.
+  Status status = 1;
+
+  // Human-readable failure reason.
+  string failure_reason = 2;
+}
+
+// Sent by chrome to detach a USB device in a VM from a container.
+message DetachUsbFromContainerRequest {
+  // Name of the VM.
+  string vm_name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+
+  // Detach USB devices on to this port.
+  int32 port_num = 3;
+}
+
+message DetachUsbFromContainerResponse {
+  enum Status {
+    // The status is unknown.
+    UNKNOWN = 0;
+
+    // The USB port will be detached.
+    OK = 1;
+
+    // Failed to detach.
+    FAILED = 2;
+  }
+
+  // The status.
+  Status status = 1;
+
+  // Human-readable failure reason.
+  string failure_reason = 2;
+}
+
+message ContainerInfo {
+  // The name of the VM.
+  string vm_name = 1;
+
+  // The name of the container within the VM.
+  string container_name = 2;
+
+  // OPTIONAL: If using LXD, information about the OS.
+  OsRelease os_release = 3;
+}
+
+// Sent by chrome to query the list of containers and VMs that Cicerone knows
+// about.
+message ListRunningContainersRequest {
+  // The owner to list VMs and Containers for.
+  string owner_id = 1;
+}
+
+message ListRunningContainersResponse {
+  // List of known vms and containers.
+  repeated ContainerInfo containers = 1;
+}
+
+// Sent by chrome to get session info from Garcon.
+message GetGarconSessionInfoRequest {
+  // Name of the VM the container is in.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM and container.
+  string owner_id = 3;
+}
+
+message GetGarconSessionInfoResponse {
+  enum Status {
+    // The current status is unknown.
+    UNKNOWN = 0;
+
+    // Generic error.
+    FAILED = 1;
+
+    // Unknown container.
+    NOT_FOUND = 2;
+
+    // Got info successfully.
+    SUCCEEDED = 3;
+  }
+
+  // Status.
+  Status status = 1;
+
+  // The failure reason if not successful.
+  string failure_reason = 2;
+
+  // The username of the user garcon is running as.
+  string container_username = 3;
+
+  // The home directory of the user garcon is running as.
+  string container_homedir = 4;
+
+  // The vsock port that sftp-server runs on.
+  uint32 sftp_vsock_port = 5;
 }

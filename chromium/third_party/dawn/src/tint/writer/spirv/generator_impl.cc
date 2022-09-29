@@ -26,12 +26,14 @@
 #include "src/tint/transform/for_loop_to_loop.h"
 #include "src/tint/transform/manager.h"
 #include "src/tint/transform/promote_side_effects_to_decl.h"
+#include "src/tint/transform/remove_phonies.h"
 #include "src/tint/transform/remove_unreachable_statements.h"
 #include "src/tint/transform/simplify_pointers.h"
 #include "src/tint/transform/unshadow.h"
 #include "src/tint/transform/unwind_discard_functions.h"
 #include "src/tint/transform/var_for_dynamic_index.h"
 #include "src/tint/transform/vectorize_scalar_matrix_constructors.h"
+#include "src/tint/transform/while_to_loop.h"
 #include "src/tint/transform/zero_init_workgroup_memory.h"
 #include "src/tint/writer/generate_external_texture_bindings.h"
 
@@ -45,6 +47,8 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
 
     {  // Builtin polyfills
         transform::BuiltinPolyfill::Builtins polyfills;
+        polyfills.acosh = transform::BuiltinPolyfill::Level::kRangeCheck;
+        polyfills.atanh = transform::BuiltinPolyfill::Level::kRangeCheck;
         polyfills.count_leading_zeros = true;
         polyfills.count_trailing_zeros = true;
         polyfills.extract_bits = transform::BuiltinPolyfill::Level::kClampParameters;
@@ -72,9 +76,10 @@ SanitizedResult Sanitize(const Program* in, const Options& options) {
     manager.Add<transform::PromoteSideEffectsToDecl>();
     manager.Add<transform::UnwindDiscardFunctions>();
     manager.Add<transform::SimplifyPointers>();  // Required for arrayLength()
+    manager.Add<transform::RemovePhonies>();
     manager.Add<transform::VectorizeScalarMatrixConstructors>();
     manager.Add<transform::ForLoopToLoop>();  // Must come after
-                                              // ZeroInitWorkgroupMemory
+    manager.Add<transform::WhileToLoop>();    // ZeroInitWorkgroupMemory
     manager.Add<transform::CanonicalizeEntryPointIO>();
     manager.Add<transform::AddEmptyEntryPoint>();
     manager.Add<transform::AddSpirvBlockAttribute>();

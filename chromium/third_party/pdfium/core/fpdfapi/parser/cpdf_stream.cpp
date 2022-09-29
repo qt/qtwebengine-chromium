@@ -6,9 +6,10 @@
 
 #include "core/fpdfapi/parser/cpdf_stream.h"
 
+#include <stdint.h>
+
 #include <sstream>
 #include <utility>
-#include <vector>
 
 #include "constants/stream_dict_common.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -18,6 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/span_util.h"
 #include "third_party/base/containers/contains.h"
@@ -41,6 +43,13 @@ CPDF_Stream::CPDF_Stream(pdfium::span<const uint8_t> pData,
   SetData(pData);
 }
 
+CPDF_Stream::CPDF_Stream(DataVector<uint8_t> pData,
+                         RetainPtr<CPDF_Dictionary> pDict)
+    : m_pDict(std::move(pDict)) {
+  // TODO(crbug.com/pdfium/1872): Avoid copying.
+  SetData(pData);
+}
+
 CPDF_Stream::CPDF_Stream(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
                          size_t size,
                          RetainPtr<CPDF_Dictionary> pDict)
@@ -56,10 +65,6 @@ CPDF_Stream::~CPDF_Stream() {
 
 CPDF_Object::Type CPDF_Stream::GetType() const {
   return kStream;
-}
-
-CPDF_Dictionary* CPDF_Stream::GetDict() {
-  return m_pDict.Get();
 }
 
 const CPDF_Dictionary* CPDF_Stream::GetDict() const {
@@ -84,15 +89,15 @@ void CPDF_Stream::InitStream(pdfium::span<const uint8_t> pData,
   SetData(pData);
 }
 
-void CPDF_Stream::InitStreamFromFile(
-    const RetainPtr<IFX_SeekableReadStream>& pFile,
-    RetainPtr<CPDF_Dictionary> pDict) {
+void CPDF_Stream::InitStreamFromFile(RetainPtr<IFX_SeekableReadStream> pFile,
+                                     RetainPtr<CPDF_Dictionary> pDict) {
   m_bMemoryBased = false;
   m_pDataBuf.reset();
-  m_pFile = pFile;
-  m_dwSize = pdfium::base::checked_cast<uint32_t>(pFile->GetSize());
+  m_pFile = std::move(pFile);
   m_pDict = std::move(pDict);
-  m_pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(m_dwSize));
+  m_dwSize = pdfium::base::checked_cast<size_t>(m_pFile->GetSize());
+  m_pDict->SetNewFor<CPDF_Number>("Length",
+                                  pdfium::base::checked_cast<int>(m_dwSize));
 }
 
 RetainPtr<CPDF_Object> CPDF_Stream::Clone() const {
@@ -170,13 +175,8 @@ void CPDF_Stream::SetDataFromStringstream(fxcrt::ostringstream* stream) {
 bool CPDF_Stream::ReadRawData(FX_FILESIZE offset,
                               uint8_t* buf,
                               size_t size) const {
-  if (!m_bMemoryBased && m_pFile)
-    return m_pFile->ReadBlockAtOffset(buf, offset, size);
-
-  if (m_pDataBuf)
-    memcpy(buf, m_pDataBuf.get() + offset, size);
-
-  return true;
+  CHECK(!m_bMemoryBased);
+  return m_pFile->ReadBlockAtOffset(buf, offset, size);
 }
 
 bool CPDF_Stream::HasFilter() const {
@@ -194,7 +194,7 @@ bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive,
   const bool is_metadata = IsMetaDataStreamDictionary(GetDict());
   CPDF_FlateEncoder encoder(this, !is_metadata);
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> encrypted_data;
+  DataVector<uint8_t> encrypted_data;
   pdfium::span<const uint8_t> data = encoder.GetSpan();
 
   if (encryptor && !is_metadata) {

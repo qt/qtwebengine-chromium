@@ -5,12 +5,14 @@ licenses(["notice"])
 exports_files_legacy()
 
 TRANSFORM_FILES = [
-    "SkSLBuiltinVariableScanner.cpp",
+    "SkSLAddConstToVarModifiers.cpp",
     "SkSLEliminateDeadFunctions.cpp",
     "SkSLEliminateDeadGlobalVariables.cpp",
     "SkSLEliminateDeadLocalVariables.cpp",
     "SkSLEliminateEmptyStatements.cpp",
     "SkSLEliminateUnreachableCode.cpp",
+    "SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "SkSLFindAndDeclareBuiltinVariables.cpp",
     "SkSLProgramWriter.h",
     "SkSLTransform.h",
 ]

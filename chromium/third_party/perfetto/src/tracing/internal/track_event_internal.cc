@@ -17,7 +17,6 @@
 #include "perfetto/tracing/internal/track_event_internal.h"
 
 #include "perfetto/base/proc_utils.h"
-#include "perfetto/base/thread_utils.h"
 #include "perfetto/base/time.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/internal/track_event_interned_fields.h"
@@ -40,6 +39,8 @@ TrackEventSessionObserver::~TrackEventSessionObserver() = default;
 void TrackEventSessionObserver::OnSetup(const DataSourceBase::SetupArgs&) {}
 void TrackEventSessionObserver::OnStart(const DataSourceBase::StartArgs&) {}
 void TrackEventSessionObserver::OnStop(const DataSourceBase::StopArgs&) {}
+void TrackEventSessionObserver::WillClearIncrementalState(
+    const DataSourceBase::ClearIncrementalStateArgs&) {}
 
 namespace internal {
 
@@ -47,7 +48,6 @@ BaseTrackEventInternedDataIndex::~BaseTrackEventInternedDataIndex() = default;
 
 namespace {
 
-std::atomic<perfetto::base::PlatformThreadId> g_main_thread;
 static constexpr const char kLegacySlowPrefix[] = "disabled-by-default-";
 static constexpr const char kSlowTag[] = "slow";
 static constexpr const char kDebugTag[] = "debug";
@@ -109,9 +109,6 @@ std::atomic<int> TrackEventInternal::session_count_{};
 bool TrackEventInternal::Initialize(
     const TrackEventCategoryRegistry& registry,
     bool (*register_data_source)(const DataSourceDescriptor&)) {
-  if (!g_main_thread)
-    g_main_thread = perfetto::base::GetThreadId();
-
   DataSourceDescriptor dsd;
   dsd.set_name("track_event");
 
@@ -202,6 +199,16 @@ void TrackEventInternal::DisableTracing(
   });
   for (size_t i = 0; i < registry.category_count(); i++)
     registry.DisableCategoryForInstance(i, args.internal_instance_index);
+}
+
+// static
+void TrackEventInternal::WillClearIncrementalState(
+    const DataSourceBase::ClearIncrementalStateArgs& args) {
+  ForEachObserver([&](TrackEventSessionObserver*& o) {
+    if (o)
+      o->WillClearIncrementalState(args);
+    return true;
+  });
 }
 
 // static
@@ -465,7 +472,6 @@ EventContext TrackEventInternal::WriteEvent(
     perfetto::protos::pbzero::TrackEvent::Type type,
     const TraceTimestamp& timestamp,
     bool on_current_thread_track) {
-  PERFETTO_DCHECK(g_main_thread);
   PERFETTO_DCHECK(!incr_state->was_cleared);
   auto packet = NewTracePacket(trace_writer, incr_state, tls_state, timestamp);
   EventContext ctx(std::move(packet), incr_state, &tls_state);

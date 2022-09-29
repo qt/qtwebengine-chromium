@@ -46,8 +46,11 @@ struct BindingPoints {
 /// textureSampleLevel that contain a texture_external parameter will be
 /// transformed into a newly generated version of the function, which can
 /// perform the desired operation on a single RGBA plane or on seperate Y and UV
-/// planes.
-class MultiplanarExternalTexture : public Castable<MultiplanarExternalTexture, Transform> {
+/// planes, and do colorspace conversions including yuv->rgb conversion, gamma
+/// decoding, gamut conversion, and gamma encoding steps. Specifically
+// for BT.709 to SRGB conversion, it takes the fast path only doing the yuv->rgb
+// step and skipping all other steps.
+class MultiplanarExternalTexture final : public Castable<MultiplanarExternalTexture, Transform> {
   public:
     /// BindingsMap is a map where the key is the binding location of a
     /// texture_external and the value is a struct containing the desired
@@ -57,7 +60,7 @@ class MultiplanarExternalTexture : public Castable<MultiplanarExternalTexture, T
     /// NewBindingPoints is consumed by the MultiplanarExternalTexture transform.
     /// Data holds information about location of each texture_external binding and
     /// which binding slots it should expand into.
-    struct NewBindingPoints : public Castable<Data, transform::Data> {
+    struct NewBindingPoints final : public Castable<Data, transform::Data> {
         /// Constructor
         /// @param bm a map to the new binding slots to use.
         explicit NewBindingPoints(BindingsMap bm);

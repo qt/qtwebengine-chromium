@@ -13,7 +13,10 @@ const char kPermissionBrokerServiceName[] = "org.chromium.PermissionBroker";
 // Methods
 const char kCheckPathAccess[] = "CheckPathAccess";
 const char kOpenPath[] = "OpenPath";
+const char kOpenPathAndRegisterClient[] = "OpenPathAndRegisterClient";
 const char kClaimDevicePath[] = "ClaimDevicePath";
+const char kDetachInterface[] = "DetachInterface";
+const char kReattachInterface[] = "ReattachInterface";
 const char kRequestAdbPortForward[] = "RequestAdbPortForward";
 const char kRequestLoopbackTcpPortLockdown[] = "RequestLoopbackTcpPortLockdown";
 const char kRequestTcpPortAccess[] = "RequestTcpPortAccess";

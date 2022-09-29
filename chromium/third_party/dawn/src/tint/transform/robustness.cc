@@ -120,17 +120,18 @@ struct Robustness::State {
             return nullptr;
         }
 
-        if (auto idx_constant = idx_sem->ConstantValue()) {
+        if (auto* idx_constant = idx_sem->ConstantValue()) {
             // Constant value index
-            if (idx_constant.Type()->Is<sem::I32>()) {
-                idx.i32 = static_cast<int32_t>(idx_constant.Element<AInt>(0).value);
+            auto val = std::get<AInt>(idx_constant->Value());
+            if (idx_constant->Type()->Is<sem::I32>()) {
+                idx.i32 = static_cast<int32_t>(val);
                 idx.is_signed = true;
-            } else if (idx_constant.Type()->Is<sem::U32>()) {
-                idx.u32 = static_cast<uint32_t>(idx_constant.Element<AInt>(0).value);
+            } else if (idx_constant->Type()->Is<sem::U32>()) {
+                idx.u32 = static_cast<uint32_t>(val);
                 idx.is_signed = false;
             } else {
                 TINT_ICE(Transform, b.Diagnostics()) << "unsupported constant value for accessor "
-                                                     << idx_constant.Type()->TypeInfo().name;
+                                                     << idx_constant->Type()->TypeInfo().name;
                 return nullptr;
             }
         } else {
@@ -223,9 +224,9 @@ struct Robustness::State {
         auto array_idx = signature.IndexOf(sem::ParameterUsage::kArrayIndex);
         auto level_idx = signature.IndexOf(sem::ParameterUsage::kLevel);
 
-        auto* texture_arg = expr->args[texture_idx];
-        auto* coords_arg = expr->args[coords_idx];
-        auto* coords_ty = builtin->Parameters()[coords_idx]->Type();
+        auto* texture_arg = expr->args[static_cast<size_t>(texture_idx)];
+        auto* coords_arg = expr->args[static_cast<size_t>(coords_idx)];
+        auto* coords_ty = builtin->Parameters()[static_cast<size_t>(coords_idx)]->Type();
 
         // If the level is provided, then we need to clamp this. As the level is
         // used by textureDimensions() and the texture[Load|Store]() calls, we need
@@ -235,7 +236,7 @@ struct Robustness::State {
         std::function<const ast::Expression*()> level_arg;
         if (level_idx >= 0) {
             level_arg = [&] {
-                auto* arg = expr->args[level_idx];
+                auto* arg = expr->args[static_cast<size_t>(level_idx)];
                 auto* num_levels = b.Call("textureNumLevels", ctx.Clone(texture_arg));
                 auto* zero = b.Expr(0_i);
                 auto* max = ctx.dst->Sub(num_levels, 1_i);
@@ -258,7 +259,7 @@ struct Robustness::State {
 
         // Clamp the array_index argument, if provided
         if (array_idx >= 0) {
-            auto* arg = expr->args[array_idx];
+            auto* arg = expr->args[static_cast<size_t>(array_idx)];
             auto* num_layers = b.Call("textureNumLayers", ctx.Clone(texture_arg));
             auto* zero = b.Expr(0_i);
             auto* max = ctx.dst->Sub(num_layers, 1_i);
@@ -268,7 +269,7 @@ struct Robustness::State {
 
         // Clamp the level argument, if provided
         if (level_idx >= 0) {
-            auto* arg = expr->args[level_idx];
+            auto* arg = expr->args[static_cast<size_t>(level_idx)];
             ctx.Replace(arg, level_arg ? level_arg() : ctx.dst->Expr(0_i));
         }
 

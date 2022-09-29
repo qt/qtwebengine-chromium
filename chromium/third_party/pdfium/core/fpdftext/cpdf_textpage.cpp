@@ -7,6 +7,7 @@
 #include "core/fpdftext/cpdf_textpage.h"
 
 #include <math.h>
+#include <stdint.h>
 
 #include <algorithm>
 #include <utility>
@@ -22,9 +23,9 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdftext/unicodenormalizationdata.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_bidi.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_unicode.h"
 #include "core/fxcrt/stl_util.h"
 #include "third_party/base/check.h"
@@ -76,16 +77,15 @@ float CalculateBaseSpace(const CPDF_TextObject* pTextObj,
   return baseSpace;
 }
 
-std::vector<wchar_t, FxAllocAllocator<wchar_t>> GetUnicodeNormalization(
-    wchar_t wch) {
+DataVector<wchar_t> GetUnicodeNormalization(wchar_t wch) {
   wch = wch & 0xFFFF;
   wchar_t wFind = kUnicodeDataNormalization[wch];
   if (!wFind)
-    return std::vector<wchar_t, FxAllocAllocator<wchar_t>>(1, wch);
+    return DataVector<wchar_t>(1, wch);
 
   if (wFind >= 0x8000) {
-    return std::vector<wchar_t, FxAllocAllocator<wchar_t>>(
-        1, kUnicodeDataNormalizationMap1[wFind - 0x8000]);
+    return DataVector<wchar_t>(1,
+                               kUnicodeDataNormalizationMap1[wFind - 0x8000]);
   }
 
   wch = wFind & 0x0FFF;
@@ -94,7 +94,7 @@ std::vector<wchar_t, FxAllocAllocator<wchar_t>> GetUnicodeNormalization(
   if (wFind == 4)
     wFind = static_cast<wchar_t>(*pMap++);
 
-  return std::vector<wchar_t, FxAllocAllocator<wchar_t>>(pMap, pMap + wFind);
+  return DataVector<wchar_t>(pMap, pMap + wFind);
 }
 
 float MaskPercentFilled(const std::vector<bool>& mask,
@@ -148,7 +148,8 @@ bool IsRightToLeft(const CPDF_TextObject& text_obj, const CPDF_Font& font) {
     if (wChar)
       str += wChar;
   }
-  return CFX_BidiString(str).OverallDirection() == CFX_BidiChar::RIGHT;
+  return CFX_BidiString(str).OverallDirection() ==
+         CFX_BidiChar::Direction::kRight;
 }
 
 int GetCharWidth(uint32_t charCode, CPDF_Font* pFont) {
@@ -668,7 +669,7 @@ void CPDF_TextPage::AddCharInfoByLRDirection(wchar_t wChar,
     return;
   }
   info2.m_Index = m_TextBuf.GetLength();
-  std::vector<wchar_t, FxAllocAllocator<wchar_t>> normalized;
+  DataVector<wchar_t> normalized;
   if (wChar >= 0xFB00 && wChar <= 0xFB06)
     normalized = GetUnicodeNormalization(wChar);
   if (normalized.empty()) {
@@ -694,8 +695,7 @@ void CPDF_TextPage::AddCharInfoByRLDirection(wchar_t wChar,
   }
   info2.m_Index = m_TextBuf.GetLength();
   wChar = pdfium::unicode::GetMirrorChar(wChar);
-  std::vector<wchar_t, FxAllocAllocator<wchar_t>> normalized =
-      GetUnicodeNormalization(wChar);
+  DataVector<wchar_t> normalized = GetUnicodeNormalization(wChar);
   if (normalized.empty()) {
     info2.m_Unicode = wChar;
     m_TextBuf.AppendChar(info2.m_Unicode);
@@ -734,14 +734,14 @@ void CPDF_TextPage::CloseTempLine() {
     bidi.SetOverallDirectionRight();
   CFX_BidiChar::Direction eCurrentDirection = bidi.OverallDirection();
   for (const auto& segment : bidi) {
-    if (segment.direction == CFX_BidiChar::RIGHT ||
-        (segment.direction == CFX_BidiChar::NEUTRAL &&
-         eCurrentDirection == CFX_BidiChar::RIGHT)) {
-      eCurrentDirection = CFX_BidiChar::RIGHT;
+    if (segment.direction == CFX_BidiChar::Direction::kRight ||
+        (segment.direction == CFX_BidiChar::Direction::kNeutral &&
+         eCurrentDirection == CFX_BidiChar::Direction::kRight)) {
+      eCurrentDirection = CFX_BidiChar::Direction::kRight;
       for (int m = segment.start + segment.count; m > segment.start; --m)
         AddCharInfoByRLDirection(str[m - 1], m_TempCharList[m - 1]);
     } else {
-      eCurrentDirection = CFX_BidiChar::LEFT;
+      eCurrentDirection = CFX_BidiChar::Direction::kLeft;
       for (int m = segment.start; m < segment.start + segment.count; ++m)
         AddCharInfoByLRDirection(str[m], m_TempCharList[m]);
     }

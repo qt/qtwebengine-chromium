@@ -33,7 +33,6 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/event.h"
-#include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/race_checker.h"
@@ -61,10 +60,6 @@ class ChannelSend : public ChannelSendInterface,
                                                         // packets from the ACM
                     public RtcpPacketTypeCounterObserver {
  public:
-  // TODO(nisse): Make OnUplinkPacketLossRate public, and delete friend
-  // declaration.
-  friend class VoERtcpObserver;
-
   ChannelSend(Clock* clock,
               TaskQueueFactory* task_queue_factory,
               Transport* rtp_transport,
@@ -154,6 +149,8 @@ class ChannelSend : public ChannelSendInterface,
       uint32_t ssrc,
       const RtcpPacketTypeCounter& packet_counter) override;
 
+  void OnUplinkPacketLossRate(float packet_loss_rate);
+
  private:
   // From AudioPacketizationCallback in the ACM
   int32_t SendData(AudioFrameType frameType,
@@ -163,7 +160,6 @@ class ChannelSend : public ChannelSendInterface,
                    size_t payloadSize,
                    int64_t absolute_capture_timestamp_ms) override;
 
-  void OnUplinkPacketLossRate(float packet_loss_rate);
   bool InputMute() const;
 
   int32_t SendRtpAudio(AudioFrameType frameType,

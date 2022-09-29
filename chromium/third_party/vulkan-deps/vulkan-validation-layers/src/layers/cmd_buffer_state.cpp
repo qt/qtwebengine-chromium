@@ -239,7 +239,8 @@ CMD_BUFFER_STATE::CMD_BUFFER_STATE(ValidationStateTracker *dev, VkCommandBuffer 
       createInfo(*pCreateInfo),
       command_pool(pool),
       dev_data(dev),
-      unprotected(pool->unprotected) {
+      unprotected(pool->unprotected),
+      lastBound({*this, *this, *this}) {
     Reset();
 }
 
@@ -273,14 +274,14 @@ void CMD_BUFFER_STATE::RemoveChild(std::shared_ptr<BASE_NODE> &child_node) {
 // Reset the command buffer state
 //  Maintain the createInfo and set state to CB_NEW, but clear all other state
 void CMD_BUFFER_STATE::Reset() {
-    ResetUse();
+    assert(!InUse());
     // Reset CB state (note that createInfo is not cleared)
     memset(&beginInfo, 0, sizeof(VkCommandBufferBeginInfo));
     memset(&inheritanceInfo, 0, sizeof(VkCommandBufferInheritanceInfo));
-    hasDrawCmd = false;
-    hasTraceRaysCmd = false;
-    hasBuildAccelerationStructureCmd = false;
-    hasDispatchCmd = false;
+    has_draw_cmd = false;
+    has_dispatch_cmd = false;
+    has_trace_rays_cmd = false;
+    has_build_as_cmd = false;
     hasRenderPassInstance = false;
     suspendsRenderPassInstance = false;
     resumesRenderPassInstance = false;
@@ -450,7 +451,10 @@ void CMD_BUFFER_STATE::Destroy() {
 
     // Remove the cb debug labels
     EraseCmdDebugUtilsLabel(dev_data->report_data, commandBuffer());
-    Reset();
+    {
+        auto guard = WriteLock();
+        Reset();
+    }
     BASE_NODE::Destroy();
 }
 
@@ -734,6 +738,7 @@ void CMD_BUFFER_STATE::BeginRendering(CMD_TYPE cmd_type, const VkRenderingInfo *
     RecordCmd(cmd_type);
     begin_rendering_func_name = CommandTypeString(cmd_type);
     activeRenderPass = std::make_shared<RENDER_PASS_STATE>(pRenderingInfo);
+    commands_since_begin_rendering = 0;
 
     auto chained_device_group_struct = LvlFindInChain<VkDeviceGroupRenderPassBeginInfo>(pRenderingInfo->pNext);
     if (chained_device_group_struct) {
@@ -785,7 +790,7 @@ void CMD_BUFFER_STATE::BeginRendering(CMD_TYPE cmd_type, const VkRenderingInfo *
             pRenderingInfo->pDepthAttachment->resolveImageView != VK_NULL_HANDLE) {
             depthResolveAttachment = res.first->get();
         }
-    } 
+    }
 
     if (pRenderingInfo->pStencilAttachment && pRenderingInfo->pStencilAttachment->imageView != VK_NULL_HANDLE) {
         auto& stencilAttachment = attachments[GetDynamicStencilAttachmentImageIndex()];
@@ -928,6 +933,20 @@ void CMD_BUFFER_STATE::ExecuteCommands(uint32_t commandBuffersCount, const VkCom
         trashedScissorMask = ~uint32_t(0);
         trashedViewportCount = true;
         trashedScissorCount = true;
+
+        // Pass along if any commands are used in the secondary command buffer
+        if (sub_cb_state->has_draw_cmd) {
+            has_draw_cmd = true;
+        }
+        if (sub_cb_state->has_dispatch_cmd) {
+            has_dispatch_cmd = true;
+        }
+        if (sub_cb_state->has_trace_rays_cmd) {
+            has_trace_rays_cmd = true;
+        }
+        if (sub_cb_state->has_build_as_cmd) {
+            has_build_as_cmd = true;
+        }
     }
 }
 
@@ -948,7 +967,7 @@ void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPo
     // If we are disturbing the current push_desriptor_set clear it
     if (!push_descriptor_set || !CompatForSet(set, last_bound, pipeline_layout->compat_for_set)) {
         last_bound.UnbindAndResetPushDescriptorSet(
-            this, std::make_shared<cvdescriptorset::DescriptorSet>(VK_NULL_HANDLE, nullptr, dsl, 0, dev_data));
+            std::make_shared<cvdescriptorset::DescriptorSet>(VK_NULL_HANDLE, nullptr, dsl, 0, dev_data));
     }
 
     UpdateLastBoundDescriptorSets(pipelineBindPoint, pipeline_layout, set, 1, nullptr, push_descriptor_set, 0, nullptr);
@@ -958,16 +977,10 @@ void CMD_BUFFER_STATE::PushDescriptorSetState(VkPipelineBindPoint pipelineBindPo
     push_descriptor_set->PerformPushDescriptorsUpdate(dev_data, descriptorWriteCount, pDescriptorWrites);
 }
 
-// Generic function to handle state update for all CmdDraw* and CmdDispatch* type functions
-void CMD_BUFFER_STATE::UpdateStateCmdDrawDispatchType(CMD_TYPE cmd_type, VkPipelineBindPoint bind_point) {
-    UpdateDrawState(cmd_type, bind_point);
-    hasDispatchCmd = true;
-}
-
 // Generic function to handle state update for all CmdDraw* type functions
-void CMD_BUFFER_STATE::UpdateStateCmdDrawType(CMD_TYPE cmd_type, VkPipelineBindPoint bind_point) {
-    UpdateStateCmdDrawDispatchType(cmd_type, bind_point);
-    hasDrawCmd = true;
+void CMD_BUFFER_STATE::UpdateDrawCmd(CMD_TYPE cmd_type) {
+    has_draw_cmd = true;
+    UpdatePipelineState(cmd_type, VK_PIPELINE_BIND_POINT_GRAPHICS);
 
     // Update the consumed viewport/scissor count.
     uint32_t &used = usedViewportScissorCount;
@@ -977,7 +990,20 @@ void CMD_BUFFER_STATE::UpdateStateCmdDrawType(CMD_TYPE cmd_type, VkPipelineBindP
     usedDynamicScissorCount |= !!(dynamic_status & CBSTATUS_SCISSOR_WITH_COUNT_SET);
 }
 
-void CMD_BUFFER_STATE::UpdateDrawState(CMD_TYPE cmd_type, const VkPipelineBindPoint bind_point) {
+// Generic function to handle state update for all CmdDispatch* type functions
+void CMD_BUFFER_STATE::UpdateDispatchCmd(CMD_TYPE cmd_type) {
+    has_dispatch_cmd = true;
+    UpdatePipelineState(cmd_type, VK_PIPELINE_BIND_POINT_COMPUTE);
+}
+
+// Generic function to handle state update for all CmdTraceRay* type functions
+void CMD_BUFFER_STATE::UpdateTraceRayCmd(CMD_TYPE cmd_type) {
+    has_trace_rays_cmd = true;
+    UpdatePipelineState(cmd_type, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
+}
+
+// Generic function to handle state update for all Provoking functions calls (draw/dispatch/traceray/etc)
+void CMD_BUFFER_STATE::UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBindPoint bind_point) {
     RecordCmd(cmd_type);
 
     const auto lv_bind_point = ConvertToLvlBindPoint(bind_point);
@@ -1215,7 +1241,12 @@ void CMD_BUFFER_STATE::SetImageViewLayout(const IMAGE_VIEW_STATE &view_state, Vk
     }
 }
 
-void CMD_BUFFER_STATE::RecordCmd(CMD_TYPE cmd_type) { commandCount++; }
+void CMD_BUFFER_STATE::RecordCmd(CMD_TYPE cmd_type) {
+    commandCount++;
+    if (pipeline_bound) {
+        ++commands_since_begin_rendering;
+    }
+}
 
 void CMD_BUFFER_STATE::RecordStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits) {
     RecordCmd(cmd_type);
@@ -1388,12 +1419,8 @@ void CMD_BUFFER_STATE::Retire(uint32_t perf_submit_pass, const std::function<boo
 }
 
 void CMD_BUFFER_STATE::UnbindResources() {
-    // Pipeline and descriptor sets
-    lastBound[BindPoint_Graphics].Reset();
-
     // Vertex and index buffers
     index_buffer_binding.reset();
-    status &= ~CBSTATUS_INDEX_BUFFER_BOUND;
     vertex_buffer_used = false;
     current_vertex_buffer_binding_info.vertex_buffer_bindings.clear();
 
@@ -1403,6 +1430,23 @@ void CMD_BUFFER_STATE::UnbindResources() {
     push_constant_data_update.clear();
     push_constant_pipeline_layout_set = VK_NULL_HANDLE;
 
-    // Dynamic state
-    dynamic_status = CBSTATUS_NONE;
+    // Reset status of cb to force rebinding of all resources
+    // Index buffer included
+    status = CBSTATUS_NONE;
+
+    // Pipeline and descriptor sets
+    lastBound[BindPoint_Graphics].Reset();
+}
+
+bool CMD_BUFFER_STATE::RasterizationDisabled() const {
+    auto pipeline = lastBound[BindPoint_Graphics].pipeline_state;
+    if (pipeline) {
+        if (pipeline->IsDynamic(VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE_EXT)) {
+            return rasterization_disabled;
+        } else {
+            return pipeline->RasterizationDisabled();
+        }
+    }
+
+    return false;
 }

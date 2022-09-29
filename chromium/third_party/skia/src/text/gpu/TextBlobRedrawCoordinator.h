@@ -36,11 +36,20 @@ public:
     void drawGlyphRunList(SkCanvas* canvas,
                           const GrClip* clip,
                           const SkMatrixProvider& viewMatrix,
-                          const SkGlyphRunList& glyphRunList,
+                          const GlyphRunList& glyphRunList,
                           const SkPaint& paint,
                           SkStrikeDeviceInfo strikeDeviceInfo,
                           skgpu::v1::SurfaceDrawContext* sdc);
 #endif
+#if defined(SK_GRAPHITE_ENABLED)
+    void drawGlyphRunList(SkCanvas* canvas,
+                          const SkMatrix& viewMatrix,
+                          const GlyphRunList& glyphRunList,
+                          const SkPaint& paint,
+                          SkStrikeDeviceInfo strikeDeviceInfo,
+                          skgpu::graphite::Device* device);
+#endif
+
     void freeAll() SK_EXCLUDES(fSpinLock);
 
     struct PurgeBlobMessage {
@@ -84,13 +93,13 @@ private:
     };
 
     sk_sp<TextBlob> findOrCreateBlob(const SkMatrixProvider& viewMatrix,
-                                     const SkGlyphRunList& glyphRunList,
+                                     const GlyphRunList& glyphRunList,
                                      const SkPaint& paint,
                                      SkStrikeDeviceInfo strikeDeviceInfo);
 
     // If not already in the cache, then add it else, return the text blob from the cache.
     sk_sp<TextBlob> addOrReturnExisting(
-            const SkGlyphRunList& glyphRunList,
+            const GlyphRunList& glyphRunList,
             sk_sp<TextBlob> blob) SK_EXCLUDES(fSpinLock);
 
     sk_sp<TextBlob> find(const TextBlob::Key& key) SK_EXCLUDES(fSpinLock);

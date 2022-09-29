@@ -17,8 +17,7 @@
 
 #include <string>
 #include <string_view>
-// TODO(https://crbug.com/dawn/1379) Update cpplint and remove NOLINT
-#include <variant>  // NOLINT(build/include_order))
+#include <variant>
 
 #include "src/tint/source.h"
 
@@ -33,6 +32,8 @@ class Token {
         kError = -2,
         /// Uninitialized token
         kUninitialized = 0,
+        /// Placeholder token which maybe fillled in later
+        kPlaceholder = 1,
         /// End of input string reached
         kEOF,
 
@@ -42,6 +43,8 @@ class Token {
         kFloatLiteral,
         /// A float literal with an 'f' suffix
         kFloatLiteral_F,
+        /// A float literal with an 'h' suffix
+        kFloatLiteral_H,
         /// An integer literal with no suffix
         kIntLiteral,
         /// An integer literal with an 'i' suffix
@@ -137,6 +140,10 @@ class Token {
         kOrEqual,
         /// A '^='
         kXorEqual,
+        /// A '>>='
+        kShiftRightEqual,
+        /// A '<<='
+        kShiftLeftEqual,
 
         /// A 'array'
         kArray,
@@ -150,6 +157,8 @@ class Token {
         kBreak,
         /// A 'case'
         kCase,
+        /// A 'const'
+        kConst,
         /// A 'continue'
         kContinue,
         /// A 'continuing'
@@ -174,14 +183,10 @@ class Token {
         kFn,
         // A 'for'
         kFor,
-        /// A 'function'
-        kFunction,
         /// A 'i32'
         kI32,
         /// A 'if'
         kIf,
-        /// A 'import'
-        kImport,
         /// A 'let'
         kLet,
         /// A 'loop'
@@ -206,8 +211,6 @@ class Token {
         kMat4x4,
         /// A 'override'
         kOverride,
-        /// A 'private'
-        kPrivate,
         /// A 'ptr'
         kPtr,
         /// A 'return'
@@ -216,8 +219,8 @@ class Token {
         kSampler,
         /// A 'sampler_comparison'
         kComparisonSampler,
-        /// A 'storage'
-        kStorage,
+        /// A 'static_assert'
+        kStaticAssert,
         /// A 'struct'
         kStruct,
         /// A 'switch'
@@ -262,8 +265,6 @@ class Token {
         kType,
         /// A 'u32'
         kU32,
-        /// A 'uniform'
-        kUniform,
         /// A 'var'
         kVar,
         /// A 'vec2'
@@ -272,8 +273,8 @@ class Token {
         kVec3,
         /// A 'vec4'
         kVec4,
-        /// A 'workgroup'
-        kWorkgroup,
+        /// A 'while'
+        kWhile,
     };
 
     /// Converts a token type to a name
@@ -315,19 +316,16 @@ class Token {
     Token(Type type, const Source& source, double val);
     /// Move constructor
     Token(Token&&);
-    /// Copy constructor
-    Token(const Token&);
     ~Token();
-
-    /// Assignment operator
-    /// @param b the token to copy
-    /// @return Token
-    Token& operator=(const Token& b);
 
     /// Equality operator with an identifier
     /// @param ident the identifier string
     /// @return true if this token is an identifier and is equal to ident.
-    bool operator==(std::string_view ident);
+    bool operator==(std::string_view ident) const;
+
+    /// Sets the token to the given type
+    /// @param type the type to set
+    void SetType(Token::Type type) { type_ = type; }
 
     /// Returns true if the token is of the given type
     /// @param t the type to check against.
@@ -336,6 +334,8 @@ class Token {
 
     /// @returns true if the token is uninitialized
     bool IsUninitialized() const { return type_ == Type::kUninitialized; }
+    /// @returns true if the token is a placeholder
+    bool IsPlaceholder() const { return type_ == Type::kPlaceholder; }
     /// @returns true if the token is EOF
     bool IsEof() const { return type_ == Type::kEOF; }
     /// @returns true if the token is Error
@@ -346,7 +346,8 @@ class Token {
     bool IsLiteral() const {
         return type_ == Type::kIntLiteral || type_ == Type::kIntLiteral_I ||
                type_ == Type::kIntLiteral_U || type_ == Type::kFalse || type_ == Type::kTrue ||
-               type_ == Type::kFloatLiteral || type_ == Type::kFloatLiteral_F;
+               type_ == Type::kFloatLiteral || type_ == Type::kFloatLiteral_F ||
+               type_ == Type::kFloatLiteral_H;
     }
     /// @returns true if token is a 'matNxM'
     bool IsMatrix() const {
@@ -376,8 +377,17 @@ class Token {
         return type_ == Type::kVec2 || type_ == Type::kVec3 || type_ == Type::kVec4;
     }
 
+    /// @returns true if the token can be split during parse into component tokens
+    bool IsSplittable() const {
+        return Is(Token::Type::kShiftRight) || Is(Token::Type::kGreaterThanEqual) ||
+               Is(Token::Type::kAndAnd);
+    }
+
     /// @returns the source information for this token
     Source source() const { return source_; }
+
+    /// @returns the type of the token
+    Type type() const { return type_; }
 
     /// Returns the string value of the token
     /// @return std::string

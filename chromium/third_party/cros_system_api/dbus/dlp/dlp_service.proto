@@ -20,6 +20,43 @@ enum DlpRuleLevel {
   BLOCK = 2;
 }
 
+// A representation of destinations to which transferring files can be
+// restricted.
+enum DlpComponent {
+  // Should not be used.
+  UNKOWN_COMPONENT = 0;
+
+  // To represent internal Chrome OS transfers.
+  SYSTEM = 1;
+
+  // ARC++ as a Guest OS.
+  ARC = 2;
+
+  // Crostini as a Guest OS.
+  CROSTINI = 3;
+
+  // Plugin VM (Parallels/Windows) as a Guest OS.
+  PLUGIN_VM = 4;
+
+  // Removable disk.
+  USB = 5;
+
+  // Google drive for file storage.
+  GOOGLE_DRIVE = 6;
+}
+
+// A representation of possible file actions.
+enum FileAction {
+  // File transfer (the default if none of the actions below is specified).
+  TRANSFER = 0;
+
+  // File upload.
+  UPLOAD = 1;
+
+  // File open.
+  OPEN = 2;
+}
+
 message DlpFilesRule {
   // Defines where from the file was originated.
   // URL patterns according to this format
@@ -63,7 +100,7 @@ message AddFileResponse {
 }
 
 message RequestFileAccessRequest {
-  // Inode numbers of the files to which access is requested.
+  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
   repeated uint64 inodes = 1;
 
   // Process id for which an access is requested.
@@ -71,6 +108,12 @@ message RequestFileAccessRequest {
 
   // Destination where the files will be targeted by the process.
   optional string destination_url = 3;
+
+  // Files paths to be transferred.
+  repeated string files_paths = 4;
+
+  // Destination component where the file will be transferred.
+  optional DlpComponent destination_component = 5;
 }
 
 message RequestFileAccessResponse {
@@ -79,18 +122,6 @@ message RequestFileAccessResponse {
 
   // Whether file access for all requested files was approved.
   optional bool allowed = 2;
-}
-
-message IsRestrictedRequest {
-  // URLs from where the files were downloaded.
-  repeated string source_urls = 1;
-  // URL where the files are going to be uploaded.
-  optional string destination_url = 2;
-}
-
-message IsRestrictedResponse {
-  // Whether the operation should be allowed or not.
-  optional bool restricted = 1;
 }
 
 message IsDlpPolicyMatchedRequest {
@@ -113,6 +144,8 @@ message FileMetadata {
   optional uint64 inode = 1;
   // URL from where the file was downloaded.
   optional string source_url = 2;
+  // File path.
+  optional string path = 3;
 }
 
 message GetFilesSourcesResponse {
@@ -127,6 +160,10 @@ message CheckFilesTransferRequest {
   repeated string files_paths = 1;
   // Destination url where the file will be transferred.
   optional string destination_url = 2;
+  // Destination component where the file will be transferred.
+  optional DlpComponent destination_component = 3;
+  // Requested file action.
+  optional FileAction file_action = 4;
 }
 
 message CheckFilesTransferResponse {
@@ -137,15 +174,23 @@ message CheckFilesTransferResponse {
 }
 
 message IsFilesTransferRestrictedRequest {
-  // Source URLs of files to be transferred.
+  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
   repeated string files_sources = 1;
   // Destination url where the file will be transferred.
   optional string destination_url = 2;
+  // Files to be transferred.
+  repeated FileMetadata transferred_files = 3;
+  // Destination component where the file will be transferred.
+  optional DlpComponent destination_component = 4;
+  // Requested file action.
+  optional FileAction file_action = 5;
 }
 
 message IsFilesTransferRestrictedResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
-  // Sources of files restricted to be transferred.
+  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
   repeated string files_sources = 2;
+  // Files restricted to be transferred.
+  repeated FileMetadata restricted_files = 3;
 }

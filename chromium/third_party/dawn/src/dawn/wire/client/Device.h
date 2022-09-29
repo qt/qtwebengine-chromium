@@ -32,8 +32,8 @@ class Queue;
 
 class Device final : public ObjectBase {
   public:
-    Device(Client* client, uint32_t refcount, uint32_t id);
-    ~Device();
+    explicit Device(const ObjectBaseParams& params);
+    ~Device() override;
 
     void SetUncapturedErrorCallback(WGPUErrorCallback errorCallback, void* errorUserdata);
     void SetLoggingCallback(WGPULoggingCallback errorCallback, void* errorUserdata);
@@ -52,6 +52,7 @@ class Device final : public ObjectBase {
                                    void* userdata);
     WGPUQuerySet CreateQuerySet(const WGPUQuerySetDescriptor* descriptor);
     WGPUTexture CreateTexture(const WGPUTextureDescriptor* descriptor);
+    WGPUTexture CreateErrorTexture(const WGPUTextureDescriptor* descriptor);
 
     void HandleError(WGPUErrorType errorType, const char* message);
     void HandleLogging(WGPULoggingType loggingType, const char* message);

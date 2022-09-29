@@ -264,6 +264,10 @@ bool DwarfCFIToModule::End() {
   return true;
 }
 
+string DwarfCFIToModule::Architecture() {
+  return module_->architecture();
+}
+
 void DwarfCFIToModule::Reporter::UnnamedRegister(size_t offset, int reg) {
   fprintf(stderr, "%s, section '%s': "
           "the call frame entry at offset 0x%zx refers to register %d,"

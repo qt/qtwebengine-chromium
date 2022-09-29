@@ -51,9 +51,7 @@ using Uniform = SkMeshSpecification::Uniform;
 static std::vector<Uniform>::iterator find_uniform(std::vector<Uniform>& uniforms,
                                                    std::string_view name) {
     return std::find_if(uniforms.begin(), uniforms.end(),
-                        [name](const SkMeshSpecification::Uniform& u) {
-        return u.name.equals(name.data(), name.size());
-    });
+                        [name](const SkMeshSpecification::Uniform& u) { return u.name == name; });
 }
 
 static std::tuple<bool, SkString>
@@ -86,14 +84,14 @@ gather_uniforms_and_check_for_main(const SkSL::Program& program,
                     if (uniform.isArray() != iter->isArray() ||
                         uniform.type      != iter->type      ||
                         uniform.count     != iter->count) {
-                        return {false, SkStringPrintf("Uniform %s declared with different types"
-                                                       " in vertex and fragment shaders.",
-                                                       iter->name.c_str())};
+                        return {false, SkStringPrintf("Uniform %.*s declared with different types"
+                                                      " in vertex and fragment shaders.",
+                                                      (int)iter->name.size(), iter->name.data())};
                     }
                     if (uniform.isColor() != iter->isColor()) {
-                        return {false, SkStringPrintf("Uniform %s declared with different color"
+                        return {false, SkStringPrintf("Uniform %.*s declared with different color"
                                                       " layout in vertex and fragment shaders.",
-                                                      iter->name.c_str())};
+                                                      (int)iter->name.size(), iter->name.data())};
                     }
                     (*iter).flags |= stage;
                 }
@@ -331,7 +329,7 @@ SkMeshSpecification::Result SkMeshSpecification::MakeFromSourceWithStructs(
     size_t offset = 0;
 
     SkSL::SharedCompiler compiler;
-    SkSL::Program::Settings settings;
+    SkSL::ProgramSettings settings;
     // TODO(skia:11209): Add SkCapabilities to the API, check against required version.
     std::unique_ptr<SkSL::Program> vsProgram = compiler->convertProgram(
             SkSL::ProgramKind::kMeshVertex,
@@ -450,11 +448,9 @@ size_t SkMeshSpecification::uniformSize() const {
                              : SkAlign4(fUniforms.back().offset + fUniforms.back().sizeInBytes());
 }
 
-const Uniform* SkMeshSpecification::findUniform(const char* name) const {
-    SkASSERT(name);
-    size_t len = strlen(name);
-    auto iter = std::find_if(fUniforms.begin(), fUniforms.end(), [name, len] (const Uniform& u) {
-        return u.name.equals(name, len);
+const Uniform* SkMeshSpecification::findUniform(std::string_view name) const {
+    auto iter = std::find_if(fUniforms.begin(), fUniforms.end(), [name] (const Uniform& u) {
+        return u.name == name;
     });
     return iter == fUniforms.end() ? nullptr : &(*iter);
 }
@@ -470,15 +466,29 @@ SkMesh::SkMesh(SkMesh&&)      = default;
 SkMesh& SkMesh::operator=(const SkMesh&) = default;
 SkMesh& SkMesh::operator=(SkMesh&&)      = default;
 
+sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, const void* data, size_t size) {
+    if (!dc) {
+        return SkMeshPriv::CpuIndexBuffer::Make(data, size);
+    }
+#if SK_SUPPORT_GPU
+    return SkMeshPriv::GpuIndexBuffer::Make(dc, data, size);
+#endif
+    return nullptr;
+}
+
 sk_sp<IndexBuffer> SkMesh::MakeIndexBuffer(GrDirectContext* dc, sk_sp<const SkData> data) {
     if (!data) {
         return nullptr;
     }
+    return MakeIndexBuffer(dc, data->data(), data->size());
+}
+
+sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, const void* data, size_t size) {
     if (!dc) {
-        return SkMeshPriv::CpuIndexBuffer::Make(std::move(data));
+        return SkMeshPriv::CpuVertexBuffer::Make(data, size);
     }
 #if SK_SUPPORT_GPU
-    return SkMeshPriv::GpuIndexBuffer::Make(dc, std::move(data));
+    return SkMeshPriv::GpuVertexBuffer::Make(dc, data, size);
 #endif
     return nullptr;
 }
@@ -487,13 +497,7 @@ sk_sp<VertexBuffer> SkMesh::MakeVertexBuffer(GrDirectContext* dc, sk_sp<const Sk
     if (!data) {
         return nullptr;
     }
-    if (!dc) {
-        return SkMeshPriv::CpuVertexBuffer::Make(std::move(data));
-    }
-#if SK_SUPPORT_GPU
-    return SkMeshPriv::GpuVertexBuffer::Make(dc, std::move(data));
-#endif
-    return nullptr;
+    return MakeVertexBuffer(dc, data->data(), data->size());
 }
 
 SkMesh SkMesh::Make(sk_sp<SkMeshSpecification> spec,
@@ -607,5 +611,68 @@ bool SkMesh::validate() const {
 
     return sm.ok();
 }
+
+//////////////////////////////////////////////////////////////////////////////
+
+static inline bool check_update(const void* data, size_t offset, size_t size, size_t bufferSize) {
+    SkSafeMath sm;
+    return data                                &&
+           size                                &&
+           SkIsAlign4(offset)                  &&
+           SkIsAlign4(size)                    &&
+           sm.add(offset, size) <= bufferSize  &&
+           sm.ok();
+}
+
+bool SkMesh::IndexBuffer::update(GrDirectContext* dc,
+                                 const void* data,
+                                 size_t offset,
+                                 size_t size) {
+    return check_update(data, offset, size, this->size()) && this->onUpdate(dc, data, offset, size);
+}
+
+bool SkMesh::VertexBuffer::update(GrDirectContext* dc,
+                                  const void* data,
+                                  size_t offset,
+                                  size_t size) {
+    return check_update(data, offset, size, this->size()) && this->onUpdate(dc, data, offset, size);
+}
+
+#if SK_SUPPORT_GPU
+bool SkMeshPriv::UpdateGpuBuffer(GrDirectContext* dc,
+                                 sk_sp<GrGpuBuffer> buffer,
+                                 const void* data,
+                                 size_t offset,
+                                 size_t size) {
+    if (!dc || dc != buffer->getContext()) {
+        return false;
+    }
+    SkASSERT(!dc->abandoned()); // If dc is abandoned then buffer->getContext() should be null.
+
+    if (!dc->priv().caps()->transferFromBufferToBufferSupport()) {
+        // TODO: Add task that takes a copy of data and pushes it to buffer.
+        return false;
+    }
+
+    // TODO: Use staging buffer manager if available to be more efficient with buffer space.
+    auto tempBuffer = dc->priv().resourceProvider()->createBuffer(size,
+                                                                  GrGpuBufferType::kXferCpuToGpu,
+                                                                  kDynamic_GrAccessPattern);
+    if (!tempBuffer) {
+        return false;
+    }
+    if (!tempBuffer->updateData(data, 0, size, /*preserve=*/false)) {
+        return false;
+    }
+
+    dc->priv().drawingManager()->newBufferTransferTask(std::move(tempBuffer),
+                                                       /*srcOffset=*/0,
+                                                       std::move(buffer),
+                                                       offset,
+                                                       size);
+
+    return true;
+}
+#endif  // SK_SUPPORT_GPU
 
 #endif  // SK_ENABLE_SKSL

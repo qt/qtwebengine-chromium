@@ -20,6 +20,7 @@
 #include <unordered_set>
 
 #include "dawn/common/Log.h"
+#include "dawn/common/Version_autogen.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/AsyncTask.h"
 #include "dawn/native/AttachmentState.h"
@@ -208,8 +209,8 @@ DeviceBase::DeviceBase(AdapterBase* adapter, const DeviceDescriptor* descriptor)
     // Record the cache key from the properties. Note that currently, if a new extension
     // descriptor is added (and probably handled here), the cache key recording needs to be
     // updated.
-    mDeviceCacheKey.Record(adapterProperties, mEnabledFeatures.featuresBitSet,
-                           mEnabledToggles.toggleBitset, cacheDesc);
+    StreamIn(&mDeviceCacheKey, kDawnVersion, adapterProperties, mEnabledFeatures.featuresBitSet,
+             mEnabledToggles.toggleBitset, cacheDesc);
 }
 
 DeviceBase::DeviceBase() : mState(State::Alive) {
@@ -622,9 +623,14 @@ bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) 
 }
 
 BlobCache* DeviceBase::GetBlobCache() {
+#if TINT_BUILD_WGSL_WRITER
+    // TODO(crbug.com/dawn/1481): Shader caching currently has a dependency on the WGSL writer to
+    // generate cache keys. We can lift the dependency once we also cache frontend parsing,
+    // transformations, and reflection.
     if (IsToggleEnabled(Toggle::EnableBlobCache)) {
         return mInstance->GetBlobCache();
     }
+#endif
     return nullptr;
 }
 
@@ -1221,6 +1227,14 @@ BufferBase* DeviceBase::APICreateErrorBuffer() {
     return BufferBase::MakeError(this, &desc);
 }
 
+ExternalTextureBase* DeviceBase::APICreateErrorExternalTexture() {
+    return ExternalTextureBase::MakeError(this);
+}
+
+TextureBase* DeviceBase::APICreateErrorTexture(const TextureDescriptor* desc) {
+    return TextureBase::MakeError(this, desc);
+}
+
 // Other Device API methods
 
 // Returns true if future ticking is needed.
@@ -1397,12 +1411,12 @@ QueueBase* DeviceBase::GetQueue() const {
 
 // Implementation details of object creation
 
-ResultOrError<Ref<BindGroupBase>> DeviceBase::CreateBindGroup(
-    const BindGroupDescriptor* descriptor) {
+ResultOrError<Ref<BindGroupBase>> DeviceBase::CreateBindGroup(const BindGroupDescriptor* descriptor,
+                                                              UsageValidationMode mode) {
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
-        DAWN_TRY_CONTEXT(ValidateBindGroupDescriptor(this, descriptor), "validating %s against %s",
-                         descriptor, descriptor->layout);
+        DAWN_TRY_CONTEXT(ValidateBindGroupDescriptor(this, descriptor, mode),
+                         "validating %s against %s", descriptor, descriptor->layout);
     }
     return CreateBindGroupImpl(descriptor);
 }
@@ -1912,6 +1926,12 @@ bool DeviceBase::MayRequireDuplicationOfIndirectParameters() const {
 bool DeviceBase::ShouldDuplicateParametersForDrawIndirect(
     const RenderPipelineBase* renderPipelineBase) const {
     return false;
+}
+
+uint64_t DeviceBase::GetBufferCopyOffsetAlignmentForDepthStencil() const {
+    // For depth-stencil texture, buffer offset must be a multiple of 4, which is required
+    // by WebGPU and Vulkan SPEC.
+    return 4u;
 }
 
 }  // namespace dawn::native

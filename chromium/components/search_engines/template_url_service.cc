@@ -16,6 +16,7 @@
 #include "base/debug/crash_logging.h"
 #include "base/format_macros.h"
 #include "base/memory/raw_ptr.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/rand_util.h"
@@ -54,6 +55,10 @@ namespace {
 
 const char kDeleteSyncedEngineHistogramName[] =
     "Search.DeleteSyncedSearchEngine";
+// TODO(yoangela): Consider sharing this const with
+//  "Omnibox.KeywordModeUsageByEngineType.Accepted" in omnibox_edit_model.cc.
+const char kKeywordModeUsageByEngineTypeHistogramName[] =
+    "Omnibox.KeywordModeUsageByEngineType";
 
 // Values for an enumerated histogram used to track whenever an ACTION_DELETE is
 // sent to the server for search engines. These are persisted. Do not re-number.
@@ -670,10 +675,20 @@ void TemplateURLService::SetIsActiveTemplateURL(TemplateURL* url,
   DCHECK(url);
 
   TemplateURLData data(url->data());
-  data.is_active = is_active ? TemplateURLData::ActiveStatus::kTrue
-                             : TemplateURLData::ActiveStatus::kFalse;
+  std::string histogram_name = kKeywordModeUsageByEngineTypeHistogramName;
+  if (is_active) {
+    data.is_active = TemplateURLData::ActiveStatus::kTrue;
+    histogram_name.append(".Activated");
+  } else {
+    data.is_active = TemplateURLData::ActiveStatus::kFalse;
+    histogram_name.append(".Deactivated");
+  }
 
   Update(url, TemplateURL(data));
+
+  base::UmaHistogramEnumeration(
+      histogram_name, url->GetBuiltinEngineType(),
+      BuiltinEngineType::KEYWORD_MODE_ENGINE_TYPE_MAX);
 }
 
 TemplateURL* TemplateURLService::CreatePlayAPISearchEngine(
@@ -737,13 +752,15 @@ void TemplateURLService::UpdateProviderFavicons(
 }
 
 bool TemplateURLService::CanMakeDefault(const TemplateURL* url) const {
-  return
-      ((default_search_provider_source_ == DefaultSearchManager::FROM_USER) ||
-       (default_search_provider_source_ ==
-        DefaultSearchManager::FROM_FALLBACK)) &&
-      (url != GetDefaultSearchProvider()) &&
-      url->url_ref().SupportsReplacement(search_terms_data()) &&
-      (url->type() == TemplateURL::NORMAL);
+  return (default_search_provider_source_ == DefaultSearchManager::FROM_USER ||
+          default_search_provider_source_ ==
+              DefaultSearchManager::FROM_POLICY_RECOMMENDED ||
+          default_search_provider_source_ ==
+              DefaultSearchManager::FROM_FALLBACK) &&
+         (url != GetDefaultSearchProvider()) &&
+         url->url_ref().SupportsReplacement(search_terms_data()) &&
+         (url->type() == TemplateURL::NORMAL) &&
+         (url->starter_pack_id() != TemplateURLStarterPackData::kTabs);
 }
 
 void TemplateURLService::SetUserSelectedDefaultSearchProvider(
@@ -952,6 +969,22 @@ base::CallbackListSubscription TemplateURLService::RegisterOnLoadedCallback(
                  : on_loaded_callbacks_.Add(std::move(callback));
 }
 
+void TemplateURLService::EmitTemplateURLActiveOnStartupHistogram(
+    OwnedTemplateURLVector* template_urls) {
+  DCHECK(template_urls);
+
+  for (auto& turl : *template_urls) {
+    std::string histogram_name = kKeywordModeUsageByEngineTypeHistogramName;
+    histogram_name.append(
+        (turl->is_active() == TemplateURLData::ActiveStatus::kTrue)
+            ? ".ActiveOnStartup"
+            : ".InactiveOnStartup");
+    base::UmaHistogramEnumeration(
+        histogram_name, turl->GetBuiltinEngineType(),
+        BuiltinEngineType::KEYWORD_MODE_ENGINE_TYPE_MAX);
+  }
+}
+
 void TemplateURLService::OnWebDataServiceRequestDone(
     KeywordWebDataService::Handle h,
     std::unique_ptr<WDTypedResult> result) {
@@ -987,6 +1020,7 @@ void TemplateURLService::OnWebDataServiceRequestDone(
   {
     PatchMissingSyncGUIDs(template_urls.get());
     MaybeSetIsActiveSearchEngines(template_urls.get());
+    EmitTemplateURLActiveOnStartupHistogram(template_urls.get());
     SetTemplateURLs(std::move(template_urls));
 
     // This initializes provider_map_ which should be done before
@@ -1896,12 +1930,19 @@ bool TemplateURLService::ApplyDefaultSearchChangeNoMetrics(
   Scoper scoper(this);
 
   if (default_search_provider_source_ == DefaultSearchManager::FROM_POLICY ||
-      source == DefaultSearchManager::FROM_POLICY) {
+      default_search_provider_source_ ==
+          DefaultSearchManager::FROM_POLICY_RECOMMENDED ||
+      source == DefaultSearchManager::FROM_POLICY ||
+      source == DefaultSearchManager::FROM_POLICY_RECOMMENDED) {
     // We do this both to remove any no-longer-applicable policy-defined DSE as
     // well as to add the new one, if appropriate.
     UpdateProvidersCreatedByPolicy(
         &template_urls_,
-        source == DefaultSearchManager::FROM_POLICY ? data : nullptr);
+        source == DefaultSearchManager::FROM_POLICY ||
+                source == DefaultSearchManager::FROM_POLICY_RECOMMENDED
+            ? data
+            : nullptr,
+        /*is_mandatory=*/source == DefaultSearchManager::FROM_POLICY);
   }
 
   // |default_search_provider_source_| must be set before calling Update(),
@@ -2019,7 +2060,8 @@ TemplateURL* TemplateURLService::Add(std::unique_ptr<TemplateURL> template_url,
 // which case it is updated with the data from prefs.
 void TemplateURLService::UpdateProvidersCreatedByPolicy(
     OwnedTemplateURLVector* template_urls,
-    const TemplateURLData* default_from_prefs) {
+    const TemplateURLData* default_from_prefs,
+    bool is_mandatory) {
   DCHECK(template_urls);
 
   Scoper scoper(this);
@@ -2053,7 +2095,9 @@ void TemplateURLService::UpdateProvidersCreatedByPolicy(
 
   if (default_from_prefs) {
     default_search_provider_ = nullptr;
-    default_search_provider_source_ = DefaultSearchManager::FROM_POLICY;
+    default_search_provider_source_ =
+        is_mandatory ? DefaultSearchManager::FROM_POLICY
+                     : DefaultSearchManager::FROM_POLICY_RECOMMENDED;
     TemplateURLData new_data(*default_from_prefs);
     if (new_data.sync_guid.empty())
       new_data.GenerateSyncGUID();
@@ -2345,11 +2389,12 @@ bool TemplateURLService::RemoveDuplicateReplaceableEnginesOf(
     DCHECK_NE(turl, candidate) << "This algorithm runs BEFORE |candidate| is "
                                   "added to the keyword map.";
 
-    // Prepopulated engines are marked as safe_for_autoreplace(). But because
+    // Built-in engines are marked as safe_for_autoreplace(). But because
     // they are shown in the Default Search Engines Settings UI, users would
     // find it confusing if they were ever automatically removed.
     // https://crbug.com/1164024
-    if (turl->safe_for_autoreplace() && turl->prepopulate_id() == 0) {
+    if (turl->safe_for_autoreplace() && turl->prepopulate_id() == 0 &&
+        turl->starter_pack_id() == 0) {
       replaceable_turls.push_back(turl);
     }
   }
@@ -2399,7 +2444,7 @@ bool TemplateURLService::RemoveDuplicateReplaceableEnginesOf(
   // above. Most probably: the solution is to stop Syncing prepopulated engines
   // and make the GUIDs actually globally unique again.
   return candidate != best && candidate->safe_for_autoreplace() &&
-         candidate->prepopulate_id() == 0;
+         candidate->prepopulate_id() == 0 && candidate->starter_pack_id() == 0;
 }
 
 bool TemplateURLService::MatchesDefaultSearchProvider(TemplateURL* turl) const {

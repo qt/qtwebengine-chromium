@@ -15,6 +15,7 @@
 #include <xnnpack/log.h>
 #include <xnnpack/operator.h>
 #include <xnnpack/params.h>
+#include <xnnpack/requantization.h>
 #include <xnnpack/subgraph.h>
 #include <xnnpack/subgraph-validation.h>
 
@@ -258,15 +259,14 @@ enum xnn_status xnn_define_static_constant_pad(
   memcpy(&node->params.static_pad.post_paddings, post_paddings, num_dims * sizeof(size_t));
   switch (output_value->datatype) {
     case xnn_datatype_fp32:
-      node->params.static_pad.padding_value = fp32_to_bits(padding_value);
+      node->params.static_pad.padding_value = float_as_uint32(padding_value);
       break;
 #ifndef XNN_NO_QS8_OPERATORS
     case xnn_datatype_qint8:
     {
       const float output_scale = output_value->quantization.scale;
       const int32_t output_zero_point = output_value->quantization.zero_point;
-      node->params.static_pad.padding_value = (int8_t)
-        lrintf(fminf(fmaxf(padding_value / output_scale + (float) output_zero_point, -128.0f), 127.0f));
+      node->params.static_pad.padding_value = xnn_qs8_quantize(padding_value, output_scale, output_zero_point);
       break;
     }
 #endif  // !defined(XNN_NO_QS8_OPERATORS)
@@ -275,8 +275,7 @@ enum xnn_status xnn_define_static_constant_pad(
     {
       const float output_scale = output_value->quantization.scale;
       const int32_t output_zero_point = output_value->quantization.zero_point;
-      node->params.static_pad.padding_value = (uint8_t)
-        lrintf(fminf(fmaxf(padding_value / output_scale + (float) output_zero_point, 0.0f), 255.0f));
+      node->params.static_pad.padding_value = xnn_qu8_quantize(padding_value, output_scale, output_zero_point);
       break;
     }
 #endif  // !defined(XNN_NO_QU8_OPERATORS)

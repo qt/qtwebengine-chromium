@@ -10,7 +10,6 @@
 #include <xnnpack/aarch64-assembler.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/gemm.h>
-#include <xnnpack/params.h>
 
 namespace xnnpack {
 namespace aarch64 {
@@ -244,11 +243,11 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
   if (max_mr > 4) {
     fmla(v28.v4s(), v12.v4s(), v4.s()[0]);
   }
-  if (prefetch) {
-    prfm(kPLDL1KEEP, mem[x5, 256]); // Prefetch B
-  }
   if (max_mr > 5) {
     fmla(v30.v4s(), v12.v4s(), v5.s()[0]);
+  }
+  if (prefetch) {
+    prfm(kPLDL1KEEP, mem[x5, 256]); // Prefetch B
   }
 
   fmla(v21.v4s(), v13.v4s(), v0.s()[0]);
@@ -271,24 +270,24 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
     fmla(v31.v4s(), v13.v4s(), v5.s()[0]);
   }
 
-  fmla(v20.v4s(), v14.v4s(), v0.s()[1]);
   if (prefetch) {
     prfm(kPLDL1KEEP, mem[x5, 384]);
   }
+  fmla(v20.v4s(), v14.v4s(), v0.s()[1]);
   if (max_mr > 1) {
     fmla(v22.v4s(), v14.v4s(), v1.s()[1]);
   }
   if (max_mr > 2) {
     fmla(v24.v4s(), v14.v4s(), v2.s()[1]);
   }
+  if (prefetch) {
+    prfm(kPLDL1KEEP, mem[x5, 448]);
+  }
   if (max_mr > 3) {
     fmla(v26.v4s(), v14.v4s(), v3.s()[1]);
   }
   if (max_mr > 4) {
     fmla(v28.v4s(), v14.v4s(), v4.s()[1]);
-  }
-  if (prefetch) {
-    prfm(kPLDL1KEEP, mem[x5, 448]);
   }
   if (max_mr > 5) {
     fmla(v30.v4s(), v14.v4s(), v5.s()[1]);
@@ -572,12 +571,18 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
   if (max_mr > 5) {
     fmla(v30.v4s(), v12.v4s(), v5.s()[0]);
   }
+  if (prefetch) {
+    prfm(kPLDL1KEEP, mem[x5, 256]); // Prefetch B
+  }
   fmla(v21.v4s(), v13.v4s(), v0.s()[0]);
   if (max_mr > 1) {
     fmla(v23.v4s(), v13.v4s(), v1.s()[0]);
   }
   if (max_mr > 2) {
     fmla(v25.v4s(), v13.v4s(), v2.s()[0]);
+  }
+  if (prefetch) {
+    prfm(kPLDL1KEEP, mem[x5, 320]);
   }
   if (max_mr > 3) {
     fmla(v27.v4s(), v13.v4s(), v3.s()[0]);
@@ -588,24 +593,24 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
   if (max_mr > 5) {
     fmla(v31.v4s(), v13.v4s(), v5.s()[0]);
   }
-  fmla(v20.v4s(), v14.v4s(), v0.s()[1]);
   if (prefetch) {
-    prfm(kPLDL1KEEP, mem[x5, 128]); // Prefetch B
+    prfm(kPLDL1KEEP, mem[x5, 384]);
   }
+  fmla(v20.v4s(), v14.v4s(), v0.s()[1]);
   if (max_mr > 1) {
     fmla(v22.v4s(), v14.v4s(), v1.s()[1]);
   }
   if (max_mr > 2) {
     fmla(v24.v4s(), v14.v4s(), v2.s()[1]);
   }
+  if (prefetch) {
+    prfm(kPLDL1KEEP, mem[x5, 448]);
+  }
   if (max_mr > 3) {
     fmla(v26.v4s(), v14.v4s(), v3.s()[1]);
   }
   if (max_mr > 4) {
     fmla(v28.v4s(), v14.v4s(), v4.s()[1]);
-  }
-  if (prefetch) {
-    prfm(kPLDL1KEEP, mem[x5, 256]);
   }
   if (max_mr > 5) {
     fmla(v30.v4s(), v14.v4s(), v5.s()[1]);

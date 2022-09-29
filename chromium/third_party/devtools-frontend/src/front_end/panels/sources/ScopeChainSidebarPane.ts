@@ -28,12 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import * as Common from '../../core/common/common.js';
+import type * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as Bindings from '../../models/bindings/bindings.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
 import * as LinearMemoryInspector from '../../ui/components/linear_memory_inspector/linear_memory_inspector.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
@@ -76,10 +75,6 @@ const UIStrings = {
   *@description A context menu item in the Scope View of the Sources Panel
   */
   revealInMemoryInspectorPanel: 'Reveal in Memory Inspector panel',
-  /**
-  *@description Error message that shows up in the console if a buffer to be opened in the lienar memory inspector cannot be found.
-  */
-  couldNotOpenLinearMemory: 'Could not open linear memory inspector: failed locating buffer.',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/ScopeChainSidebarPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -104,6 +99,8 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
     this.infoElement = document.createElement('div');
     this.infoElement.className = 'gray-info-message';
     this.infoElement.tabIndex = -1;
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebugInfoAttached, this.debugInfoAttached, this);
     void this.update();
   }
 
@@ -153,6 +150,12 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox implements UI.ContextF
     if (this.#scopesScript) {
       this.#scopesScript.debuggerModel.sourceMapManager().addEventListener(
           SDK.SourceMapManager.Events.SourceMapAttached, this.sourceMapAttached, this);
+    }
+  }
+
+  private debugInfoAttached(event: Common.EventTarget.EventTargetEvent<SDK.Script.Script>): void {
+    if (event.data === this.#scopesScript) {
+      void this.update();
     }
   }
 
@@ -310,53 +313,21 @@ export class OpenLinearMemoryInspector extends UI.Widget.VBox implements UI.Cont
     return openLinearMemoryInspectorInstance;
   }
 
-  private isMemoryObjectProperty(obj: SDK.RemoteObject.RemoteObject): boolean {
-    const isWasmOrBuffer = obj.type === 'object' && obj.subtype &&
-        LinearMemoryInspector.LinearMemoryInspectorController.ACCEPTED_MEMORY_TYPES.includes(obj.subtype);
-    if (isWasmOrBuffer) {
-      return true;
-    }
-
-    const isWasmDWARF = obj instanceof Bindings.DebuggerLanguagePlugins.ValueNode;
-    if (isWasmDWARF) {
-      return obj.inspectableAddress !== undefined;
-    }
-
-    return false;
-  }
-
   appendApplicableItems(event: Event, contextMenu: UI.ContextMenu.ContextMenu, target: Object): void {
     if (target instanceof ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement) {
-      if (target.property && target.property.value && this.isMemoryObjectProperty(target.property.value)) {
+      if (target.property && target.property.value &&
+          LinearMemoryInspector.LinearMemoryInspectorController.isMemoryObjectProperty(target.property.value)) {
+        const expression = target.path();
         contextMenu.debugSection().appendItem(
             i18nString(UIStrings.revealInMemoryInspectorPanel),
-            this.openMemoryInspector.bind(this, target.property.value));
+            this.openMemoryInspector.bind(this, expression, target.property.value));
       }
     }
   }
 
-  private async openMemoryInspector(obj: SDK.RemoteObject.RemoteObject): Promise<void> {
+  private async openMemoryInspector(expression: string, obj: SDK.RemoteObject.RemoteObject): Promise<void> {
     const controller = LinearMemoryInspector.LinearMemoryInspectorController.LinearMemoryInspectorController.instance();
-    let address = 0;
-    let memoryObj: SDK.RemoteObject.RemoteObject = obj;
-
-    if (obj instanceof Bindings.DebuggerLanguagePlugins.ValueNode) {
-      const valueNode = obj;
-      address = valueNode.inspectableAddress || 0;
-      const callFrame = valueNode.callFrame;
-      const response = await obj.debuggerModel().agent.invoke_evaluateOnCallFrame({
-        callFrameId: callFrame.id,
-        expression: 'memories[0]',
-      });
-      const error = response.getError();
-      if (error) {
-        console.error(error);
-        Common.Console.Console.instance().error(i18nString(UIStrings.couldNotOpenLinearMemory));
-      }
-      const runtimeModel = obj.debuggerModel().runtimeModel();
-      memoryObj = runtimeModel.createRemoteObject(response.result);
-    }
     Host.userMetrics.linearMemoryInspectorRevealedFrom(Host.UserMetrics.LinearMemoryInspectorRevealedFrom.ContextMenu);
-    void controller.openInspectorView(memoryObj, address);
+    void controller.openInspectorView(obj, /* address */ undefined, expression);
   }
 }

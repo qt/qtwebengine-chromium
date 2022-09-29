@@ -35,6 +35,7 @@
 #include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/StagingBuffer.h"
 #include "dawn/native/Toggles.h"
+#include "dawn/native/UsageValidationMode.h"
 
 #include "dawn/native/DawnNative.h"
 #include "dawn/native/dawn_platform.h"
@@ -203,7 +204,9 @@ class DeviceBase : public RefCountedWithExternalCount {
     Ref<PipelineCacheBase> GetOrCreatePipelineCache(const CacheKey& key);
 
     // Object creation methods that be used in a reentrant manner.
-    ResultOrError<Ref<BindGroupBase>> CreateBindGroup(const BindGroupDescriptor* descriptor);
+    ResultOrError<Ref<BindGroupBase>> CreateBindGroup(
+        const BindGroupDescriptor* descriptor,
+        UsageValidationMode mode = UsageValidationMode::Default);
     ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayout(
         const BindGroupLayoutDescriptor* descriptor,
         bool allowInternalBinding = false);
@@ -263,6 +266,8 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     // For Dawn Wire
     BufferBase* APICreateErrorBuffer();
+    ExternalTextureBase* APICreateErrorExternalTexture();
+    TextureBase* APICreateErrorTexture(const TextureDescriptor* desc);
 
     QueueBase* APIGetQueue();
 
@@ -357,6 +362,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     // BackendMetadata that we can query from the device.
     virtual uint32_t GetOptimalBytesPerRowAlignment() const = 0;
     virtual uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const = 0;
+    virtual uint64_t GetBufferCopyOffsetAlignmentForDepthStencil() const;
 
     virtual float GetTimestampPeriodInNS() const = 0;
 

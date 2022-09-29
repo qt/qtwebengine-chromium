@@ -76,9 +76,11 @@ struct allocate_small_svd<MatrixType, 0> {
  * \tparam MatrixType_ the type of the matrix of which we are computing the SVD decomposition
  *
  * \tparam Options_ this optional parameter allows one to specify options for computing unitaries \a U and \a V.
- *                  Possible values are #ComputeThinU, #ComputeThinV, #ComputeFullU, #ComputeFullV.
- *                  It is not possible to request both the thin and full version of \a U or \a V.
- *                  By default, unitaries are not computed.
+ *                  Possible values are #ComputeThinU, #ComputeThinV, #ComputeFullU, #ComputeFullV, and
+ *                  #DisableQRDecomposition. It is not possible to request both the thin and full version of \a U or
+ *                  \a V. By default, unitaries are not computed. BDCSVD uses R-Bidiagonalization to improve
+ *                  performance on tall and wide matrices. For backwards compatility, the option
+ *                  #DisableQRDecomposition can be used to disable this optimization.
  *
  * This class first reduces the input matrix to bi-diagonal form using class UpperBidiagonalization,
  * and then performs a divide-and-conquer diagonalization. Small blocks are diagonalized using class JacobiSVD.
@@ -110,6 +112,8 @@ public:
   typedef typename Base::Index Index;
   enum {
     Options = Options_,
+    QRDecomposition = Options & internal::QRPreconditionerBits,
+    ComputationOptions = Options & internal::ComputationOptionsBits,
     RowsAtCompileTime = Base::RowsAtCompileTime,
     ColsAtCompileTime = Base::ColsAtCompileTime,
     DiagSizeAtCompileTime = Base::DiagSizeAtCompileTime,
@@ -251,8 +255,12 @@ private:
   ArrayXr m_workspace;
   ArrayXi m_workspaceI;
   int m_algoswap;
-  bool m_isTranspose, m_compU, m_compV;
-  JacobiSVD<MatrixType, Options> smallSvd;
+  bool m_isTranspose, m_compU, m_compV, m_useQrDecomp;
+  JacobiSVD<MatrixType, ComputationOptions> smallSvd;
+  HouseholderQR<MatrixX> qrDecomp;
+  internal::UpperBidiagonalization<MatrixX> bid;
+  MatrixX copyWorkspace;
+  MatrixX reducedTriangle;
 
   using Base::m_computationOptions;
   using Base::m_computeThinU;
@@ -276,7 +284,7 @@ void BDCSVD<MatrixType, Options>::allocate(Index rows, Index cols, unsigned int 
     return;
 
   if (cols < m_algoswap)
-    internal::allocate_small_svd<MatrixType, Options>::run(smallSvd, rows, cols, computationOptions);
+    internal::allocate_small_svd<MatrixType, ComputationOptions>::run(smallSvd, rows, cols, computationOptions);
 
   m_computed = MatrixXr::Zero(m_diagSize + 1, m_diagSize );
   m_compU = computeV();
@@ -284,6 +292,22 @@ void BDCSVD<MatrixType, Options>::allocate(Index rows, Index cols, unsigned int 
   m_isTranspose = (cols > rows);
   if (m_isTranspose)
     std::swap(m_compU, m_compV);
+
+  // kMinAspectRatio is the crossover point that determines if we perform R-Bidiagonalization
+  // or bidiagonalize the input matrix directly.
+  // It is based off of LAPACK's dgesdd routine, which uses 11.0/6.0
+  // we use a larger scalar to prevent a regression for relatively square matrices.
+  constexpr Index kMinAspectRatio = 4;
+  constexpr bool disableQrDecomp = static_cast<int>(QRDecomposition) == static_cast<int>(DisableQRDecomposition);
+  m_useQrDecomp = !disableQrDecomp && ((rows / kMinAspectRatio > cols) || (cols / kMinAspectRatio > rows));
+  if (m_useQrDecomp) {
+    qrDecomp = HouseholderQR<MatrixX>((std::max)(rows, cols), (std::min)(rows, cols));
+    reducedTriangle = MatrixX(m_diagSize, m_diagSize);
+  }
+
+  copyWorkspace = MatrixX(m_isTranspose ? cols : rows, m_isTranspose ? rows : cols);
+  bid = internal::UpperBidiagonalization<MatrixX>(m_useQrDecomp ? m_diagSize : copyWorkspace.rows(),
+                                                  m_useQrDecomp ? m_diagSize : copyWorkspace.cols());
 
   if (m_compU) m_naiveU = MatrixXr::Zero(m_diagSize + 1, m_diagSize + 1 );
   else         m_naiveU = MatrixXr::Zero(2, m_diagSize + 1 );
@@ -330,13 +354,22 @@ BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(const Mat
   }
 
   if(numext::is_exactly_zero(scale)) scale = Literal(1);
-  MatrixX copy;
-  if (m_isTranspose) copy = matrix.adjoint()/scale;
-  else               copy = matrix/scale;
 
-  //**** step 1 - Bidiagonalization
-  // FIXME this line involves temporaries
-  internal::UpperBidiagonalization<MatrixX> bid(copy);
+  if (m_isTranspose) copyWorkspace = matrix.adjoint() / scale;
+  else copyWorkspace = matrix / scale;
+
+  //**** step 1 - Bidiagonalization.
+  // If the problem is sufficiently rectangular, we perform R-Bidiagonalization: compute A = Q(R/0)
+  // and then bidiagonalize R. Otherwise, if the problem is relatively square, we
+  // bidiagonalize the input matrix directly.
+  if (m_useQrDecomp) {
+    qrDecomp.compute(copyWorkspace);
+    reducedTriangle = qrDecomp.matrixQR().topRows(m_diagSize);
+    reducedTriangle.template triangularView<StrictlyLower>().setZero();
+    bid.compute(reducedTriangle);
+  } else {
+    bid.compute(copyWorkspace);
+  }
 
   //**** step 2 - Divide & Conquer
   m_naiveU.setZero();
@@ -368,12 +401,14 @@ BDCSVD<MatrixType, Options>& BDCSVD<MatrixType, Options>::compute_impl(const Mat
     }
   }
 
-#ifdef EIGEN_BDCSVD_DEBUG_VERBOSE
-//   std::cout << "m_naiveU\n" << m_naiveU << "\n\n";
-//   std::cout << "m_naiveV\n" << m_naiveV << "\n\n";
-#endif
+  //**** step 4 - Finalize unitaries U and V
   if(m_isTranspose) copyUV(bid.householderV(), bid.householderU(), m_naiveV, m_naiveU);
   else              copyUV(bid.householderU(), bid.householderV(), m_naiveU, m_naiveV);
+
+  if (m_useQrDecomp) {
+    if (m_isTranspose && computeV()) m_matrixV.applyOnTheLeft(qrDecomp.householderQ());
+    else if (!m_isTranspose && computeU()) m_matrixU.applyOnTheLeft(qrDecomp.householderQ());
+  }
 
   m_isInitialized = true;
   return *this;
@@ -386,17 +421,21 @@ void BDCSVD<MatrixType, Options>::copyUV(const HouseholderU& householderU, const
   // Note exchange of U and V: m_matrixU is set from m_naiveV and vice versa
   if (computeU())
   {
-    Index Ucols = m_computeThinU ? m_diagSize : householderU.cols();
-    m_matrixU = MatrixX::Identity(householderU.cols(), Ucols);
+    Index Ucols = m_computeThinU ? m_diagSize : rows();
+    m_matrixU = MatrixX::Identity(rows(), Ucols);
     m_matrixU.topLeftCorner(m_diagSize, m_diagSize) = naiveV.template cast<Scalar>().topLeftCorner(m_diagSize, m_diagSize);
-    householderU.applyThisOnTheLeft(m_matrixU); // FIXME this line involves a temporary buffer
+    // FIXME the following conditionals involve temporary buffers
+    if (m_useQrDecomp) m_matrixU.topLeftCorner(householderU.cols(), m_diagSize).applyOnTheLeft(householderU);
+    else m_matrixU.applyOnTheLeft(householderU);
   }
   if (computeV())
   {
-    Index Vcols = m_computeThinV ? m_diagSize : householderV.cols();
-    m_matrixV = MatrixX::Identity(householderV.cols(), Vcols);
+    Index Vcols = m_computeThinV ? m_diagSize : cols();
+    m_matrixV = MatrixX::Identity(cols(), Vcols);
     m_matrixV.topLeftCorner(m_diagSize, m_diagSize) = naiveU.template cast<Scalar>().topLeftCorner(m_diagSize, m_diagSize);
-    householderV.applyThisOnTheLeft(m_matrixV); // FIXME this line involves a temporary buffer
+    // FIXME the following conditionals involve temporary buffers
+    if (m_useQrDecomp) m_matrixV.topLeftCorner(householderV.cols(), m_diagSize).applyOnTheLeft(householderV);
+    else m_matrixV.applyOnTheLeft(householderV);
   }
 }
 
@@ -1044,8 +1083,8 @@ void BDCSVD<MatrixType, Options>::computeSingVals(const ArrayRef& col0, const Ar
     // perturb singular value slightly if it equals diagonal entry to avoid division by zero later
     // (deflation is supposed to avoid this from happening)
     // - this does no seem to be necessary anymore -
-//     if (singVals[k] == left) singVals[k] *= 1 + NumTraits<RealScalar>::epsilon();
-//     if (singVals[k] == right) singVals[k] *= 1 - NumTraits<RealScalar>::epsilon();
+    // if (singVals[k] == left) singVals[k] *= 1 + NumTraits<RealScalar>::epsilon();
+    // if (singVals[k] == right) singVals[k] *= 1 - NumTraits<RealScalar>::epsilon();
   }
 }
 
@@ -1097,7 +1136,14 @@ void BDCSVD<MatrixType, Options>::perturbCol0(const ArrayRef& col0, const ArrayR
             std::cout << "  " << "j=" << j << "\n";
           }
 #endif
-          Index j = i<k ? i : perm(l-1);
+          // Avoid index out of bounds.
+          // Will end up setting zhat(k) = 0.
+          if (i >= k && l == 0) {
+            m_info = NumericalIssue;
+            prod = 0;
+            break;
+          }
+          Index j = i<k ? i : l > 0 ? perm(l-1) : i;
 #ifdef EIGEN_BDCSVD_SANITY_CHECKS
           if(!(dk!=Literal(0) || diag(i)!=Literal(0)))
           {

@@ -78,7 +78,7 @@ struct SpirvShader::Impl::Group
 
 SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, EmitState *state) const
 {
-	static_assert(SIMD::Width == 4, "EmitGroupNonUniform makes many assumptions that the SIMD vector width is 4");
+	ASSERT(SIMD::Width == 4);  // EmitGroupNonUniform makes many assumptions that the SIMD vector width is 4
 
 	auto &type = getType(Type::ID(insn.word(1)));
 	Object::ID resultId = insn.word(2);
@@ -190,6 +190,59 @@ SpirvShader::EmitResult SpirvShader::EmitGroupNonUniform(InsnIterator insn, Emit
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
 				dst.move(i, OrAll(value.Int(i) & elect));
+			}
+		}
+		break;
+
+	case spv::OpGroupNonUniformQuadBroadcast:
+		{
+			auto valueId = Object::ID(insn.word(4));
+			Operand value(this, state, valueId);
+
+			ASSERT(getType(getObject(insn.word(5))).componentCount == 1);
+			auto indexId = Object::ID(insn.word(5));
+			SIMD::Int index = Operand(this, state, indexId).Int(0);
+
+			SIMD::Int active = state->activeLaneMask();
+			// Populate all lanes in index with the same value. Index is required to be
+			// uniform per the SPIR-V spec, so all active lanes should be identical.
+			index = OrAll(active & index);
+			SIMD::Int mask = CmpEQ(index, SIMD::Int(0, 1, 2, 3));
+
+			for(auto i = 0u; i < type.componentCount; i++)
+			{
+				dst.move(i, OrAll(value.Int(i) & mask));
+			}
+		}
+		break;
+
+	case spv::OpGroupNonUniformQuadSwap:
+		{
+			auto valueId = Object::ID(insn.word(4));
+			// SPIR-V spec: Drection must be a scalar of integer type and come from a constant instruction
+			int direction = GetConstScalarInt(insn.word(5));
+
+			Operand value(this, state, valueId);
+			for(auto i = 0u; i < type.componentCount; i++)
+			{
+				SIMD::Int v = value.Int(i);
+				switch(direction)
+				{
+				case 0:  // Horizontal
+					dst.move(i, v.yxwz);
+					break;
+				case 1:  // Vertical
+					dst.move(i, v.zwxy);
+					break;
+				case 2:  // Diagonal
+					dst.move(i, v.wzyx);
+					break;
+				default:
+					// The SPIR-V spec doesn't define what happens in this case,
+					// so the result in undefined.
+					UNSUPPORTED("SPIR-V does not define a OpGroupNonUniformQuadSwap result for a direction of %d", direction);
+					break;
+				}
 			}
 		}
 		break;

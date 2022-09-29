@@ -51,8 +51,8 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import * as ElementsComponents from './components/components.js';
-import type {ComputedStyleChangedEvent} from './ComputedStyleModel.js';
-import {ComputedStyleModel} from './ComputedStyleModel.js';
+
+import {ComputedStyleModel, type ComputedStyleChangedEvent} from './ComputedStyleModel.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsSidebarPane} from './ElementsSidebarPane.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
@@ -60,7 +60,7 @@ import {StyleEditorWidget} from './StyleEditorWidget.js';
 import {StylePropertyHighlighter} from './StylePropertyHighlighter.js';
 import stylesSidebarPaneStyles from './stylesSidebarPane.css.js';
 
-import type {StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import {activeHints, type StylePropertyTreeElement} from './StylePropertyTreeElement.js';
 import {
   StylePropertiesSection,
   BlankStylePropertiesSection,
@@ -213,9 +213,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private needsForceUpdate: boolean;
   private readonly resizeThrottler: Common.Throttler.Throttler;
   private readonly imagePreviewPopover: ImagePreviewPopover;
+  #hintPopoverHelper: UI.PopoverHelper.PopoverHelper;
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null;
   #urlToChangeTracker: Map<Platform.DevToolsPath.UrlString, ChangeTracker> = new Map();
   #copyChangesButton?: UI.Toolbar.ToolbarButton;
+  #updateAbortController?: AbortController;
+  #updateComputedStylesAbortController?: AbortController;
 
   static instance(): StylesSidebarPane {
     if (!stylesSidebarPaneInstance) {
@@ -281,6 +284,35 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }, () => this.node());
 
     this.activeCSSAngle = null;
+
+    this.#hintPopoverHelper = new UI.PopoverHelper.PopoverHelper(this.contentElement, event => {
+      const icon = event.composedPath()[0] as Element;
+
+      if (!icon) {
+        return null;
+      }
+
+      if (!icon.matches('.hint')) {
+        return null;
+      }
+
+      const hint = activeHints.get(icon);
+
+      if (!hint) {
+        return null;
+      }
+
+      return {
+        box: icon.boxInWindow(),
+        show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+          const popupElement = new ElementsComponents.CSSHintDetailsView.CSSHintDetailsView(hint);
+          popover.contentElement.appendChild(popupElement);
+          return true;
+        },
+      };
+    });
+    this.#hintPopoverHelper.setTimeout(200);
+    this.#hintPopoverHelper.setHasPadding(true);
   }
 
   swatchPopoverHelper(): InlineEditor.SwatchPopoverHelper.SwatchPopoverHelper {
@@ -422,6 +454,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   forceUpdate(): void {
     this.needsForceUpdate = true;
     this.swatchPopoverHelperInternal.hide();
+    this.#updateAbortController?.abort();
     this.resetCache();
     this.update();
   }
@@ -574,8 +607,17 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   }
 
   async doUpdate(): Promise<void> {
+    this.#updateAbortController?.abort();
+    this.#updateAbortController = new AbortController();
+    await this.#innerDoUpdate(this.#updateAbortController.signal);
+  }
+
+  async #innerDoUpdate(signal: AbortSignal): Promise<void> {
     if (!this.initialUpdateCompleted) {
       window.setTimeout(() => {
+        if (signal.aborted) {
+          return;
+        }
         if (!this.initialUpdateCompleted) {
           // the spinner will get automatically removed when innerRebuildUpdate is called
           this.sectionsContainer.createChild('span', 'spinner');
@@ -584,7 +626,27 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     const matchedStyles = await this.fetchMatchedCascade();
-    await this.innerRebuildUpdate(matchedStyles);
+
+    if (signal.aborted) {
+      return;
+    }
+
+    const nodeId = this.node()?.id;
+    const parentNodeId = matchedStyles?.getParentLayoutNodeId();
+
+    const [computedStyles, parentsComputedStyles] =
+        await Promise.all([this.fetchComputedStylesFor(nodeId), this.fetchComputedStylesFor(parentNodeId)]);
+
+    if (signal.aborted) {
+      return;
+    }
+
+    await this.innerRebuildUpdate(signal, matchedStyles, computedStyles, parentsComputedStyles);
+
+    if (signal.aborted) {
+      return;
+    }
+
     if (!this.initialUpdateCompleted) {
       this.initialUpdateCompleted = true;
       this.appendToolbarItem(this.createRenderingShortcuts());
@@ -596,7 +658,17 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       this.dispatchEventToListeners(Events.InitialUpdateCompleted);
     }
 
+    this.nodeStylesUpdatedForTest((this.node() as SDK.DOMModel.DOMNode), true);
+
     this.dispatchEventToListeners(Events.StylesUpdateCompleted, {hasMatchedStyles: this.hasMatchedStyles});
+  }
+
+  private async fetchComputedStylesFor(nodeId: Protocol.DOM.NodeId|undefined): Promise<Map<string, string>|null> {
+    const node = this.node();
+    if (node === null || nodeId === undefined) {
+      return null;
+    }
+    return await node.domModel().cssModel().getComputedStyle(nodeId);
   }
 
   onResize(): void {
@@ -682,15 +754,39 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       for (const section of this.allSections()) {
         section.styleSheetEdited(edit);
       }
+      void this.refreshComputedStyles();
       return;
     }
 
     if (this.userOperation || this.isEditingStyle) {
+      void this.refreshComputedStyles();
       return;
     }
 
     this.resetCache();
     this.update();
+  }
+
+  async refreshComputedStyles(): Promise<void> {
+    this.#updateComputedStylesAbortController?.abort();
+    this.#updateAbortController = new AbortController();
+    const signal = this.#updateAbortController.signal;
+    const matchedStyles = await this.fetchMatchedCascade();
+    const nodeId = this.node()?.id;
+    const parentNodeId = matchedStyles?.getParentLayoutNodeId();
+
+    const [computedStyles, parentsComputedStyles] =
+        await Promise.all([this.fetchComputedStylesFor(nodeId), this.fetchComputedStylesFor(parentNodeId)]);
+
+    if (signal.aborted) {
+      return;
+    }
+
+    for (const section of this.allSections()) {
+      section.setComputedStyles(computedStyles);
+      section.setParentsComputedStyles(parentsComputedStyles);
+      section.updateAuthoringHint();
+    }
   }
 
   focusedSectionIndex(): number {
@@ -718,7 +814,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
   }
 
-  private async innerRebuildUpdate(matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null): Promise<void> {
+  private async innerRebuildUpdate(
+      signal: AbortSignal, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null,
+      computedStyles: Map<string, string>|null, parentsComputedStyles: Map<string, string>|null): Promise<void> {
     // ElementsSidebarPane's throttler schedules this method. Usually,
     // rebuild is suppressed while editing (see onCSSModelChanged()), but we need a
     // 'force' flag since the currently running throttler process cannot be canceled.
@@ -742,8 +840,14 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       return;
     }
 
-    this.sectionBlocks =
-        await this.rebuildSectionsForMatchedStyleRules((matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles));
+    const blocks = await this.rebuildSectionsForMatchedStyleRules(
+        (matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles), computedStyles, parentsComputedStyles);
+
+    if (signal.aborted) {
+      return;
+    }
+
+    this.sectionBlocks = blocks;
 
     // Style sections maybe re-created when flexbox editor is activated.
     // With the following code we re-bind the flexbox editor to the new
@@ -796,7 +900,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     } else {
       this.noMatchesElement.classList.toggle('hidden', this.sectionBlocks.length > 0);
     }
-    this.nodeStylesUpdatedForTest((node as SDK.DOMModel.DOMNode), true);
     if (this.lastRevealedProperty) {
       this.decorator.highlightProperty(this.lastRevealedProperty);
       this.lastRevealedProperty = null;
@@ -814,8 +917,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     // For sniffing in tests.
   }
 
-  private async rebuildSectionsForMatchedStyleRules(matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles):
-      Promise<SectionBlock[]> {
+  private async rebuildSectionsForMatchedStyleRules(
+      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
+      parentsComputedStyles: Map<string, string>|null): Promise<SectionBlock[]> {
     if (this.idleCallbackManager) {
       this.idleCallbackManager.discard();
     }
@@ -872,7 +976,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const lastBlock = blocks[blocks.length - 1];
       if (lastBlock) {
         this.idleCallbackManager.schedule(() => {
-          const section = new StylePropertiesSection(this, matchedStyles, style, sectionIdx);
+          const section =
+              new StylePropertiesSection(this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles);
           sectionIdx++;
           lastBlock.sections.push(section);
         });
@@ -941,7 +1046,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         addLayerSeparator(style);
         const lastBlock = blocks[blocks.length - 1];
         this.idleCallbackManager.schedule(() => {
-          const section = new HighlightPseudoStylePropertiesSection(this, matchedStyles, style, sectionIdx);
+          const section = new HighlightPseudoStylePropertiesSection(
+              this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles);
           sectionIdx++;
           lastBlock.sections.push(section);
         });

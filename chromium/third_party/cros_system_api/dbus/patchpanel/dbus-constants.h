@@ -30,6 +30,7 @@ const char kSetDnsRedirectionRuleMethod[] = "SetDnsRedirectionRule";
 
 // Signals.
 const char kNetworkDeviceChangedSignal[] = "NetworkDeviceChanged";
+const char kNetworkConfigurationChangedSignal[] = "NetworkConfigurationChanged";
 const char kNeighborReachabilityEventSignal[] = "NeighborReachabilityEvent";
 
 }  // namespace patchpanel

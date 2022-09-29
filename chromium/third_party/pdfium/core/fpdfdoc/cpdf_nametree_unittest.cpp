@@ -120,7 +120,7 @@ TEST(cpdf_nametree, GetUnicodeNameWithBOM) {
   EXPECT_STREQ(L"1", stored_name.c_str());
 
   // Check that the correct value object can be obtained by looking up "1".
-  const CPDF_Number* pNumber = ToNumber(name_tree->LookupValue(L"1"));
+  RetainPtr<const CPDF_Number> pNumber = ToNumber(name_tree->LookupValue(L"1"));
   ASSERT_TRUE(pNumber);
   EXPECT_EQ(100, pNumber->GetInteger());
 }
@@ -130,9 +130,11 @@ TEST(cpdf_nametree, GetFromTreeWithLimitsArrayWith4Items) {
   // elements.
   auto pRootDict = pdfium::MakeRetain<CPDF_Dictionary>();
   FillNameTreeDict(pRootDict.Get());
-  CPDF_Dictionary* pKid1 = pRootDict->GetArrayFor("Kids")->GetDictAt(0);
-  CPDF_Dictionary* pGrandKid3 = pKid1->GetArrayFor("Kids")->GetDictAt(1);
-  CPDF_Array* pLimits = pGrandKid3->GetArrayFor("Limits");
+  RetainPtr<CPDF_Dictionary> pKid1 =
+      pRootDict->GetMutableArrayFor("Kids")->GetMutableDictAt(0);
+  RetainPtr<CPDF_Dictionary> pGrandKid3 =
+      pKid1->GetMutableArrayFor("Kids")->GetMutableDictAt(1);
+  RetainPtr<CPDF_Array> pLimits = pGrandKid3->GetMutableArrayFor("Limits");
   ASSERT_EQ(2u, pLimits->size());
   pLimits->AppendNew<CPDF_Number>(5);
   pLimits->AppendNew<CPDF_Number>(6);
@@ -140,11 +142,12 @@ TEST(cpdf_nametree, GetFromTreeWithLimitsArrayWith4Items) {
   std::unique_ptr<CPDF_NameTree> name_tree =
       CPDF_NameTree::CreateForTesting(pRootDict.Get());
 
-  const CPDF_Number* pNumber = ToNumber(name_tree->LookupValue(L"9.txt"));
+  RetainPtr<const CPDF_Number> pNumber =
+      ToNumber(name_tree->LookupValue(L"9.txt"));
   ASSERT_TRUE(pNumber);
   EXPECT_EQ(999, pNumber->GetInteger());
-  CheckLimitsArray(pKid1, "1.txt", "9.txt");
-  CheckLimitsArray(pGrandKid3, "9.txt", "9.txt");
+  CheckLimitsArray(pKid1.Get(), "1.txt", "9.txt");
+  CheckLimitsArray(pGrandKid3.Get(), "9.txt", "9.txt");
 }
 
 TEST(cpdf_nametree, AddIntoNames) {

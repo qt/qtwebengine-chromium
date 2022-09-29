@@ -7,12 +7,15 @@
 #include "core/fpdfdoc/cpdf_apsettings.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 
-CPDF_ApSettings::CPDF_ApSettings(CPDF_Dictionary* pDict) : m_pDict(pDict) {}
+CPDF_ApSettings::CPDF_ApSettings(RetainPtr<CPDF_Dictionary> pDict)
+    : m_pDict(std::move(pDict)) {}
 
 CPDF_ApSettings::CPDF_ApSettings(const CPDF_ApSettings& that) = default;
 
@@ -31,7 +34,7 @@ CFX_Color::TypeAndARGB CPDF_ApSettings::GetColorARGB(
   if (!m_pDict)
     return {CFX_Color::Type::kTransparent, 0};
 
-  CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
+  const CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
   if (!pEntry)
     return {CFX_Color::Type::kTransparent, 0};
 
@@ -65,7 +68,7 @@ float CPDF_ApSettings::GetOriginalColorComponent(
   if (!m_pDict)
     return 0;
 
-  CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
+  const CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
   return pEntry ? pEntry->GetNumberAt(index) : 0;
 }
 
@@ -73,7 +76,7 @@ CFX_Color CPDF_ApSettings::GetOriginalColor(const ByteString& csEntry) const {
   if (!m_pDict)
     return CFX_Color();
 
-  CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
+  const CPDF_Array* pEntry = m_pDict->GetArrayFor(csEntry);
   if (!pEntry)
     return CFX_Color();
 
@@ -97,8 +100,9 @@ WideString CPDF_ApSettings::GetCaption(const ByteString& csEntry) const {
   return m_pDict ? m_pDict->GetUnicodeTextFor(csEntry) : WideString();
 }
 
-CPDF_Stream* CPDF_ApSettings::GetIcon(const ByteString& csEntry) const {
-  return m_pDict ? m_pDict->GetStreamFor(csEntry) : nullptr;
+RetainPtr<CPDF_Stream> CPDF_ApSettings::GetIcon(
+    const ByteString& csEntry) const {
+  return m_pDict ? m_pDict->GetMutableStreamFor(csEntry) : nullptr;
 }
 
 CPDF_IconFit CPDF_ApSettings::GetIconFit() const {

@@ -19,10 +19,10 @@ config("trace_logging_config") {
 
 # The set of util classes which have no dependency on platform:api.
 source_set("base") {
-  sources = [
-    "base64.cc",
+  visibility = [ "../*" ]
+
+  public = [
     "base64.h",
-    "big_endian.cc",
     "big_endian.h",
     "chrono_helpers.h",
     "enum_name_table.h",
@@ -30,23 +30,28 @@ source_set("base") {
     "hashing.h",
     "integer_division.h",
     "json/json_helpers.h",
-    "json/json_serialization.cc",
     "json/json_serialization.h",
-    "json/json_value.cc",
     "json/json_value.h",
     "osp_logging.h",
     "saturate_cast.h",
-    "simple_fraction.cc",
     "simple_fraction.h",
-    "std_util.cc",
     "std_util.h",
-    "stringprintf.cc",
     "stringprintf.h",
-    "url.cc",
     "url.h",
     "weak_ptr.h",
-    "yet_another_bit_vector.cc",
     "yet_another_bit_vector.h",
+  ]
+
+  sources = [
+    "base64.cc",
+    "big_endian.cc",
+    "json/json_serialization.cc",
+    "json/json_value.cc",
+    "simple_fraction.cc",
+    "std_util.cc",
+    "stringprintf.cc",
+    "url.cc",
+    "yet_another_bit_vector.cc",
   ]
 
   public_deps = [
@@ -68,26 +73,31 @@ source_set("base") {
 }
 
 source_set("util") {
-  sources = [
-    "alarm.cc",
+  visibility = [ "../*" ]
+
+  public = [
     "alarm.h",
-    "crypto/certificate_utils.cc",
     "crypto/certificate_utils.h",
-    "crypto/digest_sign.cc",
     "crypto/digest_sign.h",
-    "crypto/openssl_util.cc",
     "crypto/openssl_util.h",
-    "crypto/pem_helpers.cc",
     "crypto/pem_helpers.h",
-    "crypto/random_bytes.cc",
     "crypto/random_bytes.h",
-    "crypto/rsa_private_key.cc",
     "crypto/rsa_private_key.h",
-    "crypto/secure_hash.cc",
     "crypto/secure_hash.h",
-    "crypto/sha2.cc",
     "crypto/sha2.h",
     "trace_logging.h",
+  ]
+
+  sources = [
+    "alarm.cc",
+    "crypto/certificate_utils.cc",
+    "crypto/digest_sign.cc",
+    "crypto/openssl_util.cc",
+    "crypto/pem_helpers.cc",
+    "crypto/random_bytes.cc",
+    "crypto/rsa_private_key.cc",
+    "crypto/secure_hash.cc",
+    "crypto/sha2.cc",
     "trace_logging/macro_support.h",
     "trace_logging/scoped_trace_operations.cc",
     "trace_logging/scoped_trace_operations.h",

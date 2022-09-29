@@ -28,6 +28,7 @@
 
 #include "hb-repacker.hh"
 #include "hb-open-type.hh"
+#include "graph/serialize.hh"
 
 static void start_object(const char* tag,
                          unsigned len,
@@ -52,6 +53,14 @@ static void add_offset (unsigned id,
                         hb_serialize_context_t* c)
 {
   OT::Offset16* offset = c->start_embed<OT::Offset16> ();
+  c->extend_min (offset);
+  c->add_link (*offset, id);
+}
+
+static void add_24_offset (unsigned id,
+                           hb_serialize_context_t* c)
+{
+  OT::Offset24* offset = c->start_embed<OT::Offset24> ();
   c->extend_min (offset);
   c->add_link (*offset, id);
 }
@@ -811,6 +820,51 @@ populate_serializer_virtual_link (hb_serialize_context_t* c)
   c->end_serialize();
 }
 
+static void
+populate_serializer_with_24_and_32_bit_offsets (hb_serialize_context_t* c)
+{
+  std::string large_string(60000, 'a');
+  c->start_serialize<char> ();
+
+  unsigned obj_f = add_object ("f", 1, c);
+  unsigned obj_g = add_object ("g", 1, c);
+  unsigned obj_j = add_object ("j", 1, c);
+  unsigned obj_k = add_object ("k", 1, c);
+
+  start_object (large_string.c_str (), 40000, c);
+  add_offset (obj_f, c);
+  unsigned obj_c = c->pop_pack (false);
+
+  start_object (large_string.c_str (), 40000, c);
+  add_offset (obj_g, c);
+  unsigned obj_d = c->pop_pack (false);
+
+  start_object (large_string.c_str (), 40000, c);
+  add_offset (obj_j, c);
+  unsigned obj_h = c->pop_pack (false);
+
+  start_object (large_string.c_str (), 40000, c);
+  add_offset (obj_k, c);
+  unsigned obj_i = c->pop_pack (false);
+
+  start_object ("e", 1, c);
+  add_wide_offset (obj_h, c);
+  add_wide_offset (obj_i, c);
+  unsigned obj_e = c->pop_pack (false);
+
+  start_object ("b", 1, c);
+  add_24_offset (obj_c, c);
+  add_24_offset (obj_d, c);
+  add_24_offset (obj_e, c);
+  unsigned obj_b = c->pop_pack (false);
+
+  start_object ("a", 1, c);
+  add_24_offset (obj_b, c);
+  c->pop_pack (false);
+
+  c->end_serialize();
+}
+
 static void test_sort_shortest ()
 {
   size_t buffer_size = 100;
@@ -931,7 +985,7 @@ test_serialize ()
   hb_bytes_t expected = c1.copy_bytes ();
 
   graph_t graph (c1.object_graph ());
-  hb_blob_t* out = graph.serialize ();
+  hb_blob_t* out = graph::serialize (graph);
   free (buffer_1);
 
   hb_bytes_t actual = out->as_bytes ();
@@ -948,7 +1002,7 @@ static void test_will_overflow_1 ()
   populate_serializer_complex_2 (&c);
   graph_t graph (c.object_graph ());
 
-  assert (!graph.will_overflow (nullptr));
+  assert (!graph::will_overflow (graph, nullptr));
 
   free (buffer);
 }
@@ -961,7 +1015,7 @@ static void test_will_overflow_2 ()
   populate_serializer_with_overflow (&c);
   graph_t graph (c.object_graph ());
 
-  assert (graph.will_overflow (nullptr));
+  assert (graph::will_overflow (graph, nullptr));
 
   free (buffer);
 }
@@ -974,7 +1028,7 @@ static void test_will_overflow_3 ()
   populate_serializer_with_dedup_overflow (&c);
   graph_t graph (c.object_graph ());
 
-  assert (graph.will_overflow (nullptr));
+  assert (graph::will_overflow (graph, nullptr));
 
   free (buffer);
 }
@@ -1128,6 +1182,36 @@ static void test_resolve_overflows_via_isolation_spaces ()
   hb_blob_destroy (out);
 }
 
+static void test_resolve_mixed_overflows_via_isolation_spaces ()
+{
+  size_t buffer_size = 200000;
+  void* buffer = malloc (buffer_size);
+  hb_serialize_context_t c (buffer, buffer_size);
+  populate_serializer_with_24_and_32_bit_offsets (&c);
+  graph_t graph (c.object_graph ());
+
+  assert (c.offset_overflow ());
+  hb_blob_t* out = hb_resolve_overflows (c.object_graph (), HB_TAG ('G', 'S', 'U', 'B'), 0);
+  assert (out);
+  hb_bytes_t result = out->as_bytes ();
+
+  unsigned expected_length =
+      // Objects
+      7 +
+      4 * 40000;
+
+  expected_length +=
+      // Links
+      2 * 4 +  // 32
+      4 * 3 +  // 24
+      4 * 2;   // 16
+
+  assert (result.length == expected_length);
+
+  free (buffer);
+  hb_blob_destroy (out);
+}
+
 static void test_resolve_overflows_via_splitting_spaces ()
 {
   size_t buffer_size = 160000;
@@ -1269,6 +1353,7 @@ main (int argc, char **argv)
   test_resolve_overflows_via_isolating_16bit_space_2 ();
   test_resolve_overflows_via_splitting_spaces ();
   test_resolve_overflows_via_splitting_spaces_2 ();
+  test_resolve_mixed_overflows_via_isolation_spaces ();
   test_duplicate_leaf ();
   test_duplicate_interior ();
   test_virtual_link ();

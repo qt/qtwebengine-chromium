@@ -766,18 +766,18 @@ void ScaleRowDown38_3_Box_16_C(const uint16_t* src_ptr,
         (src_ptr[0] + src_ptr[1] + src_ptr[2] + src_ptr[stride + 0] +
          src_ptr[stride + 1] + src_ptr[stride + 2] + src_ptr[stride * 2 + 0] +
          src_ptr[stride * 2 + 1] + src_ptr[stride * 2 + 2]) *
-            (65536 / 9) >>
+            (65536u / 9u) >>
         16;
     dst_ptr[1] =
         (src_ptr[3] + src_ptr[4] + src_ptr[5] + src_ptr[stride + 3] +
          src_ptr[stride + 4] + src_ptr[stride + 5] + src_ptr[stride * 2 + 3] +
          src_ptr[stride * 2 + 4] + src_ptr[stride * 2 + 5]) *
-            (65536 / 9) >>
+            (65536u / 9u) >>
         16;
     dst_ptr[2] =
         (src_ptr[6] + src_ptr[7] + src_ptr[stride + 6] + src_ptr[stride + 7] +
          src_ptr[stride * 2 + 6] + src_ptr[stride * 2 + 7]) *
-            (65536 / 6) >>
+            (65536u / 6u) >>
         16;
     src_ptr += 8;
     dst_ptr += 3;
@@ -820,15 +820,15 @@ void ScaleRowDown38_2_Box_16_C(const uint16_t* src_ptr,
   for (i = 0; i < dst_width; i += 3) {
     dst_ptr[0] = (src_ptr[0] + src_ptr[1] + src_ptr[2] + src_ptr[stride + 0] +
                   src_ptr[stride + 1] + src_ptr[stride + 2]) *
-                     (65536 / 6) >>
+                     (65536u / 6u) >>
                  16;
     dst_ptr[1] = (src_ptr[3] + src_ptr[4] + src_ptr[5] + src_ptr[stride + 3] +
                   src_ptr[stride + 4] + src_ptr[stride + 5]) *
-                     (65536 / 6) >>
+                     (65536u / 6u) >>
                  16;
     dst_ptr[2] =
         (src_ptr[6] + src_ptr[7] + src_ptr[stride + 6] + src_ptr[stride + 7]) *
-            (65536 / 4) >>
+            (65536u / 4u) >>
         16;
     src_ptr += 8;
     dst_ptr += 3;
@@ -1605,6 +1605,12 @@ void ScalePlaneVertical_16(int src_height,
   }
 }
 
+// Use scale to convert lsb formats to msb, depending how many bits there are:
+// 32768 = 9 bits
+// 16384 = 10 bits
+// 4096 = 12 bits
+// 256 = 16 bits
+// TODO(fbarchard): change scale to bits
 void ScalePlaneVertical_16To8(int src_height,
                               int dst_width,
                               int dst_height,
@@ -1620,7 +1626,7 @@ void ScalePlaneVertical_16To8(int src_height,
                               enum FilterMode filtering) {
   // TODO(fbarchard): Allow higher wpp.
   int dst_width_words = dst_width * wpp;
-  // TODO(https://crbug.com/libyuv/931): Add NEON and AVX2 versions.
+  // TODO(https://crbug.com/libyuv/931): Add NEON 32 bit and AVX2 versions.
   void (*InterpolateRow_16To8)(uint8_t * dst_argb, const uint16_t* src_argb,
                                ptrdiff_t src_stride, int scale, int dst_width,
                                int source_y_fraction) = InterpolateRow_16To8_C;
@@ -1632,6 +1638,22 @@ void ScalePlaneVertical_16To8(int src_height,
   assert(dst_height > 0);
   src_argb += (x >> 16) * wpp;
 
+#if defined(HAS_INTERPOLATEROW_16TO8_NEON)
+  if (TestCpuFlag(kCpuHasNEON)) {
+    InterpolateRow_16To8 = InterpolateRow_16To8_Any_NEON;
+    if (IS_ALIGNED(dst_width, 8)) {
+      InterpolateRow_16To8 = InterpolateRow_16To8_NEON;
+    }
+  }
+#endif
+#if defined(HAS_INTERPOLATEROW_16TO8_AVX2)
+  if (TestCpuFlag(kCpuHasAVX2)) {
+    InterpolateRow_16To8 = InterpolateRow_16To8_Any_AVX2;
+    if (IS_ALIGNED(dst_width, 32)) {
+      InterpolateRow_16To8 = InterpolateRow_16To8_AVX2;
+    }
+  }
+#endif
   for (j = 0; j < dst_height; ++j) {
     int yi;
     int yf;

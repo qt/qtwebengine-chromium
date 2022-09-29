@@ -88,6 +88,15 @@ class FtraceParser {
                      uint32_t pid,
                      bool is_enter,
                      protozero::ConstBytes);
+  void ParseI2cReadEvent(int64_t timestamp,
+                         uint32_t pid,
+                         protozero::ConstBytes);
+  void ParseI2cWriteEvent(int64_t timestamp,
+                          uint32_t pid,
+                          protozero::ConstBytes);
+  void ParseI2cResultEvent(int64_t timestamp,
+                           uint32_t pid,
+                           protozero::ConstBytes);
   void ParseTaskNewTask(int64_t timestamp,
                         uint32_t source_tid,
                         protozero::ConstBytes);
@@ -175,6 +184,7 @@ class FtraceParser {
   void ParseWakeSourceActivate(int64_t timestamp, protozero::ConstBytes);
   void ParseWakeSourceDeactivate(int64_t timestamp, protozero::ConstBytes);
   void ParseSuspendResume(int64_t timestamp, protozero::ConstBytes);
+  void ParseSchedCpuUtilCfs(int64_t timestap, protozero::ConstBytes);
 
   TraceProcessorContext* context_;
   RssStatTracker rss_stat_tracker_;

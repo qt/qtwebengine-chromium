@@ -394,6 +394,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_arm_rasterization_order_attachment_access{kNotEnabled};
     ExtEnabled vk_ext_4444_formats{kNotEnabled};
     ExtEnabled vk_ext_astc_decode_mode{kNotEnabled};
+    ExtEnabled vk_ext_attachment_feedback_loop_layout{kNotEnabled};
     ExtEnabled vk_ext_blend_operation_advanced{kNotEnabled};
     ExtEnabled vk_ext_border_color_swizzle{kNotEnabled};
     ExtEnabled vk_ext_buffer_device_address{kNotEnabled};
@@ -436,13 +437,17 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_load_store_op_none{kNotEnabled};
     ExtEnabled vk_ext_memory_budget{kNotEnabled};
     ExtEnabled vk_ext_memory_priority{kNotEnabled};
+    ExtEnabled vk_ext_metal_objects{kNotEnabled};
     ExtEnabled vk_ext_multi_draw{kNotEnabled};
+    ExtEnabled vk_ext_multisampled_render_to_single_sampled{kNotEnabled};
+    ExtEnabled vk_ext_non_seamless_cube_map{kNotEnabled};
     ExtEnabled vk_ext_pageable_device_local_memory{kNotEnabled};
     ExtEnabled vk_ext_pci_bus_info{kNotEnabled};
     ExtEnabled vk_ext_physical_device_drm{kNotEnabled};
     ExtEnabled vk_ext_pipeline_creation_cache_control{kNotEnabled};
     ExtEnabled vk_ext_pipeline_creation_feedback{kNotEnabled};
     ExtEnabled vk_ext_pipeline_properties{kNotEnabled};
+    ExtEnabled vk_ext_pipeline_robustness{kNotEnabled};
     ExtEnabled vk_ext_post_depth_coverage{kNotEnabled};
     ExtEnabled vk_ext_primitive_topology_list_restart{kNotEnabled};
     ExtEnabled vk_ext_primitives_generated_query{kNotEnabled};
@@ -459,6 +464,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_shader_atomic_float2{kNotEnabled};
     ExtEnabled vk_ext_shader_demote_to_helper_invocation{kNotEnabled};
     ExtEnabled vk_ext_shader_image_atomic_int64{kNotEnabled};
+    ExtEnabled vk_ext_shader_module_identifier{kNotEnabled};
     ExtEnabled vk_ext_shader_stencil_export{kNotEnabled};
     ExtEnabled vk_ext_shader_subgroup_ballot{kNotEnabled};
     ExtEnabled vk_ext_shader_subgroup_vote{kNotEnabled};
@@ -610,10 +616,13 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_nv_viewport_swizzle{kNotEnabled};
     ExtEnabled vk_nv_win32_keyed_mutex{kNotEnabled};
     ExtEnabled vk_qcom_fragment_density_map_offset{kNotEnabled};
+    ExtEnabled vk_qcom_image_processing{kNotEnabled};
     ExtEnabled vk_qcom_render_pass_shader_resolve{kNotEnabled};
     ExtEnabled vk_qcom_render_pass_store_ops{kNotEnabled};
     ExtEnabled vk_qcom_render_pass_transform{kNotEnabled};
     ExtEnabled vk_qcom_rotated_copy_commands{kNotEnabled};
+    ExtEnabled vk_qcom_tile_properties{kNotEnabled};
+    ExtEnabled vk_sec_amigo_profiling{kNotEnabled};
     ExtEnabled vk_valve_descriptor_set_host_mapping{kNotEnabled};
     ExtEnabled vk_valve_mutable_descriptor_type{kNotEnabled};
 
@@ -675,7 +684,10 @@ struct DeviceExtensions : public InstanceExtensions {
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_ASTC_DECODE_MODE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_astc_decode_mode, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
-            {VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_blend_operation_advanced, {})},
+            {VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_attachment_feedback_loop_layout, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_blend_operation_advanced, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_border_color_swizzle, {{
                            {&DeviceExtensions::vk_ext_custom_border_color, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME}}})},
             {VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_buffer_device_address, {{
@@ -763,7 +775,14 @@ struct DeviceExtensions : public InstanceExtensions {
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_memory_priority, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+#ifdef VK_USE_PLATFORM_METAL_EXT
+            {VK_EXT_METAL_OBJECTS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_metal_objects, {})},
+#endif
             {VK_EXT_MULTI_DRAW_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_multi_draw, {})},
+            {VK_EXT_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_multisampled_render_to_single_sampled, {{
+                           {&DeviceExtensions::vk_khr_create_renderpass2, VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME},
+                           {&DeviceExtensions::vk_khr_depth_stencil_resolve, VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME}}})},
+            {VK_EXT_NON_SEAMLESS_CUBE_MAP_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_non_seamless_cube_map, {})},
             {VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pageable_device_local_memory, {{
                            {&DeviceExtensions::vk_ext_memory_priority, VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME}}})},
             {VK_EXT_PCI_BUS_INFO_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pci_bus_info, {{
@@ -773,6 +792,8 @@ struct DeviceExtensions : public InstanceExtensions {
             {VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_creation_cache_control, {})},
             {VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_creation_feedback, {})},
             {VK_EXT_PIPELINE_PROPERTIES_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_properties, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_pipeline_robustness, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_POST_DEPTH_COVERAGE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_post_depth_coverage, {})},
             {VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_primitive_topology_list_restart, {})},
@@ -801,6 +822,9 @@ struct DeviceExtensions : public InstanceExtensions {
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_shader_image_atomic_int64, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {VK_EXT_SHADER_MODULE_IDENTIFIER_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_shader_module_identifier, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
+                           {&DeviceExtensions::vk_ext_pipeline_creation_cache_control, VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME}}})},
             {VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_shader_stencil_export, {})},
             {VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_shader_subgroup_ballot, {})},
             {VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_ext_shader_subgroup_vote, {})},
@@ -1049,7 +1073,8 @@ struct DeviceExtensions : public InstanceExtensions {
 #ifdef VK_ENABLE_BETA_EXTENSIONS
             {VK_KHR_VIDEO_QUEUE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_video_queue, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
-                           {&DeviceExtensions::vk_khr_sampler_ycbcr_conversion, VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME}}})},
+                           {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME},
+                           {&DeviceExtensions::vk_feature_version_1_1, VK_VERSION_1_1_NAME}}})},
 #endif
             {VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_khr_vulkan_memory_model, {})},
 #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -1134,6 +1159,8 @@ struct DeviceExtensions : public InstanceExtensions {
             {VK_QCOM_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_fragment_density_map_offset, {{
                            {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
                            {&DeviceExtensions::vk_ext_fragment_density_map, VK_EXT_FRAGMENT_DENSITY_MAP_EXTENSION_NAME}}})},
+            {VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_image_processing, {{
+                           {&DeviceExtensions::vk_khr_format_feature_flags2, VK_KHR_FORMAT_FEATURE_FLAGS_2_EXTENSION_NAME}}})},
             {VK_QCOM_RENDER_PASS_SHADER_RESOLVE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_render_pass_shader_resolve, {})},
             {VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_render_pass_store_ops, {})},
             {VK_QCOM_RENDER_PASS_TRANSFORM_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_render_pass_transform, {{
@@ -1142,6 +1169,10 @@ struct DeviceExtensions : public InstanceExtensions {
             {VK_QCOM_ROTATED_COPY_COMMANDS_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_rotated_copy_commands, {{
                            {&DeviceExtensions::vk_khr_swapchain, VK_KHR_SWAPCHAIN_EXTENSION_NAME},
                            {&DeviceExtensions::vk_khr_copy_commands2, VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME}}})},
+            {VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_qcom_tile_properties, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {VK_SEC_AMIGO_PROFILING_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_sec_amigo_profiling, {{
+                           {&DeviceExtensions::vk_khr_get_physical_device_properties2, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {VK_VALVE_DESCRIPTOR_SET_HOST_MAPPING_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_valve_descriptor_set_host_mapping, {})},
             {VK_VALVE_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME, DeviceInfo(&DeviceExtensions::vk_valve_mutable_descriptor_type, {{
                            {&DeviceExtensions::vk_khr_maintenance3, VK_KHR_MAINTENANCE_3_EXTENSION_NAME}}})},
@@ -1310,6 +1341,7 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_ARM_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_EXTENSION_NAME,
     VK_EXT_4444_FORMATS_EXTENSION_NAME,
     VK_EXT_ASTC_DECODE_MODE_EXTENSION_NAME,
+    VK_EXT_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_EXTENSION_NAME,
     VK_EXT_BLEND_OPERATION_ADVANCED_EXTENSION_NAME,
     VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME,
     VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
@@ -1354,13 +1386,19 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_EXT_LOAD_STORE_OP_NONE_EXTENSION_NAME,
     VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
     VK_EXT_MEMORY_PRIORITY_EXTENSION_NAME,
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    VK_EXT_METAL_OBJECTS_EXTENSION_NAME,
+#endif
     VK_EXT_MULTI_DRAW_EXTENSION_NAME,
+    VK_EXT_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_EXTENSION_NAME,
+    VK_EXT_NON_SEAMLESS_CUBE_MAP_EXTENSION_NAME,
     VK_EXT_PAGEABLE_DEVICE_LOCAL_MEMORY_EXTENSION_NAME,
     VK_EXT_PCI_BUS_INFO_EXTENSION_NAME,
     VK_EXT_PHYSICAL_DEVICE_DRM_EXTENSION_NAME,
     VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME,
     VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME,
     VK_EXT_PIPELINE_PROPERTIES_EXTENSION_NAME,
+    VK_EXT_PIPELINE_ROBUSTNESS_EXTENSION_NAME,
     VK_EXT_POST_DEPTH_COVERAGE_EXTENSION_NAME,
     VK_EXT_PRIMITIVE_TOPOLOGY_LIST_RESTART_EXTENSION_NAME,
     VK_EXT_PRIMITIVES_GENERATED_QUERY_EXTENSION_NAME,
@@ -1377,6 +1415,7 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_EXT_SHADER_ATOMIC_FLOAT_2_EXTENSION_NAME,
     VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
     VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME,
+    VK_EXT_SHADER_MODULE_IDENTIFIER_EXTENSION_NAME,
     VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME,
     VK_EXT_SHADER_SUBGROUP_BALLOT_EXTENSION_NAME,
     VK_EXT_SHADER_SUBGROUP_VOTE_EXTENSION_NAME,
@@ -1566,10 +1605,13 @@ static const std::set<std::string> kDeviceExtensionNames = {
     VK_NV_WIN32_KEYED_MUTEX_EXTENSION_NAME,
 #endif
     VK_QCOM_FRAGMENT_DENSITY_MAP_OFFSET_EXTENSION_NAME,
+    VK_QCOM_IMAGE_PROCESSING_EXTENSION_NAME,
     VK_QCOM_RENDER_PASS_SHADER_RESOLVE_EXTENSION_NAME,
     VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME,
     VK_QCOM_RENDER_PASS_TRANSFORM_EXTENSION_NAME,
     VK_QCOM_ROTATED_COPY_COMMANDS_EXTENSION_NAME,
+    VK_QCOM_TILE_PROPERTIES_EXTENSION_NAME,
+    VK_SEC_AMIGO_PROFILING_EXTENSION_NAME,
     VK_VALVE_DESCRIPTOR_SET_HOST_MAPPING_EXTENSION_NAME,
     VK_VALVE_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME,
 };

@@ -219,6 +219,22 @@ tools/xngen src/qs8-igemm/MRx4c8-wasmsimd-dot16x2.c.in -D MR=2 -D VARIANT=LD128 
 tools/xngen src/qs8-igemm/MRx4c8-wasmsimd-dot16x2.c.in -D MR=3 -D VARIANT=LD128 -D REQUANTIZATION=FP32     -D DATATYPE=QU8 -o src/qu8-igemm/gen/3x4c8-minmax-fp32-wasmsimd-dot16x2-ld128.c &
 tools/xngen src/qs8-igemm/MRx4c8-wasmsimd-dot16x2.c.in -D MR=4 -D VARIANT=LD128 -D REQUANTIZATION=FP32     -D DATATYPE=QU8 -o src/qu8-igemm/gen/4x4c8-minmax-fp32-wasmsimd-dot16x2-ld128.c &
 
+################################## ARMv6 SIMD #################################
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+
 ################################### ARM NEON ##################################
 tools/xngen src/qs8-igemm/neon-mlal-lane.c.in -D MR=1 -D NR=8  -D PREFETCH=0 -D REQUANTIZATION=RNDNU    -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/1x8-minmax-rndnu-neon-mlal-lane.c &
 tools/xngen src/qs8-igemm/neon-mlal-lane.c.in -D MR=2 -D NR=8  -D PREFETCH=0 -D REQUANTIZATION=RNDNU    -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/2x8-minmax-rndnu-neon-mlal-lane.c &
@@ -687,6 +703,13 @@ tools/xngen src/qu8-igemm/c4-neondot.c.in -D MR=4  -D NR=16 -D REQUANTIZATION=FP
 
 ############################### AArch32 assembly ##############################
 ### Cortex-A53 lane micro-kernels
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=0 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/1x8-minmax-rndnu-aarch32-neon-mlal-lane-cortex-a7.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=1 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/1x8-minmax-rndnu-aarch32-neon-mlal-lane-prfm-cortex-a7.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=0 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=0 -o src/qc8-igemm/gen/1x8-minmax-fp32-aarch32-neon-mlal-lane-cortex-a7.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=1 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=0 -o src/qc8-igemm/gen/1x8-minmax-fp32-aarch32-neon-mlal-lane-prfm-cortex-a7.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=0 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=1 -o src/qc8-igemm/gen/1x8-minmax-fp32-aarch32-neonv8-mlal-lane-cortex-a35.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=1 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=1 -o src/qc8-igemm/gen/1x8-minmax-fp32-aarch32-neonv8-mlal-lane-prfm-cortex-a35.S &
+
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-ld64.S.in        -D PREFETCH=0 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/4x8-minmax-rndnu-aarch32-neon-mlal-lane-ld64.S &
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-ld64.S.in        -D PREFETCH=1 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/4x8-minmax-rndnu-aarch32-neon-mlal-lane-prfm-ld64.S &
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-ld64.S.in        -D PREFETCH=0 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=0 -o src/qc8-igemm/gen/4x8-minmax-fp32-aarch32-neon-mlal-lane-ld64.S &
@@ -709,6 +732,9 @@ tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETC
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=1 -D REQUANTIZATION=FP32  -D CHANNELWISE=1 -D DATATYPE=QC8 -D ARMV8=1 -o src/qc8-igemm/gen/4x8-minmax-fp32-aarch32-neonv8-mlal-lane-prfm-cortex-a35.S &
 
 ### QU8 micro-kernels
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=0 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QU8 -D ARMV8=0 -o src/qu8-igemm/gen/1x8-minmax-rndnu-aarch32-neon-mlal-lane-cortex-a7.S &
+tools/xngen src/qs8-igemm/1x8-aarch32-neon-mlal-lane-cortex-a7.S.in   -D PREFETCH=1 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QU8 -D ARMV8=0 -o src/qu8-igemm/gen/1x8-minmax-rndnu-aarch32-neon-mlal-lane-prfm-cortex-a7.S &
+
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-ld64.S.in        -D PREFETCH=0 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QU8 -D ARMV8=0 -o src/qu8-igemm/gen/4x8-minmax-rndnu-aarch32-neon-mlal-lane-ld64.S &
 tools/xngen src/qs8-igemm/4x8-aarch32-neon-mlal-lane-ld64.S.in        -D PREFETCH=1 -D REQUANTIZATION=RNDNU -D CHANNELWISE=0 -D DATATYPE=QU8 -D ARMV8=0 -o src/qu8-igemm/gen/4x8-minmax-rndnu-aarch32-neon-mlal-lane-prfm-ld64.S &
 

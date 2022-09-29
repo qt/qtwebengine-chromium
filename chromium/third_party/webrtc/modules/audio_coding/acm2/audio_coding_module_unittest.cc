@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
@@ -43,7 +44,6 @@
 #include "rtc_base/message_digest.h"
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/platform_thread.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/system/arch.h"
 #include "rtc_base/thread_annotations.h"
@@ -861,7 +861,7 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
 
   // Sets up the test::AcmSendTest object. Returns true on success, otherwise
   // false.
-  bool SetUpSender(std::string input_file_name, int source_rate) {
+  bool SetUpSender(absl::string_view input_file_name, int source_rate) {
     // Note that `audio_source_` will loop forever. The test duration is set
     // explicitly by `kTestDurationMs`.
     audio_source_.reset(new test::InputAudioFile(input_file_name));
@@ -872,7 +872,7 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
 
   // Registers a send codec in the test::AcmSendTest object. Returns true on
   // success, false on failure.
-  bool RegisterSendCodec(const char* payload_name,
+  bool RegisterSendCodec(absl::string_view payload_name,
                          int sampling_freq_hz,
                          int channels,
                          int payload_type,
@@ -896,8 +896,8 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
 
   // Runs the test. SetUpSender() and RegisterSendCodec() must have been called
   // before calling this method.
-  void Run(const std::string& audio_checksum_ref,
-           const std::string& payload_checksum_ref,
+  void Run(absl::string_view audio_checksum_ref,
+           absl::string_view payload_checksum_ref,
            int expected_packets,
            test::AcmReceiveTestOldApi::NumOutputChannels expected_channels,
            rtc::scoped_refptr<AudioDecoderFactory> decoder_factory = nullptr) {
@@ -944,12 +944,12 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
   }
 
   // Helper: result must be one the "|"-separated checksums.
-  void ExpectChecksumEq(std::string ref, std::string result) {
+  void ExpectChecksumEq(absl::string_view ref, absl::string_view result) {
     if (ref.size() == result.size()) {
       // Only one checksum: clearer message.
       EXPECT_EQ(ref, result);
     } else {
-      EXPECT_NE(ref.find(result), std::string::npos)
+      EXPECT_NE(ref.find(result), absl::string_view::npos)
           << result << " must be one of these:\n"
           << ref;
     }
@@ -989,7 +989,7 @@ class AcmSenderBitExactnessOldApi : public ::testing::Test,
                               packet->payload_length_bytes());
   }
 
-  void SetUpTest(const char* codec_name,
+  void SetUpTest(absl::string_view codec_name,
                  int codec_sample_rate_hz,
                  int channels,
                  int payload_type,
@@ -1253,10 +1253,10 @@ TEST_F(AcmSenderBitExactnessNewApi, OpusFromFormat_stereo_20ms_voip) {
   ASSERT_NO_FATAL_FAILURE(SetUpTestExternalEncoder(
       AudioEncoderOpus::MakeAudioEncoder(*config, 120), 120));
   const std::string audio_maybe_sse =
-      "058c03ca2c9bb5c0066d4c15ce50d772"
+      "1010e60ad34cee73c939edaf563d0593"
       "|ca54661b220cc35239c6864ab858d29a";
   const std::string payload_maybe_sse =
-      "f270ec7be7a5ed60c203c2317c4e1011"
+      "ea48d94e43217793af9b7e15ece94e54"
       "|eb0752ce1b6f2436fefc2e19bd084fb5";
   Run(audio_maybe_sse, payload_maybe_sse, /*expected_packets=*/50,
       /*expected_channels=*/test::AcmReceiveTestOldApi::kStereoOutput);
@@ -1285,7 +1285,7 @@ class AcmSetBitRateTest : public ::testing::Test {
 
   // Registers a send codec in the test::AcmSendTest object. Returns true on
   // success, false on failure.
-  virtual bool RegisterSendCodec(const char* payload_name,
+  virtual bool RegisterSendCodec(absl::string_view payload_name,
                                  int sampling_freq_hz,
                                  int channels,
                                  int payload_type,
@@ -1311,7 +1311,7 @@ class AcmSetBitRateTest : public ::testing::Test {
     EXPECT_GE(max_expected_total_bits, nr_bytes * 8);
   }
 
-  void SetUpTest(const char* codec_name,
+  void SetUpTest(absl::string_view codec_name,
                  int codec_sample_rate_hz,
                  int channels,
                  int payload_type,

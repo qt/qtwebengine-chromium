@@ -3242,6 +3242,7 @@ int vp9_active_h_edge(VP9_COMP *cpi, int mi_row, int mi_step) {
   // For two pass account for any formatting bars detected.
   if (cpi->oxcf.pass == 2) {
     TWO_PASS *twopass = &cpi->twopass;
+    vpx_clear_system_state();
 
     // The inactive region is specified in MBs not mi units.
     // The image edge is in the following MB row.
@@ -3269,6 +3270,7 @@ int vp9_active_v_edge(VP9_COMP *cpi, int mi_col, int mi_step) {
   // For two pass account for any formatting bars detected.
   if (cpi->oxcf.pass == 2) {
     TWO_PASS *twopass = &cpi->twopass;
+    vpx_clear_system_state();
 
     // The inactive region is specified in MBs not mi units.
     // The image edge is in the following MB row.
@@ -3470,7 +3472,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi, TileDataEnc *tile_data,
   }
 
   mode_skip_mask[INTRA_FRAME] |=
-      ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
+      (uint16_t) ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
 
   for (i = 0; i <= LAST_NEW_MV_INDEX; ++i) mode_threshold[i] = 0;
 

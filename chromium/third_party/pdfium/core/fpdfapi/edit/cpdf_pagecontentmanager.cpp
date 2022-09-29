@@ -6,6 +6,7 @@
 
 #include <map>
 #include <numeric>
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pageobject.h"
@@ -20,25 +21,27 @@
 #include "third_party/base/numerics/safe_conversions.h"
 
 CPDF_PageContentManager::CPDF_PageContentManager(
-    const CPDF_PageObjectHolder* obj_holder)
+    CPDF_PageObjectHolder* obj_holder)
     : obj_holder_(obj_holder), doc_(obj_holder_->GetDocument()) {
-  CPDF_Dictionary* page_dict = obj_holder_->GetDict();
-  CPDF_Object* contents_obj = page_dict->GetObjectFor("Contents");
-  CPDF_Array* contents_array = ToArray(contents_obj);
+  RetainPtr<CPDF_Dictionary> page_dict = obj_holder_->GetMutableDict();
+  RetainPtr<CPDF_Object> contents_obj =
+      page_dict->GetMutableObjectFor("Contents");
+  RetainPtr<CPDF_Array> contents_array = ToArray(contents_obj);
   if (contents_array) {
-    contents_array_.Reset(contents_array);
+    contents_array_ = std::move(contents_array);
     return;
   }
 
-  CPDF_Reference* contents_reference = ToReference(contents_obj);
+  RetainPtr<CPDF_Reference> contents_reference = ToReference(contents_obj);
   if (contents_reference) {
-    CPDF_Object* indirect_obj = contents_reference->GetDirect();
+    RetainPtr<CPDF_Object> indirect_obj =
+        contents_reference->GetMutableDirect();
     if (!indirect_obj)
       return;
 
     contents_array = indirect_obj->AsArray();
     if (contents_array)
-      contents_array_.Reset(contents_array);
+      contents_array_ = std::move(contents_array);
     else if (indirect_obj->IsStream())
       contents_stream_.Reset(indirect_obj->AsStream());
   }
@@ -46,20 +49,20 @@ CPDF_PageContentManager::CPDF_PageContentManager(
 
 CPDF_PageContentManager::~CPDF_PageContentManager() = default;
 
+// TODO(tsepez): return retained reference.
 CPDF_Stream* CPDF_PageContentManager::GetStreamByIndex(size_t stream_index) {
   if (contents_stream_)
     return stream_index == 0 ? contents_stream_.Get() : nullptr;
 
-  if (contents_array_) {
-    CPDF_Reference* stream_reference =
-        ToReference(contents_array_->GetObjectAt(stream_index));
-    if (!stream_reference)
-      return nullptr;
+  if (!contents_array_)
+    return nullptr;
 
-    return stream_reference->GetDirect()->AsStream();
-  }
+  RetainPtr<CPDF_Reference> stream_reference =
+      ToReference(contents_array_->GetMutableObjectAt(stream_index));
+  if (!stream_reference)
+    return nullptr;
 
-  return nullptr;
+  return stream_reference->GetMutableDirect()->AsStream();
 }
 
 size_t CPDF_PageContentManager::AddStream(fxcrt::ostringstream* buf) {
@@ -75,7 +78,7 @@ size_t CPDF_PageContentManager::AddStream(fxcrt::ostringstream* buf) {
     new_contents_array->AppendNew<CPDF_Reference>(doc_.Get(),
                                                   new_stream->GetObjNum());
 
-    CPDF_Dictionary* page_dict = obj_holder_->GetDict();
+    RetainPtr<CPDF_Dictionary> page_dict = obj_holder_->GetMutableDict();
     page_dict->SetNewFor<CPDF_Reference>("Contents", doc_.Get(),
                                          new_contents_array->GetObjNum());
     contents_array_.Reset(new_contents_array);
@@ -92,7 +95,7 @@ size_t CPDF_PageContentManager::AddStream(fxcrt::ostringstream* buf) {
 
   // There were no Contents, so add the new stream as the single Content stream.
   // Its index is 0.
-  CPDF_Dictionary* page_dict = obj_holder_->GetDict();
+  RetainPtr<CPDF_Dictionary> page_dict = obj_holder_->GetMutableDict();
   page_dict->SetNewFor<CPDF_Reference>("Contents", doc_.Get(),
                                        new_stream->GetObjNum());
   contents_stream_.Reset(new_stream);
@@ -114,7 +117,7 @@ void CPDF_PageContentManager::ExecuteScheduledRemovals() {
   if (contents_stream_) {
     // Only stream that can be removed is 0.
     if (streams_to_remove_.find(0) != streams_to_remove_.end()) {
-      CPDF_Dictionary* page_dict = obj_holder_->GetDict();
+      RetainPtr<CPDF_Dictionary> page_dict = obj_holder_->GetMutableDict();
       page_dict->RemoveFor("Contents");
       contents_stream_ = nullptr;
     }

@@ -62,6 +62,7 @@
 #include "src/objects/js-segments.h"
 #endif  // V8_INTL_SUPPORT
 #include "src/codegen/script-details.h"
+#include "src/objects/js-shared-array.h"
 #include "src/objects/js-struct.h"
 #include "src/objects/js-temporal-objects-inl.h"
 #include "src/objects/js-weak-refs.h"
@@ -518,7 +519,7 @@ V8_NOINLINE Handle<JSFunction> InstallFunction(
 
 V8_NOINLINE Handle<JSFunction> CreateSharedObjectConstructor(
     Isolate* isolate, Handle<String> name, InstanceType type, int instance_size,
-    Builtin builtin) {
+    ElementsKind element_kind, Builtin builtin) {
   Factory* factory = isolate->factory();
   Handle<SharedFunctionInfo> info = factory->NewSharedFunctionInfoForBuiltin(
       name, builtin, FunctionKind::kNormalFunction);
@@ -529,8 +530,8 @@ V8_NOINLINE Handle<JSFunction> CreateSharedObjectConstructor(
           .Build();
   constexpr int in_object_properties = 0;
   Handle<Map> instance_map =
-      factory->NewMap(type, instance_size, TERMINAL_FAST_ELEMENTS_KIND,
-                      in_object_properties, AllocationType::kSharedMap);
+      factory->NewMap(type, instance_size, element_kind, in_object_properties,
+                      AllocationType::kSharedMap);
   // Shared objects have fixed layout ahead of time, so there's no slack.
   instance_map->SetInObjectUnusedPropertyFields(0);
   // Shared objects are not extensible and have a null prototype.
@@ -2758,10 +2759,6 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     // -- R u n t i m e E r r o r
     InstallError(isolate_, dummy, factory->RuntimeError_string(),
                  Context::WASM_RUNTIME_ERROR_FUNCTION_INDEX);
-
-    // -- W e b A s s e m b l y . E x c e p t i o n
-    InstallError(isolate_, dummy, factory->WebAssemblyException_string(),
-                 Context::WASM_EXCEPTION_ERROR_FUNCTION_INDEX);
   }
 
   // Initialize the embedder data slot.
@@ -4525,6 +4522,10 @@ void Genesis::InitializeGlobal_harmony_change_array_by_copy() {
 
     SimpleInstallFunction(isolate_, array_prototype, "toReversed",
                           Builtin::kArrayPrototypeToReversed, 0, true);
+    SimpleInstallFunction(isolate_, array_prototype, "toSorted",
+                          Builtin::kArrayPrototypeToSorted, 1, false);
+    SimpleInstallFunction(isolate_, array_prototype, "toSpliced",
+                          Builtin::kArrayPrototypeToSpliced, 2, false);
     SimpleInstallFunction(isolate_, array_prototype, "with",
                           Builtin::kArrayPrototypeWith, 2, true);
 
@@ -4534,6 +4535,8 @@ void Genesis::InitializeGlobal_harmony_change_array_by_copy() {
             .ToHandleChecked());
 
     InstallTrueValuedProperty(isolate_, unscopables, "toReversed");
+    InstallTrueValuedProperty(isolate_, unscopables, "toSorted");
+    InstallTrueValuedProperty(isolate_, unscopables, "toSpliced");
   }
 
   {
@@ -4635,13 +4638,44 @@ void Genesis::InitializeGlobal_harmony_struct() {
   JSObject::AddProperty(isolate(), global, "SharedStructType",
                         shared_struct_type_fun, DONT_ENUM);
 
+  {  // SharedArray
+    Handle<String> shared_array_str =
+        isolate()->factory()->InternalizeUtf8String("SharedArray");
+    Handle<JSFunction> shared_array_fun = CreateSharedObjectConstructor(
+        isolate(), shared_array_str, JS_SHARED_ARRAY_TYPE,
+        JSSharedArray::kHeaderSize, SHARED_ARRAY_ELEMENTS,
+        Builtin::kSharedArrayConstructor);
+    shared_array_fun->shared().set_internal_formal_parameter_count(
+        JSParameterCount(0));
+    shared_array_fun->shared().set_length(0);
+
+    // Add the length accessor.
+    Handle<DescriptorArray> descriptors =
+        isolate()->factory()->NewDescriptorArray(1, 0,
+                                                 AllocationType::kSharedOld);
+    Descriptor descriptor = Descriptor::AccessorConstant(
+        isolate()->shared_isolate()->factory()->length_string(),
+        isolate()->shared_isolate()->factory()->shared_array_length_accessor(),
+        ALL_ATTRIBUTES_MASK);
+    descriptors->Set(InternalIndex(0), &descriptor);
+    shared_array_fun->initial_map().InitializeDescriptors(isolate(),
+                                                          *descriptors);
+
+    // Install SharedArray constructor.
+    JSObject::AddProperty(isolate(), global, "SharedArray", shared_array_fun,
+                          DONT_ENUM);
+  }
+
+  // TODO(v8:12547): Make a single canonical copy of the Mutex and Condition
+  // maps.
+
   {  // Atomics.Mutex
-    // TODO(syg): Make a single canonical copy of the map.
     Handle<String> mutex_str =
         isolate()->factory()->InternalizeUtf8String("Mutex");
     Handle<JSFunction> mutex_fun = CreateSharedObjectConstructor(
         isolate(), mutex_str, JS_ATOMICS_MUTEX_TYPE,
-        JSAtomicsMutex::kHeaderSize, Builtin::kAtomicsMutexConstructor);
+        JSAtomicsMutex::kHeaderSize, TERMINAL_FAST_ELEMENTS_KIND,
+        Builtin::kAtomicsMutexConstructor);
     mutex_fun->shared().set_internal_formal_parameter_count(
         JSParameterCount(0));
     mutex_fun->shared().set_length(0);
@@ -4653,6 +4687,27 @@ void Genesis::InitializeGlobal_harmony_struct() {
                           Builtin::kAtomicsMutexLock, 2, true);
     SimpleInstallFunction(isolate(), mutex_fun, "tryLock",
                           Builtin::kAtomicsMutexTryLock, 2, true);
+  }
+
+  {  // Atomics.Condition
+    Handle<String> condition_str =
+        isolate()->factory()->InternalizeUtf8String("Condition");
+    Handle<JSFunction> condition_fun = CreateSharedObjectConstructor(
+        isolate(), condition_str, JS_ATOMICS_CONDITION_TYPE,
+        JSAtomicsCondition::kHeaderSize, TERMINAL_FAST_ELEMENTS_KIND,
+        Builtin::kAtomicsConditionConstructor);
+    condition_fun->shared().set_internal_formal_parameter_count(
+        JSParameterCount(0));
+    condition_fun->shared().set_length(0);
+    native_context()->set_js_atomics_condition_map(
+        condition_fun->initial_map());
+    JSObject::AddProperty(isolate(), isolate()->atomics_object(), condition_str,
+                          condition_fun, DONT_ENUM);
+
+    SimpleInstallFunction(isolate(), condition_fun, "wait",
+                          Builtin::kAtomicsConditionWait, 2, false);
+    SimpleInstallFunction(isolate(), condition_fun, "notify",
+                          Builtin::kAtomicsConditionNotify, 2, false);
   }
 }
 
@@ -4697,18 +4752,18 @@ void Genesis::InitializeGlobal_harmony_array_grouping() {
   Handle<JSObject> array_prototype(
       JSObject::cast(array_function->instance_prototype()), isolate());
 
-  SimpleInstallFunction(isolate_, array_prototype, "groupBy",
-                        Builtin::kArrayPrototypeGroupBy, 1, false);
-  SimpleInstallFunction(isolate_, array_prototype, "groupByToMap",
-                        Builtin::kArrayPrototypeGroupByToMap, 1, false);
+  SimpleInstallFunction(isolate_, array_prototype, "group",
+                        Builtin::kArrayPrototypeGroup, 1, false);
+  SimpleInstallFunction(isolate_, array_prototype, "groupToMap",
+                        Builtin::kArrayPrototypeGroupToMap, 1, false);
 
   Handle<JSObject> unscopables = Handle<JSObject>::cast(
       JSObject::GetProperty(isolate(), array_prototype,
                             isolate()->factory()->unscopables_symbol())
           .ToHandleChecked());
 
-  InstallTrueValuedProperty(isolate_, unscopables, "groupBy");
-  InstallTrueValuedProperty(isolate_, unscopables, "groupByToMap");
+  InstallTrueValuedProperty(isolate_, unscopables, "group");
+  InstallTrueValuedProperty(isolate_, unscopables, "groupToMap");
 }
 
 void Genesis::InitializeGlobal_harmony_object_has_own() {
@@ -4783,6 +4838,8 @@ void Genesis::InitializeGlobal_harmony_rab_gsab() {
                       Builtin::kArrayBufferPrototypeGetResizable, false);
   SimpleInstallFunction(isolate(), array_buffer_prototype, "resize",
                         Builtin::kArrayBufferPrototypeResize, 1, true);
+  SimpleInstallFunction(isolate(), array_buffer_prototype, "transfer",
+                        Builtin::kArrayBufferPrototypeTransfer, 0, false);
 
   Handle<JSObject> shared_array_buffer_prototype(
       JSObject::cast(
@@ -5445,19 +5502,9 @@ void Genesis::InitializeGlobal_harmony_temporal() {
 void Genesis::InitializeGlobal_harmony_intl_number_format_v3() {
   if (!FLAG_harmony_intl_number_format_v3) return;
 
-  Handle<JSObject> intl = Handle<JSObject>::cast(
-      JSReceiver::GetProperty(
-          isolate(),
-          Handle<JSReceiver>(native_context()->global_object(), isolate()),
-          factory()->InternalizeUtf8String("Intl"))
-          .ToHandleChecked());
-
   {
-    Handle<JSFunction> number_format_constructor = Handle<JSFunction>::cast(
-        JSReceiver::GetProperty(
-            isolate(), Handle<JSReceiver>(JSReceiver::cast(*intl), isolate()),
-            factory()->InternalizeUtf8String("NumberFormat"))
-            .ToHandleChecked());
+    Handle<JSFunction> number_format_constructor =
+        isolate()->intl_number_format_function();
 
     Handle<JSObject> prototype(
         JSObject::cast(number_format_constructor->prototype()), isolate());
@@ -5469,11 +5516,8 @@ void Genesis::InitializeGlobal_harmony_intl_number_format_v3() {
                           false);
   }
   {
-    Handle<JSFunction> plural_rules_constructor = Handle<JSFunction>::cast(
-        JSReceiver::GetProperty(
-            isolate(), Handle<JSReceiver>(JSReceiver::cast(*intl), isolate()),
-            factory()->InternalizeUtf8String("PluralRules"))
-            .ToHandleChecked());
+    Handle<JSFunction> plural_rules_constructor =
+        isolate()->intl_plural_rules_function();
 
     Handle<JSObject> prototype(
         JSObject::cast(plural_rules_constructor->prototype()), isolate());
@@ -5965,7 +6009,7 @@ bool Genesis::InstallSpecialObjects(Isolate* isolate,
 
 #ifdef V8_EXPOSE_MEMORY_CORRUPTION_API
   if (GetProcessWideSandbox()->is_initialized()) {
-    MemoryCorruptionApi::Install(isolate);
+    SandboxTesting::InstallMemoryCorruptionApi(isolate);
   }
 #endif  // V8_EXPOSE_MEMORY_CORRUPTION_API
 

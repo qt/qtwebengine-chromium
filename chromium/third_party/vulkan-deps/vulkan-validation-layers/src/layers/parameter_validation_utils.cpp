@@ -90,6 +90,12 @@ bool StatelessValidation::validate_instance_extensions(const VkInstanceCreateInf
         skip |= validate_extension_reqs(local_instance_extensions, "VUID-vkCreateInstance-ppEnabledExtensionNames-01388",
                                         "instance", pCreateInfo->ppEnabledExtensionNames[i]);
     }
+    if (pCreateInfo->flags & VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR &&
+        !local_instance_extensions.vk_khr_portability_enumeration) {
+        skip |= LogError(instance, "VUID-VkInstanceCreateInfo-flags-06559",
+                         "vkCreateInstance(): pCreateInfo->flags has VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR set, but "
+                         "pCreateInfo->ppEnabledExtensionNames does not include VK_KHR_portability_enumeration");
+    }
 
     return skip;
 }
@@ -168,6 +174,22 @@ bool StatelessValidation::manual_PreCallValidateCreateInstance(const VkInstanceC
     skip |= validate_instance_extensions(pCreateInfo);
     const auto *validation_features = LvlFindInChain<VkValidationFeaturesEXT>(pCreateInfo->pNext);
     if (validation_features) skip |= validate_validation_features(pCreateInfo, validation_features);
+
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(pCreateInfo->pNext);
+    while (export_metal_object_info) {
+        if ((export_metal_object_info->exportObjectType != VK_EXPORT_METAL_OBJECT_TYPE_METAL_DEVICE_BIT_EXT) &&
+            (export_metal_object_info->exportObjectType != VK_EXPORT_METAL_OBJECT_TYPE_METAL_COMMAND_QUEUE_BIT_EXT)) {
+            skip |= LogError(instance, "VUID-VkInstanceCreateInfo-pNext-06779",
+                             "vkCreateInstance(): The pNext chain contains a VkExportMetalObjectCreateInfoEXT whose "
+                             "exportObjectType = %s, but only VkExportMetalObjectCreateInfoEXT structs with exportObjectType of "
+                             "VK_EXPORT_METAL_OBJECT_TYPE_METAL_DEVICE_BIT_EXT or "
+                             "VK_EXPORT_METAL_OBJECT_TYPE_METAL_COMMAND_QUEUE_BIT_EXT are allowed",
+                             string_VkExportMetalObjectTypeFlagBitsEXT(export_metal_object_info->exportObjectType));
+        }
+        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+    }
+#endif  // VK_USE_PLATFORM_METAL_EXT
 
     return skip;
 }
@@ -1297,6 +1319,49 @@ bool StatelessValidation::manual_PreCallValidateCreateImage(VkDevice device, con
                     string_VkImageCompressionFlagsEXT(image_compression_control->flags).c_str());
             }
         }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+        auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(pCreateInfo->pNext);
+        while (export_metal_object_info) {
+            if ((export_metal_object_info->exportObjectType != VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT) &&
+                (export_metal_object_info->exportObjectType != VK_EXPORT_METAL_OBJECT_TYPE_METAL_IOSURFACE_BIT_EXT)) {
+                skip |=
+                    LogError(device, "VUID-VkImageCreateInfo-pNext-06783",
+                             "vkCreateImage(): The pNext chain contains a VkExportMetalObjectCreateInfoEXT whose "
+                             "exportObjectType = %s, but only VkExportMetalObjectCreateInfoEXT structs with exportObjectType of "
+                             "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT or VK_EXPORT_METAL_OBJECT_TYPE_METAL_IOSURFACE_BIT_EXT are allowed",
+                             string_VkExportMetalObjectTypeFlagBitsEXT(export_metal_object_info->exportObjectType));
+            }
+            export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+        }
+        auto import_metal_texture_info = LvlFindInChain<VkImportMetalTextureInfoEXT>(pCreateInfo->pNext);
+        while (import_metal_texture_info) {
+            if ((import_metal_texture_info->plane != VK_IMAGE_ASPECT_PLANE_0_BIT) &&
+                (import_metal_texture_info->plane != VK_IMAGE_ASPECT_PLANE_1_BIT) &&
+                (import_metal_texture_info->plane != VK_IMAGE_ASPECT_PLANE_2_BIT)) {
+                skip |=
+                    LogError(device, "VUID-VkImageCreateInfo-pNext-06784",
+                             "vkCreateImage(): The pNext chain contains a VkImportMetalTextureInfoEXT whose "
+                             "plane = %s, but only VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT, or VK_IMAGE_ASPECT_PLANE_2_BIT are allowed",
+                             string_VkImageAspectFlags(import_metal_texture_info->plane).c_str());
+            }
+            auto format_plane_count = FormatPlaneCount(pCreateInfo->format);
+            if ((format_plane_count <= 1) && (import_metal_texture_info->plane != VK_IMAGE_ASPECT_PLANE_0_BIT)) {
+                skip |= LogError(device, "VUID-VkImageCreateInfo-pNext-06785",
+                                 "vkCreateImage(): The pNext chain contains a VkImportMetalTextureInfoEXT whose "
+                                 "plane = %s, but only VK_IMAGE_ASPECT_PLANE_0_BIT is allowed for an image created with format %s, which is not multiplaner",
+                                 string_VkImageAspectFlags(import_metal_texture_info->plane).c_str(),
+                                 string_VkFormat(pCreateInfo->format));
+            }
+            if ((format_plane_count == 2) && (import_metal_texture_info->plane == VK_IMAGE_ASPECT_PLANE_2_BIT)) {
+                skip |= LogError(device, "VUID-VkImageCreateInfo-pNext-06786",
+                                 "vkCreateImage(): The pNext chain contains a VkImportMetalTextureInfoEXT whose "
+                                 "plane == VK_IMAGE_ASPECT_PLANE_2_BIT, which is not allowed for an image created with format %s, "
+                                 "which has only 2 planes",
+                                 string_VkFormat(pCreateInfo->format));
+            }
+            import_metal_texture_info = LvlFindInChain<VkImportMetalTextureInfoEXT>(import_metal_texture_info->pNext);
+        }
+#endif  // VK_USE_PLATFORM_METAL_EXT
     }
 
     return skip;
@@ -1364,6 +1429,11 @@ bool StatelessValidation::manual_PreCallValidateCreateImageView(VkDevice device,
                 }
             }
         }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+        skip |= ExportMetalObjectsPNextUtil(
+            VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT, "VUID-VkImageViewCreateInfo-pNext-06787",
+            "vkCreateImageView():", "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT", pCreateInfo->pNext);
+#endif  // VK_USE_PLATFORM_METAL_EXT
     }
     return skip;
 }
@@ -1804,11 +1874,16 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                 }
             }
 
+            // Values needed from either dynamic rendering or the subpass description
+            uint32_t color_attachment_count = 0;
+
             if (!create_info.renderPass) {
                 if (create_info.pColorBlendState && create_info.pMultisampleState) {
                     const auto rendering_struct = LvlFindInChain<VkPipelineRenderingCreateInfo>(create_info.pNext);
                     // Pipeline has fragment output state
                     if (rendering_struct) {
+                        color_attachment_count = rendering_struct->colorAttachmentCount;
+
                         if ((rendering_struct->depthAttachmentFormat != VK_FORMAT_UNDEFINED)) {
                             skip |= validate_ranged_enum("VkPipelineRenderingCreateInfo", "stencilAttachmentFormat", "VkFormat",
                                                          AllVkFormatEnums, rendering_struct->stencilAttachmentFormat,
@@ -1836,15 +1911,15 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                             }
                         }
 
-                        if (rendering_struct->colorAttachmentCount != 0) {
+                        if (color_attachment_count != 0) {
                             skip |= validate_ranged_enum_array(
                                 "VkPipelineRenderingCreateInfo", "VUID-VkGraphicsPipelineCreateInfo-renderPass-06579",
                                 "colorAttachmentCount", "pColorAttachmentFormats", "VkFormat", AllVkFormatEnums,
-                                rendering_struct->colorAttachmentCount, rendering_struct->pColorAttachmentFormats, true, true);
+                                color_attachment_count, rendering_struct->pColorAttachmentFormats, true, true);
                         }
 
                         if (rendering_struct->pColorAttachmentFormats) {
-                            for (uint32_t j = 0; j < rendering_struct->colorAttachmentCount; ++j) {
+                            for (uint32_t j = 0; j < color_attachment_count; ++j) {
                                 skip |= validate_ranged_enum("VkPipelineRenderingCreateInfo", "pColorAttachmentFormats", "VkFormat",
                                                              AllVkFormatEnums, rendering_struct->pColorAttachmentFormats[j],
                                                              "VUID-VkGraphicsPipelineCreateInfo-renderPass-06580");
@@ -1855,7 +1930,9 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                     // VkAttachmentSampleCountInfoAMD == VkAttachmentSampleCountInfoNV
                     auto attachment_sample_count_info = LvlFindInChain<VkAttachmentSampleCountInfoAMD>(create_info.pNext);
                     if (attachment_sample_count_info && attachment_sample_count_info->pColorAttachmentSamples) {
-                        for (uint32_t j = 0; j < attachment_sample_count_info->colorAttachmentCount; ++j) {
+                        color_attachment_count = attachment_sample_count_info->colorAttachmentCount;
+
+                        for (uint32_t j = 0; j < color_attachment_count; ++j) {
                             skip |= validate_flags("vkCreateGraphicsPipelines",
                                                    ParameterName("VkAttachmentSampleCountInfoAMD->pColorAttachmentSamples"),
                                                    "VkSampleCountFlagBits", AllVkSampleCountFlagBits,
@@ -1878,14 +1955,14 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                 skip |= validate_struct_type_array(
                     "vkCreateGraphicsPipelines", ParameterName("pCreateInfos[%i].stageCount", ParameterName::IndexVector{i}),
                     ParameterName("pCreateInfos[%i].pStages", ParameterName::IndexVector{i}),
-                    "VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO", pCreateInfos[i].stageCount, pCreateInfos[i].pStages,
+                    "VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO", create_info.stageCount, create_info.pStages,
                     VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, true, true,
                     "VUID-VkPipelineShaderStageCreateInfo-sType-sType", "VUID-VkGraphicsPipelineCreateInfo-pStages-06600",
                     "VUID-VkGraphicsPipelineCreateInfo-pStages-06600");
                 skip |= validate_struct_type("vkCreateGraphicsPipelines",
                                              ParameterName("pCreateInfos[%i].pRasterizationState", ParameterName::IndexVector{i}),
                                              "VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO",
-                                             pCreateInfos[i].pRasterizationState,
+                                             create_info.pRasterizationState,
                                              VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, true,
                                              "VUID-VkGraphicsPipelineCreateInfo-pRasterizationState-06601",
                                              "VUID-VkPipelineRasterizationStateCreateInfo-sType-sType");
@@ -2612,7 +2689,7 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                         LvlFindInChain<VkPipelineViewportDepthClipControlCreateInfoEXT>(viewport_state.pNext);
 
                     if (!physical_device_features.multiViewport) {
-                        if (!has_dynamic_viewport_with_count && (viewport_state.viewportCount != 1)) {
+                        if (!has_dynamic_viewport_with_count && (viewport_state.viewportCount > 1)) {
                             skip |= LogError(device, "VUID-VkPipelineViewportStateCreateInfo-viewportCount-01216",
                                              "vkCreateGraphicsPipelines: The VkPhysicalDeviceFeatures::multiViewport feature is "
                                              "disabled, but pCreateInfos[%" PRIu32 "].pViewportState->viewportCount (=%" PRIu32
@@ -2620,7 +2697,7 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                                              i, viewport_state.viewportCount);
                         }
 
-                        if (!has_dynamic_scissor_with_count && (viewport_state.scissorCount != 1)) {
+                        if (!has_dynamic_scissor_with_count && (viewport_state.scissorCount > 1)) {
                             skip |= LogError(device, "VUID-VkPipelineViewportStateCreateInfo-scissorCount-01217",
                                              "vkCreateGraphicsPipelines: The VkPhysicalDeviceFeatures::multiViewport feature is "
                                              "disabled, but pCreateInfos[%" PRIu32 "].pViewportState->scissorCount (=%" PRIu32
@@ -3150,6 +3227,8 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                             uses_depthstencil_attachment = true;
                         }
                         subpass_flags = subpasses_uses.subpasses_flags[create_info.subpass];
+
+                        color_attachment_count = subpasses_uses.color_attachment_count;
                     }
                     lock.unlock();
                 }
@@ -3370,120 +3449,176 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(VkDevice
                         create_info.pColorBlendState->attachmentCount, &create_info.pColorBlendState->pAttachments, false, true,
                         kVUIDUndefined, kVUIDUndefined);
 
-                    if (create_info.pColorBlendState->pAttachments != NULL) {
+                    if (create_info.pColorBlendState->pAttachments != nullptr) {
+                        const VkBlendOp first_color_blend_op = create_info.pColorBlendState->pAttachments[0].colorBlendOp;
+                        const VkBlendOp first_alpha_blend_op = create_info.pColorBlendState->pAttachments[0].alphaBlendOp;
                         for (uint32_t attachment_index = 0; attachment_index < create_info.pColorBlendState->attachmentCount;
                              ++attachment_index) {
+                            const VkPipelineColorBlendAttachmentState attachment_state =
+                                create_info.pColorBlendState->pAttachments[attachment_index];
+
                             skip |= validate_bool32("vkCreateGraphicsPipelines",
                                                     ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].blendEnable",
                                                                   ParameterName::IndexVector{i, attachment_index}),
-                                                    create_info.pColorBlendState->pAttachments[attachment_index].blendEnable);
+                                                    attachment_state.blendEnable);
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].srcColorBlendFactor",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendFactor", AllVkBlendFactorEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].srcColorBlendFactor,
+                                "VkBlendFactor", AllVkBlendFactorEnums, attachment_state.srcColorBlendFactor,
                                 "VUID-VkPipelineColorBlendAttachmentState-srcColorBlendFactor-parameter");
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].dstColorBlendFactor",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendFactor", AllVkBlendFactorEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].dstColorBlendFactor,
+                                "VkBlendFactor", AllVkBlendFactorEnums, attachment_state.dstColorBlendFactor,
                                 "VUID-VkPipelineColorBlendAttachmentState-dstColorBlendFactor-parameter");
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].colorBlendOp",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendOp", AllVkBlendOpEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].colorBlendOp,
+                                "VkBlendOp", AllVkBlendOpEnums, attachment_state.colorBlendOp,
                                 "VUID-VkPipelineColorBlendAttachmentState-colorBlendOp-parameter");
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].srcAlphaBlendFactor",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendFactor", AllVkBlendFactorEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].srcAlphaBlendFactor,
+                                "VkBlendFactor", AllVkBlendFactorEnums, attachment_state.srcAlphaBlendFactor,
                                 "VUID-VkPipelineColorBlendAttachmentState-srcAlphaBlendFactor-parameter");
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].dstAlphaBlendFactor",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendFactor", AllVkBlendFactorEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].dstAlphaBlendFactor,
+                                "VkBlendFactor", AllVkBlendFactorEnums, attachment_state.dstAlphaBlendFactor,
                                 "VUID-VkPipelineColorBlendAttachmentState-dstAlphaBlendFactor-parameter");
 
                             skip |= validate_ranged_enum(
                                 "vkCreateGraphicsPipelines",
                                 ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].alphaBlendOp",
                                               ParameterName::IndexVector{i, attachment_index}),
-                                "VkBlendOp", AllVkBlendOpEnums,
-                                create_info.pColorBlendState->pAttachments[attachment_index].alphaBlendOp,
+                                "VkBlendOp", AllVkBlendOpEnums, attachment_state.alphaBlendOp,
                                 "VUID-VkPipelineColorBlendAttachmentState-alphaBlendOp-parameter");
 
-                            skip |=
-                                validate_flags("vkCreateGraphicsPipelines",
-                                               ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].colorWriteMask",
-                                                             ParameterName::IndexVector{i, attachment_index}),
-                                               "VkColorComponentFlagBits", AllVkColorComponentFlagBits,
-                                               create_info.pColorBlendState->pAttachments[attachment_index].colorWriteMask,
-                                               kOptionalFlags, "VUID-VkPipelineColorBlendAttachmentState-colorWriteMask-parameter");
+                            skip |= validate_flags(
+                                "vkCreateGraphicsPipelines",
+                                ParameterName("pCreateInfos[%i].pColorBlendState->pAttachments[%i].colorWriteMask",
+                                              ParameterName::IndexVector{i, attachment_index}),
+                                "VkColorComponentFlagBits", AllVkColorComponentFlagBits, attachment_state.colorWriteMask,
+                                kOptionalFlags, "VUID-VkPipelineColorBlendAttachmentState-colorWriteMask-parameter");
 
-                            if (phys_dev_ext_props.blend_operation_advanced_props.advancedBlendAllOperations == VK_FALSE) {
-                                bool invalid = false;
-                                switch (create_info.pColorBlendState->pAttachments[attachment_index].colorBlendOp) {
-                                    case VK_BLEND_OP_ZERO_EXT:
-                                    case VK_BLEND_OP_SRC_EXT:
-                                    case VK_BLEND_OP_DST_EXT:
-                                    case VK_BLEND_OP_SRC_OVER_EXT:
-                                    case VK_BLEND_OP_DST_OVER_EXT:
-                                    case VK_BLEND_OP_SRC_IN_EXT:
-                                    case VK_BLEND_OP_DST_IN_EXT:
-                                    case VK_BLEND_OP_SRC_OUT_EXT:
-                                    case VK_BLEND_OP_DST_OUT_EXT:
-                                    case VK_BLEND_OP_SRC_ATOP_EXT:
-                                    case VK_BLEND_OP_DST_ATOP_EXT:
-                                    case VK_BLEND_OP_XOR_EXT:
-                                    case VK_BLEND_OP_INVERT_EXT:
-                                    case VK_BLEND_OP_INVERT_RGB_EXT:
-                                    case VK_BLEND_OP_LINEARDODGE_EXT:
-                                    case VK_BLEND_OP_LINEARBURN_EXT:
-                                    case VK_BLEND_OP_VIVIDLIGHT_EXT:
-                                    case VK_BLEND_OP_LINEARLIGHT_EXT:
-                                    case VK_BLEND_OP_PINLIGHT_EXT:
-                                    case VK_BLEND_OP_HARDMIX_EXT:
-                                    case VK_BLEND_OP_PLUS_EXT:
-                                    case VK_BLEND_OP_PLUS_CLAMPED_EXT:
-                                    case VK_BLEND_OP_PLUS_CLAMPED_ALPHA_EXT:
-                                    case VK_BLEND_OP_PLUS_DARKER_EXT:
-                                    case VK_BLEND_OP_MINUS_EXT:
-                                    case VK_BLEND_OP_MINUS_CLAMPED_EXT:
-                                    case VK_BLEND_OP_CONTRAST_EXT:
-                                    case VK_BLEND_OP_INVERT_OVG_EXT:
-                                    case VK_BLEND_OP_RED_EXT:
-                                    case VK_BLEND_OP_GREEN_EXT:
-                                    case VK_BLEND_OP_BLUE_EXT:
-                                        invalid = true;
-                                        break;
-                                    default:
-                                        break;
+                            // if blendEnabled is false, these values are ignored
+                            if (attachment_state.blendEnable) {
+                                bool advance_blend = false;
+                                if (IsAdvanceBlendOperation(attachment_state.colorBlendOp)) {
+                                    advance_blend = true;
+                                    if (phys_dev_ext_props.blend_operation_advanced_props.advancedBlendAllOperations == VK_FALSE) {
+                                        // This VUID checks if a subset of advance blend ops are allowed
+                                        switch (attachment_state.colorBlendOp) {
+                                            case VK_BLEND_OP_ZERO_EXT:
+                                            case VK_BLEND_OP_SRC_EXT:
+                                            case VK_BLEND_OP_DST_EXT:
+                                            case VK_BLEND_OP_SRC_OVER_EXT:
+                                            case VK_BLEND_OP_DST_OVER_EXT:
+                                            case VK_BLEND_OP_SRC_IN_EXT:
+                                            case VK_BLEND_OP_DST_IN_EXT:
+                                            case VK_BLEND_OP_SRC_OUT_EXT:
+                                            case VK_BLEND_OP_DST_OUT_EXT:
+                                            case VK_BLEND_OP_SRC_ATOP_EXT:
+                                            case VK_BLEND_OP_DST_ATOP_EXT:
+                                            case VK_BLEND_OP_XOR_EXT:
+                                            case VK_BLEND_OP_INVERT_EXT:
+                                            case VK_BLEND_OP_INVERT_RGB_EXT:
+                                            case VK_BLEND_OP_LINEARDODGE_EXT:
+                                            case VK_BLEND_OP_LINEARBURN_EXT:
+                                            case VK_BLEND_OP_VIVIDLIGHT_EXT:
+                                            case VK_BLEND_OP_LINEARLIGHT_EXT:
+                                            case VK_BLEND_OP_PINLIGHT_EXT:
+                                            case VK_BLEND_OP_HARDMIX_EXT:
+                                            case VK_BLEND_OP_PLUS_EXT:
+                                            case VK_BLEND_OP_PLUS_CLAMPED_EXT:
+                                            case VK_BLEND_OP_PLUS_CLAMPED_ALPHA_EXT:
+                                            case VK_BLEND_OP_PLUS_DARKER_EXT:
+                                            case VK_BLEND_OP_MINUS_EXT:
+                                            case VK_BLEND_OP_MINUS_CLAMPED_EXT:
+                                            case VK_BLEND_OP_CONTRAST_EXT:
+                                            case VK_BLEND_OP_INVERT_OVG_EXT:
+                                            case VK_BLEND_OP_RED_EXT:
+                                            case VK_BLEND_OP_GREEN_EXT:
+                                            case VK_BLEND_OP_BLUE_EXT: {
+                                                skip |= LogError(
+                                                    device,
+                                                    "VUID-VkPipelineColorBlendAttachmentState-advancedBlendAllOperations-01409",
+                                                    "vkCreateGraphicsPipelines: pCreateInfos[%" PRIu32
+                                                    "].pColorBlendState->pAttachments[%" PRIu32
+                                                    "].colorBlendOp (%s) is not valid when "
+                                                    "VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT::"
+                                                    "advancedBlendAllOperations is "
+                                                    "VK_FALSE",
+                                                    i, attachment_index, string_VkBlendOp(attachment_state.colorBlendOp));
+                                                break;
+                                            }
+                                            default:
+                                                break;
+                                        }
+                                    }
+
+                                    if (phys_dev_ext_props.blend_operation_advanced_props.advancedBlendIndependentBlend ==
+                                            VK_FALSE &&
+                                        attachment_state.colorBlendOp != first_color_blend_op) {
+                                        skip |= LogError(
+                                            device, "VUID-VkPipelineColorBlendAttachmentState-advancedBlendIndependentBlend-01407",
+                                            "vkCreateGraphicsPipelines: advancedBlendIndependentBlend is set to VK_FALSE, but "
+                                            "pCreateInfos[%" PRIu32 "].pColorBlendState->pAttachments[%" PRIu32
+                                            "].colorBlendOp (%s) is not same the other attachments (%s).",
+                                            i, attachment_index, string_VkBlendOp(attachment_state.colorBlendOp),
+                                            string_VkBlendOp(first_color_blend_op));
+                                    }
                                 }
-                                if (invalid) {
-                                    skip |= LogError(
-                                        device, "VUID-VkPipelineColorBlendAttachmentState-advancedBlendAllOperations-01409",
-                                        "vkCreateGraphicsPipelines: pCreateInfos[%" PRIu32
-                                        "].pColorBlendState->pAttachments[%" PRIu32
-                                        "].colorBlendOp (%s) is not valid when "
-                                        "VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT::advancedBlendAllOperations is "
-                                        "VK_FALSE",
-                                        i, attachment_index,
-                                        string_VkBlendOp(
-                                            create_info.pColorBlendState->pAttachments[attachment_index].colorBlendOp));
+
+                                if (IsAdvanceBlendOperation(attachment_state.alphaBlendOp)) {
+                                    advance_blend = true;
+                                    if (phys_dev_ext_props.blend_operation_advanced_props.advancedBlendIndependentBlend ==
+                                            VK_FALSE &&
+                                        attachment_state.alphaBlendOp != first_alpha_blend_op) {
+                                        skip |= LogError(
+                                            device, "VUID-VkPipelineColorBlendAttachmentState-advancedBlendIndependentBlend-01408",
+                                            "vkCreateGraphicsPipelines: advancedBlendIndependentBlend is set to VK_FALSE, but "
+                                            "pCreateInfos[%" PRIu32 "].pColorBlendState->pAttachments[%" PRIu32
+                                            "].alphaBlendOp (%s) is not same the other attachments (%s).",
+                                            i, attachment_index, string_VkBlendOp(attachment_state.alphaBlendOp),
+                                            string_VkBlendOp(first_alpha_blend_op));
+                                    }
+                                }
+
+                                if (advance_blend) {
+                                    if (attachment_state.colorBlendOp != attachment_state.alphaBlendOp) {
+                                        skip |= LogError(device, "VUID-VkPipelineColorBlendAttachmentState-colorBlendOp-01406",
+                                                         "vkCreateGraphicsPipelines: pCreateInfos[%" PRIu32
+                                                         "].pColorBlendState->pAttachments[%" PRIu32
+                                                         "] has different colorBlendOp (%s) and alphaBlendOp (%s) but one of "
+                                                         "them is an advance blend operation.",
+                                                         i, attachment_index, string_VkBlendOp(attachment_state.colorBlendOp),
+                                                         string_VkBlendOp(attachment_state.alphaBlendOp));
+                                    } else if (color_attachment_count >=
+                                               phys_dev_ext_props.blend_operation_advanced_props.advancedBlendMaxColorAttachments) {
+                                        // color_attachment_count is found one of multiple spots above
+                                        //
+                                        // error can guarantee it is the same VkBlendOp
+                                        skip |= LogError(
+                                            device, "VUID-VkPipelineColorBlendAttachmentState-colorBlendOp-01410",
+                                            "vkCreateGraphicsPipelines: pCreateInfos[%" PRIu32
+                                            "].pColorBlendState->pAttachments[%" PRIu32
+                                            "] has an advance blend operation (%s) but the colorAttachmentCount (%" PRIu32
+                                            ") for the subpass is greater than advancedBlendMaxColorAttachments (%" PRIu32 ").",
+                                            i, attachment_index, string_VkBlendOp(attachment_state.colorBlendOp),
+                                            color_attachment_count,
+                                            phys_dev_ext_props.blend_operation_advanced_props.advancedBlendMaxColorAttachments);
+                                    }
                                 }
                             }
                         }
@@ -3881,13 +4016,6 @@ bool StatelessValidation::manual_PreCallValidateCreateSampler(VkDevice device, c
             }
         }
         if (sampler_reduction && sampler_reduction->reductionMode != VK_SAMPLER_REDUCTION_MODE_WEIGHTED_AVERAGE) {
-            if (!IsExtEnabled(device_extensions.vk_ext_sampler_filter_minmax)) {
-                skip |= LogError(device, "VUID-VkSamplerCreateInfo-pNext-06726",
-                                 "vkCreateSampler(): sampler reduction mode is %s, but extension %s is not enabled.",
-                                 string_VkSamplerReductionMode(sampler_reduction->reductionMode),
-                                 VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
-            }
-
             if (!IsExtEnabled(device_extensions.vk_ext_filter_cubic)) {
                 if (pCreateInfo->magFilter == VK_FILTER_CUBIC_EXT || pCreateInfo->minFilter == VK_FILTER_CUBIC_EXT) {
                     skip |= LogError(device, "VUID-VkSamplerCreateInfo-magFilter-01422",
@@ -4125,6 +4253,60 @@ bool StatelessValidation::ValidateMutableDescriptorTypeCreateInfo(const VkDescri
     return skip;
 }
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+bool StatelessValidation::ExportMetalObjectsPNextUtil(VkExportMetalObjectTypeFlagBitsEXT bit, const char *vuid,
+                                                      const char *api_call, const char *sType, const void *pNext) const {
+    bool skip = false;
+    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(pNext);
+    while (export_metal_object_info) {
+        if (export_metal_object_info->exportObjectType != bit) {
+            std::stringstream message;
+            message << api_call
+                    << " The pNext chain contains a VkExportMetalObjectCreateInfoEXT whose "
+                       "exportObjectType = %s, but only VkExportMetalObjectCreateInfoEXT structs with exportObjectType of "
+                    << sType << " are allowed";
+            skip |= LogError(device, vuid, message.str().c_str(),
+                             string_VkExportMetalObjectTypeFlagBitsEXT(export_metal_object_info->exportObjectType));
+        }
+        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+    }
+    return skip;
+}
+#endif  // VK_USE_PLATFORM_METAL_EXT
+
+bool StatelessValidation::manual_PreCallValidateCreateSemaphore(VkDevice device, const VkSemaphoreCreateInfo *pCreateInfo,
+                                                                const VkAllocationCallbacks *pAllocator,
+                                                                VkSemaphore *pSemaphore) const {
+    bool skip = false;
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    skip |= ExportMetalObjectsPNextUtil(
+        VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT, "VUID-VkSemaphoreCreateInfo-pNext-06789",
+        "vkCreateSemaphore():", "VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT", pCreateInfo->pNext);
+#endif  // VK_USE_PLATFORM_METAL_EXT
+    return skip;
+}
+bool StatelessValidation::manual_PreCallValidateCreateEvent(VkDevice device, const VkEventCreateInfo *pCreateInfo,
+                                                            const VkAllocationCallbacks *pAllocator, VkEvent *pEvent) const {
+    bool skip = false;
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    skip |= ExportMetalObjectsPNextUtil(
+        VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT, "VUID-VkEventCreateInfo-pNext-06790",
+        "vkCreateEvent():", "VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT", pCreateInfo->pNext);
+#endif  // VK_USE_PLATFORM_METAL_EXT
+    return skip;
+}
+bool StatelessValidation::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBufferViewCreateInfo *pCreateInfo,
+                                                                 const VkAllocationCallbacks *pAllocator,
+                                                                 VkBufferView *pBufferView) const {
+    bool skip = false;
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    skip |= ExportMetalObjectsPNextUtil(
+        VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT, "VUID-VkBufferViewCreateInfo-pNext-06782",
+        "vkCreateBufferView():", "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT", pCreateInfo->pNext);
+#endif  // VK_USE_PLATFORM_METAL_EXT
+    return skip;
+}
+
 bool StatelessValidation::manual_PreCallValidateCreateDescriptorSetLayout(VkDevice device,
                                                                           const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                                                           const VkAllocationCallbacks *pAllocator,
@@ -4215,8 +4397,8 @@ bool StatelessValidation::manual_PreCallValidateCreateDescriptorSetLayout(VkDevi
         }
 
         if (mutable_descriptor_type) {
-            ValidateMutableDescriptorTypeCreateInfo(*pCreateInfo, *mutable_descriptor_type,
-                                                    "vkDescriptorSetLayoutCreateInfo");
+            skip |=
+                ValidateMutableDescriptorTypeCreateInfo(*pCreateInfo, *mutable_descriptor_type, "vkDescriptorSetLayoutCreateInfo");
         }
     }
     if (pCreateInfo) {
@@ -4721,14 +4903,18 @@ bool StatelessValidation::manual_PreCallValidateCmdDrawIndirect(VkCommandBuffer 
 
     if (!physical_device_features.multiDrawIndirect && ((drawCount > 1))) {
         skip |= LogError(device, "VUID-vkCmdDrawIndirect-drawCount-02718",
-                         "CmdDrawIndirect(): Device feature multiDrawIndirect disabled: count must be 0 or 1 but is %" PRIu32 "",
+                         "vkCmdDrawIndirect(): Device feature multiDrawIndirect disabled: count must be 0 or 1 but is %" PRIu32 "",
                          drawCount);
     }
     if (drawCount > device_limits.maxDrawIndirectCount) {
         skip |=
             LogError(commandBuffer, "VUID-vkCmdDrawIndirect-drawCount-02719",
-                     "CmdDrawIndirect(): drawCount (%" PRIu32 ") is not less than or equal to the maximum allowed (%" PRIu32 ").",
+                     "vkCmdDrawIndirect(): drawCount (%" PRIu32 ") is not less than or equal to the maximum allowed (%" PRIu32 ").",
                      drawCount, device_limits.maxDrawIndirectCount);
+    }
+    if (offset & 3) {
+        skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndirect-offset-02710",
+                         "vkCmdDrawIndirect(): offset (%" PRIxLEAST64 ") must be a multiple of 4.", offset);
     }
     return skip;
 }
@@ -4738,33 +4924,37 @@ bool StatelessValidation::manual_PreCallValidateCmdDrawIndexedIndirect(VkCommand
                                                                        uint32_t stride) const {
     bool skip = false;
     if (!physical_device_features.multiDrawIndirect && ((drawCount > 1))) {
-        skip |=
-            LogError(device, "VUID-vkCmdDrawIndexedIndirect-drawCount-02718",
-                     "CmdDrawIndexedIndirect(): Device feature multiDrawIndirect disabled: count must be 0 or 1 but is %" PRIu32 "",
-                     drawCount);
+        skip |= LogError(
+            device, "VUID-vkCmdDrawIndexedIndirect-drawCount-02718",
+            "vkCmdDrawIndexedIndirect(): Device feature multiDrawIndirect disabled: count must be 0 or 1 but is %" PRIu32 "",
+            drawCount);
     }
     if (drawCount > device_limits.maxDrawIndirectCount) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndexedIndirect-drawCount-02719",
-                         "CmdDrawIndexedIndirect(): drawCount (%" PRIu32
+                         "vkCmdDrawIndexedIndirect(): drawCount (%" PRIu32
                          ") is not less than or equal to the maximum allowed (%" PRIu32 ").",
                          drawCount, device_limits.maxDrawIndirectCount);
+    }
+    if (offset & 3) {
+        skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndirect-offset-02710",
+                         "vkCmdDrawIndexedIndirect(): offset (%" PRIxLEAST64 ") must be a multiple of 4.", offset);
     }
     return skip;
 }
 
 bool StatelessValidation::ValidateCmdDrawIndirectCount(VkCommandBuffer commandBuffer, VkDeviceSize offset,
-                                                       VkDeviceSize countBufferOffset, bool khr) const {
+                                                       VkDeviceSize countBufferOffset, CMD_TYPE cmd_type) const {
     bool skip = false;
-    const char *api_name = khr ? "vkCmdDrawIndirectCountKHR()" : "vkCmdDrawIndirectCount()";
     if (offset & 3) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndirectCount-offset-02710",
-                         "%s: parameter, VkDeviceSize offset (0x%" PRIxLEAST64 "), is not a multiple of 4.", api_name, offset);
+                         "%s: parameter, VkDeviceSize offset (0x%" PRIxLEAST64 "), is not a multiple of 4.",
+                         CommandTypeString(cmd_type), offset);
     }
 
     if (countBufferOffset & 3) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndirectCount-countBufferOffset-02716",
-                         "%s: parameter, VkDeviceSize countBufferOffset (0x%" PRIxLEAST64 "), is not a multiple of 4.", api_name,
-                         countBufferOffset);
+                         "%s: parameter, VkDeviceSize countBufferOffset (0x%" PRIxLEAST64 "), is not a multiple of 4.",
+                         CommandTypeString(cmd_type), countBufferOffset);
     }
     return skip;
 }
@@ -4773,29 +4963,36 @@ bool StatelessValidation::manual_PreCallValidateCmdDrawIndirectCount(VkCommandBu
                                                                      VkDeviceSize offset, VkBuffer countBuffer,
                                                                      VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                                      uint32_t stride) const {
-    return ValidateCmdDrawIndirectCount(commandBuffer, offset, countBufferOffset, false);
+    return ValidateCmdDrawIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDIRECTCOUNT);
+}
+
+bool StatelessValidation::manual_PreCallValidateCmdDrawIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer,
+                                                                        VkDeviceSize offset, VkBuffer countBuffer,
+                                                                        VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                                                        uint32_t stride) const {
+    return ValidateCmdDrawIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDIRECTCOUNTAMD);
 }
 
 bool StatelessValidation::manual_PreCallValidateCmdDrawIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer,
                                                                         VkDeviceSize offset, VkBuffer countBuffer,
                                                                         VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                                         uint32_t stride) const {
-    return ValidateCmdDrawIndirectCount(commandBuffer, offset, countBufferOffset, true);
+    return ValidateCmdDrawIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDIRECTCOUNTKHR);
 }
 
 bool StatelessValidation::ValidateCmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkDeviceSize offset,
-                                                              VkDeviceSize countBufferOffset, bool khr) const {
+                                                              VkDeviceSize countBufferOffset, CMD_TYPE cmd_type) const {
     bool skip = false;
-    const char *api_name = khr ? "vkCmdDrawIndexedIndirectCountKHR()" : "vkCmdDrawIndexedIndirectCount()";
     if (offset & 3) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndexedIndirectCount-offset-02710",
-                         "%s: parameter, VkDeviceSize offset (0x%" PRIxLEAST64 "), is not a multiple of 4.", api_name, offset);
+                         "%s: parameter, VkDeviceSize offset (0x%" PRIxLEAST64 "), is not a multiple of 4.",
+                         CommandTypeString(cmd_type), offset);
     }
 
     if (countBufferOffset & 3) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawIndexedIndirectCount-countBufferOffset-02716",
-                         "%s: parameter, VkDeviceSize countBufferOffset (0x%" PRIxLEAST64 "), is not a multiple of 4.", api_name,
-                         countBufferOffset);
+                         "%s: parameter, VkDeviceSize countBufferOffset (0x%" PRIxLEAST64 "), is not a multiple of 4.",
+                         CommandTypeString(cmd_type), countBufferOffset);
     }
     return skip;
 }
@@ -4804,14 +5001,21 @@ bool StatelessValidation::manual_PreCallValidateCmdDrawIndexedIndirectCount(VkCo
                                                                             VkDeviceSize offset, VkBuffer countBuffer,
                                                                             VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
                                                                             uint32_t stride) const {
-    return ValidateCmdDrawIndexedIndirectCount(commandBuffer, offset, countBufferOffset, false);
+    return ValidateCmdDrawIndexedIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDEXEDINDIRECTCOUNT);
+}
+
+bool StatelessValidation::manual_PreCallValidateCmdDrawIndexedIndirectCountAMD(VkCommandBuffer commandBuffer, VkBuffer buffer,
+                                                                               VkDeviceSize offset, VkBuffer countBuffer,
+                                                                               VkDeviceSize countBufferOffset,
+                                                                               uint32_t maxDrawCount, uint32_t stride) const {
+    return ValidateCmdDrawIndexedIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDEXEDINDIRECTCOUNTAMD);
 }
 
 bool StatelessValidation::manual_PreCallValidateCmdDrawIndexedIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer,
                                                                                VkDeviceSize offset, VkBuffer countBuffer,
                                                                                VkDeviceSize countBufferOffset,
                                                                                uint32_t maxDrawCount, uint32_t stride) const {
-    return ValidateCmdDrawIndexedIndirectCount(commandBuffer, offset, countBufferOffset, true);
+    return ValidateCmdDrawIndexedIndirectCount(commandBuffer, offset, countBufferOffset, CMD_DRAWINDEXEDINDIRECTCOUNTKHR);
 }
 
 bool StatelessValidation::manual_PreCallValidateCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
@@ -4953,22 +5157,6 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProp
     if (tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         skip |= LogError(physicalDevice, "VUID-vkGetPhysicalDeviceImageFormatProperties-tiling-02248",
                          "vkGetPhysicalDeviceImageFormatProperties(): tiling must not be VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT.");
-    }
-
-    return skip;
-}
-
-bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceVideoFormatPropertiesKHR(
-    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceVideoFormatInfoKHR *pVideoFormatInfo,
-    uint32_t *pVideoFormatPropertyCount, VkVideoFormatPropertiesKHR *pVideoFormatProperties) const {
-    bool skip = false;
-
-    if ((pVideoFormatInfo->imageUsage & (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
-                                         VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR | VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR)) == 0) {
-        skip |= LogError(physicalDevice, "VUID-vkGetPhysicalDeviceVideoFormatPropertiesKHR-imageUsage-04844",
-                         "vkGetPhysicalDeviceVideoFormatPropertiesKHR(): pVideoFormatInfo->imageUsage does not contain any of "
-                         "VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR, VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR, "
-                         "VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR, or VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR.");
     }
 
     return skip;
@@ -5425,9 +5613,9 @@ bool StatelessValidation::manual_PreCallValidateCmdDispatchIndirect(VkCommandBuf
                                                                     VkDeviceSize offset) const {
     bool skip = false;
 
-    if ((offset % 4) != 0) {
+    if (offset & 3) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDispatchIndirect-offset-02710",
-                         "vkCmdDispatchIndirect(): offset (%" PRIu64 ") must be a multiple of 4.", offset);
+                         "vkCmdDispatchIndirect(): offset (%" PRIxLEAST64 ") must be a multiple of 4.", offset);
     }
     return skip;
 }
@@ -5641,13 +5829,12 @@ bool StatelessValidation::manual_PreCallValidateCmdDrawMeshTasksIndirectNV(VkCom
                                                                            VkDeviceSize offset, uint32_t drawCount,
                                                                            uint32_t stride) const {
     bool skip = false;
-    static const int condition_multiples = 0b0011;
-    if (offset & condition_multiples) {
+    if (offset & 3) {
         skip |= LogError(
             commandBuffer, "VUID-vkCmdDrawMeshTasksIndirectNV-offset-02710",
             "vkCmdDrawMeshTasksIndirectNV() parameter, VkDeviceSize offset (0x%" PRIxLEAST64 "), is not a multiple of 4.", offset);
     }
-    if (drawCount > 1 && ((stride & condition_multiples) || stride < sizeof(VkDrawMeshTasksIndirectCommandNV))) {
+    if (drawCount > 1 && ((stride & 3) || stride < sizeof(VkDrawMeshTasksIndirectCommandNV))) {
         skip |= LogError(commandBuffer, "VUID-vkCmdDrawMeshTasksIndirectNV-drawCount-02146",
                          "vkCmdDrawMeshTasksIndirectNV() parameter, uint32_t stride (0x%" PRIxLEAST32
                          "), is not a multiple of 4 or smaller than sizeof (VkDrawMeshTasksIndirectCommandNV).",
@@ -5870,6 +6057,11 @@ bool StatelessValidation::manual_PreCallValidateAllocateMemory(VkDevice device, 
                                  "If VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT is set, bufferDeviceAddress must be enabled.");
             }
         }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+        skip |= ExportMetalObjectsPNextUtil(
+            VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT, "VUID-VkMemoryAllocateInfo-pNext-06780",
+            "vkAllocateMemory():", "VK_EXPORT_METAL_OBJECT_TYPE_METAL_TEXTURE_BIT_EXT", pAllocateInfo->pNext);
+#endif // VK_USE_PLATFORM_METAL_EXT
     }
     return skip;
 }
@@ -8592,3 +8784,23 @@ bool StatelessValidation::manual_PreCallValidateGetDeviceImageSparseMemoryRequir
 
     return skip;
 }
+
+#ifdef VK_USE_PLATFORM_METAL_EXT
+bool StatelessValidation::manual_PreCallValidateExportMetalObjectsEXT(VkDevice device,
+                                                                      VkExportMetalObjectsInfoEXT *pMetalObjectsInfo) const {
+    bool skip = false;
+    const VkStructureType allowed_structs_vk_export_metal_objects_info[] = {
+        VK_STRUCTURE_TYPE_EXPORT_METAL_BUFFER_INFO_EXT,       VK_STRUCTURE_TYPE_EXPORT_METAL_COMMAND_QUEUE_INFO_EXT,
+        VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT,       VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT,
+        VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT, VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT,
+    };
+    skip |= validate_struct_pnext("vkExportMetalObjectsEXT", "pMetalObjectsInfo->pNext",
+                                  "VkExportMetalBufferInfoEXT, VkExportMetalCommandQueueInfoEXT, VkExportMetalDeviceInfoEXT, "
+                                  "VkExportMetalIOSurfaceInfoEXT, VkExportMetalSharedEventInfoEXT, VkExportMetalTextureInfoEXT",
+                                  pMetalObjectsInfo->pNext, ARRAY_SIZE(allowed_structs_vk_export_metal_objects_info),
+                                  allowed_structs_vk_export_metal_objects_info, GeneratedVulkanHeaderVersion,
+                                  "VUID-VkExportMetalObjectsInfoEXT-pNext-pNext", "VUID-VkExportMetalObjectsInfoEXT-sType-unique",
+                                  false, true);
+    return skip;
+}
+#endif  // VK_USE_PLATFORM_METAL_EXT

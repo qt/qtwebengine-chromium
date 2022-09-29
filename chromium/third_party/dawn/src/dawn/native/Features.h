@@ -33,8 +33,7 @@ enum class Feature {
     ShaderFloat16,
     PipelineStatisticsQuery,
     TimestampQuery,
-    DepthClamping,
-    Depth24UnormStencil8,
+    DepthClipControl,
     Depth32FloatStencil8,
     ChromiumExperimentalDp4a,
     IndirectFirstInstance,
@@ -62,7 +61,6 @@ struct FeaturesSet {
     // non-null.
     size_t EnumerateFeatures(wgpu::FeatureName* features) const;
     std::vector<const char*> GetEnabledFeatureNames() const;
-    void InitializeDeviceProperties(WGPUDeviceProperties* properties) const;
 };
 
 wgpu::FeatureName FeatureEnumToAPIFeature(Feature feature);

@@ -28,7 +28,6 @@ const char kImportDiskImageMethod[] = "ImportDiskImage";
 const char kCancelDiskImageMethod[] = "CancelDiskImageOperation";
 const char kDiskImageStatusMethod[] = "DiskImageStatus";
 const char kListVmDisksMethod[] = "ListVmDisks";
-const char kStartContainerMethod[] = "StartContainer";
 const char kGetContainerSshKeysMethod[] = "GetContainerSshKeys";
 const char kSyncVmTimesMethod[] = "SyncVmTimes";
 const char kAttachUsbDeviceMethod[] = "AttachUsbDevice";
@@ -39,19 +38,17 @@ const char kGetDnsSettingsMethod[] = "GetDnsSettings";
 const char kStartArcVmMethod[] = "StartArcVm";
 const char kSetVmCpuRestrictionMethod[] = "SetVmCpuRestriction";
 const char kAdjustVmMethod[] = "AdjustVm";
-const char kSetVmIdMethod[] = "SetVmId";
 const char kReclaimVmMemoryMethod[] = "ReclaimVmMemory";
 const char kMakeRtVcpuMethod[] = "MakeRtVcpu";
 const char kListVmsMethod[] = "ListVms";
 const char kArcVmCompleteBootMethod[] = "ArcVmCompleteBoot";
+const char kSetBalloonTimerMethod[] = "SetBalloonTimer";
 
-const char kContainerStartupFailedSignal[] = "ContainerStartupFailed";
 const char kDiskImageProgressSignal[] = "DiskImageProgress";
 const char kDnsSettingsChangedSignal[] = "DnsSettingsChanged";
 const char kVmStartedSignal[] = "VmStartedSignal";
 const char kVmStartingUpSignal[] = "VmStartingUpSignal";
 const char kVmStoppedSignal[] = "VmStoppedSignal";
-const char kVmIdChangedSignal[] = "VmIdChangedSignal";
 
 }  // namespace concierge
 }  // namespace vm_tools

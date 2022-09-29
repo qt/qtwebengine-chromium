@@ -32,7 +32,6 @@ const char kGetLog[] = "GetLog";
 const char kGetAllLogs[] = "GetAllLogs";
 const char kGetBigFeedbackLogs[] = "GetBigFeedbackLogs";
 const char kKstaledSetRatio[] = "KstaledSetRatio";
-const char kGetJournalLog[] = "GetJournalLog";
 const char kTestICMP[] = "TestICMP";
 const char kTestICMPWithOptions[] = "TestICMPWithOptions";
 const char kLogKernelTaskStates[] = "LogKernelTaskStates";
@@ -57,7 +56,7 @@ const char kSwapSetParameter[] = "SwapSetParameter";
 const char kSwapZramEnableWriteback[] = "SwapZramEnableWriteback";
 const char kSwapZramMarkIdle[] = "SwapZramMarkIdle";
 const char kSwapZramSetWritebackLimit[] = "SwapZramSetWritebackLimit";
-const char kSwapZramWriteback[] = "SwapZramWriteback";
+const char kSwapZramWriteback[] = "InitiateSwapZramWriteback";
 const char kBackupArcBugReport[] = "BackupArcBugReport";
 const char kDeleteArcBugReportBackup[] = "DeleteArcBugReportBackup";
 const char kKernelFeatureList[] = "KernelFeatureList";
@@ -153,6 +152,7 @@ constexpr char kG2f[] = "g2f";
 constexpr char kVerbose[] = "verbose";
 constexpr char kUserKeys[] = "user_keys";
 constexpr char kAllowlistData[] = "allowlist_data";
+constexpr char kCorpProtocol[] = "corp_protocol";
 }  // namespace u2f_flags
 
 }  // namespace debugd

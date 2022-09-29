@@ -59,7 +59,12 @@ static void get_frame_defaults(AVFrame *frame)
     frame->pts                   =
     frame->pkt_dts               = AV_NOPTS_VALUE;
     frame->best_effort_timestamp = AV_NOPTS_VALUE;
+    frame->duration            = 0;
+#if FF_API_PKT_DURATION
+FF_DISABLE_DEPRECATION_WARNINGS
     frame->pkt_duration        = 0;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     frame->pkt_pos             = -1;
     frame->pkt_size            = -1;
     frame->time_base           = (AVRational){ 0, 1 };
@@ -283,6 +288,7 @@ static int frame_copy_props(AVFrame *dst, const AVFrame *src, int force_copy)
     dst->crop_left              = src->crop_left;
     dst->crop_right             = src->crop_right;
     dst->pts                    = src->pts;
+    dst->duration               = src->duration;
     dst->repeat_pict            = src->repeat_pict;
     dst->interlaced_frame       = src->interlaced_frame;
     dst->top_field_first        = src->top_field_first;
@@ -292,7 +298,11 @@ static int frame_copy_props(AVFrame *dst, const AVFrame *src, int force_copy)
     dst->pkt_dts                = src->pkt_dts;
     dst->pkt_pos                = src->pkt_pos;
     dst->pkt_size               = src->pkt_size;
+#if FF_API_PKT_DURATION
+FF_DISABLE_DEPRECATION_WARNINGS
     dst->pkt_duration           = src->pkt_duration;
+FF_ENABLE_DEPRECATION_WARNINGS
+#endif
     dst->time_base              = src->time_base;
     dst->reordered_opaque       = src->reordered_opaque;
     dst->quality                = src->quality;
@@ -727,19 +737,28 @@ static int frame_copy_audio(AVFrame *dst, const AVFrame *src)
 
 #if FF_API_OLD_CHANNEL_LAYOUT
 FF_DISABLE_DEPRECATION_WARNINGS
-    if (!channels) {
+    if (!channels || !src->ch_layout.nb_channels) {
         if (dst->channels       != src->channels ||
             dst->channel_layout != src->channel_layout)
             return AVERROR(EINVAL);
+        CHECK_CHANNELS_CONSISTENCY(src);
+    }
+    if (!channels) {
         channels = dst->channels;
         planes = planar ? channels : 1;
-        CHECK_CHANNELS_CONSISTENCY(src);
     }
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
     if (dst->nb_samples != src->nb_samples ||
+#if FF_API_OLD_CHANNEL_LAYOUT
+        (av_channel_layout_check(&dst->ch_layout) &&
+         av_channel_layout_check(&src->ch_layout) &&
+#endif
         av_channel_layout_compare(&dst->ch_layout, &src->ch_layout))
+#if FF_API_OLD_CHANNEL_LAYOUT
+        )
+#endif
         return AVERROR(EINVAL);
 
     for (i = 0; i < planes; i++)
@@ -763,7 +782,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
     else if (dst->nb_samples > 0 &&
              (av_channel_layout_check(&dst->ch_layout)
 #if FF_API_OLD_CHANNEL_LAYOUT
-              || dst->channel_layout || dst->channels
+              || dst->channels > 0
 #endif
             ))
         return frame_copy_audio(dst, src);

@@ -6,6 +6,7 @@
 
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
 
+#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -30,8 +31,8 @@ int32_t CPDF_ViewerPreferences::NumCopies() const {
   return pDict ? pDict->GetIntegerFor("NumCopies") : 1;
 }
 
-CPDF_Array* CPDF_ViewerPreferences::PrintPageRange() const {
-  CPDF_Dictionary* pDict = GetViewerPreferences();
+const CPDF_Array* CPDF_ViewerPreferences::PrintPageRange() const {
+  const CPDF_Dictionary* pDict = GetViewerPreferences();
   return pDict ? pDict->GetArrayFor("PrintPageRange") : nullptr;
 }
 
@@ -53,7 +54,7 @@ absl::optional<ByteString> CPDF_ViewerPreferences::GenericName(
   return pName->GetString();
 }
 
-CPDF_Dictionary* CPDF_ViewerPreferences::GetViewerPreferences() const {
-  CPDF_Dictionary* pDict = m_pDoc->GetRoot();
+const CPDF_Dictionary* CPDF_ViewerPreferences::GetViewerPreferences() const {
+  const CPDF_Dictionary* pDict = m_pDoc->GetRoot();
   return pDict ? pDict->GetDictFor("ViewerPreferences") : nullptr;
 }

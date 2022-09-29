@@ -67,12 +67,12 @@ bool ExternalImageDXGI::IsValid() const {
 
 WGPUTexture ExternalImageDXGI::ProduceTexture(
     WGPUDevice device,
-    const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor) {
+    const ExternalImageAccessDescriptorDXGISharedHandle* descriptor) {
     return ProduceTexture(descriptor);
 }
 
 WGPUTexture ExternalImageDXGI::ProduceTexture(
-    const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor) {
+    const ExternalImageAccessDescriptorDXGISharedHandle* descriptor) {
     if (!IsValid()) {
         dawn::ErrorLog() << "Cannot produce texture from external image after device destruction";
         return nullptr;

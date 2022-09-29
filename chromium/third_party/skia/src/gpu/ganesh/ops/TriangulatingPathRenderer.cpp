@@ -22,13 +22,13 @@
 #include "src/gpu/ganesh/GrSimpleMesh.h"
 #include "src/gpu/ganesh/GrStyle.h"
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/geometry/GrAATriangulator.h"
 #include "src/gpu/ganesh/geometry/GrPathUtils.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/geometry/GrTriangulator.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 #include <cstdio>
 
@@ -134,7 +134,10 @@ public:
         if (fCanMapVB) {
             fVertexBuffer->unmap();
         } else {
-            fVertexBuffer->updateData(fVertices, actualCount * fLockStride);
+            fVertexBuffer->updateData(fVertices,
+                                      /*offset=*/0,
+                                      /*size=*/actualCount*fLockStride,
+                                      /*preserve=*/false);
             sk_free(fVertices);
         }
 
@@ -554,7 +557,7 @@ GR_DRAW_OP_TEST_DEFINE(TriangulatingPathOp) {
     static constexpr GrAAType kAATypes[] = {GrAAType::kNone, GrAAType::kMSAA, GrAAType::kCoverage};
     GrAAType aaType;
     do {
-        aaType = kAATypes[random->nextULessThan(SK_ARRAY_COUNT(kAATypes))];
+        aaType = kAATypes[random->nextULessThan(std::size(kAATypes))];
     } while(GrAAType::kMSAA == aaType && numSamples <= 1);
     GrStyle style;
     do {

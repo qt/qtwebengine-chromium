@@ -4,11 +4,15 @@
 
 source_set("util") {
   testonly = true
-  sources = [
-    "read_file.cc",
+
+  visibility = [ "../../*" ]
+
+  public = [
     "read_file.h",
     "task_util.h",
   ]
+
+  sources = [ "read_file.cc" ]
 
   public_deps = [
     "../../platform",

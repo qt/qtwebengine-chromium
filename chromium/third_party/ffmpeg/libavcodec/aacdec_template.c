@@ -701,14 +701,15 @@ static ChannelElement *get_che(AACContext *ac, int type, int elem_id)
 
         av_log(ac->avctx, AV_LOG_DEBUG, "stereo with SCE\n");
 
-        if (set_default_channel_config(ac, ac->avctx, layout_map,
-                                       &layout_map_tags, 1) < 0)
-            return NULL;
+        layout_map_tags = 2;
+        layout_map[0][0] = layout_map[1][0] = TYPE_SCE;
+        layout_map[0][2] = layout_map[1][2] = AAC_CHANNEL_FRONT;
+        layout_map[0][1] = 0;
+        layout_map[1][1] = 1;
         if (output_configure(ac, layout_map, layout_map_tags,
                              OC_TRIAL_FRAME, 1) < 0)
             return NULL;
 
-        ac->oc[1].m4ac.chan_config = 1;
         if (ac->oc[1].m4ac.sbr)
             ac->oc[1].m4ac.ps = -1;
     }
@@ -786,8 +787,10 @@ static ChannelElement *get_che(AACContext *ac, int type, int elem_id)
             type == TYPE_CPE) {
             ac->tags_mapped++;
             return ac->tag_che_map[TYPE_CPE][elem_id] = ac->che[TYPE_CPE][0];
-        } else if (ac->oc[1].m4ac.chan_config == 2) {
-            return NULL;
+        } else if (ac->tags_mapped == 1 && ac->oc[1].m4ac.chan_config == 2 &&
+            type == TYPE_SCE) {
+            ac->tags_mapped++;
+            return ac->tag_che_map[TYPE_SCE][elem_id] = ac->che[TYPE_SCE][1];
         }
     case 1:
         if (!ac->tags_mapped && type == TYPE_SCE) {
@@ -1221,8 +1224,8 @@ static void aacdec_init(AACContext *ac);
 
 static av_cold void aac_static_table_init(void)
 {
-    static VLC_TYPE vlc_buf[304 + 270 + 550 + 300 + 328 +
-                            294 + 306 + 268 + 510 + 366 + 462][2];
+    static VLCElem vlc_buf[304 + 270 + 550 + 300 + 328 +
+                           294 + 306 + 268 + 510 + 366 + 462];
     for (unsigned i = 0, offset = 0; i < 11; i++) {
         vlc_spectral[i].table           = &vlc_buf[offset];
         vlc_spectral[i].table_allocated = FF_ARRAY_ELEMS(vlc_buf) - offset;
@@ -1821,7 +1824,7 @@ static int decode_spectrum_and_dequant(AACContext *ac, INTFLOAT coef[1024],
 #if !USE_FIXED
                 const float *vq = ff_aac_codebook_vector_vals[cbt_m1];
 #endif /* !USE_FIXED */
-                VLC_TYPE (*vlc_tab)[2] = vlc_spectral[cbt_m1].table;
+                const VLCElem *vlc_tab = vlc_spectral[cbt_m1].table;
                 OPEN_READER(re, gb);
 
                 switch (cbt_m1 >> 1) {
@@ -3415,9 +3418,6 @@ static int aac_decode_frame_int(AVCodecContext *avctx, AVFrame *frame,
         ac->oc[1].status = OC_LOCKED;
     }
 
-    if (multiplier)
-        avctx->internal->skip_samples_multiplier = 2;
-
     if (!ac->frame->data[0] && samples) {
         av_log(avctx, AV_LOG_ERROR, "no frame data found\n");
         err = AVERROR_INVALIDDATA;
@@ -3550,8 +3550,9 @@ static void aacdec_init(AACContext *c)
 #endif
 
 #if !USE_FIXED
-    if(ARCH_MIPS)
-        ff_aacdec_init_mips(c);
+#if ARCH_MIPS
+    ff_aacdec_init_mips(c);
+#endif
 #endif /* !USE_FIXED */
 }
 /**

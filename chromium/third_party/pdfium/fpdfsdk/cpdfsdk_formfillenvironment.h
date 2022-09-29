@@ -146,7 +146,7 @@ class CPDFSDK_FormFillEnvironment final
 
 #ifdef PDF_ENABLE_V8
   CPDFSDK_PageView* GetCurrentView();
-  FPDF_PAGE GetCurrentPage() const;
+  IPDF_Page* GetCurrentPage() const;
 
   WideString GetLanguage();
   WideString GetPlatform();
@@ -163,7 +163,7 @@ class CPDFSDK_FormFillEnvironment final
                      pdfium::span<uint8_t> response);
   void JS_appBeep(int nType);
   WideString JS_fieldBrowse();
-  void JS_docmailForm(pdfium::span<uint8_t> mailData,
+  void JS_docmailForm(pdfium::span<const uint8_t> mailData,
                       FPDF_BOOL bUI,
                       const WideString& To,
                       const WideString& Subject,
@@ -227,7 +227,7 @@ class CPDFSDK_FormFillEnvironment final
   WideString GetFilePath() const;
   ByteString GetAppName() const { return ByteString(); }
   FPDF_FORMFILLINFO* GetFormFillInfo() const { return m_pInfo; }
-  void SubmitForm(pdfium::span<uint8_t> form_data, const WideString& URL);
+  void SubmitForm(pdfium::span<const uint8_t> form_data, const WideString& URL);
 
   void SetFocusableAnnotSubtypes(
       const std::vector<CPDF_Annot::Subtype>& focusableAnnotTypes) {
@@ -272,7 +272,7 @@ class CPDFSDK_FormFillEnvironment final
                           CPDF_AAction::AActionType type,
                           CFFL_FieldAction* data,
                           const WideString& script);
-  bool IsValidField(CPDF_Dictionary* pFieldDict);
+  bool IsValidField(const CPDF_Dictionary* pFieldDict);
 
   UnownedPtr<FPDF_FORMFILLINFO> const m_pInfo;
   std::unique_ptr<IJS_Runtime> m_pIJSRuntime;

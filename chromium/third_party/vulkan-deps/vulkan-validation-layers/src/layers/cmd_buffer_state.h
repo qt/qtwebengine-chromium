@@ -42,14 +42,38 @@ class RENDER_PASS_STATE;
 class CoreChecks;
 class ValidationStateTracker;
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+static bool GetMetalExport(const VkEventCreateInfo *info) {
+    bool retval = false;
+    auto export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
+    while (export_metal_object_info) {
+        if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT) {
+            retval = true;
+            break;
+        }
+        export_metal_object_info = LvlFindInChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
+    }
+    return retval;
+}
+#endif  // VK_USE_PLATFORM_METAL_EXT
+
 class EVENT_STATE : public BASE_NODE {
   public:
     int write_in_use;
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    const bool metal_event_export;
+#endif  // VK_USE_PLATFORM_METAL_EXT
     VkPipelineStageFlags2KHR stageMask = VkPipelineStageFlags2KHR(0);
     VkEventCreateFlags flags;
 
-    EVENT_STATE(VkEvent event_, VkEventCreateFlags flags_)
-        : BASE_NODE(event_, kVulkanObjectTypeEvent), write_in_use(0), flags(flags_) {}
+    EVENT_STATE(VkEvent event_, const VkEventCreateInfo *pCreateInfo)
+        : BASE_NODE(event_, kVulkanObjectTypeEvent),
+          write_in_use(0),
+#ifdef VK_USE_PLATFORM_METAL_EXT
+          metal_event_export(GetMetalExport(pCreateInfo)),
+#endif  // VK_USE_PLATFORM_METAL_EXT
+          flags(pCreateInfo->flags) {
+    }
 
     VkEvent event() const { return handle_.Cast<VkEvent>(); }
 };
@@ -181,18 +205,23 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     // since command buffers can only be destroyed by their command pool, this does not need to be a shared_ptr
     const COMMAND_POOL_STATE *command_pool;
     ValidationStateTracker *dev_data;
-    bool hasDrawCmd;
-    bool hasTraceRaysCmd;
-    bool hasBuildAccelerationStructureCmd;
-    bool hasDispatchCmd;
     bool unprotected;  // can't be used for protected memory
     bool hasRenderPassInstance;
     bool suspendsRenderPassInstance;
     bool resumesRenderPassInstance;
 
+    // Track if certain commands have been called at least once in lifetime of the command buffer
+    // primary command buffers values are set true if a secondary command buffer has a command
+    bool has_draw_cmd;
+    bool has_dispatch_cmd;
+    bool has_trace_rays_cmd;
+    bool has_build_as_cmd;
+
     CB_STATE state;         // Track cmd buffer update state
     uint64_t commandCount;  // Number of commands recorded. Currently only used with VK_KHR_performance_query
     uint64_t submitCount;   // Number of times CB has been submitted
+    bool pipeline_bound = false;                  // True if CmdBindPipeline has been called on this command buffer, false otherwise
+    uint64_t commands_since_begin_rendering = 0;  // Number of commands since the last CmdBeginRenderingCommand
     typedef uint64_t ImageLayoutUpdateCount;
     ImageLayoutUpdateCount image_layout_change_count;  // The sequence number for changes to image layout (for cached validation)
     CBStatusFlags status;                              // Track status of various bindings on cmd buffer
@@ -256,6 +285,8 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
 
     uint32_t initial_device_mask;
     VkPrimitiveTopology primitiveTopology;
+
+    bool rasterization_disabled = false;
 
     safe_VkRenderPassBeginInfo activeRenderPassBeginInfo;
     std::shared_ptr<RENDER_PASS_STATE> activeRenderPass;
@@ -441,9 +472,10 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, PIPELINE_LAYOUT_STATE *pipeline_layout, uint32_t set,
                                 uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites);
 
-    void UpdateStateCmdDrawDispatchType(CMD_TYPE cmd_type, VkPipelineBindPoint bind_point);
-    void UpdateStateCmdDrawType(CMD_TYPE cmd_type, VkPipelineBindPoint bind_point);
-    void UpdateDrawState(CMD_TYPE cmd_type, const VkPipelineBindPoint bind_point);
+    void UpdateDrawCmd(CMD_TYPE cmd_type);
+    void UpdateDispatchCmd(CMD_TYPE cmd_type);
+    void UpdateTraceRayCmd(CMD_TYPE cmd_type);
+    void UpdatePipelineState(CMD_TYPE cmd_type, const VkPipelineBindPoint bind_point);
 
     virtual void RecordCmd(CMD_TYPE cmd_type);
     void RecordStateCmd(CMD_TYPE cmd_type, CBStatusFlags state_bits);
@@ -491,6 +523,12 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     uint32_t GetDynamicDepthResolveAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 1; }
     uint32_t GetDynamicStencilAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 2; }
     uint32_t GetDynamicStencilResolveAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 3; }
+
+    bool RasterizationDisabled() const;
+    inline void BindPipeline(LvlBindPoint bind_point, PIPELINE_STATE *pipe_state) {
+        lastBound[bind_point].pipeline_state = pipe_state;
+        pipeline_bound = true;
+    }
 
   protected:
     void NotifyInvalidate(const BASE_NODE::NodeList &invalid_nodes, bool unlink) override;

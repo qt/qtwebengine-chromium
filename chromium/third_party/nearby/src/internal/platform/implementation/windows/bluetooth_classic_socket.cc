@@ -83,8 +83,16 @@ api::BluetoothDevice* BluetoothSocket::GetRemoteDevice() {
 // Starts an asynchronous operation on a StreamSocket object to connect to a
 // remote network destination specified by a remote hostname and a remote
 // service name.
-void BluetoothSocket::Connect(HostName connectionHostName,
+bool BluetoothSocket::Connect(HostName connectionHostName,
                               winrt::hstring connectionServiceName) {
+  if (connectionHostName == nullptr || connectionServiceName.empty()) {
+    NEARBY_LOGS(ERROR)
+        << __func__
+        << ": Bluetooth socket connection failed. Attempting to "
+           "connect to empty HostName/MAC address or ServiceName.";
+    return false;
+  }
+
   windows_socket_ = winrt::Windows::Networking::Sockets::StreamSocket();
 
   // https://docs.microsoft.com/en-us/uwp/api/windows.networking.sockets.streamsocket.connectasync?view=winrt-20348
@@ -102,6 +110,11 @@ void BluetoothSocket::Connect(HostName connectionHostName,
       std::make_unique<BluetoothInputStream>(windows_socket_.InputStream());
   output_stream_ =
       std::make_unique<BluetoothOutputStream>(windows_socket_.OutputStream());
+
+  NEARBY_LOGS(INFO) << __func__
+                    << ": Bluetooth socket successfully connected to "
+                    << bluetooth_device_->GetName();
+  return true;
 }
 
 BluetoothSocket::BluetoothInputStream::BluetoothInputStream(

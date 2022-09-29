@@ -144,7 +144,6 @@ rtc_library("aec3") {
     "../../../api/audio:aec3_config",
     "../../../api/audio:echo_control",
     "../../../common_audio:common_audio_c",
-    "../../../rtc_base:atomicops",
     "../../../rtc_base:checks",
     "../../../rtc_base:logging",
     "../../../rtc_base:macromagic",
@@ -158,7 +157,10 @@ rtc_library("aec3") {
     "../../../system_wrappers:metrics",
     "../utility:cascaded_biquad_filter",
   ]
-  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+  absl_deps = [
+    "//third_party/abseil-cpp/absl/strings",
+    "//third_party/abseil-cpp/absl/types:optional",
+  ]
 
   if (current_cpu == "x86" || current_cpu == "x64") {
     deps += [ ":aec3_avx2" ]
@@ -209,6 +211,7 @@ rtc_source_set("adaptive_fir_filter") {
     "../../../api:array_view",
     "../../../rtc_base/system:arch",
   ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
 }
 
 rtc_source_set("adaptive_fir_filter_erl") {
@@ -227,6 +230,7 @@ rtc_source_set("matched_filter") {
     "../../../api:array_view",
     "../../../rtc_base/system:arch",
   ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
 rtc_source_set("vector_math") {

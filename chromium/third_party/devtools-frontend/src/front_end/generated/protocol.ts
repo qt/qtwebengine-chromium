@@ -10,16 +10,12 @@
 
 export type integer = number;
 export type binary = string;
-export type EnumerableEnum<T> = {
-  [K in keyof T]: T[K]
-};
+export type EnumerableEnum<T> = {[K in keyof T]: T[K]};
 export interface ProtocolResponseWithError {
   /** Returns an error message if the request failed. */
   getError(): string|undefined;
 }
-type OpaqueType<Tag extends string> = {
-  protocolOpaqueTypeTag: Tag
-};
+type OpaqueType<Tag extends string> = {protocolOpaqueTypeTag: Tag};
 type OpaqueIdentifier<RepresentationType, Tag extends string> = RepresentationType&OpaqueType<Tag>;
 
 export namespace Accessibility {
@@ -240,6 +236,10 @@ export namespace Accessibility {
      * This `Node`'s role, whether explicit or implicit.
      */
     role?: AXValue;
+    /**
+     * This `Node`'s Chrome raw role.
+     */
+    chromeRole?: AXValue;
     /**
      * The accessible name for this `Node`.
      */
@@ -703,6 +703,7 @@ export namespace Audits {
     ExcludeSameSiteStrict = 'ExcludeSameSiteStrict',
     ExcludeInvalidSameParty = 'ExcludeInvalidSameParty',
     ExcludeSamePartyCrossPartyContext = 'ExcludeSamePartyCrossPartyContext',
+    ExcludeDomainNonASCII = 'ExcludeDomainNonASCII',
   }
 
   export const enum CookieWarningReason {
@@ -715,6 +716,7 @@ export namespace Audits {
     WarnSameSiteLaxCrossDowngradeStrict = 'WarnSameSiteLaxCrossDowngradeStrict',
     WarnSameSiteLaxCrossDowngradeLax = 'WarnSameSiteLaxCrossDowngradeLax',
     WarnAttributeValueExceedsMaxSize = 'WarnAttributeValueExceedsMaxSize',
+    WarnDomainNonASCII = 'WarnDomainNonASCII',
   }
 
   export const enum CookieOperation {
@@ -963,9 +965,15 @@ export namespace Audits {
 
   export const enum AttributionReportingIssueType {
     PermissionPolicyDisabled = 'PermissionPolicyDisabled',
-    AttributionSourceUntrustworthyOrigin = 'AttributionSourceUntrustworthyOrigin',
-    AttributionUntrustworthyOrigin = 'AttributionUntrustworthyOrigin',
+    UntrustworthyReportingOrigin = 'UntrustworthyReportingOrigin',
+    InsecureContext = 'InsecureContext',
     InvalidHeader = 'InvalidHeader',
+    InvalidRegisterTriggerHeader = 'InvalidRegisterTriggerHeader',
+    InvalidEligibleHeader = 'InvalidEligibleHeader',
+    TooManyConcurrentRequests = 'TooManyConcurrentRequests',
+    SourceAndTriggerHeaders = 'SourceAndTriggerHeaders',
+    SourceIgnored = 'SourceIgnored',
+    TriggerIgnored = 'TriggerIgnored',
   }
 
   /**
@@ -974,7 +982,6 @@ export namespace Audits {
    */
   export interface AttributionReportingIssueDetails {
     violationType: AttributionReportingIssueType;
-    frame?: AffectedFrame;
     request?: AffectedRequest;
     violatingNodeId?: DOM.BackendNodeId;
     invalidParameter?: string;
@@ -1030,19 +1037,26 @@ export namespace Audits {
     DeprecationExample = 'DeprecationExample',
     DocumentDomainSettingWithoutOriginAgentClusterHeader = 'DocumentDomainSettingWithoutOriginAgentClusterHeader',
     EventPath = 'EventPath',
+    ExpectCTHeader = 'ExpectCTHeader',
     GeolocationInsecureOrigin = 'GeolocationInsecureOrigin',
     GeolocationInsecureOriginDeprecatedNotRemoved = 'GeolocationInsecureOriginDeprecatedNotRemoved',
     GetUserMediaInsecureOrigin = 'GetUserMediaInsecureOrigin',
     HostCandidateAttributeGetter = 'HostCandidateAttributeGetter',
+    IdentityInCanMakePaymentEvent = 'IdentityInCanMakePaymentEvent',
     InsecurePrivateNetworkSubresourceRequest = 'InsecurePrivateNetworkSubresourceRequest',
     LegacyConstraintGoogIPv6 = 'LegacyConstraintGoogIPv6',
     LocalCSSFileExtensionRejected = 'LocalCSSFileExtensionRejected',
     MediaSourceAbortRemove = 'MediaSourceAbortRemove',
     MediaSourceDurationTruncatingBuffered = 'MediaSourceDurationTruncatingBuffered',
+    NavigateEventRestoreScroll = 'NavigateEventRestoreScroll',
+    NavigateEventTransitionWhile = 'NavigateEventTransitionWhile',
     NoSysexWebMIDIWithoutPermission = 'NoSysexWebMIDIWithoutPermission',
     NotificationInsecureOrigin = 'NotificationInsecureOrigin',
     NotificationPermissionRequestedIframe = 'NotificationPermissionRequestedIframe',
     ObsoleteWebRtcCipherSuite = 'ObsoleteWebRtcCipherSuite',
+    OpenWebDatabaseInsecureContext = 'OpenWebDatabaseInsecureContext',
+    OverflowVisibleOnReplacedElement = 'OverflowVisibleOnReplacedElement',
+    PersistentQuotaType = 'PersistentQuotaType',
     PictureSourceSrc = 'PictureSourceSrc',
     PrefixedCancelAnimationFrame = 'PrefixedCancelAnimationFrame',
     PrefixedRequestAnimationFrame = 'PrefixedRequestAnimationFrame',
@@ -1057,14 +1071,12 @@ export namespace Audits {
     RequestedSubresourceWithEmbeddedCredentials = 'RequestedSubresourceWithEmbeddedCredentials',
     RTCConstraintEnableDtlsSrtpFalse = 'RTCConstraintEnableDtlsSrtpFalse',
     RTCConstraintEnableDtlsSrtpTrue = 'RTCConstraintEnableDtlsSrtpTrue',
-    RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics =
-        'RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics',
+    RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics = 'RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics',
     RTCPeerConnectionSdpSemanticsPlanB = 'RTCPeerConnectionSdpSemanticsPlanB',
     RtcpMuxPolicyNegotiate = 'RtcpMuxPolicyNegotiate',
     SharedArrayBufferConstructedWithoutIsolation = 'SharedArrayBufferConstructedWithoutIsolation',
     TextToSpeech_DisallowedByAutoplay = 'TextToSpeech_DisallowedByAutoplay',
-    V8SharedArrayBufferConstructedInExtensionWithoutIsolation =
-        'V8SharedArrayBufferConstructedInExtensionWithoutIsolation',
+    V8SharedArrayBufferConstructedInExtensionWithoutIsolation = 'V8SharedArrayBufferConstructedInExtensionWithoutIsolation',
     XHRJSONEncodingDetection = 'XHRJSONEncodingDetection',
     XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload = 'XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload',
     XRSupportsSession = 'XRSupportsSession',
@@ -1109,7 +1121,6 @@ export namespace Audits {
     ClientMetadataHttpNotFound = 'ClientMetadataHttpNotFound',
     ClientMetadataNoResponse = 'ClientMetadataNoResponse',
     ClientMetadataInvalidResponse = 'ClientMetadataInvalidResponse',
-    ClientMetadataMissingPrivacyPolicyUrl = 'ClientMetadataMissingPrivacyPolicyUrl',
     DisabledInSettings = 'DisabledInSettings',
     ErrorFetchingSignin = 'ErrorFetchingSignin',
     InvalidSigninResponse = 'InvalidSigninResponse',
@@ -1786,6 +1797,10 @@ export namespace CSS {
      */
     pseudoType: DOM.PseudoType;
     /**
+     * Pseudo element custom ident.
+     */
+    pseudoIdentifier?: string;
+    /**
      * Matches of CSS rules applicable to the pseudo style.
      */
     matches: RuleMatch[];
@@ -1979,6 +1994,11 @@ export namespace CSS {
      * with the innermost layer and going outwards.
      */
     layers?: CSSLayer[];
+    /**
+     * @scope CSS at-rule array.
+     * The array enumerates @scope at-rules starting with the innermost one, going outwards.
+     */
+    scopes?: CSSScope[];
   }
 
   /**
@@ -2115,6 +2135,11 @@ export namespace CSS {
      * The entire property range in the enclosing style declaration (if available).
      */
     range?: SourceRange;
+    /**
+     * Parsed longhand components of this property if it is a shorthand.
+     * This field will be empty if the given property is not a shorthand.
+     */
+    longhandProperties?: CSSProperty[];
   }
 
   export const enum CSSMediaSource {
@@ -2233,6 +2258,25 @@ export namespace CSS {
      * Whether the supports condition is satisfied.
      */
     active: boolean;
+    /**
+     * The associated rule header range in the enclosing stylesheet (if
+     * available).
+     */
+    range?: SourceRange;
+    /**
+     * Identifier of the stylesheet containing this object (if exists).
+     */
+    styleSheetId?: StyleSheetId;
+  }
+
+  /**
+   * CSS Scope at-rule descriptor.
+   */
+  export interface CSSScope {
+    /**
+     * Scope rule text.
+     */
+    text: string;
     /**
      * The associated rule header range in the enclosing stylesheet (if
      * available).
@@ -2572,6 +2616,10 @@ export namespace CSS {
      * A list of CSS keyframed animations matching this node.
      */
     cssKeyframesRules?: CSSKeyframesRule[];
+    /**
+     * Id of the first parent element that does not have display: contents.
+     */
+    parentLayoutNodeId?: DOM.NodeId;
   }
 
   export interface GetMediaQueriesResponse extends ProtocolResponseWithError {
@@ -2678,6 +2726,19 @@ export namespace CSS {
      * The resulting CSS Supports rule after modification.
      */
     supports: CSSSupports;
+  }
+
+  export interface SetScopeTextRequest {
+    styleSheetId: StyleSheetId;
+    range: SourceRange;
+    text: string;
+  }
+
+  export interface SetScopeTextResponse extends ProtocolResponseWithError {
+    /**
+     * The resulting CSS Scope rule after modification.
+     */
+    scope: CSSScope;
   }
 
   export interface SetRuleSelectorRequest {
@@ -3172,6 +3233,11 @@ export namespace DOM {
      * Pseudo element type for this node.
      */
     pseudoType?: PseudoType;
+    /**
+     * Pseudo element identifier for this node. Only present if there is a
+     * valid pseudoType.
+     */
+    pseudoIdentifier?: string;
     /**
      * Shadow root type.
      */
@@ -3768,6 +3834,13 @@ export namespace DOM {
   export interface QuerySelectorAllResponse extends ProtocolResponseWithError {
     /**
      * Query selector result.
+     */
+    nodeIds: NodeId[];
+  }
+
+  export interface GetTopLayerElementsResponse extends ProtocolResponseWithError {
+    /**
+     * NodeIds of top layer elements
      */
     nodeIds: NodeId[];
   }
@@ -4760,6 +4833,11 @@ export namespace DOMSnapshot {
      * Type of a pseudo element node.
      */
     pseudoType?: RareStringData;
+    /**
+     * Pseudo element identifier for this node. Only present if there is a
+     * valid pseudoType.
+     */
+    pseudoIdentifier?: RareStringData;
     /**
      * Whether this DOM node responds to mouse clicks. This includes nodes that have had click
      * event listeners attached via JavaScript as well as anchor tags that naturally navigate when
@@ -5792,9 +5870,14 @@ export namespace IndexedDB {
 
   export interface ClearObjectStoreRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     /**
      * Database name.
      */
@@ -5807,9 +5890,14 @@ export namespace IndexedDB {
 
   export interface DeleteDatabaseRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     /**
      * Database name.
      */
@@ -5817,7 +5905,15 @@ export namespace IndexedDB {
   }
 
   export interface DeleteObjectStoreEntriesRequest {
-    securityOrigin: string;
+    /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
+     * Security origin.
+     */
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     databaseName: string;
     objectStoreName: string;
     /**
@@ -5828,9 +5924,14 @@ export namespace IndexedDB {
 
   export interface RequestDataRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     /**
      * Database name.
      */
@@ -5870,9 +5971,14 @@ export namespace IndexedDB {
 
   export interface GetMetadataRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     /**
      * Database name.
      */
@@ -5898,9 +6004,14 @@ export namespace IndexedDB {
 
   export interface RequestDatabaseRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
     /**
      * Database name.
      */
@@ -5916,9 +6027,14 @@ export namespace IndexedDB {
 
   export interface RequestDatabaseNamesRequest {
     /**
+     * At least and at most one of securityOrigin, storageKey must be specified.
      * Security origin.
      */
-    securityOrigin: string;
+    securityOrigin?: string;
+    /**
+     * Storage key.
+     */
+    storageKey?: string;
   }
 
   export interface RequestDatabaseNamesResponse extends ProtocolResponseWithError {
@@ -6991,6 +7107,7 @@ export namespace Network {
     TextTrack = 'TextTrack',
     XHR = 'XHR',
     Fetch = 'Fetch',
+    Prefetch = 'Prefetch',
     EventSource = 'EventSource',
     WebSocket = 'WebSocket',
     Manifest = 'Manifest',
@@ -7362,6 +7479,16 @@ export namespace Network {
      * Whether the request complied with Certificate Transparency policy
      */
     certificateTransparencyCompliance: CertificateTransparencyCompliance;
+    /**
+     * The signature algorithm used by the server in the TLS server signature,
+     * represented as a TLS SignatureScheme code point. Omitted if not
+     * applicable or not known.
+     */
+    serverSignatureAlgorithm?: integer;
+    /**
+     * Whether the connection used Encrypted ClientHello
+     */
+    encryptedClientHello: boolean;
   }
 
   /**
@@ -10227,6 +10354,7 @@ export namespace Page {
     EncryptedMedia = 'encrypted-media',
     ExecutionWhileOutOfViewport = 'execution-while-out-of-viewport',
     ExecutionWhileNotRendered = 'execution-while-not-rendered',
+    FederatedCredentials = 'federated-credentials',
     FocusWithoutUserActivation = 'focus-without-user-activation',
     Fullscreen = 'fullscreen',
     Frobulate = 'frobulate',
@@ -10250,9 +10378,11 @@ export namespace Page {
     ScreenWakeLock = 'screen-wake-lock',
     Serial = 'serial',
     SharedAutofill = 'shared-autofill',
+    SharedStorage = 'shared-storage',
     StorageAccessAPI = 'storage-access-api',
     SyncXhr = 'sync-xhr',
     TrustTokenRedemption = 'trust-token-redemption',
+    Unload = 'unload',
     Usb = 'usb',
     VerticalScroll = 'vertical-scroll',
     WebShare = 'web-share',
@@ -10267,6 +10397,7 @@ export namespace Page {
     Header = 'Header',
     IframeAttribute = 'IframeAttribute',
     InFencedFrameTree = 'InFencedFrameTree',
+    InIsolatedApp = 'InIsolatedApp',
   }
 
   export interface PermissionsPolicyBlockLocator {
@@ -10943,8 +11074,7 @@ export namespace Page {
     EmbedderDomDistillerSelfDeletingRequestDelegate = 'EmbedderDomDistillerSelfDeletingRequestDelegate',
     EmbedderOomInterventionTabHelper = 'EmbedderOomInterventionTabHelper',
     EmbedderOfflinePage = 'EmbedderOfflinePage',
-    EmbedderChromePasswordManagerClientBindCredentialManager =
-        'EmbedderChromePasswordManagerClientBindCredentialManager',
+    EmbedderChromePasswordManagerClientBindCredentialManager = 'EmbedderChromePasswordManagerClientBindCredentialManager',
     EmbedderPermissionRequestManager = 'EmbedderPermissionRequestManager',
     EmbedderModalDialog = 'EmbedderModalDialog',
     EmbedderExtensions = 'EmbedderExtensions',
@@ -11030,7 +11160,9 @@ export namespace Page {
     TriggerBackgrounded = 'TriggerBackgrounded',
     EmbedderTriggeredAndSameOriginRedirected = 'EmbedderTriggeredAndSameOriginRedirected',
     EmbedderTriggeredAndCrossOriginRedirected = 'EmbedderTriggeredAndCrossOriginRedirected',
-    EmbedderTriggeredAndDestroyed = 'EmbedderTriggeredAndDestroyed',
+    MemoryLimitExceeded = 'MemoryLimitExceeded',
+    FailToGetMemoryUsage = 'FailToGetMemoryUsage',
+    DataSaverEnabled = 'DataSaverEnabled',
   }
 
   export interface AddScriptToEvaluateOnLoadRequest {
@@ -11757,13 +11889,13 @@ export namespace Page {
      */
     frameId: FrameId;
     /**
-     * Input node id.
-     */
-    backendNodeId: DOM.BackendNodeId;
-    /**
      * Input mode.
      */
     mode: FileChooserOpenedEventMode;
+    /**
+     * Input node id. Only present for file choosers opened via an <input type="file"> element.
+     */
+    backendNodeId?: DOM.BackendNodeId;
   }
 
   /**
@@ -12049,6 +12181,11 @@ export namespace Page {
     initiatingFrameId: FrameId;
     prerenderingUrl: string;
     finalStatus: PrerenderFinalStatus;
+    /**
+     * This is used to give users more information about the cancellation details,
+     * and this will be formatted for display.
+     */
+    reasonDetails?: string;
   }
 
   export interface LoadEventFiredEvent {
@@ -12819,6 +12956,17 @@ export namespace Storage {
     storageTypes: string;
   }
 
+  export interface ClearDataForStorageKeyRequest {
+    /**
+     * Storage key.
+     */
+    storageKey: string;
+    /**
+     * Comma separated list of StorageType to clear.
+     */
+    storageTypes: string;
+  }
+
   export interface GetCookiesRequest {
     /**
      * Browser context to use when called on the browser endpoint.
@@ -12908,6 +13056,13 @@ export namespace Storage {
     origin: string;
   }
 
+  export interface TrackIndexedDBForStorageKeyRequest {
+    /**
+     * Storage key.
+     */
+    storageKey: string;
+  }
+
   export interface UntrackCacheStorageForOriginRequest {
     /**
      * Security origin.
@@ -12920,6 +13075,13 @@ export namespace Storage {
      * Security origin.
      */
     origin: string;
+  }
+
+  export interface UntrackIndexedDBForStorageKeyRequest {
+    /**
+     * Storage key.
+     */
+    storageKey: string;
   }
 
   export interface GetTrustTokensResponse extends ProtocolResponseWithError {
@@ -12983,6 +13145,10 @@ export namespace Storage {
      */
     origin: string;
     /**
+     * Storage key to update.
+     */
+    storageKey: string;
+    /**
      * Database to update.
      */
     databaseName: string;
@@ -13000,6 +13166,10 @@ export namespace Storage {
      * Origin to update.
      */
     origin: string;
+    /**
+     * Storage key to update.
+     */
+    storageKey: string;
   }
 
   /**
@@ -13271,6 +13441,30 @@ export namespace Target {
     browserContextId?: Browser.BrowserContextID;
   }
 
+  /**
+   * A filter used by target query/discovery/auto-attach operations.
+   */
+  export interface FilterEntry {
+    /**
+     * If set, causes exclusion of mathcing targets from the list.
+     */
+    exclude?: boolean;
+    /**
+     * If not present, matches any type.
+     */
+    type?: string;
+  }
+
+  /**
+   * The entries in TargetFilter are matched sequentially against targets and
+   * the first entry that matches determines if the target is included or not,
+   * depending on the value of `exclude` field in the entry.
+   * If filter is not specified, the one assumed is
+   * [{type: "browser", exclude: true}, {type: "tab", exclude: true}, {}]
+   * (i.e. include everything but `browser` and `tab`).
+   */
+  export type TargetFilter = FilterEntry[];
+
   export interface RemoteLocation {
     host: string;
     port: integer;
@@ -13420,6 +13614,15 @@ export namespace Target {
     targetInfo: TargetInfo;
   }
 
+  export interface GetTargetsRequest {
+    /**
+     * Only targets matching filter will be reported. If filter is not specified
+     * and target discovery is currently enabled, a filter used for target discovery
+     * is used for consistency.
+     */
+    filter?: TargetFilter;
+  }
+
   export interface GetTargetsResponse extends ProtocolResponseWithError {
     /**
      * The list of targets.
@@ -13455,6 +13658,10 @@ export namespace Target {
      * and eventually retire it. See crbug.com/991325.
      */
     flatten?: boolean;
+    /**
+     * Only targets matching filter will be attached.
+     */
+    filter?: TargetFilter;
   }
 
   export interface AutoAttachRelatedRequest {
@@ -13464,6 +13671,10 @@ export namespace Target {
      * to run paused targets.
      */
     waitForDebuggerOnStart: boolean;
+    /**
+     * Only targets matching filter will be attached.
+     */
+    filter?: TargetFilter;
   }
 
   export interface SetDiscoverTargetsRequest {
@@ -13471,6 +13682,11 @@ export namespace Target {
      * Whether to discover available targets.
      */
     discover: boolean;
+    /**
+     * Only targets matching filter will be attached. If `discover` is false,
+     * `filter` must be omitted or empty.
+     */
+    filter?: TargetFilter;
   }
 
   export interface SetRemoteLocationsRequest {
@@ -13616,6 +13832,11 @@ export namespace Tracing {
      * Controls how the trace buffer stores data.
      */
     recordMode?: TraceConfigRecordMode;
+    /**
+     * Size of the trace buffer in kilobytes. If not specified or zero is passed, a default value
+     * of 200 MB would be used.
+     */
+    traceBufferSizeInKb?: number;
     /**
      * Turns on JavaScript stack sampling.
      */
@@ -14879,6 +15100,17 @@ export namespace Debugger {
     type?: BreakLocationType;
   }
 
+  export interface WasmDisassemblyChunk {
+    /**
+     * The next chunk of disassembled lines.
+     */
+    lines: string[];
+    /**
+     * The bytecode offsets describing the start of each line.
+     */
+    bytecodeOffsets: integer[];
+  }
+
   /**
    * Enum of possible script languages.
    */
@@ -15028,6 +15260,45 @@ export namespace Debugger {
      * Wasm bytecode.
      */
     bytecode?: binary;
+  }
+
+  export interface DisassembleWasmModuleRequest {
+    /**
+     * Id of the script to disassemble
+     */
+    scriptId: Runtime.ScriptId;
+  }
+
+  export interface DisassembleWasmModuleResponse extends ProtocolResponseWithError {
+    /**
+     * For large modules, return a stream from which additional chunks of
+     * disassembly can be read successively.
+     */
+    streamId?: string;
+    /**
+     * The total number of lines in the disassembly text.
+     */
+    totalNumberOfLines: integer;
+    /**
+     * The offsets of all function bodies, in the format [start1, end1,
+     * start2, end2, ...] where all ends are exclusive.
+     */
+    functionBodyOffsets: integer[];
+    /**
+     * The first chunk of disassembly.
+     */
+    chunk: WasmDisassemblyChunk;
+  }
+
+  export interface NextWasmDisassemblyChunkRequest {
+    streamId: string;
+  }
+
+  export interface NextWasmDisassemblyChunkResponse extends ProtocolResponseWithError {
+    /**
+     * The next chunk of disassembly.
+     */
+    chunk: WasmDisassemblyChunk;
   }
 
   export interface GetWasmBytecodeRequest {
@@ -15282,6 +15553,13 @@ export namespace Debugger {
     newValue: Runtime.CallArgument;
   }
 
+  export const enum SetScriptSourceResponseStatus {
+    Ok = 'Ok',
+    CompileError = 'CompileError',
+    BlockedByActiveGenerator = 'BlockedByActiveGenerator',
+    BlockedByActiveFunction = 'BlockedByActiveFunction',
+  }
+
   export interface SetScriptSourceRequest {
     /**
      * Id of the script to edit.
@@ -15296,6 +15574,11 @@ export namespace Debugger {
      * description without actually modifying the code.
      */
     dryRun?: boolean;
+    /**
+     * If true, then `scriptSource` is allowed to change the function on top of the stack
+     * as long as the top-most stack frame is the only activation of that function.
+     */
+    allowTopFrameEditing?: boolean;
   }
 
   export interface SetScriptSourceResponse extends ProtocolResponseWithError {
@@ -15316,7 +15599,13 @@ export namespace Debugger {
      */
     asyncStackTraceId?: Runtime.StackTraceId;
     /**
-     * Exception details if any.
+     * Whether the operation was successful or not. Only `Ok` denotes a
+     * successful live edit while the other enum variants denote why
+     * the live edit failed.
+     */
+    status: SetScriptSourceResponseStatus;
+    /**
+     * Exception details if any. Only present when `status` is `CompileError`.
      */
     exceptionDetails?: Runtime.ExceptionDetails;
   }

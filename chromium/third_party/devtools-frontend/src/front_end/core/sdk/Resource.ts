@@ -35,9 +35,8 @@ import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import type * as Protocol from '../../generated/protocol.js';
 
-import type {NetworkRequest} from './NetworkRequest.js';
-import {Events} from './NetworkRequest.js';
-import type {ResourceTreeFrame, ResourceTreeModel} from './ResourceTreeModel.js';
+import {Events, type NetworkRequest} from './NetworkRequest.js';
+import {type ResourceTreeFrame, type ResourceTreeModel} from './ResourceTreeModel.js';
 
 export class Resource implements TextUtils.ContentProvider.ContentProvider {
   readonly #resourceTreeModel: ResourceTreeModel;
@@ -161,11 +160,6 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
       return Common.ResourceType.resourceTypes.Script;
     }
     return this.resourceType();
-  }
-
-  async contentEncoded(): Promise<boolean> {
-    await this.requestContent();
-    return this.#contentEncodedInternal;
   }
 
   async requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {

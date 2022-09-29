@@ -51,11 +51,10 @@ import * as ElementsComponents from './components/components.js';
 import {canGetJSPath, cssPath, jsPath, xPath} from './DOMPath.js';
 import {ElementsPanel} from './ElementsPanel.js';
 
-import type {ElementsTreeOutline, UpdateRecord} from './ElementsTreeOutline.js';
-import {MappedCharToEntity} from './ElementsTreeOutline.js';
+import {MappedCharToEntity, type ElementsTreeOutline, type UpdateRecord} from './ElementsTreeOutline.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
-import type {MarkerDecorator, MarkerDecoratorRegistration} from './MarkerDecorator.js';
-import {getRegisteredDecorators} from './MarkerDecorator.js';
+
+import {getRegisteredDecorators, type MarkerDecorator, type MarkerDecoratorRegistration} from './MarkerDecorator.js';
 
 const UIStrings = {
   /**
@@ -87,14 +86,6 @@ const UIStrings = {
   *@description Text to scroll the displayed content into view
   */
   scrollIntoView: 'Scroll into view',
-  /**
-  *@description Text to enter Isolation Mode, a mode with focus on a single element and interactive resizing
-  */
-  enterIsolationMode: 'Enter Isolation Mode',
-  /**
-  *@description Text to exit Isolation Mode, a mode with focus on a single element and interactive resizing
-  */
-  exitIsolationMode: 'Exit Isolation Mode',
   /**
   *@description A context menu item in the Elements Tree Element of the Elements panel
   */
@@ -294,7 +285,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       if (node.isAdFrameNode()) {
         const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
             ElementsComponents.AdornerManager.RegisteredAdorners.AD);
-        const adorner = this.adorn(config, this.tagTypeContext);
+        const adorner = this.adorn(config);
         UI.Tooltip.Tooltip.install(adorner, i18nString(UIStrings.thisFrameWasIdentifiedAsAnAd));
       }
     }
@@ -682,17 +673,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     contextMenu.viewSection().appendItem(i18nString(UIStrings.focus), async () => {
       await this.nodeInternal.focus();
     });
-
-    const overlayModel = this.nodeInternal.domModel().overlayModel();
-    if (overlayModel.isHighlightedIsolatedElementInPersistentOverlay(this.nodeInternal.id)) {
-      contextMenu.viewSection().appendItem(i18nString(UIStrings.exitIsolationMode), () => {
-        overlayModel.hideIsolatedElementInPersistentOverlay(this.nodeInternal.id);
-      });
-    } else {
-      contextMenu.viewSection().appendItem(i18nString(UIStrings.enterIsolationMode), () => {
-        overlayModel.highlightIsolatedElementInPersistentOverlay(this.nodeInternal.id);
-      });
-    }
   }
 
   populateScrollIntoView(contextMenu: UI.ContextMenu.ContextMenu): void {
@@ -1557,7 +1537,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     const nodeName = node ? node.nodeName().toLowerCase() : '';
-    if (nodeName && (name === 'src' || name === 'href')) {
+    // If the href/src attribute has a value, attempt to link it.
+    // There's no point trying to link it if the value is empty (e.g. <a href=''>).
+    if (nodeName && (name === 'src' || name === 'href') && value) {
       attrValueElement.appendChild(linkifyValue.call(this, value));
     } else if ((nodeName === 'img' || nodeName === 'source') && name === 'srcset') {
       attrValueElement.appendChild(linkifySrcset.call(this, value));
@@ -1706,9 +1688,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         break;
 
       case Node.ELEMENT_NODE: {
-        const pseudoType = node.pseudoType();
-        if (pseudoType) {
-          this.buildPseudoElementDOM(titleDOM, pseudoType);
+        let pseudoElementName = node.pseudoType();
+        if (pseudoElementName) {
+          const pseudoIdentifier = node.pseudoIdentifier();
+          if (pseudoIdentifier) {
+            pseudoElementName += `(${pseudoIdentifier})`;
+          }
+          this.buildPseudoElementDOM(titleDOM, pseudoElementName);
           break;
         }
 
@@ -1958,17 +1944,22 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   // TODO: add unit tests for adorner-related methods after component and TypeScript works are done
-  adorn({name}: {name: string}, context: OpeningTagContext): Adorners.Adorner.Adorner {
-    const adornerContent = document.createElement('span');
-    adornerContent.textContent = name;
+  adorn({name}: {name: string}, content?: HTMLElement): Adorners.Adorner.Adorner {
+    let adornerContent = content;
+    if (!adornerContent) {
+      adornerContent = document.createElement('span');
+      adornerContent.textContent = name;
+    }
     const adorner = new Adorners.Adorner.Adorner();
     adorner.data = {
       name,
       content: adornerContent,
     };
-    context.adorners.push(adorner);
-    ElementsPanel.instance().registerAdorner(adorner);
-    this.updateAdorners(context);
+    if (isOpeningTag(this.tagTypeContext)) {
+      this.tagTypeContext.adorners.push(adorner);
+      ElementsPanel.instance().registerAdorner(adorner);
+      this.updateAdorners(this.tagTypeContext);
+    }
     return adorner;
   }
 
@@ -2006,14 +1997,16 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  removeAllAdorners(context: OpeningTagContext): void {
-    for (const adorner of context.adorners) {
-      ElementsPanel.instance().deregisterAdorner(adorner);
-      adorner.remove();
-    }
+  removeAllAdorners(): void {
+    if (isOpeningTag(this.tagTypeContext)) {
+      for (const adorner of this.tagTypeContext.adorners) {
+        ElementsPanel.instance().deregisterAdorner(adorner);
+        adorner.remove();
+      }
 
-    context.adorners = [];
-    this.updateAdorners(context);
+      this.tagTypeContext.adorners = [];
+      this.updateAdorners(this.tagTypeContext);
+    }
   }
 
   private updateAdorners(context: OpeningTagContext): void {
@@ -2094,7 +2087,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
         ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
-    const adorner = this.adorn(config, context);
+    const adorner = this.adorn(config);
     adorner.classList.add('grid');
 
     const onClick = (((): void => {
@@ -2131,7 +2124,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
         ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL_SNAP);
-    const adorner = this.adorn(config, context);
+    const adorner = this.adorn(config);
     adorner.classList.add('scroll-snap');
 
     const onClick = (((): void => {
@@ -2170,7 +2163,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
         ElementsComponents.AdornerManager.RegisteredAdorners.FLEX);
-    const adorner = this.adorn(config, context);
+    const adorner = this.adorn(config);
     adorner.classList.add('flex');
 
     const onClick = (((): void => {
@@ -2209,7 +2202,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
         ElementsComponents.AdornerManager.RegisteredAdorners.CONTAINER);
-    const adorner = this.adorn(config, context);
+    const adorner = this.adorn(config);
     adorner.classList.add('container');
 
     const onClick = (((): void => {

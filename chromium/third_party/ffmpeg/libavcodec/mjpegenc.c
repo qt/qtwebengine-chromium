@@ -627,21 +627,10 @@ static int amv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
 FF_MPV_COMMON_OPTS
-#if FF_API_MJPEG_PRED
-{ "pred", "Deprecated, does nothing", FF_MPV_OFFSET(dummy), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, 3, VE, "pred" },
-    { "left",   NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, VE, "pred" },
-    { "plane",  NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 2 }, INT_MIN, INT_MAX, VE, "pred" },
-    { "median", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 3 }, INT_MIN, INT_MAX, VE, "pred" },
-#endif
 { "huffman", "Huffman table strategy", OFFSET(huffman), AV_OPT_TYPE_INT, { .i64 = HUFFMAN_TABLE_OPTIMAL }, 0, NB_HUFFMAN_TABLE_OPTION - 1, VE, "huffman" },
     { "default", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = HUFFMAN_TABLE_DEFAULT }, INT_MIN, INT_MAX, VE, "huffman" },
     { "optimal", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = HUFFMAN_TABLE_OPTIMAL }, INT_MIN, INT_MAX, VE, "huffman" },
 { "force_duplicated_matrix", "Always write luma and chroma matrix for mjpeg, useful for rtp streaming.", OFFSET(force_duplicated_matrix), AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, VE },
-#if FF_API_MPEGVIDEO_OPTS
-FF_MPV_DEPRECATED_MPEG_QUANT_OPT
-FF_MPV_DEPRECATED_A53_CC_OPT
-FF_MPV_DEPRECATED_BFRAME_OPTS
-#endif
 { NULL},
 };
 
@@ -663,7 +652,7 @@ const FFCodec ff_mjpeg_encoder = {
     FF_CODEC_ENCODE_CB(ff_mpv_encode_picture),
     .close          = mjpeg_encode_close,
     .p.capabilities = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_FRAME_THREADS,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .p.pix_fmts     = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ422P, AV_PIX_FMT_YUVJ444P,
         AV_PIX_FMT_YUV420P,  AV_PIX_FMT_YUV422P,  AV_PIX_FMT_YUV444P,
@@ -691,7 +680,7 @@ const FFCodec ff_amv_encoder = {
     .init           = ff_mpv_encode_init,
     FF_CODEC_ENCODE_CB(amv_encode_picture),
     .close          = mjpeg_encode_close,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .p.pix_fmts     = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_NONE
     },

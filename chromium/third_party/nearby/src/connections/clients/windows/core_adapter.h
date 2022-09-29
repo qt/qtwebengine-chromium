@@ -202,7 +202,7 @@ DLL_API void __stdcall RejectConnection(Core*, const char*, ResultCallbackW);
 //         still occur during transmission (and at different times for
 //         different endpoints), and will be delivered via
 //         PayloadCallback#onPayloadTransferUpdate.
-DLL_API void __stdcall SendPayload(Core*, char**, size_t, PayloadW,
+DLL_API void __stdcall SendPayload(Core*, const char**, size_t, PayloadW,
                                    ResultCallbackW);
 
 // Cancels a Payload currently in-flight to or from remote endpoint(s).
@@ -220,12 +220,12 @@ DLL_API void __stdcall CancelPayload(Core*, int64_t, ResultCallbackW);
 // result_cb   - to access the status of the operation when available.
 //   Possible status codes include:
 //     Status::STATUS_OK - finished successfully.
-DLL_API void __stdcall DisconnectFromEndpoint(Core*, char*, ResultCallbackW);
+DLL_API void __stdcall DisconnectFromEndpoint(Core*, const char*,
+                                              ResultCallbackW);
 
 // Disconnects from, and removes all traces of, all connected and/or
-// discovered endpoints. This call is expected to be preceded by a call to
-// StopAdvertising or StartDiscovery as needed. After calling
-// StopAllEndpoints, no further operations with remote endpoints will be
+// discovered endpoints. This call also stops advertising and discovery. After
+// calling StopAllEndpoints, no further operations with remote endpoints will be
 // possible until a new call to one of StartAdvertising() or StartDiscovery().
 //
 // result_cb - to access the status of the operation when available.

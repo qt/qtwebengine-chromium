@@ -15,6 +15,7 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
@@ -197,7 +198,7 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 #endif
 
   RetainPtr<CFX_DIBitmap> holder(CFXDIBitmapFromFPDFBitmap(bitmap));
-  pDevice->Attach(holder, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
+  pDevice->AttachWithRgbByteOrder(holder, !!(flags & FPDF_REVERSE_BYTE_ORDER));
   {
     CFX_RenderDevice::StateRestorer restorer(pDevice.get());
     pDevice->SetClip_Rect(rect);
@@ -624,8 +625,10 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
   if (!page)
     return true;
 
-  CPDF_Dictionary* annot_dict = cpdfsdk_annot->GetPDFAnnot()->GetAnnotDict();
-  auto annot_context = std::make_unique<CPDF_AnnotContext>(annot_dict, page);
+  RetainPtr<CPDF_Dictionary> annot_dict =
+      cpdfsdk_annot->GetPDFAnnot()->GetMutableAnnotDict();
+  auto annot_context =
+      std::make_unique<CPDF_AnnotContext>(std::move(annot_dict), page);
 
   *page_index = page_view->GetPageIndex();
   // Caller takes ownership.
@@ -649,9 +652,9 @@ FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot) {
   if (!page_view->IsValid())
     return false;
 
-  CPDF_Dictionary* annot_dict = annot_context->GetAnnotDict();
+  RetainPtr<CPDF_Dictionary> annot_dict = annot_context->GetMutableAnnotDict();
   ObservedPtr<CPDFSDK_Annot> cpdfsdk_annot(
-      page_view->GetAnnotByDict(annot_dict));
+      page_view->GetAnnotByDict(annot_dict.Get()));
   if (!cpdfsdk_annot)
     return false;
 
@@ -768,7 +771,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoDocumentAAction(FPDF_FORMHANDLE hHandle,
     return;
 
   CPDF_Document* pDoc = pFormFillEnv->GetPDFDocument();
-  CPDF_Dictionary* pDict = pDoc->GetRoot();
+  const CPDF_Dictionary* pDict = pDoc->GetRoot();
   if (!pDict)
     return;
 
@@ -794,7 +797,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
   if (!pFormFillEnv->GetPageView(pPage))
     return;
 
-  CPDF_Dictionary* pPageDict = pPDFPage->GetDict();
+  const CPDF_Dictionary* pPageDict = pPDFPage->GetDict();
   CPDF_AAction aa(pPageDict->GetDictFor(pdfium::form_fields::kAA));
   CPDF_AAction::AActionType type = aaType == FPDFPAGE_AACTION_OPEN
                                        ? CPDF_AAction::kOpenPage

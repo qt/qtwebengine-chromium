@@ -19,6 +19,8 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/threading/thread_local.h"
+#include "base/trace_event/interned_args_helper.h"
 #include "base/trace_event/typed_macros.h"
 #include "mojo/public/cpp/bindings/associated_group.h"
 #include "mojo/public/cpp/bindings/associated_group_controller.h"
@@ -441,7 +443,7 @@ InterfaceEndpointClient::InterfaceEndpointClient(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     uint32_t interface_version,
     const char* interface_name,
-    MessageToStableIPCHashCallback ipc_hash_callback,
+    MessageToMethodInfoCallback method_info_callback,
     MessageToMethodNameCallback method_name_callback)
     : expect_sync_requests_(expect_sync_requests),
       handle_(std::move(handle)),
@@ -450,7 +452,7 @@ InterfaceEndpointClient::InterfaceEndpointClient(
       task_runner_(std::move(task_runner)),
       control_message_handler_(this, interface_version),
       interface_name_(interface_name),
-      ipc_hash_callback_(ipc_hash_callback),
+      method_info_callback_(method_info_callback),
       method_name_callback_(method_name_callback) {
   DCHECK(handle_.is_valid());
   DETACH_FROM_SEQUENCE(sequence_checker_);
@@ -694,6 +696,12 @@ bool InterfaceEndpointClient::HandleIncomingMessage(Message* message) {
 
 void InterfaceEndpointClient::NotifyError(
     const absl::optional<DisconnectReason>& reason) {
+  TRACE_EVENT("toplevel", "Closed mojo endpoint",
+              [&](perfetto::EventContext& ctx) {
+                auto* info = ctx.event()->set_chrome_mojo_event_info();
+                info->set_mojo_interface_tag(interface_name_);
+              });
+
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (encountered_error_)
@@ -867,8 +875,29 @@ bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
               perfetto::StaticString{method_name_callback_(*message)},
               [&](perfetto::EventContext& ctx) {
                 auto* info = ctx.event()->set_chrome_mojo_event_info();
-                info->set_mojo_interface_tag(interface_name_);
-                info->set_ipc_hash(ipc_hash_callback_(*message));
+                // Generate mojo interface tag only for local traces.
+                //
+                // This saves trace buffer space for field traces. The
+                // interface tag can be extracted from the interface method
+                // after symbolization.
+                //
+                // For local traces, this produces a raw string so that the
+                // trace doesn't require symbolization to be useful.
+                if (!ctx.ShouldFilterDebugAnnotations()) {
+                  info->set_mojo_interface_tag(interface_name_);
+                }
+                const auto method_info = method_info_callback_(*message);
+                if (method_info) {
+                  info->set_ipc_hash((*method_info)());
+                  const auto method_address =
+                      reinterpret_cast<uintptr_t>(method_info);
+                  const absl::optional<size_t> location_iid =
+                      base::trace_event::InternedUnsymbolizedSourceLocation::
+                          Get(&ctx, method_address);
+                  if (location_iid) {
+                    info->set_mojo_interface_method_iid(*location_iid);
+                  }
+                }
 
                 static const uint8_t* flow_enabled =
                     TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED("toplevel.flow");

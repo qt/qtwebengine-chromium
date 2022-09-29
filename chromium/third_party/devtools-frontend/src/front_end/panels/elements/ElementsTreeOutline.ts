@@ -35,16 +35,19 @@
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as Adorners from '../../ui/components/adorners/adorners.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import {linkifyDeferredNodeReference} from './DOMLinkifier.js';
+import * as ElementsComponents from './components/components.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsTreeElement, InitialChildrenLimit} from './ElementsTreeElement.js';
 import elementsTreeOutlineStyles from './elementsTreeOutline.css.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
+import {TopLayerContainer} from './TopLayerContainer.js';
 
-import type {MarkerDecoratorRegistration} from './MarkerDecorator.js';
+import {type MarkerDecoratorRegistration} from './MarkerDecorator.js';
 
 const UIStrings = {
   /**
@@ -100,6 +103,7 @@ export class ElementsTreeOutline extends
   private treeElementBeingDragged?: ElementsTreeElement;
   private dragOverTreeElement?: ElementsTreeElement;
   private updateModifiedNodesTimeout?: number;
+  #topLayerContainerByParent: Map<UI.TreeOutline.TreeElement, TopLayerContainer> = new Map();
 
   constructor(omitRootDOMNode?: boolean, selectEnabled?: boolean, hideGutter?: boolean) {
     super();
@@ -449,6 +453,8 @@ export class ElementsTreeOutline extends
       }
     }
 
+    void this.createTopLayerContainer(this.rootElement(), this.rootDOMNode.domModel());
+
     if (selectedNode) {
       this.revealAndSelectNode(selectedNode, true);
     }
@@ -553,7 +559,9 @@ export class ElementsTreeOutline extends
     // items extend at least to the right edge of the outer <ol> container.
     // In the no-word-wrap mode the outer <ol> may be wider than the tree container
     // (and partially hidden), in which case we are left to use only its right boundary.
-    const x = scrollContainer.totalOffsetLeft() + scrollContainer.offsetWidth - 18;
+    // We use .clientWidth to account for possible scrollbar, and subtract 6px
+    // for the width of the split widget (see splitWidget.css).
+    const x = scrollContainer.totalOffsetLeft() + scrollContainer.clientWidth - 6;
 
     const y = event.pageY;
 
@@ -1001,6 +1009,7 @@ export class ElementsTreeOutline extends
     domModel.addEventListener(SDK.DOMModel.Events.DocumentUpdated, this.documentUpdated, this);
     domModel.addEventListener(SDK.DOMModel.Events.ChildNodeCountUpdated, this.childNodeCountUpdated, this);
     domModel.addEventListener(SDK.DOMModel.Events.DistributedNodesChanged, this.distributedNodesChanged, this);
+    domModel.addEventListener(SDK.DOMModel.Events.TopLayerElementsChanged, this.topLayerElementsChanged, this);
   }
 
   unwireFromDOMModel(domModel: SDK.DOMModel.DOMModel): void {
@@ -1013,6 +1022,7 @@ export class ElementsTreeOutline extends
     domModel.removeEventListener(SDK.DOMModel.Events.DocumentUpdated, this.documentUpdated, this);
     domModel.removeEventListener(SDK.DOMModel.Events.ChildNodeCountUpdated, this.childNodeCountUpdated, this);
     domModel.removeEventListener(SDK.DOMModel.Events.DistributedNodesChanged, this.distributedNodesChanged, this);
+    domModel.removeEventListener(SDK.DOMModel.Events.TopLayerElementsChanged, this.topLayerElementsChanged, this);
     elementsTreeOutlineByDOMModel.delete(domModel);
   }
 
@@ -1164,13 +1174,25 @@ export class ElementsTreeOutline extends
       return Promise.resolve();
     }
 
-    return new Promise(resolve => {
+    return new Promise<void>(resolve => {
       treeElement.node().getChildNodes(() => {
         populatedTreeElements.add(treeElement);
         this.updateModifiedParentNode(treeElement.node());
         resolve();
       });
     });
+  }
+
+  async createTopLayerContainer(parent: UI.TreeOutline.TreeElement, domModel: SDK.DOMModel.DOMModel): Promise<void> {
+    if (!parent.treeOutline || !(parent.treeOutline instanceof ElementsTreeOutline)) {
+      return;
+    }
+    const container = new TopLayerContainer(parent.treeOutline, domModel);
+    await container.throttledUpdateTopLayerElements();
+    if (container.currentTopLayerDOMNodes.size > 0) {
+      parent.appendChild(container);
+    }
+    this.#topLayerContainerByParent.set(parent, container);
   }
 
   private createElementTreeElement(node: SDK.DOMModel.DOMNode, isClosingTag?: boolean): ElementsTreeElement {
@@ -1242,6 +1264,11 @@ export class ElementsTreeOutline extends
     const afterPseudoElement = node.afterPseudoElement();
     if (afterPseudoElement) {
       visibleChildren.push(afterPseudoElement);
+    }
+
+    const backdropPseudoElement = node.backdropPseudoElement();
+    if (backdropPseudoElement) {
+      visibleChildren.push(backdropPseudoElement);
     }
 
     return visibleChildren;
@@ -1318,10 +1345,13 @@ export class ElementsTreeOutline extends
   }
 
   insertChildElement(
-      treeElement: ElementsTreeElement, child: SDK.DOMModel.DOMNode, index: number,
+      treeElement: ElementsTreeElement|TopLayerContainer, child: SDK.DOMModel.DOMNode, index: number,
       isClosingTag?: boolean): ElementsTreeElement {
     const newElement = this.createElementTreeElement(child, isClosingTag);
     treeElement.insertChild(newElement, index);
+    if (child.nodeType() === Node.DOCUMENT_NODE) {
+      void this.createTopLayerContainer(newElement, child.domModel());
+    }
     return newElement;
   }
 
@@ -1424,6 +1454,16 @@ export class ElementsTreeOutline extends
     const treeElement = this.treeElementByNode.get(node);
     if (treeElement) {
       treeElement.updateDecorations();
+    }
+  }
+
+  private async topLayerElementsChanged(): Promise<void> {
+    for (const [parent, container] of this.#topLayerContainerByParent) {
+      await container.throttledUpdateTopLayerElements();
+      if (container.currentTopLayerDOMNodes.size > 0 && container.parent !== parent) {
+        parent.appendChild(container);
+      }
+      container.hidden = container.currentTopLayerDOMNodes.size === 0;
     }
   }
 
@@ -1591,13 +1631,45 @@ export class ShortcutTreeElement extends UI.TreeOutline.TreeElement {
       text = '<' + text + '>';
     }
     title.textContent = '\u21AA ' + text;
-
-    const link = (linkifyDeferredNodeReference(nodeShortcut.deferredNode) as Element);
-    UI.UIUtils.createTextChild(this.listItemElement, ' ');
-    link.classList.add('elements-tree-shortcut-link');
-    link.textContent = i18nString(UIStrings.reveal);
-    this.listItemElement.appendChild(link);
     this.nodeShortcut = nodeShortcut;
+    this.addRevealAdorner();
+  }
+
+  addRevealAdorner(): void {
+    const adorner = new Adorners.Adorner.Adorner();
+    adorner.classList.add('adorner-reveal');
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.REVEAL);
+    const name = config.name;
+    const adornerContent = document.createElement('span');
+    const linkIcon = new IconButton.Icon.Icon();
+    linkIcon
+        .data = {iconName: 'ic_show_node_16x16', color: 'var(--color-text-disabled)', width: '12px', height: '12px'};
+    const slotText = document.createElement('span');
+    slotText.textContent = name;
+    adornerContent.append(linkIcon);
+    adornerContent.append(slotText);
+    adornerContent.classList.add('adorner-with-icon');
+    adorner.data = {
+      name,
+      content: adornerContent,
+    };
+    this.listItemElement.appendChild(adorner);
+    const onClick = (((): void => {
+                       this.nodeShortcut.deferredNode.resolve(
+                           node => {
+                             void Common.Revealer.reveal(node);
+                           },
+                       );
+                     }) as EventListener);
+    adorner.addInteraction(onClick, {
+      isToggle: false,
+      shouldPropagateOnKeydown: false,
+      ariaLabelDefault: i18nString(UIStrings.reveal),
+      ariaLabelActive: i18nString(UIStrings.reveal),
+    });
+    adorner.addEventListener('mousedown', e => e.consume(), false);
+    ElementsPanel.instance().registerAdorner(adorner);
   }
 
   get hovered(): boolean {

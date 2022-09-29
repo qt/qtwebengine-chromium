@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/mtl/MtlTypes.h"
 #include "src/gpu/graphite/CommandBuffer.h"
+#include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
 #include "src/gpu/graphite/mtl/MtlUtils.h"
@@ -17,7 +18,7 @@
 
 namespace skgpu::graphite {
 
-MtlCaps::MtlCaps(const id<MTLDevice> device)
+MtlCaps::MtlCaps(const id<MTLDevice> device, const ContextOptions& options)
         : Caps() {
     this->initGPUFamily(device);
     this->initCaps(device);
@@ -27,7 +28,7 @@ MtlCaps::MtlCaps(const id<MTLDevice> device)
 
     // Metal-specific MtlCaps
 
-    this->finishInitialization();
+    this->finishInitialization(options);
 }
 
 // translates from older MTLFeatureSet interface to MTLGPUFamily interface
@@ -231,6 +232,9 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
         fRequiredUniformBufferAlignment = 16;
     }
 
+    // Metal does not distinguish between uniform and storage buffers.
+    fRequiredStorageBufferAlignment = fRequiredUniformBufferAlignment;
+
     if (@available(macOS 10.12, ios 14.0, *)) {
         fClampToBorderSupport = (this->isMac() || fFamilyGroup >= 7);
     } else {
@@ -289,6 +293,8 @@ static constexpr MTLPixelFormat kMtlFormats[] = {
     MTLPixelFormatBGRA8Unorm,
     kMTLPixelFormatB5G6R5Unorm,
 
+    MTLPixelFormatRGBA16Float,
+
     MTLPixelFormatStencil8,
     MTLPixelFormatDepth32Float,
     MTLPixelFormatDepth32Float_Stencil8,
@@ -327,7 +333,7 @@ void MtlCaps::setColorType(SkColorType colorType, std::initializer_list<MTLPixel
 }
 
 size_t MtlCaps::GetFormatIndex(MTLPixelFormat pixelFormat) {
-    static_assert(SK_ARRAY_COUNT(kMtlFormats) == MtlCaps::kNumMtlFormats,
+    static_assert(std::size(kMtlFormats) == MtlCaps::kNumMtlFormats,
                   "Size of kMtlFormats array must match static value in header");
     for (size_t i = 0; i < MtlCaps::kNumMtlFormats; ++i) {
         if (kMtlFormats[i] == pixelFormat) {
@@ -445,6 +451,21 @@ void MtlCaps::initFormatTable() {
         }
     }
 
+    // Format: RGBA16Float
+    {
+        info = &fFormatTable[GetFormatIndex(MTLPixelFormatRGBA16Float)];
+        info->fFlags = FormatInfo::kAllFlags;
+        info->fColorTypeInfoCount = 1;
+        info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
+        int ctIdx = 0;
+        // Format: RGBA16Float, Surface: RGBA_F16
+        {
+            auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+            ctInfo.fColorType = kRGBA_F16_SkColorType;
+            ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+        }
+    }
+
     /*
      * Non-color formats
      */
@@ -496,6 +517,7 @@ void MtlCaps::initFormatTable() {
     this->setColorType(kBGRA_8888_SkColorType,        { MTLPixelFormatBGRA8Unorm });
     this->setColorType(kGray_8_SkColorType,           { MTLPixelFormatR8Unorm });
     this->setColorType(kR8_unorm_SkColorType,         { MTLPixelFormatR8Unorm });
+    this->setColorType(kRGBA_F16_SkColorType,         { MTLPixelFormatRGBA16Float });
 }
 
 TextureInfo MtlCaps::getDefaultSampledTextureInfo(SkColorType colorType,
@@ -579,7 +601,7 @@ UniqueKey MtlCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineD
         static const skgpu::UniqueKey::Domain kGraphicsPipelineDomain = UniqueKey::GenerateDomain();
         SkSpan<const uint32_t> pipelineDescKey = pipelineDesc.asKey();
         UniqueKey::Builder builder(&pipelineKey, kGraphicsPipelineDomain,
-                                   pipelineDescKey.size() + 1, "GraphicsPipeline");
+                                   pipelineDescKey.size() + 2, "GraphicsPipeline");
         // add graphicspipelinedesc key
         for (unsigned int i = 0; i < pipelineDescKey.size(); ++i) {
             builder[i] = pipelineDescKey[i];
@@ -589,11 +611,34 @@ UniqueKey MtlCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineD
         renderPassDesc.fColorAttachment.fTextureInfo.getMtlTextureInfo(&colorInfo);
         renderPassDesc.fDepthStencilAttachment.fTextureInfo.getMtlTextureInfo(&depthStencilInfo);
         SkASSERT(colorInfo.fFormat < 65535 && depthStencilInfo.fFormat < 65535);
-        uint32_t renderPassKey = colorInfo.fFormat << 16 | depthStencilInfo.fFormat;
-        builder[pipelineDescKey.size()] = renderPassKey;
+        uint32_t colorAttachmentKey = colorInfo.fFormat << 16 | colorInfo.fSampleCount;
+        uint32_t dsAttachmentKey = depthStencilInfo.fFormat << 16 | depthStencilInfo.fSampleCount;
+        builder[pipelineDescKey.size()] = colorAttachmentKey;
+        builder[pipelineDescKey.size()+1] = dsAttachmentKey;
         builder.finish();
     }
 
+    return pipelineKey;
+}
+
+UniqueKey MtlCaps::makeComputePipelineKey(const ComputePipelineDesc& pipelineDesc) const {
+    UniqueKey pipelineKey;
+    {
+        static const skgpu::UniqueKey::Domain kComputePipelineDomain = UniqueKey::GenerateDomain();
+        SkSpan<const uint32_t> pipelineDescKey = pipelineDesc.asKey();
+        UniqueKey::Builder builder(
+                &pipelineKey, kComputePipelineDomain, pipelineDescKey.size(), "ComputePipeline");
+        // Add ComputePipelineDesc key
+        for (unsigned int i = 0; i < pipelineDescKey.size(); ++i) {
+            builder[i] = pipelineDescKey[i];
+        }
+
+        // TODO(b/240615224): The local work group size may need to factor into the key on platforms
+        // that don't support specialization constants and require the workgroup/threadgroup size to
+        // be specified in the shader text (D3D12, Vulkan 1.0, and OpenGL).
+
+        builder.finish();
+    }
     return pipelineKey;
 }
 

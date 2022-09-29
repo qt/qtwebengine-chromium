@@ -131,10 +131,6 @@ RtpTransportControllerSend::RtpTransportControllerSend(
 
   pacer_.SetPacingRates(DataRate::BitsPerSec(bitrate_config.start_bitrate_bps),
                         DataRate::Zero());
-
-  if (absl::StartsWith(trials.Lookup("WebRTC-LazyPacerStart"), "Disabled")) {
-    EnsureStarted();
-  }
 }
 
 RtpTransportControllerSend::~RtpTransportControllerSend() {
@@ -284,8 +280,11 @@ void RtpTransportControllerSend::OnNetworkRouteChanged(
       ApplyOrLiftRelayCap(IsRelayed(network_route));
 
   // Check whether the network route has changed on each transport.
-  auto result =
-      network_routes_.insert(std::make_pair(transport_name, network_route));
+  auto result = network_routes_.insert(
+      // Explicit conversion of transport_name to std::string here is necessary
+      // to support some platforms that cannot yet deal with implicit
+      // conversion in these types of situations.
+      std::make_pair(std::string(transport_name), network_route));
   auto kv = result.first;
   bool inserted = result.second;
   if (inserted || !(kv->second == network_route)) {

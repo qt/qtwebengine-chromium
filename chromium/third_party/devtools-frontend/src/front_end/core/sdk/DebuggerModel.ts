@@ -40,14 +40,13 @@ import * as Root from '../root/root.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
-import type {GetPropertiesResult, RemoteObject} from './RemoteObject.js';
-import {ScopeRef} from './RemoteObject.js';
+import {ScopeRef, type GetPropertiesResult, type RemoteObject} from './RemoteObject.js';
 import {Events as ResourceTreeModelEvents, ResourceTreeModel} from './ResourceTreeModel.js';
-import type {EvaluationOptions, EvaluationResult, ExecutionContext} from './RuntimeModel.js';
-import {RuntimeModel} from './RuntimeModel.js';
+
+import {RuntimeModel, type EvaluationOptions, type EvaluationResult, type ExecutionContext} from './RuntimeModel.js';
 import {Script} from './Script.js';
-import type {Target} from './Target.js';
-import {Capability, Type} from './Target.js';
+
+import {Capability, Type, type Target} from './Target.js';
 import {SDKModel} from './SDKModel.js';
 import {SourceMapManager} from './SourceMapManager.js';
 
@@ -230,6 +229,10 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     return Boolean(this.#debuggerEnabledInternal);
   }
 
+  debuggerId(): string|null {
+    return this.#debuggerId;
+  }
+
   private async enableDebugger(): Promise<void> {
     if (this.#debuggerEnabledInternal) {
       return;
@@ -314,7 +317,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     await this.agent.invoke_disable();
     this.#isPausingInternal = false;
     this.globalObjectCleared();
-    this.dispatchEventToListeners(Events.DebuggerWasDisabled);
+    this.dispatchEventToListeners(Events.DebuggerWasDisabled, this);
     if (typeof this.#debuggerId === 'string') {
       _debuggerIdToModel.delete(this.#debuggerId);
     }
@@ -580,34 +583,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     return result;
   }
 
-  setScriptSource(
-      scriptId: string, newSource: string,
-      callback: (error: string|null, arg1?: Protocol.Runtime.ExceptionDetails|undefined) => void): void {
-    const script = this.#scriptsInternal.get(scriptId);
-    if (script) {
-      void script.editSource(newSource, this.didEditScriptSource.bind(this, scriptId, newSource, callback));
-    }
-  }
-
-  private didEditScriptSource(
-      scriptId: string, newSource: string,
-      callback: (error: string|null, arg1?: Protocol.Runtime.ExceptionDetails|undefined) => void, error: string|null,
-      exceptionDetails?: Protocol.Runtime.ExceptionDetails, callFrames?: Protocol.Debugger.CallFrame[],
-      asyncStackTrace?: Protocol.Runtime.StackTrace, asyncStackTraceId?: Protocol.Runtime.StackTraceId,
-      needsStepIn?: boolean): void {
-    callback(error, exceptionDetails);
-    if (needsStepIn) {
-      void this.stepInto();
-      return;
-    }
-
-    if (!error && callFrames && callFrames.length && this.#debuggerPausedDetailsInternal) {
-      void this.pausedScript(
-          callFrames, this.#debuggerPausedDetailsInternal.reason, this.#debuggerPausedDetailsInternal.auxData,
-          this.#debuggerPausedDetailsInternal.breakpointIds, asyncStackTrace, asyncStackTraceId);
-    }
-  }
-
   get callFrames(): CallFrame[]|null {
     return this.#debuggerPausedDetailsInternal ? this.#debuggerPausedDetailsInternal.callFrames : null;
   }
@@ -706,9 +681,9 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       executionContextId: number, hash: string, executionContextAuxData: any, isLiveEdit: boolean,
-      sourceMapURL: Platform.DevToolsPath.UrlString|undefined, hasSourceURLComment: boolean, hasSyntaxError: boolean,
-      length: number, isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null,
-      codeOffset: number|null, scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols|null,
+      sourceMapURL: string|undefined, hasSourceURLComment: boolean, hasSyntaxError: boolean, length: number,
+      isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null, codeOffset: number|null,
+      scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols|null,
       embedderName: Platform.DevToolsPath.UrlString|null): Script {
     const knownScript = this.#scriptsInternal.get(scriptId);
     if (knownScript) {
@@ -759,6 +734,14 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     }
     this.#sourceMapIdToScript.set(sourceMapId, script);
     this.#sourceMapManagerInternal.attachSourceMap(script, script.sourceURL, script.sourceMapURL);
+  }
+
+  async setDebugInfoURL(script: Script, _externalURL: Platform.DevToolsPath.UrlString): Promise<void> {
+    if (this.#expandCallFramesCallback && this.#debuggerPausedDetailsInternal) {
+      this.#debuggerPausedDetailsInternal.callFrames =
+          await this.#expandCallFramesCallback.call(null, this.#debuggerPausedDetailsInternal.callFrames);
+    }
+    this.dispatchEventToListeners(Events.DebugInfoAttached, script);
   }
 
   executionContextDestroyed(executionContext: ExecutionContext): void {
@@ -992,6 +975,7 @@ export enum Events {
   DebuggerWasDisabled = 'DebuggerWasDisabled',
   DebuggerPaused = 'DebuggerPaused',
   DebuggerResumed = 'DebuggerResumed',
+  DebugInfoAttached = 'DebugInfoAttached',
   ParsedScriptSource = 'ParsedScriptSource',
   DiscardedAnonymousScriptSource = 'DiscardedAnonymousScriptSource',
   GlobalObjectCleared = 'GlobalObjectCleared',
@@ -1001,7 +985,7 @@ export enum Events {
 
 export type EventTypes = {
   [Events.DebuggerWasEnabled]: DebuggerModel,
-  [Events.DebuggerWasDisabled]: void,
+  [Events.DebuggerWasDisabled]: DebuggerModel,
   [Events.DebuggerPaused]: DebuggerModel,
   [Events.DebuggerResumed]: DebuggerModel,
   [Events.ParsedScriptSource]: Script,
@@ -1009,6 +993,7 @@ export type EventTypes = {
   [Events.GlobalObjectCleared]: DebuggerModel,
   [Events.CallFrameSelected]: DebuggerModel,
   [Events.DebuggerIsReadyToPause]: DebuggerModel,
+  [Events.DebugInfoAttached]: Script,
 };
 
 class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
@@ -1060,10 +1045,9 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
     }
     this.#debuggerModel.parsedScriptSource(
         scriptId, url as Platform.DevToolsPath.UrlString, startLine, startColumn, endLine, endColumn,
-        executionContextId, hash, executionContextAuxData, Boolean(isLiveEdit),
-        sourceMapURL as Platform.DevToolsPath.UrlString, Boolean(hasSourceURL), false, length || 0, isModule || null,
-        stackTrace || null, codeOffset || null, scriptLanguage || null, debugSymbols || null,
-        embedderName as Platform.DevToolsPath.UrlString || null);
+        executionContextId, hash, executionContextAuxData, Boolean(isLiveEdit), sourceMapURL, Boolean(hasSourceURL),
+        false, length || 0, isModule || null, stackTrace || null, codeOffset || null, scriptLanguage || null,
+        debugSymbols || null, embedderName as Platform.DevToolsPath.UrlString || null);
   }
 
   scriptFailedToParse({
@@ -1090,9 +1074,9 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
     }
     this.#debuggerModel.parsedScriptSource(
         scriptId, url as Platform.DevToolsPath.UrlString, startLine, startColumn, endLine, endColumn,
-        executionContextId, hash, executionContextAuxData, false, sourceMapURL as Platform.DevToolsPath.UrlString,
-        Boolean(hasSourceURL), true, length || 0, isModule || null, stackTrace || null, codeOffset || null,
-        scriptLanguage || null, null, embedderName as Platform.DevToolsPath.UrlString || null);
+        executionContextId, hash, executionContextAuxData, false, sourceMapURL, Boolean(hasSourceURL), true,
+        length || 0, isModule || null, stackTrace || null, codeOffset || null, scriptLanguage || null, null,
+        embedderName as Platform.DevToolsPath.UrlString || null);
   }
 
   breakpointResolved({breakpointId, location}: Protocol.Debugger.BreakpointResolvedEvent): void {

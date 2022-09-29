@@ -412,6 +412,9 @@ void RenderWidgetHostInputEventRouter::OnRenderWidgetHostViewBaseDestroyed(
   if (view == last_mouse_down_target_)
     last_mouse_down_target_ = nullptr;
 
+  if (view == last_emulated_event_root_view_)
+    last_emulated_event_root_view_ = nullptr;
+
   event_targeter_->ViewWillBeDestroyed(view);
 }
 
@@ -1606,7 +1609,8 @@ void RenderWidgetHostInputEventRouter::DispatchTouchscreenGestureEvent(
 
   if (!touchscreen_gesture_target_) {
     root_view->GestureEventAck(
-        gesture_event, blink::mojom::InputEventResultState::kNoConsumerExists);
+        gesture_event, blink::mojom::InputEventResultState::kNoConsumerExists,
+        nullptr);
     return;
   }
 
@@ -1708,7 +1712,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchpadGestureEvent(
     } else {
       root_view->GestureEventAck(
           touchpad_gesture_event,
-          blink::mojom::InputEventResultState::kNoConsumerExists);
+          blink::mojom::InputEventResultState::kNoConsumerExists, nullptr);
     }
     return;
   }
@@ -1723,7 +1727,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchpadGestureEvent(
     } else {
       root_view->GestureEventAck(
           touchpad_gesture_event,
-          blink::mojom::InputEventResultState::kNoConsumerExists);
+          blink::mojom::InputEventResultState::kNoConsumerExists, nullptr);
     }
     return;
   }
@@ -1738,7 +1742,7 @@ void RenderWidgetHostInputEventRouter::DispatchTouchpadGestureEvent(
   if (!touchpad_gesture_target_) {
     root_view->GestureEventAck(
         touchpad_gesture_event,
-        blink::mojom::InputEventResultState::kNoConsumerExists);
+        blink::mojom::InputEventResultState::kNoConsumerExists, nullptr);
     return;
   }
 

@@ -19,12 +19,58 @@
 #include <utility>
 #include <vector>
 
+#include "src/tint/ast/alias.h"
+#include "src/tint/ast/array.h"
+#include "src/tint/ast/assignment_statement.h"
+#include "src/tint/ast/atomic.h"
+#include "src/tint/ast/block_statement.h"
+#include "src/tint/ast/bool.h"
+#include "src/tint/ast/break_statement.h"
+#include "src/tint/ast/call_statement.h"
+#include "src/tint/ast/compound_assignment_statement.h"
 #include "src/tint/ast/continue_statement.h"
+#include "src/tint/ast/depth_multisampled_texture.h"
+#include "src/tint/ast/depth_texture.h"
 #include "src/tint/ast/discard_statement.h"
+#include "src/tint/ast/external_texture.h"
+#include "src/tint/ast/f16.h"
+#include "src/tint/ast/f32.h"
 #include "src/tint/ast/fallthrough_statement.h"
+#include "src/tint/ast/for_loop_statement.h"
+#include "src/tint/ast/i32.h"
+#include "src/tint/ast/id_attribute.h"
+#include "src/tint/ast/if_statement.h"
+#include "src/tint/ast/increment_decrement_statement.h"
+#include "src/tint/ast/internal_attribute.h"
+#include "src/tint/ast/interpolate_attribute.h"
+#include "src/tint/ast/invariant_attribute.h"
+#include "src/tint/ast/location_attribute.h"
+#include "src/tint/ast/loop_statement.h"
+#include "src/tint/ast/matrix.h"
+#include "src/tint/ast/multisampled_texture.h"
+#include "src/tint/ast/pointer.h"
+#include "src/tint/ast/return_statement.h"
+#include "src/tint/ast/sampled_texture.h"
+#include "src/tint/ast/stage_attribute.h"
+#include "src/tint/ast/storage_texture.h"
+#include "src/tint/ast/stride_attribute.h"
+#include "src/tint/ast/struct.h"
+#include "src/tint/ast/struct_member_align_attribute.h"
+#include "src/tint/ast/struct_member_offset_attribute.h"
+#include "src/tint/ast/struct_member_size_attribute.h"
+#include "src/tint/ast/switch_statement.h"
 #include "src/tint/ast/traverse_expressions.h"
+#include "src/tint/ast/type_name.h"
+#include "src/tint/ast/u32.h"
+#include "src/tint/ast/variable_decl_statement.h"
+#include "src/tint/ast/vector.h"
+#include "src/tint/ast/void.h"
+#include "src/tint/ast/while_statement.h"
+#include "src/tint/ast/workgroup_attribute.h"
 #include "src/tint/scope_stack.h"
 #include "src/tint/sem/builtin.h"
+#include "src/tint/symbol_table.h"
+#include "src/tint/utils/block_allocator.h"
 #include "src/tint/utils/defer.h"
 #include "src/tint/utils/map.h"
 #include "src/tint/utils/scoped_assignment.h"
@@ -158,6 +204,7 @@ class DependencyScanner {
             [&](const ast::Enable*) {
                 // Enable directives do not effect the dependency graph.
             },
+            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) { UnhandledNode(diagnostics_, global->node); });
     }
 
@@ -191,7 +238,7 @@ class DependencyScanner {
 
     /// Traverses the statements, performing symbol resolution and determining
     /// global dependencies.
-    void TraverseStatements(const ast::StatementList& stmts) {
+    void TraverseStatements(utils::VectorRef<const ast::Statement*> stmts) {
         for (auto* s : stmts) {
             TraverseStatement(s);
         }
@@ -263,6 +310,13 @@ class DependencyScanner {
                 TraverseExpression(v->variable->constructor);
                 Declare(v->variable->symbol, v->variable);
             },
+            [&](const ast::WhileStatement* w) {
+                scope_stack_.Push();
+                TINT_DEFER(scope_stack_.Pop());
+                TraverseExpression(w->condition);
+                TraverseStatement(w->body);
+            },
+            [&](const ast::StaticAssert* assertion) { TraverseExpression(assertion->condition); },
             [&](Default) {
                 if (!stmt->IsAnyOf<ast::BreakStatement, ast::ContinueStatement,
                                    ast::DiscardStatement, ast::FallthroughStatement>()) {
@@ -352,7 +406,7 @@ class DependencyScanner {
 
     /// Traverses the attribute list, performing symbol resolution and
     /// determining global dependencies.
-    void TraverseAttributes(const ast::AttributeList& attrs) {
+    void TraverseAttributes(utils::VectorRef<const ast::Attribute*> attrs) {
         for (auto* attr : attrs) {
             TraverseAttribute(attr);
         }
@@ -435,6 +489,10 @@ struct DependencyAnalysis {
     /// #diagnostics.
     /// @returns true if analysis found no errors, otherwise false.
     bool Run(const ast::Module& module) {
+        // Reserve container memory
+        graph_.resolved_symbols.reserve(module.GlobalDeclarations().Length());
+        sorted_.Reserve(module.GlobalDeclarations().Length());
+
         // Collect all the named globals from the AST module
         GatherGlobals(module);
 
@@ -447,7 +505,7 @@ struct DependencyAnalysis {
         // Dump the dependency graph if TINT_DUMP_DEPENDENCY_GRAPH is non-zero
         DumpDependencyGraph();
 
-        graph_.ordered_globals = std::move(sorted_);
+        graph_.ordered_globals = sorted_.Release();
 
         return !diagnostics_.contains_errors();
     }
@@ -463,6 +521,8 @@ struct DependencyAnalysis {
             [&](const ast::TypeDecl* td) { return td->name; },
             [&](const ast::Function* func) { return func->symbol; },
             [&](const ast::Variable* var) { return var->symbol; },
+            [&](const ast::Enable*) { return Symbol(); },
+            [&](const ast::StaticAssert*) { return Symbol(); },
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return Symbol{};
@@ -481,11 +541,12 @@ struct DependencyAnalysis {
     /// declaration
     std::string KindOf(const ast::Node* node) {
         return Switch(
-            node,  //
-            [&](const ast::Struct*) { return "struct"; },
-            [&](const ast::Alias*) { return "alias"; },
-            [&](const ast::Function*) { return "function"; },
-            [&](const ast::Variable* var) { return var->is_const ? "let" : "var"; },
+            node,                                                       //
+            [&](const ast::Struct*) { return "struct"; },               //
+            [&](const ast::Alias*) { return "alias"; },                 //
+            [&](const ast::Function*) { return "function"; },           //
+            [&](const ast::Variable* v) { return v->Kind(); },          //
+            [&](const ast::StaticAssert*) { return "static_assert"; },  //
             [&](Default) {
                 UnhandledNode(diagnostics_, node);
                 return "<error>";
@@ -497,9 +558,8 @@ struct DependencyAnalysis {
     void GatherGlobals(const ast::Module& module) {
         for (auto* node : module.GlobalDeclarations()) {
             auto* global = allocator_.Create(node);
-            // Enable directives do not form a symbol. Skip them.
-            if (!node->Is<ast::Enable>()) {
-                globals_.emplace(SymbolOf(node), global);
+            if (auto symbol = SymbolOf(node); symbol.IsValid()) {
+                globals_.emplace(symbol, global);
             }
             declaration_order_.emplace_back(global);
         }
@@ -569,33 +629,43 @@ struct DependencyAnalysis {
             return;  // This code assumes there are no undeclared identifiers.
         }
 
-        std::unordered_set<const Global*> visited;
+        // Make sure all 'enable' directives go before any other global declarations.
         for (auto* global : declaration_order_) {
-            utils::UniqueVector<const Global*> stack;
+            if (auto* enable = global->node->As<ast::Enable>()) {
+                sorted_.Add(enable);
+            }
+        }
+
+        for (auto* global : declaration_order_) {
+            if (global->node->Is<ast::Enable>()) {
+                // Skip 'enable' directives here, as they are already added.
+                continue;
+            }
+            utils::UniqueVector<const Global*, 8> stack;
             TraverseDependencies(
                 global,
                 [&](const Global* g) {  // Enter
-                    if (!stack.add(g)) {
-                        CyclicDependencyFound(g, stack);
+                    if (!stack.Add(g)) {
+                        CyclicDependencyFound(g, stack.Release());
                         return false;
                     }
-                    if (sorted_.contains(g->node)) {
+                    if (sorted_.Contains(g->node)) {
                         // Visited this global already.
                         // stack was pushed, but exit() will not be called when we return
                         // false, so pop here.
-                        stack.pop_back();
+                        stack.Pop();
                         return false;
                     }
                     return true;
                 },
                 [&](const Global* g) {  // Exit. Only called if Enter returned true.
-                    sorted_.add(g->node);
-                    stack.pop_back();
+                    sorted_.Add(g->node);
+                    stack.Pop();
                 });
 
-            sorted_.add(global->node);
+            sorted_.Add(global->node);
 
-            if (!stack.empty()) {
+            if (!stack.IsEmpty()) {
                 // Each stack.push() must have a corresponding stack.pop_back().
                 TINT_ICE(Resolver, diagnostics_)
                     << "stack not empty after returning from TraverseDependencies()";
@@ -621,12 +691,12 @@ struct DependencyAnalysis {
     /// @param root is the global that starts the cyclic dependency, which must be
     /// found in `stack`.
     /// @param stack is the global dependency stack that contains a loop.
-    void CyclicDependencyFound(const Global* root, const std::vector<const Global*>& stack) {
+    void CyclicDependencyFound(const Global* root, utils::VectorRef<const Global*> stack) {
         std::stringstream msg;
         msg << "cyclic dependency found: ";
         constexpr size_t kLoopNotStarted = ~0u;
         size_t loop_start = kLoopNotStarted;
-        for (size_t i = 0; i < stack.size(); i++) {
+        for (size_t i = 0; i < stack.Length(); i++) {
             auto* e = stack[i];
             if (loop_start == kLoopNotStarted && e == root) {
                 loop_start = i;
@@ -637,9 +707,9 @@ struct DependencyAnalysis {
         }
         msg << "'" << NameOf(root->node) << "'";
         AddError(diagnostics_, msg.str(), root->node->source);
-        for (size_t i = loop_start; i < stack.size(); i++) {
+        for (size_t i = loop_start; i < stack.Length(); i++) {
             auto* from = stack[i];
-            auto* to = (i + 1 < stack.size()) ? stack[i + 1] : stack[loop_start];
+            auto* to = (i + 1 < stack.Length()) ? stack[i + 1] : stack[loop_start];
             auto info = DepInfoFor(from, to);
             AddNote(diagnostics_,
                     KindOf(from->node) + " '" + NameOf(from->node) + "' " + info.action + " " +
@@ -694,7 +764,7 @@ struct DependencyAnalysis {
     std::vector<Global*> declaration_order_;
 
     /// Globals in sorted dependency order. Populated by SortGlobals().
-    utils::UniqueVector<const ast::Node*> sorted_;
+    utils::UniqueVector<const ast::Node*, 64> sorted_;
 };
 
 }  // namespace

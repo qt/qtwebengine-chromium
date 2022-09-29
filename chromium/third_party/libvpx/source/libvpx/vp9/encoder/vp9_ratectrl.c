@@ -2584,13 +2584,12 @@ void vp9_rc_set_gf_interval_range(const VP9_COMP *const cpi,
       const uint32_t pic_breadth =
           VPXMAX(cpi->common.width, cpi->common.height);
       int i;
-      for (i = LEVEL_1; i < LEVEL_MAX; ++i) {
+      for (i = 0; i < VP9_LEVELS; ++i) {
         if (vp9_level_defs[i].max_luma_picture_size >= pic_size &&
             vp9_level_defs[i].max_luma_picture_breadth >= pic_breadth) {
           if (rc->min_gf_interval <=
               (int)vp9_level_defs[i].min_altref_distance) {
-            rc->min_gf_interval =
-                (int)vp9_level_defs[i].min_altref_distance + 1;
+            rc->min_gf_interval = (int)vp9_level_defs[i].min_altref_distance;
             rc->max_gf_interval =
                 VPXMAX(rc->max_gf_interval, rc->min_gf_interval);
           }

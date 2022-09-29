@@ -609,23 +609,6 @@ Affects:
     libavutil/x86/x86inc.asm
 
 ------------------------------------------------------------------
-commit b62555c76193045c2e3643c626e8e8d7a8f4b93f
-Author: liberato@chromium.org <liberato@chromium.org>
-Date:   Mon Mar 4 14:01:22 2019 -0800
-
-    Check return value of avio_read().
-
-    Otherwise, it can use an uninitialized value immediately after.
-
-    Bug: 937663
-    Change-Id: I59bfb59982c18c2d523b015045b7ad261fb6aca8
-    Reviewed-on: https://chromium-review.googlesource.com/c/chromium/third_party/ffmpeg/+/1500992
-    Reviewed-by: Dale Curtis <dalecurtis@chromium.org>
-
-Affects:
-    libavformat/mov.c
-
-------------------------------------------------------------------
 commit d7ba23c23434eb938c6fcae4fe77ca1e2a2fbeff
 Author: liberato@chromium.org <liberato@chromium.org>
 Date:   Thu Aug 22 10:52:09 2019 -0700
@@ -894,21 +877,6 @@ Affects:
     libavutil/avstring.h
 
 ------------------------------------------------------------------
-commit e481fc655a6287e657a88e8c2bcd6f411d254d70
-Author: Dan Sanders <sandersd@chromium.org>
-Date:   Tue May 3 14:39:37 2022 -0700
-
-    Do not parse late SEI messages during decoding.
-
-    Bug: 1306751
-    Change-Id: I2088b9ff89bd8eee8ab82675258af302d9bfccf9
-    Reviewed-on: https://chromium-review.googlesource.com/c/chromium/third_party/ffmpeg/+/3625832
-    Reviewed-by: Dale Curtis <dalecurtis@chromium.org>
-
-Affects:
-    libavcodec/h264dec.c
-
-------------------------------------------------------------------
 commit 71c81ea6d295b2940df5a265c9298229a4bced03
 Author: Dan Sanders <sandersd@chromium.org>
 Date:   Thu May 19 14:16:20 2022 -0700
@@ -917,4 +885,17 @@ Date:   Thu May 19 14:16:20 2022 -0700
 
 Affects:
     libavutil/avsscanf.c
+
+------------------------------------------------------------------
+commit 8d12faf8f791f7655b48641ba47ff1ce9cd0d3f3
+Author: Eugene Zemtsov <eugene@chromium.org>
+Date:   Tue Jul 26 20:00:50 2022 -0700
+
+    Remove forward declaration for enum.
+
+    ISO C forbids forward references to enum types. And this breaks
+    x86 windows build of Chromium.
+
+Affects:
+    libavutil/hwcontext_stub.c
 

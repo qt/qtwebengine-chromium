@@ -7,10 +7,13 @@
 #ifndef CORE_FPDFAPI_PARSER_CPDF_STREAM_H_
 #define CORE_FPDFAPI_PARSER_CPDF_STREAM_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <set>
 
 #include "core/fpdfapi/parser/cpdf_object.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_string_wrappers.h"
@@ -25,7 +28,6 @@ class CPDF_Stream final : public CPDF_Object {
   // CPDF_Object:
   Type GetType() const override;
   RetainPtr<CPDF_Object> Clone() const override;
-  CPDF_Dictionary* GetDict() override;
   const CPDF_Dictionary* GetDict() const override;
   WideString GetUnicodeText() const override;
   bool IsStream() const override;
@@ -43,6 +45,7 @@ class CPDF_Stream final : public CPDF_Object {
   void SetData(pdfium::span<const uint8_t> pData);
   void SetDataFromStringstream(fxcrt::ostringstream* stream);
 
+  // TODO(crbug.com/pdfium/1872): Replace with vector version.
   void TakeData(std::unique_ptr<uint8_t, FxFreeDeleter> pData, size_t size);
 
   // Set data and remove "Filter" and "DecodeParms" fields from stream
@@ -52,9 +55,10 @@ class CPDF_Stream final : public CPDF_Object {
 
   void InitStream(pdfium::span<const uint8_t> pData,
                   RetainPtr<CPDF_Dictionary> pDict);
-  void InitStreamFromFile(const RetainPtr<IFX_SeekableReadStream>& pFile,
+  void InitStreamFromFile(RetainPtr<IFX_SeekableReadStream> pFile,
                           RetainPtr<CPDF_Dictionary> pDict);
 
+  // Can only be called when a stream is not memory-based.
   bool ReadRawData(FX_FILESIZE offset, uint8_t* pBuf, size_t buf_size) const;
 
   bool IsMemoryBased() const { return m_bMemoryBased; }
@@ -64,6 +68,8 @@ class CPDF_Stream final : public CPDF_Object {
   CPDF_Stream();
   CPDF_Stream(pdfium::span<const uint8_t> pData,
               RetainPtr<CPDF_Dictionary> pDict);
+  CPDF_Stream(DataVector<uint8_t> pData, RetainPtr<CPDF_Dictionary> pDict);
+  // TODO(crbug.com/pdfium/1872): Replace with vector version above.
   CPDF_Stream(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
               size_t size,
               RetainPtr<CPDF_Dictionary> pDict);
@@ -90,6 +96,10 @@ inline const CPDF_Stream* ToStream(const CPDF_Object* obj) {
 
 inline RetainPtr<CPDF_Stream> ToStream(RetainPtr<CPDF_Object> obj) {
   return RetainPtr<CPDF_Stream>(ToStream(obj.Get()));
+}
+
+inline RetainPtr<const CPDF_Stream> ToStream(RetainPtr<const CPDF_Object> obj) {
+  return RetainPtr<const CPDF_Stream>(ToStream(obj.Get()));
 }
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_STREAM_H_

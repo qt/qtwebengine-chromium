@@ -32,7 +32,7 @@ parser.set_defaults(defines=list())
 
 
 def split_ukernel_name(name):
-  match = re.match(r"^xnn_(qu8|qs8|f16|f32)_v(add|div|max|min|mul|sqrdiff|sub|addc|divc|rdivc|maxc|minc|mulc|sqrdiffc|subc|rsubc)(_(minmax|relu)(_(fp32|rndnu))?)?_ukernel__(.+)_x(\d+)$", name)
+  match = re.fullmatch(r"xnn_(qu8|qs8|f16|f32)_v(add|div|max|min|mul|sqrdiff|sub|addc|divc|rdivc|maxc|minc|mulc|sqrdiffc|subc|rsubc)(_(minmax|relu)(_(fp32|rndnu))?)?_ukernel__(.+)_x(\d+)", name)
   if match is None:
     raise ValueError("Unexpected microkernel name: " + name)
   op_type = {
@@ -312,8 +312,8 @@ def main(args):
 
     spec_name = os.path.splitext(os.path.split(options.spec)[1])[0]
     microkernel_header = {
-      "VAddMicrokernelTester": "xnnpack/vaddsub.h",
-      "VAddCMicrokernelTester": "xnnpack/vaddsub.h",
+      "VAddMicrokernelTester": "xnnpack/vadd.h",
+      "VAddCMicrokernelTester": "xnnpack/vadd.h",
       "VMulMicrokernelTester": "xnnpack/vmul.h",
       "VMulCMicrokernelTester": "xnnpack/vmul.h",
       "VBinaryMicrokernelTester": "xnnpack/vbinary.h",
@@ -343,7 +343,7 @@ def main(args):
 #include <xnnpack/common.h>
 #include <xnnpack/isa-checks.h>
 
-#include <xnnpack/params-init.h>
+#include <xnnpack/microparams-init.h>
 #include <{microkernel_header}>
 #include "{tester_header}"
 """.format(specification=options.spec, generator=sys.argv[0],

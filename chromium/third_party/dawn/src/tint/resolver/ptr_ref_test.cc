@@ -57,20 +57,20 @@ TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
 TEST_F(ResolverPtrRefTest, DefaultPtrStorageClass) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
-    auto* buf = Structure("S", {Member("m", ty.i32())});
+    auto* buf = Structure("S", utils::Vector{Member("m", ty.i32())});
     auto* function = Var("f", ty.i32());
-    auto* private_ = Global("p", ty.i32(), ast::StorageClass::kPrivate);
-    auto* workgroup = Global("w", ty.i32(), ast::StorageClass::kWorkgroup);
-    auto* uniform = Global("ub", ty.Of(buf), ast::StorageClass::kUniform,
-                           ast::AttributeList{
-                               create<ast::BindingAttribute>(0),
-                               create<ast::GroupAttribute>(0),
-                           });
-    auto* storage = Global("sb", ty.Of(buf), ast::StorageClass::kStorage,
-                           ast::AttributeList{
-                               create<ast::BindingAttribute>(1),
-                               create<ast::GroupAttribute>(0),
-                           });
+    auto* private_ = GlobalVar("p", ty.i32(), ast::StorageClass::kPrivate);
+    auto* workgroup = GlobalVar("w", ty.i32(), ast::StorageClass::kWorkgroup);
+    auto* uniform = GlobalVar("ub", ty.Of(buf), ast::StorageClass::kUniform,
+                              utils::Vector{
+                                  create<ast::BindingAttribute>(0u),
+                                  create<ast::GroupAttribute>(0u),
+                              });
+    auto* storage = GlobalVar("sb", ty.Of(buf), ast::StorageClass::kStorage,
+                              utils::Vector{
+                                  create<ast::BindingAttribute>(1u),
+                                  create<ast::GroupAttribute>(0u),
+                              });
 
     auto* function_ptr =
         Let("f_ptr", ty.pointer(ty.i32(), ast::StorageClass::kFunction), AddressOf(function));

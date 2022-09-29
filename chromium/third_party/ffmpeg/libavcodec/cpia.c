@@ -54,8 +54,8 @@ static int cpia_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     CpiaContext* const cpia = avctx->priv_data;
     int i,j,ret;
 
-    uint8_t* const header = avpkt->data;
-    uint8_t* src;
+    const uint8_t *const header = avpkt->data;
+    const uint8_t *src;
     int src_size;
     uint16_t linelength;
     uint8_t skip;
@@ -232,5 +232,4 @@ const FFCodec ff_cpia_decoder = {
     .close          = cpia_decode_end,
     FF_CODEC_DECODE_CB(cpia_decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

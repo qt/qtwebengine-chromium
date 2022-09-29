@@ -68,6 +68,7 @@ const char kMaxSupportedChannelsProperty[] = "MaxSupportedChannels";
 const char kAudioEffectProperty[] = "AudioEffect";
 const char kNodeVolumeProperty[] = "NodeVolume";
 const char kInputNodeGainProperty[] = "InputNodeGain";
+const char kNumberOfVolumeStepsProperty[] = "NumberOfVolumeSteps";
 // The following two properties are optional.
 const char kNumberOfUnderrunsProperty[] = "NumberOfUnderruns";
 const char kNumberOfSevereUnderrunsProperty[] = "NumberOfSevereUnderruns";

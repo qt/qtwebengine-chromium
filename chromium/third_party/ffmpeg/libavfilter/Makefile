@@ -13,6 +13,7 @@ OBJS = allfilters.o                                                     \
        avfiltergraph.o                                                  \
        buffersink.o                                                     \
        buffersrc.o                                                      \
+       colorspace.o                                                     \
        drawutils.o                                                      \
        fifo.o                                                           \
        formats.o                                                        \
@@ -23,6 +24,7 @@ OBJS = allfilters.o                                                     \
        version.o                                                        \
        video.o                                                          \
 
+OBJS-$(HAVE_LIBC_MSVCRT)                     += file_open.o
 OBJS-$(HAVE_THREADS)                         += pthread.o
 
 # subsystems
@@ -163,6 +165,7 @@ OBJS-$(CONFIG_SURROUND_FILTER)               += af_surround.o
 OBJS-$(CONFIG_TREBLE_FILTER)                 += af_biquads.o
 OBJS-$(CONFIG_TREMOLO_FILTER)                += af_tremolo.o
 OBJS-$(CONFIG_VIBRATO_FILTER)                += af_vibrato.o generate_wave_table.o
+OBJS-$(CONFIG_VIRTUALBASS_FILTER)            += af_virtualbass.o
 OBJS-$(CONFIG_VOLUME_FILTER)                 += af_volume.o
 OBJS-$(CONFIG_VOLUMEDETECT_FILTER)           += af_volumedetect.o
 
@@ -196,6 +199,7 @@ OBJS-$(CONFIG_BLACKDETECT_FILTER)            += vf_blackdetect.o
 OBJS-$(CONFIG_BLACKFRAME_FILTER)             += vf_blackframe.o
 OBJS-$(CONFIG_BLEND_FILTER)                  += vf_blend.o framesync.o
 OBJS-$(CONFIG_BLEND_VULKAN_FILTER)           += vf_blend_vulkan.o framesync.o vulkan.o vulkan_filter.o
+OBJS-$(CONFIG_BLOCKDETECT_FILTER)            += vf_blockdetect.o
 OBJS-$(CONFIG_BLURDETECT_FILTER)             += vf_blurdetect.o edge_common.o
 OBJS-$(CONFIG_BM3D_FILTER)                   += vf_bm3d.o framesync.o
 OBJS-$(CONFIG_BOXBLUR_FILTER)                += vf_boxblur.o boxblur.o
@@ -206,6 +210,8 @@ OBJS-$(CONFIG_CAS_FILTER)                    += vf_cas.o
 OBJS-$(CONFIG_CHROMABER_VULKAN_FILTER)       += vf_chromaber_vulkan.o vulkan.o vulkan_filter.o
 OBJS-$(CONFIG_CHROMAHOLD_FILTER)             += vf_chromakey.o
 OBJS-$(CONFIG_CHROMAKEY_FILTER)              += vf_chromakey.o
+OBJS-$(CONFIG_CHROMAKEY_CUDA_FILTER)         += vf_chromakey_cuda.o vf_chromakey_cuda.ptx.o
+
 OBJS-$(CONFIG_CHROMANR_FILTER)               += vf_chromanr.o
 OBJS-$(CONFIG_CHROMASHIFT_FILTER)            += vf_chromashift.o
 OBJS-$(CONFIG_CIESCOPE_FILTER)               += vf_ciescope.o
@@ -222,7 +228,7 @@ OBJS-$(CONFIG_COLORHOLD_FILTER)              += vf_colorkey.o
 OBJS-$(CONFIG_COLORLEVELS_FILTER)            += vf_colorlevels.o
 OBJS-$(CONFIG_COLORMAP_FILTER)               += vf_colormap.o
 OBJS-$(CONFIG_COLORMATRIX_FILTER)            += vf_colormatrix.o
-OBJS-$(CONFIG_COLORSPACE_FILTER)             += vf_colorspace.o colorspace.o colorspacedsp.o
+OBJS-$(CONFIG_COLORSPACE_FILTER)             += vf_colorspace.o colorspacedsp.o
 OBJS-$(CONFIG_COLORTEMPERATURE_FILTER)       += vf_colortemperature.o
 OBJS-$(CONFIG_CONVOLUTION_FILTER)            += vf_convolution.o
 OBJS-$(CONFIG_CONVOLUTION_OPENCL_FILTER)     += vf_convolution_opencl.o opencl.o \
@@ -324,8 +330,8 @@ OBJS-$(CONFIG_HWMAP_FILTER)                  += vf_hwmap.o
 OBJS-$(CONFIG_HWUPLOAD_CUDA_FILTER)          += vf_hwupload_cuda.o
 OBJS-$(CONFIG_HWUPLOAD_FILTER)               += vf_hwupload.o
 OBJS-$(CONFIG_HYSTERESIS_FILTER)             += vf_hysteresis.o framesync.o
-OBJS-$(CONFIG_ICCDETECT_FILTER)              += vf_iccdetect.o fflcms2.o colorspace.o
-OBJS-$(CONFIG_ICCGEN_FILTER)                 += vf_iccgen.o fflcms2.o colorspace.o
+OBJS-$(CONFIG_ICCDETECT_FILTER)              += vf_iccdetect.o fflcms2.o
+OBJS-$(CONFIG_ICCGEN_FILTER)                 += vf_iccgen.o fflcms2.o
 OBJS-$(CONFIG_IDENTITY_FILTER)               += vf_identity.o
 OBJS-$(CONFIG_IDET_FILTER)                   += vf_idet.o
 OBJS-$(CONFIG_IL_FILTER)                     += vf_il.o
@@ -416,6 +422,8 @@ OBJS-$(CONFIG_READEIA608_FILTER)             += vf_readeia608.o
 OBJS-$(CONFIG_READVITC_FILTER)               += vf_readvitc.o
 OBJS-$(CONFIG_REALTIME_FILTER)               += f_realtime.o
 OBJS-$(CONFIG_REMAP_FILTER)                  += vf_remap.o framesync.o
+OBJS-$(CONFIG_REMAP_OPENCL_FILTER)           += vf_remap_opencl.o framesync.o opencl.o \
+                                                opencl/remap.o
 OBJS-$(CONFIG_REMOVEGRAIN_FILTER)            += vf_removegrain.o
 OBJS-$(CONFIG_REMOVELOGO_FILTER)             += bbox.o lswsutils.o lavfutils.o vf_removelogo.o
 OBJS-$(CONFIG_REPEATFIELDS_FILTER)           += vf_repeatfields.o
@@ -489,8 +497,8 @@ OBJS-$(CONFIG_TLUT2_FILTER)                  += vf_lut2.o framesync.o
 OBJS-$(CONFIG_TMEDIAN_FILTER)                += vf_xmedian.o framesync.o
 OBJS-$(CONFIG_TMIDEQUALIZER_FILTER)          += vf_tmidequalizer.o
 OBJS-$(CONFIG_TMIX_FILTER)                   += vf_mix.o framesync.o
-OBJS-$(CONFIG_TONEMAP_FILTER)                += vf_tonemap.o colorspace.o
-OBJS-$(CONFIG_TONEMAP_OPENCL_FILTER)         += vf_tonemap_opencl.o colorspace.o opencl.o \
+OBJS-$(CONFIG_TONEMAP_FILTER)                += vf_tonemap.o
+OBJS-$(CONFIG_TONEMAP_OPENCL_FILTER)         += vf_tonemap_opencl.o opencl.o \
                                                 opencl/tonemap.o opencl/colorspace_common.o
 OBJS-$(CONFIG_TONEMAP_VAAPI_FILTER)          += vf_tonemap_vaapi.o vaapi_vpp.o
 OBJS-$(CONFIG_TPAD_FILTER)                   += vf_tpad.o
@@ -549,6 +557,7 @@ OBJS-$(CONFIG_COLOR_FILTER)                  += vsrc_testsrc.o
 OBJS-$(CONFIG_COLORCHART_FILTER)             += vsrc_testsrc.o
 OBJS-$(CONFIG_COLORSPECTRUM_FILTER)          += vsrc_testsrc.o
 OBJS-$(CONFIG_COREIMAGESRC_FILTER)           += vf_coreimage.o
+OBJS-$(CONFIG_DDAGRAB_FILTER)                += vsrc_ddagrab.o
 OBJS-$(CONFIG_FREI0R_SRC_FILTER)             += vf_frei0r.o
 OBJS-$(CONFIG_GRADIENTS_FILTER)              += vsrc_gradients.o
 OBJS-$(CONFIG_HALDCLUTSRC_FILTER)            += vsrc_testsrc.o

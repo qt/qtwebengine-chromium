@@ -107,11 +107,11 @@ class V8_EXPORT_PRIVATE TurboAssembler
 
   // Calls Abort(msg) if the condition cc is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cc, AbortReason reason);
+  void Assert(Condition cc, AbortReason reason) NOOP_UNLESS_DEBUG_CODE;
 
   // Like Assert(), but without condition.
   // Use --debug_code to enable.
-  void AssertUnreachable(AbortReason reason);
+  void AssertUnreachable(AbortReason reason) NOOP_UNLESS_DEBUG_CODE;
 
   // Like Assert(), but always enabled.
   void Check(Condition cc, AbortReason reason);
@@ -156,6 +156,7 @@ class V8_EXPORT_PRIVATE TurboAssembler
   void LoadEntryFromBuiltinIndex(Register builtin_index);
   void CallBuiltinByIndex(Register builtin_index);
   void CallBuiltin(Builtin builtin);
+  void TailCallBuiltin(Builtin builtin);
 
   void LoadCodeObjectEntry(Register destination, Register code_object);
   void CallCodeObject(Register code_object);
@@ -375,25 +376,19 @@ class V8_EXPORT_PRIVATE TurboAssembler
   // Calculate how much stack space (in bytes) are required to store caller
   // registers excluding those specified in the arguments.
   int RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
-                                      Register exclusion1 = no_reg,
-                                      Register exclusion2 = no_reg,
-                                      Register exclusion3 = no_reg) const;
+                                      Register exclusion = no_reg) const;
 
   // PushCallerSaved and PopCallerSaved do not arrange the registers in any
   // particular order so they are not useful for calls that can cause a GC.
-  // The caller can exclude up to 3 registers that do not need to be saved and
+  // The caller can exclude a register that does not need to be saved and
   // restored.
 
   // Push caller saved registers on the stack, and return the number of bytes
   // stack pointer is adjusted.
-  int PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
-                      Register exclusion2 = no_reg,
-                      Register exclusion3 = no_reg);
+  int PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion = no_reg);
   // Restore caller saved registers from the stack, and return the number of
   // bytes stack pointer is adjusted.
-  int PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
-                     Register exclusion2 = no_reg,
-                     Register exclusion3 = no_reg);
+  int PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion = no_reg);
 
   // Compute the start of the generated instruction stream from the current PC.
   // This is an alternative to embedding the {CodeObject} handle as a reference.
@@ -559,33 +554,48 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void TestCodeTIsMarkedForDeoptimization(Register codet, Register scratch);
   Immediate ClearedValue() const;
 
+  // Tiering support.
+  void AssertFeedbackVector(Register object,
+                            Register scratch) NOOP_UNLESS_DEBUG_CODE;
+  void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
+                                           Register closure, Register scratch1,
+                                           Register slot_address);
+  void GenerateTailCallToReturnedCode(Runtime::FunctionId function_id);
+  void LoadTieringStateAndJumpIfNeedsProcessing(
+      Register optimization_state, XMMRegister saved_feedback_vector,
+      Label* has_optimized_code_or_state);
+  void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
+      Register optimization_state, XMMRegister saved_feedback_vector);
+
   // Abort execution if argument is not a smi, enabled via --debug-code.
-  void AssertSmi(Register object);
+  void AssertSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is a smi, enabled via --debug-code.
-  void AssertNotSmi(Register object);
+  void AssertNotSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
-  void AssertFunction(Register object, Register scratch);
+  void AssertFunction(Register object, Register scratch) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a callable JSFunction, enabled via
   // --debug-code.
-  void AssertCallableFunction(Register object, Register scratch);
+  void AssertCallableFunction(Register object,
+                              Register scratch) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
-  void AssertConstructor(Register object);
+  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
-  void AssertBoundFunction(Register object);
+  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSGeneratorObject (or subclass),
   // enabled via --debug-code.
-  void AssertGeneratorObject(Register object);
+  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
-  void AssertUndefinedOrAllocationSite(Register object, Register scratch);
+  void AssertUndefinedOrAllocationSite(Register object,
+                                       Register scratch) NOOP_UNLESS_DEBUG_CODE;
 
   // ---------------------------------------------------------------------------
   // Exception handling

@@ -61,7 +61,6 @@ using HBBuffer = resource<hb_buffer_t   , decltype(hb_buffer_destroy), hb_buffer
 
 using SkUnicodeBidi = std::unique_ptr<SkBidiIterator>;
 using SkUnicodeBreak = std::unique_ptr<SkBreakIterator>;
-using SkUnicodeScript = std::unique_ptr<SkScriptIterator>;
 
 hb_position_t skhb_position(SkScalar value) {
     // Treat HarfBuzz hb_position_t as 16.16 fixed-point.
@@ -400,10 +399,13 @@ private:
 
 class SkUnicodeHbScriptRunIterator final: public SkShaper::ScriptRunIterator {
 public:
-    SkUnicodeHbScriptRunIterator(SkUnicodeScript, const char* utf8, size_t utf8Bytes)
-        : fCurrent(utf8), fBegin(utf8), fEnd(fCurrent + utf8Bytes)
-        , fCurrentScript(HB_SCRIPT_UNKNOWN)
-    {}
+    SkUnicodeHbScriptRunIterator(const char* utf8,
+                                 size_t utf8Bytes,
+                                 hb_script_t defaultScript)
+            : fCurrent(utf8)
+            , fBegin(utf8)
+            , fEnd(fCurrent + utf8Bytes)
+            , fCurrentScript(defaultScript) {}
     hb_script_t hb_script_for_unichar(SkUnichar u) {
          return hb_unicode_script(hb_unicode_funcs_get_default(), u);
     }
@@ -562,7 +564,7 @@ void append(SkShaper::RunHandler* handler, const SkShaper::RunHandler::RunInfo& 
     handler->commitRunBuffer(runInfo);
 }
 
-void emit(const ShapedLine& line, SkShaper::RunHandler* handler) {
+void emit(SkUnicode* unicode, const ShapedLine& line, SkShaper::RunHandler* handler) {
     // Reorder the runs and glyphs per line and write them out.
     handler->beginLine();
 
@@ -572,7 +574,7 @@ void emit(const ShapedLine& line, SkShaper::RunHandler* handler) {
         runLevels[i] = line.runs[i].fLevel;
     }
     SkAutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
-    SkBidiIterator::ReorderVisual(runLevels, numRuns, logicalFromVisual);
+    unicode->reorderVisual(runLevels, numRuns, logicalFromVisual);
 
     for (int i = 0; i < numRuns; ++i) {
         int logicalIndex = logicalFromVisual[i];
@@ -817,9 +819,7 @@ void ShaperHarfBuzz::shape(const char* utf8, size_t utf8Bytes,
         return;
     }
 
-    std::unique_ptr<ScriptRunIterator> script(MakeSkUnicodeHbScriptRunIterator(fUnicode.get(),
-                                                                                       utf8,
-                                                                                       utf8Bytes));
+    std::unique_ptr<ScriptRunIterator> script(MakeSkUnicodeHbScriptRunIterator(utf8, utf8Bytes));
     if (!script) {
         return;
     }
@@ -977,7 +977,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
 
             // If nothing fit (best score is negative) and the line is not empty
             if (width < line.fAdvance.fX + best.fAdvance.fX && !line.runs.empty()) {
-                emit(line, handler);
+                emit(fUnicode.get(), line, handler);
                 line.runs.reset();
                 line.fAdvance = {0, 0};
             } else {
@@ -997,14 +997,14 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
 
                 // If item broken, emit line (prevent remainder from accidentally fitting)
                 if (utf8Start != utf8End) {
-                    emit(line, handler);
+                    emit(fUnicode.get(), line, handler);
                     line.runs.reset();
                     line.fAdvance = {0, 0};
                 }
             }
         }
     }
-    emit(line, handler);
+    emit(fUnicode.get(), line, handler);
 }
 
 void ShapeThenWrap::wrap(char const * const utf8, size_t utf8Bytes,
@@ -1163,7 +1163,7 @@ void ShapeThenWrap::wrap(char const * const utf8, size_t utf8Bytes,
             runLevels[i] = runs[previousBreak.fRunIndex + i].fLevel;
         }
         SkAutoSTMalloc<4, int32_t> logicalFromVisual(numRuns);
-        SkBidiIterator::ReorderVisual(runLevels, numRuns, logicalFromVisual);
+        fUnicode->reorderVisual(runLevels, numRuns, logicalFromVisual);
 
         // step through the runs in reverse visual order and the glyphs in reverse logical order
         // until a visible glyph is found and force them to the end of the visual line.
@@ -1375,7 +1375,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     }
 
     SkSTArray<32, hb_feature_t> hbFeatures;
-    for (const auto& feature : SkMakeSpan(features, featuresSize)) {
+    for (const auto& feature : SkSpan(features, featuresSize)) {
         if (feature.end < SkTo<size_t>(utf8Start - utf8) ||
                           SkTo<size_t>(utf8End   - utf8)  <= feature.start)
         {
@@ -1490,20 +1490,18 @@ SkShaper::MakeSkUnicodeBidiRunIterator(SkUnicode* unicode, const char* utf8, siz
 
 std::unique_ptr<SkShaper::ScriptRunIterator>
 SkShaper::MakeHbIcuScriptRunIterator(const char* utf8, size_t utf8Bytes) {
-    auto unicode = SkUnicode::Make();
-    if (!unicode) {
-        return nullptr;
-    }
-    return SkShaper::MakeSkUnicodeHbScriptRunIterator(unicode.get(), utf8, utf8Bytes);
+    return SkShaper::MakeSkUnicodeHbScriptRunIterator(utf8, utf8Bytes);
 }
 
 std::unique_ptr<SkShaper::ScriptRunIterator>
-SkShaper::MakeSkUnicodeHbScriptRunIterator(SkUnicode* unicode, const char* utf8, size_t utf8Bytes) {
-    auto script = unicode->makeScriptIterator();
-    if (!script) {
-        return nullptr;
-    }
-    return std::make_unique<SkUnicodeHbScriptRunIterator>(std::move(script), utf8, utf8Bytes);
+SkShaper::MakeSkUnicodeHbScriptRunIterator(const char* utf8, size_t utf8Bytes) {
+    return std::make_unique<SkUnicodeHbScriptRunIterator>(utf8, utf8Bytes, HB_SCRIPT_UNKNOWN);
+}
+
+std::unique_ptr<SkShaper::ScriptRunIterator> SkShaper::MakeSkUnicodeHbScriptRunIterator(
+        const char* utf8, size_t utf8Bytes, SkFourByteTag script) {
+    return std::make_unique<SkUnicodeHbScriptRunIterator>(
+            utf8, utf8Bytes, hb_script_from_iso15924_tag((hb_tag_t)script));
 }
 
 std::unique_ptr<SkShaper> SkShaper::MakeShaperDrivenWrapper(sk_sp<SkFontMgr> fontmgr) {

@@ -11,13 +11,13 @@
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrClip.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrModulateAtlasCoverageEffect.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/ops/AtlasRenderTask.h"
 #include "src/gpu/ganesh/ops/DrawAtlasPathOp.h"
 #include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
 #include "src/gpu/ganesh/tessellate/GrTessellationShader.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 namespace {
 
@@ -104,6 +104,13 @@ bool AtlasPathRenderer::IsSupported(GrRecordingContext* rContext) {
     // b/195095846: There is a bug with the atlas path renderer on OpenGL iOS. Disable until we can
     // investigate.
     if (rContext->backend() == GrBackendApi::kOpenGL) {
+        return false;
+    }
+#endif
+#ifdef SK_BUILD_FOR_WIN
+    // http://skbug.com/13519 There is a bug with the atlas path renderer on Direct3D, running on
+    // Radeon hardware and possibly others. Disable until we can investigate.
+    if (rContext->backend() == GrBackendApi::kDirect3D) {
         return false;
     }
 #endif
@@ -329,8 +336,10 @@ GrFPResult AtlasPathRenderer::makeAtlasClipEffect(const SurfaceDrawContext* sdc,
 
     const SkRect pathDevBounds = viewMatrix.mapRect(path.getBounds());
     if (!is_visible(pathDevBounds, drawBounds)) {
-        // The path is empty or outside the drawBounds. No mask is needed.
-        return path.isInverseFillType() ? GrFPSuccess(std::move(inputFP))
+        // The path is empty or outside the drawBounds. No mask is needed. We explicitly allow the
+        // returned successful "fp" to be null in case this bypassed atlas clip effect was the first
+        // clip to be processed by the clip stack (at which point inputFP is null).
+        return path.isInverseFillType() ? GrFPNullableSuccess(std::move(inputFP))
                                         : GrFPFailure(std::move(inputFP));
     }
 

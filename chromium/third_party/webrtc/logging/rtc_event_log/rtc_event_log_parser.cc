@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/network_state_predictor.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -1114,7 +1115,7 @@ void ParsedRtcEventLog::Clear() {
 }
 
 ParsedRtcEventLog::ParseStatus ParsedRtcEventLog::ParseFile(
-    const std::string& filename) {
+    absl::string_view filename) {
   FileWrapper file = FileWrapper::OpenReadOnly(filename);
   if (!file.is_open()) {
     RTC_LOG(LS_WARNING) << "Could not open file " << filename
@@ -1140,12 +1141,12 @@ ParsedRtcEventLog::ParseStatus ParsedRtcEventLog::ParseFile(
 }
 
 ParsedRtcEventLog::ParseStatus ParsedRtcEventLog::ParseString(
-    const std::string& s) {
+    absl::string_view s) {
   return ParseStream(s);
 }
 
 ParsedRtcEventLog::ParseStatus ParsedRtcEventLog::ParseStream(
-    const std::string& s) {
+    absl::string_view s) {
   Clear();
   ParseStatus status = ParseStreamInternal(s);
 
@@ -1769,6 +1770,12 @@ ParsedRtcEventLog::ParseStatus ParsedRtcEventLog::StoreParsedLegacyEvent(
       ice_candidate_pair_events_.push_back(status_or_value.value());
       break;
     }
+    case rtclog::Event::REMOTE_ESTIMATE: {
+      auto status_or_value = GetRemoteEstimateEvent(event);
+      RTC_RETURN_IF_ERROR(status_or_value.status());
+      remote_estimate_events_.push_back(status_or_value.value());
+      break;
+    }
     case rtclog::Event::UNKNOWN_EVENT: {
       break;
     }
@@ -2143,7 +2150,7 @@ ParsedRtcEventLog::GetIceCandidatePairConfig(
   LoggedIceCandidatePairConfig res;
   const rtclog::IceCandidatePairConfig& config =
       rtc_event.ice_candidate_pair_config();
-  RTC_CHECK(rtc_event.has_timestamp_us());
+  RTC_PARSE_CHECK_OR_RETURN(rtc_event.has_timestamp_us());
   res.timestamp = Timestamp::Micros(rtc_event.timestamp_us());
   RTC_PARSE_CHECK_OR_RETURN(config.has_config_type());
   res.type = GetRuntimeIceCandidatePairConfigType(config.config_type());
@@ -2182,7 +2189,7 @@ ParsedRtcEventLog::GetIceCandidatePairEvent(
   LoggedIceCandidatePairEvent res;
   const rtclog::IceCandidatePairEvent& event =
       rtc_event.ice_candidate_pair_event();
-  RTC_CHECK(rtc_event.has_timestamp_us());
+  RTC_PARSE_CHECK_OR_RETURN(rtc_event.has_timestamp_us());
   res.timestamp = Timestamp::Micros(rtc_event.timestamp_us());
   RTC_PARSE_CHECK_OR_RETURN(event.has_event_type());
   res.type = GetRuntimeIceCandidatePairEventType(event.event_type());
@@ -2190,6 +2197,23 @@ ParsedRtcEventLog::GetIceCandidatePairEvent(
   res.candidate_pair_id = event.candidate_pair_id();
   // transaction_id is not supported by rtclog::Event
   res.transaction_id = 0;
+  return res;
+}
+
+ParsedRtcEventLog::ParseStatusOr<LoggedRemoteEstimateEvent>
+ParsedRtcEventLog::GetRemoteEstimateEvent(const rtclog::Event& event) const {
+  RTC_PARSE_CHECK_OR_RETURN(event.has_type());
+  RTC_PARSE_CHECK_OR_RETURN_EQ(event.type(), rtclog::Event::REMOTE_ESTIMATE);
+  LoggedRemoteEstimateEvent res;
+  const rtclog::RemoteEstimate& remote_estimate_event = event.remote_estimate();
+  RTC_PARSE_CHECK_OR_RETURN(event.has_timestamp_us());
+  res.timestamp = Timestamp::Micros(event.timestamp_us());
+  if (remote_estimate_event.has_link_capacity_lower_kbps())
+    res.link_capacity_lower = DataRate::KilobitsPerSec(
+        remote_estimate_event.link_capacity_lower_kbps());
+  if (remote_estimate_event.has_link_capacity_upper_kbps())
+    res.link_capacity_upper = DataRate::KilobitsPerSec(
+        remote_estimate_event.link_capacity_upper_kbps());
   return res;
 }
 
@@ -2280,12 +2304,12 @@ std::vector<LoggedPacketInfo> ParsedRtcEventLog::GetPacketInfos(
       seq_num_unwrapper = SequenceNumberUnwrapper();
       indices.clear();
     }
-    RTC_DCHECK(new_log_time >= last_log_time);
+    RTC_DCHECK_GE(new_log_time, last_log_time);
     last_log_time = new_log_time;
   };
 
   auto rtp_handler = [&](const LoggedRtpPacket& rtp) {
-    advance_time(Timestamp::Millis(rtp.log_time_ms()));
+    advance_time(rtp.log_time());
     MediaStreamInfo* stream = &streams[rtp.header.ssrc];
     Timestamp capture_time = Timestamp::MinusInfinity();
     if (!stream->rtx) {
@@ -2328,7 +2352,7 @@ std::vector<LoggedPacketInfo> ParsedRtcEventLog::GetPacketInfos(
 
   auto feedback_handler =
       [&](const LoggedRtcpPacketTransportFeedback& logged_rtcp) {
-        auto log_feedback_time = Timestamp::Millis(logged_rtcp.log_time_ms());
+        auto log_feedback_time = logged_rtcp.log_time();
         advance_time(log_feedback_time);
         const auto& feedback = logged_rtcp.transport_feedback;
         // Add timestamp deltas to a local time base selected on first packet

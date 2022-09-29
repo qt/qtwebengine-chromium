@@ -11,6 +11,7 @@
 #include "src/ast/ast-value-factory.h"
 #include "src/base/platform/elapsed-timer.h"
 #include "src/base/small-vector.h"
+#include "src/codegen/background-merge-task.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
@@ -122,11 +123,11 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
                                             bool restore_function_code);
 
   // Finalize and install Turbofan code from a previously run job.
-  static bool FinalizeTurbofanCompilationJob(TurbofanCompilationJob* job,
+  static void FinalizeTurbofanCompilationJob(TurbofanCompilationJob* job,
                                              Isolate* isolate);
 
   // Finalize and install Maglev code from a previously run job.
-  static bool FinalizeMaglevCompilationJob(maglev::MaglevCompilationJob* job,
+  static void FinalizeMaglevCompilationJob(maglev::MaglevCompilationJob* job,
                                            Isolate* isolate);
 
   // Give the compiler a chance to perform low-latency initialization tasks of
@@ -238,7 +239,7 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
                                                           IsolateT* isolate);
 
   static void LogFunctionCompilation(Isolate* isolate,
-                                     LogEventListener::LogEventsAndTags tag,
+                                     LogEventListener::CodeTag code_type,
                                      Handle<Script> script,
                                      Handle<SharedFunctionInfo> shared,
                                      Handle<FeedbackVector> vector,
@@ -322,7 +323,7 @@ class UnoptimizedCompilationJob : public CompilationJob {
   FinalizeJob(Handle<SharedFunctionInfo> shared_info, LocalIsolate* isolate);
 
   void RecordCompilationStats(Isolate* isolate) const;
-  void RecordFunctionCompilation(LogEventListener::LogEventsAndTags tag,
+  void RecordFunctionCompilation(LogEventListener::CodeTag code_type,
                                  Handle<SharedFunctionInfo> shared,
                                  Isolate* isolate) const;
 
@@ -423,7 +424,7 @@ class TurbofanCompilationJob : public OptimizedCompilationJob {
   Status AbortOptimization(BailoutReason reason);
 
   void RecordCompilationStats(ConcurrencyMode mode, Isolate* isolate) const;
-  void RecordFunctionCompilation(LogEventListener::LogEventsAndTags tag,
+  void RecordFunctionCompilation(LogEventListener::CodeTag code_type,
                                  Isolate* isolate) const;
 
  private:
@@ -537,6 +538,25 @@ class V8_EXPORT_PRIVATE BackgroundCompileTask {
   void Run(LocalIsolate* isolate,
            ReusableUnoptimizedCompileState* reusable_state);
 
+  // Checks the Isolate compilation cache to see whether it will be necessary to
+  // merge the newly compiled objects into an existing Script. This can change
+  // the value of ShouldMergeWithExistingScript, and embedders should check the
+  // latter after calling this. May only be called on a thread where the Isolate
+  // is currently entered.
+  void SourceTextAvailable(Isolate* isolate, Handle<String> source_text,
+                           const ScriptDetails& script_details);
+
+  // Returns whether the embedder should call MergeWithExistingScript. This
+  // function may be called from any thread, any number of times, but its return
+  // value is only meaningful after SourceTextAvailable has completed.
+  bool ShouldMergeWithExistingScript() const;
+
+  // Partially merges newly compiled objects into an existing Script with the
+  // same source, and generates a list of follow-up work for the main thread.
+  // May be called from any thread, only once, and only if
+  // ShouldMergeWithExistingScript returned true.
+  void MergeWithExistingScript();
+
   MaybeHandle<SharedFunctionInfo> FinalizeScript(
       Isolate* isolate, Handle<String> source,
       const ScriptDetails& script_details);
@@ -577,6 +597,10 @@ class V8_EXPORT_PRIVATE BackgroundCompileTask {
   int start_position_;
   int end_position_;
   int function_literal_id_;
+
+  // Task that merges newly compiled content into an existing Script from the
+  // Isolate compilation cache, if necessary.
+  BackgroundMergeTask background_merge_task_;
 };
 
 // Contains all data which needs to be transmitted between threads for
@@ -606,6 +630,25 @@ class V8_EXPORT_PRIVATE BackgroundDeserializeTask {
 
   void Run();
 
+  // Checks the Isolate compilation cache to see whether it will be necessary to
+  // merge the newly deserialized objects into an existing Script. This can
+  // change the value of ShouldMergeWithExistingScript, and embedders should
+  // check the latter after calling this. May only be called on a thread where
+  // the Isolate is currently entered.
+  void SourceTextAvailable(Isolate* isolate, Handle<String> source_text,
+                           const ScriptDetails& script_details);
+
+  // Returns whether the embedder should call MergeWithExistingScript. This
+  // function may be called from any thread, any number of times, but its return
+  // value is only meaningful after SourceTextAvailable has completed.
+  bool ShouldMergeWithExistingScript() const;
+
+  // Partially merges newly deserialized objects into an existing Script with
+  // the same source, as provided by SourceTextAvailable, and generates a list
+  // of follow-up work for the main thread. May be called from any thread, only
+  // once.
+  void MergeWithExistingScript();
+
   MaybeHandle<SharedFunctionInfo> Finish(Isolate* isolate,
                                          Handle<String> source,
                                          ScriptOriginOptions origin_options);
@@ -616,6 +659,7 @@ class V8_EXPORT_PRIVATE BackgroundDeserializeTask {
   Isolate* isolate_for_local_isolate_;
   AlignedCachedData cached_data_;
   CodeSerializer::OffThreadDeserializeData off_thread_data_;
+  BackgroundMergeTask background_merge_task_;
 };
 
 }  // namespace internal

@@ -717,8 +717,10 @@ public:
 		bool GroupNonUniformShuffle : 1;
 		bool GroupNonUniformShuffleRelative : 1;
 		bool GroupNonUniformArithmetic : 1;
+		bool GroupNonUniformQuad : 1;
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
+		bool SignedZeroInfNanPreserve : 1;
 		bool DemoteToHelperInvocation : 1;
 		bool StencilExportEXT : 1;
 		bool VulkanMemoryModel : 1;
@@ -726,6 +728,12 @@ public:
 		bool ShaderNonUniform : 1;
 		bool RuntimeDescriptorArray : 1;
 		bool StorageBufferArrayNonUniformIndexing : 1;
+		bool StorageTexelBufferArrayNonUniformIndexing : 1;
+		bool StorageTexelBufferArrayDynamicIndexing : 1;
+		bool UniformTexelBufferArrayNonUniformIndexing : 1;
+		bool UniformTexelBufferArrayDynamicIndexing : 1;
+		bool UniformBufferArrayNonUniformIndex : 1;
+		bool PhysicalStorageBufferAddresses : 1;
 	};
 
 	const Capabilities &getUsedCapabilities() const
@@ -1023,7 +1031,7 @@ private:
 	static bool IsStorageInterleavedByLane(spv::StorageClass storageClass);
 	static bool IsExplicitLayout(spv::StorageClass storageClass);
 
-	static sw::SIMD::Pointer InterleaveByLane(sw::SIMD::Pointer p);
+	static SIMD::Pointer GetElementPointer(SIMD::Pointer structure, uint32_t offset, bool interleavedByLane);
 
 	// Output storage buffers and images should not be affected by helper invocations
 	static bool StoresInHelperInvocation(spv::StorageClass storageClass);
@@ -1048,10 +1056,10 @@ private:
 	// VisitMemoryObject() walks a type tree in an explicitly laid out
 	// storage class, calling the MemoryVisitor for each scalar element
 	// within the
-	void VisitMemoryObject(Object::ID id, const MemoryVisitor &v) const;
+	void VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	// VisitMemoryObjectInner() is internally called by VisitMemoryObject()
-	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, const MemoryVisitor &v) const;
+	void VisitMemoryObjectInner(Type::ID id, Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &v) const;
 
 	Object &CreateConstant(InsnIterator it);
 
@@ -1218,6 +1226,18 @@ private:
 			return SIMD::UInt(constant[i]);
 		}
 
+		const SIMD::Pointer &Pointer(uint32_t i) const
+		{
+			ASSERT(intermediate == nullptr);
+
+			return pointer[i];
+		}
+
+		bool isPointer() const
+		{
+			return (pointer != nullptr);
+		}
+
 	private:
 		RR_PRINT_ONLY(friend struct rr::PrintValue::Ty<Operand>;)
 
@@ -1226,6 +1246,7 @@ private:
 
 		const uint32_t *constant;
 		const Intermediate *intermediate;
+		const SIMD::Pointer *pointer;
 
 	public:
 		const uint32_t componentCount;
@@ -1291,7 +1312,7 @@ private:
 	OutOfBoundsBehavior getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const;
 
 	SIMD::Pointer WalkExplicitLayoutAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
-	SIMD::Pointer WalkAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, const EmitState *state) const;
+	SIMD::Pointer WalkAccessChain(Object::ID id, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const;
 
 	// Returns the *component* offset in the literal for the given access chain.
 	uint32_t WalkLiteralAccessChain(Type::ID id, const Span &indexes) const;
@@ -1368,6 +1389,7 @@ private:
 	EmitResult EmitMemoryBarrier(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitGroupNonUniform(InsnIterator insn, EmitState *state) const;
 	EmitResult EmitArrayLength(InsnIterator insn, EmitState *state) const;
+	EmitResult EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const;
 
 	// Emits code to sample an image, regardless of whether any SIMD lanes are active.
 	void EmitImageSampleUnconditional(Array<SIMD::Float> &out, const ImageInstruction &instruction, EmitState *state) const;
@@ -1376,6 +1398,15 @@ private:
 	void callSamplerFunction(Pointer<Byte> samplerFunction, Array<SIMD::Float> &out, Pointer<Byte> imageDescriptor, const ImageInstruction &instruction, EmitState *state) const;
 
 	void GetImageDimensions(EmitState const *state, Type const &resultTy, Object::ID imageId, Object::ID lodId, Intermediate &dst) const;
+	struct TexelAddressData
+	{
+		bool isArrayed;
+		spv::Dim dim;
+		int dims, texelSize;
+		SIMD::Int u, v, w, ptrOffset;
+	};
+	static TexelAddressData setupTexelAddressData(SIMD::Int rowPitch, SIMD::Int slicePitch, SIMD::Int samplePitch, ImageInstructionSignature instruction, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, const EmitState *state);
+	static SIMD::Pointer GetNonUniformTexelAddress(ImageInstructionSignature instruction, SIMD::Pointer descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static SIMD::Pointer GetTexelAddress(ImageInstructionSignature instruction, Pointer<Byte> descriptor, SIMD::Int coordinate[], SIMD::Int sample, vk::Format imageFormat, OutOfBoundsBehavior outOfBoundsBehavior, const EmitState *state);
 	static void WriteImage(ImageInstructionSignature instruction, Pointer<Byte> descriptor, const Pointer<SIMD::Int> &coord, const Pointer<SIMD::Int> &texelAndMask, vk::Format imageFormat);
 	uint32_t GetConstScalarInt(Object::ID id) const;
@@ -1392,8 +1423,8 @@ private:
 		AtSample,
 		AtOffset,
 	};
-	SIMD::Float Interpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
-	                        uint32_t component, EmitState *state, InterpolationType type) const;
+	SIMD::Float EmitInterpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
+	                            uint32_t component, EmitState *state, InterpolationType type) const;
 
 	// Helper for implementing OpStore, which doesn't take an InsnIterator so it
 	// can also store independent operands.
@@ -1567,22 +1598,22 @@ public:
 	// are only used when debugging. See b/146486064 for more information.
 	// Give careful consideration to the runtime performance loss before adding
 	// more state here.
-	std::array<SIMD::Int, 2> windowSpacePosition;
-	Int layer;  // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
+	std::array<SIMD::Int, 2> windowSpacePosition;  // TODO(b/236162233): SIMD::Int2
+	Int layer;                                     // slice offset into input attachments for multiview, even if the shader doesn't use ViewIndex
 	Int instanceID;
 	SIMD::Int vertexIndex;
-	std::array<SIMD::Float, 4> fragCoord;
-	std::array<SIMD::Float, 4> pointCoord;
+	std::array<SIMD::Float, 4> fragCoord;   // TODO(b/236162233): SIMD::Float4
+	std::array<SIMD::Float, 2> pointCoord;  // TODO(b/236162233): SIMD::Float2
 	SIMD::Int helperInvocation;
-	SIMD::Int numWorkgroups;
-	SIMD::Int workgroupID;
-	SIMD::Int workgroupSize;
+	Int4 numWorkgroups;
+	Int4 workgroupID;
+	Int4 workgroupSize;
 	Int subgroupsPerWorkgroup;
 	Int invocationsPerSubgroup;
 	Int subgroupIndex;
 	SIMD::Int localInvocationIndex;
-	std::array<SIMD::Int, 3> localInvocationID;
-	std::array<SIMD::Int, 3> globalInvocationID;
+	std::array<SIMD::Int, 3> localInvocationID;   // TODO(b/236162233): SIMD::Int3
+	std::array<SIMD::Int, 3> globalInvocationID;  // TODO(b/236162233): SIMD::Int3
 
 	Pointer<Byte> dbgState;  // Pointer to a debugger state.
 

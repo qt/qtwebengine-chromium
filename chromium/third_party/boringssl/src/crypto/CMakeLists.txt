@@ -229,7 +229,7 @@ add_library(
   asn1/tasn_new.c
   asn1/tasn_typ.c
   asn1/tasn_utl.c
-  asn1/time_support.c
+  asn1/posix_time.c
   base64/base64.c
   bio/bio.c
   bio/bio_mem.c
@@ -400,7 +400,6 @@ add_library(
   x509/x_x509a.c
   x509v3/pcy_cache.c
   x509v3/pcy_data.c
-  x509v3/pcy_lib.c
   x509v3/pcy_map.c
   x509v3/pcy_node.c
   x509v3/pcy_tree.c

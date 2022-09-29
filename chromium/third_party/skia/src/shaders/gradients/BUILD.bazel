@@ -11,15 +11,13 @@ GRADIENT_FILES = [
     "Sk4fLinearGradient.cpp",
     "Sk4fLinearGradient.h",
     "SkGradientShader.cpp",
-    "SkGradientShaderPriv.h",
+    "SkGradientShaderBase.cpp",
+    "SkGradientShaderBase.h",
     "SkLinearGradient.cpp",
     "SkLinearGradient.h",
     "SkRadialGradient.cpp",
-    "SkRadialGradient.h",
     "SkSweepGradient.cpp",
-    "SkSweepGradient.h",
     "SkTwoPointConicalGradient.cpp",
-    "SkTwoPointConicalGradient.h",
 ]
 
 split_srcs_and_hdrs(

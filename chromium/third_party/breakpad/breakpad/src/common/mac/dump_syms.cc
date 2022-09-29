@@ -121,6 +121,7 @@ vector<string> list_directory(const string& directory) {
 namespace google_breakpad {
 
 bool DumpSymbols::Read(const string& filename) {
+  selected_object_file_ = nullptr;
   struct stat st;
   if (stat(filename.c_str(), &st) == -1) {
     fprintf(stderr, "Could not access object file %s: %s\n",

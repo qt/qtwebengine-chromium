@@ -101,19 +101,10 @@ void SkCanvasPriv::GetDstClipAndMatrixCounts(const SkCanvas::ImageSetEntry set[]
     *totalMatrixCount = maxMatrixIndex + 1;
 }
 
-#ifdef SK_ENABLE_SKSL
-void SkCanvasPriv::DrawMesh(SkCanvas* canvas,
-                            const SkMesh& mesh,
-                            sk_sp<SkBlender> blender,
-                            const SkPaint& paint) {
-    canvas->drawMesh(mesh, std::move(blender), paint);
-}
-#endif
-
 #if GR_TEST_UTILS
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/BaseDevice.h"
+#include "src/gpu/ganesh/Device_v1.h"
 
 #if SK_GPU_V1
 skgpu::v1::SurfaceDrawContext* SkCanvasPriv::TopDeviceSurfaceDrawContext(SkCanvas* canvas) {
@@ -123,9 +114,8 @@ skgpu::v1::SurfaceDrawContext* SkCanvasPriv::TopDeviceSurfaceDrawContext(SkCanva
 
     return nullptr;
 }
-#endif // SK_GPU_V1
 
-skgpu::SurfaceFillContext* SkCanvasPriv::TopDeviceSurfaceFillContext(SkCanvas* canvas) {
+skgpu::v1::SurfaceFillContext* SkCanvasPriv::TopDeviceSurfaceFillContext(SkCanvas* canvas) {
     if (auto gpuDevice = canvas->topDevice()->asGaneshDevice()) {
         return gpuDevice->surfaceFillContext();
     }
@@ -133,24 +123,26 @@ skgpu::SurfaceFillContext* SkCanvasPriv::TopDeviceSurfaceFillContext(SkCanvas* c
     return nullptr;
 }
 
+#endif // SK_GPU_V1
+
 #else // SK_SUPPORT_GPU
 
 #if SK_GPU_V1
 skgpu::v1::SurfaceDrawContext* SkCanvasPriv::TopDeviceSurfaceDrawContext(SkCanvas* canvas) {
     return nullptr;
 }
-#endif // SK_GPU_V1
 
-skgpu::SurfaceFillContext* SkCanvasPriv::TopDeviceSurfaceFillContext(SkCanvas* canvas) {
+skgpu::v1::SurfaceFillContext* SkCanvasPriv::TopDeviceSurfaceFillContext(SkCanvas* canvas) {
     return nullptr;
 }
+#endif // SK_GPU_V1
 
 #endif // SK_SUPPORT_GPU
 
 #endif // GR_TEST_UTILS
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/BaseDevice.h"
+#include "src/gpu/ganesh/Device_v1.h"
 
 GrRenderTargetProxy* SkCanvasPriv::TopDeviceTargetProxy(SkCanvas* canvas) {
     if (auto gpuDevice = canvas->topDevice()->asGaneshDevice()) {

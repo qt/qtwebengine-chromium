@@ -19,14 +19,14 @@
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawPass.h"
-#include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RenderPassTask.h"
 #include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/UploadTask.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
-#include "src/gpu/graphite/geom/Shape.h"
+#include "src/gpu/graphite/geom/Geometry.h"
 
 namespace skgpu::graphite {
 
@@ -74,13 +74,13 @@ void DrawContext::clear(const SkColor4f& clearColor) {
 
 void DrawContext::recordDraw(const Renderer& renderer,
                              const Transform& localToDevice,
-                             const Shape& shape,
+                             const Geometry& geometry,
                              const Clip& clip,
                              DrawOrder ordering,
                              const PaintParams* paint,
                              const StrokeStyle* stroke) {
     SkASSERT(SkIRect::MakeSize(fTarget->dimensions()).contains(clip.scissor()));
-    fPendingDraws->recordDraw(renderer, localToDevice, shape, clip, ordering, paint, stroke);
+    fPendingDraws->recordDraw(renderer, localToDevice, geometry, clip, ordering, paint, stroke);
 }
 
 bool DrawContext::recordUpload(Recorder* recorder,
@@ -97,23 +97,24 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          dstRect);
 }
 
-void DrawContext::snapDrawPass(Recorder* recorder, const BoundsManager* occlusionCuller) {
+void DrawContext::snapDrawPass(Recorder* recorder) {
     if (fPendingDraws->drawCount() == 0) {
         return;
     }
 
-    auto pass = DrawPass::Make(recorder, std::move(fPendingDraws), fTarget,
-                               std::make_pair(fPendingLoadOp, fPendingStoreOp), fPendingClearColor,
-                               occlusionCuller);
+    auto pass = DrawPass::Make(recorder,
+                               std::move(fPendingDraws),
+                               fTarget,
+                               std::make_pair(fPendingLoadOp, fPendingStoreOp),
+                               fPendingClearColor);
     fDrawPasses.push_back(std::move(pass));
     fPendingDraws = std::make_unique<DrawList>();
     fPendingLoadOp = LoadOp::kLoad;
     fPendingStoreOp = StoreOp::kStore;
 }
 
-sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder,
-                                            const BoundsManager* occlusionCuller) {
-    this->snapDrawPass(recorder, occlusionCuller);
+sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
+    this->snapDrawPass(recorder);
     if (fDrawPasses.empty()) {
         return nullptr;
     }

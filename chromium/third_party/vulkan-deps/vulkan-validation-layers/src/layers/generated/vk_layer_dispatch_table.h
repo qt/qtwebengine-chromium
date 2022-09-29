@@ -867,6 +867,11 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkSetPrivateDataEXT SetPrivateDataEXT;
     PFN_vkGetPrivateDataEXT GetPrivateDataEXT;
 
+    // ---- VK_EXT_metal_objects extension commands
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    PFN_vkExportMetalObjectsEXT ExportMetalObjectsEXT;
+#endif // VK_USE_PLATFORM_METAL_EXT
+
     // ---- VK_NV_fragment_shading_rate_enums extension commands
     PFN_vkCmdSetFragmentShadingRateEnumNV CmdSetFragmentShadingRateEnumNV;
 
@@ -942,6 +947,14 @@ typedef struct VkLayerDispatchTable_ {
     // ---- VK_VALVE_descriptor_set_host_mapping extension commands
     PFN_vkGetDescriptorSetLayoutHostMappingInfoVALVE GetDescriptorSetLayoutHostMappingInfoVALVE;
     PFN_vkGetDescriptorSetHostMappingVALVE GetDescriptorSetHostMappingVALVE;
+
+    // ---- VK_EXT_shader_module_identifier extension commands
+    PFN_vkGetShaderModuleIdentifierEXT GetShaderModuleIdentifierEXT;
+    PFN_vkGetShaderModuleCreateInfoIdentifierEXT GetShaderModuleCreateInfoIdentifierEXT;
+
+    // ---- VK_QCOM_tile_properties extension commands
+    PFN_vkGetFramebufferTilePropertiesQCOM GetFramebufferTilePropertiesQCOM;
+    PFN_vkGetDynamicRenderingTilePropertiesQCOM GetDynamicRenderingTilePropertiesQCOM;
 
     // ---- VK_KHR_acceleration_structure extension commands
     PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;

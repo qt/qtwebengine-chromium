@@ -606,13 +606,45 @@ pldexp(const Packet &a, const Packet &exponent) {
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pabsdiff(const Packet& a, const Packet& b) { return pselect(pcmp_lt(a, b), psub(b, a), psub(a, b)); }
 
-/** \internal \returns a packet version of \a *from, from must be 16 bytes aligned */
+/** \internal \returns a packet version of \a *from, from must be properly aligned */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 pload(const typename unpacket_traits<Packet>::type* from) { return *from; }
+
+/** \internal \returns n elements of a packet version of \a *from, from must be properly aligned
+  * offset indicates the starting element in which to load and
+  * offset + n <= unpacket_traits::size
+  * All elements before offset and after the last element loaded will initialized with zero */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+pload_partial(const typename unpacket_traits<Packet>::type* from, const Index n, const Index offset = 0)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  eigen_assert(n + offset <= packet_size && "number of elements plus offset will read past end of packet");
+  typedef typename unpacket_traits<Packet>::type Scalar;
+  EIGEN_ALIGN_MAX Scalar elements[packet_size] = { Scalar(0) };
+  for (Index i = offset; i < numext::mini(n+offset,packet_size); i++) {
+    elements[i] = from[i-offset];
+  }
+  return pload<Packet>(elements);
+}
 
 /** \internal \returns a packet version of \a *from, (un-aligned load) */
 template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
 ploadu(const typename unpacket_traits<Packet>::type* from) { return *from; }
+
+/** \internal \returns n elements of a packet version of \a *from, (un-aligned load)
+  * All elements after the last element loaded will initialized with zero */
+template<typename Packet> EIGEN_DEVICE_FUNC inline Packet
+ploadu_partial(const typename unpacket_traits<Packet>::type* from, const Index n)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  eigen_assert(n <= packet_size && "number of elements will read past end of packet");
+  typedef typename unpacket_traits<Packet>::type Scalar;
+  EIGEN_ALIGN_MAX Scalar elements[packet_size] = { Scalar(0) };
+  for (Index i = 0; i < numext::mini(n,packet_size); i++) {
+    elements[i] = from[i];
+  }
+  return pload<Packet>(elements);
+}
 
 /** \internal \returns a packet version of \a *from, (un-aligned masked load)
  * There is no generic implementation. We only have implementations for specialized
@@ -704,13 +736,39 @@ peven_mask(const Packet& /*a*/) {
 }
 
 
-/** \internal copy the packet \a from to \a *to, \a to must be 16 bytes aligned */
+/** \internal copy the packet \a from to \a *to, \a to must be properly aligned */
 template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstore(Scalar* to, const Packet& from)
 { (*to) = from; }
+
+/** \internal copy n elements of the packet \a from to \a *to, \a to must be properly aligned
+ * offset indicates the starting element in which to store and
+ * offset + n <= unpacket_traits::size */
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstore_partial(Scalar* to, const Packet& from, const Index n, const Index offset = 0)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  eigen_assert(n + offset <= packet_size && "number of elements plus offset will write past end of packet");
+  EIGEN_ALIGN_MAX Scalar elements[packet_size];
+  pstore<Scalar>(elements, from);
+  for (Index i = 0; i < numext::mini(n,packet_size-offset); i++) {
+    to[i] = elements[i + offset];
+  }
+}
 
 /** \internal copy the packet \a from to \a *to, (un-aligned store) */
 template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstoreu(Scalar* to, const Packet& from)
 {  (*to) = from; }
+
+/** \internal copy n elements of the packet \a from to \a *to, (un-aligned store) */
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pstoreu_partial(Scalar* to, const Packet& from, const Index n)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  eigen_assert(n <= packet_size && "number of elements will write past end of packet");
+  EIGEN_ALIGN_MAX Scalar elements[packet_size];
+  pstore<Scalar>(elements, from);
+  for (Index i = 0; i < numext::mini(n,packet_size); i++) {
+    to[i] = elements[i];
+  }
+}
 
 /** \internal copy the packet \a from to \a *to, (un-aligned store with a mask)
  * There is no generic implementation. We only have implementations for specialized
@@ -721,11 +779,31 @@ EIGEN_DEVICE_FUNC inline
 std::enable_if_t<unpacket_traits<Packet>::masked_store_available, void>
 pstoreu(Scalar* to, const Packet& from, typename unpacket_traits<Packet>::mask_t umask);
 
- template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline Packet pgather(const Scalar* from, Index /*stride*/)
- { return ploadu<Packet>(from); }
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline Packet pgather(const Scalar* from, Index /*stride*/)
+{ return ploadu<Packet>(from); }
 
- template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pscatter(Scalar* to, const Packet& from, Index /*stride*/)
- { pstore(to, from); }
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline Packet pgather_partial(const Scalar* from, Index stride, const Index n)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  EIGEN_ALIGN_MAX Scalar elements[packet_size] = { Scalar(0) };
+  for (Index i = 0; i < numext::mini(n,packet_size); i++) {
+    elements[i] = from[i*stride];
+  }
+  return pload<Packet>(elements);
+}
+
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pscatter(Scalar* to, const Packet& from, Index /*stride*/)
+{ pstore(to, from); }
+
+template<typename Scalar, typename Packet> EIGEN_DEVICE_FUNC inline void pscatter_partial(Scalar* to, const Packet& from, Index stride, const Index n)
+{
+  const Index packet_size = unpacket_traits<Packet>::size;
+  EIGEN_ALIGN_MAX Scalar elements[packet_size];
+  pstore<Scalar>(elements, from);
+  for (Index i = 0; i < numext::mini(n,packet_size); i++) {
+    to[i*stride] = elements[i];
+  }
+}
 
 /** \internal tries to do cache prefetching of \a addr */
 template<typename Scalar> EIGEN_DEVICE_FUNC inline void prefetch(const Scalar* addr)
@@ -996,6 +1074,17 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt(const typename unpacket_trai
     return ploadu<Packet>(from);
 }
 
+/** \internal \returns n elements of a packet version of \a *from.
+  * The pointer \a from must be aligned on a \a Alignment bytes boundary. */
+template<typename Packet, int Alignment>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE Packet ploadt_partial(const typename unpacket_traits<Packet>::type* from, const Index n, const Index offset = 0)
+{
+  if(Alignment >= unpacket_traits<Packet>::alignment)
+    return pload_partial<Packet>(from, n, offset);
+  else
+    return ploadu_partial<Packet>(from, n);
+}
+
 /** \internal copy the packet \a from to \a *to.
   * The pointer \a from must be aligned on a \a Alignment bytes boundary. */
 template<typename Scalar, typename Packet, int Alignment>
@@ -1005,6 +1094,17 @@ EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pstoret(Scalar* to, const Packet& fro
     pstore(to, from);
   else
     pstoreu(to, from);
+}
+
+/** \internal copy n elements of the packet \a from to \a *to.
+  * The pointer \a from must be aligned on a \a Alignment bytes boundary. */
+template<typename Scalar, typename Packet, int Alignment>
+EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void pstoret_partial(Scalar* to, const Packet& from, const Index n, const Index offset = 0)
+{
+  if(Alignment >= unpacket_traits<Packet>::alignment)
+    pstore_partial(to, from, n, offset);
+  else
+    pstoreu_partial(to, from, n);
 }
 
 /** \internal \returns a packet version of \a *from.

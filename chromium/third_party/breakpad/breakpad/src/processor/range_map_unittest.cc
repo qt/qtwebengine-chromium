@@ -43,11 +43,10 @@
 
 namespace {
 
-
+using google_breakpad::AddIgnoringOverflow;
 using google_breakpad::linked_ptr;
-using google_breakpad::scoped_ptr;
 using google_breakpad::RangeMap;
-
+using google_breakpad::scoped_ptr;
 
 // A CountedObject holds an int.  A global (not thread safe!) count of
 // allocated CountedObjects is maintained to help test memory management.
@@ -148,10 +147,10 @@ static bool RetrieveTest(TestMap* range_map, const RangeTest* range_test) {
     }
 
     for (AddressType offset = low_offset; offset <= high_offset; ++offset) {
-      AddressType address =
-          offset +
-          (!side ? range_test->address :
-                   range_test->address + range_test->size - 1);
+      AddressType address = AddIgnoringOverflow(
+          offset, (!side ? range_test->address
+                         : AddIgnoringOverflow(range_test->address,
+                                               range_test->size - 1)));
 
       bool expected_result = false;  // This is correct for tests not stored.
       if (range_test->expect_storable) {

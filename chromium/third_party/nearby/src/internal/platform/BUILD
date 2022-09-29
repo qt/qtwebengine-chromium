@@ -53,8 +53,8 @@ cc_library(
         "//internal/platform/implementation:__subpackages__",
         "//internal/proto/analytics:__subpackages__",
         "//location/nearby/cpp/sharing:__subpackages__",
+        "//presence:__subpackages__",
         "//third_party/nearby/cpp/cal:__subpackages__",
-        "//third_party/nearby/presence:__subpackages__",
     ],
     deps = [
         "//proto:connections_enums_cc_proto",
@@ -105,8 +105,11 @@ cc_library(
         "//connections:__subpackages__",
         "//googlemac/iPhone/Shared/Nearby/Connections:__subpackages__",
         "//internal/analytics:__subpackages__",
+        "//internal/crypto:__subpackages__",
         "//internal/platform:__subpackages__",
         "//internal/proto/analytics:__subpackages__",
+        "//location/nearby/analytics/cpp:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         "//internal/platform/implementation:platform",
@@ -173,6 +176,7 @@ cc_library(
         "//connections/implementation:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         "//internal/platform/implementation:types",
@@ -316,7 +320,6 @@ cc_library(
         ":base",
         ":logging",
         ":util",
-        "//connections/clients/windows:types",
         "//internal/platform/implementation:platform",
         "//internal/platform/implementation:types",
         "@com_google_absl//absl/base:core_headers",
@@ -341,6 +344,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "credential_storage.h",
         "wifi.h",
         "wifi_hotspot.h",
         "wifi_lan.h",
@@ -354,6 +358,7 @@ cc_library(
         "//internal/analytics:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         ":logging",

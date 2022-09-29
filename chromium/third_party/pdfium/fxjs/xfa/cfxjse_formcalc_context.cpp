@@ -8,6 +8,7 @@
 
 #include <ctype.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <algorithm>
@@ -17,11 +18,11 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_datetime.h"
-#include "core/fxcrt/cfx_widetextbuf.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_random.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/widetext_buffer.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_class.h"
 #include "fxjs/xfa/cfxjse_context.h"
@@ -865,7 +866,7 @@ bool HTMLCode2STR(uint32_t iCode, WideString* wsHTMLReserve) {
 WideString DecodeURL(const WideString& wsURL) {
   const wchar_t* pData = wsURL.c_str();
   size_t iLen = wsURL.GetLength();
-  CFX_WideTextBuf wsResultBuf;
+  WideTextBuffer wsResultBuf;
   for (size_t i = 0; i < iLen; ++i) {
     wchar_t ch = pData[i];
     if ('%' != ch) {
@@ -893,7 +894,7 @@ WideString DecodeURL(const WideString& wsURL) {
 WideString DecodeMLInternal(const WideString& wsHTML, bool bIsHTML) {
   const wchar_t* pData = wsHTML.c_str();
   size_t iLen = wsHTML.GetLength();
-  CFX_WideTextBuf wsResultBuf;
+  WideTextBuffer wsResultBuf;
   for (size_t i = 0; i < iLen; ++i) {
     wchar_t ch = pData[i];
     if (ch != '&') {
@@ -973,7 +974,7 @@ WideString EncodeURL(const ByteString& bsURL) {
                                         '\'', '(', ')', ','};
 
   WideString wsURL = WideString::FromUTF8(bsURL.AsStringView());
-  CFX_WideTextBuf wsResultBuf;
+  WideTextBuffer wsResultBuf;
   wchar_t szEncode[4];
   szEncode[0] = '%';
   szEncode[3] = 0;
@@ -1068,7 +1069,7 @@ WideString EncodeHTML(const ByteString& bsHTML) {
   szEncode[0] = '&';
   szEncode[1] = '#';
   szEncode[2] = 'x';
-  CFX_WideTextBuf wsResultBuf;
+  WideTextBuffer wsResultBuf;
   for (uint32_t ch : wsHTML) {
     WideString htmlReserve;
     if (HTMLCode2STR(ch, &htmlReserve)) {
@@ -1103,7 +1104,7 @@ WideString EncodeHTML(const ByteString& bsHTML) {
 
 WideString EncodeXML(const ByteString& bsXML) {
   WideString wsXML = WideString::FromUTF8(bsXML.AsStringView());
-  CFX_WideTextBuf wsResultBuf;
+  WideTextBuffer wsResultBuf;
   wchar_t szEncode[9];
   szEncode[0] = '&';
   szEncode[1] = '#';
@@ -3293,7 +3294,7 @@ void CFXJSE_FormCalcContext::Eval(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsUtf8Script.AsStringView());
-  absl::optional<CFX_WideTextBuf> wsJavaScriptBuf =
+  absl::optional<WideTextBuffer> wsJavaScriptBuf =
       CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
@@ -3897,7 +3898,7 @@ void CFXJSE_FormCalcContext::Lower(
     return;
   }
 
-  CFX_WideTextBuf szLowBuf;
+  WideTextBuffer szLowBuf;
   ByteString bsArg = ValueToUTF8String(info.GetIsolate(), argOne);
   WideString wsArg = WideString::FromUTF8(bsArg.AsStringView());
   for (wchar_t ch : wsArg) {
@@ -4172,7 +4173,7 @@ void CFXJSE_FormCalcContext::Space(
     ToFormCalcContext(pThis)->ThrowException("String too long.");
     return;
   }
-  std::vector<char, FxAllocAllocator<char>> space_string(count, ' ');
+  DataVector<char> space_string(count, ' ');
   info.GetReturnValue().Set(
       fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(space_string)));
 }
@@ -4194,7 +4195,8 @@ void CFXJSE_FormCalcContext::Str(
   }
   float fNumber = ValueToFloat(info.GetIsolate(), numberValue);
 
-  int32_t iWidth = 10;
+  constexpr int32_t kDefaultWidth = 10;
+  int32_t iWidth = kDefaultWidth;
   if (argc > 1) {
     v8::Local<v8::Value> widthValue = GetSimpleValue(info, 1);
     iWidth = static_cast<int32_t>(ValueToFloat(info.GetIsolate(), widthValue));
@@ -4204,11 +4206,14 @@ void CFXJSE_FormCalcContext::Str(
     }
   }
 
-  int32_t iPrecision = 0;
+  constexpr int32_t kDefaultPrecision = 0;
+  int32_t iPrecision = kDefaultPrecision;
   if (argc > 2) {
-    v8::Local<v8::Value> precisionValue = GetSimpleValue(info, 2);
+    constexpr int32_t kMaxPrecision = 15;
+    v8::Local<v8::Value> precision_value = GetSimpleValue(info, 2);
     iPrecision = std::max(0, static_cast<int32_t>(ValueToFloat(
-                                 info.GetIsolate(), precisionValue)));
+                                 info.GetIsolate(), precision_value)));
+    iPrecision = std::min(iPrecision, kMaxPrecision);
   }
 
   ByteString bsFormat = "%";
@@ -4230,7 +4235,7 @@ void CFXJSE_FormCalcContext::Str(
   }
 
   if (u > iWidth || (iPrecision + u) >= iWidth) {
-    std::vector<char, FxAllocAllocator<char>> stars(std::max(iWidth, 0), '*');
+    DataVector<char> stars(std::max(iWidth, 0), '*');
     info.GetReturnValue().Set(
         fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(stars)));
     return;
@@ -4505,8 +4510,8 @@ void CFXJSE_FormCalcContext::Get(
   if (!pFile)
     return;
 
-  int32_t size = pFile->GetSize();
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> dataBuf(size);
+  FX_FILESIZE size = pFile->GetSize();
+  DataVector<uint8_t> dataBuf(size);
   pFile->ReadBlock(dataBuf.data(), size);
   info.GetReturnValue().Set(
       fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(dataBuf)));
@@ -5089,7 +5094,7 @@ void CFXJSE_FormCalcContext::eval_translation(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsArg.AsStringView());
-  absl::optional<CFX_WideTextBuf> wsJavaScriptBuf =
+  absl::optional<WideTextBuffer> wsJavaScriptBuf =
       CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
@@ -5278,11 +5283,11 @@ ByteString CFXJSE_FormCalcContext::GenerateSomExpression(ByteStringView bsName,
   return bsSomExp;
 }
 
-absl::optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
+absl::optional<WideTextBuffer> CFXJSE_FormCalcContext::Translate(
     cppgc::Heap* pHeap,
     WideStringView wsFormcalc) {
   if (wsFormcalc.IsEmpty())
-    return CFX_WideTextBuf();
+    return WideTextBuffer();
 
   CXFA_FMLexer lexer(wsFormcalc);
   CXFA_FMParser parser(pHeap, &lexer);
@@ -5291,7 +5296,7 @@ absl::optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
     return absl::nullopt;
 
   CXFA_FMToJavaScriptDepth::Reset();
-  absl::optional<CFX_WideTextBuf> wsJavaScript = ast->ToJavaScript();
+  absl::optional<WideTextBuffer> wsJavaScript = ast->ToJavaScript();
   if (!wsJavaScript.has_value())
     return absl::nullopt;
 

@@ -18,8 +18,8 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
+#include "absl/strings/string_view.h"
 #include "p2p/base/port_allocator.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/crc32.h"
@@ -69,7 +69,7 @@ inline bool TooLongWithoutResponse(
 
 // Helper methods for converting string values of log description fields to
 // enum.
-webrtc::IceCandidateType GetCandidateTypeByString(const std::string& type) {
+webrtc::IceCandidateType GetCandidateTypeByString(absl::string_view type) {
   if (type == LOCAL_PORT_TYPE) {
     return webrtc::IceCandidateType::kLocal;
   } else if (type == STUN_PORT_TYPE) {
@@ -83,7 +83,7 @@ webrtc::IceCandidateType GetCandidateTypeByString(const std::string& type) {
 }
 
 webrtc::IceCandidatePairProtocol GetProtocolByString(
-    const std::string& protocol) {
+    absl::string_view protocol) {
   if (protocol == UDP_PROTOCOL_NAME) {
     return webrtc::IceCandidatePairProtocol::kUdp;
   } else if (protocol == TCP_PROTOCOL_NAME) {
@@ -243,6 +243,7 @@ Connection::Connection(rtc::WeakPtr<Port> port,
 
 Connection::~Connection() {
   RTC_DCHECK_RUN_ON(network_thread_);
+  RTC_DCHECK(!port_);
 }
 
 webrtc::TaskQueueBase* Connection::network_thread() const {
@@ -752,8 +753,15 @@ void Connection::Prune() {
 
 void Connection::Destroy() {
   RTC_DCHECK_RUN_ON(network_thread_);
+  RTC_DCHECK(port_) << "Calling Destroy() twice?";
+  if (port_)
+    port_->DestroyConnection(this);
+}
+
+bool Connection::Shutdown() {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (!port_)
-    return;
+    return false;  // already shut down.
 
   RTC_DLOG(LS_VERBOSE) << ToString() << ": Connection destroyed";
 
@@ -761,8 +769,9 @@ void Connection::Destroy() {
   // intentionally to avoid a situation whereby the signal might have dangling
   // pointers to objects that have been deleted by the time the async task
   // that deletes the connection object runs.
-  SignalDestroyed(this);
+  auto destroyed_signals = SignalDestroyed;
   SignalDestroyed.disconnect_all();
+  destroyed_signals(this);
 
   LogCandidatePairConfig(webrtc::IceCandidatePairConfigType::kDestroyed);
 
@@ -770,20 +779,7 @@ void Connection::Destroy() {
   // information required for logging needs access to `port_`.
   port_.reset();
 
-  // Unwind the stack before deleting the object in case upstream callers
-  // need to refer to the Connection's state as part of teardown.
-  // NOTE: We move ownership of 'this' into the capture section of the lambda
-  // so that the object will always be deleted, including if PostTask fails.
-  // In such a case (only tests), deletion would happen inside of the call
-  // to `Destroy()`.
-  network_thread_->PostTask(
-      webrtc::ToQueuedTask([me = absl::WrapUnique(this)]() {}));
-}
-
-void Connection::FailAndDestroy() {
-  RTC_DCHECK_RUN_ON(network_thread_);
-  set_state(IceCandidatePairState::FAILED);
-  Destroy();
+  return true;
 }
 
 void Connection::FailAndPrune() {
@@ -793,9 +789,9 @@ void Connection::FailAndPrune() {
   // and Connection. In some cases (Port dtor), a Connection object is deleted
   // without using the `Destroy` method (port_ won't be nulled and some
   // functionality won't run as expected), while in other cases
-  // (AddOrReplaceConnection), the Connection object is deleted asynchronously
-  // via the `Destroy` method and in that case `port_` will be nulled.
-  // However, in that case, there's a chance that the Port object gets
+  // the Connection object is deleted asynchronously and in that case `port_`
+  // will be nulled.
+  // In such a case, there's a chance that the Port object gets
   // deleted before the Connection object ends up being deleted.
   if (!port_)
     return;
@@ -833,6 +829,9 @@ void Connection::set_selected(bool selected) {
 
 void Connection::UpdateState(int64_t now) {
   RTC_DCHECK_RUN_ON(network_thread_);
+  if (!port_)
+    return;
+
   int rtt = ConservativeRTTEstimate(rtt_);
 
   if (RTC_LOG_CHECK_LEVEL(LS_VERBOSE)) {
@@ -885,7 +884,7 @@ void Connection::UpdateState(int64_t now) {
   // Update the receiving state.
   UpdateReceiving(now);
   if (dead(now)) {
-    Destroy();
+    port_->DestroyConnectionAsync(this);
   }
 }
 
@@ -905,6 +904,9 @@ int64_t Connection::last_ping_sent() const {
 
 void Connection::Ping(int64_t now) {
   RTC_DCHECK_RUN_ON(network_thread_);
+  if (!port_)
+    return;
+
   last_ping_sent_ = now;
 
   // If not using renomination, we use "1" to mean "nominated" and "0" to mean
@@ -1287,18 +1289,18 @@ void Connection::set_ice_event_log(webrtc::IceEventLog* ice_event_log) {
   ice_event_log_ = ice_event_log;
 }
 
-// RTC_RUN_ON(network_thread_)
 void Connection::LogCandidatePairConfig(
     webrtc::IceCandidatePairConfigType type) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (ice_event_log_ == nullptr) {
     return;
   }
   ice_event_log_->LogCandidatePairConfig(type, id(), ToLogDescription());
 }
 
-// RTC_RUN_ON(network_thread_)
 void Connection::LogCandidatePairEvent(webrtc::IceCandidatePairEventType type,
                                        uint32_t transaction_id) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (ice_event_log_ == nullptr) {
     return;
   }
@@ -1364,6 +1366,9 @@ void Connection::OnConnectionRequestResponse(StunRequest* request,
 
 void Connection::OnConnectionRequestErrorResponse(ConnectionRequest* request,
                                                   StunMessage* response) {
+  if (!port_)
+    return;
+
   int error_code = response->GetErrorCodeValue();
   RTC_LOG(LS_WARNING) << ToString() << ": Received "
                       << StunMethodToString(response->type())
@@ -1377,7 +1382,7 @@ void Connection::OnConnectionRequestErrorResponse(ConnectionRequest* request,
       error_code == STUN_ERROR_UNAUTHORIZED) {
     // Recoverable error, retry
   } else if (error_code == STUN_ERROR_ROLE_CONFLICT) {
-    HandleRoleConflictFromPeer();
+    port_->SignalRoleConflict(port_.get());
   } else if (request->msg()->type() == GOOG_PING_REQUEST) {
     // Race, retry.
   } else {
@@ -1385,7 +1390,8 @@ void Connection::OnConnectionRequestErrorResponse(ConnectionRequest* request,
     RTC_LOG(LS_ERROR) << ToString()
                       << ": Received STUN error response, code=" << error_code
                       << "; killing connection";
-    FailAndDestroy();
+    set_state(IceCandidatePairState::FAILED);
+    port_->DestroyConnectionAsync(this);
   }
 }
 
@@ -1397,8 +1403,8 @@ void Connection::OnConnectionRequestTimeout(ConnectionRequest* request) {
                  << request->Elapsed() << " ms";
 }
 
-// RTC_RUN_ON(network_thread_).
 void Connection::OnConnectionRequestSent(ConnectionRequest* request) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   // Log at LS_INFO if we send a ping on an unwritable connection.
   rtc::LoggingSeverity sev = !writable() ? rtc::LS_INFO : rtc::LS_VERBOSE;
   RTC_LOG_V(sev) << ToString() << ": Sent "
@@ -1412,10 +1418,6 @@ void Connection::OnConnectionRequestSent(ConnectionRequest* request) {
   if (stats_.recv_ping_responses == 0) {
     stats_.sent_ping_requests_before_first_response++;
   }
-}
-
-void Connection::HandleRoleConflictFromPeer() {
-  port_->SignalRoleConflict(port());
 }
 
 IceCandidatePairState Connection::state() const {
@@ -1496,17 +1498,22 @@ ConnectionInfo Connection::stats() {
   stats_.rtt = rtt_;
   stats_.key = this;
   stats_.state = state_;
-  stats_.priority = priority();
+  if (port_) {
+    stats_.priority = priority();
+    stats_.local_candidate = local_candidate();
+  }
   stats_.nominated = nominated();
   stats_.total_round_trip_time_ms = total_round_trip_time_ms_;
   stats_.current_round_trip_time_ms = current_round_trip_time_ms_;
-  stats_.local_candidate = local_candidate();
   stats_.remote_candidate = remote_candidate();
   return stats_;
 }
 
 void Connection::MaybeUpdateLocalCandidate(StunRequest* request,
                                            StunMessage* response) {
+  if (!port_)
+    return;
+
   // RFC 5245
   // The agent checks the mapped address from the STUN response.  If the
   // transport address does not match any of the local candidates that the
@@ -1613,8 +1620,8 @@ void Connection::SetLocalCandidateNetworkCost(uint16_t cost) {
   SignalStateChange(this);
 }
 
-// RTC_RUN_ON(network_thread_).
 bool Connection::ShouldSendGoogPing(const StunMessage* message) {
+  RTC_DCHECK_RUN_ON(network_thread_);
   if (remote_support_goog_ping_ == true && cached_stun_binding_ &&
       cached_stun_binding_->EqualAttributes(message, [](int type) {
         // Ignore these attributes.
@@ -1648,6 +1655,9 @@ ProxyConnection::ProxyConnection(rtc::WeakPtr<Port> port,
 int ProxyConnection::Send(const void* data,
                           size_t size,
                           const rtc::PacketOptions& options) {
+  if (!port_)
+    return SOCKET_ERROR;
+
   stats_.sent_total_packets++;
   int sent =
       port_->SendTo(data, size, remote_candidate_.address(), options, true);

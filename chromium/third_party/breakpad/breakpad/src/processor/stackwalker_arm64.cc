@@ -170,6 +170,8 @@ StackFrameARM64* StackwalkerARM64::GetCallerByCFIFrameInfo(
   if ((frame->context_validity & essentials) != essentials)
     return NULL;
 
+  frame->context.iregs[MD_CONTEXT_ARM64_REG_PC] =
+      PtrauthStrip(frame->context.iregs[MD_CONTEXT_ARM64_REG_PC]);
   frame->trust = StackFrame::FRAME_TRUST_CFI;
   return frame.release();
 }

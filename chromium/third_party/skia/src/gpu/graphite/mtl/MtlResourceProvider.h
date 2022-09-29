@@ -17,11 +17,11 @@
 namespace skgpu::graphite {
 
 class CommandBuffer;
-class MtlGpu;
+class MtlSharedContext;
 
 class MtlResourceProvider final : public ResourceProvider {
 public:
-    MtlResourceProvider(const Gpu* gpu, sk_sp<GlobalCache>, SingleOwner*);
+    MtlResourceProvider(const SharedContext* sharedContext, sk_sp<GlobalCache>, SingleOwner*);
     ~MtlResourceProvider() override {}
 
     sk_sp<Texture> createWrappedTexture(const BackendTexture&) override;
@@ -31,17 +31,21 @@ public:
             const DepthStencilSettings&);
 
 private:
-    const MtlGpu* mtlGpu();
+    const MtlSharedContext* mtlSharedContext();
 
-    sk_sp<CommandBuffer> createCommandBuffer() override;
-    sk_sp<GraphicsPipeline> onCreateGraphicsPipeline(const GraphicsPipelineDesc&,
-                                                            const RenderPassDesc&) override;
+    sk_sp<GraphicsPipeline> createGraphicsPipeline(const GraphicsPipelineDesc&,
+                                                   const RenderPassDesc&) override;
+    sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
+
     sk_sp<Texture> createTexture(SkISize, const TextureInfo&, SkBudgeted) override;
     sk_sp<Buffer> createBuffer(size_t size, BufferType type, PrioritizeGpuReads) override;
 
     sk_sp<Sampler> createSampler(const SkSamplingOptions&,
-                                        SkTileMode xTileMode,
-                                        SkTileMode yTileMode) override;
+                                 SkTileMode xTileMode,
+                                 SkTileMode yTileMode) override;
+
+    BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
+    void onDeleteBackendTexture(BackendTexture&) override;
 
     SkTHashMap<DepthStencilSettings, sk_cfp<id<MTLDepthStencilState>>> fDepthStencilStates;
 };

@@ -326,10 +326,13 @@ DSP_SRCS-$(HAVE_SSE2)   += x86/quantize_sse2.h
 DSP_SRCS-$(HAVE_SSSE3)  += x86/quantize_ssse3.c
 DSP_SRCS-$(HAVE_SSSE3)  += x86/quantize_ssse3.h
 DSP_SRCS-$(HAVE_AVX)    += x86/quantize_avx.c
+DSP_SRCS-$(HAVE_AVX2)   += x86/quantize_avx2.c
 DSP_SRCS-$(HAVE_NEON)   += arm/quantize_neon.c
 DSP_SRCS-$(HAVE_VSX)    += ppc/quantize_vsx.c
+DSP_SRCS-$(HAVE_LSX)    += loongarch/quantize_lsx.c
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2)   += x86/highbd_quantize_intrin_sse2.c
+DSP_SRCS-$(HAVE_AVX2)   += x86/highbd_quantize_intrin_avx2.c
 endif
 
 # avg
@@ -373,6 +376,7 @@ DSP_SRCS-$(HAVE_MMI)    += mips/subtract_mmi.c
 
 DSP_SRCS-$(HAVE_AVX2)   += x86/sad4d_avx2.c
 DSP_SRCS-$(HAVE_AVX2)   += x86/sad_avx2.c
+DSP_SRCS-$(HAVE_AVX2)   += x86/subtract_avx2.c
 DSP_SRCS-$(HAVE_AVX512) += x86/sad4d_avx512.c
 
 DSP_SRCS-$(HAVE_SSE2)   += x86/sad4d_sse2.asm
@@ -381,6 +385,8 @@ DSP_SRCS-$(HAVE_SSE2)   += x86/subtract_sse2.asm
 
 DSP_SRCS-$(HAVE_VSX) += ppc/sad_vsx.c
 DSP_SRCS-$(HAVE_VSX) += ppc/subtract_vsx.c
+
+DSP_SRCS-$(HAVE_LSX)    += loongarch/subtract_lsx.c
 
 ifeq ($(CONFIG_VP9_HIGHBITDEPTH),yes)
 DSP_SRCS-$(HAVE_SSE2) += x86/highbd_sad4d_sse2.asm
@@ -400,6 +406,7 @@ DSP_SRCS-$(HAVE_NEON)   += arm/variance_neon.c
 DSP_SRCS-$(HAVE_MSA)    += mips/variance_msa.c
 DSP_SRCS-$(HAVE_MSA)    += mips/sub_pixel_variance_msa.c
 
+DSP_SRCS-$(HAVE_LSX)    += loongarch/variance_lsx.h
 DSP_SRCS-$(HAVE_LSX)    += loongarch/variance_lsx.c
 DSP_SRCS-$(HAVE_LSX)    += loongarch/sub_pixel_variance_lsx.c
 DSP_SRCS-$(HAVE_LSX)    += loongarch/avg_pred_lsx.c

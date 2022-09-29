@@ -7,8 +7,7 @@ import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import type {LighthouseController, Preset} from './LighthouseController.js';
-import {Events, Presets, RuntimeSettings} from './LighthouseController.js';
+import {Events, Presets, RuntimeSettings, type LighthouseController, type Preset} from './LighthouseController.js';
 import {RadioSetting} from './RadioSetting.js';
 
 const UIStrings = {
@@ -143,6 +142,7 @@ export class StartView extends UI.Widget.Widget {
       const checkbox = new UI.Toolbar.ToolbarSettingCheckbox(preset.setting, preset.description());
       const row = formElements.createChild('div', 'vbox lighthouse-launcher-row');
       row.appendChild(checkbox.element);
+      checkbox.element.setAttribute('data-lh-category', preset.configID);
       this.checkboxes.push({preset, checkbox});
       if (mode && !preset.supportedModes.includes(mode)) {
         checkbox.setEnabled(false);
@@ -256,6 +256,7 @@ export class StartView extends UI.Widget.Widget {
   }
   wasShown(): void {
     super.wasShown();
+    this.controller.recomputePageAuditability();
     this.registerCSSFiles([lighthouseStartViewStyles]);
   }
 }

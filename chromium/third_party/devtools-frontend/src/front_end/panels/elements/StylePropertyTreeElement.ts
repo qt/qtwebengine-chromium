@@ -18,12 +18,15 @@ import {BezierPopoverIcon, ColorSwatchPopoverIcon, ShadowSwatchPopoverHelper} fr
 import * as ElementsComponents from './components/components.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
-import type {StylePropertiesSection} from './StylePropertiesSection.js';
+import {type StylePropertiesSection} from './StylePropertiesSection.js';
 import {CSSPropertyPrompt, StylesSidebarPane, StylesSidebarPropertyRenderer} from './StylesSidebarPane.js';
 import {getCssDeclarationAsJavascriptProperty} from './StylePropertyUtils.js';
+import {cssRuleValidatorsMap, type Hint} from './CSSRuleValidator.js';
 
 const FlexboxEditor = ElementsComponents.StylePropertyEditor.FlexboxEditor;
 const GridEditor = ElementsComponents.StylePropertyEditor.GridEditor;
+
+export const activeHints = new WeakMap<Element, Hint>();
 
 const UIStrings = {
   /**
@@ -120,6 +123,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   private hasBeenEditedIncrementally: boolean;
   private prompt: CSSPropertyPrompt|null;
   private lastComputedValue: string|null;
+  private computedStyles: Map<string, string>|null = null;
+  private parentsComputedStyles: Map<string, string>|null = null;
   private contextForTest!: Context|undefined;
   #propertyTextFromSource: string;
 
@@ -177,6 +182,14 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
     this.overloadedInternal = x;
     this.updateState();
+  }
+
+  setComputedStyles(computedStyles: Map<string, string>|null): void {
+    this.computedStyles = computedStyles;
+  }
+
+  setParentsComputedStyles(parentsComputedStyles: Map<string, string>|null): void {
+    this.parentsComputedStyles = parentsComputedStyles;
   }
 
   get name(): string {
@@ -568,6 +581,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       const item = new StylePropertyTreeElement(
           this.parentPaneInternal, this.matchedStylesInternal, longhandProperties[i], false, inherited, overloaded,
           false);
+      item.setComputedStyles(this.computedStyles);
+      item.setParentsComputedStyles(this.parentsComputedStyles);
       this.appendChild(item);
     }
   }
@@ -702,15 +717,16 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       }
     }
 
-    if (!this.property.parsedOk) {
+    if (this.property.parsedOk) {
+      void this.updateFontVariationSettingsWarning();
+      this.updateAuthoringHint();
+    } else {
       // Avoid having longhands under an invalid shorthand.
       this.listItemElement.classList.add('not-parsed-ok');
 
       // Add a separate exclamation mark IMG element with a tooltip.
       this.listItemElement.insertBefore(
           StylesSidebarPane.createExclamationMark(this.property, null), this.listItemElement.firstChild);
-    } else {
-      void this.updateFontVariationSettingsWarning();
     }
 
     if (!this.property.activeInStyle()) {
@@ -742,6 +758,35 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       });
       this.listItemElement.append(copyIcon);
       this.listItemElement.insertBefore(enabledCheckboxElement, this.listItemElement.firstChild);
+    }
+  }
+
+  updateAuthoringHint(): void {
+    if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS)) {
+      return;
+    }
+
+    const existingElement = this.listItemElement.querySelector('.hint');
+    if (existingElement) {
+      activeHints.delete(existingElement);
+      existingElement.parentElement?.removeChild(existingElement);
+    }
+    const propertyName = this.property.name;
+
+    if (!cssRuleValidatorsMap.has(propertyName)) {
+      return;
+    }
+
+    for (const validator of cssRuleValidatorsMap.get(propertyName) || []) {
+      const hint =
+          validator.getHint(propertyName, this.computedStyles || undefined, this.parentsComputedStyles || undefined);
+      if (hint) {
+        Host.userMetrics.cssHintShown(validator.getMetricType());
+        const hintIcon = UI.Icon.Icon.create('mediumicon-info', 'hint');
+        activeHints.set(hintIcon, hint);
+        this.listItemElement.append(hintIcon);
+        break;
+      }
     }
   }
 

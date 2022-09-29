@@ -35,8 +35,7 @@ export function clamp(n: number, { min, max }: { min: number; max: number }): nu
 
 /** @returns 0 if |val| is a subnormal f32 number, otherwise returns |val| */
 export function flushSubnormalNumber(val: number): number {
-  const u32_val = new Uint32Array(new Float32Array([val]).buffer)[0];
-  return (u32_val & 0x7f800000) === 0 ? 0 : val;
+  return isSubnormalNumber(val) ? 0 : val;
 }
 
 /** @returns 0 if |val| is a subnormal f32 number, otherwise returns |val| */
@@ -63,11 +62,10 @@ export function isSubnormalScalar(val: Scalar): boolean {
 
 /** Utility to pass TS numbers into |isSubnormalNumber| */
 export function isSubnormalNumber(val: number): boolean {
-  return isSubnormalScalar(f32(val));
+  return val > kValue.f32.negative.max && val < kValue.f32.positive.min;
 }
 
 /** @returns if number is in the finite range of f32 */
-// eslint-disable-next-line no-unused-vars
 export function isF32Finite(n: number) {
   return n >= kValue.f32.negative.min && n <= kValue.f32.positive.max;
 }
@@ -149,17 +147,16 @@ export function nextAfter(val: number, dir: boolean = true, flush: boolean): Sca
 }
 
 /**
- * @returns ulp(x), the unit of least precision for a specific number as a 32-bit float
+ * @returns ulp(x) for a specific flushing mode
  *
- * ulp(x) is the distance between the two floating point numbers nearest x.
- * This value is also called unit of last place, ULP, and 1 ULP.
- * See the WGSL spec and http://www.ens-lyon.fr/LIP/Pub/Rapports/RR/RR2005/RR2005-09.pdf
- * for a more detailed/nuanced discussion of the definition of ulp(x).
+ * This is the main implementation of oneULP, which is normally what should be
+ * used. This should only be called directly if a specific flushing mode is
+ * required.
  *
  * @param target number to calculate ULP for
  * @param flush should subnormals be flushed to zero
  */
-export function oneULP(target: number, flush: boolean): number {
+function oneULPImpl(target: number, flush: boolean): number {
   if (Number.isNaN(target)) {
     return Number.NaN;
   }
@@ -188,6 +185,26 @@ export function oneULP(target: number, flush: boolean): number {
 }
 
 /**
+ * @returns ulp(x), the unit of least precision for a specific number as a 32-bit float
+ *
+ * ulp(x) is the distance between the two floating point numbers nearest x.
+ * This value is also called unit of last place, ULP, and 1 ULP.
+ * See the WGSL spec and http://www.ens-lyon.fr/LIP/Pub/Rapports/RR/RR2005/RR2005-09.pdf
+ * for a more detailed/nuanced discussion of the definition of ulp(x).
+ *
+ * @param target number to calculate ULP for
+ * @param flush should subnormals be flushed to zero, if not set both flushed
+ *              and non-flush values are considered.
+ */
+export function oneULP(target: number, flush?: boolean): number {
+  if (flush === undefined) {
+    return Math.max(oneULPImpl(target, false), oneULPImpl(target, true));
+  }
+
+  return oneULPImpl(target, flush);
+}
+
+/**
  * @returns if a number is within N * ulp(x) of a target value
  * @param val number to test
  * @param target expected number
@@ -199,9 +216,8 @@ export function withinULP(val: number, target: number, n: number = 1) {
     return false;
   }
 
-  const ulp_flush = oneULP(target, true);
-  const ulp_noflush = oneULP(target, false);
-  if (Number.isNaN(ulp_flush) || Number.isNaN(ulp_noflush)) {
+  const ulp = oneULP(target);
+  if (Number.isNaN(ulp)) {
     return false;
   }
 
@@ -209,7 +225,6 @@ export function withinULP(val: number, target: number, n: number = 1) {
     return true;
   }
 
-  const ulp = Math.max(ulp_flush, ulp_noflush);
   const diff = val > target ? val - target : target - val;
   return diff <= n * ulp;
 }
@@ -439,6 +454,28 @@ export function fullF32Range(
 }
 
 /**
+ * @returns an ascending sorted array of numbers spread over the entire range of 32-bit signed ints
+ *
+ * Numbers are divided into 2 regions: negatives, and positives, with their spreads biased towards 0
+ * Zero is included in range.
+ *
+ * @param counts structure param with 2 entries indicating the number of entries to be generated each region, values must be 0 or greater.
+ */
+export function fullI32Range(
+  counts: {
+    negative?: number;
+    positive: number;
+  } = { positive: 50 }
+): Array<number> {
+  counts.negative = counts.negative === undefined ? counts.positive : counts.negative;
+  return [
+    ...biasedRange(kValue.i32.negative.max, kValue.i32.negative.min, counts.negative),
+    0,
+    ...biasedRange(kValue.i32.positive.min, kValue.i32.positive.max, counts.positive),
+  ];
+}
+
+/**
  * @returns the result matrix in Array<Array<number>> type.
  *
  * Matrix multiplication. A is m x n and B is n x p. Returns
@@ -521,4 +558,44 @@ export function hexToF64(h32: number, l32: number): number {
   u32Arr[1] = h32;
   const f64Arr = new Float64Array(u32Arr.buffer);
   return f64Arr[0];
+}
+
+/** @returns the cross of an array with the intermediate result of cartesianProduct
+ *
+ * @param elements array of values to cross with the intermediate result of
+ *                 cartesianProduct
+ * @param intermediate arrays of values representing the partial result of
+ *                     cartesianProduct
+ */
+function cartesianProductImpl<T>(elements: T[], intermediate: T[][]): T[][] {
+  const result: T[][] = [];
+  elements.forEach(e => {
+    if (intermediate.length > 0) {
+      intermediate.forEach(a => {
+        result.push(a.concat(e));
+      });
+    } else {
+      result.push([e]);
+    }
+  });
+  return result;
+}
+
+/** @returns the cartesian product (NxMx...) of a set of arrays
+ *
+ * This is implemented by calculating the cross of a single input against an
+ * intermediate result for each input to build up the final array of arrays.
+ *
+ * There are examples of doing this more succinctly using map & reduce online,
+ * but they are a bit more opaque to read.
+ *
+ * @param inputs arrays of numbers to calculate cartesian product over
+ */
+export function cartesianProduct<T>(...inputs: T[][]): T[][] {
+  let result: T[][] = [];
+  inputs.forEach(i => {
+    result = cartesianProductImpl<T>(i, result);
+  });
+
+  return result;
 }

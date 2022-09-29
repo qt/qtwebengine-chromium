@@ -12,16 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#import <CoreBluetooth/CoreBluetooth.h>
+
 #import "internal/platform/implementation/ios/Mediums/GNCMConnection.h"
 
-#import <Foundation/Foundation.h>
+@class CBUUID;
 
 NS_ASSUME_NONNULL_BEGIN
 
 /**
  * This handler is called on a discover when a nearby advertising endpoint is discovered.
  */
-typedef void (^GNCMScanResultHandler)(NSString *serviceUUID, NSData *serviceData);
+typedef void (^GNCMScanResultHandler)(NSString *peripheralID, NSData *serviceData);
+
+/**
+ * This handler is called on a discovery when a nearby advertising endpoint is connected.
+ */
+typedef void (^GNCMGATTConnectionResultHandler)(NSError *_Nullable error);
+
+/**
+ * This handler is called on a discovery when a nearby advertising endpoint is connected. The input
+ * is a discovered set of characteristics.
+ */
+typedef void (^GNCMGATTDiscoverResultHandler)(
+    NSOrderedSet<CBCharacteristic *> *_Nullable characteristicValues);
+
+/**
+ * This handler is called by a discovering endpoint to request a connection with an an advertising
+ * endpoint.
+ */
+typedef void (^GNCMBleConnectionRequester)(NSString *serviceID,
+                                           GNCMConnectionHandler connectionHandler);
+
+/**
+ * This handler is called on a discoverer when a nearby advertising endpoint is discovered.
+ * Call |requestConnection| to request a connection with the advertiser.
+ */
+typedef void (^GNCMBleRequestConnectionHandler)(GNCMBleConnectionRequester requestConnection);
 
 /**
  * GNCMBleCentral discovers devices advertising the specified service UUID via BLE (using the
@@ -33,18 +60,54 @@ typedef void (^GNCMScanResultHandler)(NSString *serviceUUID, NSData *serviceData
  */
 @interface GNCMBleCentral : NSObject
 
-- (instancetype)init NS_UNAVAILABLE;
+- (instancetype)init NS_DESIGNATED_INITIALIZER;
 
 /**
- * Initializes an `GNCMBleCentral` object.
+ * Starts scanning with service UUID.
  *
  * @param serviceUUID A string that uniquely identifies the scanning services to search for.
  * @param scanResultHandler The handler that is called when an endpoint advertising the service
  *                          UUID is discovered.
+ * @param requestConnectionHandler The handler that is called when an endpoint is discovered.
+ * @param callbackQueue The queue on which all callbacks are made.
  */
-- (instancetype)initWithServiceUUID:(NSString *)serviceUUID
-                  scanResultHandler:(GNCMScanResultHandler)scanResultHandler
-    NS_DESIGNATED_INITIALIZER;
+- (BOOL)startScanningWithServiceUUID:(NSString *)serviceUUID
+                   scanResultHandler:(GNCMScanResultHandler)scanResultHandler
+            requestConnectionHandler:(GNCMBleRequestConnectionHandler)requestConnectionHandler
+                       callbackQueue:(nullable dispatch_queue_t)callbackQueue;
+
+/**
+ * Sets up a GATT connection.
+ *
+ * @param peripheralID A string that uniquely identifies the peripheral.
+ * @param gattConnectionResultHandler The handler that is called when an endpoint is
+ * connected.
+ */
+- (void)connectGattServerWithPeripheralID:(NSString *)peripheralID
+              gattConnectionResultHandler:
+                  (GNCMGATTConnectionResultHandler)gattConnectionResultHandler;
+
+/**
+ * Discovers GATT service and its associated characteristics with values.
+ *
+ * @param serviceUUID A CBUUID for service to discover.
+ * @param gattCharacteristics Array of CBUUID for characteristic to discover.
+ * @param peripheralID A string that uniquely identifies the peripheral.
+ * @param gattDiscoverResultHandler This handler is called on a discovery for a discovered map of
+ *                                  characteristic values when a nearby advertising endpoint is
+ *                                  connected.
+ */
+- (void)discoverGattService:(CBUUID *)serviceUUID
+          gattCharacteristics:(NSArray<CBUUID *> *)characteristicUUIDs
+                 peripheralID:(NSString *)peripheralID
+    gattDiscoverResultHandler:(GNCMGATTDiscoverResultHandler)gattDiscoverResultHandler;
+
+/**
+ * Disconnects GATT connection.
+ *
+ * @param peripheralID A string that uniquely identifies the peripheral.
+ */
+- (void)disconnectGattServiceWithPeripheralID:(NSString *)peripheralID;
 
 @end
 

@@ -23,11 +23,11 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
 #include "src/gpu/ganesh/effects/GrRRectEffect.h"
 #include "src/gpu/ganesh/ops/FillRectOp.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 #include <memory>
 #include <utility>
@@ -193,7 +193,7 @@ protected:
 
         // The first complex case needs special handling since it is a square
         fRRects[kNumSimpleCases].setRectRadii(SkRect::MakeWH(kTileY-2, kTileY-2), gRadii[0]);
-        for (size_t i = 1; i < SK_ARRAY_COUNT(gRadii); ++i) {
+        for (size_t i = 1; i < std::size(gRadii); ++i) {
             fRRects[kNumSimpleCases+i].setRectRadii(SkRect::MakeWH(kTileX-2, kTileY-2), gRadii[i]);
         }
         // The last case is larger than kTileX-2 x kTileY-2 but will be drawn at an offset

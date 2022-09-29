@@ -7,6 +7,7 @@
 syntax = "proto3";
 
 package runtime_probe;
+
 option go_package = "chromiumos/system_api/runtime_probe_proto";
 
 // Defined error code.
@@ -186,6 +187,13 @@ message Storage {
     string ata_vendor = 13;
     // Model name, 16 bytes
     string ata_model = 14;
+
+    // The following are fields for UFS. Every field name comes with prefix
+    // "ufs_".
+    // Vendor name.
+    string ufs_vendor = 16;
+    // Model name.
+    string ufs_model = 17;
   }
   // Component alias.
   string name = 1;

@@ -6,6 +6,8 @@
 
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -13,6 +15,7 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
@@ -650,7 +653,7 @@ bool CFGAS_FontMgr::EnumFontsFromFontMapper() {
 
     WideString wsFaceName =
         WideString::FromDefANSI(pFontMapper->GetFaceName(i).AsStringView());
-    RegisterFaces(pFontStream, &wsFaceName);
+    RegisterFaces(pFontStream, wsFaceName);
   }
 
   return !m_InstalledFonts.empty();
@@ -723,7 +726,7 @@ std::vector<CFGAS_FontDescriptorInfo> CFGAS_FontMgr::MatchFonts(
 }
 
 void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
-                                 const WideString* pFaceName) {
+                                 const WideString& wsFaceName) {
   if ((pFace->GetRec()->face_flags & FT_FACE_FLAG_SCALABLE) == 0)
     return;
 
@@ -735,7 +738,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
   FT_ULong dwTag;
   FT_ENC_TAG(dwTag, 'n', 'a', 'm', 'e');
 
-  std::vector<uint8_t, FxAllocAllocator<uint8_t>> table;
+  DataVector<uint8_t> table;
   unsigned long nLength = 0;
   unsigned int error =
       FT_Load_Sfnt_Table(pFace->GetRec(), dwTag, 0, nullptr, &nLength);
@@ -747,10 +750,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
   pFont->m_wsFamilyNames = GetNames(table);
   pFont->m_wsFamilyNames.push_back(
       WideString::FromUTF8(pFace->GetRec()->family_name));
-  pFont->m_wsFaceName =
-      pFaceName
-          ? *pFaceName
-          : WideString::FromDefANSI(FT_Get_Postscript_Name(pFace->GetRec()));
+  pFont->m_wsFaceName = wsFaceName;
   pFont->m_nFaceIndex =
       pdfium::base::checked_cast<int32_t>(pFace->GetRec()->face_index);
   m_InstalledFonts.push_back(std::move(pFont));
@@ -758,7 +758,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
 
 void CFGAS_FontMgr::RegisterFaces(
     const RetainPtr<IFX_SeekableReadStream>& pFontStream,
-    const WideString* pFaceName) {
+    const WideString& wsFaceName) {
   int32_t index = 0;
   int32_t num_faces = 0;
   do {
@@ -770,7 +770,7 @@ void CFGAS_FontMgr::RegisterFaces(
       num_faces =
           pdfium::base::checked_cast<int32_t>(pFace->GetRec()->num_faces);
     }
-    RegisterFace(pFace, pFaceName);
+    RegisterFace(pFace, wsFaceName);
     if (FXFT_Get_Face_External_Stream(pFace->GetRec()))
       FXFT_Clear_Face_External_Stream(pFace->GetRec());
   } while (index < num_faces);

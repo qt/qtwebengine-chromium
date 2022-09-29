@@ -8,6 +8,10 @@
 #ifndef SkCombinationBuilder_DEFINED
 #define SkCombinationBuilder_DEFINED
 
+#include "include/core/SkTypes.h"
+
+#ifdef SK_ENABLE_PRECOMPILE
+
 #include <functional>
 #include <memory>
 #include <vector>
@@ -19,6 +23,7 @@
 
 class SkArenaAllocWithReset;
 class SkCombinationBuilder;
+class SkKeyContext;
 class SkOption;
 class SkPaintParamsKeyBuilder;
 class SkShaderCodeDictionary;
@@ -121,11 +126,7 @@ public:
         kAll
     };
 
-#ifdef SK_GRAPHITE_ENABLED
-    SkCombinationBuilder(skgpu::graphite::Context*);
-#else
     SkCombinationBuilder(SkShaderCodeDictionary*);
-#endif
     ~SkCombinationBuilder();
 
     // Blend Modes
@@ -154,6 +155,9 @@ private:
         return this->numShaderCombinations() * this->numBlendModeCombinations();
     }
 
+    // 'desiredCombination' must be less than numCombinations
+    void createKey(const SkKeyContext&, int desiredCombination, SkPaintParamsKeyBuilder*);
+
 #ifdef SK_DEBUG
     void dump() const;
     int epoch() const { return fEpoch; }
@@ -181,5 +185,7 @@ private:
 
     SkDEBUGCODE(int fEpoch = 0;)
 };
+
+#endif // SK_ENABLE_PRECOMPILE
 
 #endif // SkCombinationBuilder_DEFINED

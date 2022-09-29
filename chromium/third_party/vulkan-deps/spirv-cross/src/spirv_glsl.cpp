@@ -327,6 +327,8 @@ void CompilerGLSL::reset(uint32_t iteration_count)
 	// Ensure that we declare phi-variable copies even if the original declaration isn't deferred
 	flushed_phi_variables.clear();
 
+	current_emitting_switch_stack.clear();
+
 	reset_name_caches();
 
 	ir.for_each_typed_id<SPIRFunction>([&](uint32_t, SPIRFunction &func) {
@@ -405,10 +407,9 @@ void CompilerGLSL::find_static_extensions()
 		}
 		else if (type.basetype == SPIRType::Int64 || type.basetype == SPIRType::UInt64)
 		{
-			if (options.es)
-				SPIRV_CROSS_THROW("64-bit integers not supported in ES profile.");
-			if (!options.es)
-				require_extension_internal("GL_ARB_gpu_shader_int64");
+			if (options.es && options.version < 310) // GL_NV_gpu_shader5 fallback requires 310.
+				SPIRV_CROSS_THROW("64-bit integers not supported in ES profile before version 310.");
+			require_extension_internal("GL_ARB_gpu_shader_int64");
 		}
 		else if (type.basetype == SPIRType::Half)
 		{
@@ -826,7 +827,20 @@ void CompilerGLSL::emit_header()
 
 	for (auto &ext : forced_extensions)
 	{
-		if (ext == "GL_EXT_shader_explicit_arithmetic_types_float16")
+		if (ext == "GL_ARB_gpu_shader_int64")
+		{
+			statement("#if defined(GL_ARB_gpu_shader_int64)");
+			statement("#extension GL_ARB_gpu_shader_int64 : require");
+			if (!options.vulkan_semantics || options.es)
+			{
+				statement("#elif defined(GL_NV_gpu_shader5)");
+				statement("#extension GL_NV_gpu_shader5 : require");
+			}
+			statement("#else");
+			statement("#error No extension available for 64-bit integers.");
+			statement("#endif");
+		}
+		else if (ext == "GL_EXT_shader_explicit_arithmetic_types_float16")
 		{
 			// Special case, this extension has a potential fallback to another vendor extension in normal GLSL.
 			// GL_AMD_gpu_shader_half_float is a superset, so try that first.
@@ -846,13 +860,30 @@ void CompilerGLSL::emit_header()
 			statement("#error No extension available for FP16.");
 			statement("#endif");
 		}
+		else if (ext == "GL_EXT_shader_explicit_arithmetic_types_int8")
+		{
+			if (options.vulkan_semantics)
+				statement("#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require");
+			else
+			{
+				statement("#if defined(GL_EXT_shader_explicit_arithmetic_types_int8)");
+				statement("#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require");
+				statement("#elif defined(GL_NV_gpu_shader5)");
+				statement("#extension GL_NV_gpu_shader5 : require");
+				statement("#else");
+				statement("#error No extension available for Int8.");
+				statement("#endif");
+			}
+		}
 		else if (ext == "GL_EXT_shader_explicit_arithmetic_types_int16")
 		{
 			if (options.vulkan_semantics)
 				statement("#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require");
 			else
 			{
-				statement("#if defined(GL_AMD_gpu_shader_int16)");
+				statement("#if defined(GL_EXT_shader_explicit_arithmetic_types_int16)");
+				statement("#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require");
+				statement("#elif defined(GL_AMD_gpu_shader_int16)");
 				statement("#extension GL_AMD_gpu_shader_int16 : require");
 				statement("#elif defined(GL_NV_gpu_shader5)");
 				statement("#extension GL_NV_gpu_shader5 : require");
@@ -5185,8 +5216,8 @@ string CompilerGLSL::constant_expression(const SPIRConstant &c, bool inside_bloc
 }
 
 #ifdef _MSC_VER
-// sprintf warning.
-// We cannot rely on snprintf existing because, ..., MSVC.
+// snprintf does not exist or is buggy on older MSVC versions, some of them
+// being used by MinGW. Use sprintf instead and disable corresponding warning.
 #pragma warning(push)
 #pragma warning(disable : 4996)
 #endif
@@ -5246,7 +5277,11 @@ string CompilerGLSL::convert_float_to_string(const SPIRConstant &c, uint32_t col
 			in_type.width = 32;
 
 			char print_buffer[32];
+#ifdef _WIN32
 			sprintf(print_buffer, "0x%xu", c.scalar(col, row));
+#else
+			snprintf(print_buffer, sizeof(print_buffer), "0x%xu", c.scalar(col, row));
+#endif
 
 			const char *comment = "inf";
 			if (float_value == -numeric_limits<float>::infinity())
@@ -5313,13 +5348,18 @@ std::string CompilerGLSL::convert_double_to_string(const SPIRConstant &c, uint32
 
 			uint64_t u64_value = c.scalar_u64(col, row);
 
-			if (options.es)
-				SPIRV_CROSS_THROW("64-bit integers/float not supported in ES profile.");
+			if (options.es && options.version < 310) // GL_NV_gpu_shader5 fallback requires 310.
+				SPIRV_CROSS_THROW("64-bit integers not supported in ES profile before version 310.");
 			require_extension_internal("GL_ARB_gpu_shader_int64");
 
 			char print_buffer[64];
+#ifdef _WIN32
 			sprintf(print_buffer, "0x%llx%s", static_cast<unsigned long long>(u64_value),
 			        backend.long_long_literal_suffix ? "ull" : "ul");
+#else
+			snprintf(print_buffer, sizeof(print_buffer), "0x%llx%s", static_cast<unsigned long long>(u64_value),
+			         backend.long_long_literal_suffix ? "ull" : "ul");
+#endif
 
 			const char *comment = "inf";
 			if (double_value == -numeric_limits<double>::infinity())
@@ -8952,6 +8992,7 @@ string CompilerGLSL::access_chain_internal(uint32_t base, const uint32_t *indice
 		if (!is_literal)
 			mod_flags &= ~ACCESS_CHAIN_INDEX_IS_LITERAL_BIT;
 		access_chain_internal_append_index(expr, base, type, mod_flags, access_chain_is_arrayed, index);
+		check_physical_type_cast(expr, type, physical_type);
 	};
 
 	for (uint32_t i = 0; i < count; i++)
@@ -9282,6 +9323,10 @@ string CompilerGLSL::access_chain_internal(uint32_t base, const uint32_t *indice
 	}
 
 	return expr;
+}
+
+void CompilerGLSL::check_physical_type_cast(std::string &, const SPIRType *, uint32_t)
+{
 }
 
 void CompilerGLSL::prepare_access_chain_for_scalar_access(std::string &, const SPIRType &, spv::StorageClass, bool &)
@@ -10696,8 +10741,14 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		if (expr_type.vecsize > type.vecsize)
 			expr = enclose_expression(expr + vector_swizzle(type.vecsize, 0));
 
+		if (forward && ptr_expression)
+			ptr_expression->need_transpose = old_need_transpose;
+
 		// We might need to cast in order to load from a builtin.
 		cast_from_variable_load(ptr, expr, type);
+
+		if (forward && ptr_expression)
+			ptr_expression->need_transpose = false;
 
 		// We might be trying to load a gl_Position[N], where we should be
 		// doing float4[](gl_in[i].gl_Position, ...) instead.
@@ -11216,8 +11267,13 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		// forcing temporaries is not going to help.
 		// This is similar for Constant and Undef inputs.
 		// The only safe thing to RMW is SPIRExpression.
+		// If the expression has already been used (i.e. used in a continue block), we have to keep using
+		// that loop variable, since we won't be able to override the expression after the fact.
+		// If the composite is hoisted, we might never be able to properly invalidate any usage
+		// of that composite in a subsequent loop iteration.
 		if (invalid_expressions.count(composite) ||
 		    block_composite_insert_overwrite.count(composite) ||
+		    hoisted_temporaries.count(id) || hoisted_temporaries.count(composite) ||
 		    maybe_get<SPIRExpression>(composite) == nullptr)
 		{
 			can_modify_in_place = false;
@@ -13350,9 +13406,30 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 #undef GLSL_RAY_QUERY_GET_OP2
 
 	case OpConvertUToAccelerationStructureKHR:
+	{
 		require_extension_internal("GL_EXT_ray_tracing");
-		GLSL_UFOP(accelerationStructureEXT);
+
+		bool elide_temporary = should_forward(ops[2]) && forced_temporaries.count(ops[1]) == 0 &&
+		                       !hoisted_temporaries.count(ops[1]);
+
+		if (elide_temporary)
+		{
+			GLSL_UFOP(accelerationStructureEXT);
+		}
+		else
+		{
+			// Force this path in subsequent iterations.
+			forced_temporaries.insert(ops[1]);
+
+			// We cannot declare a temporary acceleration structure in GLSL.
+			// If we get to this point, we'll have to emit a temporary uvec2,
+			// and cast to RTAS on demand.
+			statement(declare_temporary(expression_type_id(ops[2]), ops[1]), to_unpacked_expression(ops[2]), ";");
+			// Use raw SPIRExpression interface to block all usage tracking.
+			set<SPIRExpression>(ops[1], join("accelerationStructureEXT(", to_name(ops[1]), ")"), ops[0], true);
+		}
 		break;
+	}
 
 	case OpConvertUToPtr:
 	{
@@ -14831,21 +14908,32 @@ void CompilerGLSL::branch(BlockID from, BlockID to)
 		// - Break merge target all at once ...
 
 		// Very dirty workaround.
-		// Switch constructs are able to break, but they cannot break out of a loop at the same time.
+		// Switch constructs are able to break, but they cannot break out of a loop at the same time,
+		// yet SPIR-V allows it.
 		// Only sensible solution is to make a ladder variable, which we declare at the top of the switch block,
 		// write to the ladder here, and defer the break.
 		// The loop we're breaking out of must dominate the switch block, or there is no ladder breaking case.
-		if (current_emitting_switch && is_loop_break(to) &&
-		    current_emitting_switch->loop_dominator != BlockID(SPIRBlock::NoDominator) &&
-		    get<SPIRBlock>(current_emitting_switch->loop_dominator).merge_block == to)
+		if (is_loop_break(to))
 		{
-			if (!current_emitting_switch->need_ladder_break)
+			for (size_t n = current_emitting_switch_stack.size(); n; n--)
 			{
-				force_recompile();
-				current_emitting_switch->need_ladder_break = true;
-			}
+				auto *current_emitting_switch = current_emitting_switch_stack[n - 1];
 
-			statement("_", current_emitting_switch->self, "_ladder_break = true;");
+				if (current_emitting_switch &&
+				    current_emitting_switch->loop_dominator != BlockID(SPIRBlock::NoDominator) &&
+				    get<SPIRBlock>(current_emitting_switch->loop_dominator).merge_block == to)
+				{
+					if (!current_emitting_switch->need_ladder_break)
+					{
+						force_recompile();
+						current_emitting_switch->need_ladder_break = true;
+					}
+
+					statement("_", current_emitting_switch->self, "_ladder_break = true;");
+				}
+				else
+					break;
+			}
 		}
 		statement("break;");
 	}
@@ -15530,8 +15618,7 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 		else if (type.basetype == SPIRType::Short)
 			label_suffix = backend.int16_t_literal_suffix;
 
-		SPIRBlock *old_emitting_switch = current_emitting_switch;
-		current_emitting_switch = &block;
+		current_emitting_switch_stack.push_back(&block);
 
 		if (block.need_ladder_break)
 			statement("bool _", block.self, "_ladder_break = false;");
@@ -15689,26 +15776,32 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 		// If there is only one default block, and no cases, this is a case where SPIRV-opt decided to emulate
 		// non-structured exits with the help of a switch block.
 		// This is buggy on FXC, so just emit the logical equivalent of a do { } while(false), which is more idiomatic.
-		bool degenerate_switch = block.default_block != block.merge_block && cases.empty();
+		bool block_like_switch = cases.empty();
 
-		if (degenerate_switch || is_legacy_es())
+		// If this is true, the switch is completely meaningless, and we should just avoid it.
+		bool collapsed_switch = block_like_switch && block.default_block == block.next_block;
+
+		if (!collapsed_switch)
 		{
-			// ESSL 1.0 is not guaranteed to support do/while.
-			if (is_legacy_es())
+			if (block_like_switch || is_legacy_es())
 			{
-				uint32_t counter = statement_count;
-				statement("for (int spvDummy", counter, " = 0; spvDummy", counter,
-				          " < 1; spvDummy", counter, "++)");
+				// ESSL 1.0 is not guaranteed to support do/while.
+				if (is_legacy_es())
+				{
+					uint32_t counter = statement_count;
+					statement("for (int spvDummy", counter, " = 0; spvDummy", counter, " < 1; spvDummy", counter,
+					          "++)");
+				}
+				else
+					statement("do");
 			}
 			else
-				statement("do");
+			{
+				emit_block_hints(block);
+				statement("switch (", to_unpacked_expression(block.condition), ")");
+			}
+			begin_scope();
 		}
-		else
-		{
-			emit_block_hints(block);
-			statement("switch (", to_unpacked_expression(block.condition), ")");
-		}
-		begin_scope();
 
 		for (size_t i = 0; i < num_blocks; i++)
 		{
@@ -15718,7 +15811,7 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 			if (literals.empty())
 			{
 				// Default case.
-				if (!degenerate_switch)
+				if (!block_like_switch)
 				{
 					if (is_legacy_es())
 						statement("else");
@@ -15756,10 +15849,10 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 			else
 				current_emitting_switch_fallthrough = false;
 
-			if (!degenerate_switch)
+			if (!block_like_switch)
 				begin_scope();
 			branch(block.self, target_block);
-			if (!degenerate_switch)
+			if (!block_like_switch)
 				end_scope();
 
 			current_emitting_switch_fallthrough = false;
@@ -15773,7 +15866,7 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 		// - Header -> Merge requires flushing PHI. In this case, we need to collect all cases and flush PHI there.
 		bool header_merge_requires_phi = flush_phi_required(block.self, block.next_block);
 		bool need_fallthrough_block = block.default_block == block.next_block || !literals_to_merge.empty();
-		if ((header_merge_requires_phi && need_fallthrough_block) || !literals_to_merge.empty())
+		if (!collapsed_switch && ((header_merge_requires_phi && need_fallthrough_block) || !literals_to_merge.empty()))
 		{
 			for (auto &case_literal : literals_to_merge)
 				statement("case ", to_case_label(case_literal, type.width, unsigned_case), label_suffix, ":");
@@ -15792,10 +15885,15 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 			end_scope();
 		}
 
-		if (degenerate_switch && !is_legacy_es())
-			end_scope_decl("while(false)");
+		if (!collapsed_switch)
+		{
+			if (block_like_switch && !is_legacy_es())
+				end_scope_decl("while(false)");
+			else
+				end_scope();
+		}
 		else
-			end_scope();
+			flush_phi(block.self, block.next_block);
 
 		if (block.need_ladder_break)
 		{
@@ -15805,7 +15903,7 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 			end_scope();
 		}
 
-		current_emitting_switch = old_emitting_switch;
+		current_emitting_switch_stack.pop_back();
 		break;
 	}
 

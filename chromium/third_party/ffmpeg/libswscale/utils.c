@@ -257,6 +257,7 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_P216LE]      = { 1, 1 },
     [AV_PIX_FMT_P416BE]      = { 1, 1 },
     [AV_PIX_FMT_P416LE]      = { 1, 1 },
+    [AV_PIX_FMT_NV16]        = { 1, 1 },
 };
 
 int ff_shuffle_filter_coefficients(SwsContext *c, int *filterPos,
@@ -1044,9 +1045,10 @@ int sws_setColorspaceDetails(struct SwsContext *c, const int inv_table[4],
                                  contrast, saturation);
         // FIXME factorize
 
-        if (ARCH_PPC)
-            ff_yuv2rgb_init_tables_ppc(c, inv_table, brightness,
-                                       contrast, saturation);
+#if ARCH_PPC
+        ff_yuv2rgb_init_tables_ppc(c, inv_table, brightness,
+                                   contrast, saturation);
+#endif
     }
 
     fill_rgb2yuv_table(c, table, dstRange);
@@ -1820,7 +1822,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         {
             const int filterAlign = X86_MMX(cpu_flags)     ? 4 :
                                     PPC_ALTIVEC(cpu_flags) ? 8 :
-                                    have_neon(cpu_flags)   ? 8 : 1;
+                                    have_neon(cpu_flags)   ? 4 : 1;
 
             if ((ret = initFilter(&c->hLumFilter, &c->hLumFilterPos,
                            &c->hLumFilterSize, c->lumXInc,

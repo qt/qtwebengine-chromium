@@ -41,50 +41,6 @@ namespace {
 
 //------------------------------------------------------------------------------
 
-// TODO(slavarnway): Move transpose functions to transpose_neon.h or
-// common_neon.h.
-
-LIBGAV1_ALWAYS_INLINE void Transpose4x4(const int16x8_t in[4],
-                                        int16x8_t out[4]) {
-  // Swap 16 bit elements. Goes from:
-  // a0: 00 01 02 03
-  // a1: 10 11 12 13
-  // a2: 20 21 22 23
-  // a3: 30 31 32 33
-  // to:
-  // b0.val[0]: 00 10 02 12
-  // b0.val[1]: 01 11 03 13
-  // b1.val[0]: 20 30 22 32
-  // b1.val[1]: 21 31 23 33
-  const int16x4_t a0 = vget_low_s16(in[0]);
-  const int16x4_t a1 = vget_low_s16(in[1]);
-  const int16x4_t a2 = vget_low_s16(in[2]);
-  const int16x4_t a3 = vget_low_s16(in[3]);
-
-  const int16x4x2_t b0 = vtrn_s16(a0, a1);
-  const int16x4x2_t b1 = vtrn_s16(a2, a3);
-
-  // Swap 32 bit elements resulting in:
-  // c0.val[0]: 00 10 20 30 04 14 24 34
-  // c0.val[1]: 02 12 22 32 06 16 26 36
-  // c1.val[0]: 01 11 21 31 05 15 25 35
-  // c1.val[1]: 03 13 23 33 07 17 27 37
-  const int32x2x2_t c0 = vtrn_s32(vreinterpret_s32_s16(b0.val[0]),
-                                  vreinterpret_s32_s16(b1.val[0]));
-  const int32x2x2_t c1 = vtrn_s32(vreinterpret_s32_s16(b0.val[1]),
-                                  vreinterpret_s32_s16(b1.val[1]));
-
-  const int16x4_t d0 = vreinterpret_s16_s32(c0.val[0]);
-  const int16x4_t d1 = vreinterpret_s16_s32(c1.val[0]);
-  const int16x4_t d2 = vreinterpret_s16_s32(c0.val[1]);
-  const int16x4_t d3 = vreinterpret_s16_s32(c1.val[1]);
-
-  out[0] = vcombine_s16(d0, d0);
-  out[1] = vcombine_s16(d1, d1);
-  out[2] = vcombine_s16(d2, d2);
-  out[3] = vcombine_s16(d3, d3);
-}
-
 // Note this is only used in the final stage of Dct32/64 and Adst16 as the in
 // place version causes additional stack usage with clang.
 LIBGAV1_ALWAYS_INLINE void Transpose8x8(const int16x8_t in[8],
@@ -580,16 +536,19 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t input[8];
-      LoadSrc<8, 8>(dst, step, 0, input);
-      Transpose4x8To8x4(input, x);
+      assert(step == 4);
+      int16x8x4_t y = vld4q_s16(dst);
+      for (int i = 0; i < 4; ++i) x[i] = y.val[i];
     } else {
       LoadSrc<16, 4>(dst, step, 0, x);
     }
   } else {
-    LoadSrc<8, 4>(dst, step, 0, x);
     if (transpose) {
-      Transpose4x4(x, x);
+      assert(step == 4);
+      int16x4x4_t y = vld4_s16(dst);
+      for (int i = 0; i < 4; ++i) x[i] = vcombine_s16(y.val[i], y.val[i]);
+    } else {
+      LoadSrc<8, 4>(dst, step, 0, x);
     }
   }
 
@@ -604,17 +563,20 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t output[8];
-      Transpose8x4To4x8(s, output);
-      StoreDst<8, 8>(dst, step, 0, output);
+      int16x8x4_t y;
+      for (int i = 0; i < 4; ++i) y.val[i] = s[i];
+      vst4q_s16(dst, y);
     } else {
       StoreDst<16, 4>(dst, step, 0, s);
     }
   } else {
     if (transpose) {
-      Transpose4x4(s, s);
+      int16x4x4_t y;
+      for (int i = 0; i < 4; ++i) y.val[i] = vget_low_s16(s[i]);
+      vst4_s16(dst, y);
+    } else {
+      StoreDst<8, 4>(dst, step, 0, s);
     }
-    StoreDst<8, 4>(dst, step, 0, s);
   }
 }
 
@@ -1204,45 +1166,41 @@ void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
 
 //------------------------------------------------------------------------------
 // Asymmetric Discrete Sine Transforms (ADST).
-template <bool stage_is_rectangular>
+
 LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
                                       bool transpose) {
   auto* const dst = static_cast<int16_t*>(dest);
-  int32x4_t s[8];
-  int16x8_t x[4];
+  int32x4_t s[7];
+  int16x4_t x[4];
 
-  if (stage_is_rectangular) {
-    if (transpose) {
-      int16x8_t input[8];
-      LoadSrc<8, 8>(dst, step, 0, input);
-      Transpose4x8To8x4(input, x);
-    } else {
-      LoadSrc<16, 4>(dst, step, 0, x);
-    }
+  if (transpose) {
+    assert(step == 4);
+    int16x4x4_t y = vld4_s16(dst);
+    for (int i = 0; i < 4; ++i) x[i] = y.val[i];
   } else {
-    LoadSrc<8, 4>(dst, step, 0, x);
-    if (transpose) {
-      Transpose4x4(x, x);
-    }
+    x[0] = vld1_s16(dst);
+    x[1] = vld1_s16(dst + 1 * step);
+    x[2] = vld1_s16(dst + 2 * step);
+    x[3] = vld1_s16(dst + 3 * step);
   }
 
   // stage 1.
-  s[5] = vmull_n_s16(vget_low_s16(x[3]), kAdst4Multiplier[1]);
-  s[6] = vmull_n_s16(vget_low_s16(x[3]), kAdst4Multiplier[3]);
+  s[5] = vmull_n_s16(x[3], kAdst4Multiplier[1]);
+  s[6] = vmull_n_s16(x[3], kAdst4Multiplier[3]);
 
   // stage 2.
-  const int32x4_t a7 = vsubl_s16(vget_low_s16(x[0]), vget_low_s16(x[2]));
-  const int32x4_t b7 = vaddw_s16(a7, vget_low_s16(x[3]));
+  const int32x4_t a7 = vsubl_s16(x[0], x[2]);
+  const int32x4_t b7 = vaddw_s16(a7, x[3]);
 
   // stage 3.
-  s[0] = vmull_n_s16(vget_low_s16(x[0]), kAdst4Multiplier[0]);
-  s[1] = vmull_n_s16(vget_low_s16(x[0]), kAdst4Multiplier[1]);
+  s[0] = vmull_n_s16(x[0], kAdst4Multiplier[0]);
+  s[1] = vmull_n_s16(x[0], kAdst4Multiplier[1]);
   // s[0] = s[0] + s[3]
-  s[0] = vmlal_n_s16(s[0], vget_low_s16(x[2]), kAdst4Multiplier[3]);
+  s[0] = vmlal_n_s16(s[0], x[2], kAdst4Multiplier[3]);
   // s[1] = s[1] - s[4]
-  s[1] = vmlsl_n_s16(s[1], vget_low_s16(x[2]), kAdst4Multiplier[0]);
+  s[1] = vmlsl_n_s16(s[1], x[2], kAdst4Multiplier[0]);
 
-  s[3] = vmull_n_s16(vget_low_s16(x[1]), kAdst4Multiplier[2]);
+  s[3] = vmull_n_s16(x[1], kAdst4Multiplier[2]);
   s[2] = vmulq_n_s32(b7, kAdst4Multiplier[2]);
 
   // stage 4.
@@ -1259,24 +1217,20 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
   const int16x4_t dst_2 = vqrshrn_n_s32(s[2], 12);
   const int16x4_t dst_3 = vqrshrn_n_s32(x3, 12);
 
-  x[0] = vcombine_s16(dst_0, dst_0);
-  x[1] = vcombine_s16(dst_1, dst_1);
-  x[2] = vcombine_s16(dst_2, dst_2);
-  x[3] = vcombine_s16(dst_3, dst_3);
+  x[0] = dst_0;
+  x[1] = dst_1;
+  x[2] = dst_2;
+  x[3] = dst_3;
 
-  if (stage_is_rectangular) {
-    if (transpose) {
-      int16x8_t output[8];
-      Transpose8x4To4x8(x, output);
-      StoreDst<8, 8>(dst, step, 0, output);
-    } else {
-      StoreDst<16, 4>(dst, step, 0, x);
-    }
+  if (transpose) {
+    int16x4x4_t y;
+    for (int i = 0; i < 4; ++i) y.val[i] = x[i];
+    vst4_s16(dst, y);
   } else {
-    if (transpose) {
-      Transpose4x4(x, x);
-    }
-    StoreDst<8, 4>(dst, step, 0, x);
+    vst1_s16(dst, x[0]);
+    vst1_s16(dst + 1 * step, x[1]);
+    vst1_s16(dst + 2 * step, x[2]);
+    vst1_s16(dst + 3 * step, x[3]);
   }
 }
 
@@ -2705,7 +2659,7 @@ void Adst4TransformLoopRow_NEON(TransformType /*tx_type*/,
   int i = adjusted_tx_height;
   auto* data = src;
   do {
-    Adst4_NEON<false>(data, /*step=*/4, /*transpose=*/true);
+    Adst4_NEON(data, /*step=*/4, /*transpose=*/true);
     data += 16;
     i -= 4;
   } while (i != 0);
@@ -2732,7 +2686,7 @@ void Adst4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
     int i = tx_width;
     auto* data = src;
     do {
-      Adst4_NEON<false>(data, tx_width, /*transpose=*/false);
+      Adst4_NEON(data, tx_width, /*transpose=*/false);
       data += 4;
       i -= 4;
     } while (i != 0);

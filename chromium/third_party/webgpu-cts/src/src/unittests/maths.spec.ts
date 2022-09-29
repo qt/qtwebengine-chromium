@@ -8,6 +8,7 @@ import { kBit, kValue } from '../webgpu/util/constants.js';
 import { f32, f32Bits, float32ToUint32, Scalar } from '../webgpu/util/conversion.js';
 import {
   biasedRange,
+  cartesianProduct,
   correctlyRounded,
   correctlyRoundedF32,
   fullF32Range,
@@ -195,27 +196,27 @@ g.test('oneULPFlushToZero')
 
     // Subnormals
     { target: hexToF32(kBit.f32.subnormal.positive.min), expect: hexToF32(0x00800000) },
+    { target: 2.82e-40, expect: hexToF32(0x00800000) }, // positive subnormal
     { target: hexToF32(kBit.f32.subnormal.positive.max), expect: hexToF32(0x00800000) },
     { target: hexToF32(kBit.f32.subnormal.negative.min), expect: hexToF32(0x00800000) },
+    { target: -2.82e-40, expect: hexToF32(0x00800000) }, // negative subnormal
     { target: hexToF32(kBit.f32.subnormal.negative.max), expect: hexToF32(0x00800000) },
 
     // Normals
-    { target: hexToF32(kBit.f32.positive.max), expect: hexToF32(0x73800000) },
     { target: hexToF32(kBit.f32.positive.min), expect: hexToF32(0x00000001) },
-    { target: hexToF32(kBit.f32.negative.max), expect: hexToF32(0x00000001) },
-    { target: hexToF32(kBit.f32.negative.min), expect: hexToF32(0x73800000) },
     { target: 1, expect: hexToF32(0x33800000) },
     { target: 2, expect: hexToF32(0x34000000) },
     { target: 4, expect: hexToF32(0x34800000) },
     { target: 1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.positive.max), expect: hexToF32(0x73800000) },
+    { target: hexToF32(kBit.f32.negative.max), expect: hexToF32(0x00000001) },
     { target: -1, expect: hexToF32(0x33800000) },
     { target: -2, expect: hexToF32(0x34000000) },
     { target: -4, expect: hexToF32(0x34800000) },
     { target: -1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.negative.min), expect: hexToF32(0x73800000) },
 
-    // Not precisely expressible as float32
-    { target: 2.82e-40, expect: hexToF32(0x00800000) }, // positive subnormal
-    { target: -2.82e-40, expect: hexToF32(0x00800000) }, // negative subnormal
+    // No precise f32 value
     { target: 0.001, expect: hexToF32(0x2f000000) }, // positive normal
     { target: -0.001, expect: hexToF32(0x2f000000) }, // negative normal
     { target: 1e40, expect: hexToF32(0x73800000) }, // positive out of range
@@ -244,23 +245,27 @@ g.test('oneULPNoFlush')
 
     // Subnormals
     { target: hexToF32(kBit.f32.subnormal.positive.min), expect: hexToF32(0x00000001) },
+    { target: -2.82e-40, expect: hexToF32(0x00000001) }, // negative subnormal
     { target: hexToF32(kBit.f32.subnormal.positive.max), expect: hexToF32(0x00000001) },
     { target: hexToF32(kBit.f32.subnormal.negative.min), expect: hexToF32(0x00000001) },
+    { target: 2.82e-40, expect: hexToF32(0x00000001) }, // positive subnormal
     { target: hexToF32(kBit.f32.subnormal.negative.max), expect: hexToF32(0x00000001) },
 
     // Normals
+    { target: hexToF32(kBit.f32.positive.min), expect: hexToF32(0x00000001) },
     { target: 1, expect: hexToF32(0x33800000) },
     { target: 2, expect: hexToF32(0x34000000) },
     { target: 4, expect: hexToF32(0x34800000) },
     { target: 1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.positive.max), expect: hexToF32(0x73800000) },
+    { target: hexToF32(kBit.f32.negative.max), expect: hexToF32(0x00000001) },
     { target: -1, expect: hexToF32(0x33800000) },
     { target: -2, expect: hexToF32(0x34000000) },
     { target: -4, expect: hexToF32(0x34800000) },
     { target: -1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.negative.min), expect: hexToF32(0x73800000) },
 
-    // Non-f32 expressible
-    { target: 2.82e-40, expect: hexToF32(0x00000001) }, // positive subnormal
-    { target: -2.82e-40, expect: hexToF32(0x00000001) }, // negative subnormal
+    // No precise f32 value
     { target: 0.001, expect: hexToF32(0x2f000000) }, // positive normal
     { target: -0.001, expect: hexToF32(0x2f000000) }, // negative normal
     { target: 1e40, expect: hexToF32(0x73800000) }, // positive out of range
@@ -272,7 +277,56 @@ g.test('oneULPNoFlush')
     const expect = t.params.expect;
     t.expect(
       got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
-      `oneULP(${target}, true) returned ${got}. Expected ${expect}`
+      `oneULPImpl(${target}, false) returned ${got}. Expected ${expect}`
+    );
+  });
+
+g.test('oneULP')
+  .paramsSimple<OneULPCase>([
+    // Edge Cases
+    { target: Number.NaN, expect: Number.NaN },
+    { target: Number.NEGATIVE_INFINITY, expect: hexToF32(0x73800000) },
+    { target: Number.POSITIVE_INFINITY, expect: hexToF32(0x73800000) },
+
+    // Zeroes
+    { target: +0, expect: hexToF32(0x00800000) },
+    { target: -0, expect: hexToF32(0x00800000) },
+
+    // Subnormals
+    { target: hexToF32(kBit.f32.subnormal.negative.max), expect: hexToF32(0x00800000) },
+    { target: -2.82e-40, expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.negative.min), expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.positive.max), expect: hexToF32(0x00800000) },
+    { target: 2.82e-40, expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.positive.min), expect: hexToF32(0x00800000) },
+
+    // Normals
+    { target: hexToF32(kBit.f32.positive.min), expect: hexToF32(0x00000001) },
+    { target: 1, expect: hexToF32(0x33800000) },
+    { target: 2, expect: hexToF32(0x34000000) },
+    { target: 4, expect: hexToF32(0x34800000) },
+    { target: 1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.positive.max), expect: hexToF32(0x73800000) },
+    { target: hexToF32(kBit.f32.negative.max), expect: hexToF32(0x000000001) },
+    { target: -1, expect: hexToF32(0x33800000) },
+    { target: -2, expect: hexToF32(0x34000000) },
+    { target: -4, expect: hexToF32(0x34800000) },
+    { target: -1000000, expect: hexToF32(0x3d800000) },
+    { target: hexToF32(kBit.f32.negative.min), expect: hexToF32(0x73800000) },
+
+    // No precise f32 value
+    { target: -0.001, expect: hexToF32(0x2f000000) }, // negative normal
+    { target: -1e40, expect: hexToF32(0x73800000) }, // negative out of range
+    { target: 0.001, expect: hexToF32(0x2f000000) }, // positive normal
+    { target: 1e40, expect: hexToF32(0x73800000) }, // positive out of range
+  ])
+  .fn(t => {
+    const target = t.params.target;
+    const got = oneULP(target);
+    const expect = t.params.expect;
+    t.expect(
+      got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
+      `oneULP(${target}) returned ${got}. Expected ${expect}`
     );
   });
 
@@ -1141,9 +1195,23 @@ g.test('f32LimitsEquivalency')
     { bits: kBit.f32.positive.max, value: kValue.f32.positive.max },
     { bits: kBit.f32.positive.min, value: kValue.f32.positive.min },
     { bits: kBit.f32.positive.nearest_max, value: kValue.f32.positive.nearest_max },
+    { bits: kBit.f32.positive.less_than_one, value: kValue.f32.positive.less_than_one },
+    { bits: kBit.f32.positive.pi.whole, value: kValue.f32.positive.pi.whole },
+    { bits: kBit.f32.positive.pi.three_quarters, value: kValue.f32.positive.pi.three_quarters },
+    { bits: kBit.f32.positive.pi.half, value: kValue.f32.positive.pi.half },
+    { bits: kBit.f32.positive.pi.third, value: kValue.f32.positive.pi.third },
+    { bits: kBit.f32.positive.pi.quarter, value: kValue.f32.positive.pi.quarter },
+    { bits: kBit.f32.positive.pi.sixth, value: kValue.f32.positive.pi.sixth },
+    { bits: kBit.f32.positive.e, value: kValue.f32.positive.e },
     { bits: kBit.f32.negative.max, value: kValue.f32.negative.max },
     { bits: kBit.f32.negative.min, value: kValue.f32.negative.min },
     { bits: kBit.f32.negative.nearest_min, value: kValue.f32.negative.nearest_min },
+    { bits: kBit.f32.negative.pi.whole, value: kValue.f32.negative.pi.whole },
+    { bits: kBit.f32.negative.pi.three_quarters, value: kValue.f32.negative.pi.three_quarters },
+    { bits: kBit.f32.negative.pi.half, value: kValue.f32.negative.pi.half },
+    { bits: kBit.f32.negative.pi.third, value: kValue.f32.negative.pi.third },
+    { bits: kBit.f32.negative.pi.quarter, value: kValue.f32.negative.pi.quarter },
+    { bits: kBit.f32.negative.pi.sixth, value: kValue.f32.negative.pi.sixth },
     { bits: kBit.f32.subnormal.positive.max, value: kValue.f32.subnormal.positive.max },
     { bits: kBit.f32.subnormal.positive.min, value: kValue.f32.subnormal.positive.min },
     { bits: kBit.f32.subnormal.negative.max, value: kValue.f32.subnormal.negative.max },
@@ -1160,5 +1228,35 @@ g.test('f32LimitsEquivalency')
     test.expect(
       val_to_bits && bits_to_val,
       `bits = ${bits}, value = ${value}, returned val_to_bits as ${val_to_bits}, and bits_to_val as ${bits_to_val}, they are expected to be equivalent`
+    );
+  });
+
+interface cartesianProductCase {
+  inputs: number[][];
+  result: number[][];
+}
+
+g.test('cartesianProduct')
+  .paramsSimple<cartesianProductCase>(
+    // prettier-ignore
+    [
+      { inputs: [[0], [1]], result: [[0, 1]] },
+      { inputs: [[0, 1], [2]], result: [[0, 2], [1, 2]] },
+      { inputs: [[0], [1, 2]], result: [[0, 1], [0, 2]] },
+      { inputs: [[0, 1], [2, 3]], result: [[0,2], [1, 2], [0, 3], [1, 3]] },
+      { inputs: [[0, 1, 2], [3, 4, 5]], result: [[0, 3], [1, 3], [2, 3], [0, 4], [1, 4], [2, 4], [0, 5], [1, 5], [2, 5]] },
+      { inputs: [[0, 1], [2, 3], [4, 5]], result: [[0, 2, 4], [1, 2, 4], [0, 3, 4], [1, 3, 4], [0, 2, 5], [1, 2, 5], [0, 3, 5], [1, 3, 5]] },
+  ]
+  )
+  .fn(test => {
+    const inputs = test.params.inputs;
+    const got = cartesianProduct(...inputs);
+    const expect = test.params.result;
+
+    test.expect(
+      objectEquals(got, expect),
+      `cartesianProduct([${inputs.map(i => '[' + i.toString() + ']')}]) returned [${got.map(
+        g => '[' + g.toString() + ']'
+      )}]. Expected ${expect.map(e => '[' + e.toString() + ']')}`
     );
   });

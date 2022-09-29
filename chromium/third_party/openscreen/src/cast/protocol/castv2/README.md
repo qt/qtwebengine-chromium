@@ -11,6 +11,7 @@ managing OFFER/ANSWER exchanges, getting status and capability information from
 the receiver, and exchanging RPC messaging for handling media remoting.
 
 ## What's in this folder?
+
 The `streaming_schema.json` file in this directory contains a
 [JsonSchema](https://json-schema.org/) for the validation of control messaging
 defined in the Cast Streaming Control Protocol. This includes comprehensive
@@ -25,7 +26,7 @@ these example files and see what kind of errors this script presents.
 
 NOTE: this script uses
 [`yajsv`](https://github.com/neilpa/yajsv/releases/tag/v1.4.0),
-which must be downloaded using the `tools/download-yajsv.py` script.
+which needs to be installed. See the [README.md](../../../README.md#).
 
 For example, if we modify the launch.json to not have a language field:
 

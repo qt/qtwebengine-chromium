@@ -22,18 +22,10 @@
 #include <xnnpack/common.h>
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
-#include <xnnpack/params-init.h>
+#include <xnnpack/microparams-init.h>
 #include <xnnpack/params.h>
 #include <xnnpack/indirection.h>
 
-
-static inline size_t compute_output_dimension(
-    size_t padded_input_dimension,
-    size_t pooling_dimension,
-    size_t stride_dimension)
-{
-  return (padded_input_dimension - pooling_dimension) / stride_dimension + 1;
-}
 
 static inline size_t compute_output_dimension_with_tf_same_padding(
     size_t input_dimension,
@@ -95,6 +87,20 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_qu8(
       "failed to create %s operator with %" PRIu32 "x%" PRIu32 " stride: stride dimensions must be non-zero",
       xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_qu8), stride_width, stride_height);
     goto error;
+  }
+
+  if (stride_height > pooling_height) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride height: must be less than pooling height %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_qu8), stride_height, pooling_height);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (stride_width > pooling_width) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride width: must be less than pooling width %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_qu8), stride_width, pooling_width);
+    return xnn_status_invalid_parameter;
   }
 
   if (channels == 0) {
@@ -211,11 +217,8 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_qu8(
   average_pooling_op->output_pixel_stride = output_pixel_stride;
 
   average_pooling_op->input_zero_point = (int32_t) (uint32_t) input_zero_point;
-  average_pooling_op->output_zero_point = output_zero_point;
   average_pooling_op->input_scale = input_scale;
   average_pooling_op->output_scale = output_scale;
-  average_pooling_op->output_min = output_min;
-  average_pooling_op->output_max = output_max;
 
   // Number of rows read in the AVGPOOL micro-kernel.
   const size_t avgpool_nrows =
@@ -297,6 +300,20 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_f16(
       "failed to create %s operator with %" PRIu32 "x%" PRIu32 " stride: stride dimensions must be non-zero",
       xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f16), stride_width, stride_height);
     goto error;
+  }
+
+  if (stride_height > pooling_height) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride height: must be less than pooling height %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f16), stride_height, pooling_height);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (stride_width > pooling_width) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride width: must be less than pooling width %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f16), stride_width, pooling_width);
+    return xnn_status_invalid_parameter;
   }
 
   if (channels == 0) {
@@ -463,6 +480,20 @@ enum xnn_status xnn_create_average_pooling2d_nhwc_f32(
       "failed to create %s operator with %" PRIu32 "x%" PRIu32 " stride: stride dimensions must be non-zero",
       xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f32), stride_width, stride_height);
     goto error;
+  }
+
+  if (stride_height > pooling_height) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride height: must be less than pooling height %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f32), stride_height, pooling_height);
+    return xnn_status_invalid_parameter;
+  }
+
+  if (stride_width > pooling_width) {
+    xnn_log_error(
+      "failed to define %s operator with %" PRIu32 " stride width: must be less than pooling width %" PRIu32,
+      xnn_operator_type_to_string(xnn_operator_type_average_pooling_nhwc_f32), stride_width, pooling_width);
+    return xnn_status_invalid_parameter;
   }
 
   if (channels == 0) {
@@ -640,13 +671,15 @@ static enum xnn_status setup_average_pooling2d(
     average_pooling_op->padding_bottom = total_padding_height - average_pooling_op->padding_top;
     average_pooling_op->padding_right = total_padding_width - average_pooling_op->padding_left;
   } else {
-    average_pooling_op->output_height = compute_output_dimension(
+    average_pooling_op->output_height = xnn_compute_convolution_output_dimension(
         average_pooling_op->padding_top + input_height + average_pooling_op->padding_bottom,
         average_pooling_op->kernel_height,
+        1,
         average_pooling_op->stride_height);
-    average_pooling_op->output_width = compute_output_dimension(
+    average_pooling_op->output_width = xnn_compute_convolution_output_dimension(
         average_pooling_op->padding_left + input_width + average_pooling_op->padding_right,
         average_pooling_op->kernel_width,
+        1,
         average_pooling_op->stride_width);
   }
   average_pooling_op->output = output;

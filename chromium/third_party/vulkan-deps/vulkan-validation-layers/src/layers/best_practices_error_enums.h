@@ -30,6 +30,8 @@
 #define DECORATE_UNUSED
 #endif
 
+// clang-format off
+
 static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_ExtensionMismatch =
     "UNASSIGNED-BestPractices-vkCreateInstance-extension-mismatch";
 static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_ExtensionMismatch =
@@ -126,6 +128,9 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_TransitionUndefinedToRead
 static const char DECORATE_UNUSED *kVUID_BestPractices_SemaphoreCount = "UNASSIGNED-BestPractices-SemaphoreCount";
 static const char DECORATE_UNUSED *kVUID_BestPractices_EmptyDescriptorPool =
     "UNASSIGNED-BestPractices-EmptyDescriptorPool";
+static const char DECORATE_UNUSED *kVUID_BestPractices_ClearValueWithoutLoadOpClear = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-ClearValueWithoutLoadOpClear";
+static const char DECORATE_UNUSED *kVUID_BestPractices_ClearValueCountHigherThanAttachmentCount = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-ClearValueCountHigherThanAttachmentCount";
+static const char DECORATE_UNUSED *kVUID_BestPractices_StoreOpDontCareThenLoadOpLoad = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-StoreOpDontCareThenLoadOpLoad";
 
 // Arm-specific best practice
 static const char DECORATE_UNUSED *kVUID_BestPractices_AllocateDescriptorSets_SuboptimalReuse =
@@ -256,4 +261,7 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_DynamicRendering_NotSuppo
 // Imagination Technologies best practices
 static const char DECORATE_UNUSED *kVUID_BestPractices_Texture_Format_PVRTC_Outdated =
     "UNASSIGNED-BestPractices-Texture-Format-PVRTC-Outdated";
+
+// clang-format on
+
 #endif

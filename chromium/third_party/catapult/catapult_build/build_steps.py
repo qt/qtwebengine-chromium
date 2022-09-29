@@ -17,6 +17,8 @@ import sys
 #   environment.
 # disabled (optional): List of platforms the test is disabled on. May contain
 #   'win', 'mac', 'linux', or 'android'.
+# python_versions (optional): A list of ints specifying the Python versions to
+#   run on. May contain "2" or "3". Defaults to running on both.
 # outputs_presentation_json (optional): If True, pass in --presentation-json
 #   argument to the test executable to allow it to update the buildbot status
 #   page. More details here:
@@ -95,6 +97,7 @@ _CATAPULT_TESTS = [
         'additional_args': ['--browser=reference',],
         'uses_sandbox_env': True,
         'disabled': ['android'],
+        'python_versions': [3],
     },
     {
         'name': 'Telemetry Tests with Stable Browser (Desktop)',
@@ -106,6 +109,7 @@ _CATAPULT_TESTS = [
         ],
         'uses_sandbox_env': True,
         'disabled': ['android'],
+        'python_versions': [3],
     },
     {
         'name': 'Telemetry Tests with Stable Browser (Android)',
@@ -117,7 +121,8 @@ _CATAPULT_TESTS = [
             '-v',
         ],
         'uses_sandbox_env': True,
-        'disabled': ['win', 'mac', 'linux']
+        'disabled': ['win', 'mac', 'linux'],
+        'python_versions': [3],
     },
     {
         'name': 'Telemetry Integration Tests with Stable Browser',
@@ -129,6 +134,7 @@ _CATAPULT_TESTS = [
         ],
         'uses_sandbox_env': True,
         'disabled': ['android', 'linux'],  # TODO(nedn): enable this on linux
+        'python_versions': [3],
     },
     {
         'name': 'Tracing Dev Server Tests',
@@ -238,13 +244,6 @@ def main(args=None):
 
   protoc_path = 'protoc'
 
-  # TODO(crbug.com/1271700): Remove this condition once protoc mac-arm build is
-  # released.
-  if args.platform == 'mac' and args.platform_arch == 'arm':
-    protoc_path = os.path.join(args.api_path_checkout, 'catapult_build', 'bin',
-                               'mac-arm64', 'protoc')
-
-
   steps = [
       {
           # Always remove stale files first. Not listed as a test above
@@ -343,6 +342,10 @@ def main(args=None):
       break
 
     if args.platform in test.get('disabled', []):
+      continue
+
+    python_version = 3 if args.use_python3 else 2
+    if python_version not in test.get('python_versions', [2, 3]):
       continue
 
     # The test "Devil Python Tests" has two executables, run_py_tests and

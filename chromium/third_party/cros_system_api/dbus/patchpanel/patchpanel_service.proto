@@ -91,6 +91,12 @@ message NetworkDevice {
 
   // The guest to which the device is bound, if applicable.
   GuestType guest_type = 4;
+
+  // The IPv4 and IPv6 addresses of the DNS proxy instance tied to the guest
+  // device, if applicable. The addresses are represented in network order as a
+  // byte array of size 4 and 16 respectively for IPv4 and IPv6.
+  bytes dns_proxy_ipv4_addr = 8;
+  bytes dns_proxy_ipv6_addr = 9;
 }
 
 // Request to obtain the list of virtual network devices that patchpanel
@@ -479,9 +485,15 @@ message SetDnsRedirectionRuleRequest {
 
   // Nameservers are only necessary for Chrome redirect (USER type).
   repeated string nameservers = 4;
+
+  // Name of the "local" veth interface visible in the host namespace.
+  string host_ifname = 5;
 }
 
 // Response to a SetDnsRedirectionRuleRequest.
 message SetDnsRedirectionRuleResponse {
   bool success = 1;
 }
+
+// Signal that is emitted when a network configuration change happens.
+message NetworkConfigurationChangedSignal {}

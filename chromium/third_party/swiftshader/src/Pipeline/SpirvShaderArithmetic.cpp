@@ -146,11 +146,64 @@ SpirvShader::EmitResult SpirvShader::EmitTranspose(InsnIterator insn, EmitState 
 	return EmitResult::Continue;
 }
 
+SpirvShader::EmitResult SpirvShader::EmitPointerBitCast(Object::ID resultID, Operand &src, EmitState *state) const
+{
+	if(src.isPointer())  // Pointer -> Integer bits
+	{
+		if(sizeof(void *) == 4)  // 32-bit pointers
+		{
+			SIMD::UInt bits;
+			src.Pointer(0).castTo(bits);
+
+			auto &dst = state->createIntermediate(resultID, 1);
+			dst.move(0, bits);
+		}
+		else  // 64-bit pointers
+		{
+			ASSERT(sizeof(void *) == 8);
+			// Casting a 64 bit pointer into 2 32bit integers
+			auto &ptr = src.Pointer(0);
+			SIMD::UInt lowerBits, upperBits;
+			ptr.castTo(lowerBits, upperBits);
+
+			auto &dst = state->createIntermediate(resultID, 2);
+			dst.move(0, lowerBits);
+			dst.move(1, upperBits);
+		}
+	}
+	else  // Integer bits -> Pointer
+	{
+		if(sizeof(void *) == 4)  // 32-bit pointers
+		{
+			state->createPointer(resultID, SIMD::Pointer(src.UInt(0)));
+		}
+		else  // 64-bit pointers
+		{
+			ASSERT(sizeof(void *) == 8);
+			// Casting two 32-bit integers into a 64-bit pointer
+			state->createPointer(resultID, SIMD::Pointer(src.UInt(0), src.UInt(1)));
+		}
+	}
+
+	return EmitResult::Continue;
+}
+
 SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *state) const
 {
 	auto &type = getType(insn.resultTypeId());
-	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
 	auto src = Operand(this, state, insn.word(3));
+
+	bool dstIsPointer = getObject(insn.resultId()).kind == Object::Kind::Pointer;
+	bool srcIsPointer = src.isPointer();
+	if(srcIsPointer || dstIsPointer)
+	{
+		ASSERT(insn.opcode() == spv::OpBitcast);
+		ASSERT((srcIsPointer || (type.componentCount == 1)));  // When the ouput is a pointer, it's a single pointer
+
+		return EmitPointerBitCast(insn.resultId(), src, state);
+	}
+
+	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
 
 	for(auto i = 0u; i < type.componentCount; i++)
 	{
@@ -238,7 +291,7 @@ SpirvShader::EmitResult SpirvShader::EmitUnaryOp(InsnIterator insn, EmitState *s
 			// Derivative instructions: FS invocations are laid out like so:
 			//    0 1
 			//    2 3
-			static_assert(SIMD::Width == 4, "All cross-lane instructions will need care when using a different width");
+			ASSERT(SIMD::Width == 4);  // All cross-lane instructions will need care when using a different width
 			dst.move(i, SIMD::Float(Extract(src.Float(i), 1) - Extract(src.Float(i), 0)));
 			break;
 		case spv::OpDPdy:

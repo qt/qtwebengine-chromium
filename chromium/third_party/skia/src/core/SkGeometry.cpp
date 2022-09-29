@@ -727,7 +727,7 @@ int SkChopCubicAtXExtrema(const SkPoint src[4], SkPoint dst[10]) {
     C = d - 3c + 3b - a
     (BxCy - ByCx)t^2 + (AxCy - AyCx)t + AxBy - AyBx == 0
 */
-int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[]) {
+int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[2]) {
     SkScalar    Ax = src[1].fX - src[0].fX;
     SkScalar    Ay = src[1].fY - src[0].fY;
     SkScalar    Bx = src[2].fX - 2 * src[1].fX + src[0].fX;
@@ -741,7 +741,7 @@ int SkFindCubicInflections(const SkPoint src[4], SkScalar tValues[]) {
                                tValues);
 }
 
-int SkChopCubicAtInflections(const SkPoint src[], SkPoint dst[10]) {
+int SkChopCubicAtInflections(const SkPoint src[4], SkPoint dst[10]) {
     SkScalar    tValues[2];
     int         count = SkFindCubicInflections(src, tValues);
 
@@ -898,7 +898,7 @@ static int collaps_duplicates(SkScalar array[], int count) {
 
 #ifdef SK_DEBUG
 
-#define TEST_COLLAPS_ENTRY(array)   array, SK_ARRAY_COUNT(array)
+#define TEST_COLLAPS_ENTRY(array)   array, std::size(array)
 
 static void test_collaps_duplicates() {
     static bool gOnce;
@@ -924,7 +924,7 @@ static void test_collaps_duplicates() {
         { TEST_COLLAPS_ENTRY(src5), 2 },
         { TEST_COLLAPS_ENTRY(src6), 3 },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(data); ++i) {
+    for (size_t i = 0; i < std::size(data); ++i) {
         SkScalar dst[3];
         memcpy(dst, data[i].fData, data[i].fCount * sizeof(dst[0]));
         int count = collaps_duplicates(dst, data[i].fCount);
@@ -1619,7 +1619,7 @@ bool SkConic::findMaxCurvature(SkScalar* t) const {
 }
 #endif
 
-SkScalar SkConic::TransformW(const SkPoint pts[], SkScalar w, const SkMatrix& matrix) {
+SkScalar SkConic::TransformW(const SkPoint pts[3], SkScalar w, const SkMatrix& matrix) {
     if (!matrix.hasPerspective()) {
         return w;
     }

@@ -17,6 +17,7 @@ syntax = "proto3";
 package cast.runtime;
 
 import "proto/common/application_config.proto";
+import "proto/common/application_state.proto";
 import "proto/common/duration.proto";
 import "proto/common/service_info.proto";
 import "proto/v2/url_rewrite.proto";
@@ -99,6 +100,14 @@ message LaunchApplicationRequest {
   cast.common.ServiceInfo core_application_service_info = 1;
   // CastMedia service info for this application in CastCore.
   cast.common.ServiceInfo cast_media_service_info = 4;
+  // Application session id.
+  string cast_session_id = 5;
+  // Initial application media state.
+  cast.common.MediaState.Type media_state = 6;
+  // Initial application window visibility.
+  cast.common.Visibility.Type visibility = 7;
+  // Initial touch input capability.
+  cast.common.TouchInput.Type touch_input = 8;
 }
 
 // Returned by the runtime in response to a launch application request.

@@ -16,6 +16,7 @@
 
 #include "absl/strings/str_format.h"
 #include "connections/core.h"
+#include "internal/platform/bluetooth_utils.h"
 
 namespace location::nearby::windows {
 
@@ -189,8 +190,8 @@ void RequestConnection(connections::Core *pCore, const char *endpoint_id,
   connection_options.low_power = connection_options_w.low_power;
   if (connection_options_w.remote_bluetooth_mac_address) {
     connection_options.remote_bluetooth_mac_address =
-        ByteArray(connection_options_w.remote_bluetooth_mac_address,
-                  strlen(connection_options_w.remote_bluetooth_mac_address));
+        BluetoothUtils::FromString(
+            connection_options_w.remote_bluetooth_mac_address);
   }
   if (connection_options_w.strategy == StrategyW::kNone)
     connection_options.strategy = connections::Strategy::kNone;
@@ -226,7 +227,7 @@ void RejectConnection(connections::Core *pCore, const char *endpoint_id,
 void SendPayload(connections::Core *pCore,
                  // todo(jfcarroll) this is being exported, needs to be
                  // refactored to return a plain old c type
-                 char **endpoint_ids, size_t endpoint_ids_size,
+                 const char **endpoint_ids, size_t endpoint_ids_size,
                  PayloadW payloadw, ResultCallbackW callback) {
   if (pCore == nullptr) {
     return;
@@ -244,7 +245,7 @@ void CancelPayload(connections::Core *pCore, std::int64_t payload_id,
   pCore->CancelPayload(payload_id, *callback.GetImpl());
 }
 
-void DisconnectFromEndpoint(connections::Core *pCore, char *endpoint_id,
+void DisconnectFromEndpoint(connections::Core *pCore, const char *endpoint_id,
                             ResultCallbackW callback) {
   if (pCore == nullptr) {
     return;

@@ -15,9 +15,7 @@
 
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/encodeframe_utils.h"
-#include "av1/encoder/partition_strategy.h"
 #include "av1/encoder/rdopt.h"
-#include "av1/encoder/aq_variance.h"
 
 void av1_set_ssim_rdmult(const AV1_COMP *const cpi, int *errorperbit,
                          const BLOCK_SIZE bsize, const int mi_row,
@@ -326,7 +324,8 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
 
     if (!dry_run && !mi_addr->skip_txfm) {
       int cdf_num;
-      const int spatial_pred = av1_get_spatial_seg_pred(cm, xd, &cdf_num);
+      const int spatial_pred = av1_get_spatial_seg_pred(
+          cm, xd, &cdf_num, cpi->cyclic_refresh->skip_over4x4);
       const int coded_id = av1_neg_interleave(mi_addr->segment_id, spatial_pred,
                                               seg->last_active_segid + 1);
       int64_t spatial_cost = x->mode_costs.spatial_pred_cost[cdf_num][coded_id];
@@ -1577,6 +1576,10 @@ void av1_set_cost_upd_freq(AV1_COMP *cpi, ThreadData *td,
   const int num_planes = av1_num_planes(cm);
   MACROBLOCK *const x = &td->mb;
   MACROBLOCKD *const xd = &x->e_mbd;
+
+  if (cm->features.disable_cdf_update) {
+    return;
+  }
 
   switch (cpi->sf.inter_sf.coeff_cost_upd_level) {
     case INTERNAL_COST_UPD_OFF:

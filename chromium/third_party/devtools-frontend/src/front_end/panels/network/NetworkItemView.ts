@@ -38,7 +38,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as NetworkComponents from './components/components.js';
 import {EventSourceMessagesView} from './EventSourceMessagesView.js';
 
-import type {NetworkTimeCalculator} from './NetworkTimeCalculator.js';
+import {type NetworkTimeCalculator} from './NetworkTimeCalculator.js';
 import {RequestCookiesView} from './RequestCookiesView.js';
 import {RequestHeadersView} from './RequestHeadersView.js';
 import {RequestPayloadView} from './RequestPayloadView.js';
@@ -311,7 +311,20 @@ export class NetworkItemView extends UI.TabbedPane.TabbedPane {
   }
 
   revealHeader(section: NetworkForward.UIRequestLocation.UIHeaderSection, header: string|undefined): void {
-    this.selectTabInternal(NetworkForward.UIRequestLocation.UIRequestTabs.Headers);
-    this.headersView.revealHeader(section, header);
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HEADER_OVERRIDES)) {
+      this.selectTabInternal(NetworkForward.UIRequestLocation.UIRequestTabs.HeadersComponent);
+      this.headersViewComponent.revealHeader(section, header);
+    } else {
+      this.selectTabInternal(NetworkForward.UIRequestLocation.UIRequestTabs.Headers);
+      this.headersView.revealHeader(section, header);
+    }
+  }
+
+  getHeadersView(): RequestHeadersView {
+    return this.headersView;
+  }
+
+  getHeadersViewComponent(): NetworkComponents.RequestHeadersView.RequestHeadersView {
+    return this.headersViewComponent;
   }
 }

@@ -7,7 +7,7 @@
 
 #include "src/gpu/graphite/render/TessellateWedgesRenderStep.h"
 
-#include "src/gpu/graphite/DrawGeometry.h"
+#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/render/DynamicInstancesPatchAllocator.h"
 
@@ -27,11 +27,13 @@ using namespace skgpu::tess;
 // No color or wide color attribs, since it might always be part of the PaintParams
 // or we'll add a color-only fast path to RenderStep later.
 static constexpr PatchAttribs kAttribs = PatchAttribs::kFanPoint |
-                                         PatchAttribs::kPaintDepth;
+                                         PatchAttribs::kPaintDepth |
+                                         PatchAttribs::kSsboIndex;
 
 using Writer = PatchWriter<DynamicInstancesPatchAllocator<FixedCountWedges>,
                            Required<PatchAttribs::kFanPoint>,
-                           Required<PatchAttribs::kPaintDepth>>;
+                           Required<PatchAttribs::kPaintDepth>,
+                           Required<PatchAttribs::kSsboIndex>>;
 
 }  // namespace
 
@@ -51,7 +53,8 @@ TessellateWedgesRenderStep::TessellateWedgesRenderStep(std::string_view variantN
                                         {"p23", VertexAttribType::kFloat4, SkSLType::kFloat4},
                                         {"fanPointAttrib", VertexAttribType::kFloat2,
                                                            SkSLType::kFloat2},
-                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat}}) {
+                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                                        {"ssboIndex", VertexAttribType::kInt, SkSLType::kInt}}) {
     SkASSERT(this->instanceStride() == PatchStride(kAttribs));
 }
 
@@ -63,8 +66,10 @@ const char* TessellateWedgesRenderStep::vertexSkSL() const {
                                         "fanPointAttrib), depth, 1.0);\n";
 }
 
-void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometry& geom) const {
-    SkPath path = geom.shape().asPath(); // TODO: Iterate the Shape directly
+void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw,
+                                               const DrawParams& geom,
+                                               int ssboIndex) const {
+    SkPath path = geom.geometry().shape().asPath(); // TODO: Iterate the Shape directly
 
     BindBufferInfo fixedVertexBuffer = dw->bufferManager()->getStaticBuffer(
             BufferType::kVertex,
@@ -78,6 +83,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
     int patchReserveCount = FixedCountWedges::PreallocCount(path.countVerbs());
     Writer writer{kAttribs, *dw, fixedVertexBuffer, fixedIndexBuffer, patchReserveCount};
     writer.updatePaintDepthAttrib(geom.order().depthAsFloat());
+    writer.updateSsboIndexAttrib(ssboIndex);
 
     // TODO: Is it better to pre-transform on the CPU and only have a matrix uniform to compute
     // local coords, or is it better to always transform on the GPU (less CPU usage, more
@@ -154,7 +160,8 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw, const DrawGeometr
     }
 }
 
-void TessellateWedgesRenderStep::writeUniforms(const DrawGeometry&, SkPipelineDataGatherer*) const {
+void TessellateWedgesRenderStep::writeUniformsAndTextures(const DrawParams&,
+                                                          SkPipelineDataGatherer*) const {
     // Control points are pre-transformed to device space on the CPU, so no uniforms needed.
 }
 

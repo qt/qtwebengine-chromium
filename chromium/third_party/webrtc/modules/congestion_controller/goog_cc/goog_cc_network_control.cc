@@ -132,7 +132,7 @@ GoogCcNetworkController::GoogCcNetworkController(NetworkControllerConfig config,
       {&safe_reset_on_route_change_, &safe_reset_acknowledged_rate_},
       key_value_config_->Lookup("WebRTC-Bwe-SafeResetOnRouteChange"));
   if (delay_based_bwe_)
-    delay_based_bwe_->SetMinBitrate(congestion_controller::GetMinBitrate());
+    delay_based_bwe_->SetMinBitrate(kCongestionControllerMinBitrate);
 }
 
 GoogCcNetworkController::~GoogCcNetworkController() {}
@@ -343,8 +343,7 @@ void GoogCcNetworkController::ClampConstraints() {
   // TODO(holmer): We should make sure the default bitrates are set to 10 kbps,
   // and that we don't try to set the min bitrate to 0 from any applications.
   // The congestion controller should allow a min bitrate of 0.
-  min_data_rate_ =
-      std::max(min_target_rate_, congestion_controller::GetMinBitrate());
+  min_data_rate_ = std::max(min_target_rate_, kCongestionControllerMinBitrate);
   if (use_min_allocatable_as_lower_bound_) {
     min_data_rate_ = std::max(min_data_rate_, min_total_allocated_bitrate_);
   }
@@ -540,7 +539,6 @@ NetworkControlUpdate GoogCcNetworkController::OnTransportPacketsFeedback(
 
   NetworkControlUpdate update;
   bool recovered_from_overuse = false;
-  bool backoff_in_alr = false;
 
   DelayBasedBwe::Result result;
   result = delay_based_bwe_->IncomingPacketFeedbackVector(
@@ -562,15 +560,9 @@ NetworkControlUpdate GoogCcNetworkController::OnTransportPacketsFeedback(
   bandwidth_estimation_->UpdateLossBasedEstimator(report,
                                                   result.delay_detector_state);
   recovered_from_overuse = result.recovered_from_overuse;
-  backoff_in_alr = result.backoff_in_alr;
 
   if (recovered_from_overuse) {
     probe_controller_->SetAlrStartTimeMs(alr_start_time);
-    auto probes = probe_controller_->RequestProbe(report.feedback_time.ms());
-    update.probe_cluster_configs.insert(update.probe_cluster_configs.end(),
-                                        probes.begin(), probes.end());
-  } else if (backoff_in_alr) {
-    // If we just backed off during ALR, request a new probe.
     auto probes = probe_controller_->RequestProbe(report.feedback_time.ms());
     update.probe_cluster_configs.insert(update.probe_cluster_configs.end(),
                                         probes.begin(), probes.end());

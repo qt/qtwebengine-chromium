@@ -430,7 +430,9 @@ enum QRPreconditioners {
   /** Use a QR decomposition without pivoting as the first step. */
   HouseholderQRPreconditioner = 0x80,
   /** Use a QR decomposition with full pivoting as the first step. */
-  FullPivHouseholderQRPreconditioner = 0xC0
+  FullPivHouseholderQRPreconditioner = 0xC0,
+  /** Used to disable the QR Preconditioner in BDCSVD. */
+  DisableQRDecomposition = NoQRPreconditioner
 };
 
 #ifdef Success
@@ -549,7 +551,7 @@ struct IteratorBased {};
 /** \internal
  * Constants for comparison functors
  */
-enum ComparisonName {
+enum ComparisonName : unsigned int {
   cmp_EQ = 0,
   cmp_LT = 1,
   cmp_LE = 2,

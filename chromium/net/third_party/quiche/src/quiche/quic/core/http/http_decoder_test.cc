@@ -38,54 +38,6 @@ class HttpDecoderPeer {
 
 namespace {
 
-class MockHttpDecoderVisitor : public HttpDecoder::Visitor {
- public:
-  ~MockHttpDecoderVisitor() override = default;
-
-  // Called if an error is detected.
-  MOCK_METHOD(void, OnError, (HttpDecoder*), (override));
-
-  MOCK_METHOD(bool, OnMaxPushIdFrame, (), (override));
-  MOCK_METHOD(bool, OnGoAwayFrame, (const GoAwayFrame& frame), (override));
-  MOCK_METHOD(bool, OnSettingsFrameStart, (QuicByteCount header_length),
-              (override));
-  MOCK_METHOD(bool, OnSettingsFrame, (const SettingsFrame& frame), (override));
-
-  MOCK_METHOD(bool, OnDataFrameStart,
-              (QuicByteCount header_length, QuicByteCount payload_length),
-              (override));
-  MOCK_METHOD(bool, OnDataFramePayload, (absl::string_view payload),
-              (override));
-  MOCK_METHOD(bool, OnDataFrameEnd, (), (override));
-
-  MOCK_METHOD(bool, OnHeadersFrameStart,
-              (QuicByteCount header_length, QuicByteCount payload_length),
-              (override));
-  MOCK_METHOD(bool, OnHeadersFramePayload, (absl::string_view payload),
-              (override));
-  MOCK_METHOD(bool, OnHeadersFrameEnd, (), (override));
-
-  MOCK_METHOD(bool, OnPriorityUpdateFrameStart, (QuicByteCount header_length),
-              (override));
-  MOCK_METHOD(bool, OnPriorityUpdateFrame, (const PriorityUpdateFrame& frame),
-              (override));
-
-  MOCK_METHOD(bool, OnAcceptChFrameStart, (QuicByteCount header_length),
-              (override));
-  MOCK_METHOD(bool, OnAcceptChFrame, (const AcceptChFrame& frame), (override));
-  MOCK_METHOD(void, OnWebTransportStreamFrameType,
-              (QuicByteCount header_length, WebTransportSessionId session_id),
-              (override));
-
-  MOCK_METHOD(bool, OnUnknownFrameStart,
-              (uint64_t frame_type, QuicByteCount header_length,
-               QuicByteCount payload_length),
-              (override));
-  MOCK_METHOD(bool, OnUnknownFramePayload, (absl::string_view payload),
-              (override));
-  MOCK_METHOD(bool, OnUnknownFrameEnd, (), (override));
-};
-
 class HttpDecoderTest : public QuicTest {
  public:
   HttpDecoderTest() : decoder_(&visitor_) {
@@ -617,7 +569,8 @@ TEST_F(HttpDecoderTest, FrameWithOverlyLargePayload) {
     HttpDecoder decoder(&visitor);
     QuicDataWriter writer(max_input_length, input);
     ASSERT_TRUE(writer.WriteVarInt62(frame_type));         // frame type.
-    ASSERT_TRUE(writer.WriteVarInt62(kVarInt62MaxValue));  // frame length.
+    ASSERT_TRUE(
+        writer.WriteVarInt62(quiche::kVarInt62MaxValue));  // frame length.
     ASSERT_TRUE(writer.WriteUInt8(0x00));  // one byte of payload.
     EXPECT_NE(decoder.ProcessInput(input, writer.length()), 0u) << frame_type;
   }
@@ -806,11 +759,11 @@ TEST_F(HttpDecoderTest, EmptyMaxPushIdFrame) {
 TEST_F(HttpDecoderTest, LargeStreamIdInGoAway) {
   GoAwayFrame frame;
   frame.id = 1ull << 60;
-  std::unique_ptr<char[]> buffer;
-  uint64_t length = HttpEncoder::SerializeGoAwayFrame(frame, &buffer);
+  std::string goaway = HttpEncoder::SerializeGoAwayFrame(frame);
   EXPECT_CALL(visitor_, OnGoAwayFrame(frame));
-  EXPECT_GT(length, 0u);
-  EXPECT_EQ(length, decoder_.ProcessInput(buffer.get(), length));
+  EXPECT_GT(goaway.length(), 0u);
+  EXPECT_EQ(goaway.length(),
+            decoder_.ProcessInput(goaway.data(), goaway.length()));
   EXPECT_THAT(decoder_.error(), IsQuicNoError());
   EXPECT_EQ("", decoder_.error_detail());
 }

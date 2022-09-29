@@ -93,7 +93,8 @@ class GeneratorImpl : public TextGenerator {
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted successfully
     bool EmitAssign(const ast::AssignmentStatement* stmt);
-    /// Emits code such that if `expr` is zero, it emits one, else `expr`
+    /// Emits code such that if `expr` is zero, it emits one, else `expr`.
+    /// Used to avoid divide-by-zeros by substituting constant zeros with ones.
     /// @param out the output of the expression stream
     /// @param expr the expression
     /// @returns true if the expression was emitted, false otherwise
@@ -111,11 +112,11 @@ class GeneratorImpl : public TextGenerator {
     /// Emits a list of statements
     /// @param stmts the statement list
     /// @returns true if the statements were emitted successfully
-    bool EmitStatements(const ast::StatementList& stmts);
+    bool EmitStatements(utils::VectorRef<const ast::Statement*> stmts);
     /// Emits a list of statements with an indentation
     /// @param stmts the statement list
     /// @returns true if the statements were emitted successfully
-    bool EmitStatementsWithIndent(const ast::StatementList& stmts);
+    bool EmitStatementsWithIndent(utils::VectorRef<const ast::Statement*> stmts);
     /// Handles a block statement
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted successfully
@@ -303,19 +304,22 @@ class GeneratorImpl : public TextGenerator {
     bool EmitGlobalVariable(const ast::Variable* global);
 
     /// Handles emitting a global variable with the uniform storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitUniformVariable(const sem::Variable* var);
+    bool EmitUniformVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the storage storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitStorageVariable(const sem::Variable* var);
+    bool EmitStorageVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the handle storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitHandleVariable(const sem::Variable* var);
+    bool EmitHandleVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the private storage class
     /// @param var the global variable
@@ -339,7 +343,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output stream
     /// @param constant the constant value to emit
     /// @returns true if the constant value was successfully emitted
-    bool EmitConstant(std::ostream& out, const sem::Constant& constant);
+    bool EmitConstant(std::ostream& out, const sem::Constant* constant);
     /// Handles a literal
     /// @param out the output stream
     /// @param lit the literal to emit
@@ -353,6 +357,10 @@ class GeneratorImpl : public TextGenerator {
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted
     bool EmitForLoop(const ast::ForLoopStatement* stmt);
+    /// Handles a while statement
+    /// @param stmt the statement to emit
+    /// @returns true if the statement was emitted
+    bool EmitWhile(const ast::WhileStatement* stmt);
     /// Handles generating an identifier expression
     /// @param out the output of the expression stream
     /// @param expr the identifier expression
@@ -433,14 +441,18 @@ class GeneratorImpl : public TextGenerator {
     /// @param type the type to emit the value for
     /// @returns true if the zero value was successfully emitted.
     bool EmitZeroValue(std::ostream& out, const sem::Type* type);
-    /// Handles generating a variable
+    /// Handles generating a 'var' declaration
     /// @param var the variable to generate
     /// @returns true if the variable was emitted
-    bool EmitVariable(const ast::Variable* var);
-    /// Handles generating a program scope constant variable
-    /// @param var the variable to emit
+    bool EmitVar(const ast::Var* var);
+    /// Handles generating a function-scope 'let' declaration
+    /// @param let the variable to generate
     /// @returns true if the variable was emitted
-    bool EmitProgramConstVariable(const ast::Variable* var);
+    bool EmitLet(const ast::Let* let);
+    /// Handles generating a module-scope 'override' declaration
+    /// @param override the 'override' to emit
+    /// @returns true if the variable was emitted
+    bool EmitOverride(const ast::Override* override);
     /// Emits call to a helper vector assignment function for the input assignment
     /// statement and vector type. This is used to work around FXC issues where
     /// assignments to vectors with dynamic indices cause compilation failures.
@@ -477,7 +489,7 @@ class GeneratorImpl : public TextGenerator {
     /// Converts a builtin to an attribute name
     /// @param builtin the builtin to convert
     /// @returns the string name of the builtin or blank on error
-    std::string builtin_to_attribute(ast::Builtin builtin) const;
+    std::string builtin_to_attribute(ast::BuiltinValue builtin) const;
 
     /// Converts interpolation attributes to a HLSL modifiers
     /// @param type the interpolation type
@@ -531,7 +543,6 @@ class GeneratorImpl : public TextGenerator {
     std::function<bool()> emit_continuing_;
     std::unordered_map<const sem::Matrix*, std::string> matrix_scalar_ctors_;
     std::unordered_map<const sem::Builtin*, std::string> builtins_;
-    std::unordered_map<const sem::Struct*, std::string> structure_builders_;
     std::unordered_map<const sem::Vector*, std::string> dynamic_vector_write_;
     std::unordered_map<const sem::Matrix*, std::string> dynamic_matrix_vector_write_;
     std::unordered_map<const sem::Matrix*, std::string> dynamic_matrix_scalar_write_;

@@ -16,6 +16,7 @@
 #define SRC_TINT_WRITER_GLSL_GENERATOR_IMPL_H_
 
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -125,11 +126,11 @@ class GeneratorImpl : public TextGenerator {
     /// Emits a list of statements
     /// @param stmts the statement list
     /// @returns true if the statements were emitted successfully
-    bool EmitStatements(const ast::StatementList& stmts);
+    bool EmitStatements(utils::VectorRef<const ast::Statement*> stmts);
     /// Emits a list of statements with an indentation
     /// @param stmts the statement list
     /// @returns true if the statements were emitted successfully
-    bool EmitStatementsWithIndent(const ast::StatementList& stmts);
+    bool EmitStatementsWithIndent(utils::VectorRef<const ast::Statement*> stmts);
     /// Handles a block statement
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted successfully
@@ -293,19 +294,22 @@ class GeneratorImpl : public TextGenerator {
     bool EmitGlobalVariable(const ast::Variable* global);
 
     /// Handles emitting a global variable with the uniform storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitUniformVariable(const sem::Variable* var);
+    bool EmitUniformVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the storage storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitStorageVariable(const sem::Variable* var);
+    bool EmitStorageVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the handle storage class
-    /// @param var the global variable
+    /// @param var the AST node for the 'var'
+    /// @param sem the semantic node for the 'var'
     /// @returns true on success
-    bool EmitHandleVariable(const sem::Variable* var);
+    bool EmitHandleVariable(const ast::Var* var, const sem::Variable* sem);
 
     /// Handles emitting a global variable with the private storage class
     /// @param var the global variable
@@ -325,12 +329,13 @@ class GeneratorImpl : public TextGenerator {
     /// Handles emitting interpolation qualifiers
     /// @param out the output of the expression stream
     /// @param attrs the attributes
-    void EmitInterpolationQualifiers(std::ostream& out, const ast::AttributeList& attrs);
+    void EmitInterpolationQualifiers(std::ostream& out,
+                                     utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting attributes
     /// @param out the output of the expression stream
     /// @param attrs the attributes
     /// @returns true if the attributes were emitted
-    bool EmitAttributes(std::ostream& out, const ast::AttributeList& attrs);
+    bool EmitAttributes(std::ostream& out, utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting the entry point function
     /// @param func the entry point
     /// @returns true if the entry point function was emitted
@@ -343,7 +348,7 @@ class GeneratorImpl : public TextGenerator {
     /// @param out the output stream
     /// @param constant the constant value to emit
     /// @returns true if the constant value was successfully emitted
-    bool EmitConstant(std::ostream& out, const sem::Constant& constant);
+    bool EmitConstant(std::ostream& out, const sem::Constant* constant);
     /// Handles a literal
     /// @param out the output stream
     /// @param lit the literal to emit
@@ -357,6 +362,10 @@ class GeneratorImpl : public TextGenerator {
     /// @param stmt the statement to emit
     /// @returns true if the statement was emitted
     bool EmitForLoop(const ast::ForLoopStatement* stmt);
+    /// Handles a while statement
+    /// @param stmt the statement to emit
+    /// @returns true if the statement was emitted
+    bool EmitWhile(const ast::WhileStatement* stmt);
     /// Handles generating an identifier expression
     /// @param out the output of the expression stream
     /// @param expr the identifier expression
@@ -433,14 +442,22 @@ class GeneratorImpl : public TextGenerator {
     /// @param type the type to emit the value for
     /// @returns true if the zero value was successfully emitted.
     bool EmitZeroValue(std::ostream& out, const sem::Type* type);
-    /// Handles generating a variable
+    /// Handles generating a 'var' declaration
     /// @param var the variable to generate
     /// @returns true if the variable was emitted
-    bool EmitVariable(const ast::Variable* var);
-    /// Handles generating a program scope constant variable
-    /// @param var the variable to emit
+    bool EmitVar(const ast::Var* var);
+    /// Handles generating a function-scope 'let' declaration
+    /// @param let the variable to generate
     /// @returns true if the variable was emitted
-    bool EmitProgramConstVariable(const ast::Variable* var);
+    bool EmitLet(const ast::Let* let);
+    /// Handles generating a module-scope 'let' declaration
+    /// @param let the 'let' to emit
+    /// @returns true if the variable was emitted
+    bool EmitProgramConstVariable(const ast::Variable* let);
+    /// Handles generating a module-scope 'override' declaration
+    /// @param override the 'override' to emit
+    /// @returns true if the variable was emitted
+    bool EmitOverride(const ast::Override* override);
     /// Handles generating a builtin method name
     /// @param builtin the semantic info for the builtin
     /// @returns the name or "" if not valid
@@ -449,11 +466,11 @@ class GeneratorImpl : public TextGenerator {
     /// @param builtin the builtin to convert
     /// @param stage pipeline stage in which this builtin is used
     /// @returns the string name of the builtin or blank on error
-    const char* builtin_to_string(ast::Builtin builtin, ast::PipelineStage stage);
+    const char* builtin_to_string(ast::BuiltinValue builtin, ast::PipelineStage stage);
     /// Converts a builtin to a sem::Type appropriate for GLSL.
     /// @param builtin the builtin to convert
     /// @returns the appropriate semantic type or null on error.
-    sem::Type* builtin_type(ast::Builtin builtin);
+    sem::Type* builtin_type(ast::BuiltinValue builtin);
 
   private:
     enum class VarType { kIn, kOut };
@@ -463,19 +480,9 @@ class GeneratorImpl : public TextGenerator {
         std::string var_name;
     };
 
-    struct DMAIntrinsic {
-        transform::DecomposeMemoryAccess::Intrinsic::Op op;
-        transform::DecomposeMemoryAccess::Intrinsic::DataType type;
-        bool operator==(const DMAIntrinsic& rhs) const { return op == rhs.op && type == rhs.type; }
-        /// Hasher is a std::hash function for DMAIntrinsic
-        struct Hasher {
-            /// @param i the DMAIntrinsic to hash
-            /// @returns the hash of `i`
-            inline std::size_t operator()(const DMAIntrinsic& i) const {
-                return utils::Hash(i.op, i.type);
-            }
-        };
-    };
+    /// The map key for two semantic types.
+    using BinaryOperandType =
+        utils::UnorderedKeyWrapper<std::tuple<const sem::Type*, const sem::Type*>>;
 
     /// CallBuiltinHelper will call the builtin helper function, creating it
     /// if it hasn't been built already. If the builtin needs to be built then
@@ -503,15 +510,14 @@ class GeneratorImpl : public TextGenerator {
 
     TextBuffer helpers_;  // Helper functions emitted at the top of the output
     std::function<bool()> emit_continuing_;
-    std::unordered_map<DMAIntrinsic, std::string, DMAIntrinsic::Hasher> dma_intrinsics_;
     std::unordered_map<const sem::Builtin*, std::string> builtins_;
-    std::unordered_map<const sem::Struct*, std::string> structure_builders_;
     std::unordered_map<const sem::Vector*, std::string> dynamic_vector_write_;
     std::unordered_map<const sem::Vector*, std::string> int_dot_funcs_;
-    std::unordered_map<const sem::Type*, std::string> float_modulo_funcs_;
+    std::unordered_map<BinaryOperandType, std::string> float_modulo_funcs_;
     std::unordered_set<const sem::Struct*> emitted_structs_;
     bool requires_oes_sample_variables_ = false;
     bool requires_default_precision_qualifier_ = false;
+    bool requires_f16_extension_ = false;
     Version version_;
 };
 

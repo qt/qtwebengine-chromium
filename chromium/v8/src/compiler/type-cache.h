@@ -7,7 +7,6 @@
 
 #include "src/compiler/types.h"
 #include "src/date/date.h"
-#include "src/objects/code.h"
 #include "src/objects/js-array-buffer.h"
 #include "src/objects/string.h"
 
@@ -131,9 +130,10 @@ class V8_EXPORT_PRIVATE TypeCache final {
   Type const kStringLengthType = CreateRange(0.0, String::kMaxLength);
 
   // A time value always contains a tagged number in the range
-  // [-kMaxTimeInMs, kMaxTimeInMs].
-  Type const kTimeValueType =
-      CreateRange(-DateCache::kMaxTimeInMs, DateCache::kMaxTimeInMs);
+  // [-kMaxTimeInMs, kMaxTimeInMs] or -0.
+  Type const kTimeValueType = Type::Union(
+      CreateRange(-DateCache::kMaxTimeInMs, DateCache::kMaxTimeInMs),
+      Type::MinusZero(), zone());
 
   // The JSDate::day property always contains a tagged number in the range
   // [1, 31] or NaN.

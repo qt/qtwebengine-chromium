@@ -447,10 +447,10 @@ std::string ParserImpl::ShowType(uint32_t type_id) {
     return "SPIR-V type " + std::to_string(type_id);
 }
 
-ast::AttributeList ParserImpl::ConvertMemberDecoration(uint32_t struct_type_id,
-                                                       uint32_t member_index,
-                                                       const Type* member_ty,
-                                                       const Decoration& decoration) {
+ParserImpl::AttributeList ParserImpl::ConvertMemberDecoration(uint32_t struct_type_id,
+                                                              uint32_t member_index,
+                                                              const Type* member_ty,
+                                                              const Decoration& decoration) {
     if (decoration.empty()) {
         Fail() << "malformed SPIR-V decoration: it's empty";
         return {};
@@ -513,7 +513,8 @@ ast::AttributeList ParserImpl::ConvertMemberDecoration(uint32_t struct_type_id,
             return {
                 create<ast::StrideAttribute>(Source{}, decoration[1]),
                 builder_.ASTNodes().Create<ast::DisableValidationAttribute>(
-                    builder_.ID(), ast::DisabledValidation::kIgnoreStrideAttribute),
+                    builder_.ID(), builder_.AllocateNodeID(),
+                    ast::DisabledValidation::kIgnoreStrideAttribute),
             };
         }
         default:
@@ -816,7 +817,7 @@ bool ParserImpl::RegisterWorkgroupSizeBuiltin() {
     /// Returns false and emits a diagnostic on error.
     auto set_param = [this, composite_def](uint32_t* id_ptr, uint32_t* value_ptr,
                                            int index) -> bool {
-        const auto id = composite_def->GetSingleWordInOperand(index);
+        const auto id = composite_def->GetSingleWordInOperand(static_cast<uint32_t>(index));
         const auto* def = def_use_mgr_->GetDef(id);
         if (!def || (def->opcode() != SpvOpSpecConstant && def->opcode() != SpvOpConstant) ||
             (def->NumInOperands() != 1)) {
@@ -877,17 +878,17 @@ bool ParserImpl::RegisterEntryPoints() {
         TINT_ASSERT(Reader, !inner_implementation_name.empty());
         TINT_ASSERT(Reader, ep_name != inner_implementation_name);
 
-        utils::UniqueVector<uint32_t> inputs;
-        utils::UniqueVector<uint32_t> outputs;
+        utils::UniqueVector<uint32_t, 8> inputs;
+        utils::UniqueVector<uint32_t, 8> outputs;
         for (unsigned iarg = 3; iarg < entry_point.NumInOperands(); iarg++) {
             const uint32_t var_id = entry_point.GetSingleWordInOperand(iarg);
             if (const auto* var_inst = def_use_mgr_->GetDef(var_id)) {
                 switch (SpvStorageClass(var_inst->GetSingleWordInOperand(0))) {
                     case SpvStorageClassInput:
-                        inputs.add(var_id);
+                        inputs.Add(var_id);
                         break;
                     case SpvStorageClassOutput:
-                        outputs.add(var_id);
+                        outputs.Add(var_id);
                         break;
                     default:
                         break;
@@ -895,9 +896,9 @@ bool ParserImpl::RegisterEntryPoints() {
             }
         }
         // Save the lists, in ID-sorted order.
-        std::vector<uint32_t> sorted_inputs(inputs);
+        utils::Vector<uint32_t, 8> sorted_inputs(inputs);
         std::sort(sorted_inputs.begin(), sorted_inputs.end());
-        std::vector<uint32_t> sorted_outputs(outputs);
+        utils::Vector<uint32_t, 8> sorted_outputs(outputs);
         std::sort(sorted_outputs.begin(), sorted_outputs.end());
 
         const auto ast_stage = enum_converter_.ToPipelineStage(stage);
@@ -1066,7 +1067,7 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
     }
 
     // Compute members
-    ast::StructMemberList ast_members;
+    utils::Vector<const ast::StructMember*, 8> ast_members;
     const auto members = struct_ty->element_types();
     if (members.empty()) {
         Fail() << "WGSL does not support empty structures. can't convert type: "
@@ -1122,7 +1123,7 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
         }
 
         bool is_non_writable = false;
-        ast::AttributeList ast_member_decorations;
+        AttributeList ast_member_decorations;
         for (auto& decoration : GetDecorationsForMember(type_id, member_index)) {
             if (IsPipelineDecoration(decoration)) {
                 // IO decorations are handled when emitting the entry point.
@@ -1136,7 +1137,7 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
                 auto decos =
                     ConvertMemberDecoration(type_id, member_index, ast_member_ty, decoration);
                 for (auto* deco : decos) {
-                    ast_member_decorations.emplace_back(deco);
+                    ast_member_decorations.Push(deco);
                 }
                 if (!success_) {
                     return nullptr;
@@ -1153,10 +1154,10 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
         auto* ast_struct_member = create<ast::StructMember>(
             Source{}, builder_.Symbols().Register(member_name), ast_member_ty->Build(builder_),
             std::move(ast_member_decorations));
-        ast_members.push_back(ast_struct_member);
+        ast_members.Push(ast_struct_member);
     }
 
-    if (ast_members.empty()) {
+    if (ast_members.IsEmpty()) {
         // All members were likely built-ins. Don't generate an empty AST structure.
         return nullptr;
     }
@@ -1167,8 +1168,7 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
 
     // Now make the struct.
     auto sym = builder_.Symbols().Register(name);
-    auto* ast_struct =
-        create<ast::Struct>(Source{}, sym, std::move(ast_members), ast::AttributeList());
+    auto* ast_struct = create<ast::Struct>(Source{}, sym, std::move(ast_members), utils::Empty);
     if (num_non_writable_members == members.size()) {
         read_only_struct_types_.insert(ast_struct->name);
     }
@@ -1218,8 +1218,8 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
     }
 
     // Pipeline input and output variables map to private variables.
-    if (ast_storage_class == ast::StorageClass::kInput ||
-        ast_storage_class == ast::StorageClass::kOutput) {
+    if (ast_storage_class == ast::StorageClass::kIn ||
+        ast_storage_class == ast::StorageClass::kOut) {
         ast_storage_class = ast::StorageClass::kPrivate;
     }
     switch (ptr_as) {
@@ -1336,7 +1336,7 @@ bool ParserImpl::EmitScalarSpecConstants() {
                     },
                     [&](const U32*) {
                         return create<ast::IntLiteralExpression>(
-                            Source{}, static_cast<uint64_t>(literal_value),
+                            Source{}, static_cast<int64_t>(literal_value),
                             ast::IntLiteralExpression::Suffix::kU);
                     },
                     [&](const F32*) {
@@ -1357,7 +1357,7 @@ bool ParserImpl::EmitScalarSpecConstants() {
                 break;
         }
         if (ast_type && ast_expr) {
-            ast::AttributeList spec_id_decos;
+            AttributeList spec_id_decos;
             for (const auto& deco : GetDecorationsFor(inst.result_id())) {
                 if ((deco.size() == 2) && (deco[0] == SpvDecorationSpecId)) {
                     const uint32_t id = deco[1];
@@ -1367,12 +1367,12 @@ bool ParserImpl::EmitScalarSpecConstants() {
                                       << inst.result_id() << " has SpecId " << id;
                     }
                     auto* cid = create<ast::IdAttribute>(Source{}, id);
-                    spec_id_decos.push_back(cid);
+                    spec_id_decos.Push(cid);
                     break;
                 }
             }
-            auto* ast_var = MakeVariable(inst.result_id(), ast::StorageClass::kNone, ast_type, true,
-                                         true, ast_expr, std::move(spec_id_decos));
+            auto* ast_var =
+                MakeOverride(inst.result_id(), ast_type, ast_expr, std::move(spec_id_decos));
             if (ast_var) {
                 builder_.AST().AddGlobalVariable(ast_var);
                 scalar_spec_constants_.insert(inst.result_id());
@@ -1445,8 +1445,8 @@ bool ParserImpl::EmitModuleScopeVariables() {
         }
         switch (enum_converter_.ToStorageClass(spirv_storage_class)) {
             case ast::StorageClass::kNone:
-            case ast::StorageClass::kInput:
-            case ast::StorageClass::kOutput:
+            case ast::StorageClass::kIn:
+            case ast::StorageClass::kOut:
             case ast::StorageClass::kUniform:
             case ast::StorageClass::kHandle:
             case ast::StorageClass::kStorage:
@@ -1489,8 +1489,8 @@ bool ParserImpl::EmitModuleScopeVariables() {
             // here.)
             ast_constructor = MakeConstantExpression(var.GetSingleWordInOperand(1)).expr;
         }
-        auto* ast_var = MakeVariable(var.result_id(), ast_storage_class, ast_store_type, false,
-                                     false, ast_constructor, ast::AttributeList{});
+        auto* ast_var = MakeVar(var.result_id(), ast_storage_class, ast_store_type, ast_constructor,
+                                utils::Empty);
         // TODO(dneto): initializers (a.k.a. constructor expression)
         if (ast_var) {
             builder_.AST().AddGlobalVariable(ast_var);
@@ -1521,10 +1521,9 @@ bool ParserImpl::EmitModuleScopeVariables() {
             }
         }
         auto* ast_var =
-            MakeVariable(builtin_position_.per_vertex_var_id,
-                         enum_converter_.ToStorageClass(builtin_position_.storage_class),
-                         ConvertType(builtin_position_.position_member_type_id), false, false,
-                         ast_constructor, {});
+            MakeVar(builtin_position_.per_vertex_var_id,
+                    enum_converter_.ToStorageClass(builtin_position_.storage_class),
+                    ConvertType(builtin_position_.position_member_type_id), ast_constructor, {});
 
         builder_.AST().AddGlobalVariable(ast_var);
     }
@@ -1554,13 +1553,11 @@ const spvtools::opt::analysis::IntConstant* ParserImpl::GetArraySize(uint32_t va
     return size->AsIntConstant();
 }
 
-ast::Variable* ParserImpl::MakeVariable(uint32_t id,
-                                        ast::StorageClass sc,
-                                        const Type* storage_type,
-                                        bool is_const,
-                                        bool is_overridable,
-                                        const ast::Expression* constructor,
-                                        ast::AttributeList decorations) {
+ast::Var* ParserImpl::MakeVar(uint32_t id,
+                              ast::StorageClass sc,
+                              const Type* storage_type,
+                              const ast::Expression* constructor,
+                              AttributeList decorations) {
     if (storage_type == nullptr) {
         Fail() << "internal error: can't make ast::Variable for null type";
         return nullptr;
@@ -1588,20 +1585,41 @@ ast::Variable* ParserImpl::MakeVariable(uint32_t id,
         return nullptr;
     }
 
-    std::string name = namer_.Name(id);
+    auto sym = builder_.Symbols().Register(namer_.Name(id));
+    return create<ast::Var>(Source{}, sym, storage_type->Build(builder_), sc, access, constructor,
+                            decorations);
+}
 
-    // Note: we're constructing the variable here with the *storage* type,
-    // regardless of whether this is a `let`, `override`, or `var` declaration.
-    // `var` declarations will have a resolved type of ref<storage>, but at the
-    // AST level all three are declared with the same type.
-    return create<ast::Variable>(Source{}, builder_.Symbols().Register(name), sc, access,
-                                 storage_type->Build(builder_), is_const, is_overridable,
-                                 constructor, decorations);
+ast::Let* ParserImpl::MakeLet(uint32_t id, const Type* type, const ast::Expression* constructor) {
+    auto sym = builder_.Symbols().Register(namer_.Name(id));
+    return create<ast::Let>(Source{}, sym, type->Build(builder_), constructor, utils::Empty);
+}
+
+ast::Override* ParserImpl::MakeOverride(uint32_t id,
+                                        const Type* type,
+                                        const ast::Expression* constructor,
+                                        AttributeList decorations) {
+    if (!ConvertDecorationsForVariable(id, &type, &decorations, false)) {
+        return nullptr;
+    }
+    auto sym = builder_.Symbols().Register(namer_.Name(id));
+    return create<ast::Override>(Source{}, sym, type->Build(builder_), constructor, decorations);
+}
+
+ast::Parameter* ParserImpl::MakeParameter(uint32_t id,
+                                          const Type* type,
+                                          AttributeList decorations) {
+    if (!ConvertDecorationsForVariable(id, &type, &decorations, false)) {
+        return nullptr;
+    }
+
+    auto sym = builder_.Symbols().Register(namer_.Name(id));
+    return create<ast::Parameter>(Source{}, sym, type->Build(builder_), decorations);
 }
 
 bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                                                const Type** store_type,
-                                               ast::AttributeList* decorations,
+                                               AttributeList* decorations,
                                                bool transfer_pipeline_io) {
     DecorationList non_builtin_pipeline_decorations;
     for (auto& deco : GetDecorationsFor(id)) {
@@ -1656,12 +1674,12 @@ bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                     break;
             }
             auto ast_builtin = enum_converter_.ToBuiltin(spv_builtin);
-            if (ast_builtin == ast::Builtin::kNone) {
+            if (ast_builtin == ast::BuiltinValue::kInvalid) {
                 // A diagnostic has already been emitted.
                 return false;
             }
             if (transfer_pipeline_io) {
-                decorations->emplace_back(create<ast::BuiltinAttribute>(Source{}, ast_builtin));
+                decorations->Push(create<ast::BuiltinAttribute>(Source{}, ast_builtin));
             }
         }
         if (transfer_pipeline_io && IsPipelineDecoration(deco)) {
@@ -1672,13 +1690,13 @@ bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                 return Fail() << "malformed DescriptorSet decoration on ID " << id
                               << ": has no operand";
             }
-            decorations->emplace_back(create<ast::GroupAttribute>(Source{}, deco[1]));
+            decorations->Push(create<ast::GroupAttribute>(Source{}, deco[1]));
         }
         if (deco[0] == SpvDecorationBinding) {
             if (deco.size() == 1) {
                 return Fail() << "malformed Binding decoration on ID " << id << ": has no operand";
             }
-            decorations->emplace_back(create<ast::BindingAttribute>(Source{}, deco[1]));
+            decorations->Push(create<ast::BindingAttribute>(Source{}, deco[1]));
         }
     }
 
@@ -1696,8 +1714,8 @@ DecorationList ParserImpl::GetMemberPipelineDecorations(const Struct& struct_typ
                                                         int member_index) {
     // Yes, I could have used std::copy_if or std::copy_if.
     DecorationList result;
-    for (const auto& deco :
-         GetDecorationsForMember(struct_id_for_symbol_[struct_type.name], member_index)) {
+    for (const auto& deco : GetDecorationsForMember(struct_id_for_symbol_[struct_type.name],
+                                                    static_cast<uint32_t>(member_index))) {
         if (IsPipelineDecoration(deco)) {
             result.emplace_back(deco);
         }
@@ -1705,7 +1723,7 @@ DecorationList ParserImpl::GetMemberPipelineDecorations(const Struct& struct_typ
     return result;
 }
 
-const ast::Attribute* ParserImpl::SetLocation(ast::AttributeList* attributes,
+const ast::Attribute* ParserImpl::SetLocation(AttributeList* attributes,
                                               const ast::Attribute* replacement) {
     if (!replacement) {
         return nullptr;
@@ -1722,13 +1740,13 @@ const ast::Attribute* ParserImpl::SetLocation(ast::AttributeList* attributes,
         }
     }
     // The list didn't have a location. Add it.
-    attributes->push_back(replacement);
+    attributes->Push(replacement);
     return nullptr;
 }
 
 bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
                                             const DecorationList& decorations,
-                                            ast::AttributeList* attributes) {
+                                            AttributeList* attributes) {
     // Vulkan defaults to perspective-correct interpolation.
     ast::InterpolationType type = ast::InterpolationType::kPerspective;
     ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone;
@@ -1776,12 +1794,20 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
         }
     }
 
+    if (type == ast::InterpolationType::kFlat &&
+        !ast::HasAttribute<ast::LocationAttribute>(*attributes)) {
+        // WGSL requires that '@interpolate(flat)' needs to be paired with '@location', however
+        // SPIR-V requires all fragment shader integer Inputs are 'flat'. If the decorations do not
+        // contain a SpvDecorationLocation, then make this perspective.
+        type = ast::InterpolationType::kPerspective;
+    }
+
     // Apply interpolation.
     if (type == ast::InterpolationType::kPerspective &&
         sampling == ast::InterpolationSampling::kNone) {
         // This is the default. Don't add a decoration.
     } else {
-        attributes->emplace_back(create<ast::InterpolateAttribute>(type, sampling));
+        attributes->Push(create<ast::InterpolateAttribute>(type, sampling));
     }
 
     return success();
@@ -1814,7 +1840,7 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
         auto z = MakeConstantExpression(workgroup_size_builtin_.z_id);
         auto* ast_type = ty_.Vector(x.type, 3);
         return {ast_type, builder_.Construct(Source{}, ast_type->Build(builder_),
-                                             ast::ExpressionList{x.expr, y.expr, z.expr})};
+                                             utils::Vector{x.expr, y.expr, z.expr})};
     } else if (id == workgroup_size_builtin_.x_id) {
         return MakeConstantExpressionForScalarSpirvConstant(
             Source{}, ConvertType(workgroup_size_builtin_.component_type_id),
@@ -1870,14 +1896,14 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
             // Handle vector, matrix, array, and struct
 
             // Generate a composite from explicit components.
-            ast::ExpressionList ast_components;
+            ExpressionList ast_components;
             if (!inst->WhileEachInId([&](const uint32_t* id_ref) -> bool {
                     auto component = MakeConstantExpression(*id_ref);
                     if (!component) {
                         this->Fail() << "invalid constant with ID " << *id_ref;
                         return false;
                     }
-                    ast_components.emplace_back(component.expr);
+                    ast_components.Push(component.expr);
                     return true;
                 })) {
                 // We've already emitted a diagnostic.
@@ -1968,9 +1994,9 @@ const ast::Expression* ParserImpl::MakeNullValue(const Type* type) {
         [&](const Array*) { return builder_.Construct(Source{}, type->Build(builder_)); },
         [&](const Bool*) { return create<ast::BoolLiteralExpression>(Source{}, false); },
         [&](const Struct* struct_ty) {
-            ast::ExpressionList ast_components;
+            ExpressionList ast_components;
             for (auto* member : struct_ty->members) {
-                ast_components.emplace_back(MakeNullValue(member));
+                ast_components.Push(MakeNullValue(member));
             }
             return builder_.Construct(Source{}, original_type->Build(builder_),
                                       std::move(ast_components));
@@ -2448,7 +2474,7 @@ const Pointer* ParserImpl::GetTypeForHandleVar(const spvtools::opt::Instruction&
         } else {
             const auto access = ast::Access::kWrite;
             const auto format = enum_converter_.ToTexelFormat(image_type->format());
-            if (format == ast::TexelFormat::kNone) {
+            if (format == ast::TexelFormat::kInvalid) {
                 return nullptr;
             }
             ast_store_type = ty_.StorageTexture(dim, format, access);
@@ -2702,7 +2728,7 @@ std::string ParserImpl::GetMemberName(const Struct& struct_type, int member_inde
         Fail() << "no structure type registered for symbol";
         return "";
     }
-    return namer_.GetMemberName(where->second, member_index);
+    return namer_.GetMemberName(where->second, static_cast<uint32_t>(member_index));
 }
 
 WorkgroupSizeInfo::WorkgroupSizeInfo() = default;

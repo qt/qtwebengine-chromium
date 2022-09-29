@@ -44,12 +44,14 @@ class ReturnStatement;
 class SwitchStatement;
 class UnaryOpExpression;
 class Variable;
+class WhileStatement;
 }  // namespace tint::ast
 namespace tint::sem {
 class Array;
 class Atomic;
 class BlockStatement;
 class Builtin;
+class Call;
 class CaseStatement;
 class ForLoopStatement;
 class IfStatement;
@@ -58,6 +60,7 @@ class Materialize;
 class Statement;
 class SwitchStatement;
 class TypeConstructor;
+class WhileStatement;
 }  // namespace tint::sem
 
 namespace tint::resolver {
@@ -113,6 +116,11 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool PipelineStages(const std::vector<sem::Function*>& entry_points) const;
 
+    /// Validates push_constant variables
+    /// @param entry_points the entry points to the module
+    /// @returns true on success, false otherwise.
+    bool PushConstants(const std::vector<sem::Function*>& entry_points) const;
+
     /// Validates aliases
     /// @param alias the alias to validate
     /// @returns true on success, false otherwise.
@@ -128,12 +136,10 @@ class Validator {
     /// @param attr the stride attribute to validate
     /// @param el_size the element size
     /// @param el_align the element alignment
-    /// @param source the source of the attribute
     /// @returns true on success, false otherwise
     bool ArrayStrideAttribute(const ast::StrideAttribute* attr,
                               uint32_t el_size,
-                              uint32_t el_align,
-                              const Source& source) const;
+                              uint32_t el_align) const;
 
     /// Validates an atomic
     /// @param a the atomic ast node to validate
@@ -207,6 +213,11 @@ class Validator {
     /// @returns true on success, false otherwise
     bool ForLoopStatement(const sem::ForLoopStatement* stmt) const;
 
+    /// Validates a while loop
+    /// @param stmt the while statement to validate
+    /// @returns true on success, false otherwise
+    bool WhileStatement(const sem::WhileStatement* stmt) const;
+
     /// Validates a fallthrough statement
     /// @param stmt the fallthrough to validate
     /// @returns true on success, false otherwise
@@ -226,13 +237,13 @@ class Validator {
 
     /// Validates a global variable
     /// @param var the global variable to validate
-    /// @param constant_ids the set of constant ids in the module
+    /// @param override_id the set of override ids in the module
     /// @param atomic_composite_info atomic composite info in the module
     /// @returns true on success, false otherwise
     bool GlobalVariable(
-        const sem::Variable* var,
-        std::unordered_map<uint32_t, const sem::Variable*> constant_ids,
-        std::unordered_map<const sem::Type*, const Source&> atomic_composite_info) const;
+        const sem::GlobalVariable* var,
+        const std::unordered_map<OverrideId, const sem::Variable*>& override_id,
+        const std::unordered_map<const sem::Type*, const Source&>& atomic_composite_info) const;
 
     /// Validates an if statement
     /// @param stmt the statement to validate
@@ -256,6 +267,11 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool BuiltinCall(const sem::Call* call) const;
 
+    /// Validates a local variable
+    /// @param v the variable to validate
+    /// @returns true on success, false otherwise.
+    bool LocalVariable(const sem::Variable* v) const;
+
     /// Validates a location attribute
     /// @param location the location attribute to validate
     /// @param type the variable type
@@ -276,10 +292,12 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool LoopStatement(const sem::LoopStatement* stmt) const;
 
-    /// Validates a materialize of an abstract numeric value
-    /// @param m the materialize to validate
+    /// Validates a materialize of an abstract numeric value from the type `from` to the type `to`.
+    /// @param to the target type
+    /// @param from the abstract numeric type
+    /// @param source the source of the materialization
     /// @returns true on success, false otherwise
-    bool Materialize(const sem::Materialize* m) const;
+    bool Materialize(const sem::Type* to, const sem::Type* from, const Source& source) const;
 
     /// Validates a matrix
     /// @param ty the matrix to validate
@@ -291,7 +309,7 @@ class Validator {
     /// @param func the function the variable is for
     /// @param var the variable to validate
     /// @returns true on success, false otherwise
-    bool FunctionParameter(const ast::Function* func, const sem::Variable* var) const;
+    bool Parameter(const ast::Function* func, const sem::Variable* var) const;
 
     /// Validates a return
     /// @param ret the return statement to validate
@@ -307,12 +325,24 @@ class Validator {
     /// Validates a list of statements
     /// @param stmts the statements to validate
     /// @returns true on success, false otherwise
-    bool Statements(const ast::StatementList& stmts) const;
+    bool Statements(utils::VectorRef<const ast::Statement*> stmts) const;
 
     /// Validates a storage texture
     /// @param t the texture to validate
     /// @returns true on success, false otherwise
     bool StorageTexture(const ast::StorageTexture* t) const;
+
+    /// Validates a sampled texture
+    /// @param t the texture to validate
+    /// @param source the source of the texture
+    /// @returns true on success, false otherwise
+    bool SampledTexture(const sem::SampledTexture* t, const Source& source) const;
+
+    /// Validates a multisampled texture
+    /// @param t the texture to validate
+    /// @param source the source of the texture
+    /// @returns true on success, false otherwise
+    bool MultisampledTexture(const sem::MultisampledTexture* t, const Source& source) const;
 
     /// Validates a structure
     /// @param str the structure to validate
@@ -332,21 +362,38 @@ class Validator {
     /// @returns true on success, false otherwise
     bool SwitchStatement(const ast::SwitchStatement* s);
 
-    /// Validates a variable
-    /// @param var the variable to validate
+    /// Validates a 'var' variable declaration
+    /// @param v the variable to validate
     /// @returns true on success, false otherwise.
-    bool Variable(const sem::Variable* var) const;
+    bool Var(const sem::Variable* v) const;
 
-    /// Validates a variable constructor or cast
-    /// @param var the variable to validate
+    /// Validates a 'let' variable declaration
+    /// @param v the variable to validate
+    /// @returns true on success, false otherwise.
+    bool Let(const sem::Variable* v) const;
+
+    /// Validates a 'override' variable declaration
+    /// @param v the variable to validate
+    /// @param override_id the set of override ids in the module
+    /// @returns true on success, false otherwise.
+    bool Override(const sem::Variable* v,
+                  const std::unordered_map<OverrideId, const sem::Variable*>& override_id) const;
+
+    /// Validates a 'const' variable declaration
+    /// @param v the variable to validate
+    /// @returns true on success, false otherwise.
+    bool Const(const sem::Variable* v) const;
+
+    /// Validates a variable initializer
+    /// @param v the variable to validate
     /// @param storage_class the storage class of the variable
     /// @param storage_type the type of the storage
-    /// @param rhs_type the right hand side of the expression
+    /// @param initializer the RHS initializer expression
     /// @returns true on succes, false otherwise
-    bool VariableConstructorOrCast(const ast::Variable* var,
-                                   ast::StorageClass storage_class,
-                                   const sem::Type* storage_type,
-                                   const sem::Type* rhs_type) const;
+    bool VariableInitializer(const ast::Variable* v,
+                             ast::StorageClass storage_class,
+                             const sem::Type* storage_type,
+                             const sem::Expression* initializer) const;
 
     /// Validates a vector
     /// @param ty the vector to validate
@@ -375,7 +422,7 @@ class Validator {
     /// Validates there are no duplicate attributes
     /// @param attributes the list of attributes to validate
     /// @returns true on success, false otherwise.
-    bool NoDuplicateAttributes(const ast::AttributeList& attributes) const;
+    bool NoDuplicateAttributes(utils::VectorRef<const ast::Attribute*> attributes) const;
 
     /// Validates a storage class layout
     /// @param type the type to validate
@@ -391,15 +438,18 @@ class Validator {
     /// Validates a storage class layout
     /// @param var the variable to validate
     /// @param layouts previously validated storage layouts
+    /// @param enabled_extensions all the extensions declared in current module
     /// @returns true on success, false otherwise.
-    bool StorageClassLayout(const sem::Variable* var, ValidTypeStorageLayouts& layouts) const;
+    bool StorageClassLayout(const sem::Variable* var,
+                            const ast::Extensions& enabled_extensions,
+                            ValidTypeStorageLayouts& layouts) const;
 
     /// @returns true if the attribute list contains a
     /// ast::DisableValidationAttribute with the validation mode equal to
     /// `validation`
     /// @param attributes the attribute list to check
     /// @param validation the validation mode to check
-    bool IsValidationDisabled(const ast::AttributeList& attributes,
+    bool IsValidationDisabled(utils::VectorRef<const ast::Attribute*> attributes,
                               ast::DisabledValidation validation) const;
 
     /// @returns true if the attribute list does not contains a
@@ -407,7 +457,7 @@ class Validator {
     /// `validation`
     /// @param attributes the attribute list to check
     /// @param validation the validation mode to check
-    bool IsValidationEnabled(const ast::AttributeList& attributes,
+    bool IsValidationEnabled(utils::VectorRef<const ast::Attribute*> attributes,
                              ast::DisabledValidation validation) const;
 
   private:

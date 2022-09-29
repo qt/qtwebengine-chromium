@@ -72,8 +72,8 @@ namespace flatbuffers {
 // - Go type.
 // - C# / .Net type.
 // - Python type.
-// - Rust type.
 // - Kotlin type.
+// - Rust type.
 
 // using these macros, we can now write code dealing with types just once, e.g.
 
@@ -468,6 +468,10 @@ inline bool IsUnion(const Type &type) {
   return type.enum_def != nullptr && type.enum_def->is_union;
 }
 
+inline bool IsUnionType(const Type &type) {
+  return IsUnion(type) && IsInteger(type.base_type);
+}
+
 inline bool IsVector(const Type &type) {
   return type.base_type == BASE_TYPE_VECTOR;
 }
@@ -547,6 +551,7 @@ struct IDLOptions {
   bool output_enum_identifiers;
   bool prefixed_enums;
   bool scoped_enums;
+  bool swift_implementation_only;
   bool include_dependence_headers;
   bool mutable_buffer;
   bool one_file;
@@ -591,11 +596,13 @@ struct IDLOptions {
   std::string filename_suffix;
   std::string filename_extension;
   bool no_warnings;
+  bool warnings_as_errors;
   std::string project_root;
   bool cs_global_alias;
   bool json_nested_flatbuffers;
   bool json_nested_flexbuffers;
   bool json_nested_legacy_flatbuffers;
+  bool ts_flat_file;
 
   // Possible options for the more general generator below.
   enum Language {
@@ -625,6 +632,12 @@ struct IDLOptions {
   // If set, require all fields in a table to be explicitly numbered.
   bool require_explicit_ids;
 
+  // If set, implement serde::Serialize for generated Rust types
+  bool rust_serialize;
+
+  // If set, generate rust types in individual files with a root module file.
+  bool rust_module_root_file;
+
   // The corresponding language bit will be set if a language is included
   // for code generation.
   unsigned long lang_to_generate;
@@ -646,6 +659,7 @@ struct IDLOptions {
         output_enum_identifiers(true),
         prefixed_enums(true),
         scoped_enums(false),
+        swift_implementation_only(false),
         include_dependence_headers(true),
         mutable_buffer(false),
         one_file(false),
@@ -681,13 +695,17 @@ struct IDLOptions {
         filename_suffix("_generated"),
         filename_extension(),
         no_warnings(false),
+        warnings_as_errors(false),
         project_root(""),
         cs_global_alias(false),
         json_nested_flatbuffers(true),
         json_nested_flexbuffers(true),
         json_nested_legacy_flatbuffers(false),
+        ts_flat_file(false),
         mini_reflect(IDLOptions::kNone),
         require_explicit_ids(false),
+        rust_serialize(false),
+        rust_module_root_file(false),
         lang_to_generate(0),
         set_empty_strings_to_null(true),
         set_empty_vectors_to_null(true) {}
@@ -787,6 +805,7 @@ class Parser : public ParserState {
         root_struct_def_(nullptr),
         opts(options),
         uses_flexbuffers_(false),
+        has_warning_(false),
         advanced_features_(0),
         source_(nullptr),
         anonymous_counter_(0),
@@ -1021,6 +1040,7 @@ class Parser : public ParserState {
 
   IDLOptions opts;
   bool uses_flexbuffers_;
+  bool has_warning_;
 
   uint64_t advanced_features_;
 
@@ -1040,10 +1060,6 @@ class Parser : public ParserState {
 };
 
 // Utility functions for multiple generators:
-
-extern std::string MakeCamel(const std::string &in, bool first = true);
-
-extern std::string MakeScreamingCamel(const std::string &in);
 
 // Generate text (JSON) from a given FlatBuffer, and a given Parser
 // object that has been populated with the corresponding schema.

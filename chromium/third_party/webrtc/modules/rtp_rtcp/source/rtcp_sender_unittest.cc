@@ -603,8 +603,6 @@ TEST_F(RtcpSenderTest, TestRegisterRtcpPacketTypeObserver) {
   EXPECT_EQ(1, parser()->pli()->num_packets());
   EXPECT_EQ(kRemoteSsrc, observer.ssrc_);
   EXPECT_EQ(1U, observer.counter_.pli_packets);
-  EXPECT_EQ(clock_.TimeInMilliseconds(),
-            observer.counter_.first_packet_time_ms);
 }
 
 TEST_F(RtcpSenderTest, SendTmmbr) {
@@ -831,7 +829,7 @@ TEST_F(RtcpSenderTest, SendsCombinedRtcpPacket) {
 
   std::vector<std::unique_ptr<rtcp::RtcpPacket>> packets;
   auto transport_feedback = std::make_unique<rtcp::TransportFeedback>();
-  transport_feedback->AddReceivedPacket(321, 10000);
+  transport_feedback->AddReceivedPacket(321, Timestamp::Millis(10));
   packets.push_back(std::move(transport_feedback));
   auto remote_estimate = std::make_unique<rtcp::RemoteEstimate>();
   packets.push_back(std::move(remote_estimate));

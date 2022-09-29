@@ -354,6 +354,10 @@ void* OS::GetRandomMmapAddr() {
   // TODO(RISCV): We need more information from the kernel to correctly mask
   // this address for RISC-V. https://github.com/v8-riscv/v8/issues/375
   raw_addr &= uint64_t{0xFFFFFF0000};
+#elif V8_TARGET_ARCH_RISCV32
+  // TODO(RISCV): We need more information from the kernel to correctly mask
+  // this address for RISC-V. https://github.com/v8-riscv/v8/issues/375
+  raw_addr &= 0x3FFFF000;
 #elif V8_TARGET_ARCH_LOONG64
   // 42 bits of virtual addressing. Truncate to 40 bits to allow kernel chance
   // to fulfill request.
@@ -506,6 +510,14 @@ bool OS::SetPermissions(void* address, size_t size, MemoryPermission access) {
 }
 
 // static
+void OS::SetDataReadOnly(void* address, size_t size) {
+  DCHECK_EQ(0, reinterpret_cast<uintptr_t>(address) % CommitPageSize());
+  DCHECK_EQ(0, size % CommitPageSize());
+
+  CHECK_EQ(0, mprotect(address, size, PROT_READ));
+}
+
+// static
 bool OS::RecommitPages(void* address, size_t size, MemoryPermission access) {
   DCHECK_EQ(0, reinterpret_cast<uintptr_t>(address) % CommitPageSize());
   DCHECK_EQ(0, size % CommitPageSize());
@@ -610,8 +622,9 @@ PlatformSharedMemoryHandle OS::CreateSharedMemoryHandleForTesting(size_t size) {
       reinterpret_cast<memfd_create_t>(dlsym(RTLD_DEFAULT, "memfd_create"));
   int fd = -1;
   if (memfd_create) {
-    fd = memfd_create("V8MemFDForTesting", MFD_CLOEXEC);
-  } else {
+    fd = memfd_create("V8MemFDForTesting", 0);
+  }
+  if (fd == -1) {
     char filename[] = "/tmp/v8_tmp_file_for_testing_XXXXXX";
     fd = mkstemp(filename);
     if (fd != -1) CHECK_EQ(0, unlink(filename));
@@ -683,6 +696,8 @@ void OS::DebugBreak() {
   // Software breakpoint instruction is 0x0001
   asm volatile(".word 0x0001");
 #elif V8_HOST_ARCH_RISCV64
+  asm("ebreak");
+#elif V8_HOST_ARCH_RISCV32
   asm("ebreak");
 #else
 #error Unsupported host architecture.

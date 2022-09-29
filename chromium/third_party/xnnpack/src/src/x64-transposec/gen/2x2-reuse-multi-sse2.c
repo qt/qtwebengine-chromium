@@ -14,6 +14,8 @@
 #include <xnnpack/common.h>
 #include <xnnpack/math.h>
 #include <xnnpack/transpose.h>
+#include <xnnpack/unaligned.h>
+
 
 void xnn_x64_transposec_ukernel__2x2_reuse_multi_sse2(
     const uint64_t* input,
@@ -21,7 +23,7 @@ void xnn_x64_transposec_ukernel__2x2_reuse_multi_sse2(
     size_t input_stride,
     size_t output_stride,
     size_t block_width,
-    size_t block_height)
+    size_t block_height) XNN_OOB_READS
 {
   assert(output_stride >= block_height * sizeof(uint64_t));
   assert(input_stride >= block_width * sizeof(uint64_t));

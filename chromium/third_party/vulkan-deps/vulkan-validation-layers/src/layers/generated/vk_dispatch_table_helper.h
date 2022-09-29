@@ -473,6 +473,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL StubCreatePrivateDataSlotEXT(VkDevice devi
 static VKAPI_ATTR void VKAPI_CALL StubDestroyPrivateDataSlotEXT(VkDevice device, VkPrivateDataSlot privateDataSlot, const VkAllocationCallbacks* pAllocator) {  };
 static VKAPI_ATTR VkResult VKAPI_CALL StubSetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkPrivateDataSlot privateDataSlot, uint64_t data) { return VK_SUCCESS; };
 static VKAPI_ATTR void VKAPI_CALL StubGetPrivateDataEXT(VkDevice device, VkObjectType objectType, uint64_t objectHandle, VkPrivateDataSlot privateDataSlot, uint64_t* pData) {  };
+#ifdef VK_USE_PLATFORM_METAL_EXT
+static VKAPI_ATTR void VKAPI_CALL StubExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {  };
+#endif // VK_USE_PLATFORM_METAL_EXT
 static VKAPI_ATTR void VKAPI_CALL StubCmdSetFragmentShadingRateEnumNV(VkCommandBuffer           commandBuffer, VkFragmentShadingRateNV                     shadingRate, const VkFragmentShadingRateCombinerOpKHR    combinerOps[2]) {  };
 static VKAPI_ATTR void VKAPI_CALL StubGetImageSubresourceLayout2EXT(VkDevice device, VkImage image, const VkImageSubresource2EXT* pSubresource, VkSubresourceLayout2EXT* pLayout) {  };
 #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -537,6 +540,10 @@ static VKAPI_ATTR void VKAPI_CALL StubCmdDrawMultiIndexedEXT(VkCommandBuffer com
 static VKAPI_ATTR void VKAPI_CALL StubSetDeviceMemoryPriorityEXT(VkDevice       device, VkDeviceMemory memory, float          priority) {  };
 static VKAPI_ATTR void VKAPI_CALL StubGetDescriptorSetLayoutHostMappingInfoVALVE(VkDevice device, const VkDescriptorSetBindingReferenceVALVE* pBindingReference, VkDescriptorSetLayoutHostMappingInfoVALVE* pHostMapping) {  };
 static VKAPI_ATTR void VKAPI_CALL StubGetDescriptorSetHostMappingVALVE(VkDevice device, VkDescriptorSet descriptorSet, void** ppData) {  };
+static VKAPI_ATTR void VKAPI_CALL StubGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule, VkShaderModuleIdentifierEXT* pIdentifier) {  };
+static VKAPI_ATTR void VKAPI_CALL StubGetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo, VkShaderModuleIdentifierEXT* pIdentifier) {  };
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount, VkTilePropertiesQCOM* pProperties) { return VK_SUCCESS; };
+static VKAPI_ATTR VkResult VKAPI_CALL StubGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo* pRenderingInfo, VkTilePropertiesQCOM* pProperties) { return VK_SUCCESS; };
 static VKAPI_ATTR VkResult VKAPI_CALL StubCreateAccelerationStructureKHR(VkDevice                                           device, const VkAccelerationStructureCreateInfoKHR*        pCreateInfo, const VkAllocationCallbacks*       pAllocator, VkAccelerationStructureKHR*                        pAccelerationStructure) { return VK_SUCCESS; };
 static VKAPI_ATTR void VKAPI_CALL StubDestroyAccelerationStructureKHR(VkDevice device, VkAccelerationStructureKHR accelerationStructure, const VkAllocationCallbacks* pAllocator) {  };
 static VKAPI_ATTR void VKAPI_CALL StubCmdBuildAccelerationStructuresKHR(VkCommandBuffer                                    commandBuffer, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR* pInfos, const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos) {  };
@@ -760,6 +767,7 @@ const layer_data::unordered_map<std::string, std::string> api_extension_map {
     {"vkDestroyVideoSessionKHR", "VK_KHR_video_queue"},
     {"vkDestroyVideoSessionParametersKHR", "VK_KHR_video_queue"},
     {"vkDisplayPowerControlEXT", "VK_EXT_display_control"},
+    {"vkExportMetalObjectsEXT", "VK_EXT_metal_objects"},
     {"vkGetAccelerationStructureBuildSizesKHR", "VK_KHR_acceleration_structure"},
     {"vkGetAccelerationStructureDeviceAddressKHR", "VK_KHR_acceleration_structure"},
     {"vkGetAccelerationStructureHandleNV", "VK_NV_ray_tracing"},
@@ -796,8 +804,10 @@ const layer_data::unordered_map<std::string, std::string> api_extension_map {
     {"vkGetDeviceMemoryOpaqueCaptureAddressKHR", "VK_KHR_buffer_device_address"},
     {"vkGetDeviceQueue2", "VK_VERSION_1_1"},
     {"vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI", "VK_HUAWEI_subpass_shading"},
+    {"vkGetDynamicRenderingTilePropertiesQCOM", "VK_QCOM_tile_properties"},
     {"vkGetFenceFdKHR", "VK_KHR_external_fence_fd"},
     {"vkGetFenceWin32HandleKHR", "VK_KHR_external_fence_win32"},
+    {"vkGetFramebufferTilePropertiesQCOM", "VK_QCOM_tile_properties"},
     {"vkGetGeneratedCommandsMemoryRequirementsNV", "VK_NV_device_generated_commands"},
     {"vkGetImageDrmFormatModifierPropertiesEXT", "VK_EXT_image_drm_format_modifier"},
     {"vkGetImageMemoryRequirements2", "VK_VERSION_1_1"},
@@ -838,6 +848,8 @@ const layer_data::unordered_map<std::string, std::string> api_extension_map {
     {"vkGetSemaphoreWin32HandleKHR", "VK_KHR_external_semaphore_win32"},
     {"vkGetSemaphoreZirconHandleFUCHSIA", "VK_FUCHSIA_external_semaphore"},
     {"vkGetShaderInfoAMD", "VK_AMD_shader_info"},
+    {"vkGetShaderModuleCreateInfoIdentifierEXT", "VK_EXT_shader_module_identifier"},
+    {"vkGetShaderModuleIdentifierEXT", "VK_EXT_shader_module_identifier"},
     {"vkGetSwapchainCounterEXT", "VK_EXT_display_control"},
     {"vkGetSwapchainImagesKHR", "VK_KHR_swapchain"},
     {"vkGetSwapchainStatusKHR", "VK_KHR_shared_presentable_image"},
@@ -1622,6 +1634,10 @@ static inline void layer_init_device_dispatch_table(VkDevice device, VkLayerDisp
     if (table->SetPrivateDataEXT == nullptr) { table->SetPrivateDataEXT = (PFN_vkSetPrivateDataEXT)StubSetPrivateDataEXT; }
     table->GetPrivateDataEXT = (PFN_vkGetPrivateDataEXT) gpa(device, "vkGetPrivateDataEXT");
     if (table->GetPrivateDataEXT == nullptr) { table->GetPrivateDataEXT = (PFN_vkGetPrivateDataEXT)StubGetPrivateDataEXT; }
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    table->ExportMetalObjectsEXT = (PFN_vkExportMetalObjectsEXT) gpa(device, "vkExportMetalObjectsEXT");
+    if (table->ExportMetalObjectsEXT == nullptr) { table->ExportMetalObjectsEXT = (PFN_vkExportMetalObjectsEXT)StubExportMetalObjectsEXT; }
+#endif // VK_USE_PLATFORM_METAL_EXT
     table->CmdSetFragmentShadingRateEnumNV = (PFN_vkCmdSetFragmentShadingRateEnumNV) gpa(device, "vkCmdSetFragmentShadingRateEnumNV");
     if (table->CmdSetFragmentShadingRateEnumNV == nullptr) { table->CmdSetFragmentShadingRateEnumNV = (PFN_vkCmdSetFragmentShadingRateEnumNV)StubCmdSetFragmentShadingRateEnumNV; }
     table->GetImageSubresourceLayout2EXT = (PFN_vkGetImageSubresourceLayout2EXT) gpa(device, "vkGetImageSubresourceLayout2EXT");
@@ -1696,6 +1712,14 @@ static inline void layer_init_device_dispatch_table(VkDevice device, VkLayerDisp
     if (table->GetDescriptorSetLayoutHostMappingInfoVALVE == nullptr) { table->GetDescriptorSetLayoutHostMappingInfoVALVE = (PFN_vkGetDescriptorSetLayoutHostMappingInfoVALVE)StubGetDescriptorSetLayoutHostMappingInfoVALVE; }
     table->GetDescriptorSetHostMappingVALVE = (PFN_vkGetDescriptorSetHostMappingVALVE) gpa(device, "vkGetDescriptorSetHostMappingVALVE");
     if (table->GetDescriptorSetHostMappingVALVE == nullptr) { table->GetDescriptorSetHostMappingVALVE = (PFN_vkGetDescriptorSetHostMappingVALVE)StubGetDescriptorSetHostMappingVALVE; }
+    table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT) gpa(device, "vkGetShaderModuleIdentifierEXT");
+    if (table->GetShaderModuleIdentifierEXT == nullptr) { table->GetShaderModuleIdentifierEXT = (PFN_vkGetShaderModuleIdentifierEXT)StubGetShaderModuleIdentifierEXT; }
+    table->GetShaderModuleCreateInfoIdentifierEXT = (PFN_vkGetShaderModuleCreateInfoIdentifierEXT) gpa(device, "vkGetShaderModuleCreateInfoIdentifierEXT");
+    if (table->GetShaderModuleCreateInfoIdentifierEXT == nullptr) { table->GetShaderModuleCreateInfoIdentifierEXT = (PFN_vkGetShaderModuleCreateInfoIdentifierEXT)StubGetShaderModuleCreateInfoIdentifierEXT; }
+    table->GetFramebufferTilePropertiesQCOM = (PFN_vkGetFramebufferTilePropertiesQCOM) gpa(device, "vkGetFramebufferTilePropertiesQCOM");
+    if (table->GetFramebufferTilePropertiesQCOM == nullptr) { table->GetFramebufferTilePropertiesQCOM = (PFN_vkGetFramebufferTilePropertiesQCOM)StubGetFramebufferTilePropertiesQCOM; }
+    table->GetDynamicRenderingTilePropertiesQCOM = (PFN_vkGetDynamicRenderingTilePropertiesQCOM) gpa(device, "vkGetDynamicRenderingTilePropertiesQCOM");
+    if (table->GetDynamicRenderingTilePropertiesQCOM == nullptr) { table->GetDynamicRenderingTilePropertiesQCOM = (PFN_vkGetDynamicRenderingTilePropertiesQCOM)StubGetDynamicRenderingTilePropertiesQCOM; }
     table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR) gpa(device, "vkCreateAccelerationStructureKHR");
     if (table->CreateAccelerationStructureKHR == nullptr) { table->CreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)StubCreateAccelerationStructureKHR; }
     table->DestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR) gpa(device, "vkDestroyAccelerationStructureKHR");

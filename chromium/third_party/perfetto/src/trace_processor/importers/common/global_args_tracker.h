@@ -21,7 +21,6 @@
 #include "perfetto/ext/base/hash.h"
 #include "perfetto/ext/base/small_vector.h"
 #include "src/trace_processor/storage/trace_storage.h"
-#include "src/trace_processor/types/trace_processor_context.h"
 #include "src/trace_processor/types/variadic.h"
 
 namespace perfetto {
@@ -39,15 +38,24 @@ class GlobalArgsTracker {
   // the same key will be overridden.
   enum class UpdatePolicy { kSkipIfExists, kAddOrUpdate };
 
-  struct Arg {
+  struct CompactArg {
     StringId flat_key = kNullStringId;
     StringId key = kNullStringId;
     Variadic value = Variadic::Integer(0);
-
-    Column* column;
-    uint32_t row;
     UpdatePolicy update_policy = UpdatePolicy::kAddOrUpdate;
   };
+  static_assert(std::is_trivially_destructible<CompactArg>::value,
+                "Args must be trivially destructible");
+
+  struct Arg : public CompactArg {
+    Column* column;
+    uint32_t row;
+
+    // Object slices this Arg to become a CompactArg.
+    CompactArg ToCompactArg() const { return CompactArg(*this); }
+  };
+  static_assert(std::is_trivially_destructible<Arg>::value,
+                "Args must be trivially destructible");
 
   struct ArgHasher {
     uint64_t operator()(const Arg& arg) const noexcept {
@@ -84,7 +92,7 @@ class GlobalArgsTracker {
     }
   };
 
-  explicit GlobalArgsTracker(TraceProcessorContext* context);
+  explicit GlobalArgsTracker(TraceStorage* storage);
 
   // Assumes that the interval [begin, end) of |args| is sorted by keys.
   ArgSetId AddArgSet(const Arg* args, uint32_t begin, uint32_t end) {
@@ -114,7 +122,7 @@ class GlobalArgsTracker {
       hash.Update(ArgHasher()(args[i]));
     }
 
-    auto* arg_table = context_->storage->mutable_arg_table();
+    auto* arg_table = storage_->mutable_arg_table();
 
     ArgSetHash digest = hash.digest();
     auto it_and_inserted =
@@ -159,7 +167,7 @@ class GlobalArgsTracker {
         case Variadic::Type::kNull:
           break;
       }
-      row.value_type = context_->storage->GetIdForVariadicType(arg.value.type);
+      row.value_type = storage_->GetIdForVariadicType(arg.value.type);
       arg_table->Insert(row);
     }
     return id;
@@ -178,7 +186,7 @@ class GlobalArgsTracker {
   base::FlatHashMap<ArgSetHash, uint32_t, base::AlreadyHashed<ArgSetHash>>
       arg_row_for_hash_;
 
-  TraceProcessorContext* context_;
+  TraceStorage* storage_;
 };
 
 }  // namespace trace_processor

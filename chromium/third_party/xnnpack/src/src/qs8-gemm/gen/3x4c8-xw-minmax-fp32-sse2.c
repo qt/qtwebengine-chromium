@@ -13,6 +13,7 @@
 
 #include <xnnpack/gemm.h>
 #include <xnnpack/math.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qs8_gemm_xw_minmax_fp32_ukernel_3x4c8__sse2(
@@ -53,10 +54,10 @@ void xnn_qs8_gemm_xw_minmax_fp32_ukernel_3x4c8__sse2(
   }
 
   do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128((int) ((const int32_t*) w)[3]);
+    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
+    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
+    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
+    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
     __m128i vacc1x0 = vacc0x0;
     __m128i vacc1x1 = vacc0x1;
     __m128i vacc1x2 = vacc0x2;
@@ -65,7 +66,7 @@ void xnn_qs8_gemm_xw_minmax_fp32_ukernel_3x4c8__sse2(
     __m128i vacc2x1 = vacc0x1;
     __m128i vacc2x2 = vacc0x2;
     __m128i vacc2x3 = vacc0x3;
-    w = (const void*) ((const int32_t*) w + 4);
+    w = (const int32_t*) w + 4;
 
     size_t k = 0;
     while (k < kc) {
@@ -145,11 +146,11 @@ void xnn_qs8_gemm_xw_minmax_fp32_ukernel_3x4c8__sse2(
 
 
     if (nc >= 4) {
-      *((uint32_t*) c0) = (uint32_t) _mm_cvtsi128_si32(vout);
+      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
       vout = _mm_srli_si128(vout, 4);
-      *((uint32_t*) c1) = (uint32_t) _mm_cvtsi128_si32(vout);
+      unaligned_store_u32(c1, (uint32_t) _mm_cvtsi128_si32(vout));
       vout = _mm_srli_si128(vout, 4);
-      *((uint32_t*) c2) = (uint32_t) _mm_cvtsi128_si32(vout);
+      unaligned_store_u32(c2, (uint32_t) _mm_cvtsi128_si32(vout));
 
       c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
       c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
@@ -162,11 +163,11 @@ void xnn_qs8_gemm_xw_minmax_fp32_ukernel_3x4c8__sse2(
       nc -= 4;
     } else {
       if (nc & 2) {
-        *((uint16_t*) c0) = (uint16_t) _mm_extract_epi16(vout, 0);
+        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
         c0 += 2;
-        *((uint16_t*) c1) = (uint16_t) _mm_extract_epi16(vout, 2);
+        unaligned_store_u16(c1, (uint16_t) _mm_extract_epi16(vout, 2));
         c1 += 2;
-        *((uint16_t*) c2) = (uint16_t) _mm_extract_epi16(vout, 4);
+        unaligned_store_u16(c2, (uint16_t) _mm_extract_epi16(vout, 4));
         c2 += 2;
         vout = _mm_srli_epi32(vout, 16);
       }

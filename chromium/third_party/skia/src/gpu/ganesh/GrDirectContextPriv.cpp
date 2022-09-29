@@ -196,7 +196,8 @@ static std::unique_ptr<GrFragmentProcessor> make_premul_effect(
         return nullptr;
     }
 
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter,
+    R"(
         half4 main(half4 halfColor) {
             float4 color = float4(halfColor);
             color = floor(color * 255 + 0.5) / 255;
@@ -215,7 +216,8 @@ static std::unique_ptr<GrFragmentProcessor> make_unpremul_effect(
         return nullptr;
     }
 
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter,
+    R"(
         half4 main(half4 halfColor) {
             float4 color = float4(halfColor);
             color = floor(color * 255 + 0.5) / 255;

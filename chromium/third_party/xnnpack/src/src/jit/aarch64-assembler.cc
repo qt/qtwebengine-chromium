@@ -390,6 +390,15 @@ void Assembler::dup(DRegister dd, VRegisterLane vn) {
   emit32(0x5E000400 | imm5 << 16 | rn(vn) | rd(dd));
 }
 
+void Assembler::fabs(VRegister vd, VRegister vn) {
+  if (!is_same_shape(vd, vn)) {
+    error_ = Error::kInvalidOperand;
+    return;
+  }
+
+  emit32(0x0EA0F800 | q(vd) | fp_sz(vn) | rn(vn) | rd(vd));
+}
+
 void Assembler::fadd(VRegister vd, VRegister vn, VRegister vm) {
   if (!is_same_shape(vd, vn, vm)) {
     error_ = Error::kInvalidOperand;
@@ -430,6 +439,24 @@ void Assembler::fmla(VRegister vd, VRegister vn, VRegisterLane vm) {
   emit32(0x0F801000 | q(vd) | fp_sz(vd) | hl(vm) | rm(vm) | rn(vn) | rd(vd));
 }
 
+void Assembler::fmul(VRegister vd, VRegister vn, VRegister vm) {
+  if (!is_same_shape(vd, vn, vm)) {
+    error_ = Error::kInvalidOperand;
+    return;
+  }
+
+  emit32(0x2E20DC00 | q(vd) | fp_sz(vn) | rm(vm) | rn(vn) | rd(vd));
+}
+
+void Assembler::fneg(VRegister vd, VRegister vn) {
+  if (!is_same_shape(vd, vn)) {
+    error_ = Error::kInvalidOperand;
+    return;
+  }
+
+  emit32(0x2EA0F800 | q(vd) | fp_sz(vn) | rn(vn) | rd(vd));
+}
+
 void Assembler::ld1(VRegisterList vs, MemOperand xn, int32_t imm) {
   VRegister vt = vs.vt1;
 
@@ -459,12 +486,21 @@ void Assembler::ld1r(VRegisterList xs, MemOperand xn) {
 }
 
 void Assembler::ld2r(VRegisterList xs, MemOperand xn) {
-  if (xs.length != 2 || !is_same_shape(xs.vt1, xs.vt2) || xn.offset != 0) {
+  if (xs.length != 2 || !is_same_shape(xs.vt1, xs.vt2) || xn.offset != 0 || !is_consecutive(xs)) {
     error_ = Error::kInvalidOperand;
     return;
   }
 
   emit32(0x0D60C000 | q(xs.vt1) | size(xs.vt1) | rn(xn.base) | xs.vt1.code);
+}
+
+void Assembler::ld3r(VRegisterList xs, MemOperand xn) {
+  if (xs.length != 3 || !is_same_shape(xs.vt1, xs.vt2, xs.vt3) || xn.offset != 0 || !is_consecutive(xs)) {
+    error_ = Error::kInvalidOperand;
+    return;
+  }
+
+  emit32(0x0D40E000 | q(xs.vt1) | size(xs.vt1) | rn(xn.base) | xs.vt1.code);
 }
 
 void Assembler::ldp(DRegister dt1, DRegister dt2, MemOperand xn) {

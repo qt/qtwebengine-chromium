@@ -15,6 +15,7 @@
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "fxjs/gc/container_trace.h"
 #include "fxjs/xfa/cfxjse_engine.h"
+#include "fxjs/xfa/cfxjse_resolveprocessor.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"

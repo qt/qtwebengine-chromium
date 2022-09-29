@@ -10,8 +10,6 @@ $assert BATCH_TILE >= 1
 #include <xnnpack/math.h>
 #include <xnnpack/vcvt.h>
 
-#include <fp16.h>
-
 
 $XINT8_T = {"QS8": "int8_t", "QU8": "uint8_t"}[DATATYPE]
 $MIN_F32 = "__builtin_wasm_min_f32" if WASM else "math_min_f32"
@@ -52,7 +50,7 @@ void xnn_f32_${DATATYPE.lower()}_vcvt_ukernel__${"wasm" if WASM else "scalar"}_f
         vx${N} += vmagic_bias;
 
       $for N in range(BATCH_TILE):
-        int32_t vy${N} = (int32_t) fp32_to_bits(vx${N});
+        int32_t vy${N} = (int32_t) float_as_uint32(vx${N});
 
       $for N in range(BATCH_TILE):
         vy${N} -= vmagic_bias_less_zero_point;
@@ -69,7 +67,7 @@ void xnn_f32_${DATATYPE.lower()}_vcvt_ukernel__${"wasm" if WASM else "scalar"}_f
       vx = ${MIN_F32}(vx, voutput_max_less_zero_point);
       vx += vmagic_bias;
 
-      int32_t vy = (int32_t) fp32_to_bits(vx);
+      int32_t vy = (int32_t) float_as_uint32(vx);
       vy -= vmagic_bias_less_zero_point;
 
       *y++ = (${XINT8_T}) vy;
@@ -84,7 +82,7 @@ void xnn_f32_${DATATYPE.lower()}_vcvt_ukernel__${"wasm" if WASM else "scalar"}_f
       vx = ${MIN_F32}(vx, voutput_max_less_zero_point);
       vx += vmagic_bias;
 
-      int32_t vy = (int32_t) fp32_to_bits(vx);
+      int32_t vy = (int32_t) float_as_uint32(vx);
       vy -= vmagic_bias_less_zero_point;
 
       *y = (${XINT8_T}) vy;
@@ -98,7 +96,7 @@ void xnn_f32_${DATATYPE.lower()}_vcvt_ukernel__${"wasm" if WASM else "scalar"}_f
         vx = ${MIN_F32}(vx, voutput_max_less_zero_point);
         vx += vmagic_bias;
 
-        int32_t vy = (int32_t) fp32_to_bits(vx);
+        int32_t vy = (int32_t) float_as_uint32(vx);
         vy -= vmagic_bias_less_zero_point;
 
         *y++ = (${XINT8_T}) vy;

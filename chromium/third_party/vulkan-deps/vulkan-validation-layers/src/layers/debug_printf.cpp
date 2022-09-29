@@ -22,12 +22,7 @@
 #include "spirv-tools/instrument.hpp"
 #include <iostream>
 #include "layer_chassis_dispatch.h"
-#include "sync_utils.h"
 #include "cmd_buffer_state.h"
-
-static const VkShaderStageFlags kShaderStageAllRayTracing =
-    VK_SHADER_STAGE_ANY_HIT_BIT_NV | VK_SHADER_STAGE_CALLABLE_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV |
-    VK_SHADER_STAGE_INTERSECTION_BIT_NV | VK_SHADER_STAGE_MISS_BIT_NV | VK_SHADER_STAGE_RAYGEN_BIT_NV;
 
 // Perform initializations that can be done at Create Device time.
 void DebugPrintf::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
@@ -82,58 +77,6 @@ void DebugPrintf::DestroyBuffer(DPFBufferInfo &buffer_info) {
     if (buffer_info.desc_set != VK_NULL_HANDLE) {
         desc_set_manager->PutBackDescriptorSet(buffer_info.desc_pool, buffer_info.desc_set);
     }
-}
-
-// Just gives a warning about a possible deadlock.
-bool DebugPrintf::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
-                                               VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask,
-                                               uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
-                                               uint32_t bufferMemoryBarrierCount,
-                                               const VkBufferMemoryBarrier *pBufferMemoryBarriers, uint32_t imageMemoryBarrierCount,
-                                               const VkImageMemoryBarrier *pImageMemoryBarriers) const {
-    if (srcStageMask & VK_PIPELINE_STAGE_HOST_BIT) {
-        ReportSetupProblem(commandBuffer,
-                           "CmdWaitEvents recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
-                           "Debug Printf waits on queue completion. "
-                           "This wait could block the host's signaling of this event, resulting in deadlock.");
-    }
-    return false;
-}
-
-bool DebugPrintf::PreCallValidateCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
-                                                   const VkDependencyInfoKHR *pDependencyInfos) const {
-    VkPipelineStageFlags2KHR src_stage_mask = 0;
-
-    for (uint32_t i = 0; i < eventCount; i++) {
-        auto stage_masks = sync_utils::GetGlobalStageMasks(pDependencyInfos[i]);
-        src_stage_mask |= stage_masks.src;
-    }
-
-    if (src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
-        ReportSetupProblem(commandBuffer,
-                           "CmdWaitEvents2KHR recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
-                           "Debug Printf waits on queue completion. "
-                           "This wait could block the host's signaling of this event, resulting in deadlock.");
-    }
-    return false;
-}
-
-bool DebugPrintf::PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
-                                                   const VkDependencyInfo *pDependencyInfos) const {
-    VkPipelineStageFlags2 src_stage_mask = 0;
-
-    for (uint32_t i = 0; i < eventCount; i++) {
-        auto stage_masks = sync_utils::GetGlobalStageMasks(pDependencyInfos[i]);
-        src_stage_mask |= stage_masks.src;
-    }
-
-    if (src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
-        ReportSetupProblem(commandBuffer,
-                           "CmdWaitEvents2 recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
-                           "Debug Printf waits on queue completion. "
-                           "This wait could block the host's signaling of this event, resulting in deadlock.");
-    }
-    return false;
 }
 
 // Call the SPIR-V Optimizer to run the instrumentation pass on the shader.
@@ -276,7 +219,7 @@ std::vector<DPFSubstring> DebugPrintf::ParseFormatString(const std::string forma
                 parsed_strings.push_back(substring);
 
                 // Continue with a comma separated list
-                sprintf(tempstring, ", %s", specifier.c_str());
+                snprintf(tempstring, sizeof(tempstring), ", %s", specifier.c_str());
                 substring.string = tempstring;
                 for (int i = 0; i < (count - 1); i++) {
                     parsed_strings.push_back(substring);
@@ -472,7 +415,7 @@ void DebugPrintf::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
 // For the given command buffer, map its debug data buffers and read their contents for analysis.
 void debug_printf_state::CommandBuffer::Process(VkQueue queue) {
     auto *device_state = static_cast<DebugPrintf *>(dev_data);
-    if (hasDrawCmd || hasTraceRaysCmd || hasDispatchCmd) {
+    if (has_draw_cmd || has_trace_rays_cmd || has_dispatch_cmd) {
         auto &gpu_buffer_list = buffer_infos;
         uint32_t draw_index = 0;
         uint32_t compute_index = 0;
@@ -484,10 +427,13 @@ void debug_printf_state::CommandBuffer::Process(VkQueue queue) {
             uint32_t operation_index = 0;
             if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
                 operation_index = draw_index;
+                draw_index++;
             } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
                 operation_index = compute_index;
-            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_NV) {
+                compute_index++;
+            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
                 operation_index = ray_trace_index;
+                ray_trace_index++;
             } else {
                 assert(false);
             }
@@ -496,16 +442,6 @@ void debug_printf_state::CommandBuffer::Process(VkQueue queue) {
             if (result == VK_SUCCESS) {
                 device_state->AnalyzeAndGenerateMessages(commandBuffer(), queue, buffer_info, operation_index, (uint32_t *)data);
                 vmaUnmapMemory(device_state->vmaAllocator, buffer_info.output_mem_block.allocation);
-            }
-
-            if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
-                draw_index++;
-            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-                compute_index++;
-            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_NV) {
-                ray_trace_index++;
-            } else {
-                assert(false);
             }
         }
     }
@@ -641,17 +577,6 @@ void DebugPrintf::PreCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkB
     AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV);
 }
 
-void DebugPrintf::PostCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
-                                               VkDeviceSize raygenShaderBindingOffset, VkBuffer missShaderBindingTableBuffer,
-                                               VkDeviceSize missShaderBindingOffset, VkDeviceSize missShaderBindingStride,
-                                               VkBuffer hitShaderBindingTableBuffer, VkDeviceSize hitShaderBindingOffset,
-                                               VkDeviceSize hitShaderBindingStride, VkBuffer callableShaderBindingTableBuffer,
-                                               VkDeviceSize callableShaderBindingOffset, VkDeviceSize callableShaderBindingStride,
-                                               uint32_t width, uint32_t height, uint32_t depth) {
-    auto cb_state = GetWrite<debug_printf_state::CommandBuffer>(commandBuffer);
-    cb_state->hasTraceRaysCmd = true;
-}
-
 void DebugPrintf::PreCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
                                                const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
                                                const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
@@ -659,16 +584,6 @@ void DebugPrintf::PreCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
                                                const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable, uint32_t width,
                                                uint32_t height, uint32_t depth) {
     AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
-}
-
-void DebugPrintf::PostCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
-                                                const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pHitShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable, uint32_t width,
-                                                uint32_t height, uint32_t depth) {
-    auto cb_state = GetWrite<debug_printf_state::CommandBuffer>(commandBuffer);
-    cb_state->hasTraceRaysCmd = true;
 }
 
 void DebugPrintf::PreCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
@@ -680,28 +595,13 @@ void DebugPrintf::PreCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBu
     AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 }
 
-void DebugPrintf::PostCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
-                                                        const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pHitShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable,
-                                                        VkDeviceAddress indirectDeviceAddress) {
-    auto cb_state = GetWrite<debug_printf_state::CommandBuffer>(commandBuffer);
-    cb_state->hasTraceRaysCmd = true;
-}
-
 void DebugPrintf::PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) {
     AllocateDebugPrintfResources(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 }
 
-void DebugPrintf::PostCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress) {
-    auto cb_state = Get<debug_printf_state::CommandBuffer>(commandBuffer);
-    cb_state->hasTraceRaysCmd = true;
-}
-
 void DebugPrintf::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point) {
     if (bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS && bind_point != VK_PIPELINE_BIND_POINT_COMPUTE &&
-        bind_point != VK_PIPELINE_BIND_POINT_RAY_TRACING_NV) {
+        bind_point != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
         return;
     }
     VkResult result;

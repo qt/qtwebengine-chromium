@@ -75,7 +75,7 @@ struct QUIC_EXPORT_PRIVATE Bbr2Params {
    * STARTUP parameters.
    */
 
-  // The gain for both CWND and PacingRate at startup.
+  // The gain for CWND in startup.
   float startup_cwnd_gain = 2.0;
   // TODO(wub): Maybe change to the newly derived value of 2.773 (4 * ln(2)).
   float startup_pacing_gain = 2.885;
@@ -560,7 +560,8 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
   QuicByteCount max_bytes_delivered_in_round_ = 0;
 
   // The minimum bytes in flight during this round.
-  QuicByteCount min_bytes_in_flight_in_round_ = 0;
+  QuicByteCount min_bytes_in_flight_in_round_ =
+      std::numeric_limits<uint64_t>::max();
 
   // Max bandwidth in the current round. Updated once per congestion event.
   QuicBandwidth bandwidth_latest_ = QuicBandwidth::Zero();

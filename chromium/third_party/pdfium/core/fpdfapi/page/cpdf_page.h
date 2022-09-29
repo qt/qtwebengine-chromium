@@ -26,8 +26,11 @@ class CPDF_Object;
 
 class CPDF_Page final : public IPDF_Page, public CPDF_PageObjectHolder {
  public:
-  // Caller implements as desired, empty here due to layering.
-  class View : public Observable {};
+  // Caller implements as desired, exists here due to layering.
+  class View : public Observable {
+   public:
+    virtual void ClearPage(CPDF_Page* pPage) = 0;
+  };
 
   // Data for the render layer to attach to this page.
   class RenderContextIface {
@@ -39,7 +42,7 @@ class CPDF_Page final : public IPDF_Page, public CPDF_PageObjectHolder {
   class RenderCacheIface {
    public:
     virtual ~RenderCacheIface() = default;
-    virtual void ResetBitmapForImage(const RetainPtr<CPDF_Image>& pImage) = 0;
+    virtual void ResetBitmapForImage(RetainPtr<CPDF_Image> pImage) = 0;
   };
 
   class RenderContextClearer {
@@ -92,16 +95,16 @@ class CPDF_Page final : public IPDF_Page, public CPDF_PageObjectHolder {
   void SetRenderContext(std::unique_ptr<RenderContextIface> pContext);
   void ClearRenderContext();
 
-  CPDF_Document* GetPDFDocument() const { return m_pPDFDocument.Get(); }
-  View* GetView() const { return m_pView.Get(); }
   void SetView(View* pView) { m_pView.Reset(pView); }
+  void ClearView();
   void UpdateDimensions();
 
  private:
-  CPDF_Page(CPDF_Document* pDocument, CPDF_Dictionary* pPageDict);
+  CPDF_Page(CPDF_Document* pDocument, RetainPtr<CPDF_Dictionary> pPageDict);
   ~CPDF_Page() override;
 
-  CPDF_Object* GetPageAttr(const ByteString& name) const;
+  RetainPtr<CPDF_Object> GetMutablePageAttr(const ByteString& name);
+  const CPDF_Object* GetPageAttr(const ByteString& name) const;
   CFX_FloatRect GetBox(const ByteString& name) const;
 
   CFX_SizeF m_PageSize;

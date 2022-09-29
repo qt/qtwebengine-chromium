@@ -38,13 +38,15 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 
 export class DOMStorage extends Common.ObjectWrapper.ObjectWrapper<DOMStorage.EventTypes> {
   private readonly model: DOMStorageModel;
-  private readonly securityOriginInternal: string;
+  private readonly securityOriginInternal: string|null;
+  private readonly storageKeyInternal: string|null;
   private readonly isLocalStorageInternal: boolean;
 
-  constructor(model: DOMStorageModel, securityOrigin: string, isLocalStorage: boolean) {
+  constructor(model: DOMStorageModel, securityOrigin: string, storageKey: string, isLocalStorage: boolean) {
     super();
     this.model = model;
     this.securityOriginInternal = securityOrigin;
+    this.storageKeyInternal = storageKey;
     this.isLocalStorageInternal = isLocalStorage;
   }
 
@@ -52,12 +54,44 @@ export class DOMStorage extends Common.ObjectWrapper.ObjectWrapper<DOMStorage.Ev
     return {securityOrigin: securityOrigin, isLocalStorage: isLocalStorage};
   }
 
-  get id(): Protocol.DOMStorage.StorageId {
-    return DOMStorage.storageId(this.securityOriginInternal, this.isLocalStorageInternal);
+  static storageIdWithSecurityOrigin(securityOrigin: string, isLocalStorage: boolean): Protocol.DOMStorage.StorageId {
+    return {securityOrigin: securityOrigin, isLocalStorage: isLocalStorage};
   }
 
-  get securityOrigin(): string {
+  static storageIdWithStorageKey(storageKey: string, isLocalStorage: boolean): Protocol.DOMStorage.StorageId {
+    return {storageKey: storageKey, isLocalStorage: isLocalStorage};
+  }
+
+  get idWithSecurityOrigin(): Protocol.DOMStorage.StorageId {
+    let securityOrigin = '';
+    if (this.securityOriginInternal) {
+      securityOrigin = this.securityOriginInternal;
+    }
+    return DOMStorage.storageIdWithSecurityOrigin(securityOrigin, this.isLocalStorageInternal);
+  }
+
+  get idWithStorageKey(): Protocol.DOMStorage.StorageId {
+    let storageKey = '';
+    if (this.storageKeyInternal) {
+      storageKey = this.storageKeyInternal;
+    }
+    return DOMStorage.storageIdWithStorageKey(storageKey, this.isLocalStorageInternal);
+  }
+
+  get id(): Protocol.DOMStorage.StorageId {
+    // TODO(crbug.com/1313434) Prioritize storageKey once everything is ready
+    if (this.securityOriginInternal) {
+      return this.idWithSecurityOrigin;
+    }
+    return this.idWithStorageKey;
+  }
+
+  get securityOrigin(): string|null {
     return this.securityOriginInternal;
+  }
+
+  get storageKey(): string|null {
+    return this.storageKeyInternal;
   }
 
   get isLocalStorage(): boolean {
@@ -116,6 +150,7 @@ export namespace DOMStorage {
 
 export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
   private readonly securityOriginManager: SDK.SecurityOriginManager.SecurityOriginManager|null;
+  private readonly storageKeyManagerInternal: SDK.StorageKeyManager.StorageKeyManager|null;
   private storagesInternal: {
     [x: string]: DOMStorage,
   };
@@ -126,8 +161,13 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
     super(target);
 
     this.securityOriginManager = target.model(SDK.SecurityOriginManager.SecurityOriginManager);
+    this.storageKeyManagerInternal = target.model(SDK.StorageKeyManager.StorageKeyManager);
     this.storagesInternal = {};
     this.agent = target.domstorageAgent();
+  }
+
+  get storageKeyManagerForTest(): SDK.StorageKeyManager.StorageKeyManager|null {
+    return this.storageKeyManagerInternal;
   }
 
   enable(): void {
@@ -146,6 +186,16 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
         this.addOrigin(securityOrigin);
       }
     }
+    if (this.storageKeyManagerInternal) {
+      this.storageKeyManagerInternal.addEventListener(
+          SDK.StorageKeyManager.Events.StorageKeyAdded, this.storageKeyAdded, this);
+      this.storageKeyManagerInternal.addEventListener(
+          SDK.StorageKeyManager.Events.StorageKeyRemoved, this.storageKeyRemoved, this);
+
+      for (const storageKey of this.storageKeyManagerInternal.storageKeys()) {
+        this.addStorageKey(storageKey);
+      }
+    }
     void this.agent.invoke_enable();
 
     this.enabled = true;
@@ -156,7 +206,7 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
       return;
     }
     for (const isLocal of [true, false]) {
-      const key = this.storageKey(origin, isLocal);
+      const key = this.keyForSecurityOrigin(origin, isLocal);
       const storage = this.storagesInternal[key];
       if (!storage) {
         return;
@@ -167,8 +217,28 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
     this.addOrigin(origin);
   }
 
+  clearForStorageKey(storageKey: string): void {
+    if (!this.enabled) {
+      return;
+    }
+    for (const isLocal of [true, false]) {
+      const key = this.keyForStorageKey(storageKey, isLocal);
+      const storage = this.storagesInternal[key];
+      if (!storage) {
+        return;
+      }
+      storage.clear();
+    }
+    this.removeStorageKey(storageKey);
+    this.addStorageKey(storageKey);
+  }
+
   private securityOriginAdded(event: Common.EventTarget.EventTargetEvent<string>): void {
     this.addOrigin(event.data);
+  }
+
+  private storageKeyAdded(event: Common.EventTarget.EventTargetEvent<string>): void {
+    this.addStorageKey(event.data);
   }
 
   private addOrigin(securityOrigin: string): void {
@@ -179,21 +249,55 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
     }
 
     for (const isLocal of [true, false]) {
-      const key = this.storageKey(securityOrigin, isLocal);
+      const key = this.keyForSecurityOrigin(securityOrigin, isLocal);
       console.assert(!this.storagesInternal[key]);
-      const storage = new DOMStorage(this, securityOrigin, isLocal);
+      if (this.duplicateExists(key)) {
+        continue;
+      }
+      const storage = new DOMStorage(this, securityOrigin, '', isLocal);
       this.storagesInternal[key] = storage;
       this.dispatchEventToListeners(Events.DOMStorageAdded, storage);
     }
+  }
+
+  private addStorageKey(storageKey: string): void {
+    for (const isLocal of [true, false]) {
+      const key = this.keyForStorageKey(storageKey, isLocal);
+      console.assert(!this.storagesInternal[key]);
+      if (this.duplicateExists(key)) {
+        continue;
+      }
+      const storage = new DOMStorage(this, '', storageKey, isLocal);
+      this.storagesInternal[key] = storage;
+      this.dispatchEventToListeners(Events.DOMStorageAdded, storage);
+    }
+  }
+
+  private duplicateExists(key: string): boolean {
+    const parsedKey = JSON.parse(key);
+    for (const storageInternal in this.storagesInternal) {
+      const parsedStorageInternalKey = JSON.parse(storageInternal);
+      if (parsedKey.isLocalStorage === parsedStorageInternalKey.isLocalStorage) {
+        if (parsedKey.storageKey?.slice(0, -1) === parsedStorageInternalKey.securityOrigin ||
+            parsedKey.securityOrigin === parsedStorageInternalKey.storageKey?.slice(0, -1)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private securityOriginRemoved(event: Common.EventTarget.EventTargetEvent<string>): void {
     this.removeOrigin(event.data);
   }
 
+  private storageKeyRemoved(event: Common.EventTarget.EventTargetEvent<string>): void {
+    this.removeStorageKey(event.data);
+  }
+
   private removeOrigin(securityOrigin: string): void {
     for (const isLocal of [true, false]) {
-      const key = this.storageKey(securityOrigin, isLocal);
+      const key = this.keyForSecurityOrigin(securityOrigin, isLocal);
       const storage = this.storagesInternal[key];
       if (!storage) {
         continue;
@@ -203,8 +307,36 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
     }
   }
 
-  private storageKey(securityOrigin: string, isLocalStorage: boolean): string {
-    return JSON.stringify(DOMStorage.storageId(securityOrigin, isLocalStorage));
+  private removeStorageKey(storageKey: string): void {
+    for (const isLocal of [true, false]) {
+      const key = this.keyForStorageKey(storageKey, isLocal);
+      const storage = this.storagesInternal[key];
+      if (!storage) {
+        continue;
+      }
+      delete this.storagesInternal[key];
+      this.dispatchEventToListeners(Events.DOMStorageRemoved, storage);
+    }
+  }
+
+  private storageKey(securityOrigin: string|undefined, storageKey: string|undefined, isLocalStorage: boolean): string {
+    // TODO(crbug.com/1313434) Prioritize storageKey once everything is ready
+    console.assert(Boolean(securityOrigin) || Boolean(storageKey));
+    if (securityOrigin) {
+      return JSON.stringify(DOMStorage.storageIdWithSecurityOrigin(securityOrigin, isLocalStorage));
+    }
+    if (storageKey) {
+      return JSON.stringify(DOMStorage.storageIdWithStorageKey(storageKey, isLocalStorage));
+    }
+    throw new Error('Either securityOrigin or storageKey is required');
+  }
+
+  private keyForSecurityOrigin(securityOrigin: string, isLocalStorage: boolean): string {
+    return this.storageKey(securityOrigin, '', isLocalStorage);
+  }
+
+  private keyForStorageKey(storageKey: string, isLocalStorage: boolean): string {
+    return this.storageKey('', storageKey, isLocalStorage);
   }
 
   domStorageItemsCleared(storageId: Protocol.DOMStorage.StorageId): void {
@@ -247,7 +379,8 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
   }
 
   storageForId(storageId: Protocol.DOMStorage.StorageId): DOMStorage {
-    return this.storagesInternal[JSON.stringify(storageId)];
+    return this
+        .storagesInternal[this.storageKey(storageId.securityOrigin, storageId.storageKey, storageId.isLocalStorage)];
   }
 
   storages(): DOMStorage[] {

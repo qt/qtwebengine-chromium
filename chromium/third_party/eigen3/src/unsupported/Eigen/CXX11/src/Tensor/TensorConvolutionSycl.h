@@ -394,8 +394,8 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
         const size_t numX = dimensions()[m_indices[0]];
         const size_t numP = dimensions().TotalSize() / numX;
         const auto input_dim = std::array<size_t, 2>{numX, numP};
-        auto global_range = cl::sycl::range<2>{};
-        auto local_range = cl::sycl::range<2>{};
+        auto global_range = cl::sycl::range<2>{1, 1};
+        auto local_range = cl::sycl::range<2>{1, 1};
         const size_t kernel_size = m_kernelImpl.dimensions().TotalSize();
 
         m_device.parallel_for_setup(input_dim, global_range, local_range);
@@ -425,8 +425,8 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
         const size_t numP = dimensions().TotalSize() / (numX * numY);
         auto input_dim = std::array<size_t, 3>{numX, numY, numP};
 
-        auto global_range = cl::sycl::range<3>{};
-        auto local_range = cl::sycl::range<3>{};
+        auto global_range = cl::sycl::range<3>{1, 1, 1};
+        auto local_range = cl::sycl::range<3>{1, 1, 1};
 
         m_device.parallel_for_setup(input_dim, global_range, local_range);
 
@@ -469,8 +469,8 @@ struct TensorEvaluator<const TensorConvolutionOp<Indices, InputArgType, KernelAr
 
         internal::IndexMapper<Index, InputDims, 3, Layout> indexMapper(m_inputImpl.dimensions(), kernel_dims, indices);
 
-        auto global_range = cl::sycl::range<3>{};
-        auto local_range = cl::sycl::range<3>{};
+        auto global_range = cl::sycl::range<3>{1, 1, 1};
+        auto local_range = cl::sycl::range<3>{1, 1, 1};
 
         m_device.parallel_for_setup(input_dim, global_range, local_range);
         auto local_memory_range = (local_range + kernel_size - 1);

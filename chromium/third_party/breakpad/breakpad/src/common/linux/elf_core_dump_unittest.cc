@@ -130,9 +130,13 @@ TEST(ElfCoreDumpTest, TestElfHeader) {
 TEST(ElfCoreDumpTest, ValidCoreFile) {
   CrashGenerator crash_generator;
   if (!crash_generator.HasDefaultCorePattern()) {
-    fprintf(stderr, "ElfCoreDumpTest.ValidCoreFile test is skipped "
-            "due to non-default core pattern");
-    return;
+    GTEST_SKIP() << "ElfCoreDumpTest.ValidCoreFile test is skipped "
+                    "due to non-default core pattern";
+  }
+
+  if (!crash_generator.HasResourceLimitsAmenableToCrashCollection()) {
+    GTEST_SKIP() << "ElfCoreDumpTest.ValidCoreFile test is skipped "
+                    "due to inadequate system resource limits";
   }
 
   const unsigned kNumOfThreads = 3;

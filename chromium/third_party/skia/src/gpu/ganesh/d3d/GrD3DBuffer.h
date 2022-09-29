@@ -40,14 +40,18 @@ protected:
 private:
     void releaseResource();
 
-    void onMap() override;
-    void onUnmap() override;
-    bool onUpdateData(const void* src, size_t srcSizeInBytes) override;
+    void onMap(MapType) override;
+    void onUnmap(MapType) override;
+    bool onUpdateData(const void* src, size_t offset, size_t size, bool preserve) override;
 
-    void internalMap(size_t size);
-    void internalUnmap(size_t size);
+    void* internalMap(MapType, size_t offset, size_t size);
+    void internalUnmap(MapType, size_t offset, size_t size);
 
+#ifdef SK_DEBUG
     void validate() const;
+#endif
+
+    void onSetLabel() override;
 
     GrD3DGpu* getD3DGpu() const {
         SkASSERT(!this->wasDestroyed());

@@ -273,6 +273,22 @@ void SkBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
 
 /////////////////////// these are not virtual, just helpers
 
+#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
+void SkBlitter::blitMaskRegion(const SkMask& mask, const SkRegion& clip) {
+    if (clip.quickReject(mask.fBounds)) {
+        return;
+    }
+
+    SkRegion::Cliperator clipper(clip, mask.fBounds);
+
+    while (!clipper.done()) {
+        const SkIRect& cr = clipper.rect();
+        this->blitMask(mask, cr);
+        clipper.next();
+    }
+}
+#endif
+
 void SkBlitter::blitRectRegion(const SkIRect& rect, const SkRegion& clip) {
     SkRegion::Cliperator clipper(clip, rect);
 
@@ -682,7 +698,8 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
                              const SkPaint& origPaint,
                              SkArenaAlloc* alloc,
                              bool drawCoverage,
-                             sk_sp<SkShader> clipShader) {
+                             sk_sp<SkShader> clipShader,
+                             const SkSurfaceProps& props) {
     SkASSERT(alloc);
 
     if (kUnknown_SkColorType == device.colorType()) {
@@ -747,7 +764,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
             }
         }
         if (auto blitter = SkCreateRasterPipelineBlitter(
-                    device, *paint, matrixProvider, alloc, clipShader)) {
+                    device, *paint, matrixProvider, alloc, clipShader, props)) {
             return blitter;
         }
         if (!gUseSkVMBlitter) {
@@ -776,7 +793,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
     SkShaderBase::Context* shaderContext = nullptr;
     if (paint->getShader()) {
         shaderContext = as_SB(paint->getShader())->makeContext(
-                {*paint, ctm, nullptr, device.colorType(), device.colorSpace()},
+                {*paint, ctm, nullptr, device.colorType(), device.colorSpace(), props},
                 alloc);
 
         // Creating the context isn't always possible... try fallbacks before giving up.

@@ -10,7 +10,7 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkTypes.h"
-#include "include/third_party/skcms/skcms.h"
+#include "modules/skcms/skcms.h"
 #include "src/core/SkUtils.h"  // unaligned_{load,store}
 #include <cstdint>
 
@@ -48,21 +48,19 @@ SI void* load_and_inc(void**& program) {
 #endif
 }
 
-// Lazily resolved on first cast.  Does nothing if cast to Ctx::None.
 struct Ctx {
     struct None {};
 
-    void*   ptr;
     void**& program;
-
-    explicit Ctx(void**& p) : ptr(nullptr), program(p) {}
 
     template <typename T>
     operator T*() {
-        if (!ptr) { ptr = load_and_inc(program); }
-        return (T*)ptr;
+        return (T*)load_and_inc(program);
     }
-    operator None() { return None{}; }
+    operator None() {
+        load_and_inc(program);
+        return None{};
+    }
 };
 
 
@@ -1109,6 +1107,12 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
     }
 }
 
+#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__)
+    #define JUMPER_MUSTTAIL [[clang::musttail]]
+#else
+    #define JUMPER_MUSTTAIL
+#endif
+
 #if JUMPER_NARROW_STAGES
     #define STAGE(name, ...)                                                    \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,        \
@@ -1118,7 +1122,7 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
             name##_k(Ctx{program},params->dx,params->dy,params->tail, r,g,b,a,  \
                      params->dr, params->dg, params->db, params->da);           \
             auto next = (Stage)load_and_inc(program);                           \
-            next(params,program, r,g,b,a);                                      \
+            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);               \
         }                                                                       \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,        \
                          F& r, F& g, F& b, F& a, F& dr, F& dg, F& db, F& da)
@@ -1130,7 +1134,7 @@ static void start_pipeline(size_t dx, size_t dy, size_t xlimit, size_t ylimit, v
                              F r, F g, F b, F a, F dr, F dg, F db, F da) {           \
             name##_k(Ctx{program},dx,dy,tail, r,g,b,a, dr,dg,db,da);                 \
             auto next = (Stage)load_and_inc(program);                                \
-            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                          \
+            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);   \
         }                                                                            \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,             \
                          F& r, F& g, F& b, F& a, F& dr, F& dg, F& db, F& da)
@@ -1468,11 +1472,7 @@ BLEND_MODE(softlight) {
     //    3. light src, light dst?
     F darkSrc = d*(sa + (s2 - sa)*(1.0f - m)),     // Used in case 1.
       darkDst = (m4*m4 + m4)*(m - 1.0f) + 7.0f*m,  // Used in case 2.
-    #if defined(SK_RASTER_PIPELINE_LEGACY_RCP_RSQRT)
-      liteDst = rcp_fast(rsqrt(m)) - m,                 // Used in case 3.
-    #else
       liteDst = sqrt_(m) - m,
-    #endif
       liteSrc = d*sa + da*(s2 - sa) * if_then_else(two(two(d)) <= da, darkDst, liteDst); // 2 or 3?
     return s*inv(da) + d*inv(sa) + if_then_else(s2 <= sa, darkSrc, liteSrc);      // 1 or (2 or 3)?
 }
@@ -1514,8 +1514,8 @@ SI void clip_color(F* r, F* g, F* b, F a) {
       l  = lum(*r, *g, *b);
 
     auto clip = [=](F c) {
-        c = if_then_else(mn >= 0, c, l + (c - l) * (    l) / (l - mn)   );
-        c = if_then_else(mx >  a,    l + (c - l) * (a - l) / (mx - l), c);
+        c = if_then_else(mn < 0 && l != mn, l + (c - l) * (    l) / (l - mn), c);
+        c = if_then_else(mx > a && l != mx, l + (c - l) * (a - l) / (mx - l), c);
         c = max(c, 0);  // Sometimes without this we may dip just a little negative.
         return c;
     };
@@ -3013,7 +3013,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             split(x, &r,&g);                                                                   \
             split(y, &b,&a);                                                                   \
             auto next = (Stage)load_and_inc(program);                                          \
-            next(params,program, r,g,b,a);                                                     \
+            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                              \
         }                                                                                      \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
 
@@ -3027,7 +3027,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             name##_k(Ctx{program}, params->dx,params->dy,params->tail, x,y, r,g,b,a,       \
                      params->dr,params->dg,params->db,params->da);                         \
             auto next = (Stage)load_and_inc(program);                                      \
-            next(params,program, r,g,b,a);                                                 \
+            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                          \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3041,7 +3041,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             name##_k(Ctx{program}, params->dx,params->dy,params->tail, r,g,b,a,            \
                      params->dr,params->dg,params->db,params->da);                         \
             auto next = (Stage)load_and_inc(program);                                      \
-            next(params,program, r,g,b,a);                                                 \
+            JUMPER_MUSTTAIL return next(params,program, r,g,b,a);                          \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3058,7 +3058,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
             split(x, &r,&g);                                                               \
             split(y, &b,&a);                                                               \
             auto next = (Stage)load_and_inc(program);                                      \
-            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
+            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F& x, F& y)
 
@@ -3073,7 +3073,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                  y = join<F>(b,a);                                                         \
             name##_k(Ctx{program}, dx,dy,tail, x,y, r,g,b,a, dr,dg,db,da);                 \
             auto next = (Stage)load_and_inc(program);                                      \
-            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
+            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail, F x, F y,         \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -3088,7 +3088,7 @@ static void start_pipeline(const size_t x0,     const size_t y0,
                              U16 dr, U16 dg, U16 db, U16 da) {                             \
             name##_k(Ctx{program}, dx,dy,tail, r,g,b,a, dr,dg,db,da);                      \
             auto next = (Stage)load_and_inc(program);                                      \
-            next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);                                \
+            JUMPER_MUSTTAIL return next(tail,program,dx,dy, r,g,b,a, dr,dg,db,da);         \
         }                                                                                  \
         SI void name##_k(__VA_ARGS__, size_t dx, size_t dy, size_t tail,                   \
                          U16&  r, U16&  g, U16&  b, U16&  a,                               \
@@ -4117,8 +4117,6 @@ STAGE_GP(evenly_spaced_2_stop_gradient, const SkRasterPipeline_EvenlySpaced2Stop
                    &r,&g,&b,&a);
 }
 
-SI F   cast  (U32 v) { return      __builtin_convertvector((I32)v,   F); }
-#if !defined(SK_SUPPORT_LEGACY_BILERP_HIGHP)
 STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
     // Quantize sample point and transform into lerp coordinates converting them to 16.16 fixed
     // point number.
@@ -4214,7 +4212,6 @@ STAGE_GP(bilerp_clamp_8888, const SkRasterPipeline_GatherCtx* ctx) {
     b = lerpY(topB, bottomB);
     a = lerpY(topA, bottomA);
 }
-#endif  // SK_SUPPORT_LEGACY_BILERP_HIGHP
 
 STAGE_GG(xy_to_unit_angle, Ctx::None) {
     F xabs = abs_(x),
@@ -4346,9 +4343,6 @@ STAGE_PP(swizzle, void* ctx) {
     NOT_IMPLEMENTED(repeat_y)
     NOT_IMPLEMENTED(negate_x)
     NOT_IMPLEMENTED(bilinear)
-#if defined(SK_SUPPORT_LEGACY_BILERP_HIGHP)
-    NOT_IMPLEMENTED(bilerp_clamp_8888)
-#endif
     NOT_IMPLEMENTED(bicubic)
     NOT_IMPLEMENTED(bicubic_clamp_8888)
     NOT_IMPLEMENTED(bilinear_nx)

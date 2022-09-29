@@ -66,8 +66,8 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopWithContinuing) {
 TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopNestedWithContinuing) {
     Func("a_statement", {}, ty.void_(), {});
 
-    Global("lhs", ty.f32(), ast::StorageClass::kPrivate);
-    Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("lhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
     auto* body = Block(create<ast::DiscardStatement>());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -112,7 +112,7 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_LoopWithVarUsedInContinuing) {
     //   }
     // }
 
-    Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
     auto* body = Block(Decl(Var("lhs", ty.f32(), Expr(2.4_f))),  //
                        Decl(Var("other", ty.f32())),             //
@@ -369,6 +369,70 @@ TEST_F(HlslGeneratorImplTest_Loop, Emit_ForLoopWithMultiStmtInitCondCont) {
       }
       i = (tint_tmp_2);
     }
+  }
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Loop, Emit_While) {
+    // while(true) {
+    //   return;
+    // }
+
+    auto* f = While(Expr(true), Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  [loop] while(true) {
+    return;
+  }
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Loop, Emit_While_WithContinue) {
+    // while(true) {
+    //   continue;
+    // }
+
+    auto* f = While(Expr(true), Block(Continue()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  [loop] while(true) {
+    continue;
+  }
+)");
+}
+
+TEST_F(HlslGeneratorImplTest_Loop, Emit_WhileWithMultiStmtCond) {
+    // while(true && false) {
+    //   return;
+    // }
+
+    auto* multi_stmt =
+        create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
+    auto* f = While(multi_stmt, Block(Return()));
+    WrapInFunction(f);
+
+    GeneratorImpl& gen = Build();
+
+    gen.increment_indent();
+
+    ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+    EXPECT_EQ(gen.result(), R"(  [loop] while (true) {
+    bool tint_tmp = true;
+    if (tint_tmp) {
+      tint_tmp = false;
+    }
+    if (!((tint_tmp))) { break; }
+    return;
   }
 )");
 }

@@ -22,11 +22,16 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/render/charposlist.h"
+#include "core/fpdfapi/render/cpdf_pagerendercontext.h"
+#include "core/fpdfapi/render/cpdf_rendercontext.h"
+#include "core/fpdfapi/render/cpdf_renderstatus.h"
+#include "core/fpdfapi/render/cpdf_textrenderer.h"
 #include "core/fpdftext/cpdf_textpage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_string_wrappers.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
@@ -119,8 +124,8 @@ CPDF_Dictionary* LoadFontDesc(CPDF_Document* pDoc,
   pStream->SetData(span);
   // TODO(npm): Lengths for Type1 fonts.
   if (font_type == FPDF_FONT_TRUETYPE) {
-    pStream->GetDict()->SetNewFor<CPDF_Number>("Length1",
-                                               static_cast<int>(span.size()));
+    pStream->GetMutableDict()->SetNewFor<CPDF_Number>(
+        "Length1", static_cast<int>(span.size()));
   }
   ByteString fontFile = font_type == FPDF_FONT_TYPE1 ? "FontFile" : "FontFile2";
   pFontDesc->SetNewFor<CPDF_Reference>(fontFile, pDoc, pStream->GetObjNum());
@@ -286,7 +291,7 @@ RetainPtr<CPDF_Font> LoadSimpleFont(CPDF_Document* pDoc,
                                     std::unique_ptr<CFX_Font> pFont,
                                     pdfium::span<const uint8_t> span,
                                     int font_type) {
-  CPDF_Dictionary* pFontDict = pDoc->NewIndirect<CPDF_Dictionary>();
+  RetainPtr<CPDF_Dictionary> pFontDict(pDoc->NewIndirect<CPDF_Dictionary>());
   pFontDict->SetNewFor<CPDF_Name>("Type", "Font");
   pFontDict->SetNewFor<CPDF_Name>(
       "Subtype", font_type == FPDF_FONT_TYPE1 ? "Type1" : "TrueType");
@@ -322,14 +327,14 @@ RetainPtr<CPDF_Font> LoadSimpleFont(CPDF_Document* pDoc,
 
   pFontDict->SetNewFor<CPDF_Reference>("FontDescriptor", pDoc,
                                        pFontDesc->GetObjNum());
-  return CPDF_DocPageData::FromDocument(pDoc)->GetFont(pFontDict);
+  return CPDF_DocPageData::FromDocument(pDoc)->GetFont(std::move(pFontDict));
 }
 
 RetainPtr<CPDF_Font> LoadCompositeFont(CPDF_Document* pDoc,
                                        std::unique_ptr<CFX_Font> pFont,
                                        pdfium::span<const uint8_t> span,
                                        int font_type) {
-  CPDF_Dictionary* pFontDict = pDoc->NewIndirect<CPDF_Dictionary>();
+  RetainPtr<CPDF_Dictionary> pFontDict(pDoc->NewIndirect<CPDF_Dictionary>());
   pFontDict->SetNewFor<CPDF_Name>("Type", "Font");
   pFontDict->SetNewFor<CPDF_Name>("Subtype", "Type0");
   // TODO(npm): Get the correct encoding, if it's not identity.
@@ -471,7 +476,7 @@ FPDFPageObj_NewTextObj(FPDF_DOCUMENT document,
     return nullptr;
 
   auto pTextObj = std::make_unique<CPDF_TextObject>();
-  pTextObj->m_TextState.SetFont(pFont);
+  pTextObj->m_TextState.SetFont(std::move(pFont));
   pTextObj->m_TextState.SetFontSize(font_size);
   pTextObj->DefaultStates();
 
@@ -583,6 +588,70 @@ FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
   return Utf16EncodeMaybeCopyAndReturnLength(text, buffer, length);
 }
 
+FPDF_EXPORT FPDF_BITMAP FPDF_CALLCONV
+FPDFTextObj_GetRenderedBitmap(FPDF_DOCUMENT document,
+                              FPDF_PAGE page,
+                              FPDF_PAGEOBJECT text_object,
+                              float scale) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc)
+    return nullptr;
+
+  CPDF_Page* optional_page = CPDFPageFromFPDFPage(page);
+  if (optional_page && optional_page->GetDocument() != doc)
+    return nullptr;
+
+  CPDF_TextObject* text = CPDFTextObjectFromFPDFPageObject(text_object);
+  if (!text)
+    return nullptr;
+
+  if (scale <= 0)
+    return nullptr;
+
+  const CFX_Matrix scale_matrix(scale, 0, 0, scale, 0, 0);
+  const CFX_FloatRect& text_rect = text->GetRect();
+  const CFX_FloatRect scaled_text_rect = scale_matrix.TransformRect(text_rect);
+
+  // `rect` has to use integer values. Round up as needed.
+  const FX_RECT rect = scaled_text_rect.GetOuterRect();
+  if (rect.IsEmpty())
+    return nullptr;
+
+  auto result_bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
+  if (!result_bitmap->Create(rect.Width(), rect.Height(), FXDIB_Format::kArgb))
+    return nullptr;
+
+  auto render_context = std::make_unique<CPDF_PageRenderContext>();
+  CPDF_PageRenderContext* render_context_ptr = render_context.get();
+  CPDF_Page::RenderContextClearer clearer(optional_page);
+  if (optional_page)
+    optional_page->SetRenderContext(std::move(render_context));
+
+  RetainPtr<CPDF_Dictionary> page_resources =
+      optional_page ? optional_page->GetMutablePageResources() : nullptr;
+
+  auto device = std::make_unique<CFX_DefaultRenderDevice>();
+  CFX_DefaultRenderDevice* device_ptr = device.get();
+  render_context_ptr->m_pDevice = std::move(device);
+  render_context_ptr->m_pContext = std::make_unique<CPDF_RenderContext>(
+      doc, page_resources.Get(), /*pPageCache=*/nullptr);
+
+  device_ptr->Attach(result_bitmap);
+
+  CFX_Matrix device_matrix(rect.Width(), 0, 0, rect.Height(), 0, 0);
+  CPDF_RenderStatus status(render_context_ptr->m_pContext.get(), device_ptr);
+  status.SetDeviceMatrix(device_matrix);
+  status.Initialize(nullptr, nullptr);
+
+  // Need to flip the rendering and also move it to fit within `result_bitmap`.
+  CFX_Matrix render_matrix(1, 0, 0, -1, -text_rect.left, text_rect.top);
+  render_matrix *= scale_matrix;
+  status.RenderSingleObject(text, render_matrix);
+
+  // Caller takes ownership.
+  return FPDFBitmapFromCFXDIBitmap(result_bitmap.Leak());
+}
+
 FPDF_EXPORT void FPDF_CALLCONV FPDFFont_Close(FPDF_FONT font) {
   // Take back ownership from caller and release.
   RetainPtr<CPDF_Font>().Unleak(CPDFFontFromFPDFFont(font));
@@ -598,8 +667,8 @@ FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
     return nullptr;
 
   auto pTextObj = std::make_unique<CPDF_TextObject>();
-  pTextObj->m_TextState.SetFont(
-      CPDF_DocPageData::FromDocument(pDoc)->GetFont(pFont->GetFontDict()));
+  pTextObj->m_TextState.SetFont(CPDF_DocPageData::FromDocument(pDoc)->GetFont(
+      pFont->GetMutableFontDict()));
   pTextObj->m_TextState.SetFontSize(font_size);
   pTextObj->DefaultStates();
   return FPDFPageObjectFromCPDFPageObject(pTextObj.release());

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <utility>
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
@@ -40,7 +41,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_PDFFontMgr::FindFont(const ByteString& strPsName,
                                                    bool bBold,
                                                    bool bItalic,
                                                    bool bStrictMatch) {
-  CPDF_Dictionary* pFontSetDict =
+  const CPDF_Dictionary* pFontSetDict =
       m_pDoc->GetRoot()->GetDictFor("AcroForm")->GetDictFor("DR");
   if (!pFontSetDict)
     return nullptr;
@@ -61,15 +62,16 @@ RetainPtr<CFGAS_GEFont> CFGAS_PDFFontMgr::FindFont(const ByteString& strPsName,
                                bStrictMatch)) {
       continue;
     }
-    CPDF_Dictionary* pFontDict = ToDictionary(pObj->GetDirect());
-    if (!ValidateDictType(pFontDict, "Font"))
+    RetainPtr<CPDF_Dictionary> pFontDict =
+        ToDictionary(pObj->GetMutableDirect());
+    if (!ValidateDictType(pFontDict.Get(), "Font"))
       return nullptr;
 
     RetainPtr<CPDF_Font> pPDFFont = pData->GetFont(pFontDict);
     if (!pPDFFont || !pPDFFont->IsEmbedded())
       return nullptr;
 
-    return CFGAS_GEFont::LoadFont(pPDFFont);
+    return CFGAS_GEFont::LoadFont(std::move(pPDFFont));
   }
   return nullptr;
 }

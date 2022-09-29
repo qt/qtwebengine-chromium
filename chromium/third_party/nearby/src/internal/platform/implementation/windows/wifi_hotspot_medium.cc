@@ -12,29 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "absl/strings/string_view.h"
 #include "internal/platform/implementation/windows/wifi_hotspot.h"
 
 // Nearby connections headers
 #include "internal/platform/cancellation_flag_listener.h"
-#include "internal/platform/logging.h"
 #include "internal/platform/implementation/windows/utils.h"
+#include "internal/platform/logging.h"
 
 namespace location {
 namespace nearby {
 namespace windows {
 
 namespace {
-  constexpr int kMaxRetries = 3;
-  constexpr int kRetryIntervalMilliSeconds = 300;
-  constexpr int kMaxScans = 3;
+constexpr int kMaxRetries = 3;
+constexpr int kRetryIntervalMilliSeconds = 300;
+constexpr int kMaxScans = 2;
 }  // namespace
 
-WifiHotspotMedium::WifiHotspotMedium() {
-  HotspotCredentials hotspot_credentials_;
-  hotspot_interface_valid_ = StartWifiHotspot(&hotspot_credentials_);
-  if (hotspot_interface_valid_)
-    StopWifiHotspot();
-}
+WifiHotspotMedium::WifiHotspotMedium() {}
 
 WifiHotspotMedium::~WifiHotspotMedium() {
   StopWifiHotspot();
@@ -42,14 +38,15 @@ WifiHotspotMedium::~WifiHotspotMedium() {
 }
 
 bool WifiHotspotMedium::IsInterfaceValid() const {
-  return hotspot_interface_valid_;
+  // Windows 10 starts to support WiFi direct feature, so don't need to check
+  // feature by OS due to targeting OS version is at leat Windows 10.
+  NEARBY_LOGS(ERROR) << "WiFi hotspot: valid interface found.";
+  return true;
 }
-
 
 std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
     absl::string_view ip_address, int port,
     CancellationFlag* cancellation_flag) {
-
   if (ip_address.empty() || port == 0) {
     NEARBY_LOGS(ERROR) << "no valid service address and port to connect: "
                        << "ip_address = " << ip_address << ", port = " << port;
@@ -84,10 +81,11 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
         cancellation_flag, [socket]() { socket.CancelIOAsync().get(); });
   }
 
-  // Try connecting to the service up to kMaxRetries. Because it may fail fisrt
-  // time if DHCP procedure is not finished yet.
+  // Try connecting to the service up to kMaxRetries, because it may fail
+  // first time if DHCP procedure is not finished yet.
   for (int i = 0; i < kMaxRetries; i++) {
     try {
+      Sleep(kRetryIntervalMilliSeconds);
       socket.ConnectAsync(host_name, service_name).get();
 
       auto wifi_hotspot_socket = std::make_unique<WifiHotspotSocket>(socket);
@@ -97,8 +95,7 @@ std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
       return wifi_hotspot_socket;
     } catch (...) {
       NEARBY_LOGS(ERROR) << "failed to connect remote service " << ipv4_address
-                         << ":" << port << " for the " << i+1 << " time";
-      Sleep(kRetryIntervalMilliSeconds);
+                         << ":" << port << " for the " << i + 1 << " time";
     }
   }
   return nullptr;
@@ -151,16 +148,11 @@ bool WifiHotspotMedium::StartWifiHotspot(
   publisher_status_changed_token_ =
       publisher_.StatusChanged({this, &WifiHotspotMedium::OnStatusChanged});
   listener_ = WiFiDirectConnectionListener();
-  try {
-    listener_.ConnectionRequested(
-        {this, &WifiHotspotMedium::OnConnectionRequested});
-  } catch (winrt::hresult_error const& ex) {
-    NEARBY_LOGS(ERROR) << __func__ << ": winrt exception: " << ex.code() << ": "
-                       << winrt::to_string(ex.message());
-  }
+  connection_requested_token_ = listener_.ConnectionRequested(
+      {this, &WifiHotspotMedium::OnConnectionRequested});
 
-  // Normal mode: The device is highly discoverable so long as the app is in the
-  // foreground.
+  // Normal mode: The device is highly discoverable so long as the app is in
+  // the foreground.
   publisher_.Advertisement().ListenStateDiscoverability(
       WiFiDirectAdvertisementListenStateDiscoverability::Normal);
   // Enbale Autonomous GO mode
@@ -188,6 +180,8 @@ bool WifiHotspotMedium::StartWifiHotspot(
 
   // Clean up when fail
   NEARBY_LOGS(ERROR) << "Windows WiFi Hotspot fails to start";
+  publisher_.StatusChanged(publisher_status_changed_token_);
+  listener_.ConnectionRequested(connection_requested_token_);
   listener_ = nullptr;
   publisher_ = nullptr;
   return false;
@@ -204,10 +198,14 @@ bool WifiHotspotMedium::StopWifiHotspot() {
 
   if (publisher_) {
     publisher_.Stop();
-    publisher_.StatusChanged(publisher_status_changed_token_);
     listener_.ConnectionRequested(connection_requested_token_);
+    publisher_.StatusChanged(publisher_status_changed_token_);
+    wifi_direct_device_  = nullptr;
+    listener_ = nullptr;
+    publisher_ = nullptr;
     NEARBY_LOGS(INFO) << "succeeded to stop WiFi Hotspot";
   }
+
   medium_status_ &= (~kMediumStatusBeaconing);
   return true;
 }
@@ -227,10 +225,32 @@ fire_and_forget WifiHotspotMedium::OnStatusChanged(
                                                 .Passphrase()
                                                 .Password());
     }
+    return winrt::fire_and_forget();
+  } else if (event.Status() ==
+             WiFiDirectAdvertisementPublisherStatus::Created) {
+    NEARBY_LOGS(INFO) << "Receive WiFi direct/SoftAP Created event.";
+    return winrt::fire_and_forget();
+  } else if (event.Status() ==
+             WiFiDirectAdvertisementPublisherStatus::Stopped) {
+    NEARBY_LOGS(INFO) << "Receive WiFi direct/SoftAP Stopped event.";
+  } else if (event.Status() ==
+             WiFiDirectAdvertisementPublisherStatus::Aborted) {
+    NEARBY_LOGS(INFO) << "Receive WiFi direct/SoftAP Aborted event.";
   }
-  if (event.Status() == WiFiDirectAdvertisementPublisherStatus::Stopped) {
-    NEARBY_LOGS(INFO) << "Receive WiFi direct/SoftAP stop event";
+
+  // Publisher is stopped. Need to clean up the publisher.
+  {
+    absl::MutexLock lock(&mutex_);
+    if (publisher_ != nullptr) {
+      NEARBY_LOGS(ERROR) << "Windows WiFi Hotspot cleanup.";
+      listener_.ConnectionRequested(connection_requested_token_);
+      publisher_.StatusChanged(publisher_status_changed_token_);
+      wifi_direct_device_  = nullptr;
+      listener_ = nullptr;
+      publisher_ = nullptr;
+    }
   }
+
   return winrt::fire_and_forget();
 }
 
@@ -242,13 +262,22 @@ fire_and_forget WifiHotspotMedium::OnConnectionRequested(
   NEARBY_LOGS(INFO) << "Receive connection request from: "
                     << winrt::to_string(device_name);
 
-  DeviceInformationPairing pairing =
-      connection_request.DeviceInformation().Pairing();
-  if (pairing.IsPaired())
-    NEARBY_LOGS(INFO) << "Paired";
-  else
-    NEARBY_LOGS(INFO) << "Not Paired";
-
+  try {
+    // This is to solve b/236805122.
+    // Problem: [Microsoft-Windows-WLAN-AutoConfig] issues a disconnection to
+    // Hotspot Client every 2 minutes and stopped Hotspot eventually.
+    // Solution: Creating a WiFiDirectDevice for Client’s connection request can
+    // solve the problem. Guess when this object is created,
+    // [Microsoft-Windows-WLAN-AutoConfig] will recognise it as a valid device
+    // and won't kick it away.
+    wifi_direct_device_  = WiFiDirectDevice::FromIdAsync(
+            connection_request.DeviceInformation().Id()).get();
+    NEARBY_LOGS(INFO) << "Registered the device in WLAN-AutoConfig";
+  } catch (...) {
+    NEARBY_LOGS(ERROR) << "Failed to registered the device in WLAN-AutoConfig";
+    wifi_direct_device_  = nullptr;
+    connection_request.Close();
+  }
   return winrt::fire_and_forget();
 }
 
@@ -258,7 +287,7 @@ bool WifiHotspotMedium::ConnectWifiHotspot(
 
   if (IsConnected()) {
     NEARBY_LOGS(WARNING) << "Already connected to AP, disconnect first.";
-    DisconnectWifiHotspot();
+    InternalDisconnectWifiHotspot();
   }
 
   auto access = WiFiAdapter::RequestAccessAsync().get();
@@ -268,29 +297,47 @@ bool WifiHotspotMedium::ConnectWifiHotspot(
     return false;
   }
 
-  auto adaptors = WiFiAdapter::FindAllAdaptersAsync().get();
-  if (adaptors.Size() < 1) {
-    NEARBY_LOGS(WARNING) << "No WiFi Adaptor found.";
+  auto adapters = WiFiAdapter::FindAllAdaptersAsync().get();
+  if (adapters.Size() < 1) {
+    NEARBY_LOGS(WARNING) << "No WiFi Adapter found.";
     return false;
   }
-  wifi_adapter_ = adaptors.GetAt(0);
+  wifi_adapter_ = adapters.GetAt(0);
+
+  // Retrieve the current connected network's profile
+  ConnectionProfile profile =
+      wifi_adapter_.NetworkAdapter().GetConnectedProfileAsync().get();
+  std::string ssid;
+
+  if (profile != nullptr && profile.IsWlanConnectionProfile()) {
+    ssid = winrt::to_string(
+        profile.WlanConnectionProfileDetails().GetConnectedSsid());
+  }
 
   // SoftAP is an abbreviation for "software enabled access point".
   WiFiAvailableNetwork nearby_softap{nullptr};
   NEARBY_LOGS(INFO) << "Scanning for Nearby Hotspot SSID: "
                     << hotspot_credentials_->GetSSID();
 
-  // First time scan may not find our target hotspot, try 3 times can almost
-  // guarantee to find the Hotspot
-  for (int i = 0; i < kMaxScans; i++) {
+  // First time scan may not find our target hotspot, try 2 more times can
+  // almost guarantee to find the Hotspot
+  wifi_adapter_.ScanAsync().get();
+
+    wifi_connected_network_ = nullptr;
+    for (int i = 0; i < kMaxScans; i++) {
     for (const auto& network :
          wifi_adapter_.NetworkReport().AvailableNetworks()) {
-      if (winrt::to_string(network.Ssid()) == hotspot_credentials_->GetSSID()) {
+      if (!wifi_connected_network_ && !ssid.empty() &&
+          (winrt::to_string(network.Ssid()) == ssid)) {
+        wifi_connected_network_ = network;
+        NEARBY_LOGS(INFO) << "Save the current connected network: " << ssid;
+      } else if (!nearby_softap && winrt::to_string(network.Ssid()) ==
+                                      hotspot_credentials_->GetSSID()) {
         NEARBY_LOGS(INFO) << "Found Nearby SSID: "
                           << winrt::to_string(network.Ssid());
         nearby_softap = network;
-        break;
       }
+      if (nearby_softap && wifi_connected_network_) break;
     }
     if (nearby_softap) break;
     NEARBY_LOGS(INFO) << "Scan ... ";
@@ -307,32 +354,96 @@ bool WifiHotspotMedium::ConnectWifiHotspot(
 
   auto connect_result =
       wifi_adapter_
-          .ConnectAsync(nearby_softap, WiFiReconnectionKind::Automatic, creds)
+          .ConnectAsync(nearby_softap, WiFiReconnectionKind::Manual, creds)
           .get();
 
-  if (connect_result.ConnectionStatus() != WiFiConnectionStatus::Success) {
-    NEARBY_LOGS(INFO) << "Connectiong failed with reason: "
+  if (connect_result == nullptr ||
+      connect_result.ConnectionStatus() != WiFiConnectionStatus::Success) {
+    NEARBY_LOGS(INFO) << "Connecting failed with reason: "
                       << static_cast<int>(connect_result.ConnectionStatus());
     return false;
   }
 
-  NEARBY_LOGS(INFO) << "Connected to: " << hotspot_credentials_->GetSSID();
+  std::string last_ssid = hotspot_credentials_->GetSSID();
   medium_status_ |= kMediumStatusConnected;
+  NEARBY_LOGS(INFO) << "Connected to hotspot: " << last_ssid;
+
   return true;
 }
 
 bool WifiHotspotMedium::DisconnectWifiHotspot() {
   absl::MutexLock lock(&mutex_);
+  return InternalDisconnectWifiHotspot();
+}
 
+bool WifiHotspotMedium::InternalDisconnectWifiHotspot() {
   if (!IsConnected()) {
     NEARBY_LOGS(WARNING)
-        << "Cannot diconnect SoftAP because it is not connected.";
+        << "Cannot disconnect SoftAP because it is not connected.";
+    return true;
   }
+
   if (wifi_adapter_) {
+    // Gets connected WiFi profile.
+    auto profile =
+        wifi_adapter_.NetworkAdapter().GetConnectedProfileAsync().get();
+
+    // Disconnect to the WiFi connection through the WiFi adapter.
     wifi_adapter_.Disconnect();
-    NEARBY_LOGS(INFO) << "Disconnect softAP.";
-    wifi_adapter_ = {nullptr};
+    NEARBY_LOGS(INFO) << "Disconnected to SoftAP.";
+
+    if (wifi_connected_network_) {
+      auto connect_result = wifi_adapter_
+                                .ConnectAsync(wifi_connected_network_,
+                                              WiFiReconnectionKind::Automatic)
+                                .get();
+
+      if (connect_result == nullptr ||
+          connect_result.ConnectionStatus() != WiFiConnectionStatus::Success) {
+        NEARBY_LOGS(INFO)
+            << "Connecting to previous network failed with reason: "
+            << static_cast<int>(connect_result.ConnectionStatus());
+      } else {
+        NEARBY_LOGS(INFO) << "Restored the previous WIFI connection: "
+                          << winrt::to_string(wifi_connected_network_.Ssid());
+      }
+      wifi_connected_network_ = nullptr;
+    }
+    wifi_adapter_ = nullptr;
+
+    // Try to remove the WiFi profile
+    if (profile != nullptr && profile.CanDelete() &&
+        profile.IsWlanConnectionProfile()) {
+      std::string ssid = winrt::to_string(
+          profile.WlanConnectionProfileDetails().GetConnectedSsid());
+
+      auto profile_delete_status = profile.TryDeleteAsync().get();
+      switch (profile_delete_status) {
+        case ConnectionProfileDeleteStatus::Success:
+          NEARBY_LOGS(INFO)
+              << "WiFi profile with SSID:" << ssid << " is deleted.";
+          break;
+        case ConnectionProfileDeleteStatus::DeniedBySystem:
+          NEARBY_LOGS(ERROR)
+              << "Failed to delete WiFi profile with SSID:" << ssid
+              << " due to denied by system.";
+          break;
+        case ConnectionProfileDeleteStatus::DeniedByUser:
+          NEARBY_LOGS(ERROR)
+              << "Failed to delete WiFi profile with SSID:" << ssid
+              << " due to denied by user.";
+          break;
+        case ConnectionProfileDeleteStatus::UnknownError:
+          NEARBY_LOGS(ERROR)
+              << "Failed to delete WiFi profile with SSID:" << ssid
+              << " due to unknonw error.";
+          break;
+        default:
+          break;
+      }
+    }
   }
+
   medium_status_ &= (~kMediumStatusConnected);
   return true;
 }

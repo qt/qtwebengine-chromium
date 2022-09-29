@@ -361,13 +361,17 @@ class Assembler : public AssemblerBase {
 
   // SIMD instructions
   void dup(DRegister dd, VRegisterLane vn);
+  void fabs(VRegister vd, VRegister vn);
   void fadd(VRegister vd, VRegister vn, VRegister vm);
   void fmax(VRegister vd, VRegister vn, VRegister vm);
   void fmin(VRegister vd, VRegister vn, VRegister vm);
   void fmla(VRegister vd, VRegister vn, VRegisterLane vm);
+  void fmul(VRegister vd, VRegister vn, VRegister vm);
+  void fneg(VRegister vd, VRegister vn);
   void ld1(VRegisterList vs, MemOperand xn, int32_t imm);
   void ld1r(VRegisterList xs, MemOperand xn);
   void ld2r(VRegisterList xs, MemOperand xn);
+  void ld3r(VRegisterList xs, MemOperand xn);
   void ldp(DRegister dt1, DRegister dt2, MemOperand xn);
   void ldp(DRegister dt1, DRegister dt2, MemOperand xn, int32_t imm);
   void ldp(QRegister qt1, QRegister qt2, MemOperand xn, int32_t imm);

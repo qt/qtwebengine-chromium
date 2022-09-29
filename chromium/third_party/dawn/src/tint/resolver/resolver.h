@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "src/tint/program_builder.h"
+#include "src/tint/resolver/const_eval.h"
 #include "src/tint/resolver/dependency_graph.h"
 #include "src/tint/resolver/intrinsic_table.h"
 #include "src/tint/resolver/sem_helper.h"
@@ -34,7 +35,7 @@
 #include "src/tint/sem/constant.h"
 #include "src/tint/sem/function.h"
 #include "src/tint/sem/struct.h"
-#include "src/tint/utils/result.h"
+#include "src/tint/utils/bitset.h"
 #include "src/tint/utils/unique_vector.h"
 
 // Forward declarations
@@ -54,6 +55,7 @@ class ReturnStatement;
 class SwitchStatement;
 class UnaryOpExpression;
 class Variable;
+class WhileStatement;
 }  // namespace tint::ast
 namespace tint::sem {
 class Array;
@@ -65,8 +67,10 @@ class ForLoopStatement;
 class IfStatement;
 class LoopStatement;
 class Statement;
+class StructMember;
 class SwitchStatement;
 class TypeConstructor;
+class WhileStatement;
 }  // namespace tint::sem
 
 namespace tint::resolver {
@@ -107,9 +111,6 @@ class Resolver {
     const Validator* GetValidatorForTesting() const { return &validator_; }
 
   private:
-    /// Describes the context in which a variable is declared
-    enum class VariableKind { kParameter, kLocal, kGlobal };
-
     Validator::ValidTypeStorageLayouts valid_type_storage_layouts_;
 
     /// Structure holding semantic information about a block (i.e. scope), such as
@@ -159,39 +160,36 @@ class Resolver {
     /// ProgramBuilder.
     void CreateSemanticNodes() const;
 
-    /// Retrieves information for the requested import.
-    /// @param src the source of the import
-    /// @param path the import path
-    /// @param name the method name to get information on
-    /// @param params the parameters to the method call
-    /// @param id out parameter for the external call ID. Must not be a nullptr.
-    /// @returns the return type of `name` in `path` or nullptr on error.
-    sem::Type* GetImportData(const Source& src,
-                             const std::string& path,
-                             const std::string& name,
-                             const ast::ExpressionList& params,
-                             uint32_t* id);
+    /// Expression traverses the graph of expressions starting at `expr`, building a postordered
+    /// list (leaf-first) of all the expression nodes. Each of the expressions are then resolved by
+    /// dispatching to the appropriate expression handlers below.
+    /// @returns the resolved semantic node for the expression `expr`, or nullptr on failure.
+    sem::Expression* Expression(const ast::Expression* expr);
 
-    //////////////////////////////////////////////////////////////////////////////
-    // AST and Type traversal methods
-    //////////////////////////////////////////////////////////////////////////////
-
+    ////////////////////////////////////////////////////////////////////////////////////////////////
     // Expression resolving methods
+    //
     // Returns the semantic node pointer on success, nullptr on failure.
+    //
+    // These methods are invoked by Expression(), in postorder (child-first). These methods should
+    // not attempt to resolve their children. This design avoids recursion, which is a common cause
+    // of stack-overflows.
+    ////////////////////////////////////////////////////////////////////////////////////////////////
     sem::Expression* IndexAccessor(const ast::IndexAccessorExpression*);
     sem::Expression* Binary(const ast::BinaryExpression*);
     sem::Expression* Bitcast(const ast::BitcastExpression*);
     sem::Call* Call(const ast::CallExpression*);
-    sem::Expression* Expression(const ast::Expression*);
     sem::Function* Function(const ast::Function*);
+    template <size_t N>
     sem::Call* FunctionCall(const ast::CallExpression*,
                             sem::Function* target,
-                            std::vector<const sem::Expression*> args,
+                            utils::Vector<const sem::Expression*, N>& args,
                             sem::Behaviors arg_behaviors);
     sem::Expression* Identifier(const ast::IdentifierExpression*);
+    template <size_t N>
     sem::Call* BuiltinCall(const ast::CallExpression*,
                            sem::BuiltinType,
-                           std::vector<const sem::Expression*> args);
+                           utils::Vector<const sem::Expression*, N>& args);
     sem::Expression* Literal(const ast::LiteralExpression*);
     sem::Expression* MemberAccessor(const ast::MemberAccessorExpression*);
     sem::Expression* UnaryOp(const ast::UnaryOpExpression*);
@@ -214,12 +212,35 @@ class Resolver {
 
     /// Materializes all the arguments in `args` to the parameter types of `target`.
     /// @returns true on success, false on failure.
-    bool MaterializeArguments(std::vector<const sem::Expression*>& args,
+    template <size_t N>
+    bool MaterializeArguments(utils::Vector<const sem::Expression*, N>& args,
                               const sem::CallTarget* target);
 
     /// @returns true if an argument of an abstract numeric type, passed to a parameter of type
     /// `parameter_ty` should be materialized.
     bool ShouldMaterializeArgument(const sem::Type* parameter_ty) const;
+
+    /// Converts `c` to `target_ty`
+    /// @returns true on success, false on failure.
+    bool Convert(const sem::Constant*& c, const sem::Type* target_ty, const Source& source);
+
+    /// Transforms `args` to a vector of constants, and converts each constant to the call target's
+    /// parameter type.
+    /// @returns the vector of constants, `utils::Failure` on failure.
+    template <size_t N>
+    utils::Result<utils::Vector<const sem::Constant*, N>> ConvertArguments(
+        const utils::Vector<const sem::Expression*, N>& args,
+        const sem::CallTarget* target);
+
+    /// @param ty the type that may hold abstract numeric types
+    /// @param target_ty the target type for the expression (variable type, parameter type, etc).
+    ///        May be nullptr.
+    /// @param source the source of the expression requiring materialization
+    /// @returns the concrete (materialized) type for the given type, or nullptr if the type is
+    ///          already concrete.
+    const sem::Type* ConcreteType(const sem::Type* ty,
+                                  const sem::Type* target_ty,
+                                  const Source& source);
 
     // Statement resolving methods
     // Each return true on success, false on failure.
@@ -233,6 +254,7 @@ class Resolver {
     sem::Statement* DiscardStatement(const ast::DiscardStatement*);
     sem::Statement* FallthroughStatement(const ast::FallthroughStatement*);
     sem::ForLoopStatement* ForLoopStatement(const ast::ForLoopStatement*);
+    sem::WhileStatement* WhileStatement(const ast::WhileStatement*);
     sem::GlobalVariable* GlobalVariable(const ast::Variable*);
     sem::Statement* Parameter(const ast::Variable*);
     sem::IfStatement* IfStatement(const ast::IfStatement*);
@@ -240,16 +262,17 @@ class Resolver {
     sem::LoopStatement* LoopStatement(const ast::LoopStatement*);
     sem::Statement* ReturnStatement(const ast::ReturnStatement*);
     sem::Statement* Statement(const ast::Statement*);
+    sem::Statement* StaticAssert(const ast::StaticAssert*);
     sem::SwitchStatement* SwitchStatement(const ast::SwitchStatement* s);
     sem::Statement* VariableDeclStatement(const ast::VariableDeclStatement*);
-    bool Statements(const ast::StatementList&);
+    bool Statements(utils::VectorRef<const ast::Statement*>);
 
     // CollectTextureSamplerPairs() collects all the texture/sampler pairs from the target function
     // / builtin, and records these on the current function by calling AddTextureSamplerPair().
     void CollectTextureSamplerPairs(sem::Function* func,
-                                    const std::vector<const sem::Expression*>& args) const;
+                                    utils::VectorRef<const sem::Expression*> args) const;
     void CollectTextureSamplerPairs(const sem::Builtin* builtin,
-                                    const std::vector<const sem::Expression*>& args) const;
+                                    utils::VectorRef<const sem::Expression*> args) const;
 
     /// Resolves the WorkgroupSize for the given function, assigning it to
     /// current_function_
@@ -269,13 +292,37 @@ class Resolver {
     /// @returns the resolved semantic type
     sem::Type* TypeDecl(const ast::TypeDecl* named_type);
 
-    /// Builds and returns the semantic information for the array `arr`.
-    /// This method does not mark the ast::Array node, nor attach the generated
-    /// semantic information to the AST node.
-    /// @returns the semantic Array information, or nullptr if an error is
-    /// raised.
+    /// Builds and returns the semantic information for the AST array `arr`.
+    /// This method does not mark the ast::Array node, nor attach the generated semantic information
+    /// to the AST node.
+    /// @returns the semantic Array information, or nullptr if an error is raised.
     /// @param arr the Array to get semantic information for
     sem::Array* Array(const ast::Array* arr);
+
+    /// Resolves and validates the expression used as the count parameter of an array.
+    /// @param count_expr the expression used as the second template parameter to an array<>.
+    /// @returns the number of elements in the array.
+    utils::Result<uint32_t> ArrayCount(const ast::Expression* count_expr);
+
+    /// Resolves and validates the attributes on an array.
+    /// @param attributes the attributes on the array type.
+    /// @param el_ty the element type of the array.
+    /// @param explicit_stride assigned the specified stride of the array in bytes.
+    /// @returns true on success, false on failure
+    bool ArrayAttributes(utils::VectorRef<const ast::Attribute*> attributes,
+                         const sem::Type* el_ty,
+                         uint32_t& explicit_stride);
+
+    /// Builds and returns the semantic information for an array.
+    /// @returns the semantic Array information, or nullptr if an error is raised.
+    /// @param source the source of the array declaration
+    /// @param el_ty the Array element type
+    /// @param el_count the number of elements in the array. Zero means runtime-sized.
+    /// @param explicit_stride the explicit byte stride of the array. Zero means implicit stride.
+    sem::Array* Array(const Source& source,
+                      const sem::Type* el_ty,
+                      uint32_t el_count,
+                      uint32_t explicit_stride);
 
     /// Builds and returns the semantic information for the alias `alias`.
     /// This method does not mark the ast::Alias node, nor attach the generated
@@ -290,14 +337,51 @@ class Resolver {
     /// raised.
     sem::Struct* Structure(const ast::Struct* str);
 
-    /// @returns the semantic info for the variable `var`. If an error is
-    /// raised, nullptr is returned.
-    /// @note this method does not resolve the attributes as these are
-    /// context-dependent (global, local, parameter)
-    /// @param var the variable to create or return the `VariableInfo` for
-    /// @param kind what kind of variable we are declaring
-    /// @param index the index of the parameter, if this variable is a parameter
-    sem::Variable* Variable(const ast::Variable* var, VariableKind kind, uint32_t index = 0);
+    /// @returns the semantic info for the variable `v`. If an error is raised, nullptr is
+    /// returned.
+    /// @note this method does not resolve the attributes as these are context-dependent (global,
+    /// local)
+    /// @param var the variable
+    /// @param is_global true if this is module scope, otherwise function scope
+    sem::Variable* Variable(const ast::Variable* var, bool is_global);
+
+    /// @returns the semantic info for the `ast::Let` `v`. If an error is raised, nullptr is
+    /// returned.
+    /// @note this method does not resolve the attributes as these are context-dependent (global,
+    /// local)
+    /// @param var the variable
+    /// @param is_global true if this is module scope, otherwise function scope
+    sem::Variable* Let(const ast::Let* var, bool is_global);
+
+    /// @returns the semantic info for the module-scope `ast::Override` `v`. If an error is raised,
+    /// nullptr is returned.
+    /// @note this method does not resolve the attributes as these are context-dependent (global,
+    /// local)
+    /// @param override the variable
+    sem::Variable* Override(const ast::Override* override);
+
+    /// @returns the semantic info for an `ast::Const` `v`. If an error is raised, nullptr is
+    /// returned.
+    /// @note this method does not resolve the attributes as these are context-dependent (global,
+    /// local)
+    /// @param const_ the variable
+    /// @param is_global true if this is module scope, otherwise function scope
+    sem::Variable* Const(const ast::Const* const_, bool is_global);
+
+    /// @returns the semantic info for the `ast::Var` `var`. If an error is raised, nullptr is
+    /// returned.
+    /// @note this method does not resolve the attributes as these are context-dependent (global,
+    /// local)
+    /// @param var the variable
+    /// @param is_global true if this is module scope, otherwise function scope
+    sem::Variable* Var(const ast::Var* var, bool is_global);
+
+    /// @returns the semantic info for the function parameter `param`. If an error is raised,
+    /// nullptr is returned.
+    /// @note the caller is expected to validate the parameter
+    /// @param param the AST parameter
+    /// @param index the index of the parameter
+    sem::Parameter* Parameter(const ast::Parameter* param, uint32_t index);
 
     /// Records the storage class usage for the given type, and any transient
     /// dependencies of the type. Validates that the type can be used for the
@@ -315,7 +399,8 @@ class Resolver {
     ast::Access DefaultAccessForStorageClass(ast::StorageClass storage_class);
 
     /// Allocate constant IDs for pipeline-overridable constants.
-    void AllocateOverridableConstantIds();
+    /// @returns true on success, false on error
+    bool AllocateOverridableConstantIds();
 
     /// Set the shadowing information on variable declarations.
     /// @note this method must only be called after all semantic nodes are built.
@@ -350,36 +435,23 @@ class Resolver {
     /// Adds the given note message to the diagnostics
     void AddNote(const std::string& msg, const Source& source) const;
 
-    //////////////////////////////////////////////////////////////////////////////
-    /// Constant value evaluation methods
-    //////////////////////////////////////////////////////////////////////////////
-    /// The result type of a ConstantEvaluation method. Holds the constant value and a boolean,
-    /// which is true on success, false on an error.
-    using ConstantResult = utils::Result<sem::Constant>;
-
-    /// Convert the `value` to `target_type`
-    /// @return the converted value
-    ConstantResult ConvertValue(const sem::Constant& value,
-                                const sem::Type* target_type,
-                                const Source& source);
-    ConstantResult EvaluateConstantValue(const ast::Expression* expr, const sem::Type* type);
-    ConstantResult EvaluateConstantValue(const ast::LiteralExpression* literal,
-                                         const sem::Type* type);
-    ConstantResult EvaluateConstantValue(const ast::CallExpression* call, const sem::Type* type);
-
     /// @returns true if the symbol is the name of a builtin function.
     bool IsBuiltin(Symbol) const;
 
     // ArrayConstructorSig represents a unique array constructor signature.
-    // It is a tuple of the array type and number of arguments provided.
-    using ArrayConstructorSig = utils::UnorderedKeyWrapper<std::tuple<const sem::Array*, size_t>>;
+    // It is a tuple of the array type, number of arguments provided and earliest evaluation stage.
+    using ArrayConstructorSig =
+        utils::UnorderedKeyWrapper<std::tuple<const sem::Array*, size_t, sem::EvaluationStage>>;
 
     // StructConstructorSig represents a unique structure constructor signature.
-    // It is a tuple of the structure type and number of arguments provided.
-    using StructConstructorSig = utils::UnorderedKeyWrapper<std::tuple<const sem::Struct*, size_t>>;
+    // It is a tuple of the structure type, number of arguments provided and earliest evaluation
+    // stage.
+    using StructConstructorSig =
+        utils::UnorderedKeyWrapper<std::tuple<const sem::Struct*, size_t, sem::EvaluationStage>>;
 
     ProgramBuilder* const builder_;
     diag::List& diagnostics_;
+    ConstEval const_eval_;
     std::unique_ptr<IntrinsicTable> const intrinsic_table_;
     DependencyGraph dependencies_;
     SemHelper sem_;
@@ -387,8 +459,8 @@ class Resolver {
     ast::Extensions enabled_extensions_;
     std::vector<sem::Function*> entry_points_;
     std::unordered_map<const sem::Type*, const Source&> atomic_composite_info_;
-    std::unordered_set<const ast::Node*> marked_;
-    std::unordered_map<uint32_t, const sem::Variable*> constant_ids_;
+    utils::Bitset<0> marked_;
+    std::unordered_map<OverrideId, const sem::Variable*> override_ids_;
     std::unordered_map<ArrayConstructorSig, sem::CallTarget*> array_ctors_;
     std::unordered_map<StructConstructorSig, sem::CallTarget*> struct_ctors_;
 

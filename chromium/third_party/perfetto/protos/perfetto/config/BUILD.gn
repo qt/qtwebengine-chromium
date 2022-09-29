@@ -29,7 +29,9 @@ perfetto_proto_library("@TYPE@") {
     "power:@TYPE@",
     "process_stats:@TYPE@",
     "profiling:@TYPE@",
+    "statsd:@TYPE@",
     "sys_stats:@TYPE@",
+    "system_info:@TYPE@",
     "track_event:@TYPE@",
   ]
 

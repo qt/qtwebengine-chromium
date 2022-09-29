@@ -211,7 +211,7 @@ class Builder {
     /// @param builtin the builtin to convert
     /// @param storage the storage class that this builtin is being used with
     /// @returns the SPIR-V builtin or SpvBuiltInMax on error.
-    SpvBuiltIn ConvertBuiltin(ast::Builtin builtin, ast::StorageClass storage);
+    SpvBuiltIn ConvertBuiltin(ast::BuiltinValue builtin, ast::StorageClass storage);
 
     /// Converts an interpolate attribute to SPIR-V decorations and pushes a
     /// capability if needed.
@@ -554,7 +554,7 @@ class Builder {
     /// Generates a constant value if needed
     /// @param constant the constant to generate.
     /// @returns the ID on success or 0 on failure
-    uint32_t GenerateConstantIfNeeded(const sem::Constant& constant);
+    uint32_t GenerateConstantIfNeeded(const sem::Constant* constant);
 
     /// Generates a scalar constant if needed
     /// @param constant the constant to generate.

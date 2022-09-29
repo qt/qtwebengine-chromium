@@ -18,6 +18,7 @@
 #include 'src/objects/js-promise.h'
 #include 'src/objects/js-regexp-string-iterator.h'
 #include 'src/objects/js-shadow-realm.h'
+#include 'src/objects/js-shared-array.h'
 #include 'src/objects/js-struct.h'
 #include 'src/objects/js-weak-refs.h'
 #include 'src/objects/objects.h'
@@ -374,7 +375,7 @@ extern enum MessageTemplate {
   kProtoObjectOrNull,
   kInvalidOffset,
   kInvalidTypedArrayLength,
-  kIteratorSymbolNonCallable,
+  kFirstArgumentIteratorSymbolNonCallable,
   kIteratorValueNotAnObject,
   kNotIterable,
   kReduceNoInitial,
@@ -427,13 +428,14 @@ extern enum MessageTemplate {
   kWasmTrapFloatUnrepresentable,
   kWasmTrapFuncSigMismatch,
   kWasmTrapDataSegmentOutOfBounds,
-  kWasmTrapElemSegmentDropped,
+  kWasmTrapElementSegmentOutOfBounds,
   kWasmTrapTableOutOfBounds,
   kWasmTrapRethrowNull,
   kWasmTrapNullDereference,
   kWasmTrapIllegalCast,
   kWasmTrapArrayOutOfBounds,
   kWasmTrapArrayTooLarge,
+  kWasmTrapStringOffsetOutOfBounds,
   kWeakRefsRegisterTargetAndHoldingsMustNotBeSame,
   kWeakRefsRegisterTargetMustBeObject,
   kWeakRefsUnregisterTokenMustBeObject,
@@ -478,6 +480,8 @@ const kObjectAlignmentMask: constexpr intptr
     generates 'kObjectAlignmentMask';
 const kMinAddedElementsCapacity:
     constexpr int31 generates 'JSObject::kMinAddedElementsCapacity';
+const kMaxFastArrayLength:
+    constexpr int31 generates 'JSArray::kMaxFastArrayLength';
 const kMaxCopyElements:
     constexpr int31 generates 'JSArray::kMaxCopyElements';
 const kMaxRegularHeapObjectSize: constexpr int31
@@ -709,6 +713,8 @@ extern transitioning runtime ThrowCalledNonCallable(implicit context: Context)(
 
 extern transitioning macro ThrowIfNotJSReceiver(implicit context: Context)(
     JSAny, constexpr MessageTemplate, constexpr string): void;
+
+extern macro TerminateExecution(implicit context: Context)(): never;
 
 extern macro ArraySpeciesCreate(Context, JSAny, Number): JSReceiver;
 extern macro ArrayCreate(implicit context: Context)(Number): JSArray;

@@ -20,7 +20,9 @@ module.exports = {
     'rulesdir/l10n_no_locked_or_placeholder_only_phrase': 2,
     'rulesdir/l10n_no_uistrings_export': 2,
     'rulesdir/l10n_no_unused_message': 2,
-    'rulesdir/custom_element_definitions_location': 2,
+    'rulesdir/custom_element_definitions_location': [2, {
+      rootFrontendDirectory: __dirname,
+    }],
     'rulesdir/custom_element_component_definition': 2,
   },
   'overrides': [
@@ -47,6 +49,7 @@ module.exports = {
         'rulesdir/lit_html_host_this': 2,
         'rulesdir/lit_html_no_attribute_quotes': 2,
         'rulesdir/lit_template_result_or_nothing': 2,
+        'rulesdir/inject_checkbox_styles': 2,
         '@typescript-eslint/naming-convention': [
           'error', {
             'selector': ['property', 'parameterProperty'],

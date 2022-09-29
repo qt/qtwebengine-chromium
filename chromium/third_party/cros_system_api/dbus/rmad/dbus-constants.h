@@ -31,6 +31,7 @@ const char kFinalizeProgressSignal[] = "FinalizeProgress";
 const char kHardwareWriteProtectionStateSignal[] =
     "HardwareWriteProtectionState";
 const char kPowerCableStateSignal[] = "PowerCableState";
+const char kExternalDiskDetectedSignal[] = "ExternalDiskDetected";
 
 }  // namespace rmad
 

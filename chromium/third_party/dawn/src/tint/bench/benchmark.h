@@ -17,8 +17,7 @@
 
 #include <memory>
 #include <string>
-// TODO(https://crbug.com/dawn/1379) Update cpplint and remove NOLINT
-#include <variant>  // NOLINT: Found C system header after C++ system header.
+#include <variant>
 
 #include "benchmark/benchmark.h"
 #include "src/tint/utils/concat.h"
@@ -59,6 +58,7 @@ std::variant<ProgramAndFile, Error> LoadProgram(std::string name);
 /// files in `<tint>/test/benchmark`.
 #define TINT_BENCHMARK_WGSL_PROGRAMS(FUNC)                                   \
     TINT_BENCHMARK_WGSL_PROGRAM(FUNC, "animometer.wgsl");                    \
+    TINT_BENCHMARK_WGSL_PROGRAM(FUNC, "atan2-const-eval.wgsl");              \
     TINT_BENCHMARK_WGSL_PROGRAM(FUNC, "bloom-vertical-blur.wgsl");           \
     TINT_BENCHMARK_WGSL_PROGRAM(FUNC, "cluster-lights.wgsl");                \
     TINT_BENCHMARK_WGSL_PROGRAM(FUNC, "empty.wgsl");                         \

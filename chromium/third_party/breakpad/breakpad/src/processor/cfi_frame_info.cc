@@ -81,7 +81,7 @@ bool CFIFrameInfo::FindCallerRegs(const RegisterValueMap<V>& registers,
     working = registers;
     working[".cfa"] = cfa;
     if (!evaluator.EvaluateForValue(it->second, &value))
-      return false;
+      continue;
     (*caller_registers)[it->first] = value;
   }
 

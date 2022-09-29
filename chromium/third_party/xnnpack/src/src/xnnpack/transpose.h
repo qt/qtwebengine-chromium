@@ -7,8 +7,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <xnnpack/common.h>
-#include <xnnpack/params.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -114,14 +114,16 @@ DECLARE_X32_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x32_transposec_ukernel__4x4_sse)
                             size_t block_height);
 
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__1x2_scalar)
-DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__1x2_scalar)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__1x4_scalar)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__2x1_scalar)
+DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__2x2_neon_tbl)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__2x2_scalar)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__2x4_scalar)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__4x1_scalar)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__4x2_scalar)
+DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__4x4_aarch64_neon_tbl)
 DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__4x4_scalar)
+DECLARE_X24_TRANSPOSEC_UKERNEL_FUNCTION(xnn_x24_transposec_ukernel__4x4_ssse3)
 
 #define DECLARE_X16_TRANSPOSEC_UKERNEL_FUNCTION(fn_name) \
   XNN_INTERNAL void fn_name(const uint16_t* input,      \

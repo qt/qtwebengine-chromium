@@ -92,7 +92,7 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *frame,
 {
     MWSCContext *s = avctx->priv_data;
     z_stream *const zstream = &s->zstream.zstream;
-    uint8_t *buf = avpkt->data;
+    const uint8_t *buf = avpkt->data;
     int buf_size = avpkt->size;
     GetByteContext gb;
     GetByteContext gbp;
@@ -178,6 +178,5 @@ const FFCodec ff_mwsc_decoder = {
     .close            = decode_close,
     FF_CODEC_DECODE_CB(decode_frame),
     .p.capabilities   = AV_CODEC_CAP_DR1,
-    .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
-                        FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };

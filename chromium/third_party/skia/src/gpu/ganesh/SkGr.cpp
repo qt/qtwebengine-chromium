@@ -98,6 +98,7 @@ sk_sp<SkIDChangeListener> GrMakeUniqueKeyInvalidationListener(skgpu::UniqueKey* 
 sk_sp<GrSurfaceProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext* ctx,
                                                      sk_sp<GrSurfaceProxy> baseProxy,
                                                      GrSurfaceOrigin origin,
+                                                     std::string_view label,
                                                      SkBudgeted budgeted) {
     SkASSERT(baseProxy);
 
@@ -110,7 +111,7 @@ sk_sp<GrSurfaceProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext* ctx,
         return nullptr;
     }
     auto copy = GrSurfaceProxy::Copy(ctx, std::move(baseProxy), origin, GrMipmapped::kYes,
-                                     SkBackingFit::kExact, budgeted);
+                                     SkBackingFit::kExact, budgeted, label);
     if (!copy) {
         return nullptr;
     }
@@ -124,7 +125,10 @@ GrSurfaceProxyView GrCopyBaseMipMapToView(GrRecordingContext* context,
     auto origin = src.origin();
     auto swizzle = src.swizzle();
     auto proxy = src.refProxy();
-    return {GrCopyBaseMipMapToTextureProxy(context, proxy, origin, budgeted), origin, swizzle};
+    return {GrCopyBaseMipMapToTextureProxy(
+                    context, proxy, origin, /*label=*/"CopyBaseMipMapToView", budgeted),
+            origin,
+            swizzle};
 }
 
 static GrMipmapped adjust_mipmapped(GrMipmapped mipmapped,
@@ -169,6 +173,7 @@ static sk_sp<GrTextureProxy> make_bmp_proxy(GrProxyProvider* proxyProvider,
 std::tuple<GrSurfaceProxyView, GrColorType>
 GrMakeCachedBitmapProxyView(GrRecordingContext* rContext,
                             const SkBitmap& bitmap,
+                            std::string_view label,
                             GrMipmapped mipmapped) {
     if (!bitmap.peekPixels(nullptr)) {
         return {};
@@ -214,7 +219,8 @@ GrMakeCachedBitmapProxyView(GrRecordingContext* rContext,
     // We need a mipped proxy, but we found a proxy earlier that wasn't mipped. Thus we generate
     // a new mipped surface and copy the original proxy into the base layer. We will then let
     // the gpu generate the rest of the mips.
-    auto mippedProxy = GrCopyBaseMipMapToTextureProxy(rContext, proxy, kTopLeft_GrSurfaceOrigin);
+    auto mippedProxy = GrCopyBaseMipMapToTextureProxy(
+            rContext, proxy, kTopLeft_GrSurfaceOrigin, /*label=*/"MakeCachedBitmapProxyView");
     if (!mippedProxy) {
         // We failed to make a mipped proxy with the base copied into it. This could have
         // been from failure to make the proxy or failure to do the copy. Thus we will fall
@@ -386,7 +392,8 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
     // Pixel 4           Adreno640       500    110ms        221ms (2.01x)     214ms (1.95x)
     // Galaxy S20 FE     Mali-G77 MP11   600    165ms        360ms (2.18x)     260ms (1.58x)
     static const SkBitmap gLUT = make_dither_lut();
-    auto [tex, ct] = GrMakeCachedBitmapProxyView(rContext, gLUT, GrMipmapped::kNo);
+    auto [tex, ct] = GrMakeCachedBitmapProxyView(
+            rContext, gLUT, /*label=*/"MakeDitherEffect", GrMipmapped::kNo);
     if (!tex) {
         return inputFP;
     }
@@ -394,7 +401,7 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
     GrSamplerState sampler(GrSamplerState::WrapMode::kRepeat, SkFilterMode::kNearest);
     auto te = GrTextureEffect::Make(
             std::move(tex), kPremul_SkAlphaType, SkMatrix::I(), sampler, *caps);
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform half range;
         uniform shader table;
         half4 main(float2 xy, half4 color) {
@@ -404,14 +411,10 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
             return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
         }
     )");
-    return GrSkSLFP::Make(effect,
-                          "Dither",
-                          std::move(inputFP),
+    return GrSkSLFP::Make(effect, "Dither", std::move(inputFP),
                           GrSkSLFP::OptFlags::kPreservesOpaqueInput,
-                          "range",
-                          range,
-                          "table",
-                          std::move(te));
+                          "range", range,
+                          "table", std::move(te));
 }
 #endif
 
@@ -422,11 +425,12 @@ static inline bool skpaint_to_grpaint_impl(
         const SkMatrixProvider& matrixProvider,
         std::optional<std::unique_ptr<GrFragmentProcessor>> shaderFP,
         SkBlender* primColorBlender,
+        const SkSurfaceProps& surfaceProps,
         GrPaint* grPaint) {
     // Convert SkPaint color to 4f format in the destination color space
     SkColor4f origColor = SkColor4fPrepForDst(skPaint.getColor4f(), dstColorInfo);
 
-    GrFPArgs fpArgs(context, matrixProvider, &dstColorInfo);
+    GrFPArgs fpArgs(context, matrixProvider, &dstColorInfo, surfaceProps);
 
     // Setup the initial color considering the shader, the SkPaint color, and the presence or not
     // of per-vertex colors.
@@ -463,6 +467,9 @@ static inline bool skpaint_to_grpaint_impl(
             paintFP = as_BB(primColorBlender)->asFragmentProcessor(std::move(paintFP),
                                                                    /*dstFP=*/nullptr,
                                                                    fpArgs);
+            if (!paintFP) {
+                return false;
+            }
 
             // We can ignore origColor here - alpha is unchanged by gamma
             float paintAlpha = skPaint.getColor4f().fA;
@@ -505,6 +512,9 @@ static inline bool skpaint_to_grpaint_impl(
                 paintFP = as_BB(primColorBlender)->asFragmentProcessor(std::move(paintFP),
                                                                        /*dstFP=*/nullptr,
                                                                        fpArgs);
+                if (!paintFP) {
+                    return false;
+                }
             }
 
             // The paint's *alpha* is applied after the paint/primitive color blend:
@@ -531,7 +541,8 @@ static inline bool skpaint_to_grpaint_impl(
             grPaint->setColor4f(colorFilter->filterColor4f(origColor, dstCS, dstCS).premul());
         } else {
             auto [success, fp] = as_CFB(colorFilter)->asFragmentProcessor(std::move(paintFP),
-                                                                          context, dstColorInfo);
+                                                                          context, dstColorInfo,
+                                                                          surfaceProps);
             if (!success) {
                 return false;
             }
@@ -572,6 +583,9 @@ static inline bool skpaint_to_grpaint_impl(
                 std::move(paintFP),
                 GrFragmentProcessor::SurfaceColor(),
                 fpArgs);
+        if (!paintFP) {
+            return false;
+        }
         grPaint->setXPFactory(SkBlendMode_AsXPFactory(SkBlendMode::kSrc));
     }
 
@@ -598,6 +612,7 @@ bool SkPaintToGrPaint(GrRecordingContext* context,
                       const GrColorInfo& dstColorInfo,
                       const SkPaint& skPaint,
                       const SkMatrixProvider& matrixProvider,
+                      const SkSurfaceProps& surfaceProps,
                       GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
@@ -605,6 +620,7 @@ bool SkPaintToGrPaint(GrRecordingContext* context,
                                    matrixProvider,
                                    /*shaderFP=*/std::nullopt,
                                    /*primColorBlender=*/nullptr,
+                                   surfaceProps,
                                    grPaint);
 }
 
@@ -614,6 +630,7 @@ bool SkPaintToGrPaintReplaceShader(GrRecordingContext* context,
                                    const SkPaint& skPaint,
                                    const SkMatrixProvider& matrixProvider,
                                    std::unique_ptr<GrFragmentProcessor> shaderFP,
+                                   const SkSurfaceProps& surfaceProps,
                                    GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
@@ -621,6 +638,7 @@ bool SkPaintToGrPaintReplaceShader(GrRecordingContext* context,
                                    matrixProvider,
                                    std::move(shaderFP),
                                    /*primColorBlender=*/nullptr,
+                                   surfaceProps,
                                    grPaint);
 }
 
@@ -631,6 +649,7 @@ bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
                                const SkPaint& skPaint,
                                const SkMatrixProvider& matrixProvider,
                                SkBlender* primColorBlender,
+                               const SkSurfaceProps& surfaceProps,
                                GrPaint* grPaint) {
     return skpaint_to_grpaint_impl(context,
                                    dstColorInfo,
@@ -638,5 +657,6 @@ bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
                                    matrixProvider,
                                    /*shaderFP=*/std::nullopt,
                                    primColorBlender,
+                                   surfaceProps,
                                    grPaint);
 }

@@ -9,27 +9,33 @@
 
 #include "src/base/macros.h"
 #include "src/codegen/bailout-reason.h"
+#include "src/codegen/code-factory.h"
 #include "src/codegen/tnode.h"
 #include "src/common/globals.h"
 #include "src/common/message-template.h"
 #include "src/compiler/code-assembler.h"
 #include "src/numbers/integer-literal.h"
+#include "src/objects/api-callbacks.h"
 #include "src/objects/arguments.h"
 #include "src/objects/bigint.h"
 #include "src/objects/cell.h"
 #include "src/objects/feedback-vector.h"
+#include "src/objects/heap-number.h"
 #include "src/objects/js-function.h"
-#include "src/objects/js-generator.h"
 #include "src/objects/js-promise.h"
+#include "src/objects/js-proxy.h"
 #include "src/objects/objects.h"
-#include "src/objects/promise.h"
+#include "src/objects/oddball.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/smi.h"
 #include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/tagged-index.h"
 #include "src/roots/roots.h"
-#include "src/sandbox/external-pointer.h"
 #include "torque-generated/exported-macros-assembler.h"
+
+#if V8_ENABLE_WEBASSEMBLY
+#include "src/wasm/wasm-objects.h"
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
 namespace internal {
@@ -114,8 +120,8 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(ShadowRealmImportValueFulfilledSFI,                                        \
     shadow_realm_import_value_fulfilled_sfi,                                   \
     ShadowRealmImportValueFulfilledSFI)                                        \
-  V(SingleCharacterStringCache, single_character_string_cache,                 \
-    SingleCharacterStringCache)                                                \
+  V(SingleCharacterStringTable, single_character_string_table,                 \
+    SingleCharacterStringTable)                                                \
   V(StringIteratorProtector, string_iterator_protector,                        \
     StringIteratorProtector)                                                   \
   V(TypedArraySpeciesProtector, typed_array_species_protector,                 \
@@ -1003,6 +1009,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                  Int32Constant(higher_limit - lower_limit));
   }
 
+  TNode<BoolT> IsInRange(TNode<UintPtrT> value, TNode<UintPtrT> lower_limit,
+                         TNode<UintPtrT> higher_limit) {
+    CSA_DCHECK(this, UintPtrLessThanOrEqual(lower_limit, higher_limit));
+    return UintPtrLessThanOrEqual(UintPtrSub(value, lower_limit),
+                                  UintPtrSub(higher_limit, lower_limit));
+  }
+
   TNode<BoolT> IsInRange(TNode<WordT> value, intptr_t lower_limit,
                          intptr_t higher_limit) {
     DCHECK_LE(lower_limit, higher_limit);
@@ -1092,33 +1105,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // ExternalPointerT-related functionality.
   //
 
-#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
-  TNode<ExternalPointerT> ChangeIndexToExternalPointer(TNode<Uint32T> index);
-  TNode<Uint32T> ChangeExternalPointerToIndex(TNode<ExternalPointerT> pointer);
-#endif  // V8_SANDBOXED_EXTERNAL_POINTERS
-
-  // Initialize an external pointer field in an object.
-  void InitializeExternalPointerField(TNode<HeapObject> object, int offset) {
-    InitializeExternalPointerField(object, IntPtrConstant(offset));
-  }
-  void InitializeExternalPointerField(TNode<HeapObject> object,
-                                      TNode<IntPtrT> offset);
-
-  // Initialize an external pointer field in an object with given value.
-  void InitializeExternalPointerField(TNode<HeapObject> object, int offset,
-                                      TNode<RawPtrT> pointer,
-                                      ExternalPointerTag tag) {
-    InitializeExternalPointerField(object, IntPtrConstant(offset), pointer,
-                                   tag);
-  }
-
-  void InitializeExternalPointerField(TNode<HeapObject> object,
-                                      TNode<IntPtrT> offset,
-                                      TNode<RawPtrT> pointer,
-                                      ExternalPointerTag tag) {
-    InitializeExternalPointerField(object, offset);
-    StoreExternalPointerToObject(object, offset, pointer, tag);
-  }
+  TNode<RawPtrT> ExternalPointerTableAddress(ExternalPointerTag tag);
 
   // Load an external pointer value from an object.
   TNode<RawPtrT> LoadExternalPointerFromObject(TNode<HeapObject> object,
@@ -1148,6 +1135,13 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                          kForeignForeignAddressTag);
   }
 
+  TNode<RawPtrT> LoadCallHandlerInfoJsCallbackPtr(
+      TNode<CallHandlerInfo> object) {
+    return LoadExternalPointerFromObject(object,
+                                         CallHandlerInfo::kJsCallbackOffset,
+                                         kCallHandlerInfoJsCallbackTag);
+  }
+
   TNode<RawPtrT> LoadExternalStringResourcePtr(TNode<ExternalString> object) {
     return LoadExternalPointerFromObject(
         object, ExternalString::kResourceOffset, kExternalStringResourceTag);
@@ -1165,6 +1159,20 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                          ExternalString::kResourceDataOffset,
                                          kExternalStringResourceDataTag);
   }
+
+#if V8_ENABLE_WEBASSEMBLY
+  TNode<RawPtrT> LoadWasmInternalFunctionCallTargetPtr(
+      TNode<WasmInternalFunction> object) {
+    return LoadExternalPointerFromObject(
+        object, WasmInternalFunction::kCallTargetOffset,
+        kWasmInternalFunctionCallTargetTag);
+  }
+
+  TNode<RawPtrT> LoadWasmTypeInfoNativeTypePtr(TNode<WasmTypeInfo> object) {
+    return LoadExternalPointerFromObject(
+        object, WasmTypeInfo::kNativeTypeOffset, kWasmTypeInfoNativeTypeTag);
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   TNode<RawPtrT> LoadJSTypedArrayExternalPointerPtr(
       TNode<JSTypedArray> holder) {
@@ -2042,7 +2050,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     TNode<FixedArray> result = UncheckedCast<FixedArray>(
         AllocateFixedArray(PACKED_ELEMENTS, capacity,
                            AllocationFlag::kAllowLargeObjectAllocation));
-    FillFixedArrayWithSmiZero(result, capacity);
+    FillEntireFixedArrayWithSmiZero(PACKED_ELEMENTS, result, capacity);
     return result;
   }
 
@@ -2051,7 +2059,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     TNode<FixedDoubleArray> result = UncheckedCast<FixedDoubleArray>(
         AllocateFixedArray(PACKED_DOUBLE_ELEMENTS, capacity,
                            AllocationFlag::kAllowLargeObjectAllocation));
-    FillFixedDoubleArrayWithZero(result, capacity);
+    FillEntireFixedDoubleArrayWithZero(result, capacity);
     return result;
   }
 
@@ -2095,10 +2103,25 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                RootIndex value_root_index);
 
   // Uses memset to effectively initialize the given FixedArray with zeroes.
-  void FillFixedArrayWithSmiZero(TNode<FixedArray> array,
-                                 TNode<IntPtrT> length);
+  void FillFixedArrayWithSmiZero(ElementsKind kind, TNode<FixedArray> array,
+                                 TNode<IntPtrT> start, TNode<IntPtrT> length);
+  void FillEntireFixedArrayWithSmiZero(ElementsKind kind,
+                                       TNode<FixedArray> array,
+                                       TNode<IntPtrT> length) {
+    CSA_DCHECK(this,
+               WordEqual(length, LoadAndUntagFixedArrayBaseLength(array)));
+    FillFixedArrayWithSmiZero(kind, array, IntPtrConstant(0), length);
+  }
+
   void FillFixedDoubleArrayWithZero(TNode<FixedDoubleArray> array,
+                                    TNode<IntPtrT> start,
                                     TNode<IntPtrT> length);
+  void FillEntireFixedDoubleArrayWithZero(TNode<FixedDoubleArray> array,
+                                          TNode<IntPtrT> length) {
+    CSA_DCHECK(this,
+               WordEqual(length, LoadAndUntagFixedArrayBaseLength(array)));
+    FillFixedDoubleArrayWithZero(array, IntPtrConstant(0), length);
+  }
 
   void FillPropertyArrayWithUndefined(TNode<PropertyArray> array,
                                       TNode<IntPtrT> from_index,
@@ -2511,6 +2534,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                       base::Optional<TNode<Object>> arg1 = base::nullopt,
                       base::Optional<TNode<Object>> arg2 = base::nullopt);
 
+  void TerminateExecution(TNode<Context> context);
+
   TNode<HeapObject> GetPendingMessage();
   void SetPendingMessage(TNode<HeapObject> message);
   TNode<BoolT> IsExecutionTerminating();
@@ -2592,6 +2617,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSPrimitiveWrapperInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSPrimitiveWrapperMap(TNode<Map> map);
   TNode<BoolT> IsJSPrimitiveWrapper(TNode<HeapObject> object);
+  TNode<BoolT> IsJSSharedArrayInstanceType(TNode<Int32T> instance_type);
+  TNode<BoolT> IsJSSharedArrayMap(TNode<Map> map);
+  TNode<BoolT> IsJSSharedArray(TNode<HeapObject> object);
+  TNode<BoolT> IsJSSharedArray(TNode<Object> object);
   TNode<BoolT> IsJSSharedStructInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSSharedStructMap(TNode<Map> map);
   TNode<BoolT> IsJSSharedStruct(TNode<HeapObject> object);
@@ -2926,6 +2955,19 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
     TNode<Word32T> masked_word32 =
         Word32And(word32, Int32Constant(BitField::kMask));
     return Word32Equal(masked_word32, Int32Constant(BitField::encode(value)));
+  }
+
+  // Checks if two values of non-overlapping bitfields are both set.
+  template <typename BitField1, typename BitField2>
+  TNode<BoolT> IsBothEqualInWord32(TNode<Word32T> word32,
+                                   typename BitField1::FieldType value1,
+                                   typename BitField2::FieldType value2) {
+    static_assert((BitField1::kMask & BitField2::kMask) == 0);
+    TNode<Word32T> combined_masked_word32 =
+        Word32And(word32, Int32Constant(BitField1::kMask | BitField2::kMask));
+    TNode<Int32T> combined_value =
+        Int32Constant(BitField1::encode(value1) | BitField2::encode(value2));
+    return Word32Equal(combined_masked_word32, combined_value);
   }
 
   // Returns true if the bit field |BitField| in |word32| is not equal to a

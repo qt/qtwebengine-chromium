@@ -35,7 +35,6 @@ class CPDF_Dictionary final : public CPDF_Object {
   // CPDF_Object:
   Type GetType() const override;
   RetainPtr<CPDF_Object> Clone() const override;
-  CPDF_Dictionary* GetDict() override;
   const CPDF_Dictionary* GetDict() const override;
   bool IsDictionary() const override;
   CPDF_Dictionary* AsDictionary() override;
@@ -47,9 +46,10 @@ class CPDF_Dictionary final : public CPDF_Object {
 
   size_t size() const { return m_Map.size(); }
   const CPDF_Object* GetObjectFor(const ByteString& key) const;
-  CPDF_Object* GetObjectFor(const ByteString& key);
+  RetainPtr<CPDF_Object> GetMutableObjectFor(const ByteString& key);
+
   const CPDF_Object* GetDirectObjectFor(const ByteString& key) const;
-  CPDF_Object* GetDirectObjectFor(const ByteString& key);
+  RetainPtr<CPDF_Object> GetMutableDirectObjectFor(const ByteString& key);
 
   // These will return the string representation of the object specified by
   // |key|, for any object type that has a string representation.
@@ -66,15 +66,16 @@ class CPDF_Dictionary final : public CPDF_Object {
   bool GetBooleanFor(const ByteString& key, bool bDefault) const;
   int GetIntegerFor(const ByteString& key) const;
   int GetIntegerFor(const ByteString& key, int default_int) const;
+  int GetDirectIntegerFor(const ByteString& key) const;
   float GetNumberFor(const ByteString& key) const;
   const CPDF_Dictionary* GetDictFor(const ByteString& key) const;
-  CPDF_Dictionary* GetDictFor(const ByteString& key);  // Prefer next form.
   RetainPtr<CPDF_Dictionary> GetMutableDictFor(const ByteString& key);
+  RetainPtr<CPDF_Dictionary> GetOrCreateDictFor(const ByteString& key);
   const CPDF_Array* GetArrayFor(const ByteString& key) const;
-  CPDF_Array* GetArrayFor(const ByteString& key);  // Prefer next form.
   RetainPtr<CPDF_Array> GetMutableArrayFor(const ByteString& key);
+  RetainPtr<CPDF_Array> GetOrCreateArrayFor(const ByteString& key);
   const CPDF_Stream* GetStreamFor(const ByteString& key) const;
-  CPDF_Stream* GetStreamFor(const ByteString& key);
+  RetainPtr<CPDF_Stream> GetMutableStreamFor(const ByteString& key);
   CFX_FloatRect GetRectFor(const ByteString& key) const;
   CFX_Matrix GetMatrixFor(const ByteString& key) const;
 
@@ -169,6 +170,11 @@ inline const CPDF_Dictionary* ToDictionary(const CPDF_Object* obj) {
 
 inline RetainPtr<CPDF_Dictionary> ToDictionary(RetainPtr<CPDF_Object> obj) {
   return RetainPtr<CPDF_Dictionary>(ToDictionary(obj.Get()));
+}
+
+inline RetainPtr<const CPDF_Dictionary> ToDictionary(
+    RetainPtr<const CPDF_Object> obj) {
+  return RetainPtr<const CPDF_Dictionary>(ToDictionary(obj.Get()));
 }
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_DICTIONARY_H_

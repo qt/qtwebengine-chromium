@@ -49,7 +49,6 @@
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
-#include "rtc_base/ref_counted_object.h"
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/system/file_wrapper.h"
 
@@ -205,9 +204,6 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     PeerConnectionDependencies dependencies) {
   RTC_DCHECK_RUN_ON(signaling_thread());
-  RTC_DCHECK(!(dependencies.allocator && dependencies.packet_socket_factory))
-      << "You can't set both allocator and packet_socket_factory; "
-         "the former is going away (see bugs.webrtc.org/7447";
 
   // Set internal defaults if optional dependencies are not set.
   if (!dependencies.cert_generator) {
@@ -216,14 +212,8 @@ PeerConnectionFactory::CreatePeerConnectionOrError(
                                                        network_thread());
   }
   if (!dependencies.allocator) {
-    rtc::PacketSocketFactory* packet_socket_factory;
-    if (dependencies.packet_socket_factory)
-      packet_socket_factory = dependencies.packet_socket_factory.get();
-    else
-      packet_socket_factory = context_->default_socket_factory();
-
     dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
-        context_->default_network_manager(), packet_socket_factory,
+        context_->default_network_manager(), context_->default_socket_factory(),
         configuration.turn_customizer);
     dependencies.allocator->SetPortRange(
         configuration.port_allocator_config.min_port,
@@ -306,9 +296,8 @@ std::unique_ptr<RtcEventLog> PeerConnectionFactory::CreateRtcEventLog_w() {
   auto encoding_type = RtcEventLog::EncodingType::Legacy;
   if (IsTrialEnabled("WebRTC-RtcEventLogNewFormat"))
     encoding_type = RtcEventLog::EncodingType::NewFormat;
-  return event_log_factory_
-             ? event_log_factory_->CreateRtcEventLog(encoding_type)
-             : std::make_unique<RtcEventLogNull>();
+  return event_log_factory_ ? event_log_factory_->Create(encoding_type)
+                            : std::make_unique<RtcEventLogNull>();
 }
 
 std::unique_ptr<Call> PeerConnectionFactory::CreateCall_w(

@@ -7,11 +7,16 @@
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
+#include "core/fpdfapi/page/cpdf_dib.h"
 #include "core/fpdfapi/page/cpdf_image.h"
 #include "core/fpdfapi/page/cpdf_page.h"
-#include "core/fpdfapi/render/cpdf_imagecacheentry.h"
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -19,10 +24,10 @@
 namespace {
 
 struct CacheInfo {
-  CacheInfo(uint32_t t, CPDF_Stream* stream) : time(t), pStream(stream) {}
+  CacheInfo(uint32_t t, const CPDF_Stream* stream) : time(t), pStream(stream) {}
 
   uint32_t time;
-  CPDF_Stream* pStream;
+  const CPDF_Stream* pStream;
 
   bool operator<(const CacheInfo& other) const { return time < other.time; }
 };
@@ -63,7 +68,7 @@ void CPDF_PageRenderCache::CacheOptimization(int32_t dwLimitCacheSize) {
     ClearImageCacheEntry(cache_info[i++].pStream);
 }
 
-void CPDF_PageRenderCache::ClearImageCacheEntry(CPDF_Stream* pStream) {
+void CPDF_PageRenderCache::ClearImageCacheEntry(const CPDF_Stream* pStream) {
   auto it = m_ImageCache.find(pStream);
   if (it == m_ImageCache.end())
     return;
@@ -73,17 +78,17 @@ void CPDF_PageRenderCache::ClearImageCacheEntry(CPDF_Stream* pStream) {
 }
 
 bool CPDF_PageRenderCache::StartGetCachedBitmap(
-    const RetainPtr<CPDF_Image>& pImage,
+    RetainPtr<CPDF_Image> pImage,
     const CPDF_RenderStatus* pRenderStatus,
     bool bStdCS) {
-  CPDF_Stream* pStream = pImage->GetStream();
+  const CPDF_Stream* pStream = pImage->GetStream();
   const auto it = m_ImageCache.find(pStream);
   m_bCurFindCache = it != m_ImageCache.end();
   if (m_bCurFindCache) {
     m_pCurImageCacheEntry = it->second.get();
   } else {
-    m_pCurImageCacheEntry =
-        std::make_unique<CPDF_ImageCacheEntry>(m_pPage->GetDocument(), pImage);
+    m_pCurImageCacheEntry = std::make_unique<ImageCacheEntry>(
+        m_pPage->GetDocument(), std::move(pImage));
   }
   CPDF_DIB::LoadState ret = m_pCurImageCacheEntry->StartGetCachedBitmap(
       m_pPage->GetPageResources(), pRenderStatus, bStdCS);
@@ -115,16 +120,119 @@ bool CPDF_PageRenderCache::Continue(PauseIndicatorIface* pPause,
   return false;
 }
 
-void CPDF_PageRenderCache::ResetBitmapForImage(
-    const RetainPtr<CPDF_Image>& pImage) {
-  CPDF_ImageCacheEntry* pEntry;
-  CPDF_Stream* pStream = pImage->GetStream();
+void CPDF_PageRenderCache::ResetBitmapForImage(RetainPtr<CPDF_Image> pImage) {
+  const CPDF_Stream* pStream = pImage->GetStream();
   const auto it = m_ImageCache.find(pStream);
   if (it == m_ImageCache.end())
     return;
 
-  pEntry = it->second.get();
+  ImageCacheEntry* pEntry = it->second.get();
   m_nCacheSize -= pEntry->EstimateSize();
   pEntry->Reset();
   m_nCacheSize += pEntry->EstimateSize();
+}
+
+uint32_t CPDF_PageRenderCache::GetCurMatteColor() const {
+  return m_pCurImageCacheEntry->GetMatteColor();
+}
+
+RetainPtr<CFX_DIBBase> CPDF_PageRenderCache::DetachCurBitmap() {
+  return m_pCurImageCacheEntry->DetachBitmap();
+}
+
+RetainPtr<CFX_DIBBase> CPDF_PageRenderCache::DetachCurMask() {
+  return m_pCurImageCacheEntry->DetachMask();
+}
+
+CPDF_PageRenderCache::ImageCacheEntry::ImageCacheEntry(
+    CPDF_Document* pDoc,
+    RetainPtr<CPDF_Image> pImage)
+    : m_pDocument(pDoc), m_pImage(std::move(pImage)) {}
+
+CPDF_PageRenderCache::ImageCacheEntry::~ImageCacheEntry() = default;
+
+void CPDF_PageRenderCache::ImageCacheEntry::Reset() {
+  m_pCachedBitmap.Reset();
+  CalcSize();
+}
+
+RetainPtr<CFX_DIBBase> CPDF_PageRenderCache::ImageCacheEntry::DetachBitmap() {
+  return std::move(m_pCurBitmap);
+}
+
+RetainPtr<CFX_DIBBase> CPDF_PageRenderCache::ImageCacheEntry::DetachMask() {
+  return std::move(m_pCurMask);
+}
+
+CPDF_DIB::LoadState CPDF_PageRenderCache::ImageCacheEntry::StartGetCachedBitmap(
+    const CPDF_Dictionary* pPageResources,
+    const CPDF_RenderStatus* pRenderStatus,
+    bool bStdCS) {
+  if (m_pCachedBitmap) {
+    m_pCurBitmap = m_pCachedBitmap;
+    m_pCurMask = m_pCachedMask;
+    return CPDF_DIB::LoadState::kSuccess;
+  }
+
+  // A cross-document image may have come from the embedder.
+  if (m_pDocument != m_pImage->GetDocument())
+    return CPDF_DIB::LoadState::kFail;
+
+  m_pCurBitmap = m_pImage->CreateNewDIB();
+  CPDF_DIB::LoadState ret = m_pCurBitmap.As<CPDF_DIB>()->StartLoadDIBBase(
+      true, pRenderStatus->GetFormResource(), pPageResources, bStdCS,
+      pRenderStatus->GetGroupFamily(), pRenderStatus->GetLoadMask());
+  if (ret == CPDF_DIB::LoadState::kContinue)
+    return CPDF_DIB::LoadState::kContinue;
+
+  if (ret == CPDF_DIB::LoadState::kSuccess)
+    ContinueGetCachedBitmap(pRenderStatus);
+  else
+    m_pCurBitmap.Reset();
+  return CPDF_DIB::LoadState::kFail;
+}
+
+bool CPDF_PageRenderCache::ImageCacheEntry::Continue(
+    PauseIndicatorIface* pPause,
+    CPDF_RenderStatus* pRenderStatus) {
+  CPDF_DIB::LoadState ret =
+      m_pCurBitmap.As<CPDF_DIB>()->ContinueLoadDIBBase(pPause);
+  if (ret == CPDF_DIB::LoadState::kContinue)
+    return true;
+
+  if (ret == CPDF_DIB::LoadState::kSuccess)
+    ContinueGetCachedBitmap(pRenderStatus);
+  else
+    m_pCurBitmap.Reset();
+  return false;
+}
+
+void CPDF_PageRenderCache::ImageCacheEntry::ContinueGetCachedBitmap(
+    const CPDF_RenderStatus* pRenderStatus) {
+  m_MatteColor = m_pCurBitmap.As<CPDF_DIB>()->GetMatteColor();
+  m_pCurMask = m_pCurBitmap.As<CPDF_DIB>()->DetachMask();
+  CPDF_RenderContext* pContext = pRenderStatus->GetContext();
+  CPDF_PageRenderCache* pPageRenderCache = pContext->GetPageCache();
+  m_dwTimeCount = pPageRenderCache->GetTimeCount();
+  if (m_pCurBitmap->GetPitch() * m_pCurBitmap->GetHeight() < kHugeImageSize) {
+    m_pCachedBitmap = m_pCurBitmap->Realize();
+    m_pCurBitmap.Reset();
+  } else {
+    m_pCachedBitmap = m_pCurBitmap;
+  }
+  if (m_pCurMask) {
+    m_pCachedMask = m_pCurMask->Realize();
+    m_pCurMask.Reset();
+  }
+  m_pCurBitmap = m_pCachedBitmap;
+  m_pCurMask = m_pCachedMask;
+  CalcSize();
+}
+
+void CPDF_PageRenderCache::ImageCacheEntry::CalcSize() {
+  m_dwCacheSize = 0;
+  if (m_pCachedBitmap)
+    m_dwCacheSize += m_pCachedBitmap->GetEstimatedImageMemoryBurden();
+  if (m_pCachedMask)
+    m_dwCacheSize += m_pCachedMask->GetEstimatedImageMemoryBurden();
 }

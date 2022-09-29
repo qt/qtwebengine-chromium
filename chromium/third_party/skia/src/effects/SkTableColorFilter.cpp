@@ -18,6 +18,10 @@
 #include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Image_Graphite.h"
+#endif
+
 class SkTable_ColorFilter : public SkColorFilterBase {
 public:
     SkTable_ColorFilter(const uint8_t tableA[], const uint8_t tableR[],
@@ -38,7 +42,14 @@ public:
 
 #if SK_SUPPORT_GPU
     GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
-                                   GrRecordingContext*, const GrColorInfo&) const override;
+                                   GrRecordingContext*, const GrColorInfo&,
+                                   const SkSurfaceProps&) const override;
+#endif
+
+#ifdef SK_ENABLE_SKSL
+    void addToKey(const SkKeyContext& keyContext,
+                  SkPaintParamsKeyBuilder* builder,
+                  SkPipelineDataGatherer* gatherer) const override;
 #endif
 
     bool onAppendStages(const SkStageRec& rec, bool shaderIsOpaque) const override {
@@ -182,7 +193,10 @@ std::unique_ptr<GrFragmentProcessor> ColorTableEffect::Make(
     SkASSERT(kPremul_SkAlphaType == bitmap.alphaType());
     SkASSERT(bitmap.isImmutable());
 
-    auto view = std::get<0>(GrMakeCachedBitmapProxyView(context, bitmap, GrMipmapped::kNo));
+    auto view = std::get<0>(GrMakeCachedBitmapProxyView(context,
+                                                        bitmap,
+                                                        /*label=*/"MakeColorTableEffect",
+                                                        GrMipmapped::kNo));
     if (!view) {
         return nullptr;
     }
@@ -220,9 +234,11 @@ std::unique_ptr<GrFragmentProcessor> ColorTableEffect::TestCreate(GrProcessorTes
         (flags & (1 << 3)) ? luts[3] : nullptr
     ));
     sk_sp<SkColorSpace> colorSpace = GrTest::TestColorSpace(d->fRandom);
+    SkSurfaceProps props; // default props for testing
     auto [success, fp] = as_CFB(filter)->asFragmentProcessor(
             d->inputFP(), d->context(),
-            GrColorInfo(GrColorType::kRGBA_8888, kUnknown_SkAlphaType, std::move(colorSpace)));
+            GrColorInfo(GrColorType::kRGBA_8888, kUnknown_SkAlphaType, std::move(colorSpace)),
+            props);
     SkASSERT(success);
     return std::move(fp);
 }
@@ -230,12 +246,45 @@ std::unique_ptr<GrFragmentProcessor> ColorTableEffect::TestCreate(GrProcessorTes
 
 GrFPResult SkTable_ColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
                                                     GrRecordingContext* context,
-                                                    const GrColorInfo&) const {
+                                                    const GrColorInfo&,
+                                                    const SkSurfaceProps&) const {
     auto cte = ColorTableEffect::Make(std::move(inputFP), context, fBitmap);
     return cte ? GrFPSuccess(std::move(cte)) : GrFPFailure(nullptr);
 }
 
 #endif // SK_SUPPORT_GPU
+
+#ifdef SK_ENABLE_SKSL
+
+#include "include/core/SkImage.h"
+#include "src/core/SkKeyContext.h"
+#include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
+
+void SkTable_ColorFilter::addToKey(const SkKeyContext& keyContext,
+                                   SkPaintParamsKeyBuilder* builder,
+                                   SkPipelineDataGatherer* gatherer) const {
+    TableColorFilterBlock::TableColorFilterData data;
+
+#ifdef SK_GRAPHITE_ENABLED
+    // TODO(b/239604347): remove this hack. This is just here until we determine what Graphite's
+    // Recorder-level caching story is going to be.
+    sk_sp<SkImage> image = SkImage::MakeFromBitmap(fBitmap);
+    image = image->makeTextureImage(keyContext.recorder(), { skgpu::graphite::Mipmapped::kNo });
+
+    if (as_IB(image)->isGraphiteBacked()) {
+        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(image.get());
+
+        auto [view, _] = grImage->asView(keyContext.recorder(), skgpu::graphite::Mipmapped::kNo);
+        data.fTextureProxy = view.refProxy();
+    }
+#endif
+
+    TableColorFilterBlock::BeginBlock(keyContext, builder, gatherer, data);
+    builder->endBlock();
+}
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 

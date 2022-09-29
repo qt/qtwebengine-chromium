@@ -24,8 +24,8 @@ namespace dawn::wire::client {
 
 class ShaderModule final : public ObjectBase {
   public:
-    ShaderModule(Client* client, uint32_t refcount, uint32_t id);
-    ~ShaderModule();
+    using ObjectBase::ObjectBase;
+    ~ShaderModule() override;
 
     void GetCompilationInfo(WGPUCompilationInfoCallback callback, void* userdata);
     bool GetCompilationInfoCallback(uint64_t requestSerial,

@@ -28,6 +28,8 @@ function keycap(key: string) {
 }
 
 function showHelp() {
+  const ctrlOrCmd =
+      window.navigator.platform.indexOf('Mac') !== -1 ? 'Cmd' : 'Ctrl';
   showModal({
     title: 'Perfetto Help',
     content: m(
@@ -52,6 +54,29 @@ function showHelp() {
           m('tr', m('td', 'Ctrl + Scroll wheel'), m('td', 'Zoom in/out')),
           m('tr', m('td', 'Click + Drag'), m('td', 'Select area')),
           m('tr', m('td', 'Shift + Click + Drag'), m('td', 'Pan left/right'))),
+        m('h2', 'Making SQL queries from the viewer page'),
+        m('table',
+          m('tr',
+            m('td', keycap(':'), ' in the (empty) search box'),
+            m('td', 'Switch to query input')),
+          m('tr', m('td', keycap('Enter')), m('td', 'Execute query')),
+          m('tr',
+            m('td', keycap('Ctrl'), ' + ', keycap('Enter')),
+            m('td',
+              'Execute query and pin output ' +
+                  '(output will not be replaced by regular query input)'))),
+        m('h2', 'Making SQL queries from the query page'),
+        m('table',
+          m('tr',
+            m('td', keycap('Ctrl'), ' + ', keycap('Enter')),
+            m('td', 'Execute query')),
+          m('tr',
+            m('td',
+              keycap('Ctrl'),
+              ' + ',
+              keycap('Enter'),
+              ' (with selection)'),
+            m('td', 'Execute selection'))),
         m('h2', 'Other'),
         m(
             'table',
@@ -67,7 +92,7 @@ function showHelp() {
                     'the one that is in focus (bold) is selected')),
             m('tr',
               m('td',
-                keycap('Ctrl'),
+                keycap(ctrlOrCmd),
                 ' + ',
                 keycap('['),
                 '/',
@@ -85,7 +110,10 @@ function showHelp() {
                 ' (with event or area selected)'),
               m('td', 'Mark the area (persistently)')),
             m('tr',
-              m('td', keycap('Ctrl'), ' + ', keycap('b')),
+              m('td', keycap(ctrlOrCmd), ' + ', keycap('a')),
+              m('td', 'Select all')),
+            m('tr',
+              m('td', keycap(ctrlOrCmd), ' + ', keycap('b')),
               m('td', 'Toggle display of sidebar')),
             m('tr', m('td', keycap('?')), m('td', 'Show help')),
             )),

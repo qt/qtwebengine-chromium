@@ -9,10 +9,9 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/dwconv.h>
 #include <xnnpack/math.h>
+#include <xnnpack/unaligned.h>
 
 
 void xnn_qu8_dwconv_minmax_fp32_ukernel_up1x9__scalar_imagic(
@@ -87,7 +86,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_up1x9__scalar_imagic(
     size_t c = channels;
     const void* w = weights;
     do {
-      int32_t vacc = *((const int32_t*) w);
+      int32_t vacc = unaligned_load_s32(w);
 
       const int32_t vi0 = (int32_t) (uint32_t) *i0++;
       const int32_t vk0 = (int32_t) (uint32_t) ((const uint8_t*) ((uintptr_t) w + sizeof(int32_t)))[0] - vkernel_zero_point;
@@ -122,7 +121,7 @@ void xnn_qu8_dwconv_minmax_fp32_ukernel_up1x9__scalar_imagic(
       float vfpacc = (float) vacc * vscale;
 
       vfpacc += vmagic_bias;
-      int32_t vout = (int32_t) fp32_to_bits(vfpacc);
+      int32_t vout = (int32_t) float_as_uint32(vfpacc);
       vout = math_max_s32(vout, vmagic_min);
       vout = math_min_s32(vout, vmagic_max);
       vout -= vmagic_bias_less_zero_point;

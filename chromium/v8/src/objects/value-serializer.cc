@@ -25,6 +25,7 @@
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-regexp-inl.h"
+#include "src/objects/js-shared-array-inl.h"
 #include "src/objects/js-struct-inl.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/objects-inl.h"
@@ -395,6 +396,13 @@ Maybe<bool> ValueSerializer::ExpandBuffer(size_t required_capacity) {
   }
 }
 
+void ValueSerializer::WriteByte(uint8_t value) {
+  uint8_t* dest;
+  if (ReserveRawBytes(sizeof(uint8_t)).To(&dest)) {
+    *dest = value;
+  }
+}
+
 void ValueSerializer::WriteUint32(uint32_t value) {
   WriteVarint<uint32_t>(value);
 }
@@ -602,9 +610,12 @@ Maybe<bool> ValueSerializer::WriteJSReceiver(Handle<JSReceiver> receiver) {
       return WriteJSArrayBufferView(JSArrayBufferView::cast(*receiver));
     case JS_ERROR_TYPE:
       return WriteJSError(Handle<JSObject>::cast(receiver));
+    case JS_SHARED_ARRAY_TYPE:
+      return WriteJSSharedArray(Handle<JSSharedArray>::cast(receiver));
     case JS_SHARED_STRUCT_TYPE:
       return WriteJSSharedStruct(Handle<JSSharedStruct>::cast(receiver));
     case JS_ATOMICS_MUTEX_TYPE:
+    case JS_ATOMICS_CONDITION_TYPE:
       return WriteSharedObject(receiver);
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_MODULE_OBJECT_TYPE:
@@ -1048,6 +1059,11 @@ Maybe<bool> ValueSerializer::WriteJSSharedStruct(
   return WriteSharedObject(shared_struct);
 }
 
+Maybe<bool> ValueSerializer::WriteJSSharedArray(
+    Handle<JSSharedArray> shared_array) {
+  return WriteSharedObject(shared_array);
+}
+
 #if V8_ENABLE_WEBASSEMBLY
 Maybe<bool> ValueSerializer::WriteWasmModule(Handle<WasmModuleObject> object) {
   if (delegate_ == nullptr) {
@@ -1351,6 +1367,13 @@ Maybe<base::Vector<const uint8_t>> ValueDeserializer::ReadRawBytes(
   const uint8_t* start = position_;
   position_ += size;
   return Just(base::Vector<const uint8_t>(start, size));
+}
+
+bool ValueDeserializer::ReadByte(uint8_t* value) {
+  if (static_cast<size_t>(end_ - position_) < sizeof(uint8_t)) return false;
+  *value = *position_;
+  position_++;
+  return true;
 }
 
 bool ValueDeserializer::ReadUint32(uint32_t* value) {
@@ -2334,6 +2357,10 @@ Maybe<uint32_t> ValueDeserializer::ReadJSObjectProperties(
       // (though generalization may be required), store the property value so
       // that we can copy them all at once. Otherwise, stop transitioning.
       if (transitioning) {
+        // Deserializaton of |value| might have deprecated current |target|,
+        // ensure we are working with the up-to-date version.
+        target = Map::Update(isolate_, target);
+
         InternalIndex descriptor(properties.size());
         PropertyDetails details =
             target->instance_descriptors(isolate_).GetDetails(descriptor);

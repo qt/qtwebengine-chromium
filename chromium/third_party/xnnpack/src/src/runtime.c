@@ -7,6 +7,7 @@
 #define _POSIX_C_SOURCE 199309L
 #endif
 
+#include <assert.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -37,13 +38,46 @@
   #error "XNN_ENABLE_JIT is not defined"
 #endif
 
-enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out)
+enum xnn_status xnn_create_workspace(xnn_workspace_t* workspace_out)
+{
+  if ((xnn_params.init_flags & XNN_INIT_FLAG_XNNPACK) == 0) {
+    xnn_log_error("failed to create workspace: XNNPACK is not initialized");
+    return xnn_status_uninitialized;
+  }
+
+  struct xnn_workspace* workspace = NULL;
+  workspace = xnn_allocate_zero_memory(sizeof(struct xnn_workspace));
+  if (workspace == NULL) {
+    xnn_log_error("failed to allocate %zu bytes for workspace descriptor", sizeof(struct xnn_workspace));
+    return xnn_status_out_of_memory;
+  }
+  workspace->ref_count = 1;
+  *workspace_out = workspace;
+  return xnn_status_success;
+}
+
+static inline void xnn_retain_workspace(xnn_workspace_t workspace)
+{
+  workspace->ref_count++;
+}
+
+enum xnn_status xnn_release_workspace(xnn_workspace_t workspace)
+{
+  assert(workspace->ref_count != 0);
+  if (--workspace->ref_count == 0) {
+    xnn_release_simd_memory(workspace->data);
+    xnn_release_memory(workspace);
+  }
+  return xnn_status_success;
+}
+
+enum xnn_status xnn_create_weights_cache_with_size(size_t size, xnn_weights_cache_t* weights_cache_out)
 {
   struct xnn_weights_cache* weights_cache = NULL;
   enum xnn_status status = xnn_status_uninitialized;
 
   if ((xnn_params.init_flags & XNN_INIT_FLAG_XNNPACK) == 0) {
-    xnn_log_error("failed to create runtime: XNNPACK is not initialized");
+    xnn_log_error("failed to create weights cache: XNNPACK is not initialized");
     goto error;
   }
 
@@ -53,7 +87,7 @@ enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out)
     goto error;
   }
 
-  status = xnn_init_weights_cache(weights_cache);
+  status = xnn_init_weights_cache_with_size(weights_cache, size);
   if (status != xnn_status_success) {
     goto error;
   }
@@ -63,6 +97,11 @@ enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out)
 error:
   xnn_release_weights_cache(weights_cache);
   return status;
+}
+
+enum xnn_status xnn_create_weights_cache(xnn_weights_cache_t* weights_cache_out)
+{
+  return xnn_create_weights_cache_with_size(XNN_DEFAULT_WEIGHTS_BUFFER_SIZE, weights_cache_out);
 }
 
 enum xnn_status xnn_delete_weights_cache(xnn_weights_cache_t weights_cache)
@@ -98,6 +137,95 @@ enum xnn_status xnn_create_runtime_v3(
   uint32_t flags,
   xnn_runtime_t* runtime_out)
 {
+  xnn_workspace_t workspace;
+  enum xnn_status status = xnn_create_workspace(&workspace);
+  if (status != xnn_status_success) {
+    return status;
+  }
+  status = xnn_create_runtime_v4(subgraph, weights_cache, workspace, threadpool, flags, runtime_out);
+  // Release workspace regardless of return status of creating runtime.
+  xnn_release_workspace(workspace);
+  return status;
+}
+
+static enum xnn_status initialize_workspace_blobs(
+    xnn_subgraph_t subgraph,
+    xnn_runtime_t runtime,
+    struct xnn_value_allocation_tracker* mem_alloc_tracker)
+{
+  assert(runtime->workspace != NULL);
+
+  size_t mem_arena_size = mem_alloc_tracker->mem_arena_size;
+  if (mem_arena_size == 0) {
+    return xnn_status_success;
+  }
+  // Sparse microkernels can read up to 2 * XNN_EXTRA_BYTES beyond array bounds.
+  mem_arena_size += 2 * XNN_EXTRA_BYTES;
+
+  // Records how much the workspace has moved by due to allocating a larger workspace.
+  ptrdiff_t workspace_data_delta = 0;
+  // Allocates larger workspace here if needed.
+  if (runtime->workspace->size < mem_arena_size) {
+    void* old_workspace_data = runtime->workspace->data;
+    if (runtime->workspace->size != 0) {
+      // Free up the workspace's current data. Free first then allocate to keep peak memory usage low.
+      xnn_release_simd_memory(runtime->workspace->data);
+    }
+    void* new_workspace_data = xnn_allocate_simd_memory(mem_arena_size);
+    if (new_workspace_data == NULL) {
+      xnn_log_error("failed to allocate %zu bytes for runtime workspace", mem_arena_size);
+      return xnn_status_out_of_memory;
+    }
+    runtime->workspace->data = new_workspace_data;
+    runtime->workspace->size = mem_arena_size;
+    // Keep track of how much the workspace data moved.
+    if (old_workspace_data != NULL) {
+      workspace_data_delta = (uintptr_t) new_workspace_data - (uintptr_t) old_workspace_data;
+    }
+  }
+
+  assert(runtime->workspace->size >= mem_arena_size);
+
+  // Initialize current runtime's blob pointers.
+  for (size_t i = 0; i < subgraph->num_values; i++) {
+    const struct xnn_value* value = &subgraph->values[i];
+    struct xnn_blob* blob = &runtime->blobs[i];
+    if (value->datatype != xnn_datatype_invalid && value->type == xnn_value_type_dense_tensor) {
+      if (blob->allocation_type == xnn_allocation_type_workspace) {
+        // Value is purely internal to the runtime, allocate it in the workspace.
+        blob->data = (void*) ((uintptr_t) runtime->workspace->data + mem_alloc_tracker->usage[i].alloc_offset);
+      }
+    }
+  }
+
+  // Adjust the blob pointers of all runtimes that share this workspace.
+  if (workspace_data_delta != 0) {
+    for (struct xnn_runtime* rt = runtime->workspace->first_user; rt != NULL; rt = rt->next_workspace_user) {
+      // The current runtime already has the correct offset.
+      if (rt == runtime) {
+        continue;
+      }
+      for (size_t i = 0; i < rt->num_blobs; i++) {
+        struct xnn_blob* blob = &rt->blobs[i];
+        if (blob->allocation_type == xnn_allocation_type_workspace) {
+          assert(blob->data != NULL);
+          blob->data = (void*) ((uintptr_t) blob->data + workspace_data_delta);
+        }
+      }
+    }
+  }
+
+  return xnn_status_success;
+}
+
+enum xnn_status xnn_create_runtime_v4(
+  xnn_subgraph_t subgraph,
+  xnn_weights_cache_t weights_cache,
+  xnn_workspace_t workspace,
+  pthreadpool_t threadpool,
+  uint32_t flags,
+  xnn_runtime_t* runtime_out)
+{
   struct xnn_runtime* runtime = NULL;
   enum xnn_status status = xnn_status_uninitialized;
 
@@ -106,7 +234,14 @@ enum xnn_status xnn_create_runtime_v3(
     goto error;
   }
 
-  const uint32_t optimization_flags = XNN_FLAG_SPARSE_INFERENCE | XNN_FLAG_HINT_FP16_INFERENCE | XNN_FLAG_FORCE_FP16_INFERENCE;
+  if (workspace == NULL) {
+    xnn_log_error("failed to create runtime: workspace is NULL");
+    status = xnn_status_invalid_parameter;
+    goto error;
+  }
+
+  const uint32_t optimization_flags = XNN_FLAG_SPARSE_INFERENCE | XNN_FLAG_HINT_FP16_INFERENCE |
+    XNN_FLAG_FORCE_FP16_INFERENCE | XNN_FLAG_NO_OPERATOR_FUSION;
   status = xnn_subgraph_optimize(subgraph, flags & optimization_flags);
   if (status != xnn_status_success) {
     xnn_log_error("failed to optimize subgraph");
@@ -124,7 +259,7 @@ enum xnn_status xnn_create_runtime_v3(
   runtime->opdata = xnn_allocate_zero_memory(sizeof(struct xnn_operator_data) * subgraph->num_nodes);
   if (runtime->opdata == NULL) {
     xnn_log_error("failed to allocate %zu bytes for opdata descriptors",
-      sizeof(struct xnn_operator_data) * subgraph->num_nodes);
+      sizeof(struct xnn_operator_data) * (size_t) subgraph->num_nodes);
     goto error;
   }
   runtime->num_ops = subgraph->num_nodes;
@@ -177,7 +312,7 @@ enum xnn_status xnn_create_runtime_v3(
   runtime->blobs = xnn_allocate_zero_memory(sizeof(struct xnn_blob) * subgraph->num_values);
   if (runtime->blobs == NULL) {
     xnn_log_error("failed to allocate %zu bytes for blob descriptors",
-      sizeof(struct xnn_blob) * subgraph->num_values);
+      sizeof(struct xnn_blob) * (size_t) subgraph->num_values);
     goto error;
   }
   runtime->num_blobs = subgraph->num_values;
@@ -195,34 +330,27 @@ enum xnn_status xnn_create_runtime_v3(
         if ((value->flags & (XNN_VALUE_FLAG_EXTERNAL_INPUT | XNN_VALUE_FLAG_EXTERNAL_OUTPUT)) == 0) {
           // Value is purely internal to the runtime, and must be allocated in its workspace.
           xnn_add_value_allocation_tracker(&mem_alloc_tracker, i, round_up_po2(blob->size, XNN_EXTRA_BYTES));
+          blob->allocation_type = xnn_allocation_type_workspace;
         } else {
           // Value is non-static and external to the runtime: must be specified via a call to xnn_setup_runtime.
-          blob->external = true;
+          blob->allocation_type = xnn_allocation_type_external;
         }
+      } else {
+        blob->allocation_type = xnn_allocation_type_static;
       }
     }
   }
   xnn_plan_value_allocation_tracker(&mem_alloc_tracker);
 
-  if (mem_alloc_tracker.mem_arena_size != 0) {
-    // XNN_EXTRA_BYTES ensures that out-of-bound reads of intermediate values don't segfault.
-    const size_t mem_arena_size = mem_alloc_tracker.mem_arena_size + XNN_EXTRA_BYTES;
-    runtime->workspace = xnn_allocate_simd_memory(mem_arena_size);
-    if (runtime->workspace == NULL) {
-      xnn_log_error("failed to allocate %zu bytes for runtime workspace", mem_arena_size);
-      xnn_release_value_allocation_tracker(&mem_alloc_tracker);
-      goto error;
-    }
-    for (size_t i = 0; i < subgraph->num_values; i++) {
-      const struct xnn_value* value = &subgraph->values[i];
-      struct xnn_blob* blob = &runtime->blobs[i];
-      if (value->datatype != xnn_datatype_invalid && value->type == xnn_value_type_dense_tensor) {
-        if (value->data == NULL && !blob->external) {
-          // Value is purely internal to the runtime, allocate it in the workspace.
-          blob->data = (void*) ((uintptr_t) runtime->workspace + mem_alloc_tracker.usage[i].alloc_offset);
-        }
-      }
-    }
+  xnn_retain_workspace(workspace);
+  runtime->workspace = workspace;
+  runtime->next_workspace_user = runtime->workspace->first_user;
+  runtime->workspace->first_user = runtime;
+
+  status = initialize_workspace_blobs(subgraph, runtime, &mem_alloc_tracker);
+  if (status != xnn_status_success) {
+    xnn_release_value_allocation_tracker(&mem_alloc_tracker);
+    goto error;
   }
 
   if (flags & XNN_FLAG_BASIC_PROFILING) {
@@ -258,7 +386,7 @@ enum xnn_status xnn_setup_runtime(
     }
 
     const struct xnn_blob* blob = &runtime->blobs[value_id];
-    if (!blob->external) {
+    if (blob->allocation_type != xnn_allocation_type_external) {
       xnn_log_error("failed to setup runtime: Value %" PRIu32 " is not external", value_id);
       return xnn_status_invalid_parameter;
     }
@@ -325,7 +453,7 @@ static xnn_timestamp xnn_read_timer() {
 static inline uint64_t xnn_get_elapsed_time(const xnn_timestamp* start, const xnn_timestamp* end) {
 #ifdef __MACH__
   const uint64_t kMicrosInNanos = 1000;
-  return (end - start) / kMicrosInNanos;
+  return (*end - *start) / kMicrosInNanos;
 #elif __EMSCRIPTEN__
   const double kMillisInMicros = 1.0e3;
   return (uint64_t) ((*end - *start) * kMillisInMicros);
@@ -481,7 +609,23 @@ enum xnn_status xnn_delete_runtime(
       xnn_release_memory(runtime->opdata);
 
       xnn_release_memory(runtime->blobs);
-      xnn_release_simd_memory(runtime->workspace);
+      if (runtime->workspace != NULL) {
+        // Remove this runtime from the list of users of the workspace.
+        assert(runtime->workspace->first_user != NULL);
+        if (runtime->workspace->first_user == runtime) {
+          runtime->workspace->first_user = runtime->next_workspace_user;
+        } else {
+          xnn_runtime_t prev = runtime->workspace->first_user;
+          xnn_runtime_t curr = prev->next_workspace_user;
+          while (curr != runtime) {
+            prev = curr;
+            curr = curr->next_workspace_user;
+          }
+          assert(curr == runtime);
+          prev->next_workspace_user = curr->next_workspace_user;
+        }
+        xnn_release_workspace(runtime->workspace);
+      }
     }
 #if XNN_PLATFORM_JIT && XNN_ENABLE_JIT
     xnn_release_code_cache(&runtime->code_cache);

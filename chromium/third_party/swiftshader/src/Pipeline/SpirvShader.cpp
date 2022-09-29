@@ -276,6 +276,7 @@ SpirvShader::SpirvShader(
 		case spv::OpTypeRuntimeArray:
 		case spv::OpTypeStruct:
 		case spv::OpTypePointer:
+		case spv::OpTypeForwardPointer:
 		case spv::OpTypeFunction:
 			DeclareType(insn);
 			break;
@@ -305,6 +306,7 @@ SpirvShader::SpirvShader(
 
 				case spv::StorageClassUniform:
 				case spv::StorageClassStorageBuffer:
+				case spv::StorageClassPhysicalStorageBuffer:
 					object.kind = Object::Kind::DescriptorSet;
 					break;
 
@@ -441,8 +443,10 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityGroupNonUniformBallot: capabilities.GroupNonUniformBallot = true; break;
 				case spv::CapabilityGroupNonUniformShuffle: capabilities.GroupNonUniformShuffle = true; break;
 				case spv::CapabilityGroupNonUniformShuffleRelative: capabilities.GroupNonUniformShuffleRelative = true; break;
+				case spv::CapabilityGroupNonUniformQuad: capabilities.GroupNonUniformQuad = true; break;
 				case spv::CapabilityDeviceGroup: capabilities.DeviceGroup = true; break;
 				case spv::CapabilityMultiView: capabilities.MultiView = true; break;
+				case spv::CapabilitySignedZeroInfNanPreserve: capabilities.SignedZeroInfNanPreserve = true; break;
 				case spv::CapabilityDemoteToHelperInvocation: capabilities.DemoteToHelperInvocation = true; break;
 				case spv::CapabilityStencilExportEXT: capabilities.StencilExportEXT = true; break;
 				case spv::CapabilityVulkanMemoryModel: capabilities.VulkanMemoryModel = true; break;
@@ -450,6 +454,12 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityShaderNonUniform: capabilities.ShaderNonUniform = true; break;
 				case spv::CapabilityRuntimeDescriptorArray: capabilities.RuntimeDescriptorArray = true; break;
 				case spv::CapabilityStorageBufferArrayNonUniformIndexing: capabilities.StorageBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityStorageTexelBufferArrayNonUniformIndexing: capabilities.StorageTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayNonUniformIndexing: capabilities.UniformTexelBufferArrayNonUniformIndexing = true; break;
+				case spv::CapabilityUniformTexelBufferArrayDynamicIndexing: capabilities.UniformTexelBufferArrayDynamicIndexing = true; break;
+				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
+				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
+				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
 				}
@@ -577,8 +587,9 @@ SpirvShader::SpirvShader(
 
 				if(opcode == spv::OpAccessChain || opcode == spv::OpInBoundsAccessChain || opcode == spv::OpPtrAccessChain)
 				{
+					int indexId = (insn.opcode() == spv::OpPtrAccessChain) ? 5 : 4;
 					Decorations dd{};
-					ApplyDecorationsForAccessChain(&dd, &descriptorDecorations[resultId], pointerId, Span(insn, 4, insn.wordCount() - 4));
+					ApplyDecorationsForAccessChain(&dd, &descriptorDecorations[resultId], pointerId, Span(insn, indexId, insn.wordCount() - indexId));
 					// Note: offset is the one thing that does *not* propagate, as the access chain accounts for it.
 					dd.HasOffset = false;
 					decorations[resultId].Apply(dd);
@@ -726,6 +737,8 @@ SpirvShader::SpirvShader(
 		case spv::OpGroupNonUniformAllEqual:
 		case spv::OpGroupNonUniformBroadcast:
 		case spv::OpGroupNonUniformBroadcastFirst:
+		case spv::OpGroupNonUniformQuadBroadcast:
+		case spv::OpGroupNonUniformQuadSwap:
 		case spv::OpGroupNonUniformBallot:
 		case spv::OpGroupNonUniformInverseBallot:
 		case spv::OpGroupNonUniformBallotBitExtract:
@@ -809,6 +822,7 @@ SpirvShader::SpirvShader(
 				if(!strcmp(ext, "SPV_KHR_float_controls")) break;
 				if(!strcmp(ext, "SPV_KHR_integer_dot_product")) break;
 				if(!strcmp(ext, "SPV_KHR_non_semantic_info")) break;
+				if(!strcmp(ext, "SPV_KHR_physical_storage_buffer")) break;
 				if(!strcmp(ext, "SPV_KHR_vulkan_memory_model")) break;
 				if(!strcmp(ext, "SPV_GOOGLE_decorate_string")) break;
 				if(!strcmp(ext, "SPV_GOOGLE_hlsl_functionality1")) break;
@@ -855,7 +869,8 @@ void SpirvShader::DeclareType(InsnIterator insn)
 
 	// A structure is a builtin block if it has a builtin
 	// member. All members of such a structure are builtins.
-	switch(insn.opcode())
+	spv::Op opcode = insn.opcode();
+	switch(opcode)
 	{
 	case spv::OpTypeStruct:
 		{
@@ -874,8 +889,9 @@ void SpirvShader::DeclareType(InsnIterator insn)
 		}
 		break;
 	case spv::OpTypePointer:
+	case spv::OpTypeForwardPointer:
 		{
-			Type::ID elementTypeId = insn.word(3);
+			Type::ID elementTypeId = insn.word((opcode == spv::OpTypeForwardPointer) ? 1 : 3);
 			type.element = elementTypeId;
 			type.isBuiltInBlock = getType(elementTypeId).isBuiltInBlock;
 			type.storageClass = static_cast<spv::StorageClass>(insn.word(2));
@@ -1047,6 +1063,9 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 	case spv::ExecutionModeOriginUpperLeft:
 		// This is always the case for a Vulkan shader. Do nothing.
 		break;
+	case spv::ExecutionModeSignedZeroInfNanPreserve:
+		// We currently don't perform any aggressive fast-math optimizations.
+		break;
 	default:
 		UNREACHABLE("Execution mode: %d", int(mode));
 	}
@@ -1078,6 +1097,7 @@ uint32_t SpirvShader::ComputeTypeSize(InsnIterator insn)
 	case spv::OpTypeSampler:
 	case spv::OpTypeImage:
 	case spv::OpTypeSampledImage:
+	case spv::OpTypeForwardPointer:
 	case spv::OpTypeFunction:
 	case spv::OpTypeRuntimeArray:
 		// Objects that don't consume any space.
@@ -1359,13 +1379,15 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, Obje
 	return ptr;
 }
 
-SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, EmitState const *state) const
+SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, bool nonUniform, EmitState const *state) const
 {
 	// TODO: avoid doing per-lane work in some cases if we can?
 	auto routine = state->routine;
 	auto &baseObject = getObject(baseId);
 	Type::ID typeId = getType(baseObject).element;
 	Decorations d = GetDecorationsForId(baseObject.typeId());
+	auto storageClass = getType(baseObject).storageClass;
+	bool interleavedByLane = IsStorageInterleavedByLane(storageClass);
 
 	auto ptr = state->getPointer(baseId);
 	OffsetToElement(ptr, elementId, d.ArrayStride, state);
@@ -1397,7 +1419,7 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID element
 		case spv::OpTypeRuntimeArray:
 			{
 				// TODO(b/127950082): Check bounds.
-				if(getType(baseObject).storageClass == spv::StorageClassUniformConstant)
+				if(storageClass == spv::StorageClassUniformConstant)
 				{
 					// indexing into an array of descriptors.
 					auto d = descriptorDecorations.at(baseId);
@@ -1412,15 +1434,37 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID element
 					}
 					else
 					{
-						// Note: the value of indexIds[i] must be dynamically uniform.
-						ptr += Int(descriptorSize * Extract(state->getIntermediate(indexIds[i]).Int(0), 0));
+						nonUniform |= GetDecorationsForId(indexIds[i]).NonUniform;
+						SIMD::Int intermediate = state->getIntermediate(indexIds[i]).Int(0);
+						if(nonUniform)
+						{
+							// NonUniform array data can deal with pointers not bound by a 32-bit address
+							// space, so we need to ensure we're using an array pointer, and not a base+offset
+							// pointer.
+							std::vector<Pointer<Byte>> pointers(SIMD::Width);
+							for(int i = 0; i < SIMD::Width; i++)
+							{
+								pointers[i] = ptr.getPointerForLane(i);
+							}
+							ptr = SIMD::Pointer(pointers);
+							ptr += descriptorSize * intermediate;
+						}
+						else
+						{
+							ptr += descriptorSize * Extract(intermediate, 0);
+						}
 					}
 				}
 				else
 				{
 					auto stride = getType(type.element).componentCount * static_cast<uint32_t>(sizeof(float));
-					auto &obj = getObject(indexIds[i]);
-					if(obj.kind == Object::Kind::Constant)
+
+					if(interleavedByLane)
+					{
+						stride *= SIMD::Width;
+					}
+
+					if(getObject(indexIds[i]).kind == Object::Kind::Constant)
 					{
 						ptr += stride * GetConstScalarInt(indexIds[i]);
 					}
@@ -1440,8 +1484,14 @@ SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID element
 
 	if(constantOffset != 0)
 	{
+		if(interleavedByLane)
+		{
+			constantOffset *= SIMD::Width;
+		}
+
 		ptr += constantOffset;
 	}
+
 	return ptr;
 }
 
@@ -1698,6 +1748,9 @@ OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, Em
 		return robustBufferAccess ? OutOfBoundsBehavior::RobustBufferAccess
 		                          : OutOfBoundsBehavior::UndefinedBehavior;
 
+	case spv::StorageClassPhysicalStorageBuffer:
+		return OutOfBoundsBehavior::UndefinedBehavior;
+
 	case spv::StorageClassImage:
 		// VK_EXT_image_robustness requires nullifying out-of-bounds accesses.
 		// TODO(b/162327166): Only perform bounds checks when VK_EXT_image_robustness is enabled.
@@ -1858,6 +1911,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpTypeMatrix:
 	case spv::OpTypeStruct:
 	case spv::OpTypePointer:
+	case spv::OpTypeForwardPointer:
 	case spv::OpTypeFunction:
 	case spv::OpTypeImage:
 	case spv::OpTypeSampledImage:
@@ -2172,6 +2226,8 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpGroupNonUniformAllEqual:
 	case spv::OpGroupNonUniformBroadcast:
 	case spv::OpGroupNonUniformBroadcastFirst:
+	case spv::OpGroupNonUniformQuadBroadcast:
+	case spv::OpGroupNonUniformQuadSwap:
 	case spv::OpGroupNonUniformBallot:
 	case spv::OpGroupNonUniformInverseBallot:
 	case spv::OpGroupNonUniformBallotBitExtract:
@@ -2223,17 +2279,31 @@ SpirvShader::EmitResult SpirvShader::EmitAccessChain(InsnIterator insn, EmitStat
 
 	Object::ID elementId = (insn.opcode() == spv::OpPtrAccessChain) ? insn.word(4) : 0;
 	int indexId = (insn.opcode() == spv::OpPtrAccessChain) ? 5 : 4;
+	// TODO(b/236280746): Eliminate lookahead by optimizing inside SIMD::Pointer.
+	for(auto it = insn; it != end(); it++)
+	{
+		if(it.opcode() == spv::OpLoad)
+		{
+			Object::ID pointerId = it.word(3);
+			if(pointerId.value() == resultId.value())
+			{
+				nonUniform |= GetDecorationsForId(it.word(2)).NonUniform;
+				break;
+			}
+		}
+	}
 
 	if(type.storageClass == spv::StorageClassPushConstant ||
 	   type.storageClass == spv::StorageClassUniform ||
-	   type.storageClass == spv::StorageClassStorageBuffer)
+	   type.storageClass == spv::StorageClassStorageBuffer ||
+	   type.storageClass == spv::StorageClassPhysicalStorageBuffer)
 	{
 		auto ptr = WalkExplicitLayoutAccessChain(baseId, elementId, Span(insn, indexId, insn.wordCount() - indexId), nonUniform, state);
 		state->createPointer(resultId, ptr);
 	}
 	else
 	{
-		auto ptr = WalkAccessChain(baseId, elementId, Span(insn, indexId, insn.wordCount() - indexId), state);
+		auto ptr = WalkAccessChain(baseId, elementId, Span(insn, indexId, insn.wordCount() - indexId), nonUniform, state);
 		state->createPointer(resultId, ptr);
 	}
 
@@ -2398,6 +2468,10 @@ SpirvShader::EmitResult SpirvShader::EmitSelect(InsnIterator insn, EmitState *st
 			auto &lhs = state->getPointer(insn.word(4));
 			auto &rhs = state->getPointer(insn.word(5));
 			state->createPointer(insn.resultId(), SIMD::Pointer::IfThenElse(cond.Int(0), lhs, rhs));
+
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 		}
 		break;
 	default:
@@ -2410,14 +2484,14 @@ SpirvShader::EmitResult SpirvShader::EmitSelect(InsnIterator insn, EmitState *st
 				auto sel = cond.Int(condIsScalar ? 0 : i);
 				dst.move(i, (sel & lhs.Int(i)) | (~sel & rhs.Int(i)));  // TODO: IfThenElse()
 			}
+
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(2), dst);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
+			SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 		}
 		break;
 	}
-
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(2), result);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(3), cond);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(4), lhs);
-	SPIRV_SHADER_DBG("{0}: {1}", insn.word(5), rhs);
 
 	return EmitResult::Continue;
 }
@@ -2712,14 +2786,16 @@ SpirvShader::Operand::Operand(const SpirvShader *shader, const EmitState *state,
 SpirvShader::Operand::Operand(const EmitState *state, const Object &object)
     : constant(object.kind == SpirvShader::Object::Kind::Constant ? object.constantValue.data() : nullptr)
     , intermediate(object.kind == SpirvShader::Object::Kind::Intermediate ? &state->getIntermediate(object.id()) : nullptr)
+    , pointer(object.kind == SpirvShader::Object::Kind::Pointer ? &state->getPointer(object.id()) : nullptr)
     , componentCount(intermediate ? intermediate->componentCount : object.constantValue.size())
 {
-	ASSERT(intermediate || constant);
+	ASSERT(intermediate || constant || pointer);
 }
 
 SpirvShader::Operand::Operand(const Intermediate &value)
     : constant(nullptr)
     , intermediate(&value)
+    , pointer(nullptr)
     , componentCount(value.componentCount)
 {
 }

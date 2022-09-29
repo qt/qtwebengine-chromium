@@ -23,6 +23,10 @@ template <typename T>
 class Handle;
 class Heap;
 class Isolate;
+class Factory;
+template <typename Impl>
+class FactoryBase;
+class LocalFactory;
 class Map;
 class PropertyCell;
 class ReadOnlyHeap;
@@ -101,6 +105,7 @@ class Symbol;
   V(Map, ordered_name_dictionary_map, OrderedNameDictionaryMap)                \
   V(Map, preparse_data_map, PreparseDataMap)                                   \
   V(Map, property_array_map, PropertyArrayMap)                                 \
+  V(Map, accessor_info_map, AccessorInfoMap)                                   \
   V(Map, side_effect_call_handler_info_map, SideEffectCallHandlerInfoMap)      \
   V(Map, side_effect_free_call_handler_info_map,                               \
     SideEffectFreeCallHandlerInfoMap)                                          \
@@ -119,8 +124,9 @@ class Symbol;
           WasmExportedFunctionDataMap)                                         \
   IF_WASM(V, Map, wasm_internal_function_map, WasmInternalFunctionMap)         \
   IF_WASM(V, Map, wasm_js_function_data_map, WasmJSFunctionDataMap)            \
-  IF_WASM(V, Map, wasm_onfulfilled_data_map, WasmOnFulfilledDataMap)           \
+  IF_WASM(V, Map, wasm_resume_data_map, WasmResumeDataMap)                     \
   IF_WASM(V, Map, wasm_type_info_map, WasmTypeInfoMap)                         \
+  IF_WASM(V, Map, wasm_continuation_object_map, WasmContinuationObjectMap)     \
   V(Map, weak_fixed_array_map, WeakFixedArrayMap)                              \
   V(Map, weak_array_list_map, WeakArrayListMap)                                \
   V(Map, ephemeron_hash_table_map, EphemeronHashTableMap)                      \
@@ -193,6 +199,8 @@ class Symbol;
   V(HeapNumber, infinity_value, InfinityValue)                                 \
   V(HeapNumber, minus_zero_value, MinusZeroValue)                              \
   V(HeapNumber, minus_infinity_value, MinusInfinityValue)                      \
+  /* Table of strings of one-byte single characters */                         \
+  V(FixedArray, single_character_string_table, SingleCharacterStringTable)     \
   /* Marker for self-references during code-generation */                      \
   V(HeapObject, self_reference_marker, SelfReferenceMarker)                    \
   /* Marker for basic-block usage counters array during code-generation */     \
@@ -242,7 +250,6 @@ class Symbol;
   V(PropertyCell, set_iterator_protector, SetIteratorProtector)                \
   V(PropertyCell, string_iterator_protector, StringIteratorProtector)          \
   /* Caches */                                                                 \
-  V(FixedArray, single_character_string_cache, SingleCharacterStringCache)     \
   V(FixedArray, string_split_cache, StringSplitCache)                          \
   V(FixedArray, regexp_multiple_cache, RegExpMultipleCache)                    \
   /* Indirection lists for isolate-independent builtins */                     \
@@ -318,8 +325,6 @@ class Symbol;
   V(HeapObject, current_microtask, CurrentMicrotask)                        \
   /* KeepDuringJob set for JS WeakRefs */                                   \
   V(HeapObject, weak_refs_keep_during_job, WeakRefsKeepDuringJob)           \
-  V(HeapObject, interpreter_entry_trampoline_for_profiling,                 \
-    InterpreterEntryTrampolineForProfiling)                                 \
   V(Object, pending_optimize_for_test_bytecode,                             \
     PendingOptimizeForTestBytecode)                                         \
   V(ArrayList, basic_block_profiling_data, BasicBlockProfilingData)         \
@@ -360,6 +365,13 @@ class Symbol;
 #define WELL_KNOWN_SYMBOL_ROOT_LIST(V) \
   WELL_KNOWN_SYMBOL_LIST_GENERATOR(SYMBOL_ROOT_LIST_ADAPTER, V)
 
+// Produces (Na,e, name, CamelCase) entries
+#define NAME_FOR_PROTECTOR_ROOT_LIST(V)                            \
+  INTERNALIZED_STRING_FOR_PROTECTOR_LIST_GENERATOR(                \
+      INTERNALIZED_STRING_LIST_ADAPTER, V)                         \
+  SYMBOL_FOR_PROTECTOR_LIST_GENERATOR(SYMBOL_ROOT_LIST_ADAPTER, V) \
+  WELL_KNOWN_SYMBOL_FOR_PROTECTOR_LIST_GENERATOR(SYMBOL_ROOT_LIST_ADAPTER, V)
+
 // Adapts one ACCESSOR_INFO_LIST_GENERATOR entry to the ROOT_LIST-compatible
 // entry
 #define ACCESSOR_INFO_ROOT_LIST_ADAPTER(V, name, CamelName, ...) \
@@ -378,6 +390,7 @@ class Symbol;
   STRUCT_MAPS_LIST(V)              \
   TORQUE_DEFINED_MAP_ROOT_LIST(V)  \
   ALLOCATION_SITE_MAPS_LIST(V)     \
+  NAME_FOR_PROTECTOR_ROOT_LIST(V)  \
   DATA_HANDLER_MAPS_LIST(V)
 
 #define MUTABLE_ROOT_LIST(V)                \
@@ -392,6 +405,7 @@ class Symbol;
 // Declare all the root indices.  This defines the root list order.
 // clang-format off
 enum class RootIndex : uint16_t {
+#define COUNT_ROOT(...) +1
 #define DECL(type, name, CamelName) k##CamelName,
   ROOT_LIST(DECL)
 #undef DECL
@@ -402,21 +416,23 @@ enum class RootIndex : uint16_t {
   kFirstRoot = 0,
   kLastRoot = kRootListLength - 1,
 
-#define ROOT(...) +1
-  kReadOnlyRootsCount = 0 READ_ONLY_ROOT_LIST(ROOT),
+  kReadOnlyRootsCount = 0 READ_ONLY_ROOT_LIST(COUNT_ROOT),
   kImmortalImmovableRootsCount =
-      kReadOnlyRootsCount STRONG_MUTABLE_IMMOVABLE_ROOT_LIST(ROOT),
-#undef ROOT
+      kReadOnlyRootsCount STRONG_MUTABLE_IMMOVABLE_ROOT_LIST(COUNT_ROOT),
+
   kFirstReadOnlyRoot = kFirstRoot,
   kLastReadOnlyRoot = kFirstReadOnlyRoot + kReadOnlyRootsCount - 1,
 
+  // Use for fast protector update checks
+  kFirstNameForProtector = kconstructor_string,
+  kNameForProtectorCount = 0 NAME_FOR_PROTECTOR_ROOT_LIST(COUNT_ROOT),
+  kLastNameForProtector = kFirstNameForProtector + kNameForProtectorCount - 1,
+
   // The strong roots visited by the garbage collector (not including read-only
   // roots).
-#define ROOT(...) +1
   kMutableRootsCount = 0
-      STRONG_MUTABLE_IMMOVABLE_ROOT_LIST(ROOT)
-      STRONG_MUTABLE_MOVABLE_ROOT_LIST(ROOT),
-#undef ROOT
+      STRONG_MUTABLE_IMMOVABLE_ROOT_LIST(COUNT_ROOT)
+      STRONG_MUTABLE_MOVABLE_ROOT_LIST(COUNT_ROOT),
   kFirstStrongRoot = kLastReadOnlyRoot + 1,
   kLastStrongRoot = kFirstStrongRoot + kMutableRootsCount - 1,
 
@@ -431,8 +447,17 @@ enum class RootIndex : uint16_t {
 
   kFirstSmiRoot = kLastStrongRoot + 1,
   kLastSmiRoot = kLastRoot
+#undef COUNT_ROOT
 };
 // clang-format on
+
+static_assert(RootIndex::kFirstNameForProtector <=
+              RootIndex::kLastNameForProtector);
+#define FOR_PROTECTOR_CHECK(type, name, CamelName)                             \
+  static_assert(RootIndex::kFirstNameForProtector <= RootIndex::k##CamelName); \
+  static_assert(RootIndex::k##CamelName <= RootIndex::kLastNameForProtector);
+NAME_FOR_PROTECTOR_ROOT_LIST(FOR_PROTECTOR_CHECK)
+#undef FOR_PROTECTOR_CHECK
 
 // Represents a storage of V8 heap roots.
 class RootsTable {
@@ -545,6 +570,8 @@ class RootsTable {
   friend class Isolate;
   friend class Heap;
   friend class Factory;
+  friend class FactoryBase<Factory>;
+  friend class FactoryBase<LocalFactory>;
   friend class PointerCompressedReadOnlyArtifacts;
   friend class ReadOnlyHeap;
   friend class ReadOnlyRoots;
@@ -573,6 +600,12 @@ class ReadOnlyRoots {
   READ_ONLY_ROOT_LIST(ROOT_ACCESSOR)
 #undef ROOT_ACCESSOR
 
+  V8_INLINE bool IsNameForProtector(HeapObject object) const;
+  V8_INLINE void VerifyNameForProtectorsPages() const;
+#ifdef DEBUG
+  void VerifyNameForProtectors();
+#endif
+
   // Get the address of a given read-only root index, without type checks.
   V8_INLINE Address at(RootIndex root_index) const;
 
@@ -582,6 +615,8 @@ class ReadOnlyRoots {
   void Iterate(RootVisitor* visitor);
 
  private:
+  V8_INLINE Address first_name_for_protector() const;
+  V8_INLINE Address last_name_for_protector() const;
 #ifdef DEBUG
 #define ROOT_TYPE_CHECK(Type, name, CamelName) \
   V8_EXPORT_PRIVATE bool CheckType_##name() const;

@@ -78,7 +78,7 @@ struct triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mode, Con
         if (k>0)
           rhs[i] -= (cjLhs.row(i).segment(s,k).transpose().cwiseProduct(Map<const Matrix<RhsScalar,Dynamic,1> >(rhs+s,k))).sum();
 
-        if((!(Mode & UnitDiag)) && numext::not_equal_strict(rhs[i],RhsScalar(0)))
+        if((!(Mode & UnitDiag)) && !is_identically_zero(rhs[i]))
           rhs[i] /= cjLhs(i,i);
       }
     }
@@ -115,7 +115,7 @@ struct triangular_solve_vector<LhsScalar, RhsScalar, Index, OnTheLeft, Mode, Con
       for(Index k=0; k<actualPanelWidth; ++k)
       {
         Index i = IsLower ? pi+k : pi-k-1;
-        if(numext::not_equal_strict(rhs[i],RhsScalar(0)))
+        if(!is_identically_zero(rhs[i]))
         {
           if(!(Mode & UnitDiag))
             rhs[i] /= cjLhs.coeff(i,i);

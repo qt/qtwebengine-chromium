@@ -69,6 +69,9 @@ struct avifCodecInternal
     // Whether cq-level was set with an
     // avifEncoderSetCodecSpecificOption(encoder, "cq-level", value) call.
     avifBool cqLevelSet;
+    // Whether 'tuning' (of the specified distortion metric) was set with an
+    // avifEncoderSetCodecSpecificOption(encoder, "tune", value) call.
+    avifBool tuningSet;
 #endif
 };
 
@@ -269,6 +272,7 @@ static aom_img_fmt_t avifImageCalcAOMFmt(const avifImage * image, avifBool alpha
                 fmt = AOM_IMG_FMT_I420;
                 break;
             case AVIF_PIXEL_FORMAT_NONE:
+            case AVIF_PIXEL_FORMAT_COUNT:
             default:
                 return AOM_IMG_FMT_NONE;
         }
@@ -464,6 +468,11 @@ static avifBool avifProcessAOMOptionsPostInit(avifCodec * codec, avifBool alpha)
                                   aom_codec_error_detail(&codec->internal->encoder));
             return AVIF_FALSE;
         }
+        if (!strcmp(key, "cq-level")) {
+            codec->internal->cqLevelSet = AVIF_TRUE;
+        } else if (!strcmp(key, "tune")) {
+            codec->internal->tuningSet = AVIF_TRUE;
+        }
 #else  // !defined(HAVE_AOM_CODEC_SET_OPTION)
         avifBool match = AVIF_FALSE;
         for (int j = 0; aomOptionDefs[j].name; ++j) {
@@ -497,6 +506,8 @@ static avifBool avifProcessAOMOptionsPostInit(avifCodec * codec, avifBool alpha)
                 }
                 if (aomOptionDefs[j].controlId == AOME_SET_CQ_LEVEL) {
                     codec->internal->cqLevelSet = AVIF_TRUE;
+                } else if (aomOptionDefs[j].controlId == AOME_SET_TUNING) {
+                    codec->internal->tuningSet = AVIF_TRUE;
                 }
                 break;
             }
@@ -591,6 +602,26 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
             return AVIF_RESULT_UNKNOWN_ERROR;
         }
 
+        // Set our own default cfg.rc_end_usage value, which may differ from libaom's default.
+        switch (aomUsage) {
+            case AOM_USAGE_GOOD_QUALITY:
+                // libaom's default is AOM_VBR. Change the default to AOM_Q since we don't need to
+                // hit a certain target bit rate. It's easier to control the worst quality in Q
+                // mode.
+                cfg.rc_end_usage = AOM_Q;
+                break;
+            case AOM_USAGE_REALTIME:
+                // For real-time mode we need to use CBR rate control mode. AOM_Q doesn't fit the
+                // rate control requirements for real-time mode. CBR does.
+                cfg.rc_end_usage = AOM_CBR;
+                break;
+#if defined(AOM_USAGE_ALL_INTRA)
+            case AOM_USAGE_ALL_INTRA:
+                cfg.rc_end_usage = AOM_Q;
+                break;
+#endif
+        }
+
         // Profile 0.  8-bit and 10-bit 4:2:0 and 4:0:0 only.
         // Profile 1.  8-bit and 10-bit 4:4:4
         // Profile 2.  8-bit and 10-bit 4:2:2
@@ -619,6 +650,7 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
                         seqProfile = 0;
                         break;
                     case AVIF_PIXEL_FORMAT_NONE:
+                    case AVIF_PIXEL_FORMAT_COUNT:
                     default:
                         break;
                 }
@@ -637,9 +669,7 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
             cfg.g_limit = 1;
 
             // Use the default settings of the new AOM_USAGE_ALL_INTRA (added in
-            // https://crbug.com/aomedia/2959). Note that AOM_USAGE_ALL_INTRA
-            // also sets cfg.rc_end_usage to AOM_Q by default, which we do not
-            // set here.
+            // https://crbug.com/aomedia/2959).
             //
             // Set g_lag_in_frames to 0 to reduce the number of frame buffers
             // (from 20 to 2) in libaom's lookahead structure. This reduces
@@ -731,6 +761,11 @@ static avifResult aomCodecEncodeImage(avifCodec * codec,
             aom_codec_control(&codec->internal->encoder, AOME_SET_CQ_LEVEL, cqLevel);
         }
 #endif
+        if (!codec->internal->tuningSet) {
+            if (aom_codec_control(&codec->internal->encoder, AOME_SET_TUNING, AOM_TUNE_SSIM) != AOM_CODEC_OK) {
+                return AVIF_RESULT_UNKNOWN_ERROR;
+            }
+        }
     }
 
     aom_image_t aomImage;

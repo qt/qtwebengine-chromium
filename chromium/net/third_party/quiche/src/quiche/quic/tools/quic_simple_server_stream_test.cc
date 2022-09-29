@@ -15,10 +15,13 @@
 #include "quiche/quic/core/crypto/null_encrypter.h"
 #include "quiche/quic/core/http/http_encoder.h"
 #include "quiche/quic/core/http/spdy_utils.h"
+#include "quiche/quic/core/quic_alarm_factory.h"
+#include "quiche/quic/core/quic_default_clock.h"
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
+#include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/crypto_test_utils.h"
@@ -28,12 +31,12 @@
 #include "quiche/quic/test_tools/quic_spdy_session_peer.h"
 #include "quiche/quic/test_tools/quic_stream_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
+#include "quiche/quic/test_tools/simulator/simulator.h"
 #include "quiche/quic/tools/quic_backend_response.h"
 #include "quiche/quic/tools/quic_memory_cache_backend.h"
 #include "quiche/quic/tools/quic_simple_server_backend.h"
 #include "quiche/quic/tools/quic_simple_server_session.h"
 #include "quiche/common/simple_buffer_allocator.h"
-#include "quiche/spdy/core/spdy_header_block.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -63,6 +66,7 @@ class TestStream : public QuicSimpleServerStream {
 
   ~TestStream() override = default;
 
+  MOCK_METHOD(void, FireAlarmMock, (), ());
   MOCK_METHOD(void, WriteHeadersMock, (bool fin), ());
   MOCK_METHOD(void, WriteEarlyHintsHeadersMock, (bool fin), ());
   MOCK_METHOD(void, WriteOrBufferBody, (absl::string_view data, bool fin),
@@ -205,7 +209,7 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
  public:
   QuicSimpleServerStreamTest()
       : connection_(new StrictMock<MockQuicConnection>(
-            &helper_, &alarm_factory_, Perspective::IS_SERVER,
+            &simulator_, simulator_.GetAlarmFactory(), Perspective::IS_SERVER,
             SupportedVersions(GetParam()))),
         crypto_config_(new QuicCryptoServerConfig(
             QuicCryptoServerConfig::TESTING, QuicRandom::GetInstance(),
@@ -275,9 +279,9 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
     stream_->ReplaceBackend(replacement_backend_.get());
   }
 
+  quic::simulator::Simulator simulator_;
   spdy::Http2HeaderBlock response_headers_;
   MockQuicConnectionHelper helper_;
-  MockAlarmFactory alarm_factory_;
   StrictMock<MockQuicConnection>* connection_;
   StrictMock<MockQuicSessionVisitor> session_owner_;
   StrictMock<MockQuicCryptoServerStreamHelper> session_helper_;
@@ -565,6 +569,61 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithEarlyHints) {
   EXPECT_TRUE(stream_->write_side_closed());
 }
 
+class AlarmTestDelegate : public QuicAlarm::DelegateWithoutContext {
+ public:
+  AlarmTestDelegate(TestStream* stream) : stream_(stream) {}
+
+  void OnAlarm() override { stream_->FireAlarmMock(); }
+
+ private:
+  TestStream* stream_;
+};
+
+TEST_P(QuicSimpleServerStreamTest, SendResponseWithDelay) {
+  // Add a request and response with valid headers.
+  spdy::Http2HeaderBlock* request_headers = stream_->mutable_headers();
+  std::string host = "www.google.com";
+  std::string path = "/bar";
+  (*request_headers)[":path"] = path;
+  (*request_headers)[":authority"] = host;
+  (*request_headers)[":method"] = "GET";
+
+  response_headers_[":status"] = "200";
+  response_headers_["content-length"] = "5";
+  std::string body = "Yummm";
+  QuicTime::Delta delay = QuicTime::Delta::FromMilliseconds(3000);
+
+  quiche::QuicheBuffer header = HttpEncoder::SerializeDataFrameHeader(
+      body.length(), quiche::SimpleBufferAllocator::Get());
+
+  memory_cache_backend_.AddResponse(host, path, std::move(response_headers_),
+                                    body);
+  auto did_delay_succeed =
+      memory_cache_backend_.SetResponseDelay(host, path, delay);
+  EXPECT_TRUE(did_delay_succeed);
+  auto did_invalid_delay_succeed =
+      memory_cache_backend_.SetResponseDelay(host, "nonsense", delay);
+  EXPECT_FALSE(did_invalid_delay_succeed);
+  std::unique_ptr<QuicAlarm> alarm(connection_->alarm_factory()->CreateAlarm(
+      new AlarmTestDelegate(stream_)));
+  alarm->Set(connection_->clock()->Now() + delay);
+  QuicStreamPeer::SetFinReceived(stream_);
+  InSequence s;
+  EXPECT_CALL(*stream_, FireAlarmMock());
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+
+  if (UsesHttp3()) {
+    EXPECT_CALL(session_, WritevData(_, header.size(), _, NO_FIN, _, _));
+  }
+  EXPECT_CALL(session_, WritevData(_, body.length(), _, FIN, _, _));
+
+  stream_->DoSendResponse();
+  simulator_.RunFor(delay);
+
+  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
+  EXPECT_TRUE(stream_->write_side_closed());
+}
+
 TEST_P(QuicSimpleServerStreamTest, PushResponseOnClientInitiatedStream) {
   // EXPECT_QUIC_BUG tests are expensive so only run one instance of them.
   if (GetParam() != AllSupportedVersions()[0]) {
@@ -644,6 +703,12 @@ TEST_P(QuicSimpleServerStreamTest, InvalidMultipleContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", absl::string_view("11\00012", 5));
 
+  if (GetQuicReloadableFlag(quic_validate_header_field_value_at_spdy_stream) &&
+      session_.version().UsesHttp3()) {
+    EXPECT_CALL(session_,
+                MaybeSendStopSendingFrame(_, QuicResetStreamError::FromInternal(
+                                                 QUIC_STREAM_NO_ERROR)));
+  }
   EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
       .WillRepeatedly(
@@ -660,6 +725,12 @@ TEST_P(QuicSimpleServerStreamTest, InvalidLeadingNullContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", absl::string_view("\00012", 3));
 
+  if (GetQuicReloadableFlag(quic_validate_header_field_value_at_spdy_stream) &&
+      session_.version().UsesHttp3()) {
+    EXPECT_CALL(session_,
+                MaybeSendStopSendingFrame(_, QuicResetStreamError::FromInternal(
+                                                 QUIC_STREAM_NO_ERROR)));
+  }
   EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
       .WillRepeatedly(
@@ -671,17 +742,35 @@ TEST_P(QuicSimpleServerStreamTest, InvalidLeadingNullContentLength) {
   EXPECT_TRUE(stream_->write_side_closed());
 }
 
-TEST_P(QuicSimpleServerStreamTest, ValidMultipleContentLength) {
+TEST_P(QuicSimpleServerStreamTest, InvalidMultipleContentLengthII) {
   spdy::Http2HeaderBlock request_headers;
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", absl::string_view("11\00011", 5));
 
+  if (GetQuicReloadableFlag(quic_validate_header_field_value_at_spdy_stream) &&
+      session_.version().UsesHttp3()) {
+    EXPECT_CALL(session_,
+                MaybeSendStopSendingFrame(_, QuicResetStreamError::FromInternal(
+                                                 QUIC_STREAM_NO_ERROR)));
+    EXPECT_CALL(*stream_, WriteHeadersMock(false));
+    EXPECT_CALL(session_, WritevData(_, _, _, _, _, _))
+        .WillRepeatedly(
+            Invoke(&session_, &MockQuicSimpleServerSession::ConsumeData));
+  }
+
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
 
-  EXPECT_EQ(11, stream_->content_length());
-  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
-  EXPECT_FALSE(stream_->reading_stopped());
-  EXPECT_FALSE(stream_->write_side_closed());
+  if (GetQuicReloadableFlag(quic_validate_header_field_value_at_spdy_stream) &&
+      session_.version().UsesHttp3()) {
+    EXPECT_TRUE(QuicStreamPeer::read_side_closed(stream_));
+    EXPECT_TRUE(stream_->reading_stopped());
+    EXPECT_TRUE(stream_->write_side_closed());
+  } else {
+    EXPECT_EQ(11, stream_->content_length());
+    EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
+    EXPECT_FALSE(stream_->reading_stopped());
+    EXPECT_FALSE(stream_->write_side_closed());
+  }
 }
 
 TEST_P(QuicSimpleServerStreamTest,

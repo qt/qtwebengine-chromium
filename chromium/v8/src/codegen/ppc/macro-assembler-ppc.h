@@ -10,6 +10,7 @@
 #define V8_CODEGEN_PPC_MACRO_ASSEMBLER_PPC_H_
 
 #include "src/base/numbers/double.h"
+#include "src/base/platform/platform.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/ppc/assembler-ppc.h"
 #include "src/common/globals.h"
@@ -49,8 +50,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
  public:
   using TurboAssemblerBase::TurboAssemblerBase;
 
-  void CallBuiltin(Builtin builtin, Condition cond);
-  void TailCallBuiltin(Builtin builtin);
+  void CallBuiltin(Builtin builtin, Condition cond = al);
+  void TailCallBuiltin(Builtin builtin, Condition cond = al,
+                       CRegister cr = cr7);
   void Popcnt32(Register dst, Register src);
   void Popcnt64(Register dst, Register src);
   // Converts the integer (untagged smi) in |src| to a double, storing
@@ -142,7 +144,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   void LoadDoubleLiteral(DoubleRegister result, base::Double value,
                          Register scratch);
-  void LoadSimd128(Simd128Register dst, const MemOperand& mem);
 
   // load a literal signed int value <value> to GPR <dst>
   void LoadIntLiteral(Register dst, int value);
@@ -559,12 +560,16 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void MultiPushDoubles(DoubleRegList dregs, Register location = sp);
   void MultiPopDoubles(DoubleRegList dregs, Register location = sp);
 
-  void MultiPushV128(Simd128RegList dregs, Register location = sp);
-  void MultiPopV128(Simd128RegList dregs, Register location = sp);
+  void MultiPushV128(Simd128RegList dregs, Register scratch,
+                     Register location = sp);
+  void MultiPopV128(Simd128RegList dregs, Register scratch,
+                    Register location = sp);
 
   void MultiPushF64AndV128(DoubleRegList dregs, Simd128RegList simd_regs,
+                           Register scratch1, Register scratch2,
                            Register location = sp);
   void MultiPopF64AndV128(DoubleRegList dregs, Simd128RegList simd_regs,
+                          Register scratch1, Register scratch2,
                           Register location = sp);
 
   // Calculate how much stack space (in bytes) are required to store caller
@@ -576,12 +581,14 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Push caller saved registers on the stack, and return the number of bytes
   // stack pointer is adjusted.
-  int PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
+  int PushCallerSaved(SaveFPRegsMode fp_mode, Register scratch1,
+                      Register scratch2, Register exclusion1 = no_reg,
                       Register exclusion2 = no_reg,
                       Register exclusion3 = no_reg);
   // Restore caller saved registers from the stack, and return the number of
   // bytes stack pointer is adjusted.
-  int PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1 = no_reg,
+  int PopCallerSaved(SaveFPRegsMode fp_mode, Register scratch1,
+                     Register scratch2, Register exclusion1 = no_reg,
                      Register exclusion2 = no_reg,
                      Register exclusion3 = no_reg);
 
@@ -609,7 +616,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                    Simd128Register scratch);
   void SwapSimd128(Simd128Register src, MemOperand dst,
                    Simd128Register scratch);
-  void SwapSimd128(MemOperand src, MemOperand dst, Simd128Register scratch);
+  void SwapSimd128(MemOperand src, MemOperand dst, Simd128Register scratch1,
+                   Simd128Register scratch2);
 
   void ByteReverseU16(Register dst, Register val, Register scratch);
   void ByteReverseU32(Register dst, Register val, Register scratch);
@@ -661,7 +669,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Calls Abort(msg) if the condition cond is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cond, AbortReason reason, CRegister cr = cr7);
+  void Assert(Condition cond, AbortReason reason,
+              CRegister cr = cr7) NOOP_UNLESS_DEBUG_CODE;
 
   // Like Assert(), but always enabled.
   void Check(Condition cond, AbortReason reason, CRegister cr = cr7);
@@ -769,7 +778,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void Move(Register dst, ExternalReference reference);
   void Move(Register dst, Register src, Condition cond = al);
   void Move(DoubleRegister dst, DoubleRegister src);
-  void Move(Register dst, const MemOperand& src) { LoadU64(dst, src); }
+  void Move(Register dst, const MemOperand& src) {
+    // TODO: use scratch register scope instead of r0
+    LoadU64(dst, src, r0);
+  }
 
   void SmiUntag(Register dst, const MemOperand& src, RCBit rc = LeaveRC,
                 Register scratch = no_reg);
@@ -797,8 +809,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   }
 
   // Abort execution if argument is a smi, enabled via --debug-code.
-  void AssertNotSmi(Register object);
-  void AssertSmi(Register object);
+  void AssertNotSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   void ZeroExtByte(Register dst, Register src);
   void ZeroExtHalfWord(Register dst, Register src);
@@ -1020,8 +1032,6 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void StoreF64WithUpdate(DoubleRegister src, const MemOperand& mem,
                           Register scratch = no_reg);
 
-  void StoreSimd128(Simd128Register src, const MemOperand& mem);
-
   void LoadU64(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadU32(Register dst, const MemOperand& mem, Register scratch = no_reg);
   void LoadS32(Register dst, const MemOperand& mem, Register scratch = no_reg);
@@ -1059,6 +1069,60 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                   Register scratch2);
   void StoreF64LE(DoubleRegister src, const MemOperand& mem, Register scratch,
                   Register scratch2);
+
+  // Simd Support.
+  void LoadSimd128(Simd128Register dst, const MemOperand& mem,
+                   Register scratch);
+  void StoreSimd128(Simd128Register src, const MemOperand& mem,
+                    Register scratch);
+  void LoadSimd128LE(Simd128Register dst, const MemOperand& mem,
+                     Register scratch);
+  void StoreSimd128LE(Simd128Register src, const MemOperand& mem,
+                      Register scratch1, Simd128Register scratch2);
+  void F64x2Splat(Simd128Register dst, DoubleRegister src, Register scratch);
+  void F32x4Splat(Simd128Register dst, DoubleRegister src,
+                  DoubleRegister scratch1, Register scratch2);
+  void I64x2Splat(Simd128Register dst, Register src);
+  void I32x4Splat(Simd128Register dst, Register src);
+  void I16x8Splat(Simd128Register dst, Register src);
+  void I8x16Splat(Simd128Register dst, Register src);
+  void F64x2ExtractLane(DoubleRegister dst, Simd128Register src,
+                        uint8_t imm_lane_idx, Simd128Register scratch1,
+                        Register scratch2);
+  void F32x4ExtractLane(DoubleRegister dst, Simd128Register src,
+                        uint8_t imm_lane_idx, Simd128Register scratch1,
+                        Register scratch2, Register scratch3);
+  void I64x2ExtractLane(Register dst, Simd128Register src, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
+  void I32x4ExtractLane(Register dst, Simd128Register src, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
+  void I16x8ExtractLaneU(Register dst, Simd128Register src,
+                         uint8_t imm_lane_idx, Simd128Register scratch);
+  void I16x8ExtractLaneS(Register dst, Simd128Register src,
+                         uint8_t imm_lane_idx, Simd128Register scratch);
+  void I8x16ExtractLaneU(Register dst, Simd128Register src,
+                         uint8_t imm_lane_idx, Simd128Register scratch);
+  void I8x16ExtractLaneS(Register dst, Simd128Register src,
+                         uint8_t imm_lane_idx, Simd128Register scratch);
+  void F64x2ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        DoubleRegister src2, uint8_t imm_lane_idx,
+                        Register scratch1, Simd128Register scratch2);
+  void F32x4ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        DoubleRegister src2, uint8_t imm_lane_idx,
+                        Register scratch1, DoubleRegister scratch2,
+                        Simd128Register scratch3);
+  void I64x2ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        Register src2, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
+  void I32x4ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        Register src2, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
+  void I16x8ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        Register src2, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
+  void I8x16ReplaceLane(Simd128Register dst, Simd128Register src1,
+                        Register src2, uint8_t imm_lane_idx,
+                        Simd128Register scratch);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
@@ -1231,6 +1295,19 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   void JumpIfIsInRange(Register value, unsigned lower_limit,
                        unsigned higher_limit, Label* on_in_range);
 
+  // Tiering support.
+  void AssertFeedbackVector(Register object,
+                            Register scratch) NOOP_UNLESS_DEBUG_CODE;
+  void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
+                                           Register closure, Register scratch1,
+                                           Register slot_address);
+  void GenerateTailCallToReturnedCode(Runtime::FunctionId function_id);
+  void LoadTieringStateAndJumpIfNeedsProcessing(
+      Register optimization_state, Register feedback_vector,
+      Label* has_optimized_code_or_state);
+  void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(Register optimization_state,
+                                                    Register feedback_vector);
+
   // ---------------------------------------------------------------------------
   // Runtime calls
 
@@ -1321,26 +1398,27 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 #endif
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
-  void AssertConstructor(Register object);
+  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
-  void AssertFunction(Register object);
+  void AssertFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a callable JSFunction, enabled via
   // --debug-code.
-  void AssertCallableFunction(Register object);
+  void AssertCallableFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
-  void AssertBoundFunction(Register object);
+  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not a JSGeneratorObject (or subclass),
   // enabled via --debug-code.
-  void AssertGeneratorObject(Register object);
+  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE;
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
-  void AssertUndefinedOrAllocationSite(Register object, Register scratch);
+  void AssertUndefinedOrAllocationSite(Register object,
+                                       Register scratch) NOOP_UNLESS_DEBUG_CODE;
 
   // ---------------------------------------------------------------------------
   // Patching helpers.

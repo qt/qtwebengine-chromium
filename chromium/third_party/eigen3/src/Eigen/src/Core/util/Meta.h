@@ -441,6 +441,17 @@ bool not_equal_strict(const double& x,const double& y) { return std::not_equal_t
 } // end namespace numext
 
 namespace internal {
+
+template<typename Scalar>
+struct is_identically_zero_impl {
+  static inline bool run(const Scalar& s) {
+    return numext::is_exactly_zero(s);
+  }
+};
+
+template<typename Scalar> EIGEN_STRONG_INLINE
+bool is_identically_zero(const Scalar& s) { return is_identically_zero_impl<Scalar>::run(s); }
+
 /// \internal Returns true if its argument is of integer or enum type.
 /// FIXME this has the same purpose as `is_valid_index_type` in XprHelper.h
 template<typename A>

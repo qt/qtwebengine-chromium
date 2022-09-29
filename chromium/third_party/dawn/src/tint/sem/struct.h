@@ -170,7 +170,7 @@ class Struct final : public Castable<Struct, Type> {
 };
 
 /// StructMember holds the semantic information for structure members.
-class StructMember : public Castable<StructMember, Node> {
+class StructMember final : public Castable<StructMember, Node> {
   public:
     /// Constructor
     /// @param declaration the AST declaration node
@@ -182,7 +182,7 @@ class StructMember : public Castable<StructMember, Node> {
     /// @param size the byte size of the member
     StructMember(const ast::StructMember* declaration,
                  Symbol name,
-                 sem::Type* type,
+                 const sem::Type* type,
                  uint32_t index,
                  uint32_t offset,
                  uint32_t align,
@@ -194,11 +194,18 @@ class StructMember : public Castable<StructMember, Node> {
     /// @returns the AST declaration node
     const ast::StructMember* Declaration() const { return declaration_; }
 
-    /// @returns the name of the structure
+    /// @returns the name of the structure member
     Symbol Name() const { return name_; }
 
+    /// Sets the owning structure to `s`
+    /// @param s the new structure owner
+    void SetStruct(const sem::Struct* s) { struct_ = s; }
+
+    /// @returns the structure that owns this member
+    const sem::Struct* Struct() const { return struct_; }
+
     /// @returns the type of the member
-    sem::Type* Type() const { return type_; }
+    const sem::Type* Type() const { return type_; }
 
     /// @returns the member index
     uint32_t Index() const { return index_; }
@@ -215,7 +222,8 @@ class StructMember : public Castable<StructMember, Node> {
   private:
     const ast::StructMember* const declaration_;
     const Symbol name_;
-    sem::Type* const type_;
+    const sem::Struct* struct_;
+    const sem::Type* type_;
     const uint32_t index_;
     const uint32_t offset_;
     const uint32_t align_;

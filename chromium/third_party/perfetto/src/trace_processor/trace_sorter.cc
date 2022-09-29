@@ -39,6 +39,19 @@ TraceSorter::TraceSorter(TraceProcessorContext* context,
     PERFETTO_ELOG("TEST MODE: bypassing protobuf parsing stage");
 }
 
+TraceSorter::~TraceSorter() {
+  // If trace processor encountered a fatal error, it's possible for some events
+  // to have been pushed without evicting them by pushing to the next stage. Do
+  // that now.
+  for (auto& queue : queues_) {
+    for (const auto& event : queue.events_) {
+      // Calling this function without using the TimestampedTracePiece the same
+      // as just calling the destructor for the element.
+      EvictVariadicAsTtp(event);
+    }
+  }
+}
+
 void TraceSorter::Queue::Sort() {
   PERFETTO_DCHECK(needs_sorting());
   PERFETTO_DCHECK(sort_start_idx_ < events_.size());
@@ -100,7 +113,7 @@ void TraceSorter::SortAndExtractEventsUntilPacket(uint64_t limit_offset) {
         continue;
       PERFETTO_DCHECK(queue.min_ts_ >= global_min_ts_);
       PERFETTO_DCHECK(queue.max_ts_ <= global_max_ts_);
-      if (queue.min_ts_ < min_queue_ts[0]) {
+      if (!has_queues_with_expired_events || queue.min_ts_ < min_queue_ts[0]) {
         min_queue_ts[1] = min_queue_ts[0];
         min_queue_ts[0] = queue.min_ts_;
         min_queue_idx = i;
@@ -189,37 +202,18 @@ void TraceSorter::MaybePushEvent(size_t queue_idx,
 
   latest_pushed_event_ts_ = std::max(latest_pushed_event_ts_, timestamp);
 
+  TimestampedTracePiece ttp = EvictVariadicAsTtp(ts_desc);
+
   if (PERFETTO_UNLIKELY(bypass_next_stage_for_testing_))
     return;
 
-  switch (ts_desc.descriptor.type()) {
-    case Type::kInlineSchedSwitch:
-      ParseTracePacket<InlineSchedSwitch>(queue_idx, ts_desc);
-      return;
-    case Type::kInlineSchedWaking:
-      ParseTracePacket<InlineSchedWaking>(queue_idx, ts_desc);
-      return;
-    case Type::kFtraceEvent:
-      ParseTracePacket<FtraceEventData>(queue_idx, ts_desc);
-      return;
-    case Type::kTracePacket:
-      ParseTracePacket<TracePacketData>(queue_idx, ts_desc);
-      return;
-    case Type::kTrackEvent:
-      ParseTracePacket<std::unique_ptr<TrackEventData>>(queue_idx, ts_desc);
-      return;
-    case Type::kFuchsiaRecord:
-      ParseTracePacket<std::unique_ptr<FuchsiaRecord>>(queue_idx, ts_desc);
-      return;
-    case Type::kJsonValue:
-      ParseTracePacket<std::string>(queue_idx, ts_desc);
-      return;
-    case Type::kSystraceLine:
-      ParseTracePacket<std::unique_ptr<SystraceLine>>(queue_idx, ts_desc);
-      return;
-    case Type::kInvalid:
-      PERFETTO_DFATAL("Invalid TimestampedTracePiece type");
-      return;
+  if (queue_idx == 0) {
+    // queues_[0] is for non-ftrace packets.
+    parser_->ParseTracePacket(ts_desc.ts, std::move(ttp));
+  } else {
+    // Ftrace queues start at offset 1. So queues_[1] = cpu[0] and so on.
+    uint32_t cpu = static_cast<uint32_t>(queue_idx - 1);
+    parser_->ParseFtracePacket(cpu, ts_desc.ts, std::move(ttp));
   }
 }
 

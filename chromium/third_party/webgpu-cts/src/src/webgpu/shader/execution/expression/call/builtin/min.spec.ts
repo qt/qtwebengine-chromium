@@ -17,17 +17,11 @@ Component-wise when T is a vector.
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { correctlyRoundedMatch } from '../../../../../util/compare.js';
-import { kBit, kValue } from '../../../../../util/constants.js';
-import {
-  i32,
-  TypeF32,
-  TypeI32,
-  TypeU32,
-  u32,
-  uint32ToFloat32,
-} from '../../../../../util/conversion.js';
-import { allInputSources, Case, Config, makeBinaryF32Case, run } from '../../expression.js';
+import { kValue } from '../../../../../util/constants.js';
+import { i32, TypeF32, TypeI32, TypeU32, u32 } from '../../../../../util/conversion.js';
+import { minInterval } from '../../../../../util/f32_interval.js';
+import { fullF32Range } from '../../../../../util/math.js';
+import { allInputSources, Case, makeBinaryF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -62,9 +56,6 @@ g.test('u32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const cfg: Config = t.params;
-    cfg.cmpFloats = correctlyRoundedMatch();
-
     const makeCase = (x: number, y: number): Case => {
       return { input: [u32(x), u32(y)], expected: u32(Math.min(x, y)) };
     };
@@ -72,7 +63,7 @@ g.test('u32')
     const test_values: Array<number> = [0, 1, 2, 0x70000000, 0x80000000, 0xffffffff];
     const cases = generateTestCases(test_values, makeCase);
 
-    run(t, builtin('min'), [TypeU32, TypeU32], TypeU32, cfg, cases);
+    run(t, builtin('min'), [TypeU32, TypeU32], TypeU32, t.params, cases);
   });
 
 g.test('i32')
@@ -82,9 +73,6 @@ g.test('i32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const cfg: Config = t.params;
-    cfg.cmpFloats = correctlyRoundedMatch();
-
     const makeCase = (x: number, y: number): Case => {
       return { input: [i32(x), i32(y)], expected: i32(Math.min(x, y)) };
     };
@@ -92,7 +80,7 @@ g.test('i32')
     const test_values: Array<number> = [-0x70000000, -2, -1, 0, 1, 2, 0x70000000];
     const cases = generateTestCases(test_values, makeCase);
 
-    run(t, builtin('min'), [TypeI32, TypeI32], TypeI32, cfg, cases);
+    run(t, builtin('min'), [TypeI32, TypeI32], TypeI32, t.params, cases);
   });
 
 g.test('abstract_float')
@@ -110,33 +98,20 @@ g.test('f32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    const cfg: Config = t.params;
-    cfg.cmpFloats = correctlyRoundedMatch();
-
     const makeCase = (x: number, y: number): Case => {
-      return makeBinaryF32Case(x, y, Math.min);
+      return makeBinaryF32IntervalCase(x, y, minInterval);
     };
 
-    const test_values: Array<number> = [
-      uint32ToFloat32(kBit.f32.infinity.negative),
-      kValue.f32.negative.min,
-      -10.0,
-      -1.0,
-      kValue.f32.negative.max,
-      kValue.f32.subnormal.negative.min,
-      kValue.f32.subnormal.negative.max,
-      0.0,
-      kValue.f32.subnormal.positive.min,
-      kValue.f32.subnormal.positive.max,
-      kValue.f32.positive.min,
-      1.0,
-      10.0,
-      kValue.f32.positive.max,
-      uint32ToFloat32(kBit.f32.infinity.positive),
-    ];
-    const cases = generateTestCases(test_values, makeCase);
+    const cases: Array<Case> = [];
+    const numeric_range = fullF32Range();
+    numeric_range.push(kValue.f32.infinity.positive, kValue.f32.infinity.negative);
+    numeric_range.forEach(lhs => {
+      numeric_range.forEach(rhs => {
+        cases.push(makeCase(lhs, rhs));
+      });
+    });
 
-    run(t, builtin('min'), [TypeF32, TypeF32], TypeF32, cfg, cases);
+    run(t, builtin('min'), [TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

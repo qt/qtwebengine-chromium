@@ -250,7 +250,7 @@ static void idct(int16_t block[64])
 
 static av_cold void init_vlcs(void)
 {
-    static VLC_TYPE table[2][4][32][2];
+    static VLCElem table[2][4][32];
     int i, j;
 
     for (i = 0; i < 2; i++) {
@@ -1036,5 +1036,5 @@ const FFCodec ff_fourxm_decoder = {
     .close          = decode_end,
     FF_CODEC_DECODE_CB(decode_frame),
     .p.capabilities = AV_CODEC_CAP_DR1,
-    .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

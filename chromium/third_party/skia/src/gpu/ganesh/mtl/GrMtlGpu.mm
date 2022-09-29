@@ -1389,6 +1389,40 @@ bool GrMtlGpu::onReadPixels(GrSurface* surface,
     return true;
 }
 
+bool GrMtlGpu::onTransferFromBufferToBuffer(sk_sp<GrGpuBuffer> src,
+                                            size_t srcOffset,
+                                            sk_sp<GrGpuBuffer> dst,
+                                            size_t dstOffset,
+                                            size_t size) {
+    id<MTLBuffer> GR_NORETAIN mtlSrc =  static_cast<GrMtlBuffer*>(src.get())->mtlBuffer();
+    id<MTLBuffer> GR_NORETAIN mtlDst =  static_cast<GrMtlBuffer*>(dst.get())->mtlBuffer();
+    SkASSERT(mtlSrc);
+    SkASSERT(mtlDst);
+
+    auto cmdBuffer = this->commandBuffer();
+    id<MTLBlitCommandEncoder> GR_NORETAIN blitCmdEncoder = cmdBuffer->getBlitCommandEncoder();
+    if (!blitCmdEncoder) {
+        return false;
+    }
+
+#ifdef SK_ENABLE_MTL_DEBUG_INFO
+    [blitCmdEncoder pushDebugGroup:@"onTransferFromBufferToBuffer"];
+#endif
+    [blitCmdEncoder copyFromBuffer: mtlSrc
+                      sourceOffset: srcOffset
+                          toBuffer: mtlDst
+                 destinationOffset: dstOffset
+                              size: size];
+#ifdef SK_ENABLE_MTL_DEBUG_INFO
+    [blitCmdEncoder popDebugGroup];
+#endif
+
+    cmdBuffer->addGrBuffer(std::move(src));
+    cmdBuffer->addGrBuffer(std::move(dst));
+
+    return true;
+}
+
 bool GrMtlGpu::onTransferPixelsTo(GrTexture* texture,
                                   SkIRect rect,
                                   GrColorType textureColorType,
@@ -1751,7 +1785,7 @@ void GrMtlGpu::onDumpJSON(SkJSONWriter* writer) const {
     writer->beginObject("Metal GPU");
 
     writer->beginObject("Device");
-    writer->appendString("name", fDevice.name.UTF8String);
+    writer->appendCString("name", fDevice.name.UTF8String);
 #ifdef SK_BUILD_FOR_MAC
     if (@available(macOS 10.11, *)) {
         writer->appendBool("isHeadless", fDevice.isHeadless);
@@ -1768,19 +1802,19 @@ void GrMtlGpu::onDumpJSON(SkJSONWriter* writer) const {
     if (@available(macOS 10.15, *)) {
         switch (fDevice.location) {
             case MTLDeviceLocationBuiltIn:
-                writer->appendString("location", "builtIn");
+                writer->appendNString("location", "builtIn");
                 break;
             case MTLDeviceLocationSlot:
-                writer->appendString("location", "slot");
+                writer->appendNString("location", "slot");
                 break;
             case MTLDeviceLocationExternal:
-                writer->appendString("location", "external");
+                writer->appendNString("location", "external");
                 break;
             case MTLDeviceLocationUnspecified:
-                writer->appendString("location", "unspecified");
+                writer->appendNString("location", "unspecified");
                 break;
             default:
-                writer->appendString("location", "unknown");
+                writer->appendNString("location", "unknown");
                 break;
         }
         writer->appendU64("locationNumber", fDevice.locationNumber);
@@ -1844,27 +1878,27 @@ void GrMtlGpu::onDumpJSON(SkJSONWriter* writer) const {
     if (@available(macOS 10.13, iOS 11.0, *)) {
         switch (fDevice.readWriteTextureSupport) {
             case MTLReadWriteTextureTier1:
-                writer->appendString("readWriteTextureSupport", "tier1");
+                writer->appendNString("readWriteTextureSupport", "tier1");
                 break;
             case MTLReadWriteTextureTier2:
-                writer->appendString("readWriteTextureSupport", "tier2");
+                writer->appendNString("readWriteTextureSupport", "tier2");
                 break;
             case MTLReadWriteTextureTierNone:
-                writer->appendString("readWriteTextureSupport", "tierNone");
+                writer->appendNString("readWriteTextureSupport", "tierNone");
                 break;
             default:
-                writer->appendString("readWriteTextureSupport", "unknown");
+                writer->appendNString("readWriteTextureSupport", "unknown");
                 break;
         }
         switch (fDevice.argumentBuffersSupport) {
             case MTLArgumentBuffersTier1:
-                writer->appendString("argumentBuffersSupport", "tier1");
+                writer->appendNString("argumentBuffersSupport", "tier1");
                 break;
             case MTLArgumentBuffersTier2:
-                writer->appendString("argumentBuffersSupport", "tier2");
+                writer->appendNString("argumentBuffersSupport", "tier2");
                 break;
             default:
-                writer->appendString("argumentBuffersSupport", "unknown");
+                writer->appendNString("argumentBuffersSupport", "unknown");
                 break;
         }
     }
@@ -1878,7 +1912,7 @@ void GrMtlGpu::onDumpJSON(SkJSONWriter* writer) const {
 #endif
     writer->endObject();
 
-    writer->appendString("queue", fQueue.label.UTF8String);
+    writer->appendCString("queue", fQueue.label.UTF8String);
     writer->appendBool("disconnected", fDisconnected);
 
     writer->endObject();

@@ -18,13 +18,12 @@
 
 namespace dawn::wire::client {
 
-ShaderModule::ShaderModule(Client* c, uint32_t r, uint32_t i) : ObjectBase(c, r, i) {}
-
 ShaderModule::~ShaderModule() {
     ClearAllCallbacks(WGPUCompilationInfoRequestStatus_Unknown);
 }
 
 void ShaderModule::GetCompilationInfo(WGPUCompilationInfoCallback callback, void* userdata) {
+    Client* client = GetClient();
     if (client->IsDisconnected()) {
         callback(WGPUCompilationInfoRequestStatus_DeviceLost, nullptr, userdata);
         return;
@@ -33,7 +32,7 @@ void ShaderModule::GetCompilationInfo(WGPUCompilationInfoCallback callback, void
     uint64_t serial = mCompilationInfoRequests.Add({callback, userdata});
 
     ShaderModuleGetCompilationInfoCmd cmd;
-    cmd.shaderModuleId = this->id;
+    cmd.shaderModuleId = GetWireId();
     cmd.requestSerial = serial;
 
     client->SerializeCommand(cmd);

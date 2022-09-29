@@ -1020,7 +1020,19 @@ static inline int pnm_probe(const AVProbeData *p)
 
 static int pbm_probe(const AVProbeData *p)
 {
-    return pnm_magic_check(p, 1) || pnm_magic_check(p, 4) || pnm_magic_check(p, 22) || pnm_magic_check(p, 54) ? pnm_probe(p) : 0;
+    return pnm_magic_check(p, 1) || pnm_magic_check(p, 4) ? pnm_probe(p) : 0;
+}
+
+static int pfm_probe(const AVProbeData *p)
+{
+    return pnm_magic_check(p, 'F' - '0') ||
+           pnm_magic_check(p, 'f' - '0') ? pnm_probe(p) : 0;
+}
+
+static int phm_probe(const AVProbeData *p)
+{
+    return pnm_magic_check(p, 'H' - '0') ||
+           pnm_magic_check(p, 'h' - '0') ? pnm_probe(p) : 0;
 }
 
 static inline int pgmx_probe(const AVProbeData *p)
@@ -1056,6 +1068,13 @@ static int ppm_probe(const AVProbeData *p)
 static int pam_probe(const AVProbeData *p)
 {
     return pnm_magic_check(p, 7) ? pnm_probe(p) : 0;
+}
+
+static int hdr_probe(const AVProbeData *p)
+{
+    if (!memcmp(p->buf, "#?RADIANCE\n", 11))
+        return AVPROBE_SCORE_MAX;
+    return 0;
 }
 
 static int xbm_probe(const AVProbeData *p)
@@ -1131,6 +1150,23 @@ static int photocd_probe(const AVProbeData *p)
     return AVPROBE_SCORE_MAX - 1;
 }
 
+static int qoi_probe(const AVProbeData *p)
+{
+    if (memcmp(p->buf, "qoif", 4))
+        return 0;
+
+    if (AV_RB32(p->buf + 4) == 0 || AV_RB32(p->buf + 8) == 0)
+        return 0;
+
+    if (p->buf[12] != 3 && p->buf[12] != 4)
+        return 0;
+
+    if (p->buf[13] > 1)
+        return 0;
+
+    return AVPROBE_SCORE_MAX - 1;
+}
+
 static int gem_probe(const AVProbeData *p)
 {
     const uint8_t *b = p->buf;
@@ -1192,6 +1228,7 @@ IMAGEAUTO_DEMUXER(dpx,       DPX)
 IMAGEAUTO_DEMUXER(exr,       EXR)
 IMAGEAUTO_DEMUXER(gem,       GEM)
 IMAGEAUTO_DEMUXER(gif,       GIF)
+IMAGEAUTO_DEMUXER_EXT(hdr,   RADIANCE_HDR, HDR)
 IMAGEAUTO_DEMUXER_EXT(j2k,   JPEG2000, J2K)
 IMAGEAUTO_DEMUXER_EXT(jpeg,  MJPEG, JPEG)
 IMAGEAUTO_DEMUXER(jpegls,    JPEGLS)
@@ -1199,15 +1236,18 @@ IMAGEAUTO_DEMUXER(jpegxl,    JPEGXL)
 IMAGEAUTO_DEMUXER(pam,       PAM)
 IMAGEAUTO_DEMUXER(pbm,       PBM)
 IMAGEAUTO_DEMUXER(pcx,       PCX)
+IMAGEAUTO_DEMUXER(pfm,       PFM)
 IMAGEAUTO_DEMUXER(pgm,       PGM)
 IMAGEAUTO_DEMUXER(pgmyuv,    PGMYUV)
 IMAGEAUTO_DEMUXER(pgx,       PGX)
+IMAGEAUTO_DEMUXER(phm,       PHM)
 IMAGEAUTO_DEMUXER(photocd,   PHOTOCD)
 IMAGEAUTO_DEMUXER(pictor,    PICTOR)
 IMAGEAUTO_DEMUXER(png,       PNG)
 IMAGEAUTO_DEMUXER(ppm,       PPM)
 IMAGEAUTO_DEMUXER(psd,       PSD)
 IMAGEAUTO_DEMUXER(qdraw,     QDRAW)
+IMAGEAUTO_DEMUXER(qoi,       QOI)
 IMAGEAUTO_DEMUXER(sgi,       SGI)
 IMAGEAUTO_DEMUXER(sunrast,   SUNRAST)
 IMAGEAUTO_DEMUXER(svg,       SVG)

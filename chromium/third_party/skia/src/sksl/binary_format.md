@@ -302,8 +302,12 @@ its own ID; references to a Field are compiled in terms of the owner’s ID.
 | `Modifiers`                | modifiers      |
 | `String`                   | name           |
 | `uint8`                    | parameterCount |
-| `SymbolId[parameterCount]` | parameters     |
+| `Symbol[parameterCount]`   | parameters     |
 | `Type`                     | returnType     |
+
+If a function is overloaded, the overloads will by dehydrated in the same order that they appear in
+the code. SkSL will prefer the first overload when a function call is ambiguous, so maintaining the
+overload order is important.
 
 ---
 
@@ -333,16 +337,6 @@ The `Field` type referenced in this command is:
 | `SymbolId` | id         |
 
 Refers to a Symbol which has already been written by another command.
-
----
-
-#### kUnresolvedFunction_Command
-
-| Type                         | Field Name |
-|------------------------------|------------|
-| `uint16`                     | id         |
-| `uint8`                      | count      |
-| `FunctionDeclaration[count]` | functions  |
 
 ---
 

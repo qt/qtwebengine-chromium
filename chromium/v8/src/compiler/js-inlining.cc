@@ -4,8 +4,6 @@
 
 #include "src/compiler/js-inlining.h"
 
-#include "src/ast/ast.h"
-#include "src/codegen/compiler.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/codegen/tick-counter.h"
 #include "src/compiler/access-builder.h"
@@ -18,11 +16,9 @@
 #include "src/compiler/js-operator.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
-#include "src/compiler/operator-properties.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/execution/isolate-inl.h"
 #include "src/objects/feedback-cell-inl.h"
-#include "src/parsing/parse-info.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/compiler/wasm-compiler.h"
@@ -583,8 +579,8 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
       CallFrequency frequency = call.frequency();
       BuildGraphFromBytecode(broker(), zone(), *shared_info, feedback_cell,
                              BytecodeOffset::None(), jsgraph(), frequency,
-                             source_positions_, inlining_id, info_->code_kind(),
-                             flags, &info_->tick_counter());
+                             source_positions_, node_origins_, inlining_id,
+                             info_->code_kind(), flags, &info_->tick_counter());
     }
 
     // Extract the inlinee start/end nodes.

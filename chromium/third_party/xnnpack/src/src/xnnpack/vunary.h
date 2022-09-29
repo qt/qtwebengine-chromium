@@ -8,8 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <xnnpack/params.h>
 #include <xnnpack/common.h>
+#include <xnnpack/microparams.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,6 +42,20 @@ DECLARE_F16_VCLAMP_UKERNEL_FUNCTION(xnn_f16_vclamp_ukernel__neonfp16arith_x16)
 
 DECLARE_F16_VCLAMP_UKERNEL_FUNCTION(xnn_f16_vclamp_ukernel__f16c_x8)
 DECLARE_F16_VCLAMP_UKERNEL_FUNCTION(xnn_f16_vclamp_ukernel__f16c_x16)
+
+
+#define DECLARE_F16_VELU_UKERNEL_FUNCTION(fn_name) \
+  XNN_INTERNAL void fn_name(                       \
+      size_t n,                                    \
+      const void* x,                               \
+      void* y,                                     \
+      const union xnn_f16_elu_params* params);
+
+DECLARE_F16_VELU_UKERNEL_FUNCTION(xnn_f16_velu_ukernel__neonfp16arith_rr1_p3_x8)
+DECLARE_F16_VELU_UKERNEL_FUNCTION(xnn_f16_velu_ukernel__neonfp16arith_rr1_p3_x16)
+
+DECLARE_F16_VELU_UKERNEL_FUNCTION(xnn_f16_velu_ukernel__avx2_rr1_p3_x8)
+DECLARE_F16_VELU_UKERNEL_FUNCTION(xnn_f16_velu_ukernel__avx2_rr1_p3_x16)
 
 
 #define DECLARE_F16_VHSWISH_UKERNEL_FUNCTION(fn_name) \

@@ -4,15 +4,12 @@
 
 #include "src/wasm/wasm-serialization.h"
 
-#include "src/base/platform/wrappers.h"
+#include "src/codegen/assembler-arch.h"
 #include "src/codegen/assembler-inl.h"
-#include "src/codegen/external-reference-table.h"
-#include "src/objects/objects-inl.h"
-#include "src/objects/objects.h"
+#include "src/debug/debug.h"
 #include "src/runtime/runtime.h"
-#include "src/snapshot/code-serializer.h"
+#include "src/snapshot/snapshot-data.h"
 #include "src/utils/ostreams.h"
-#include "src/utils/utils.h"
 #include "src/utils/version.h"
 #include "src/wasm/code-space-access.h"
 #include "src/wasm/function-compiler.h"
@@ -385,7 +382,7 @@ void NativeModuleSerializer::WriteCode(const WasmCode* code, Writer* writer) {
   writer->WriteVector(code->protected_instructions_data());
 #if V8_TARGET_ARCH_MIPS || V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_ARM || \
     V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_S390X || \
-    V8_TARGET_ARCH_RISCV64
+    V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
   // On platforms that don't support misaligned word stores, copy to an aligned
   // buffer if necessary so we can relocate the serialized code.
   std::unique_ptr<byte[]> aligned_buffer;
@@ -599,6 +596,7 @@ class DeserializeCodeTask : public JobTask {
         deserializer_->CopyAndRelocate(unit);
       }
       publish_queue_.Add(std::move(batch));
+      ResetPKUPermissionsForThreadSpawning pku_reset_scope;
       delegate->NotifyConcurrencyIncrease();
     }
   }
@@ -659,7 +657,9 @@ bool NativeModuleDeserializer::Read(Reader* reader) {
 
   DeserializationQueue reloc_queue;
 
-  std::unique_ptr<JobHandle> job_handle = V8::GetCurrentPlatform()->PostJob(
+  // Create a new job without any workers; those are spawned on
+  // {NotifyConcurrencyIncrease}.
+  std::unique_ptr<JobHandle> job_handle = V8::GetCurrentPlatform()->CreateJob(
       TaskPriority::kUserVisible,
       std::make_unique<DeserializeCodeTask>(this, &reloc_queue));
 
@@ -681,6 +681,7 @@ bool NativeModuleDeserializer::Read(Reader* reader) {
       reloc_queue.Add(std::move(batch));
       DCHECK(batch.empty());
       batch_size = 0;
+      ResetPKUPermissionsForThreadSpawning pku_reset_scope;
       job_handle->NotifyConcurrencyIncrease();
     }
   }
@@ -692,6 +693,7 @@ bool NativeModuleDeserializer::Read(Reader* reader) {
 
   if (!batch.empty()) {
     reloc_queue.Add(std::move(batch));
+    ResetPKUPermissionsForThreadSpawning pku_reset_scope;
     job_handle->NotifyConcurrencyIncrease();
   }
 

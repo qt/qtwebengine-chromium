@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/functional/bind_front.h"
 #include "absl/time/time.h"
@@ -128,8 +129,7 @@ void BwuManager::Shutdown() {
       V1Frame::BANDWIDTH_UPGRADE_NEGOTIATION, this);
 
   // Stop all the ongoing Runnables (as gracefully as possible).
-  alarm_executor_.Shutdown();
-  serial_executor_.Shutdown();
+  ShutdownExecutors();
 
   // After worker threads are down we became exclusive owners of data and
   // may access it from current thread.
@@ -161,6 +161,11 @@ void BwuManager::InvokeOnIncomingConnectionForTesting(
   OnIncomingConnection(client, std::move(mutable_connection));
 }
 
+void BwuManager::ShutdownExecutors() {
+  alarm_executor_.Shutdown();
+  serial_executor_.Shutdown();
+}
+
 void BwuManager::InitiateBwuForEndpoint(ClientProxy* client,
                                         const std::string& endpoint_id,
                                         Medium new_medium) {
@@ -178,19 +183,15 @@ void BwuManager::InitiateBwuForEndpoint(ClientProxy* client,
                       << " with medium "
                       << proto::connections::Medium_Name(proposed_medium);
 
-    auto channel = channel_manager_->GetChannelForEndpoint(endpoint_id);
-    Medium channel_medium =
-        channel ? channel->GetMedium() : Medium::UNKNOWN_MEDIUM;
-
-    if ((channel_medium == Medium::WIFI_LAN) &&
+    if (channel_manager_->isWifiLanConnected() &&
         (proposed_medium == Medium::WIFI_HOTSPOT)) {
       NEARBY_LOGS(INFO)
-          << "Current medium is WIFI_LAN and proposed upgrade medium is "
-             ":WIFI_HOTSPOT. Don't do the BWU because connecting to "
-             "WIFI_HOTSPOT will destroy WIFI_LAN which will lead BWU fail";
+          << "Some endpoint is using WIFI_LAN and proposed upgrade medium is "
+             "WIFI_HOTSPOT. Don't do the BWU because connecting to "
+             "WIFI_HOTSPOT will destroy WIFI_LAN which will lead BWU fail and "
+             "other endpoint connection fail";
       return;
     }
-
 
     SetBwuMediumForEndpoint(endpoint_id, proposed_medium);
     BwuHandler* handler = GetHandlerForMedium(proposed_medium);
@@ -213,6 +214,9 @@ void BwuManager::InitiateBwuForEndpoint(ClientProxy* client,
 
     CancelRetryUpgradeAlarm(endpoint_id);
 
+    auto channel = channel_manager_->GetChannelForEndpoint(endpoint_id);
+    Medium channel_medium =
+        channel ? channel->GetMedium() : Medium::UNKNOWN_MEDIUM;
     client->GetAnalyticsRecorder().OnBandwidthUpgradeStarted(
         endpoint_id, channel_medium, proposed_medium,
         proto::connections::INCOMING, client->GetConnectionToken(endpoint_id));
@@ -375,12 +379,23 @@ void BwuManager::RevertBwuMediumForEndpoint(const std::string& service_id,
                     << endpoint_id;
   endpoint_id_to_bwu_medium_.erase(endpoint_id);
 
-  // If |service_id| isn't of the INITIATOR-upgrade format--for example, if this
-  // is called by the RESPONDER--there is no need to call RevertInitiatorState.
-  if (!IsInitiatorUpgradeServiceId(service_id)) return;
-
   BwuHandler* handler = GetHandlerForMedium(medium);
-  if (!handler) return;
+  if (!handler) {
+    NEARBY_LOGS(INFO) << "No BWU handler can be found for "
+                      << proto::connections::Medium_Name(medium);
+    return;
+  }
+  // If |service_id| isn't of the INITIATOR-upgrade format--for example, if this
+  // is called by the RESPONDER--there is no need to call RevertInitiatorState
+  // unless the BWU Medium is Hotspot. The client needs to disconnect from
+  // Hotspot, then it can restore the previous AP connection right away.
+  if (!IsInitiatorUpgradeServiceId(service_id)) {
+    if (medium == Medium::WIFI_HOTSPOT) {
+      handler->RevertResponderState(service_id);
+    }
+
+    return;
+  }
 
   handler->RevertInitiatorState(service_id, endpoint_id);
 }
@@ -532,7 +547,8 @@ void BwuManager::OnIncomingConnection(
         // Use the introductory client information sent over to run the upgrade
         // protocol.
         RunUpgradeProtocol(mapped_client, endpoint_id,
-                           std::move(connection->channel));
+                           std::move(connection->channel),
+                           !introduction.supports_disabling_encryption());
       });
 }
 
@@ -548,7 +564,8 @@ void BwuManager::RunOnBwuManagerThread(const std::string& name,
 
 void BwuManager::RunUpgradeProtocol(
     ClientProxy* client, const std::string& endpoint_id,
-    std::unique_ptr<EndpointChannel> new_channel) {
+    std::unique_ptr<EndpointChannel> new_channel,
+    bool enable_encryption) {
   NEARBY_LOGS(INFO) << "RunUpgradeProtocol new channel @" << new_channel.get()
                     << " name: " << new_channel->GetName() << ", medium: "
                     << proto::connections::Medium_Name(
@@ -574,8 +591,8 @@ void BwuManager::RunUpgradeProtocol(
         proto::connections::PRIOR_ENDPOINT_CHANNEL);
     return;
   }
-  channel_manager_->ReplaceChannelForEndpoint(client, endpoint_id,
-                                              std::move(new_channel));
+  channel_manager_->ReplaceChannelForEndpoint(
+      client, endpoint_id, std::move(new_channel), enable_encryption);
 
   // Next, initiate a clean shutdown for the previous EndpointChannel used for
   // this endpoint by telling the remote device that it will not receive any
@@ -614,11 +631,23 @@ void BwuManager::RunUpgradeProtocol(
 void BwuManager::ProcessBwuPathAvailableEvent(
     ClientProxy* client, const string& endpoint_id,
     const UpgradePathInfo& upgrade_path_info) {
-  Medium medium =
+  Medium upgrade_medium =
       parser::UpgradePathInfoMediumToMedium(upgrade_path_info.medium());
   NEARBY_LOGS(INFO) << "ProcessBwuPathAvailableEvent for endpoint "
                     << endpoint_id << " medium "
-                    << proto::connections::Medium_Name(medium);
+                    << proto::connections::Medium_Name(upgrade_medium);
+
+  if (channel_manager_->isWifiLanConnected() &&
+      (upgrade_medium == Medium::WIFI_HOTSPOT)) {
+    NEARBY_LOGS(INFO)
+        << "Some endpoint is using WIFI_LAN and proposed upgrade medium is "
+           "WIFI_HOTSPOT. Don't do the BWU because connecting to "
+           "WIFI_HOTSPOT will destroy WIFI_LAN which will lead BWU fail and "
+           "other endpoint connection fail";
+    RunUpgradeFailedProtocol(client, endpoint_id, upgrade_path_info);
+    return;
+  }
+
   if (in_progress_upgrades_.contains(endpoint_id)) {
     NEARBY_LOGS(ERROR)
         << "BwuManager received a duplicate bandwidth upgrade for endpoint "
@@ -646,8 +675,6 @@ void BwuManager::ProcessBwuPathAvailableEvent(
     return;
   }
   Medium current_medium = GetBwuMediumForEndpoint(endpoint_id);
-  Medium upgrade_medium =
-      parser::UpgradePathInfoMediumToMedium(upgrade_path_info.medium());
   if (current_medium == Medium::UNKNOWN_MEDIUM) {
     SetBwuMediumForEndpoint(endpoint_id, upgrade_medium);
   }
@@ -699,7 +726,8 @@ void BwuManager::ProcessBwuPathAvailableEvent(
   }
 
   in_progress_upgrades_.emplace(endpoint_id, client);
-  RunUpgradeProtocol(client, endpoint_id, std::move(channel));
+  RunUpgradeProtocol(client, endpoint_id, std::move(channel),
+                     !upgrade_path_info.supports_disabling_encryption());
 }
 
 std::unique_ptr<EndpointChannel>
@@ -763,7 +791,9 @@ BwuManager::ProcessBwuPathAvailableEventInternal(
   // Write the requisite BANDWIDTH_UPGRADE_NEGOTIATION.CLIENT_INTRODUCTION as
   // the first OfflineFrame on this new EndpointChannel.
   if (!new_channel
-           ->Write(parser::ForBwuIntroduction(client->GetLocalEndpointId()))
+           ->Write(parser::ForBwuIntroduction(
+               client->GetLocalEndpointId(),
+               upgrade_path_info.supports_disabling_encryption()))
            .Ok()) {
     // This was never a fully EstablishedConnection, no need to provide a
     // closure reason.
@@ -1114,7 +1144,10 @@ void BwuManager::ProcessUpgradeFailureEvent(
       channel ? channel->GetServiceId() : std::string(kUnknownServiceId);
   // Revert the existing upgrade medium for now.
   if (GetBwuMediumForEndpoint(endpoint_id) != Medium::UNKNOWN_MEDIUM) {
-    RevertBwuMediumForEndpoint(service_id, endpoint_id);
+    // This is the BWU initiator, so append "_UPGRADE" to service_id.
+    // Otherwise the Revert logic won't call into platform medium layer code.
+    std::string upgrade_service_id = WrapInitiatorUpgradeServiceId(service_id);
+    RevertBwuMediumForEndpoint(upgrade_service_id, endpoint_id);
   }
 
   // Loop through the ordered list of upgrade mediums. One by one, remove the

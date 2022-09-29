@@ -17,13 +17,13 @@
 #include "src/gpu/ganesh/GrMemoryPool.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/glsl/GrGLSLColorSpaceXformHelper.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
 namespace {
 
@@ -311,7 +311,8 @@ public:
         for (int i = 0; i < loops; ++i) {
             auto sdc = skgpu::v1::SurfaceDrawContext::Make(context, GrColorType::kRGBA_8888, p3,
                                                            SkBackingFit::kApprox, {100, 100},
-                                                           SkSurfaceProps());
+                                                           SkSurfaceProps(),
+                                                           /*label=*/"DrawVertexColorSpaceBench");
             SkASSERT(sdc);
 
             for (int j = 0; j < kDrawsPerLoop; ++j) {

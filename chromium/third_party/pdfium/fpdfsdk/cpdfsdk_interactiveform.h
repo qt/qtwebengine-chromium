@@ -33,15 +33,12 @@ class CPDFSDK_InteractiveForm final
   CPDF_InteractiveForm* GetInteractiveForm() const {
     return m_pInteractiveForm.get();
   }
-  CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
-    return m_pFormFillEnv.Get();
-  }
 
   CPDFSDK_Widget* GetWidget(CPDF_FormControl* pControl) const;
   void GetWidgets(const WideString& sFieldName,
-                  std::vector<ObservedPtr<CPDFSDK_Annot>>* widgets) const;
+                  std::vector<ObservedPtr<CPDFSDK_Widget>>* widgets) const;
   void GetWidgets(CPDF_FormField* pField,
-                  std::vector<ObservedPtr<CPDFSDK_Annot>>* widgets) const;
+                  std::vector<ObservedPtr<CPDFSDK_Widget>>* widgets) const;
 
   void AddMap(CPDF_FormControl* pControl, CPDFSDK_Widget* pWidget);
   void RemoveMap(CPDF_FormControl* pControl);
@@ -102,7 +99,7 @@ class CPDFSDK_InteractiveForm final
   void AfterFormReset(CPDF_InteractiveForm* pForm) override;
 
   int GetPageIndexByAnnotDict(CPDF_Document* pDocument,
-                              CPDF_Dictionary* pAnnotDict) const;
+                              const CPDF_Dictionary* pAnnotDict) const;
 
   UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;
   std::unique_ptr<CPDF_InteractiveForm> const m_pInteractiveForm;

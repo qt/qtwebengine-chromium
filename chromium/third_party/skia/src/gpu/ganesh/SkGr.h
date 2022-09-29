@@ -38,6 +38,7 @@ class SkMatrixProvider;
 class SkPaint;
 class SkPixelRef;
 class SkPixmap;
+class SkSurfaceProps;
 struct SkIRect;
 
 namespace skgpu {
@@ -92,6 +93,7 @@ bool SkPaintToGrPaint(GrRecordingContext*,
                       const GrColorInfo& dstColorInfo,
                       const SkPaint& skPaint,
                       const SkMatrixProvider& matrixProvider,
+                      const SkSurfaceProps& surfaceProps,
                       GrPaint* grPaint);
 
 /** Replaces the SkShader (if any) on skPaint with the passed in GrFragmentProcessor, if not null.
@@ -102,6 +104,7 @@ bool SkPaintToGrPaintReplaceShader(GrRecordingContext*,
                                    const SkPaint& skPaint,
                                    const SkMatrixProvider& matrixProvider,
                                    std::unique_ptr<GrFragmentProcessor> shaderFP,
+                                   const SkSurfaceProps& surfaceProps,
                                    GrPaint* grPaint);
 
 /** Blends the SkPaint's shader (or color if no shader) with the color which specified via a
@@ -111,6 +114,7 @@ bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
                                const SkPaint& skPaint,
                                const SkMatrixProvider& matrixProvider,
                                SkBlender* primColorBlender,
+                               const SkSurfaceProps& surfaceProps,
                                GrPaint* grPaint);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -149,6 +153,7 @@ enum class GrImageTexGenPolicy : int {
 sk_sp<GrSurfaceProxy> GrCopyBaseMipMapToTextureProxy(GrRecordingContext*,
                                                      sk_sp<GrSurfaceProxy> baseProxy,
                                                      GrSurfaceOrigin origin,
+                                                     std::string_view label,
                                                      SkBudgeted = SkBudgeted::kYes);
 /**
  * Same as GrCopyBaseMipMapToTextureProxy but takes the src as a view and returns a view with same
@@ -169,6 +174,7 @@ GrSurfaceProxyView GrCopyBaseMipMapToView(GrRecordingContext*,
 std::tuple<GrSurfaceProxyView, GrColorType>
 GrMakeCachedBitmapProxyView(GrRecordingContext*,
                             const SkBitmap&,
+                            std::string_view label,
                             GrMipmapped = GrMipmapped::kNo);
 
 /**

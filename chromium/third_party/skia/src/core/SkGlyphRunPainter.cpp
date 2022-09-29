@@ -11,7 +11,7 @@
 #if SK_SUPPORT_GPU
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 #endif // SK_SUPPORT_GPU
@@ -28,13 +28,13 @@
 #include "src/core/SkEnumerate.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkGlyphBuffer.h"
-#include "src/core/SkGlyphRun.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScalerCache.h"
 #include "src/core/SkStrikeCache.h"
-#include "src/core/SkStrikeForGPU.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/text/GlyphRun.h"
+#include "src/text/StrikeForGPU.h"
 
 #include <cinttypes>
 #include <climits>
@@ -64,8 +64,8 @@ SkGlyphRunListPainterCPU::SkGlyphRunListPainterCPU(const SkSurfaceProps& props,
 
 void SkGlyphRunListPainterCPU::drawForBitmapDevice(
         SkCanvas* canvas, const BitmapDevicePainter* bitmapDevice,
-        const SkGlyphRunList& glyphRunList, const SkPaint& paint, const SkMatrix& drawMatrix) {
-    auto bufferScope = SkSubRunBuffers::EnsureBuffers(glyphRunList);
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint, const SkMatrix& drawMatrix) {
+    auto bufferScope = sktext::SkSubRunBuffers::EnsureBuffers(glyphRunList);
     auto [accepted, rejected] = bufferScope.buffers();
 
     // The bitmap blitters can only draw lcd text to a N32 bitmap in srcOver. Otherwise,
@@ -104,29 +104,34 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
                                        pathPaint.getPathEffect() ||
                                        pathPaint.getMaskFilter() ||
                                        (stroking && !hairline);
-            if (!needsExactCTM) {
-                for (auto [variant, pos] : accepted->accepted()) {
-                    const SkPath* path = variant.glyph()->path();
-                    SkMatrix m;
-                    SkPoint translate = drawOrigin + pos;
-                    m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
-                                        translate.x(), translate.y());
-                    SkAutoCanvasRestore acr(canvas, true);
-                    canvas->concat(m);
-                    canvas->drawPath(*path, pathPaint);
-                }
-            } else {
-                for (auto [variant, pos] : accepted->accepted()) {
-                    const SkPath* path = variant.glyph()->path();
-                    SkMatrix m;
-                    SkPoint translate = drawOrigin + pos;
-                    m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
-                                        translate.x(), translate.y());
+            {
+                SkBulkGlyphMetricsAndPaths glyphs{sk_sp<SkStrike>(strike)};
+                if (!needsExactCTM) {
+                    for (auto [variant, pos] : accepted->accepted()) {
+                        const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                        const SkPath* path = glyph.path();
+                        SkMatrix m;
+                        SkPoint translate = drawOrigin + pos;
+                        m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
+                                            translate.x(), translate.y());
+                        SkAutoCanvasRestore acr(canvas, true);
+                        canvas->concat(m);
+                        canvas->drawPath(*path, pathPaint);
+                    }
+                } else {
+                    for (auto [variant, pos] : accepted->accepted()) {
+                        const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                        const SkPath* path = glyph.path();
+                        SkMatrix m;
+                        SkPoint translate = drawOrigin + pos;
+                        m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
+                                            translate.x(), translate.y());
 
-                    SkPath deviceOutline;
-                    path->transform(m, &deviceOutline);
-                    deviceOutline.setIsVolatile(true);
-                    canvas->drawPath(deviceOutline, pathPaint);
+                        SkPath deviceOutline;
+                        path->transform(m, &deviceOutline);
+                        deviceOutline.setIsVolatile(true);
+                        canvas->drawPath(deviceOutline, pathPaint);
+                    }
                 }
             }
 
@@ -135,8 +140,10 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
                 strike->prepareForDrawableDrawing(accepted, rejected);
                 rejected->flipRejectsToSource();
 
+                SkBulkGlyphMetricsAndDrawables glyphs(std::move(strike));
                 for (auto [variant, pos] : accepted->accepted()) {
-                    SkDrawable* drawable = variant.glyph()->drawable();
+                    const SkGlyph& glyph = *glyphs.glyph(variant.packedID().glyphID());
+                    SkDrawable* drawable = glyph.drawable();
                     SkMatrix m;
                     SkPoint translate = drawOrigin + pos;
                     m.setScaleTranslate(strikeToSourceScale, strikeToSourceScale,
@@ -248,22 +255,4 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(
         // TODO: have the mask stage above reject the glyphs that are too big, and handle the
         //  rejects in a more sophisticated stage.
     }
-}
-
-auto SkSubRunBuffers::EnsureBuffers(const SkGlyphRunList& glyphRunList) -> ScopedBuffers {
-    size_t size = 0;
-    for (const SkGlyphRun& run : glyphRunList) {
-        size = std::max(run.runSize(), size);
-    }
-    return ScopedBuffers(glyphRunList.buffers(), size);
-}
-
-SkSubRunBuffers::ScopedBuffers::ScopedBuffers(SkSubRunBuffers* buffers, size_t size)
-        : fBuffers{buffers} {
-    fBuffers->fAccepted.ensureSize(size);
-}
-
-SkSubRunBuffers::ScopedBuffers::~ScopedBuffers() {
-    fBuffers->fAccepted.reset();
-    fBuffers->fRejected.reset();
 }

@@ -24,17 +24,20 @@ namespace tint::sem {
 
 Expression::Expression(const ast::Expression* declaration,
                        const sem::Type* type,
+                       EvaluationStage stage,
                        const Statement* statement,
-                       Constant constant,
+                       const Constant* constant,
                        bool has_side_effects,
                        const Variable* source_var /* = nullptr */)
     : declaration_(declaration),
       source_variable_(source_var),
       type_(type),
+      stage_(stage),
       statement_(statement),
       constant_(std::move(constant)),
       has_side_effects_(has_side_effects) {
     TINT_ASSERT(Semantic, type_);
+    TINT_ASSERT(Semantic, (constant != nullptr) == (stage == EvaluationStage::kConstant));
 }
 
 Expression::~Expression() = default;

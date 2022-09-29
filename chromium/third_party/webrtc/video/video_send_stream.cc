@@ -20,7 +20,6 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "system_wrappers/include/clock.h"
 #include "video/adaptation/overuse_frame_detector.h"
 #include "video/frame_cadence_adapter.h"
@@ -150,7 +149,7 @@ VideoSendStream::VideoSendStream(
     const std::map<uint32_t, RtpPayloadState>& suspended_payload_states,
     std::unique_ptr<FecController> fec_controller,
     const FieldTrialsView& field_trials)
-    : rtp_transport_queue_(transport->GetWorkerQueue()),
+    : rtp_transport_queue_(transport->GetWorkerQueue()->Get()),
       transport_(transport),
       stats_proxy_(clock, config, encoder_config.content_type, field_trials),
       config_(std::move(config)),
@@ -238,7 +237,7 @@ void VideoSendStream::UpdateActiveSimulcastLayers(
                    << active_layers_string.str();
 
   rtp_transport_queue_->PostTask(
-      ToQueuedTask(transport_queue_safety_, [this, active_layers] {
+      SafeTask(transport_queue_safety_, [this, active_layers] {
         send_stream_.UpdateActiveSimulcastLayers(active_layers);
       }));
 
@@ -253,11 +252,11 @@ void VideoSendStream::Start() {
 
   running_ = true;
 
-  rtp_transport_queue_->PostTask(ToQueuedTask([this] {
+  rtp_transport_queue_->PostTask([this] {
     transport_queue_safety_->SetAlive();
     send_stream_.Start();
     thread_sync_event_.Set();
-  }));
+  });
 
   // It is expected that after VideoSendStream::Start has been called, incoming
   // frames are not dropped in VideoStreamEncoder. To ensure this, Start has to
@@ -272,7 +271,7 @@ void VideoSendStream::Stop() {
     return;
   RTC_DLOG(LS_INFO) << "VideoSendStream::Stop";
   running_ = false;
-  rtp_transport_queue_->PostTask(ToQueuedTask(transport_queue_safety_, [this] {
+  rtp_transport_queue_->PostTask(SafeTask(transport_queue_safety_, [this] {
     // As the stream can get re-used and implicitly restarted via changing
     // the state of the active layers, we do not mark the
     // `transport_queue_safety_` flag with `SetNotAlive()` here. That's only

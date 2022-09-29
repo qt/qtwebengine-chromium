@@ -25,19 +25,19 @@ namespace {
 using GlslSanitizerTest = TestHelper;
 
 TEST_F(GlslSanitizerTest, Call_ArrayLength) {
-    auto* s = Structure("my_struct", {Member(0, "a", ty.array<f32>(4))});
-    Global("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
+    GlobalVar("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("a_func", ast::VariableList{}, ty.void_(),
-         ast::StatementList{
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(Var("len", ty.u32(), ast::StorageClass::kNone,
                       Call("arrayLength", AddressOf(MemberAccessor("b", "a"))))),
          },
-         ast::AttributeList{
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -65,22 +65,22 @@ void main() {
 }
 
 TEST_F(GlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
-    auto* s = Structure("my_struct", {
+    auto* s = Structure("my_struct", utils::Vector{
                                          Member(0, "z", ty.f32()),
                                          Member(4, "a", ty.array<f32>(4)),
                                      });
-    Global("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    GlobalVar("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
-    Func("a_func", ast::VariableList{}, ty.void_(),
-         ast::StatementList{
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(Var("len", ty.u32(), ast::StorageClass::kNone,
                       Call("arrayLength", AddressOf(MemberAccessor("b", "a"))))),
          },
-         ast::AttributeList{
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -110,23 +110,23 @@ void main() {
 }
 
 TEST_F(GlslSanitizerTest, Call_ArrayLength_ViaLets) {
-    auto* s = Structure("my_struct", {Member(0, "a", ty.array<f32>(4))});
-    Global("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-           ast::AttributeList{
-               create<ast::BindingAttribute>(1),
-               create<ast::GroupAttribute>(2),
-           });
+    auto* s = Structure("my_struct", utils::Vector{Member(0, "a", ty.array<f32>(4))});
+    GlobalVar("b", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
+              utils::Vector{
+                  create<ast::BindingAttribute>(1u),
+                  create<ast::GroupAttribute>(2u),
+              });
 
     auto* p = Let("p", nullptr, AddressOf("b"));
     auto* p2 = Let("p2", nullptr, AddressOf(MemberAccessor(Deref(p), "a")));
 
-    Func("a_func", ast::VariableList{}, ty.void_(),
-         ast::StatementList{
+    Func("a_func", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(p),
              Decl(p2),
              Decl(Var("len", ty.u32(), ast::StorageClass::kNone, Call("arrayLength", p2))),
          },
-         ast::AttributeList{
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -156,14 +156,13 @@ void main() {
 
 TEST_F(GlslSanitizerTest, PromoteArrayInitializerToConstVar) {
     auto* array_init = array<i32, 4>(1_i, 2_i, 3_i, 4_i);
-    auto* array_index = IndexAccessor(array_init, 3_i);
-    auto* pos = Var("pos", ty.i32(), ast::StorageClass::kNone, array_index);
 
-    Func("main", ast::VariableList{}, ty.void_(),
-         {
-             Decl(pos),
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
+             Decl(Var("idx", nullptr, Expr(3_i))),
+             Decl(Var("pos", ty.i32(), IndexAccessor(array_init, "idx"))),
          },
-         {
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -176,8 +175,9 @@ TEST_F(GlslSanitizerTest, PromoteArrayInitializerToConstVar) {
 precision mediump float;
 
 void tint_symbol() {
+  int idx = 3;
   int tint_symbol_1[4] = int[4](1, 2, 3, 4);
-  int pos = tint_symbol_1[3];
+  int pos = tint_symbol_1[idx];
 }
 
 void main() {
@@ -189,7 +189,7 @@ void main() {
 }
 
 TEST_F(GlslSanitizerTest, PromoteStructInitializerToConstVar) {
-    auto* str = Structure("S", {
+    auto* str = Structure("S", utils::Vector{
                                    Member("a", ty.i32()),
                                    Member("b", ty.vec3<f32>()),
                                    Member("c", ty.i32()),
@@ -198,11 +198,11 @@ TEST_F(GlslSanitizerTest, PromoteStructInitializerToConstVar) {
     auto* struct_access = MemberAccessor(struct_init, "b");
     auto* pos = Var("pos", ty.vec3<f32>(), ast::StorageClass::kNone, struct_access);
 
-    Func("main", ast::VariableList{}, ty.void_(),
-         {
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(pos),
          },
-         {
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -241,13 +241,13 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
     auto* p = Let("p", ty.pointer<i32>(ast::StorageClass::kFunction), AddressOf(v));
     auto* x = Var("x", ty.i32(), ast::StorageClass::kNone, Deref(p));
 
-    Func("main", ast::VariableList{}, ty.void_(),
-         {
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(v),
              Decl(p),
              Decl(x),
          },
-         {
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -287,15 +287,15 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
                    AddressOf(IndexAccessor(Deref(mp), 2_i)));
     auto* v = Var("v", ty.vec4<f32>(), ast::StorageClass::kNone, Deref(vp));
 
-    Func("main", ast::VariableList{}, ty.void_(),
-         {
+    Func("main", utils::Empty, ty.void_(),
+         utils::Vector{
              Decl(a),
              Decl(ap),
              Decl(mp),
              Decl(vp),
              Decl(v),
          },
-         {
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 

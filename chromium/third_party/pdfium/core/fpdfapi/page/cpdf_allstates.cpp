@@ -42,11 +42,11 @@ void CPDF_AllStates::SetLineDash(const CPDF_Array* pArray,
   m_GraphState.SetLineDash(std::move(dashes), phase, scale);
 }
 
-void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
+void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
                                   CPDF_StreamContentParser* pParser) {
   CPDF_DictionaryLocker locker(pGS);
   for (const auto& it : locker) {
-    CPDF_Object* pObject = it.second->GetDirect();
+    RetainPtr<CPDF_Object> pObject = it.second->GetMutableDirect();
     if (!pObject)
       continue;
 
@@ -67,11 +67,11 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
         m_GraphState.SetMiterLimit(pObject->GetNumber());
         break;
       case FXBSTR_ID('D', 0, 0, 0): {
-        CPDF_Array* pDash = pObject->AsArray();
+        const CPDF_Array* pDash = pObject->AsArray();
         if (!pDash)
           break;
 
-        CPDF_Array* pArray = pDash->GetArrayAt(0);
+        const CPDF_Array* pArray = pDash->GetArrayAt(0);
         if (!pArray)
           break;
 
@@ -82,7 +82,7 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
         m_GeneralState.SetRenderIntent(pObject->GetString());
         break;
       case FXBSTR_ID('F', 'o', 'n', 't'): {
-        CPDF_Array* pFont = pObject->AsArray();
+        const CPDF_Array* pFont = pObject->AsArray();
         if (!pFont)
           break;
 
@@ -96,7 +96,7 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('T', 'R', '2', 0):
-        m_GeneralState.SetTR(!pObject->IsName() ? pObject : nullptr);
+        m_GeneralState.SetTR(!pObject->IsName() ? pObject.Get() : nullptr);
         break;
       case FXBSTR_ID('B', 'M', 0, 0): {
         CPDF_Array* pArray = pObject->AsArray();
@@ -106,14 +106,13 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
           pParser->GetPageObjectHolder()->SetBackgroundAlphaNeeded(true);
         break;
       }
-      case FXBSTR_ID('S', 'M', 'a', 's'):
-        if (ToDictionary(pObject)) {
-          m_GeneralState.SetSoftMask(pObject);
+      case FXBSTR_ID('S', 'M', 'a', 's'): {
+        RetainPtr<CPDF_Dictionary> pMaskDict = ToDictionary(pObject);
+        m_GeneralState.SetSoftMask(pMaskDict);
+        if (pMaskDict)
           m_GeneralState.SetSMaskMatrix(pParser->GetCurStates()->m_CTM);
-        } else {
-          m_GeneralState.SetSoftMask(nullptr);
-        }
         break;
+      }
       case FXBSTR_ID('C', 'A', 0, 0):
         m_GeneralState.SetStrokeAlpha(
             pdfium::clamp(pObject->GetNumber(), 0.0f, 1.0f));
@@ -139,7 +138,7 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('B', 'G', '2', 0):
-        m_GeneralState.SetBG(pObject);
+        m_GeneralState.SetBG(pObject.Get());
         break;
       case FXBSTR_ID('U', 'C', 'R', 0):
         if (pGS->KeyExist("UCR2")) {
@@ -147,10 +146,10 @@ void CPDF_AllStates::ProcessExtGS(CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('U', 'C', 'R', '2'):
-        m_GeneralState.SetUCR(pObject);
+        m_GeneralState.SetUCR(pObject.Get());
         break;
       case FXBSTR_ID('H', 'T', 0, 0):
-        m_GeneralState.SetHT(pObject);
+        m_GeneralState.SetHT(pObject.Get());
         break;
       case FXBSTR_ID('F', 'L', 0, 0):
         m_GeneralState.SetFlatness(pObject->GetNumber());

@@ -26,7 +26,7 @@
 //     const int8_t* zero,                  sp + 112 -> (r7)
 //     xnn_qs8_minmax_params*params); sp + 116 -> (r5)
 
-// d10-d15, r4-r11,r14(lr) need to be preserved if used. r13(sp),r15(pc) are reserved.
+// d8-d15, r4-r11,r14(lr) need to be preserved if used. r13(sp),r15(pc) are reserved.
 
 // Register usage
 // A0   r3  d0-d1 q0
@@ -444,8 +444,8 @@ BEGIN_FUNCTION xnn_qc8_igemm_minmax_fp32_ukernel_4x8__aarch32_neon_mlal_lane_prf
         VST1.32 {d2[0]}, [r8]!
         VST1.32 {d1[0]}, [r4]!
         VST1.32 {d0[0]}, [r11]!
-        VEXT.8  q0, q0, q0, 4
         VEXT.8  q1, q1, q1, 4
+        VEXT.8  q0, q0, q0, 4
 6:
         TST     r1, 2
         BEQ     7f
@@ -453,8 +453,8 @@ BEGIN_FUNCTION xnn_qc8_igemm_minmax_fp32_ukernel_4x8__aarch32_neon_mlal_lane_prf
         VST1.16 {d2[0]}, [r8]!
         VST1.16 {d1[0]}, [r4]!
         VST1.16 {d0[0]}, [r11]!
-        VEXT.8  q0, q0, q0, 2
         VEXT.8  q1, q1, q1, 2
+        VEXT.8  q0, q0, q0, 2
 
 7:
         TST     r1, 1
@@ -470,7 +470,6 @@ BEGIN_FUNCTION xnn_qc8_igemm_minmax_fp32_ukernel_4x8__aarch32_neon_mlal_lane_prf
         POP     {r4, r5, r6, r7, r8, r9, r10, r11, pc}
 
 END_FUNCTION xnn_qc8_igemm_minmax_fp32_ukernel_4x8__aarch32_neon_mlal_lane_prfm_ld64
-
 #ifdef __ELF__
 .section ".note.GNU-stack","",%progbits
 #endif

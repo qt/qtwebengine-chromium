@@ -43,9 +43,9 @@ protected:
         { Test::Source::Resource, "fonts/sbix.ttf"     , sampleText  },
         { Test::Source::Resource, "fonts/cbdt.ttf"     , sampleText  },
         { Test::Source::Portable, "Emoji"              , sampleText  },
-        { Test::Source::Resource, "fonts/SampleSVG.ttf", "abcdefghi" },
+        { Test::Source::Resource, "fonts/SampleSVG.ttf", "abcdefghij" },
     };
-    sk_sp<SkTypeface> typefaces[SK_ARRAY_COUNT(tests)];
+    sk_sp<SkTypeface> typefaces[std::size(tests)];
     void onOnceBeforeDraw() override {
         for (auto&& [i, test] : SkMakeEnumerate(tests)) {
             if (test.fontSource == Test::Source::Resource) {

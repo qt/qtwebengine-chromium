@@ -181,7 +181,7 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* config) {
   if (g_bLibraryInitialized)
     return;
 
-  FXMEM_InitializePartitionAlloc();
+  FX_InitializeMemoryAllocators();
   CFX_GEModule::Create(config ? config->m_pUserFontPaths : nullptr);
   CPDF_PageModule::Create();
 
@@ -364,11 +364,11 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDF_LoadPage(FPDF_DOCUMENT document,
   }
 #endif  // PDF_ENABLE_XFA
 
-  CPDF_Dictionary* pDict = pDoc->GetPageDictionary(page_index);
+  RetainPtr<CPDF_Dictionary> pDict = pDoc->GetMutablePageDictionary(page_index);
   if (!pDict)
     return nullptr;
 
-  auto pPage = pdfium::MakeRetain<CPDF_Page>(pDoc, pDict);
+  auto pPage = pdfium::MakeRetain<CPDF_Page>(pDoc, std::move(pDict));
   pPage->SetRenderCache(std::make_unique<CPDF_PageRenderCache>(pPage.Get()));
   pPage->ParseContent();
   return FPDFPageFromIPDFPage(pPage.Leak());
@@ -536,7 +536,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPage(HDC dc,
   pBitmap->Clear(0x00ffffff);
   CFX_DefaultRenderDevice* pDevice = new CFX_DefaultRenderDevice;
   pContext->m_pDevice = pdfium::WrapUnique(pDevice);
-  pDevice->Attach(pBitmap, false, nullptr, false);
+  pDevice->Attach(pBitmap);
   if (bHasMask) {
     pContext->m_pOptions = std::make_unique<CPDF_RenderOptions>();
     pContext->m_pOptions->GetOptions().bBreakForMasks = true;
@@ -629,7 +629,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
   pContext->m_pDevice = std::move(pOwnedDevice);
 
   RetainPtr<CFX_DIBitmap> pBitmap(CFXDIBitmapFromFPDFBitmap(bitmap));
-  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
+  pDevice->AttachWithRgbByteOrder(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER));
   CPDFSDK_RenderPageWithContext(pContext, pPage, start_x, start_y, size_x,
                                 size_y, rotate, flags, /*color_scheme=*/nullptr,
                                 /*need_to_restore=*/true,
@@ -664,7 +664,8 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
   pContext->m_pDevice = std::move(pOwnedDevice);
 
   RetainPtr<CFX_DIBitmap> pBitmap(CFXDIBitmapFromFPDFBitmap(bitmap));
-  pDevice->Attach(pBitmap, !!(flags & FPDF_REVERSE_BYTE_ORDER), nullptr, false);
+  pDevice->AttachWithRgbByteOrder(std::move(pBitmap),
+                                  !!(flags & FPDF_REVERSE_BYTE_ORDER));
 
   CFX_FloatRect clipping_rect;
   if (clipping)
@@ -715,20 +716,10 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_ClosePage(FPDF_PAGE page) {
   if (pPage->AsXFAPage())
     return;
 
-  CPDFSDK_PageView* pPageView =
-      static_cast<CPDFSDK_PageView*>(pPage->AsPDFPage()->GetView());
-  if (!pPageView || pPageView->IsBeingDestroyed())
-    return;
-
-  if (pPageView->IsLocked()) {
-    pPageView->TakePageOwnership();
-    return;
-  }
-
-  // This will delete the |pPageView| object. We must cleanup the PageView
-  // first because it will attempt to reset the View on the |pPage| during
-  // destruction.
-  pPageView->GetFormFillEnv()->RemovePageView(pPage.Get());
+  // This will delete the PageView object corresponding to |pPage|. We must
+  // cleanup the PageView before releasing the reference on |pPage| as it will
+  // attempt to reset the PageView during destruction.
+  pPage->AsPDFPage()->ClearView();
 }
 
 FPDF_EXPORT void FPDF_CALLCONV FPDF_CloseDocument(FPDF_DOCUMENT document) {
@@ -865,7 +856,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFBitmap_FillRect(FPDF_BITMAP bitmap,
 
   CFX_DefaultRenderDevice device;
   RetainPtr<CFX_DIBitmap> pBitmap(CFXDIBitmapFromFPDFBitmap(bitmap));
-  device.Attach(pBitmap, false, nullptr, false);
+  device.Attach(pBitmap);
   if (!pBitmap->IsAlphaFormat())
     color |= 0xFF000000;
   device.FillRect(FX_RECT(left, top, left + width, top + height),
@@ -920,11 +911,11 @@ FPDF_GetPageSizeByIndexF(FPDF_DOCUMENT document,
   }
 #endif  // PDF_ENABLE_XFA
 
-  CPDF_Dictionary* pDict = pDoc->GetPageDictionary(page_index);
+  RetainPtr<CPDF_Dictionary> pDict = pDoc->GetMutablePageDictionary(page_index);
   if (!pDict)
     return false;
 
-  auto page = pdfium::MakeRetain<CPDF_Page>(pDoc, pDict);
+  auto page = pdfium::MakeRetain<CPDF_Page>(pDoc, std::move(pDict));
   page->SetRenderCache(std::make_unique<CPDF_PageRenderCache>(page.Get()));
   size->width = page->GetPageWidth();
   size->height = page->GetPageHeight();
@@ -1050,7 +1041,9 @@ FPDF_GetNamedDestByName(FPDF_DOCUMENT document, FPDF_BYTESTRING name) {
     return nullptr;
 
   ByteString dest_name(name);
-  return FPDFDestFromCPDFArray(CPDF_NameTree::LookupNamedDest(pDoc, dest_name));
+  // TODO(tsepez): murky ownership, should caller get a reference?
+  return FPDFDestFromCPDFArray(
+      CPDF_NameTree::LookupNamedDest(pDoc, dest_name).Get());
 }
 
 #ifdef PDF_ENABLE_V8
@@ -1135,7 +1128,7 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
 
   auto name_tree = CPDF_NameTree::Create(pDoc, "Dests");
   size_t name_tree_count = name_tree ? name_tree->GetCount() : 0;
-  CPDF_Object* pDestObj = nullptr;
+  const CPDF_Object* pDestObj = nullptr;
   WideString wsName;
   if (static_cast<size_t>(index) >= name_tree_count) {
     // If |index| is out of bounds, then try to retrieve the Nth old style named
@@ -1166,7 +1159,7 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
   }
   if (!pDestObj)
     return nullptr;
-  if (CPDF_Dictionary* pDict = pDestObj->AsDictionary()) {
+  if (const CPDF_Dictionary* pDict = pDestObj->AsDictionary()) {
     pDestObj = pDict->GetArrayFor("D");
     if (!pDestObj)
       return nullptr;

@@ -19,12 +19,16 @@
 
 #include <functional>
 #include <future>  //  NOLINT
+#include <memory>
 #include <string>
+#include <utility>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/synchronization/mutex.h"
 #include "internal/platform/implementation/ble.h"
 #include "internal/platform/implementation/bluetooth_adapter.h"
 #include "internal/platform/implementation/windows/ble.h"
+#include "internal/platform/implementation/windows/bluetooth_adapter.h"
 #include "winrt/Windows.Devices.Bluetooth.Advertisement.h"
 
 namespace location {
@@ -45,59 +49,35 @@ class BleMedium : public api::BleMedium {
 
   bool StartAdvertising(
       const std::string& service_id, const ByteArray& advertisement_bytes,
-      const std::string& fast_advertisement_service_uuid) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+      const std::string& fast_advertisement_service_uuid) override;
 
-  bool StopAdvertising(const std::string& service_id) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  bool StopAdvertising(const std::string& service_id) override;
 
   // Returns true once the BLE scan has been initiated.
   bool StartScanning(const std::string& service_id,
                      const std::string& fast_advertisement_service_uuid,
-                     DiscoveredPeripheralCallback callback) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+                     DiscoveredPeripheralCallback callback) override;
 
   // Returns true once BLE scanning for service_id is well and truly stopped;
   // after this returns, there must be no more invocations of the
   // DiscoveredPeripheralCallback passed in to StartScanning() for service_id.
-  bool StopScanning(const std::string& service_id) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  bool StopScanning(const std::string& service_id) override;
 
   // Returns true once BLE socket connection requests to service_id can be
   // accepted.
   bool StartAcceptingConnections(const std::string& service_id,
-                                 AcceptedConnectionCallback callback) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+                                 AcceptedConnectionCallback callback) override;
 
-  bool StopAcceptingConnections(const std::string& service_id) override
-      ABSL_LOCKS_EXCLUDED(mutex_);
+  bool StopAcceptingConnections(const std::string& service_id) override;
 
   // Connects to a BLE peripheral.
   // On success, returns a new BleSocket.
   // On error, returns nullptr.
-  std::unique_ptr<api::BleSocket> Connect(
-      api::BlePeripheral& peripheral, const std::string& service_id,
-      CancellationFlag* cancellation_flag) override ABSL_LOCKS_EXCLUDED(mutex_);
+  std::unique_ptr<api::BleSocket> Connect(api::BlePeripheral& peripheral,
+                                          const std::string& service_id,
+                                          CancellationFlag* cancellation_flag);
 
  private:
-  enum class PublisherState { kStarted = 0, kStopped, kError };
-
-  enum class WatcherState { kStarted = 0, kStopped, kError };
-
-  absl::Mutex mutex_;
-  api::BluetoothAdapter* adapter_;
-  ByteArray advertisement_byte_ ABSL_GUARDED_BY(mutex_);
-
-  DiscoveredPeripheralCallback advertisement_received_callback_;
-
-  // WinRT objects
-  ::winrt::Windows::Devices::Bluetooth::Advertisement::
-      BluetoothLEAdvertisementPublisher publisher_;
-  ::winrt::Windows::Devices::Bluetooth::Advertisement::
-      BluetoothLEAdvertisementWatcher watcher_;
-  ::winrt::Windows::Devices::Bluetooth::Advertisement::BluetoothLEAdvertisement
-      advertisement_;
-
   void PublisherHandler(
       ::winrt::Windows::Devices::Bluetooth::Advertisement::
           BluetoothLEAdvertisementPublisher publisher,
@@ -113,16 +93,30 @@ class BleMedium : public api::BleMedium {
                       ::winrt::Windows::Devices::Bluetooth::Advertisement::
                           BluetoothLEAdvertisementWatcherStoppedEventArgs args);
 
-  ::winrt::event_token publisher_token_;
-  std::promise<PublisherState> publisher_started_promise_;
-  std::promise<PublisherState> publisher_stopped_promise_;
+  BluetoothAdapter* adapter_;
+  std::string service_id_;
 
-  ::winrt::event_token watcher_token_;
-  std::promise<WatcherState> watcher_started_promise_;
-  std::promise<WatcherState> watcher_stopped_promise_;
+  DiscoveredPeripheralCallback advertisement_received_callback_;
+
+  // Map to protect the pointer for BlePeripheral because
+  // DiscoveredPeripheralCallback only keeps the pointer to the object
+  absl::Mutex peripheral_map_mutex_;
+  absl::flat_hash_map<std::string, std::unique_ptr<BlePeripheral>>
+      peripheral_map_ ABSL_GUARDED_BY(peripheral_map_mutex_);
+
+  // WinRT objects
+  ::winrt::Windows::Devices::Bluetooth::Advertisement::
+      BluetoothLEAdvertisementPublisher publisher_ = nullptr;
+  ::winrt::Windows::Devices::Bluetooth::Advertisement::
+      BluetoothLEAdvertisementWatcher watcher_ = nullptr;
+  ::winrt::Windows::Devices::Bluetooth::Advertisement::BluetoothLEAdvertisement
+      advertisement_;
+
+  bool is_publisher_started_ = false;
   bool is_watcher_started_ = false;
-  bool is_watcher_stopped_ = false;
 
+  ::winrt::event_token publisher_token_;
+  ::winrt::event_token watcher_token_;
   ::winrt::event_token advertisement_received_token_;
 };
 

@@ -51,11 +51,12 @@ GrD3DCaps::GrD3DCaps(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
 
     fTransferFromBufferToTextureSupport = true;
     fTransferFromSurfaceToBufferSupport = true;
+    fTransferFromBufferToBufferSupport  = true;
 
     fMaxRenderTargetSize = 16384;  // minimum required by feature level 11_0
     fMaxTextureSize = 16384;       // minimum required by feature level 11_0
 
-    fTransferBufferAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+    fTransferBufferRowBytesAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
 
     // TODO: implement
     fDynamicStateArrayGeometryProcessorTextureSupport = false;
@@ -338,9 +339,9 @@ const GrD3DCaps::FormatInfo& GrD3DCaps::getFormatInfo(DXGI_FORMAT format) const 
 }
 
 GrD3DCaps::FormatInfo& GrD3DCaps::getFormatInfo(DXGI_FORMAT format) {
-    static_assert(SK_ARRAY_COUNT(kDxgiFormats) == GrD3DCaps::kNumDxgiFormats,
+    static_assert(std::size(kDxgiFormats) == GrD3DCaps::kNumDxgiFormats,
                   "Size of DXGI_FORMATs array must match static value in header");
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kDxgiFormats); ++i) {
+    for (size_t i = 0; i < std::size(kDxgiFormats); ++i) {
         if (kDxgiFormats[i] == format) {
             return fFormatTable[i];
         }
@@ -350,7 +351,7 @@ GrD3DCaps::FormatInfo& GrD3DCaps::getFormatInfo(DXGI_FORMAT format) {
 }
 
 void GrD3DCaps::initFormatTable(const DXGI_ADAPTER_DESC& adapterDesc, ID3D12Device* device) {
-    static_assert(SK_ARRAY_COUNT(kDxgiFormats) == GrD3DCaps::kNumDxgiFormats,
+    static_assert(std::size(kDxgiFormats) == GrD3DCaps::kNumDxgiFormats,
                   "Size of DXGI_FORMATs array must match static value in header");
 
     std::fill_n(fColorTypeToFormatTable, kGrColorTypeCnt, DXGI_FORMAT_UNKNOWN);

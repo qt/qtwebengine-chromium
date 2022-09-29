@@ -627,6 +627,7 @@ namespace bluetooth_debug {
 constexpr char kBluetoothDebugInterface[] = "org.chromium.Bluetooth.Debug";
 
 // Methods.
+constexpr char kSetBluetoothQualityReport[] = "SetQuality";
 constexpr char kSetLevels[] = "SetLevels";
 }  // namespace bluetooth_debug
 

@@ -18,10 +18,10 @@
 #include <utility>
 
 #include "absl/algorithm/container.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/types/optional.h"
 #include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
-#include "api/task_queue/queued_task.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
@@ -46,7 +46,6 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/system/no_unique_address.h"
-#include "rtc_base/task_utils/to_queued_task.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/metrics.h"
@@ -702,7 +701,7 @@ VideoStreamEncoder::VideoStreamEncoder(
   RTC_DCHECK_GE(number_of_cores, 1);
 
   frame_cadence_adapter_->Initialize(&cadence_callback_);
-  stream_resource_manager_.Initialize(&encoder_queue_);
+  stream_resource_manager_.Initialize(encoder_queue_.Get());
 
   encoder_queue_.PostTask([this] {
     RTC_DCHECK_RUN_ON(&encoder_queue_);
@@ -738,9 +737,9 @@ void VideoStreamEncoder::Stop() {
   video_source_sink_controller_.SetSource(nullptr);
 
   rtc::Event shutdown_event;
-
-  encoder_queue_.PostTask(webrtc::ToQueuedTask(
-      [this] {
+  absl::Cleanup shutdown = [&shutdown_event] { shutdown_event.Set(); };
+  encoder_queue_.PostTask(
+      [this, shutdown = std::move(shutdown)] {
         RTC_DCHECK_RUN_ON(&encoder_queue_);
         if (resource_adaptation_processor_) {
           stream_resource_manager_.StopManagedResources();
@@ -763,8 +762,7 @@ void VideoStreamEncoder::Stop() {
         ReleaseEncoder();
         encoder_ = nullptr;
         frame_cadence_adapter_ = nullptr;
-      },
-      [&shutdown_event]() { shutdown_event.Set(); }));
+      });
   shutdown_event.Wait(rtc::Event::kForever);
 }
 
@@ -1148,9 +1146,10 @@ void VideoStreamEncoder::ReconfigureEncoder() {
     encoder_resolutions.emplace_back(simulcastStream.width,
                                      simulcastStream.height);
   }
-  worker_queue_->PostTask(ToQueuedTask(
-      task_safety_, [this, max_framerate, alignment,
-                     encoder_resolutions = std::move(encoder_resolutions)]() {
+  worker_queue_->PostTask(SafeTask(
+      task_safety_.flag(),
+      [this, max_framerate, alignment,
+       encoder_resolutions = std::move(encoder_resolutions)]() {
         RTC_DCHECK_RUN_ON(worker_queue_);
         if (max_framerate !=
                 video_source_sink_controller_.frame_rate_upper_limit() ||
@@ -1700,6 +1699,8 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       pending_frame_.reset();
       accumulated_update_rect_.Union(video_frame.update_rect());
       accumulated_update_rect_is_valid_ &= video_frame.has_update_rect();
+      encoder_stats_observer_->OnFrameDropped(
+          VideoStreamEncoderObserver::DropReason::kEncoderQueue);
     }
     return;
   }
@@ -1719,6 +1720,8 @@ void VideoStreamEncoder::MaybeEncodeVideoFrame(const VideoFrame& video_frame,
       TraceFrameDropStart();
       accumulated_update_rect_.Union(video_frame.update_rect());
       accumulated_update_rect_is_valid_ &= video_frame.has_update_rect();
+      encoder_stats_observer_->OnFrameDropped(
+          VideoStreamEncoderObserver::DropReason::kEncoderQueue);
     }
     return;
   }
@@ -1910,7 +1913,7 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
 }
 
 void VideoStreamEncoder::RequestRefreshFrame() {
-  worker_queue_->PostTask(ToQueuedTask(task_safety_, [this] {
+  worker_queue_->PostTask(SafeTask(task_safety_.flag(), [this] {
     RTC_DCHECK_RUN_ON(worker_queue_);
     video_source_sink_controller_.RequestRefreshFrame();
   }));
@@ -2186,14 +2189,22 @@ void VideoStreamEncoder::OnBitrateUpdated(DataRate target_bitrate,
     RTC_LOG(LS_INFO) << "Video suspend state changed to: "
                      << (video_is_suspended ? "suspended" : "not suspended");
     encoder_stats_observer_->OnSuspendChange(video_is_suspended);
-  }
-  if (video_suspension_changed && !video_is_suspended && pending_frame_ &&
-      !DropDueToSize(pending_frame_->size())) {
-    int64_t pending_time_us =
-        clock_->CurrentTime().us() - pending_frame_post_time_us_;
-    if (pending_time_us < kPendingFrameTimeoutMs * 1000)
-      EncodeVideoFrame(*pending_frame_, pending_frame_post_time_us_);
-    pending_frame_.reset();
+
+    if (!video_is_suspended && pending_frame_ &&
+        !DropDueToSize(pending_frame_->size())) {
+      // A pending stored frame can be processed.
+      int64_t pending_time_us =
+          clock_->CurrentTime().us() - pending_frame_post_time_us_;
+      if (pending_time_us < kPendingFrameTimeoutMs * 1000)
+        EncodeVideoFrame(*pending_frame_, pending_frame_post_time_us_);
+      pending_frame_.reset();
+    } else if (!video_is_suspended && !pending_frame_ &&
+               encoder_paused_and_dropped_frame_) {
+      // A frame was enqueued during pause-state, but since it was a native
+      // frame we could not store it in `pending_frame_` so request a
+      // refresh-frame instead.
+      RequestRefreshFrame();
+    }
   }
 }
 
@@ -2249,8 +2260,8 @@ void VideoStreamEncoder::OnVideoSourceRestrictionsUpdated(
   RTC_LOG(LS_INFO) << "Updating sink restrictions from "
                    << (reason ? reason->Name() : std::string("<null>"))
                    << " to " << restrictions.ToString();
-  worker_queue_->PostTask(ToQueuedTask(
-      task_safety_, [this, restrictions = std::move(restrictions)]() {
+  worker_queue_->PostTask(SafeTask(
+      task_safety_.flag(), [this, restrictions = std::move(restrictions)]() {
         RTC_DCHECK_RUN_ON(worker_queue_);
         video_source_sink_controller_.SetRestrictions(std::move(restrictions));
         video_source_sink_controller_.PushSourceSinkSettings();
@@ -2274,7 +2285,6 @@ void VideoStreamEncoder::RunPostEncode(const EncodedImage& encoded_image,
   absl::optional<int> encode_duration_us;
   if (encoded_image.timing_.flags != VideoSendTiming::kInvalid) {
     encode_duration_us =
-        // TODO(nisse): Maybe use capture_time_ms_ rather than encode_start_ms_?
         TimeDelta::Millis(encoded_image.timing_.encode_finish_ms -
                           encoded_image.timing_.encode_start_ms)
             .us();
@@ -2392,7 +2402,7 @@ void VideoStreamEncoder::CheckForAnimatedContent(
                           "animation detection.";
     }
     worker_queue_->PostTask(
-        ToQueuedTask(task_safety_, [this, should_cap_resolution]() {
+        SafeTask(task_safety_.flag(), [this, should_cap_resolution]() {
           RTC_DCHECK_RUN_ON(worker_queue_);
           video_source_sink_controller_.SetPixelsPerFrameUpperLimit(
               should_cap_resolution

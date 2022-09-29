@@ -9,8 +9,6 @@
 
 #include <assert.h>
 
-#include <fp16.h>
-
 #include <xnnpack/math.h>
 #include <xnnpack/vmul.h>
 
@@ -39,7 +37,7 @@ void xnn_qu8_vmul_minmax_fp32_ukernel__scalar_x1(
     vfpacc = math_max_f32(vfpacc, voutput_min_less_zero_point);
     vfpacc = math_min_f32(vfpacc, voutput_max_less_zero_point);
     vfpacc += vmagic_bias;
-    const int32_t vout = (int32_t) fp32_to_bits(vfpacc) - vmagic_bias_less_output_zero_point;
+    const int32_t vout = (int32_t) float_as_uint32(vfpacc) - vmagic_bias_less_output_zero_point;
     *output++ = (uint8_t) vout;
 
     n -= sizeof(uint8_t);

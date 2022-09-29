@@ -10,6 +10,7 @@
 
 #ifdef SK_GRAPHITE_ENABLED
 #include "include/gpu/graphite/Context.h"
+#include "src/gpu/graphite/TextureProxy.h"
 #endif
 
 #include "include/core/SkBlendMode.h"
@@ -21,14 +22,22 @@
 
 enum class SkBackend : uint8_t;
 enum class SkShaderType : uint32_t;
+class SkData;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
+class SkRuntimeEffect;
 class SkUniquePaintParamsID;
 class SkKeyContext;
 
-namespace skgpu::graphite { class TextureProxy; }
-
 // The KeyHelpers can be used to manually construct an SkPaintParamsKey
+
+struct PassthroughShaderBlock {
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
+
+};
 
 struct SolidColorShaderBlock {
 
@@ -160,18 +169,127 @@ struct BlendShaderBlock {
 
 };
 
+struct MatrixColorFilterBlock {
+    struct MatrixColorFilterData {
+        MatrixColorFilterData(const float matrix[20],
+                              bool inHSLA)
+                : fMatrix(matrix[ 0], matrix[ 1], matrix[ 2], matrix[ 3],
+                          matrix[ 5], matrix[ 6], matrix[ 7], matrix[ 8],
+                          matrix[10], matrix[11], matrix[12], matrix[13],
+                          matrix[15], matrix[16], matrix[17], matrix[18])
+                , fTranslate(matrix[4], matrix[9], matrix[14], matrix[19])
+                , fInHSLA(inHSLA) {
+        }
+
+        SkM44        fMatrix;
+        skvx::float4 fTranslate;
+        bool         fInHSLA;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const MatrixColorFilterData&);
+};
+
+struct BlendColorFilterBlock {
+    struct BlendColorFilterData {
+        BlendColorFilterData(SkBlendMode blendMode, const SkPMColor4f& srcColor)
+                : fBlendMode(blendMode)
+                , fSrcColor(srcColor) {
+        }
+
+        SkBlendMode fBlendMode;
+        SkPMColor4f fSrcColor;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const BlendColorFilterData&);
+};
+
+struct ComposeColorFilterBlock {
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
+};
+
+struct TableColorFilterBlock {
+    struct TableColorFilterData {
+        TableColorFilterData();
+
+#ifdef SK_GRAPHITE_ENABLED
+        sk_sp<skgpu::graphite::TextureProxy> fTextureProxy;
+#endif
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const TableColorFilterData&);
+};
+
+struct GaussianColorFilterBlock {
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*);
+};
+
 struct BlendModeBlock {
     static void BeginBlock(const SkKeyContext&,
                            SkPaintParamsKeyBuilder*,
                            SkPipelineDataGatherer*,
                            SkBlendMode);
-
 };
 
-// Bridge between the combinations system and the SkPaintParamsKey
-SkUniquePaintParamsID CreateKey(const SkKeyContext&,
-                                SkPaintParamsKeyBuilder*,
-                                SkShaderType,
-                                SkBlendMode);
+struct RuntimeShaderBlock {
+    struct ShaderData {
+        // This ctor is used during pre-compilation when we don't have enough information to
+        // extract uniform data.
+        ShaderData(sk_sp<const SkRuntimeEffect> effect);
+
+        // This ctor is used when extracting information from PaintParams.
+        ShaderData(sk_sp<const SkRuntimeEffect> effect,
+                   const SkMatrix& localMatrix,
+                   sk_sp<const SkData> uniforms);
+
+        bool operator==(const ShaderData& rhs) const;
+        bool operator!=(const ShaderData& rhs) const { return !(*this == rhs); }
+
+        // Runtime shader data.
+        sk_sp<const SkRuntimeEffect> fEffect;
+        SkMatrix                     fLocalMatrix;
+        sk_sp<const SkData>          fUniforms;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const ShaderData&);
+};
+
+struct RuntimeColorFilterBlock {
+    struct ColorFilterData {
+        // This ctor is used during pre-compilation when we don't have enough information to
+        // extract uniform data.
+        ColorFilterData(sk_sp<const SkRuntimeEffect> effect);
+
+        // This ctor is used when extracting information from PaintParams.
+        ColorFilterData(sk_sp<const SkRuntimeEffect> effect, sk_sp<const SkData> uniforms);
+
+        bool operator==(const ColorFilterData& rhs) const;
+        bool operator!=(const ColorFilterData& rhs) const { return !(*this == rhs); }
+
+        // Runtime shader data.
+        sk_sp<const SkRuntimeEffect> fEffect;
+        sk_sp<const SkData>          fUniforms;
+    };
+
+    static void BeginBlock(const SkKeyContext&,
+                           SkPaintParamsKeyBuilder*,
+                           SkPipelineDataGatherer*,
+                           const ColorFilterData&);
+};
 
 #endif // SkKeyHelpers_DEFINED

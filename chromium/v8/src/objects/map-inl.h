@@ -171,7 +171,9 @@ void Map::GeneralizeIfCanHaveTransitionableFastElementsKind(
 
 Handle<Map> Map::Normalize(Isolate* isolate, Handle<Map> fast_map,
                            PropertyNormalizationMode mode, const char* reason) {
-  return Normalize(isolate, fast_map, fast_map->elements_kind(), mode, reason);
+  const bool kUseCache = true;
+  return Normalize(isolate, fast_map, fast_map->elements_kind(), mode,
+                   kUseCache, reason);
 }
 
 bool Map::EquivalentToForNormalization(const Map other,
@@ -311,6 +313,13 @@ int Map::GetInObjectPropertiesStartInWords() const {
 void Map::SetInObjectPropertiesStartInWords(int value) {
   CHECK(IsJSObjectMap());
   set_inobject_properties_start_or_constructor_function_index(value);
+}
+
+bool Map::HasOutOfObjectProperties() const {
+  bool ret = used_or_unused_instance_size_in_words() < JSObject::kFieldsAdded;
+  DCHECK_EQ(ret, GetInObjectProperties() <
+                     NumberOfFields(ConcurrencyMode::kSynchronous));
+  return ret;
 }
 
 int Map::GetInObjectProperties() const {
@@ -624,6 +633,10 @@ bool Map::has_frozen_elements() const {
   return IsFrozenElementsKind(elements_kind());
 }
 
+bool Map::has_shared_array_elements() const {
+  return IsSharedArrayElementsKind(elements_kind());
+}
+
 void Map::set_is_dictionary_map(bool value) {
   uint32_t new_bit_field3 =
       Bits3::IsDictionaryMapBit::update(bit_field3(), value);
@@ -659,8 +672,8 @@ bool Map::CanBeDeprecated() const {
 void Map::NotifyLeafMapLayoutChange(Isolate* isolate) {
   if (is_stable()) {
     mark_unstable();
-    dependent_code().DeoptimizeDependentCodeGroup(
-        isolate, DependentCode::kPrototypeCheckGroup);
+    DependentCode::DeoptimizeDependencyGroups(
+        isolate, *this, DependentCode::kPrototypeCheckGroup);
   }
 }
 

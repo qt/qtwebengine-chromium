@@ -14,6 +14,7 @@
 #include "include/sksl/DSLModifiers.h"
 #include "include/sksl/SkSLPosition.h"
 
+#include <cstdint>
 #include <string_view>
 #include <utility>
 
@@ -160,13 +161,13 @@ public:
     template<typename... Args>
     static DSLExpression Construct(DSLType type, DSLVarBase& var, Args&&... args) {
         DSLExpression argArray[] = {var, args...};
-        return Construct(type, SkMakeSpan(argArray));
+        return Construct(type, SkSpan(argArray));
     }
 
     template<typename... Args>
     static DSLExpression Construct(DSLType type, DSLExpression expr, Args&&... args) {
         DSLExpression argArray[] = {std::move(expr), std::move(args)...};
-        return Construct(type, SkMakeSpan(argArray));
+        return Construct(type, SkSpan(argArray));
     }
 
     static DSLExpression Construct(DSLType type, SkSpan<DSLExpression> argArray);
@@ -260,7 +261,7 @@ DSLType Struct(std::string_view name, SkSpan<DSLField> fields,
 template<typename... Field>
 DSLType Struct(std::string_view name, Field... fields) {
     DSLField fieldTypes[] = {std::move(fields)...};
-    return Struct(name, SkMakeSpan(fieldTypes), Position());
+    return Struct(name, SkSpan(fieldTypes), Position());
 }
 
 } // namespace dsl

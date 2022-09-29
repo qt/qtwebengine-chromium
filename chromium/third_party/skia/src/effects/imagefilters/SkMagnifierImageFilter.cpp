@@ -100,7 +100,7 @@ static std::unique_ptr<GrFragmentProcessor> make_magnifier_fp(
         float yInvZoom,
         float xInvInset,
         float yInvInset) {
-    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
         uniform shader src;
         uniform float4 boundsUniform;
         uniform float  xInvZoom;

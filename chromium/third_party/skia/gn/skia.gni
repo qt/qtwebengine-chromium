@@ -24,6 +24,7 @@ declare_args() {
   skia_enable_pdf = !is_wasm
   skia_enable_skottie = !(is_win && is_component_build) ||
                         (is_wasm && skia_canvaskit_enable_skottie)
+  skia_enable_precompile = true
   skia_enable_sksl = true
   skia_enable_sksl_tracing = is_skia_dev_build
   skia_enable_skvm_jit_when_possible = is_skia_dev_build
@@ -51,6 +52,7 @@ declare_args() {
   skia_use_harfbuzz = true
   skia_use_gl = !is_fuchsia
   skia_use_icu = !is_fuchsia
+  skia_use_libavif = false
   skia_use_libheif = is_skia_dev_build
   skia_use_libjpeg_turbo_decode = true
   skia_use_libjpeg_turbo_encode = true
@@ -62,16 +64,16 @@ declare_args() {
   skia_use_lua = is_skia_dev_build && !is_ios
   skia_use_metal = false
   skia_use_ndk_images = is_android && defined(ndk_api) && ndk_api >= 30
+  skia_use_perfetto = is_linux || is_mac || is_android
   skia_use_piex = !is_win && !is_wasm
   skia_use_sfml = false
   skia_use_webgl = is_wasm
+  skia_use_webgpu = is_wasm
   skia_use_wuffs = is_wasm
   skia_use_x11 = is_linux
   skia_use_xps = true
   skia_enable_graphite = false
   skia_use_zlib = true
-
-  skia_vtune_path = ""
 
   if (is_ios) {
     skia_ios_identity = ".*Google.*"

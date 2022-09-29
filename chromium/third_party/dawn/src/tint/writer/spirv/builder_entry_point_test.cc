@@ -15,8 +15,8 @@
 #include <memory>
 
 #include "gtest/gtest.h"
-#include "src/tint/ast/builtin.h"
 #include "src/tint/ast/builtin_attribute.h"
+#include "src/tint/ast/builtin_value.h"
 #include "src/tint/ast/location_attribute.h"
 #include "src/tint/ast/return_statement.h"
 #include "src/tint/ast/stage_attribute.h"
@@ -42,13 +42,18 @@ TEST_F(BuilderTest, EntryPoint_Parameters) {
     //              @location(1) loc1 : f32) {
     //   var col : f32 = (coord.x * loc1);
     // }
-    auto* coord = Param("coord", ty.vec4<f32>(), {Builtin(ast::Builtin::kPosition)});
-    auto* loc1 = Param("loc1", ty.f32(), {Location(1u)});
+    auto* coord = Param("coord", ty.vec4<f32>(),
+                        utils::Vector{
+                            Builtin(ast::BuiltinValue::kPosition),
+                        });
+    auto* loc1 = Param("loc1", ty.f32(),
+                       utils::Vector{
+                           Location(1u),
+                       });
     auto* mul = Mul(Expr(MemberAccessor("coord", "x")), Expr("loc1"));
     auto* col = Var("col", ty.f32(), ast::StorageClass::kNone, mul);
-    Func("frag_main", ast::VariableList{coord, loc1}, ty.void_(),
-         ast::StatementList{WrapInStatement(col)},
-         ast::AttributeList{
+    Func("frag_main", utils::Vector{coord, loc1}, ty.void_(), utils::Vector{WrapInStatement(col)},
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          });
 
@@ -113,18 +118,24 @@ TEST_F(BuilderTest, EntryPoint_ReturnValue) {
     //   }
     //   return 1.0;
     // }
-    auto* loc_in = Param("loc_in", ty.u32(), {Location(0), Flat()});
+    auto* loc_in = Param("loc_in", ty.u32(),
+                         utils::Vector{
+                             Location(0),
+                             Flat(),
+                         });
     auto* cond =
         create<ast::BinaryExpression>(ast::BinaryOp::kGreaterThan, Expr("loc_in"), Expr(10_u));
-    Func("frag_main", ast::VariableList{loc_in}, ty.f32(),
-         ast::StatementList{
+    Func("frag_main", utils::Vector{loc_in}, ty.f32(),
+         utils::Vector{
              If(cond, Block(Return(0.5_f))),
              Return(1_f),
          },
-         ast::AttributeList{
+         utils::Vector{
              Stage(ast::PipelineStage::kFragment),
          },
-         ast::AttributeList{Location(0)});
+         utils::Vector{
+             Location(0),
+         });
 
     spirv::Builder& b = SanitizeAndBuild();
 
@@ -199,19 +210,26 @@ TEST_F(BuilderTest, EntryPoint_SharedStruct) {
 
     auto* interface = Structure(
         "Interface",
-        {
-            Member("value", ty.f32(), ast::AttributeList{Location(1u)}),
-            Member("pos", ty.vec4<f32>(), ast::AttributeList{Builtin(ast::Builtin::kPosition)}),
+        utils::Vector{
+            Member("value", ty.f32(), utils::Vector{Location(1u)}),
+            Member("pos", ty.vec4<f32>(), utils::Vector{Builtin(ast::BuiltinValue::kPosition)}),
         });
 
     auto* vert_retval = Construct(ty.Of(interface), 42_f, Construct(ty.vec4<f32>()));
-    Func("vert_main", ast::VariableList{}, ty.Of(interface), {Return(vert_retval)},
-         {Stage(ast::PipelineStage::kVertex)});
+    Func("vert_main", utils::Empty, ty.Of(interface), utils::Vector{Return(vert_retval)},
+         utils::Vector{
+             Stage(ast::PipelineStage::kVertex),
+         });
 
     auto* frag_inputs = Param("inputs", ty.Of(interface));
-    Func("frag_main", ast::VariableList{frag_inputs}, ty.f32(),
-         {Return(MemberAccessor(Expr("inputs"), "value"))}, {Stage(ast::PipelineStage::kFragment)},
-         {Builtin(ast::Builtin::kFragDepth)});
+    Func("frag_main", utils::Vector{frag_inputs}, ty.f32(),
+         utils::Vector{
+             Return(MemberAccessor(Expr("inputs"), "value")),
+         },
+         utils::Vector{Stage(ast::PipelineStage::kFragment)},
+         utils::Vector{
+             Builtin(ast::BuiltinValue::kFragDepth),
+         });
 
     spirv::Builder& b = SanitizeAndBuild();
 
@@ -302,8 +320,13 @@ OpFunctionEnd
 }
 
 TEST_F(BuilderTest, SampleIndex_SampleRateShadingCapability) {
-    Func("main", {Param("sample_index", ty.u32(), {Builtin(ast::Builtin::kSampleIndex)})},
-         ty.void_(), {}, {Stage(ast::PipelineStage::kFragment)});
+    Func("main",
+         utils::Vector{Param("sample_index", ty.u32(),
+                             utils::Vector{Builtin(ast::BuiltinValue::kSampleIndex)})},
+         ty.void_(), utils::Empty,
+         utils::Vector{
+             Stage(ast::PipelineStage::kFragment),
+         });
 
     spirv::Builder& b = SanitizeAndBuild();
 
@@ -311,9 +334,12 @@ TEST_F(BuilderTest, SampleIndex_SampleRateShadingCapability) {
 
     // Make sure we generate the SampleRateShading capability.
     EXPECT_EQ(DumpInstructions(b.capabilities()),
-              "OpCapability Shader\n"
-              "OpCapability SampleRateShading\n");
-    EXPECT_EQ(DumpInstructions(b.annots()), "OpDecorate %1 BuiltIn SampleId\n");
+              R"(OpCapability Shader
+OpCapability SampleRateShading
+)");
+    EXPECT_EQ(DumpInstructions(b.annots()), R"(OpDecorate %1 BuiltIn SampleId
+OpDecorate %1 Flat
+)");
 }
 
 }  // namespace

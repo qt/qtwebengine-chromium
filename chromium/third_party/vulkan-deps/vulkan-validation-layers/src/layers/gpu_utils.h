@@ -26,9 +26,13 @@
 
 class GpuAssistedBase;
 
+static const VkShaderStageFlags kShaderStageAllRayTracing =
+    VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+    VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 class UtilDescriptorSetManager {
   public:
-    UtilDescriptorSetManager(VkDevice device, uint32_t numBindingsInSet);
+    UtilDescriptorSetManager(VkDevice device, uint32_t num_bindings_in_set);
     ~UtilDescriptorSetManager();
 
     VkResult GetDescriptorSet(VkDescriptorPool *desc_pool, VkDescriptorSetLayout ds_layout, VkDescriptorSet *desc_sets);
@@ -45,7 +49,7 @@ class UtilDescriptorSetManager {
         uint32_t used;
     };
     VkDevice device;
-    uint32_t numBindingsInSet;
+    uint32_t num_bindings_in_set;
     layer_data::unordered_map<VkDescriptorPool, struct PoolTracker> desc_pool_map_;
     mutable std::mutex lock_;
 };
@@ -107,6 +111,17 @@ class GpuAssistedBase : public ValidationStateTracker {
                                        VkResult result) override;
     void PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits, VkFence fence,
                                     VkResult result) override;
+    bool ValidateCmdWaitEvents(VkCommandBuffer command_buffer, VkPipelineStageFlags2 src_stage_mask, CMD_TYPE cmd_type) const;
+    bool PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+                                      VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask,
+                                      uint32_t memoryBarrierCount, const VkMemoryBarrier *pMemoryBarriers,
+                                      uint32_t bufferMemoryBarrierCount, const VkBufferMemoryBarrier *pBufferMemoryBarriers,
+                                      uint32_t imageMemoryBarrierCount,
+                                      const VkImageMemoryBarrier *pImageMemoryBarriers) const override;
+    bool PreCallValidateCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+                                          const VkDependencyInfoKHR *pDependencyInfos) const override;
+    bool PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+                                       const VkDependencyInfo *pDependencyInfos) const override;
     void PreCallRecordCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
                                            const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout,
                                            void *cpl_state_data) override;
@@ -152,7 +167,7 @@ class GpuAssistedBase : public ValidationStateTracker {
 
     template <typename T>
     void ReportSetupProblem(T object, const char *const specific_message, bool vma_fail = false) const {
-        std::string logit = specific_message; 
+        std::string logit = specific_message;
         if (vma_fail) {
             char *stats_string;
             vmaBuildStatsString(vmaAllocator, &stats_string, false);

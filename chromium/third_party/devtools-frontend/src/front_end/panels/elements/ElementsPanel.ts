@@ -51,13 +51,17 @@ import {AccessibilityTreeView} from './AccessibilityTreeView.js';
 import * as ElementsComponents from './components/components.js';
 import {ComputedStyleWidget} from './ComputedStyleWidget.js';
 
-import type {ElementsTreeElement} from './ElementsTreeElement.js';
+import {type ElementsTreeElement} from './ElementsTreeElement.js';
 import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.js';
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
-import type {MarkerDecorator} from './MarkerDecorator.js';
+import {type MarkerDecorator} from './MarkerDecorator.js';
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
-import {Events as StylesSidebarPaneEvents, StylesSidebarPane} from './StylesSidebarPane.js';
-import type {StylesUpdateCompletedEvent} from './StylesSidebarPane.js';
+import {LayoutSidebarPane} from './LayoutSidebarPane.js';
+import {
+  Events as StylesSidebarPaneEvents,
+  StylesSidebarPane,
+  type StylesUpdateCompletedEvent,
+} from './StylesSidebarPane.js';
 
 const UIStrings = {
   /**
@@ -1143,6 +1147,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       if (treeElement) {
         void treeElement.updateStyleAdorners();
       }
+
+      LayoutSidebarPane.instance().update();
     }
   }
 

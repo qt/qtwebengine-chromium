@@ -23,6 +23,7 @@
 #include "cros_healthd/dbus-constants.h"
 #include "cryptohome/dbus-constants.h"
 #include "debugd/dbus-constants.h"
+#include "discod/dbus-constants.h"
 #include "dlp/dbus-constants.h"
 #include "drivefs/dbus-constants.h"
 #include "featured/dbus-constants.h"

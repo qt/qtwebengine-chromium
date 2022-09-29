@@ -14,7 +14,6 @@
 
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fxcrt/mask.h"
-#include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 
@@ -34,6 +33,9 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
   CPDFSDK_PageView(CPDFSDK_FormFillEnvironment* pFormFillEnv, IPDF_Page* page);
   ~CPDFSDK_PageView();
 
+  // CPDF_Page::View:
+  void ClearPage(CPDF_Page* pPage) override;
+
   void PageView_OnDraw(CFX_RenderDevice* pDevice,
                        const CFX_Matrix& mtUser2Device,
                        CPDF_RenderOptions* pOptions,
@@ -49,7 +51,7 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
   bool IsValidSDKAnnot(const CPDFSDK_Annot* p) const;
 
   std::vector<CPDFSDK_Annot*> GetAnnotList() const;
-  CPDFSDK_Annot* GetAnnotByDict(CPDF_Dictionary* pDict);
+  CPDFSDK_Annot* GetAnnotByDict(const CPDF_Dictionary* pDict);
 
 #ifdef PDF_ENABLE_XFA
   CPDFSDK_Annot* AddAnnotForFFWidget(CXFA_FFWidget* pWidget);
@@ -102,7 +104,6 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
   bool IsLocked() const { return m_bLocked; }
   void SetBeingDestroyed() { m_bBeingDestroyed = true; }
   bool IsBeingDestroyed() const { return m_bBeingDestroyed; }
-  void TakePageOwnership() { m_pOwnsPage.Reset(ToPDFPage(m_page)); }
 
  private:
 #ifdef PDF_ENABLE_XFA
@@ -126,7 +127,6 @@ class CPDFSDK_PageView final : public CPDF_Page::View {
   std::vector<std::unique_ptr<CPDFSDK_Annot>> m_SDKAnnotArray;
   UnownedPtr<CPDFSDK_FormFillEnvironment> const m_pFormFillEnv;
   ObservedPtr<CPDFSDK_Annot> m_pCaptureWidget;
-  RetainPtr<CPDF_Page> m_pOwnsPage;
   bool m_bOnWidget = false;
   bool m_bValid = false;
   bool m_bLocked = false;

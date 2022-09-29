@@ -16,6 +16,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/private/SkColorData.h"
 #include "src/core/SkEnumBitMask.h"
+#include "src/core/SkUniform.h"
 
 #ifdef SK_GRAPHITE_ENABLED
 #include "include/private/SkVx.h"
@@ -148,6 +149,7 @@ public:
     void write(int i) { fUniformManager.write(i); }
     void write(skvx::float2 v) { fUniformManager.write(v); }
     void write(skvx::float4 v) { fUniformManager.write(v); }
+    void write(SkSLType t, unsigned int cnt, const void* v) { fUniformManager.write(t, cnt, v); }
 
     bool hasUniforms() const { return fUniformManager.size(); }
 

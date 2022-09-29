@@ -30,7 +30,7 @@ struct S {
     EXPECT_TRUE(s.matched);
     ASSERT_NE(s.value, nullptr);
     ASSERT_EQ(s->name, p->builder().Symbols().Register("S"));
-    ASSERT_EQ(s->members.size(), 2u);
+    ASSERT_EQ(s->members.Length(), 2u);
     EXPECT_EQ(s->members[0]->symbol, p->builder().Symbols().Register("a"));
     EXPECT_EQ(s->members[1]->symbol, p->builder().Symbols().Register("b"));
 }
@@ -64,7 +64,7 @@ struct $struct {
     EXPECT_TRUE(s.matched);
     ASSERT_NE(s.value, nullptr);
     ASSERT_EQ(s->name, p->builder().Symbols().Register(struct_ident));
-    ASSERT_EQ(s->members.size(), 2u);
+    ASSERT_EQ(s->members.Length(), 2u);
     EXPECT_EQ(s->members[0]->symbol, p->builder().Symbols().Register(member_a_ident));
     EXPECT_EQ(s->members[1]->symbol, p->builder().Symbols().Register(member_b_ident));
 }
@@ -77,7 +77,7 @@ TEST_F(ParserImplTest, StructDecl_EmptyMembers) {
     EXPECT_FALSE(s.errored);
     EXPECT_TRUE(s.matched);
     ASSERT_NE(s.value, nullptr);
-    ASSERT_EQ(s->members.size(), 0u);
+    ASSERT_EQ(s->members.Length(), 0u);
 }
 
 TEST_F(ParserImplTest, StructDecl_MissingIdent) {
@@ -102,24 +102,6 @@ TEST_F(ParserImplTest, StructDecl_MissingBracketLeft) {
 
     EXPECT_TRUE(p->has_error());
     EXPECT_EQ(p->error(), "1:10: expected '{' for struct declaration");
-}
-
-// TODO(crbug.com/tint/1475): Remove this.
-TEST_F(ParserImplTest, DEPRECATED_StructDecl_Parses_WithSemicolons) {
-    auto p = parser(R"(
-struct S {
-  a : i32;
-  b : f32;
-})");
-    auto s = p->struct_decl();
-    EXPECT_FALSE(p->has_error());
-    EXPECT_FALSE(s.errored);
-    EXPECT_TRUE(s.matched);
-    ASSERT_NE(s.value, nullptr);
-    ASSERT_EQ(s->name, p->builder().Symbols().Register("S"));
-    ASSERT_EQ(s->members.size(), 2u);
-    EXPECT_EQ(s->members[0]->symbol, p->builder().Symbols().Register("a"));
-    EXPECT_EQ(s->members[1]->symbol, p->builder().Symbols().Register("b"));
 }
 
 }  // namespace

@@ -21,6 +21,8 @@
 #include <windows.h>
 #endif
 
+namespace {
+
 pdfium::base::PartitionAllocatorGeneric& GetArrayBufferPartitionAllocator() {
   static pdfium::base::NoDestructor<pdfium::base::PartitionAllocatorGeneric>
       s_array_buffer_allocator;
@@ -39,7 +41,9 @@ pdfium::base::PartitionAllocatorGeneric& GetStringPartitionAllocator() {
   return *s_string_allocator;
 }
 
-void FXMEM_InitializePartitionAlloc() {
+}  // namespace
+
+void FX_InitializeMemoryAllocators() {
   static bool s_partition_allocators_initialized = false;
   if (!s_partition_allocators_initialized) {
     pdfium::base::PartitionAllocGlobalInit(FX_OutOfMemoryTerminate);
@@ -51,9 +55,7 @@ void FXMEM_InitializePartitionAlloc() {
 }
 
 void* FXMEM_DefaultAlloc(size_t byte_size) {
-  return pdfium::base::PartitionAllocGenericFlags(
-      GetGeneralPartitionAllocator().root(),
-      pdfium::base::PartitionAllocReturnNull, byte_size, "GeneralPartition");
+  return pdfium::internal::Alloc(byte_size, 1);
 }
 
 void* FXMEM_DefaultCalloc(size_t num_elems, size_t byte_size) {
@@ -61,14 +63,11 @@ void* FXMEM_DefaultCalloc(size_t num_elems, size_t byte_size) {
 }
 
 void* FXMEM_DefaultRealloc(void* pointer, size_t new_size) {
-  return pdfium::base::PartitionReallocGenericFlags(
-      GetGeneralPartitionAllocator().root(),
-      pdfium::base::PartitionAllocReturnNull, pointer, new_size,
-      "GeneralPartition");
+  return pdfium::internal::Realloc(pointer, new_size, 1);
 }
 
 void FXMEM_DefaultFree(void* pointer) {
-  pdfium::base::PartitionFree(pointer);
+  FX_Free(pointer);
 }
 
 NOINLINE void FX_OutOfMemoryTerminate(size_t size) {
@@ -189,6 +188,20 @@ void* StringAlloc(size_t num_members, size_t member_size) {
 
 }  // namespace internal
 }  // namespace pdfium
+
+void* FX_ArrayBufferAllocate(size_t length) {
+  return GetArrayBufferPartitionAllocator().root()->AllocFlags(
+      pdfium::base::PartitionAllocZeroFill, length, "FXArrayBuffer");
+}
+
+void* FX_ArrayBufferAllocateUninitialized(size_t length) {
+  return GetArrayBufferPartitionAllocator().root()->Alloc(length,
+                                                          "FXArrayBuffer");
+}
+
+void FX_ArrayBufferFree(void* data) {
+  GetArrayBufferPartitionAllocator().root()->Free(data);
+}
 
 void FX_Free(void* ptr) {
   // TODO(palmer): Removing this check exposes crashes when PDFium callers
