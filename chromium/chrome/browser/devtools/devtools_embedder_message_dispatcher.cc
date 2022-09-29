@@ -8,9 +8,13 @@
 
 #include "base/functional/bind.h"
 #include "base/values.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_features.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_settings.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/visual_logging.h"
+#endif
 
 namespace {
 
@@ -75,6 +79,7 @@ bool GetValue(const base::Value& value, RegisterOptions* options) {
   return true;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool GetValue(const base::Value& value, ImpressionEvent* event) {
   if (!value.is_dict()) {
     return false;
@@ -242,6 +247,7 @@ bool GetValue(const base::Value& value, KeyDownEvent* event) {
   }
   return true;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 template <typename T>
 struct StorageTraits {
@@ -420,6 +426,7 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
                      &Delegate::RecordPerformanceHistogram, delegate);
   d->RegisterHandler("recordUserMetricsAction",
                      &Delegate::RecordUserMetricsAction, delegate);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandler("recordImpression", &Delegate::RecordImpression, delegate);
   d->RegisterHandler("recordResize", &Delegate::RecordResize, delegate);
   d->RegisterHandler("recordClick", &Delegate::RecordClick, delegate);
@@ -427,6 +434,7 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
   d->RegisterHandler("recordDrag", &Delegate::RecordDrag, delegate);
   d->RegisterHandler("recordChange", &Delegate::RecordChange, delegate);
   d->RegisterHandler("recordKeyDown", &Delegate::RecordKeyDown, delegate);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandlerWithCallback("sendJsonRequest",
                                  &Delegate::SendJsonRequest, delegate);
   d->RegisterHandler("registerPreference", &Delegate::RegisterPreference,
@@ -457,6 +465,7 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
   d->RegisterHandlerWithCallback("showSurvey", &Delegate::ShowSurvey, delegate);
   d->RegisterHandlerWithCallback("canShowSurvey", &Delegate::CanShowSurvey,
                                  delegate);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(::features::kDevToolsConsoleInsights)) {
     d->RegisterHandlerWithCallback("doAidaConversation",
                                    &Delegate::DoAidaConversation, delegate);
@@ -464,5 +473,6 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
                                    &Delegate::RegisterAidaClientEvent,
                                    delegate);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   return d;
 }
