@@ -121,6 +121,7 @@ class DevToolsEmbedderMessageDispatcher {
                                                   double duration) = 0;
     virtual void RecordUserMetricsAction(const std::string& name) = 0;
     virtual void RecordNewBadgeUsage(const std::string& feature_name) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual void RecordImpression(const ImpressionEvent& event) = 0;
     virtual void RecordResize(const ResizeEvent& event) = 0;
     virtual void RecordClick(const ClickEvent& event) = 0;
@@ -130,6 +131,7 @@ class DevToolsEmbedderMessageDispatcher {
     virtual void RecordKeyDown(const KeyDownEvent& event) = 0;
     virtual void RecordSettingAccess(const SettingAccessEvent& event) = 0;
     virtual void RecordFunctionCall(const FunctionCallEvent& event) = 0;
+#endif
     virtual void Reattach(DispatchCallback callback) = 0;
     virtual void ReadyForTest() = 0;
     virtual void ConnectionReady() = 0;

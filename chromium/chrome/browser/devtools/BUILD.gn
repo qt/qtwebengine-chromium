@@ -212,7 +212,7 @@ static_library("devtools") {
     ]
 
     deps += [ "//chrome/browser/ui/android/tab_model" ]
-  } else {
+  } else if (!is_qtwebengine) {
     public_deps += [
       "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui:browser_tab_strip",
