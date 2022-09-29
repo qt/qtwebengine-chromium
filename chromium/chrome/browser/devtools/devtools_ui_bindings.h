@@ -15,23 +15,30 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/aida_client.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_dispatch_http_request_params.h"
 #include "chrome/browser/devtools/devtools_embedder_message_dispatcher.h"
 #include "chrome/browser/devtools/devtools_file_helper.h"
 #include "chrome/browser/devtools/devtools_file_storage.h"
 #include "chrome/browser/devtools/devtools_file_system_indexer.h"
 #include "chrome/browser/devtools/devtools_http_service_handler.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_infobar_delegate.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_settings.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_targets_ui.h"
 #include "chrome/browser/devtools/visual_logging.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/prefs/pref_change_registrar.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_frontend_host.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "ui/gfx/geometry/size.h"
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/themes/theme_service_observer.h"
 #endif
 
@@ -60,9 +67,11 @@ class Profile;
 
 // Base implementation of DevTools bindings around front-end.
 class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
+#if !BUILDFLAG(IS_QTWEBENGINE)
                            public DevToolsAndroidBridge::DeviceCountListener,
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
                            public content::DevToolsAgentHostClient,
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
                            public ThemeServiceObserver,
 #endif
                            public DevToolsFileHelper::Delegate {
@@ -91,13 +100,16 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
     virtual void ReadyForTest() = 0;
     virtual void ConnectionReady() = 0;
     virtual void SetOpenNewWindowForPopups(bool value) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual infobars::ContentInfoBarManager* GetInfoBarManager() = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
     virtual void RenderProcessGone(bool crashed) = 0;
     virtual void ShowCertificateViewer(const std::string& cert_chain) = 0;
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual int GetDockStateForLogging() = 0;
     virtual int GetOpenedByForLogging() = 0;
     virtual int GetClosedByForLogging() = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   };
 
   static DevToolsUIBindings* ForWebContents(content::WebContents* web_contents);
@@ -141,7 +153,7 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void Detach();
   bool IsAttachedTo(content::DevToolsAgentHost* agent_host);
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   // ThemeServiceObserver implementation
   void OnThemeChanged() override;
 #endif
@@ -240,6 +252,7 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void RecordPerformanceHistogramMedium(const std::string& name,
                                         double duration) override;
   void RecordUserMetricsAction(const std::string& name) override;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void RecordImpression(const ImpressionEvent& event) override;
   void RecordResize(const ResizeEvent& event) override;
   void RecordClick(const ClickEvent& event) override;
@@ -249,6 +262,7 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void RecordKeyDown(const KeyDownEvent& event) override;
   void RecordSettingAccess(const SettingAccessEvent& event) override;
   void RecordFunctionCall(const FunctionCallEvent& event) override;
+#endif
   void RegisterPreference(const std::string& name,
                           const RegisterOptions& options) override;
   void RecordNewBadgeUsage(const std::string& feature_name) override;
@@ -329,12 +343,14 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
                       const base::Value* arg1);
   void InnerAttach();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // DevToolsAndroidBridge::DeviceCountListener override:
   void DeviceCountChanged(int count) override;
 
   // Forwards discovered devices to frontend.
   virtual void DevicesUpdated(const std::string& source,
                               const base::Value& targets);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   void ReadyToCommitNavigation(content::NavigationHandle* navigation_handle);
   void DocumentOnLoadCompletedInPrimaryMainFrame();
@@ -368,6 +384,7 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void SearchCompleted(int request_id,
                        const std::string& file_system_path,
                        const std::vector<std::string>& file_paths);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void HandleDirectoryPermissions(const std::string& directory_path,
                                   const std::u16string& message,
                                   DevToolsInfoBarDelegate::Callback callback);
@@ -378,12 +395,14 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
       DevToolsInfoBarDelegate::Callback callback);
   void OnPermissionDialogResult(DevToolsInfoBarDelegate::Callback callback,
                                 permissions::PermissionAction result);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   void MaybeStartLogging();
   base::TimeDelta GetTimeSinceSessionStart();
   void HandleAidaRequestError(
       DispatchCallback callback,
       std::variant<network::ResourceRequest, std::string>
           resource_request_or_error);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void OnAidaConversationRequest(
       DispatchCallback callback,
       int stream_id,
@@ -412,6 +431,7 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
       std::unique_ptr<network::SimpleURLLoader> simple_url_loader,
       base::TimeTicks start_time,
       std::optional<std::string> response_body);
+#endif
 
   void OnHttpRequestPerformed(
       DispatchCallback callback,
@@ -445,8 +465,10 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
 
   bool devices_updates_enabled_;
   bool frontend_loaded_;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<DevToolsTargetsUIHandler> remote_targets_handler_;
   std::unique_ptr<PortForwardingStatusSerializer> port_status_serializer_;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   PrefChangeRegistrar pref_change_registrar_;
   std::unique_ptr<DevToolsEmbedderMessageDispatcher>
       embedder_message_dispatcher_;
@@ -462,9 +484,10 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
 
   DevToolsSettings settings_;
   base::TimeTicks session_start_time_;
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<AidaClient> aida_client_;
   bool can_access_aida_ = false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   std::unique_ptr<DevToolsHttpServiceRegistry> http_service_registry_;
 
