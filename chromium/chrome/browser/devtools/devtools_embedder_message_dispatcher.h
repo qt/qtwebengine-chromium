@@ -109,6 +109,7 @@ class DevToolsEmbedderMessageDispatcher {
     virtual void RecordPerformanceHistogram(const std::string& name,
                                             double duration) = 0;
     virtual void RecordUserMetricsAction(const std::string& name) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
     virtual void RecordImpression(const ImpressionEvent& event) = 0;
     virtual void RecordResize(const ResizeEvent& event) = 0;
     virtual void RecordClick(const ClickEvent& event) = 0;
@@ -116,6 +117,7 @@ class DevToolsEmbedderMessageDispatcher {
     virtual void RecordDrag(const DragEvent& event) = 0;
     virtual void RecordChange(const ChangeEvent& event) = 0;
     virtual void RecordKeyDown(const KeyDownEvent& event) = 0;
+#endif
     virtual void SendJsonRequest(DispatchCallback callback,
                                  const std::string& browser_id,
                                  const std::string& url) = 0;
