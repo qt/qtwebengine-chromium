@@ -253,7 +253,7 @@ static_library("devtools") {
     ]
 
     deps += [ "//chrome/android:chrome_jni_headers" ]
-  } else {
+  } else if (!is_qtwebengine) {
     public_deps += [
       "//chrome/browser/ui:browser_tab_strip",
       "//chrome/browser/ui/tabs:tab_strip_model_observer",

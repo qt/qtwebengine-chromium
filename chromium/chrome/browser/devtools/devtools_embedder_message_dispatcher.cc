@@ -13,7 +13,9 @@
 #include "chrome/browser/devtools/devtools_dispatch_http_request_params.h"
 #include "chrome/browser/devtools/devtools_settings.h"
 #include "chrome/browser/devtools/features.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/visual_logging.h"
+#endif
 
 namespace {
 
@@ -72,6 +74,7 @@ bool GetValue(const base::Value& value, gfx::Rect& rect) {
   return true;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool GetValue(const base::Value& value, RegisterOptions& options) {
   const base::DictValue* dict = value.GetIfDict();
   if (!dict) {
@@ -224,6 +227,7 @@ bool GetValue(const base::Value& value, FunctionCallEvent& event) {
   base::OptionalUnwrapTo(dict->FindInt("context"), event.context);
   return true;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 template <typename T>
 struct StorageTraits {
@@ -407,6 +411,7 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
                      &Delegate::RecordUserMetricsAction, delegate);
   d->RegisterHandler("recordNewBadgeUsage", &Delegate::RecordNewBadgeUsage,
                      delegate);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandler("setChromeFlag", &Delegate::SetChromeFlag, delegate);
   d->RegisterHandler("recordImpression", &Delegate::RecordImpression, delegate);
   d->RegisterHandler("recordResize", &Delegate::RecordResize, delegate);
@@ -421,6 +426,7 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
                      delegate);
   d->RegisterHandler("registerPreference", &Delegate::RegisterPreference,
                      delegate);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandlerWithCallback("getPreferences",
                                  &Delegate::GetPreferences, delegate);
   d->RegisterHandlerWithCallback("getPreference", &Delegate::GetPreference,
@@ -448,12 +454,14 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
   d->RegisterHandlerWithCallback("canShowSurvey", &Delegate::CanShowSurvey,
                                  delegate);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandlerWithCallback("doAidaConversation",
                                  &Delegate::DoAidaConversation, delegate);
   d->RegisterHandlerWithCallback("aidaCodeComplete",
                                  &Delegate::AidaCodeComplete, delegate);
   d->RegisterHandlerWithCallback("registerAidaClientEvent",
                                  &Delegate::RegisterAidaClientEvent, delegate);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   d->RegisterHandlerWithCallback("dispatchHttpRequest",
                                  &Delegate::DispatchHttpRequest, delegate);
   d->RegisterHandler("requestRestart", &Delegate::RequestRestart, delegate);
