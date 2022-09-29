@@ -16,13 +16,19 @@
 #if defined(AIDA_SCOPE)
 #include "chrome/browser/devtools/aida_client.h"
 #endif
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/device/devtools_android_bridge.h"
+#endif  //! defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/devtools_embedder_message_dispatcher.h"
 #include "chrome/browser/devtools/devtools_file_helper.h"
 #include "chrome/browser/devtools/devtools_file_system_indexer.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/devtools_infobar_delegate.h"
+#endif  //! defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/devtools_settings.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/devtools_targets_ui.h"
+#endif  //! defined(TOOLKIT_QT)
 #include "components/prefs/pref_change_registrar.h"
 #include "components/signin/public/identity_manager/access_token_fetcher.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
@@ -48,7 +54,9 @@ class ContentInfoBarManager;
 
 // Base implementation of DevTools bindings around front-end.
 class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
+#if !defined(TOOLKIT_QT)
                            public DevToolsAndroidBridge::DeviceCountListener,
+#endif  //! defined(TOOLKIT_QT)
                            public content::DevToolsAgentHostClient,
                            public DevToolsFileHelper::Delegate {
  public:
@@ -71,7 +79,9 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
     virtual void ReadyForTest() = 0;
     virtual void ConnectionReady() = 0;
     virtual void SetOpenNewWindowForPopups(bool value) = 0;
+#if !defined(TOOLKIT_QT)
     virtual infobars::ContentInfoBarManager* GetInfoBarManager() = 0;
+#endif  //! defined(TOOLKIT_QT)
     virtual void RenderProcessGone(bool crashed) = 0;
     virtual void ShowCertificateViewer(const std::string& cert_chain) = 0;
   };
@@ -219,12 +229,14 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
                       const base::Value* arg1);
   void InnerAttach();
 
+#if !defined(TOOLKIT_QT)
   // DevToolsAndroidBridge::DeviceCountListener override:
   void DeviceCountChanged(int count) override;
 
   // Forwards discovered devices to frontend.
   virtual void DevicesUpdated(const std::string& source,
                               const base::Value& targets);
+#endif  //! defined(TOOLKIT_QT)
 
   void ReadyToCommitNavigation(content::NavigationHandle* navigation_handle);
   void DocumentOnLoadCompletedInPrimaryMainFrame();
@@ -260,9 +272,11 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   void SearchCompleted(int request_id,
                        const std::string& file_system_path,
                        const std::vector<std::string>& file_paths);
+#if !defined(TOOLKIT_QT)
   void ShowDevToolsInfoBar(const std::u16string& message,
                            DevToolsInfoBarDelegate::Callback callback);
 
+#endif  //! defined(TOOLKIT_QT)
   // Extensions support.
   void AddDevToolsExtensionsToClient();
 
@@ -276,7 +290,9 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
   std::unique_ptr<FrontendWebContentsObserver> frontend_contents_observer_;
 
   Profile* profile_;
+#if !defined(TOOLKIT_QT)
   DevToolsAndroidBridge* android_bridge_;
+#endif  //! defined(TOOLKIT_QT)
   content::WebContents* web_contents_;
   std::unique_ptr<Delegate> delegate_;
   scoped_refptr<content::DevToolsAgentHost> agent_host_;
@@ -291,8 +307,10 @@ class DevToolsUIBindings : public DevToolsEmbedderMessageDispatcher::Delegate,
 
   bool devices_updates_enabled_;
   bool frontend_loaded_;
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<DevToolsTargetsUIHandler> remote_targets_handler_;
   std::unique_ptr<PortForwardingStatusSerializer> port_status_serializer_;
+#endif  //! defined(TOOLKIT_QT)
   PrefChangeRegistrar pref_change_registrar_;
   std::unique_ptr<DevToolsEmbedderMessageDispatcher>
       embedder_message_dispatcher_;
