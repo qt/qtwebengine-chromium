@@ -345,7 +345,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
   const bool may_attach_to_brower = session->GetClient()->MayAttachToBrowser();
   session->AddHandler(std::make_unique<protocol::ServiceWorkerHandler>(
       /* allow_inspect_worker= */ may_attach_to_brower));
-  session->AddHandler(std::make_unique<protocol::StorageHandler>());
+  session->AddHandler(std::make_unique<protocol::StorageHandler>(
+      session->GetClient()->MayAttachToBrowser()));
   session->AddHandler(std::make_unique<protocol::TargetHandler>(
       may_attach_to_brower
           ? protocol::TargetHandler::AccessMode::kRegular
