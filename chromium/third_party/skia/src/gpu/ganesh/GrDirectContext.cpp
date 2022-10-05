@@ -142,9 +142,6 @@ void GrDirectContext::abandonContext() {
 
     fGpu->disconnect(GrGpu::DisconnectType::kAbandon);
 
-    // Must be after GrResourceCache::abandonAll().
-    fMappedBufferManager.reset();
-
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
     }
