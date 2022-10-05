@@ -129,8 +129,6 @@ void GrContext::abandonContext() {
     fResourceCache->abandonAll();
 
     fGpu->disconnect(GrGpu::DisconnectType::kAbandon);
-
-    fMappedBufferManager.reset();
 }
 
 void GrContext::releaseResourcesAndAbandonContext() {
