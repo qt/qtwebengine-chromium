@@ -2642,6 +2642,7 @@ void StyleEngine::RecalcStyle(StyleRecalcChange change,
                               const StyleRecalcContext& style_recalc_context) {
   DCHECK(GetDocument().documentElement());
   ScriptForbiddenScope forbid_script;
+  SkipStyleRecalcScope skip_scope(*this);
   HasMatchedCacheScope has_matched_cache_scope(&GetDocument());
   Element& root_element = style_recalc_root_.RootElement();
   Element* parent = FlatTreeTraversal::ParentElement(root_element);
@@ -3229,6 +3230,19 @@ void StyleEngine::MarkForLayoutTreeChangesAfterDetach() {
       layout_object_element->MarkAncestorsWithChildNeedsStyleRecalc();
   }
   parent_for_detached_subtree_ = nullptr;
+}
+
+bool StyleEngine::AllowSkipStyleRecalcForScope() const {
+  if (InContainerQueryStyleRecalc())
+    return true;
+  if (LocalFrameView* view = GetDocument().View()) {
+    // Existing layout roots before starting style recalc may end up being
+    // inside skipped subtrees if we allowed skipping. If we start out with an
+    // empty list, any added ones will be a result of an element style recalc,
+    // which means the will not be inside a skipped subtree.
+    return !view->IsSubtreeLayout();
+  }
+  return true;
 }
 
 }  // namespace blink
