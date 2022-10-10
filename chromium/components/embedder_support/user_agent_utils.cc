@@ -538,6 +538,7 @@ blink::UserAgentMetadata GetUserAgentMetadata(PrefService* pref_service) {
   blink::UserAgentMetadata metadata;
   bool enable_updated_grease_by_policy = true;
   UserAgentOptions ua_options;
+#if !defined(TOOLKIT_QT)
   if (pref_service) {
     if (pref_service->HasPrefPath(
             policy::policy_prefs::kUserAgentClientHintsGREASEUpdateEnabled))
@@ -545,6 +546,7 @@ blink::UserAgentMetadata GetUserAgentMetadata(PrefService* pref_service) {
           policy::policy_prefs::kUserAgentClientHintsGREASEUpdateEnabled);
     ua_options.force_major_to_minor = GetMajorToMinorFromPrefs(pref_service);
   }
+#endif
   metadata.brand_version_list = GetBrandMajorVersionList(
       enable_updated_grease_by_policy, ua_options.force_major_to_minor);
   metadata.brand_full_version_list = GetBrandFullVersionList(
