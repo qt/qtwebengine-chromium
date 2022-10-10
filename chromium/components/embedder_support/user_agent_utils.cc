@@ -459,6 +459,7 @@ blink::UserAgentMetadata GetUserAgentMetadata(const PrefService* pref_service,
   blink::UserAgentMetadata metadata;
 
   bool enable_updated_grease_by_policy = true;
+#if !defined(TOOLKIT_QT)
   // TODO(crbug.com/40838057): Remove this after M126 which deprecates the
   // policy.
   if (pref_service) {
@@ -467,6 +468,7 @@ blink::UserAgentMetadata GetUserAgentMetadata(const PrefService* pref_service,
       enable_updated_grease_by_policy = pref_service->GetBoolean(
           policy::policy_prefs::kUserAgentClientHintsGREASEUpdateEnabled);
   }
+#endif
 
   // Low entropy client hints.
   metadata.brand_version_list =
