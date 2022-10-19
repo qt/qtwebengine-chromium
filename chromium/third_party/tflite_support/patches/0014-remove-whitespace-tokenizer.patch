@@ -1,0 +1,21 @@
+From 3e2574d49dd6a93efef8de6c5256a428c9d9c784 Mon Sep 17 00:00:00 2001
+From: Robert Ogden <robertogden@chromium.org>
+Date: Mon, 17 Oct 2022 13:09:01 -0700
+Subject: [PATCH] remove whitespace tokenizer
+
+---
+ .../custom_ops/kernel/whitespace_tokenizer.cc | 227 ------------------
+ .../custom_ops/kernel/whitespace_tokenizer.h  |  31 ---
+ .../whitespace_tokenizer_op_resolver.cc       |  32 ---
+ .../kernel/whitespace_tokenizer_op_resolver.h |  34 ---
+ ...hitespace_tokenizer_op_resolver_wrapper.cc |  29 ---
+ .../kernel/whitespace_tokenizer_test.cc       | 189 ---------------
+ .../kernel/whitespace_tokenizer_test.py       | 167 -------------
+ 7 files changed, 709 deletions(-)
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer.cc
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer.h
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer_op_resolver.cc
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer_op_resolver.h
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer_op_resolver_wrapper.cc
+ delete mode 100644 third_party/tflite_support/src/tensorflow_lite_support/custom_ops/kernel/whitespace_tokenizer_test.cc
+
