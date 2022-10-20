@@ -211,7 +211,7 @@ void GrTextureRenderTargetProxy::onValidateSurface(const GrSurface* surface) {
     SkASSERT(surface->asRenderTarget());
     SkASSERT(surface->asRenderTarget()->numSamples() == this->numSamples());
 
-    SkASSERT(surface->asTexture()->textureType() == this->textureType());
+    //SkASSERT(surface->asTexture()->textureType() == this->textureType());
 
     GrInternalSurfaceFlags proxyFlags = fSurfaceFlags;
     GrInternalSurfaceFlags surfaceFlags = surface->flags();
