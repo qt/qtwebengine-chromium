@@ -70,7 +70,7 @@ class PendingReceiver {
       typename T,
       std::enable_if_t<std::is_same<
           PendingReceiver<Interface>,
-          std::result_of_t<decltype (&PendingReceiverConverter<T>::template To<
+          absl::result_of_t<decltype (&PendingReceiverConverter<T>::template To<
                                      Interface>)(T&&)>>::value>* = nullptr>
   PendingReceiver(T&& other)
       : PendingReceiver(PendingReceiverConverter<T>::template To<Interface>(

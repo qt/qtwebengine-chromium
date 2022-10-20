@@ -72,7 +72,7 @@ class PendingRemote {
       typename T,
       std::enable_if_t<std::is_same<
           PendingRemote<Interface>,
-          std::result_of_t<decltype (&PendingRemoteConverter<T>::template To<
+          absl::result_of_t<decltype (&PendingRemoteConverter<T>::template To<
                                      Interface>)(T&&)>>::value>* = nullptr>
   PendingRemote(T&& other)
       : PendingRemote(PendingRemoteConverter<T>::template To<Interface>(

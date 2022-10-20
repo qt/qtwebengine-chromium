@@ -43,7 +43,7 @@ class PendingAssociatedReceiver {
   template <typename T,
             std::enable_if_t<std::is_same<
                 PendingAssociatedReceiver<Interface>,
-                std::result_of_t<decltype (&PendingAssociatedReceiverConverter<
+                absl::result_of_t<decltype (&PendingAssociatedReceiverConverter<
                                            T>::template To<Interface>)(T&&)>>::
                                  value>* = nullptr>
   PendingAssociatedReceiver(T&& other)

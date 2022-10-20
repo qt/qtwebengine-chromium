@@ -44,7 +44,7 @@ class PendingAssociatedRemote {
   template <typename T,
             std::enable_if_t<std::is_same<
                 PendingAssociatedRemote<Interface>,
-                std::result_of_t<decltype (&PendingAssociatedRemoteConverter<
+                absl::result_of_t<decltype (&PendingAssociatedRemoteConverter<
                                            T>::template To<Interface>)(T&&)>>::
                                  value>* = nullptr>
   PendingAssociatedRemote(T&& other)
