@@ -698,7 +698,7 @@ bool Frame::FocusCrossesFencedBoundary() {
   return false;
 }
 
-bool Frame::ShouldAllowScriptFocus() {
+bool Frame::AllowFocusWithoutUserActivation() {
   if (!features::IsFencedFramesEnabled())
     return true;
 
