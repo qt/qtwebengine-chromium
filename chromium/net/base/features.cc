@@ -305,5 +305,7 @@ const base::Feature kAlpsClientHintParsing{"AlpsClientHintParsing",
 const base::Feature kShouldKillSessionOnAcceptChMalformed{
     "ShouldKillSessionOnAcceptChMalformed", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kBlockNewForbiddenHeaders{
+    "BlockNewForbiddenHeaders", base::FEATURE_ENABLED_BY_DEFAULT};
 }  // namespace features
 }  // namespace net
