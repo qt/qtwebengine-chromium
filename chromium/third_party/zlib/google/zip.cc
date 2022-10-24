@@ -247,17 +247,23 @@ bool ZipWithFilterCallback(const base::FilePath& src_dir,
                            const base::FilePath& dest_file,
                            FilterCallback filter) {
   DCHECK(base::DirectoryExists(src_dir));
-  return Zip({.src_dir = src_dir,
-              .dest_file = dest_file,
-              .filter_callback = std::move(filter)});
+  ZipParams params = {};
+  params.src_dir = src_dir;
+  params.dest_file = dest_file;
+  params.filter_callback = std::move(filter);
+
+  return Zip(params);
 }
 
 bool Zip(const base::FilePath& src_dir,
          const base::FilePath& dest_file,
          bool include_hidden_files) {
-  return Zip({.src_dir = src_dir,
-              .dest_file = dest_file,
-              .include_hidden_files = include_hidden_files});
+  ZipParams params = {};
+  params.src_dir = src_dir;
+  params.dest_file = dest_file;
+  params.include_hidden_files = include_hidden_files;
+
+  return Zip(params);
 }
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
