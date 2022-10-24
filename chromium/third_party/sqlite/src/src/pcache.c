@@ -243,11 +243,14 @@ static int numberOfCachePages(PCache *p){
     ** suggested cache size is set to N. */
     return p->szCache;
   }else{
+    i64 n;
     /* IMPLEMANTATION-OF: R-59858-46238 If the argument N is negative, then the
     ** number of cache pages is adjusted to be a number of pages that would
     ** use approximately abs(N*1024) bytes of memory based on the current
     ** page size. */
-    return (int)((-1024*(i64)p->szCache)/(p->szPage+p->szExtra));
+    n = ((-1024*(i64)p->szCache)/(p->szPage+p->szExtra));
+    if( n>1000000000 ) n = 1000000000;
+    return (int)n;
   }
 }
 
@@ -619,14 +622,24 @@ void sqlite3PcacheClearSyncFlags(PCache *pCache){
 */
 void sqlite3PcacheMove(PgHdr *p, Pgno newPgno){
   PCache *pCache = p->pCache;
+  sqlite3_pcache_page *pOther;
   assert( p->nRef>0 );
   assert( newPgno>0 );
   assert( sqlite3PcachePageSanity(p) );
   pcacheTrace(("%p.MOVE %d -> %d\n",pCache,p->pgno,newPgno));
+  pOther = sqlite3GlobalConfig.pcache2.xFetch(pCache->pCache, newPgno, 0);
+  if( pOther ){
+    PgHdr *pXPage = (PgHdr*)pOther->pExtra;
+    assert( pXPage->nRef==0 );
+    pXPage->nRef++;
+    pCache->nRefSum++;
+    sqlite3PcacheDrop(pXPage);
+  }
   sqlite3GlobalConfig.pcache2.xRekey(pCache->pCache, p->pPage, p->pgno,newPgno);
   p->pgno = newPgno;
   if( (p->flags&PGHDR_DIRTY) && (p->flags&PGHDR_NEED_SYNC) ){
     pcacheManageDirtyList(p, PCACHE_DIRTYLIST_FRONT);
+    assert( sqlite3PcachePageSanity(p) );
   }
 }
 

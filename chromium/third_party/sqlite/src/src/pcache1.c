@@ -817,12 +817,18 @@ static sqlite3_pcache *pcache1Create(int szPage, int szExtra, int bPurgeable){
 */
 static void pcache1Cachesize(sqlite3_pcache *p, int nMax){
   PCache1 *pCache = (PCache1 *)p;
+  u32 n;
+  assert( nMax>=0 );
   if( pCache->bPurgeable ){
     PGroup *pGroup = pCache->pGroup;
     pcache1EnterMutex(pGroup);
-    pGroup->nMaxPage += (nMax - pCache->nMax);
+    n = (u32)nMax;
+    if( n > 0x7fff0000 - pGroup->nMaxPage + pCache->nMax ){
+      n = 0x7fff0000 - pGroup->nMaxPage + pCache->nMax;
+    }
+    pGroup->nMaxPage += (n - pCache->nMax);
     pGroup->mxPinned = pGroup->nMaxPage + 10 - pGroup->nMinPage;
-    pCache->nMax = nMax;
+    pCache->nMax = n;
     pCache->n90pct = pCache->nMax*9/10;
     pcache1EnforceMaxPage(pCache);
     pcache1LeaveMutex(pGroup);
@@ -838,7 +844,7 @@ static void pcache1Shrink(sqlite3_pcache *p){
   PCache1 *pCache = (PCache1*)p;
   if( pCache->bPurgeable ){
     PGroup *pGroup = pCache->pGroup;
-    int savedMaxPage;
+    unsigned int savedMaxPage;
     pcache1EnterMutex(pGroup);
     savedMaxPage = pGroup->nMaxPage;
     pGroup->nMaxPage = 0;
@@ -1117,23 +1123,26 @@ static void pcache1Rekey(
   PCache1 *pCache = (PCache1 *)p;
   PgHdr1 *pPage = (PgHdr1 *)pPg;
   PgHdr1 **pp;
-  unsigned int h; 
+  unsigned int hOld, hNew; 
   assert( pPage->iKey==iOld );
   assert( pPage->pCache==pCache );
+  assert( iOld!=iNew );               /* The page number really is changing */
 
   pcache1EnterMutex(pCache->pGroup);
-
-  h = iOld%pCache->nHash;
-  pp = &pCache->apHash[h];
+  
+  assert( pcache1FetchNoMutex(p, iOld, 0)==pPage ); /* pPg really is iOld */
+  hOld = iOld%pCache->nHash;
+  pp = &pCache->apHash[hOld];
   while( (*pp)!=pPage ){
     pp = &(*pp)->pNext;
   }
   *pp = pPage->pNext;
 
-  h = iNew%pCache->nHash;
+  assert( pcache1FetchNoMutex(p, iNew, 0)==0 ); /* iNew not in cache */
+  hNew = iNew%pCache->nHash;
   pPage->iKey = iNew;
-  pPage->pNext = pCache->apHash[h];
-  pCache->apHash[h] = pPage;
+  pPage->pNext = pCache->apHash[hNew];
+  pCache->apHash[hNew] = pPage;
   if( iNew>pCache->iMaxKey ){
     pCache->iMaxKey = iNew;
   }
