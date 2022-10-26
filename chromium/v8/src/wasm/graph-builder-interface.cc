@@ -89,6 +89,7 @@ class WasmGraphBuildingInterface {
   struct TryInfo : public ZoneObject {
     SsaEnv* catch_env;
     TFNode* exception = nullptr;
+    bool first_catch = true;
 
     bool might_throw() const { return exception != nullptr; }
 
@@ -603,6 +604,10 @@ class WasmGraphBuildingInterface {
     }
 
     SetEnv(block->try_info->catch_env);
+    if (block->try_info->first_catch) {
+      LoadContextIntoSsa(ssa_env_);
+      block->try_info->first_catch = false;
+    }
     DCHECK_NOT_NULL(block->try_info->exception);
     exception->node = block->try_info->exception;
   }
