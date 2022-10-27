@@ -12,6 +12,7 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+#include "build/build_config.h"
 #include "base/feature_list.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/vulkan/vma_wrapper.h"
@@ -49,6 +50,10 @@ class SkiaVulkanMemoryAllocator : public skgpu::VulkanMemoryAllocator {
         .pool = VK_NULL_HANDLE,
         .pUserData = nullptr,
     };
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+    info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+#endif
 
     if (kDedicatedAllocation_AllocationPropertyFlag & flags) {
       info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
