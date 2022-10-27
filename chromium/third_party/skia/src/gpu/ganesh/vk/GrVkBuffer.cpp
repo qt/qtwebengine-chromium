@@ -127,6 +127,20 @@ sk_sp<GrVkBuffer> GrVkBuffer::Make(GrVkGpu* gpu,
     bufInfo.queueFamilyIndexCount = 0;
     bufInfo.pQueueFamilyIndices = nullptr;
 
+#if defined(TOOLKIT_QT)
+    // This is a workaround to avoid validation error messages when enabling external memmory
+    // allocation by VMA.
+    VkExternalMemoryBufferCreateInfo externalMemoryBufferCreateInfo = { VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO };
+    externalMemoryBufferCreateInfo.pNext = nullptr;
+    externalMemoryBufferCreateInfo.handleTypes =
+#if defined(SK_BUILD_FOR_WIN)
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR;
+#else
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
+#endif
+    bufInfo.pNext = &externalMemoryBufferCreateInfo;
+#endif  // defined(TOOLKIT_QT)
+
     VkResult err;
     err = VK_CALL(gpu, CreateBuffer(gpu->device(), &bufInfo, nullptr, &buffer));
     if (err) {

@@ -488,9 +488,29 @@ bool GrVkImage::InitImageInfo(GrVkGpu* gpu, const ImageDesc& imageDesc, GrVkImag
     if (imageDesc.fIsProtected == GrProtected::kYes || gpu->protectedContext()) {
         createflags |= VK_IMAGE_CREATE_PROTECTED_BIT;
     }
+
+#if defined(TOOLKIT_QT)
+    // The initialLayout should be undefined for the external image.
+    // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkImageCreateInfo.html#VUID-VkImageCreateInfo-pNext-01443
+    initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkExternalMemoryImageCreateInfoKHR externalMemoryImageCreateInfo = { VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_KHR };
+    externalMemoryImageCreateInfo.pNext = nullptr;
+    externalMemoryImageCreateInfo.handleTypes =
+#if defined(SK_BUILD_FOR_WIN)
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR;
+#else
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
+#endif  // defined(SK_BUILD_FOR_WIN)
+#endif  // defined(TOOLKIT_QT)
+
     const VkImageCreateInfo imageCreateInfo = {
         VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,         // sType
+#if defined(TOOLKIT_QT)
+        &externalMemoryImageCreateInfo,              // pNext
+#else
         nullptr,                                     // pNext
+#endif
         createflags,                                 // VkImageCreateFlags
         imageDesc.fImageType,                        // VkImageType
         imageDesc.fFormat,                           // VkFormat

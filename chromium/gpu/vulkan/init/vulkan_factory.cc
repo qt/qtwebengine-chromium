@@ -26,6 +26,7 @@
 
 namespace gpu {
 
+#if !defined(TOOLKIT_QT)
 std::unique_ptr<VulkanImplementation> CreateVulkanImplementation(
     bool use_swiftshader,
     bool allow_protected_memory) {
@@ -59,5 +60,6 @@ std::unique_ptr<VulkanImplementation> CreateVulkanImplementation(
 #endif
 #endif
 }
+#endif  // !defined(TOOLKIT_QT)
 
 }  // namespace gpu

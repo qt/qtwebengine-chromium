@@ -59,6 +59,25 @@ VkResult CreateAllocator(VkPhysicalDevice physical_device,
       allocator_info.instance = instance;
       allocator_info.vulkanApiVersion = kVulkanRequiredApiVersion;
 
+#if defined(TOOLKIT_QT)
+  VkPhysicalDeviceMemoryProperties mem_properties;
+  function_pointers->vkGetPhysicalDeviceMemoryProperties(physical_device,
+                                                         &mem_properties);
+  std::vector<VkExternalMemoryHandleTypeFlagsKHR> external_memory_handle_types(mem_properties.memoryTypeCount, 0);
+  for (uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i) {
+    VkMemoryPropertyFlags property_flags = mem_properties.memoryTypes[i].propertyFlags;
+    if (property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+      external_memory_handle_types[i] =
+#if BUILDFLAG(IS_WIN)
+              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR;
+#else
+              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
+#endif
+    }
+  }
+  allocator_info.pTypeExternalMemoryHandleTypes = external_memory_handle_types.data();
+#endif  // defined(TOOLKIT_QT)
+
   return vmaCreateAllocator(&allocator_info, pAllocator);
 }
 
