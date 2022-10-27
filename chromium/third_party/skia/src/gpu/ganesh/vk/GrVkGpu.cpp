@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 
+#include "build/build_config.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
@@ -1688,6 +1689,14 @@ bool GrVkGpu::createVkImageForBackendSurface(VkFormat vkFormat,
     imageDesc.fUsageFlags = usageFlags;
     imageDesc.fMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     imageDesc.fIsProtected = fProtectedContext;
+
+#if BUILDFLAG(IS_QTWEBENGINE) && defined(SK_BUILD_FOR_WIN)
+    if (fPhysDevProps.vendorID == 0x8086) {
+        // FIXME: This is a workaround for Intel drivers on Windows.
+        // The imported VkImage has artifacts if the tiling is not linear.
+        imageDesc.fImageTiling = VK_IMAGE_TILING_LINEAR;
+    }
+#endif
 
     if (!GrVkImage::InitImageInfo(this, imageDesc, info)) {
         SkDebugf("Failed to init image info\n");

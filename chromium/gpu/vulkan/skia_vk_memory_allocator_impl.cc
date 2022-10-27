@@ -11,6 +11,7 @@
 
 #include "base/feature_list.h"
 #include "base/trace_event/trace_event.h"
+#include "build/build_config.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
 #include "gpu/vulkan/vulkan_function_pointers.h"
 
@@ -34,6 +35,10 @@ VkResult SkiaVulkanMemoryAllocator::allocateImageMemory(
       .pool = VK_NULL_HANDLE,
       .pUserData = nullptr,
   };
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+    info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+#endif
 
   if (kDedicatedAllocation_AllocationPropertyFlag & flags) {
     info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
