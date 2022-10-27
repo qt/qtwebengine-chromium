@@ -100,8 +100,10 @@ std::string Port::ComputeFoundation(const std::string& type,
                                     const std::string& protocol,
                                     const std::string& relay_protocol,
                                     const rtc::SocketAddress& base_address) {
+  // TODO(bugs.webrtc.org/14605): ensure IceTiebreaker() is set.
   rtc::StringBuilder sb;
-  sb << type << base_address.ipaddr().ToString() << protocol << relay_protocol;
+  sb << type << base_address.ipaddr().ToString() << protocol << relay_protocol
+     << rtc::ToString(IceTiebreaker());
   return rtc::ToString(rtc::ComputeCrc32(sb.Release()));
 }
 

@@ -1551,7 +1551,7 @@ void Connection::MaybeUpdateLocalCandidate(ConnectionRequest* request,
   new_local_candidate.set_address(addr->GetAddress());
   new_local_candidate.set_priority(priority);
   new_local_candidate.set_related_address(local_candidate().address());
-  new_local_candidate.set_foundation(Port::ComputeFoundation(
+  new_local_candidate.set_foundation(port()->ComputeFoundation(
       PRFLX_PORT_TYPE, local_candidate().protocol(),
       local_candidate().relay_protocol(), local_candidate().address()));
 
