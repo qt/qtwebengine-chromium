@@ -88,6 +88,9 @@ JsepTransportController::JsepTransportController(
   RTC_DCHECK(config_.transport_observer);
   RTC_DCHECK(config_.rtcp_handler);
   RTC_DCHECK(config_.ice_transport_factory);
+  if (port_allocator_) {
+    port_allocator_->SetIceTiebreaker(ice_tiebreaker_);
+  }
 }
 
 JsepTransportController::~JsepTransportController() {
