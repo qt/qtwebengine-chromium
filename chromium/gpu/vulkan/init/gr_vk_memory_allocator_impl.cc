@@ -42,6 +42,10 @@ class GrVkMemoryAllocatorImpl : public GrVkMemoryAllocator {
     info.pool = VK_NULL_HANDLE;
     info.pUserData = nullptr;
 
+#if defined(TOOLKIT_QT)
+    info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+#endif
+
     if (AllocationPropertyFlags::kDedicatedAllocation & flags) {
       info.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     }
