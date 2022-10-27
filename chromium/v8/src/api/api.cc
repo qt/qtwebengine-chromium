@@ -7551,6 +7551,10 @@ void v8::ArrayBuffer::Detach() {
   obj->Detach();
 }
 
+bool v8::ArrayBuffer::WasDetached() const {
+  return Utils::OpenHandle(this)->was_detached();
+}
+
 size_t v8::ArrayBuffer::ByteLength() const {
   i::Handle<i::JSArrayBuffer> obj = Utils::OpenHandle(this);
   return obj->byte_length();
