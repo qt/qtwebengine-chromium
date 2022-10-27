@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/vk/GrVkBuffer.h"
 
+#include "build/build_config.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
@@ -147,6 +148,20 @@ sk_sp<GrVkBuffer> GrVkBuffer::Make(GrVkGpu* gpu,
     bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     bufInfo.queueFamilyIndexCount = 0;
     bufInfo.pQueueFamilyIndices = nullptr;
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+    // This is a workaround to avoid validation error messages when enabling external memmory
+    // allocation by VMA.
+    VkExternalMemoryBufferCreateInfo externalMemoryBufferCreateInfo = { VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO };
+    externalMemoryBufferCreateInfo.pNext = nullptr;
+    externalMemoryBufferCreateInfo.handleTypes =
+#if defined(SK_BUILD_FOR_WIN)
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR;
+#else
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT_KHR;
+#endif
+    bufInfo.pNext = &externalMemoryBufferCreateInfo;
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
     VkResult err;
     GR_VK_CALL_RESULT(gpu, err, CreateBuffer(gpu->device(), &bufInfo, nullptr, &buffer));
