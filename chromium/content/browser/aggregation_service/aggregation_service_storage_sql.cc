@@ -568,8 +568,8 @@ AggregationServiceStorageSql::GetRequestsReportingOnOrBefore(
       return {};
 
     result.push_back(AggregationServiceStorage::RequestAndId{
-        .request = std::move(parsed_request.value()),
-        .id = AggregationServiceStorage::RequestId(
+        /*.request =*/ std::move(parsed_request.value()),
+        /*.id =*/ AggregationServiceStorage::RequestId(
             get_requests_statement.ColumnInt64(0))});
   }
 
@@ -604,8 +604,8 @@ AggregationServiceStorageSql::GetRequests(
     if (!parsed_request)
       continue;
     result.push_back(AggregationServiceStorage::RequestAndId{
-        .request = std::move(*parsed_request),
-        .id = id,
+        /*.request =*/ std::move(*parsed_request),
+        /*.id =*/ id,
     });
   }
   return result;

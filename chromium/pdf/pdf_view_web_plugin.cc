@@ -1911,7 +1911,7 @@ void PdfViewWebPlugin::HandleLoadPreviewPageMessage(
   int src_page_index = ExtractPrintPreviewPageIndex(url);
   DCHECK_GE(src_page_index, 0);
 
-  preview_pages_info_.push({.url = url, .dest_page_index = dest_page_index});
+  preview_pages_info_.push({/*.url =*/ url, /*.dest_page_index =*/ dest_page_index});
   LoadAvailablePreviewPage();
 }
 

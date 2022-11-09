@@ -684,8 +684,8 @@ bool V8ScriptValueSerializerForModules::WriteMediaSourceHandle(
   DCHECK(media_source_attachment_provider);
 
   attachments.push_back(MediaSourceHandleAttachment::HandleInternals{
-      .attachment_provider = std::move(media_source_attachment_provider),
-      .internal_blob_url = handle->GetInternalBlobURL()});
+      /*.attachment_provider =*/ std::move(media_source_attachment_provider),
+      /*.internal_blob_url =*/ handle->GetInternalBlobURL()});
   handle->mark_serialized();
   const uint32_t index = static_cast<uint32_t>(attachments.size() - 1);
 

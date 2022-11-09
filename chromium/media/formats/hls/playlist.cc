@@ -93,12 +93,12 @@ ParseStatus::Or<Playlist::Identification> Playlist::IdentifyPlaylist(
   return Identification{
       // If the playlist did not contain a version tag, version is implicitly
       // `kDefaultVersion`.
-      .version = version_tag ? version_tag->version : kDefaultVersion,
+      /*.version =*/ version_tag ? version_tag->version : kDefaultVersion,
 
       // Media playlists must contain the EXT-X-TARGETDURATION tag, so if we
       // never encountered a media playlist tag it must be an (empty)
       // multivariant playlist.
-      .kind =
+//      .kind =
           playlist_kind ? playlist_kind.value() : Kind::kMultivariantPlaylist,
   };
 }

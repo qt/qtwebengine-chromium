@@ -190,8 +190,8 @@ ParseStatus::Or<DecimalResolution> DecimalResolution::Parse(
     }
   }
 
-  return DecimalResolution{.width = std::move(width).value(),
-                           .height = std::move(height).value()};
+  return DecimalResolution{/*.width =*/ std::move(width).value(),
+                           /*.height =*/ std::move(height).value()};
 }
 
 // static
@@ -220,8 +220,8 @@ ParseStatus::Or<ByteRangeExpression> ByteRangeExpression::Parse(
     offset = std::move(offset_result).value();
   }
 
-  return ByteRangeExpression{.length = std::move(length).value(),
-                             .offset = offset};
+  return ByteRangeExpression{/*.length =*/ std::move(length).value(),
+                             /*.offset =*/ offset};
 }
 
 // static

@@ -424,7 +424,7 @@ ParseStatus::Or<MediaPlaylist> MediaPlaylist::Parse(
   absl::optional<PartialSegmentInfo> partial_segment_info;
   if (part_inf_tag.has_value()) {
     partial_segment_info = MediaPlaylist::PartialSegmentInfo{
-        .target_duration = part_inf_tag->target_duration};
+        /*.target_duration =*/ part_inf_tag->target_duration};
 
     // Since the combination of partial segments should be equivalent to their
     // parent segment, the partial segment target duration should not exceed the
@@ -519,22 +519,22 @@ ParseStatus::Or<MediaPlaylist> MediaPlaylist::Parse(
   }
 
   return MediaPlaylist(
-      CtorArgs{.uri = std::move(uri),
-               .version = version,
-               .independent_segments = independent_segments,
-               .target_duration = target_duration,
-               .partial_segment_info = std::move(partial_segment_info),
-               .segments = std::move(segments),
-               .total_duration = total_duration,
-               .playlist_type = playlist_type,
-               .end_list = end_list_tag.has_value(),
-               .i_frames_only = i_frames_only_tag.has_value(),
-               .has_media_sequence_tag = media_sequence_tag.has_value(),
-               .can_skip_dateranges = can_skip_dateranges,
-               .can_block_reload = can_block_reload,
-               .skip_boundary = skip_boundary,
-               .hold_back_distance = hold_back_distance,
-               .part_hold_back_distance = part_hold_back_distance});
+      CtorArgs{/*.uri =*/ std::move(uri),
+               /*.version =*/ version,
+               /*.independent_segments =*/ independent_segments,
+               /*.target_duration =*/ target_duration,
+               /*.partial_segment_info =*/ std::move(partial_segment_info),
+               /*.segments =*/ std::move(segments),
+               /*.total_duration =*/ total_duration,
+               /*.playlist_type =*/ playlist_type,
+               /*.end_list =*/ end_list_tag.has_value(),
+               /*.i_frames_only =*/ i_frames_only_tag.has_value(),
+               /*.has_media_sequence_tag =*/ media_sequence_tag.has_value(),
+               /*.can_skip_dateranges =*/ can_skip_dateranges,
+               /*.can_block_reload =*/ can_block_reload,
+               /*.skip_boundary =*/ skip_boundary,
+               /*.hold_back_distance =*/ hold_back_distance,
+               /*.part_hold_back_distance =*/ part_hold_back_distance});
 }
 
 MediaPlaylist::MediaPlaylist(CtorArgs args)

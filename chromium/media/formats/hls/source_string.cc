@@ -53,7 +53,7 @@ ResolvedSourceString ResolvedSourceString::CreateForTesting(
     base::StringPiece str) {
   return ResolvedSourceString::CreateForTesting(
       line, column, str,
-      ResolvedSourceStringState{.contains_substitutions = false});
+      ResolvedSourceStringState{/*.contains_substitutions =*/ false});
 }
 
 // static
@@ -99,7 +99,7 @@ template <>
 ResolvedSourceString SourceString::SkipVariableSubstitution() const {
   return ResolvedSourceString(
       Line(), Column(), Str(),
-      ResolvedSourceStringState{.contains_substitutions = false});
+      ResolvedSourceStringState{/*.contains_substitutions =*/ false});
 }
 
 template <typename ResolutionState>

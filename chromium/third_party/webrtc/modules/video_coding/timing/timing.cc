@@ -253,8 +253,8 @@ TimeDelta VCMTiming::TargetDelayInternal() const {
 
 VideoFrame::RenderParameters VCMTiming::RenderParameters() const {
   MutexLock lock(&mutex_);
-  return {.use_low_latency_rendering = UseLowLatencyRendering(),
-          .max_composition_delay_in_frames = max_composition_delay_in_frames_};
+  return {/*.use_low_latency_rendering =*/ UseLowLatencyRendering(),
+          /*.max_composition_delay_in_frames =*/ max_composition_delay_in_frames_};
 }
 
 bool VCMTiming::UseLowLatencyRendering() const {

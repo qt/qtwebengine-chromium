@@ -157,8 +157,8 @@ VideoStreamBufferController::VideoStreamBufferController(
           clock_,
           worker_queue,
           VideoReceiveStreamTimeoutTracker::Timeouts{
-              .max_wait_for_keyframe = max_wait_for_keyframe,
-              .max_wait_for_frame = max_wait_for_frame},
+              /*.max_wait_for_keyframe =*/ max_wait_for_keyframe,
+              /*.max_wait_for_frame =*/ max_wait_for_frame},
           absl::bind_front(&VideoStreamBufferController::OnTimeout, this)),
       zero_playout_delay_max_decode_queue_size_(
           "max_decode_queue_size",
@@ -223,8 +223,8 @@ void VideoStreamBufferController::UpdateRtt(int64_t max_rtt_ms) {
 void VideoStreamBufferController::SetMaxWaits(TimeDelta max_wait_for_keyframe,
                                               TimeDelta max_wait_for_frame) {
   RTC_DCHECK_RUN_ON(&worker_sequence_checker_);
-  timeout_tracker_.SetTimeouts({.max_wait_for_keyframe = max_wait_for_keyframe,
-                                .max_wait_for_frame = max_wait_for_frame});
+  timeout_tracker_.SetTimeouts({/*.max_wait_for_keyframe =*/ max_wait_for_keyframe,
+                                /*.max_wait_for_frame =*/ max_wait_for_frame});
 }
 
 void VideoStreamBufferController::StartNextDecode(bool keyframe_required) {

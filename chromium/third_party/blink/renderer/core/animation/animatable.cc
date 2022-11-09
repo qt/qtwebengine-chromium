@@ -139,7 +139,7 @@ HeapVector<Member<Animation>> Animatable::getAnimations(
     GetAnimationsOptions* options) {
   bool use_subtree = options && options->subtree();
   return GetAnimationsInternal(
-      GetAnimationsOptionsResolved{.use_subtree = use_subtree});
+      GetAnimationsOptionsResolved{/*.use_subtree =*/ use_subtree});
 }
 
 HeapVector<Member<Animation>> Animatable::GetAnimationsInternal(

@@ -287,7 +287,7 @@ RouterLinkState::QueueState RemoteRouterLink::GetPeerQueueState() {
   if (auto* state = GetLinkState()) {
     return state->GetQueueState(side_.opposite());
   }
-  return {.num_parcels = 0, .num_bytes = 0};
+  return {/*.num_parcels =*/ 0, /*.num_bytes =*/ 0};
 }
 
 bool RemoteRouterLink::UpdateInboundQueueState(size_t num_parcels,

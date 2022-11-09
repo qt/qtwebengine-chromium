@@ -272,8 +272,9 @@ void AttributionDataHostManagerImpl::NotifyNavigationRedirectRegistation(
 
   auto [it, inserted] = redirect_registrations_.try_emplace(
       attribution_src_token, NavigationRedirectSourceRegistrations{
-                                 .source_origin = source_origin,
-                                 .register_time = base::TimeTicks::Now()});
+                                 /*.source_origin =*/ source_origin,
+                                0, {}, {},
+                                 /*.register_time =*/ base::TimeTicks::Now()});
 
   // Redirect data may not be registered if the navigation is already finished.
   DCHECK(it->second.destination.opaque());
@@ -309,10 +310,11 @@ void AttributionDataHostManagerImpl::NotifyNavigationForDataHost(
   if (it != navigation_data_host_map_.end()) {
     receivers_.Add(
         this, std::move(it->second.data_host),
-        FrozenContext{.context_origin = source_origin,
-                      .source_type = AttributionSourceType::kNavigation,
-                      .destination = net::SchemefulSite(destination_origin),
-                      .register_time = it->second.register_time});
+        FrozenContext{/*.context_origin =*/ source_origin,
+                      /*.source_type =*/ AttributionSourceType::kNavigation,
+                      /*.destination =*/ net::SchemefulSite(destination_origin),
+                      RegistrationType::kNone, 0,
+                      /*.register_time =*/ it->second.register_time});
 
     navigation_data_host_map_.erase(it);
     RecordNavigationDataHostStatus(NavigationDataHostStatus::kProcessed);

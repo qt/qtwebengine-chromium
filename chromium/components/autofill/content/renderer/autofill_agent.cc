@@ -449,7 +449,9 @@ void AutofillAgent::OnTextFieldDidChange(const WebInputElement& element) {
     return;
   }
 
-  ShowSuggestions(element, {.requires_caret_at_end = true});
+  ShowSuggestionsOptions options;
+    options.requires_caret_at_end = true;
+  ShowSuggestions(element, options);
 
   FormData form;
   FormFieldData field;
@@ -469,17 +471,20 @@ void AutofillAgent::TextFieldDidReceiveKeyDown(const WebInputElement& element,
 
   if (event.windows_key_code == ui::VKEY_DOWN ||
       event.windows_key_code == ui::VKEY_UP) {
-    ShowSuggestions(element,
-                    {.autofill_on_empty_values = true,
-                     .requires_caret_at_end = true,
-                     .autoselect_first_suggestion =
-                         ShouldAutoselectFirstSuggestionOnArrowDown()});
+    ShowSuggestionsOptions options;
+        options.autofill_on_empty_values = true;
+        options.requires_caret_at_end = true;
+        options.autoselect_first_suggestion =
+            ShouldAutoselectFirstSuggestionOnArrowDown();
+    ShowSuggestions(element, options);
   }
 }
 
 void AutofillAgent::OpenTextDataListChooser(const WebInputElement& element) {
   DCHECK(IsOwnedByFrame(element, render_frame()));
-  ShowSuggestions(element, {.autofill_on_empty_values = true});
+  ShowSuggestionsOptions options;
+    options.autofill_on_empty_values = true;
+  ShowSuggestions(element, options);
 }
 
 // Notifies the AutofillDriver about changes in the <datalist> options in
@@ -1136,16 +1141,17 @@ void AutofillAgent::FormControlElementClicked(
   password_autofill_agent_->TryToShowTouchToFill(element);
 #endif
 
-  ShowSuggestions(
-      element, {.autofill_on_empty_values = true,
+  ShowSuggestionsOptions options;
+    options.autofill_on_empty_values = true;
                 // Even if the user has not edited an input element, it may
                 // still contain a value: A default value filled by the website.
                 // In that case, we don't want to elide suggestions that don't
                 // have a common prefix with the default value.
-                .show_full_suggestion_list =
-                    element.IsAutofilled() || !element.UserHasEditedTheField(),
-                .touch_to_fill_eligible = TouchToFillEligible(true)});
+    options.show_full_suggestion_list =
+                    element.IsAutofilled() || !element.UserHasEditedTheField();
+    options.touch_to_fill_eligible = TouchToFillEligible(true);
 
+  ShowSuggestions(element, std::move(options));
   SendPotentiallySubmittedFormToBrowser();
 }
 

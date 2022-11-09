@@ -287,9 +287,9 @@ void SpeculationHostImpl::ProcessCandidatesForPrerender(
                             rfhi.GetPageUkmSourceId(), ui::PAGE_TRANSITION_LINK,
                             /*url_match_predicate=*/absl::nullopt),
         *web_contents, /*preloading_attempt=*/preloading_attempt);
-    started_prerenders_.insert(end, {.url = it->url,
-                                     .referrer = referrer,
-                                     .prerender_host_id = prerender_host_id});
+    started_prerenders_.insert(end, {/*.url =*/ it->url,
+                                     /*.referrer =*/ referrer,
+                                     /*.prerender_host_id =*/ prerender_host_id});
   }
 }
 

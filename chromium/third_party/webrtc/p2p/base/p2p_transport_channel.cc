@@ -1834,16 +1834,16 @@ rtc::NetworkRoute P2PTransportChannel::ConfigureNetworkRoute(
     const Connection* conn) {
   RTC_DCHECK_RUN_ON(network_thread_);
   return {
-      .connected = ReadyToSend(conn),
-      .local = CreateRouteEndpointFromCandidate(
+      /*.connected =*/ ReadyToSend(conn),
+      /*.local =*/ CreateRouteEndpointFromCandidate(
           /* local= */ true, conn->local_candidate(),
           /* uses_turn= */
           conn->port()->Type() == RELAY_PORT_TYPE),
-      .remote = CreateRouteEndpointFromCandidate(
+      /*.remote =*/ CreateRouteEndpointFromCandidate(
           /* local= */ false, conn->remote_candidate(),
           /* uses_turn= */ conn->remote_candidate().type() == RELAY_PORT_TYPE),
-      .last_sent_packet_id = last_sent_packet_id_,
-      .packet_overhead =
+      /*.last_sent_packet_id =*/ last_sent_packet_id_,
+//      .packet_overhead =
           conn->local_candidate().address().ipaddr().overhead() +
           GetProtocolOverhead(conn->local_candidate().protocol())};
 }

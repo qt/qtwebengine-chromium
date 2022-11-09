@@ -257,7 +257,7 @@ absl::optional<Impression> AttributionSrcLoader::RegisterNavigation(
     return absl::nullopt;
 
   DCHECK(client->attribution_src_token());
-  return blink::Impression{.attribution_src_token =
+  return blink::Impression{/*.attribution_src_token =*/
                                *client->attribution_src_token()};
 }
 

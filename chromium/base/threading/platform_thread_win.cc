@@ -472,10 +472,10 @@ void SetCurrentThreadQualityOfService(ThreadType thread_type) {
   }
 
   THREAD_POWER_THROTTLING_STATE thread_power_throttling_state{
-      .Version = THREAD_POWER_THROTTLING_CURRENT_VERSION,
-      .ControlMask =
+      /*.Version =*/ THREAD_POWER_THROTTLING_CURRENT_VERSION,
+//      .ControlMask =
           desire_ecoqos ? THREAD_POWER_THROTTLING_EXECUTION_SPEED : 0ul,
-      .StateMask =
+//      .StateMask =
           desire_ecoqos ? THREAD_POWER_THROTTLING_EXECUTION_SPEED : 0ul,
   };
   [[maybe_unused]] const BOOL success = set_thread_information_fn(

@@ -280,9 +280,9 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     }
   };
 
-  return value.Visit(Visitor{.converter = this,
-                             .isolate = isolate,
-                             .creation_context = creation_context});
+  return value.Visit(Visitor{/*.converter =*/ this,
+                             /*.isolate =*/ isolate,
+                             /*.creation_context =*/ creation_context});
 }
 
 v8::Local<v8::Value> V8ValueConverterImpl::ToV8Array(

@@ -95,9 +95,9 @@ bool ShouldDisableSiteIsolationDueToMemorySlow(
 
 IsolationDisableDecisions MakeBothDecisions() {
   IsolationDisableDecisions result{
-      .should_disable_strict = ShouldDisableSiteIsolationDueToMemorySlow(
+      /*.should_disable_strict =*/ ShouldDisableSiteIsolationDueToMemorySlow(
           content::SiteIsolationMode::kStrictSiteIsolation),
-      .should_disable_partial = ShouldDisableSiteIsolationDueToMemorySlow(
+      /*.should_disable_partial =*/ ShouldDisableSiteIsolationDueToMemorySlow(
           content::SiteIsolationMode::kPartialSiteIsolation)};
   return result;
 }

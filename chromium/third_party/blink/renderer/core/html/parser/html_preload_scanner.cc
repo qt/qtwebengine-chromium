@@ -977,9 +977,9 @@ void TokenPreloadScanner::ScanCommon(
                 token.GetAttributeItem(html_names::kContentAttr);
             if (content_attribute) {
               meta_ch_values.push_back(
-                  MetaCHValue{.value = content_attribute->GetValue(),
-                              .type = network::MetaCHType::HttpEquivAcceptCH,
-                              .is_doc_preloader =
+                  MetaCHValue{/*.value =*/ content_attribute->GetValue(),
+                              /*.type =*/ network::MetaCHType::HttpEquivAcceptCH,
+//                              .is_doc_preloader =
                                   scanner_type_ == ScannerType::kMainDocument});
             }
           } else if (EqualIgnoringASCIICase(equiv_attribute_value,
@@ -990,9 +990,9 @@ void TokenPreloadScanner::ScanCommon(
                 token.GetAttributeItem(html_names::kContentAttr);
             if (content_attribute) {
               meta_ch_values.push_back(
-                  MetaCHValue{.value = content_attribute->GetValue(),
-                              .type = network::MetaCHType::HttpEquivDelegateCH,
-                              .is_doc_preloader =
+                  MetaCHValue{/*.value =*/ content_attribute->GetValue(),
+                              /*.type =*/ network::MetaCHType::HttpEquivDelegateCH,
+//                              .is_doc_preloader =
                                   scanner_type_ == ScannerType::kMainDocument});
             }
           }

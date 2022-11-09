@@ -1562,9 +1562,9 @@ void LibvpxVp9Encoder::UpdateReferenceBuffers(const vpx_codec_cx_pkt& pkt,
   vpx_svc_layer_id_t layer_id = {0};
   libvpx_->codec_control(encoder_, VP9E_GET_SVC_LAYER_ID, &layer_id);
 
-  RefFrameBuffer frame_buf = {.pic_num = pic_num,
-                              .spatial_layer_id = layer_id.spatial_layer_id,
-                              .temporal_layer_id = layer_id.temporal_layer_id};
+  RefFrameBuffer frame_buf = {/*.pic_num =*/ pic_num,
+                              /*.spatial_layer_id =*/ layer_id.spatial_layer_id,
+                              /*.temporal_layer_id =*/ layer_id.temporal_layer_id};
 
   if (is_svc_) {
     vpx_svc_ref_frame_config_t enc_layer_conf = {{0}};

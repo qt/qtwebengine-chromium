@@ -358,15 +358,15 @@ void RRSendQueue::Add(TimeMs now,
   // message's lifetime, as the message is alive during its entire lifetime
   // (which may be zero).
   MessageAttributes attributes = {
-      .unordered = send_options.unordered,
-      .max_retransmissions =
+      /*.unordered =*/ send_options.unordered,
+//      .max_retransmissions =
           send_options.max_retransmissions.has_value()
               ? MaxRetransmits(send_options.max_retransmissions.value())
               : MaxRetransmits::NoLimit(),
-      .expires_at = send_options.lifetime.has_value()
+      /*.expires_at =*/ send_options.lifetime.has_value()
                         ? now + *send_options.lifetime + DurationMs(1)
                         : TimeMs::InfiniteFuture(),
-      .lifecycle_id = send_options.lifecycle_id,
+      /*.lifecycle_id =*/ send_options.lifecycle_id,
   };
   GetOrCreateStreamInfo(message.stream_id())
       .Add(std::move(message), std::move(attributes));

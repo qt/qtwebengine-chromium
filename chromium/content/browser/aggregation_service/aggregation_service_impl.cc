@@ -179,8 +179,8 @@ void AggregationServiceImpl::OnReportAssemblyComplete(
     scheduler_->NotifyInProgressRequestFailed(request_id);
     NotifyReportHandled(
         AggregationServiceStorage::RequestAndId{
-            .request = std::move(report_request),
-            .id = request_id,
+            /*.request =*/ std::move(report_request),
+            /*.id =*/ request_id,
         },
         /*report=*/absl::nullopt,
         AggregationServiceObserver::ReportStatus::kFailedToAssemble);
@@ -199,8 +199,8 @@ void AggregationServiceImpl::OnReportAssemblyComplete(
                  // `base::Unretained` is safe as the sender is owned by `this`.
                  base::Unretained(this), std::move(done),
                  AggregationServiceStorage::RequestAndId{
-                     .request = std::move(report_request),
-                     .id = request_id,
+                     /*.request =*/ std::move(report_request),
+                     /*.id =*/ request_id,
                  },
                  std::move(*report)));
 }

@@ -22,10 +22,10 @@ void TrapEventDispatcher::DeferEvent(IpczTrapEventHandler handler,
 void TrapEventDispatcher::DispatchAll() {
   for (const Event& event : events_) {
     const IpczTrapEvent trap_event = {
-        .size = sizeof(trap_event),
-        .context = event.context,
-        .condition_flags = event.flags,
-        .status = &event.status,
+        /*.size =*/ sizeof(trap_event),
+        /*.context =*/ event.context,
+        /*.condition_flags =*/ event.flags,
+        /*.status =*/ &event.status,
     };
     event.handler(&trap_event);
   }

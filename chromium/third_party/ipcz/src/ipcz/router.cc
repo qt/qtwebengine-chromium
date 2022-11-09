@@ -58,7 +58,7 @@ void CollectParcelsToFlush(ParcelQueue& queue,
       return;
     }
 
-    ParcelToFlush& parcel = parcels.emplace_back(ParcelToFlush{.link = link});
+    ParcelToFlush& parcel = parcels.emplace_back(ParcelToFlush{/*.link =*/ link});
     const bool popped = queue.Pop(parcel.parcel);
     ABSL_ASSERT(popped);
   }

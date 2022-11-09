@@ -222,7 +222,7 @@ EmeConfig::Rule WidevineKeySystemProperties::GetRobustnessConfigRule(
       EmeConfig tmp = {};
       tmp.identifier = EmeConfigRuleState::kRequired;
       tmp.persistence = EmeConfigRuleState::kRequired;
-      tmp.hw_secure_codecs = EmeConfigRuleState::kRequired};
+      tmp.hw_secure_codecs = EmeConfigRuleState::kRequired;
       return tmp;
     } else {
       return media::EmeConfig::UnsupportedRule();

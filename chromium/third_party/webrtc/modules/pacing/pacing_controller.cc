@@ -112,11 +112,11 @@ PacingController::PacingController(Clock* clock,
 PacingController::~PacingController() = default;
 
 void PacingController::CreateProbeCluster(DataRate bitrate, int cluster_id) {
-  prober_.CreateProbeCluster({.at_time = CurrentTime(),
-                              .target_data_rate = bitrate,
-                              .target_duration = TimeDelta::Millis(15),
-                              .target_probe_count = 5,
-                              .id = cluster_id});
+  prober_.CreateProbeCluster({/*.at_time =*/ CurrentTime(),
+                              /*.target_data_rate =*/ bitrate,
+                              /*.target_duration =*/ TimeDelta::Millis(15),
+                              /*.target_probe_count =*/ 5,
+                              /*.id =*/ cluster_id});
 }
 
 void PacingController::CreateProbeClusters(

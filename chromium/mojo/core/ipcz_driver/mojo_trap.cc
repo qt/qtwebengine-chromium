@@ -119,7 +119,7 @@ struct MojoTrap::Trigger : public base::RefCountedThreadSafe<Trigger> {
   const MojoHandle handle;
   const MojoHandleSignals signals;
   const uintptr_t trigger_context;
-  IpczTrapConditions conditions = {.size = sizeof(conditions), .flags = 0};
+  IpczTrapConditions conditions = {/*.size =*/ sizeof(conditions), /*.flags =*/ 0};
 
   // Access is effectively guarded by the owning MojoTrap's `lock_`.
   bool armed = false;
@@ -174,8 +174,8 @@ MojoResult MojoTrap::AddTrigger(MojoHandle handle,
     // added here.
     trigger->AddRef();
     IpczTrapConditions removal_conditions = {
-        .size = sizeof(removal_conditions),
-        .flags = IPCZ_TRAP_REMOVED,
+        /*.size =*/ sizeof(removal_conditions),
+        /*.flags =*/ IPCZ_TRAP_REMOVED,
     };
     IpczResult result = GetIpczAPI().Trap(
         handle, &removal_conditions, &TrapRemovalEventHandler,
@@ -197,7 +197,7 @@ MojoResult MojoTrap::AddTrigger(MojoHandle handle,
     armed_ = false;
   }
 
-  MojoTrapEvent event = {.struct_size = sizeof(event)};
+  MojoTrapEvent event = {/*.struct_size =*/ sizeof(event)};
   TranslateIpczToMojoEvent(signals, trigger_context, flags, status, &event);
   event.flags = MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL;
   handler_(&event);
@@ -358,7 +358,7 @@ void MojoTrap::HandleEvent(const IpczTrapEvent& event) {
     armed_ = false;
   }
 
-  MojoTrapEvent mojo_event = {.struct_size = sizeof(mojo_event)};
+  MojoTrapEvent mojo_event = {/*.struct_size =*/ sizeof(mojo_event)};
   TranslateIpczToMojoEvent(trigger.signals, trigger.trigger_context,
                            event.condition_flags, *event.status, &mojo_event);
   mojo_event.flags |= MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL;
@@ -413,11 +413,11 @@ IpczResult MojoTrap::ArmTrigger(Trigger& trigger,
 
 void MojoTrap::NotifyTriggerRemoved(Trigger& trigger) {
   MojoTrapEvent mojo_event = {
-      .struct_size = sizeof(mojo_event),
-      .flags = MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL,
-      .trigger_context = trigger.trigger_context,
-      .result = MOJO_RESULT_CANCELLED,
-      .signals_state = {.satisfied_signals = 0, .satisfiable_signals = 0},
+      /*.struct_size =*/ sizeof(mojo_event),
+      /*.flags =*/ MOJO_TRAP_EVENT_FLAG_WITHIN_API_CALL,
+      /*.trigger_context =*/ trigger.trigger_context,
+      /*.result =*/ MOJO_RESULT_CANCELLED,
+      /*.signals_state =*/ {/*.satisfied_signals =*/ 0, /*.satisfiable_signals =*/ 0},
   };
   handler_(&mojo_event);
 }

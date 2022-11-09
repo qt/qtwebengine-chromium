@@ -198,7 +198,7 @@ bool BlockAllocator::TryUpdateFrontHeader(BlockHeader& last_known_header,
   // called within a tight retry loop.
   return block_header_at(kFrontBlockIndex)
       .compare_exchange_weak(
-          last_known_header, {.version = new_version, .next = relative_next},
+          last_known_header, {/*.version =*/ new_version, /*.next =*/ relative_next},
           std::memory_order_release, std::memory_order_relaxed);
 }
 
@@ -210,7 +210,7 @@ BlockAllocator::FreeBlock::FreeBlock(int16_t index, AtomicBlockHeader& header)
 void BlockAllocator::FreeBlock::SetNextFreeBlock(int16_t next_free_block) {
   const int16_t relative_next =
       ForBaseIndex(index_).GetRelativeFromAbsoluteIndex(next_free_block);
-  header_.store({.version = 0, .next = relative_next},
+  header_.store({/*.version =*/ 0, /*.next =*/ relative_next},
                 std::memory_order_release);
 }
 

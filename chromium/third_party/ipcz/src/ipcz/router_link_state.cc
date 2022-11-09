@@ -128,9 +128,9 @@ bool RouterLinkState::ResetWaitingBit(LinkSide side) {
 RouterLinkState::QueueState RouterLinkState::GetQueueState(
     LinkSide side) const {
   return {
-      .num_parcels = SelectBySide(side, num_parcels_on_a, num_parcels_on_b)
+      /*.num_parcels =*/ SelectBySide(side, num_parcels_on_a, num_parcels_on_b)
                          .load(std::memory_order_relaxed),
-      .num_bytes = SelectBySide(side, num_bytes_on_a, num_bytes_on_b)
+      /*.num_bytes =*/ SelectBySide(side, num_bytes_on_a, num_bytes_on_b)
                        .load(std::memory_order_relaxed),
   };
 }
