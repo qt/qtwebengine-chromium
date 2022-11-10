@@ -12,4 +12,9 @@ template class EXPORT_TEMPLATE_DEFINE(GL_EXPORT) GLDisplayManager<GLDisplayEGL>;
 #if defined(USE_GLX)
 template class EXPORT_TEMPLATE_DEFINE(GL_EXPORT) GLDisplayManager<GLDisplayX11>;
 #endif
+
+#if BUILDFLAG(IS_WIN)
+template class EXPORT_TEMPLATE_DEFINE(GL_EXPORT) GLDisplayManager<GLDisplayWGL>;
+#endif
+
 }  // namespace gl

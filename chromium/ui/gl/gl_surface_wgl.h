@@ -10,6 +10,7 @@
 #include "ui/gl/gl_surface.h"
 
 namespace gl {
+class GLDisplayWGL;
 
 // Base interface for WGL surfaces.
 class GL_EXPORT GLSurfaceWGL : public GLSurface {
@@ -27,8 +28,9 @@ class GL_EXPORT GLSurfaceWGL : public GLSurface {
  protected:
   ~GLSurfaceWGL() override;
 
- private:
+ protected:
   static bool initialized_;
+  GLDisplayWGL* display_;
 };
 
 // A surface used to render to a view.
