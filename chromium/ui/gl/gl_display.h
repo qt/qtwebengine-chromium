@@ -75,6 +75,7 @@ enum DisplayPlatform {
   NONE = 0,
   EGL = 1,
   X11 = 2,
+  WGL = 3,
 };
 
 GL_EXPORT void GetEGLInitDisplaysForTesting(
@@ -140,6 +141,7 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
 
   std::unique_ptr<DisplayExtensionsEGL> ext;
 
+  explicit GLDisplayEGL(uint64_t system_device_id);
  private:
   friend class GLDisplayManager<GLDisplayEGL>;
   friend class EGLApiTest;
@@ -154,7 +156,6 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
     EGLDisplay display_ = EGL_NO_DISPLAY;
   };
 
-  explicit GLDisplayEGL(uint64_t system_device_id);
 
   bool InitializeDisplay(EGLDisplayPlatform native_display);
   void InitializeCommon();
@@ -183,12 +184,37 @@ class GL_EXPORT GLDisplayX11 : public GLDisplay {
   void Shutdown() override;
   bool IsInitialized() const override;
 
+  explicit GLDisplayX11(uint64_t system_device_id);
  private:
   friend class GLDisplayManager<GLDisplayX11>;
 
-  explicit GLDisplayX11(uint64_t system_device_id);
 };
 #endif  // defined(USE_GLX)
+
+#if BUILDFLAG(IS_WIN)
+class GLDisplayWGL : public GLDisplay {
+ public:
+  ~GLDisplayWGL() override;
+
+  void* GetDisplay() const override;
+  bool IsInitialized() const override;
+  void Shutdown() override;
+
+  bool Init(bool software_rendering);
+
+  ATOM window_class() const { return window_class_; }
+  HDC device_context() const { return device_context_; }
+  int pixel_format() const { return pixel_format_; }
+
+  explicit GLDisplayWGL(uint64_t system_device_id);
+ private:
+  HINSTANCE module_handle_;
+  ATOM window_class_;
+  HWND window_handle_;
+  HDC device_context_;
+  int pixel_format_;
+};
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace gl
 

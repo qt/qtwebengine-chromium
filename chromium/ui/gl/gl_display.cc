@@ -686,6 +686,11 @@ GLDisplayPlatform* GLDisplay::GetAs() {
       type_checked = std::is_same<GLDisplayPlatform, GLDisplayX11>::value;
 #endif  // defined(USE_GLX)
       break;
+    case WGL:
+#if BUILDFLAG(IS_WIN)
+      type_checked = std::is_same<GLDisplayPlatform, GLDisplayWGL>::value;
+#endif  // BUILDFLAG(IS_WIN)
+      break;
   }
   if (type_checked)
     return static_cast<GLDisplayPlatform*>(this);
@@ -702,6 +707,11 @@ template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
 template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
     GLDisplayX11* GLDisplay::GetAs<GLDisplayX11>();
 #endif  // defined(USE_GLX)
+
+#if BUILDFLAG(IS_WIN)
+template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
+    GLDisplayWGL* GLDisplay::GetAs<GLDisplayWGL>();
+#endif  // BUILDFLAG(IS_WIN)
 
 #if defined(USE_EGL)
 GLDisplayEGL::EGLGpuSwitchingObserver::EGLGpuSwitchingObserver(
@@ -1039,5 +1049,156 @@ bool GLDisplayX11::IsInitialized() const {
   return true;
 }
 #endif  // defined(USE_GLX)
+
+#if BUILDFLAG(IS_WIN)
+
+namespace {
+const PIXELFORMATDESCRIPTOR kPixelFormatDescriptor = {
+  sizeof(kPixelFormatDescriptor),    // Size of structure.
+  1,                       // Default version.
+  PFD_DRAW_TO_WINDOW |     // Window drawing support.
+  PFD_SUPPORT_OPENGL |     // OpenGL support.
+  PFD_DOUBLEBUFFER,        // Double buffering support (not stereo).
+  PFD_TYPE_RGBA,           // RGBA color mode (not indexed).
+  24,                      // 24 bit color mode.
+  0, 0, 0, 0, 0, 0,        // Don't set RGB bits & shifts.
+  8, 0,                    // 8 bit alpha
+  0,                       // No accumulation buffer.
+  0, 0, 0, 0,              // Ignore accumulation bits.
+  0,                       // no z-buffer.
+  0,                       // no stencil buffer.
+  0,                       // No aux buffer.
+  PFD_MAIN_PLANE,          // Main drawing plane (not overlay).
+  0,                       // Reserved.
+  0, 0, 0,                 // Layer masks ignored.
+};
+
+LRESULT CALLBACK IntermediateWindowProc(HWND window,
+                                        UINT message,
+                                        WPARAM w_param,
+                                        LPARAM l_param) {
+  switch (message) {
+    case WM_ERASEBKGND:
+      // Prevent windows from erasing the background.
+      return 1;
+    case WM_PAINT:
+      // Do not paint anything.
+      PAINTSTRUCT paint;
+      if (BeginPaint(window, &paint))
+        EndPaint(window, &paint);
+      return 0;
+    default:
+      return DefWindowProc(window, message, w_param, l_param);
+  }
+}
+}  // namespace
+
+GLDisplayWGL::GLDisplayWGL(uint64_t system_device_id)
+    : GLDisplay(system_device_id, WGL),
+      module_handle_(0),
+      window_class_(0),
+      window_handle_(0),
+      device_context_(0),
+      pixel_format_(0) {}
+
+GLDisplayWGL::~GLDisplayWGL() {
+  if (window_handle_)
+    DestroyWindow(window_handle_);
+  if (window_class_)
+    UnregisterClass(reinterpret_cast<wchar_t*>(window_class_),
+                    module_handle_);
+}
+
+bool GLDisplayWGL::Init(bool software_rendering) {
+  // We must initialize a GL context before we can bind to extension entry
+  // points. This requires the device context for a window.
+  if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT |
+                         GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                         reinterpret_cast<wchar_t*>(IntermediateWindowProc),
+                         &module_handle_)) {
+    LOG(ERROR) << "GetModuleHandleEx failed.";
+    return false;
+  }
+
+  WNDCLASS intermediate_class;
+  intermediate_class.style = CS_OWNDC;
+  intermediate_class.lpfnWndProc = IntermediateWindowProc;
+  intermediate_class.cbClsExtra = 0;
+  intermediate_class.cbWndExtra = 0;
+  intermediate_class.hInstance = module_handle_;
+  intermediate_class.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+  intermediate_class.hCursor = LoadCursor(NULL, IDC_ARROW);
+  intermediate_class.hbrBackground = NULL;
+  intermediate_class.lpszMenuName = NULL;
+  intermediate_class.lpszClassName = L"Intermediate GL Window";
+  window_class_ = RegisterClass(&intermediate_class);
+  if (!window_class_) {
+    LOG(ERROR) << "RegisterClass failed.";
+    return false;
+  }
+
+  window_handle_ = CreateWindowEx(WS_EX_NOPARENTNOTIFY,
+                                  reinterpret_cast<wchar_t*>(window_class_),
+                                  L"",
+                                  WS_OVERLAPPEDWINDOW,
+                                  0,
+                                  0,
+                                  100,
+                                  100,
+                                  NULL,
+                                  NULL,
+                                  NULL,
+                                  NULL);
+  if (!window_handle_) {
+    LOG(ERROR) << "CreateWindow failed.";
+    return false;
+  }
+
+  device_context_ = GetDC(window_handle_);
+  pixel_format_ = ChoosePixelFormat(device_context_,
+                                    &kPixelFormatDescriptor);
+  if (pixel_format_ == 0) {
+    LOG(ERROR) << "Unable to get the pixel format for GL context.";
+    return false;
+  }
+
+  bool result = false;
+  if (software_rendering) {
+    // wglSetPixelFormat needs to be called instead of SetPixelFormat to allow
+    // a differently named software GL implementation library to set up its
+    // internal data. The windows gdi.dll SetPixelFormat call directly calls
+    // into the stock opengl32.dll, instead of opengl32sw.dll for example.
+    typedef BOOL(WINAPI * wglSetPixelFormatProc)(
+        HDC, int, const PIXELFORMATDESCRIPTOR*);
+    wglSetPixelFormatProc wglSetPixelFormatFn =
+        reinterpret_cast<wglSetPixelFormatProc>(
+            GetGLProcAddress("wglSetPixelFormat"));
+
+    result = wglSetPixelFormatFn(device_context_, pixel_format_,
+                                 &kPixelFormatDescriptor);
+  } else {
+    result = SetPixelFormat(device_context_, pixel_format_,
+                            &kPixelFormatDescriptor);
+  }
+  if (!result) {
+    LOG(ERROR) << "Unable to set the pixel format for temporary GL context.";
+    return false;
+  }
+  return true;
+}
+
+void* GLDisplayWGL::GetDisplay() const
+{
+  return device_context();
+}
+
+bool GLDisplayWGL::IsInitialized() const
+{
+  return true;
+}
+void GLDisplayWGL::Shutdown()
+{
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace gl

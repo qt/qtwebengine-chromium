@@ -177,6 +177,11 @@ GLDisplay* GetDisplay(GpuPreference gpu_preference) {
     return GLDisplayManagerX11::GetInstance()->GetDisplay(gpu_preference);
   }
 #endif
+#if BUILDFLAG(IS_WIN)
+  if (!GLDisplayManagerWGL::GetInstance()->IsEmpty()) {
+    return GLDisplayManagerWGL::GetInstance()->GetDisplay(gpu_preference);
+  }
+#endif
 #if defined(USE_EGL)
   return GLDisplayManagerEGL::GetInstance()->GetDisplay(gpu_preference);
 #endif
