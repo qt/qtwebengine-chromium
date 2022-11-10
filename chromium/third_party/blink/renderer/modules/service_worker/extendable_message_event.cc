@@ -135,7 +135,7 @@ ExtendableMessageEvent::ExtendableMessageEvent(
     origin_ = initializer->origin();
   if (initializer->hasLastEventId())
     last_event_id_ = initializer->lastEventId();
-  if (initializer->hasSource() and initializer->source()) {
+  if (initializer->hasSource() && initializer->source()) {
     switch (initializer->source()->GetContentType()) {
       case V8UnionClientOrMessagePortOrServiceWorker::ContentType::kClient:
         source_as_client_ = initializer->source()->GetAsClient();
