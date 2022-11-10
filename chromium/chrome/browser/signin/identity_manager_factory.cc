@@ -27,13 +27,13 @@
 #include "components/signin/public/webdata/token_web_data.h"
 #include "content/public/browser/network_service_instance.h"
 
-#if BUILDFLAG((ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !defined(TOOLKIT_QT)
+#if (BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !defined(TOOLKIT_QT)
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
 #endif
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
 #include "chrome/browser/web_data_service_factory.h"
 #include "components/keyed_service/core/service_access_type.h"
 #endif
@@ -141,7 +141,7 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
 #endif
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
   params.token_web_data = WebDataServiceFactory::GetTokenWebDataForProfile(
       profile, ServiceAccessType::EXPLICIT_ACCESS);
 #endif

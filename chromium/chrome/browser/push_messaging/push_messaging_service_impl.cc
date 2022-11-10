@@ -27,8 +27,8 @@
 #endif
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/gcm/instance_id/instance_id_profile_service_factory.h"
-#include "chrome/browser/lifetime/termination_notification.h"
 #ifndef TOOLKIT_QT
+#include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/permissions/permission_revocation_request.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
@@ -287,11 +287,11 @@ PushMessagingServiceImpl::PushMessagingServiceImpl(Profile* profile)
   DCHECK(profile);
 #ifndef TOOLKIT_QT
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(this);
-#endif
 
   on_app_terminating_subscription_ =
       browser_shutdown::AddAppTerminatingCallback(base::BindOnce(
           &PushMessagingServiceImpl::OnAppTerminating, base::Unretained(this)));
+#endif
   refresh_observation_.Observe(&refresher_);
 }
 
@@ -969,8 +969,8 @@ void PushMessagingServiceImpl::SubscribeFromDocument(
                      render_frame_id));
 #else
   if (!IsPermissionSet(requesting_origin)) {
-    profile_->GetPermissionControllerDelegate()->RequestPermissionFromCurrentDocument(
-      content::PermissionType::NOTIFICATIONS, render_frame_host, user_gesture,
+    profile_->GetPermissionController()->RequestPermissionFromCurrentDocument(
+      blink::PermissionType::NOTIFICATIONS, render_frame_host, user_gesture,
       base::BindOnce(&PushMessagingServiceImpl::DoSubscribe,
                      weak_factory_.GetWeakPtr(), std::move(app_identifier),
                      std::move(options), std::move(callback), render_process_id,

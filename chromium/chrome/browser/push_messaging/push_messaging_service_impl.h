@@ -20,7 +20,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/permissions/permission_revocation_request.h"
+#endif
 #include "chrome/browser/push_messaging/push_messaging_notification_manager.h"
 #include "chrome/browser/push_messaging/push_messaging_refresher.h"
 #include "chrome/common/buildflags.h"

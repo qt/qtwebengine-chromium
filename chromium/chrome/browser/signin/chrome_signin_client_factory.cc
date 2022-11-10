@@ -10,11 +10,9 @@
 #include "chrome/browser/profiles/profile.h"
 
 ChromeSigninClientFactory::ChromeSigninClientFactory()
-#ifndef TOOLKIT_QT
     : ProfileKeyedServiceFactory("ChromeSigninClient") {
+#ifndef TOOLKIT_QT
   DependsOn(ProfileNetworkContextServiceFactory::GetInstance());
-#else
-{
 #endif
 }
 
