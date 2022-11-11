@@ -106,7 +106,7 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::Run() {
     return RespondNow(Error(kTargetNotFoundError));
   }
 
-  content::RenderFrameHost* const main_frame = web_contents->GetMainFrame();
+  content::RenderFrameHost* const main_frame = web_contents->GetPrimaryMainFrame();
   content::MediaStreamRequest request(main_frame->GetProcess()->GetID() /* render_process_id */,
                                       main_frame->GetRoutingID() /* render_frame_id */,
                                       request_id_ /* page_request_id */,
@@ -131,7 +131,7 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::Run() {
 void WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequestResponse(
       content::RenderFrameHost* const main_frame,
       const GURL &origin,
-      const blink::MediaStreamDevices& devices,
+      const blink::mojom::StreamDevicesSet& devicesSet,
       blink::mojom::MediaStreamRequestResult stream_request_result,
       std::unique_ptr<content::MediaStreamUI> stream_ui)
 {
@@ -140,12 +140,12 @@ void WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequest
     return;
   }
 
-  DCHECK(!devices.empty());
+  DCHECK(!devicesSet.stream_devices.empty());
 
   content::DesktopMediaID source = content::DesktopMediaID(content::DesktopMediaID::TYPE_SCREEN, 0);
-  blink::MediaStreamDevices::const_iterator it = devices.begin();
-  for (; it != devices.end(); ++it) {
-    content::DesktopMediaID id = content::DesktopMediaID::Parse(it->id);
+  auto it = devicesSet.stream_devices.begin();
+  for (; it != devicesSet.stream_devices.end(); ++it) {
+    content::DesktopMediaID id = content::DesktopMediaID::Parse((*it)->video_device->id);
     if (id.type == content::DesktopMediaID::TYPE_SCREEN) {
         source = id;
         break;

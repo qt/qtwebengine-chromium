@@ -52,6 +52,7 @@
 #include "content/public/browser/media_stream_request.h"
 #include "extensions/browser/extension_function.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
+#include "third_party/blink/public/mojom/mediastream/media_stream.mojom-shared.h"
 
 namespace content {
 class RenderFrameHost;
@@ -70,7 +71,7 @@ class WebrtcDesktopCapturePrivateChooseDesktopMediaFunction : public ExtensionFu
   void ProcessAccessRequestResponse(
       content::RenderFrameHost* const main_frame,
       const GURL &origin,
-      const blink::MediaStreamDevices& devices,
+      const blink::mojom::StreamDevicesSet& devicesSet,
       blink::mojom::MediaStreamRequestResult stream_request_result,
       std::unique_ptr<content::MediaStreamUI> stream_ui);
 
