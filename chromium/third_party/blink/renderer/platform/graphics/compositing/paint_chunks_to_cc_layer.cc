@@ -988,7 +988,8 @@ static gfx::Point MapSelectionBoundPoint(const IntPoint& point,
           .MapPoint(FloatPoint(point));
 
   mapped_point.MoveBy(-layer_offset);
-  gfx::Point out_point(RoundedIntPoint(mapped_point));
+  IntPoint tmpOutPoint = RoundedIntPoint(mapped_point);
+  gfx::Point out_point(tmpOutPoint.X(), tmpOutPoint.Y());
   return out_point;
 }
 
