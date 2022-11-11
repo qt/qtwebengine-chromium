@@ -320,7 +320,9 @@ FloatRect PaintTimingDetector::BlinkSpaceToDIPs(
   // May be nullptr in tests.
   if (!widget)
     return float_rect;
-  return FloatRect(widget->BlinkSpaceToDIPs(gfx::RectF(float_rect)));
+  gfx::RectF rectF(float_rect.X(), float_rect.Y(),
+                        float_rect.Width(), float_rect.Height());
+  return FloatRect(widget->BlinkSpaceToDIPs(rectF));
 }
 
 FloatRect PaintTimingDetector::CalculateVisualRect(
