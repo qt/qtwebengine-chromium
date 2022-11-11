@@ -764,6 +764,8 @@ blink::WebMediaPlayer* MediaFactory::CreateWebMediaPlayerForMediaStream(
         main_thread_compositor_task_runner,
     scoped_refptr<base::TaskRunner> compositor_worker_task_runner) {
 #if BUILDFLAG(ENABLE_WEBRTC)
+  RenderThreadImpl* const render_thread = RenderThreadImpl::current();
+
   std::vector<std::unique_ptr<BatchingMediaLog::EventHandler>> handlers;
   handlers.push_back(
       std::make_unique<InspectorMediaEventHandler>(inspector_context));
