@@ -331,7 +331,6 @@ void HistoryBackend::Init(
       std::make_unique<ClientTagBasedModelTypeProcessor>(
           syncer::TYPED_URLS, /*dump_stack=*/base::RepeatingClosure()));
   typed_url_sync_bridge_->Init();
-#endif // !defined(TOOLKIT_QT)
 
   if (base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType)) {
     // TODO(crbug.com/1318028): Plumb in syncer::ReportUnrecoverableError as the
@@ -341,6 +340,7 @@ void HistoryBackend::Init(
         std::make_unique<ClientTagBasedModelTypeProcessor>(
             syncer::HISTORY, /*dump_stack=*/base::RepeatingClosure()));
   }
+#endif // !defined(TOOLKIT_QT)
 
   memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
       FROM_HERE, base::BindRepeating(&HistoryBackend::OnMemoryPressure,
@@ -1500,13 +1500,13 @@ HistoryBackend::GetTypedURLSyncControllerDelegate() {
   DCHECK(typed_url_sync_bridge_);
   return typed_url_sync_bridge_->change_processor()->GetControllerDelegate();
 }
-#endif // !defined(TOOLKIT_QT)
 
 base::WeakPtr<syncer::ModelTypeControllerDelegate>
 HistoryBackend::GetHistorySyncControllerDelegate() {
   DCHECK(history_sync_bridge_);
   return history_sync_bridge_->change_processor()->GetControllerDelegate();
 }
+#endif // !defined(TOOLKIT_QT)
 
 // Statistics ------------------------------------------------------------------
 

@@ -163,11 +163,13 @@ class HistoryDatabase : public DownloadDatabase,
 
   // Sync metadata storage ----------------------------------------------------
 
+#if !defined(TOOLKIT_QT)
   // Returns the sub-database used for storing Sync metadata for Typed URLs.
   TypedURLSyncMetadataDatabase* GetTypedURLMetadataDB();
 
   // Returns the sub-database used for storing Sync metadata for History.
   HistorySyncMetadataDatabase* GetHistoryMetadataDB();
+#endif  // !defined(TOOLKIT_QT)
 
  private:
 #if BUILDFLAG(IS_ANDROID)
@@ -202,12 +204,14 @@ class HistoryDatabase : public DownloadDatabase,
   sql::Database db_;
   sql::MetaTable meta_table_;
 
+#if !defined(TOOLKIT_QT)
   // Most of the sub-DBs (URLDatabase etc.) are integrated into HistoryDatabase
   // via inheritance. However, that can lead to "diamond inheritance" issues
   // when multiple of these base classes define the same methods. Therefore the
   // Sync metadata DBs are integrated via composition instead.
   TypedURLSyncMetadataDatabase typed_url_metadata_db_;
   HistorySyncMetadataDatabase history_metadata_db_;
+#endif  // !defined(TOOLKIT_QT)
 
   base::Time cached_early_expiration_threshold_;
 };

@@ -1194,7 +1194,6 @@ HistoryService::GetTypedURLSyncControllerDelegate() {
       base::BindRepeating(&HistoryBackend::GetTypedURLSyncControllerDelegate,
                           base::Unretained(history_backend_.get())));
 }
-#endif // !defined(TOOLKIT_QT)
 
 std::unique_ptr<syncer::ModelTypeControllerDelegate>
 HistoryService::GetHistorySyncControllerDelegate() {
@@ -1207,6 +1206,7 @@ HistoryService::GetHistorySyncControllerDelegate() {
       base::BindRepeating(&HistoryBackend::GetHistorySyncControllerDelegate,
                           base::Unretained(history_backend_.get())));
 }
+#endif // !defined(TOOLKIT_QT)
 
 void HistoryService::ProcessLocalDeleteDirective(
     const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive) {

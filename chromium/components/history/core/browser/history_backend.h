@@ -591,12 +591,12 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
   GetTypedURLSyncControllerDelegate();
-#endif // !defined(TOOLKIT_QT)
 
   // Returns the sync controller delegate for syncing history. The returned
   // delegate is owned by `this` object.
   base::WeakPtr<syncer::ModelTypeControllerDelegate>
   GetHistorySyncControllerDelegate();
+#endif // !defined(TOOLKIT_QT)
 
   // Deleting ------------------------------------------------------------------
 

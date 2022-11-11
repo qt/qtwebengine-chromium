@@ -646,12 +646,12 @@ class HistoryService : public KeyedService {
   // TypedURLSyncBridge. Must be called from the UI thread.
   std::unique_ptr<syncer::ModelTypeControllerDelegate>
   GetTypedURLSyncControllerDelegate();
-#endif // !defined(TOOLKIT_QT)
 
   // For sync codebase only: instantiates a controller delegate to interact with
   // HistorySyncBridge. Must be called from the UI thread.
   std::unique_ptr<syncer::ModelTypeControllerDelegate>
   GetHistorySyncControllerDelegate();
+#endif // !defined(TOOLKIT_QT)
 
   // Override `backend_task_runner_` for testing; needs to be called before
   // Init.
