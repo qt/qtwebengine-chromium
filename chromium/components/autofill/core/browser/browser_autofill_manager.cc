@@ -440,6 +440,21 @@ BrowserAutofillManager::FillingContext::FillingContext(
 BrowserAutofillManager::FillingContext::~FillingContext() = default;
 #endif  // !defined(TOOLKIT_QT)
 
+#if defined(TOOLKIT_QT)
+BrowserAutofillManager::BrowserAutofillManager(
+    AutofillDriver* driver,
+    AutofillClient* client,
+    const std::string& app_locale,
+    EnableDownloadManager enable_download_manager)
+    : AutofillManager(driver,
+                      client,
+                      client->GetChannel(),
+                      enable_download_manager),
+      external_delegate_(
+          std::make_unique<AutofillExternalDelegate>(this, driver)),
+      app_locale_(app_locale),
+      personal_data_(client->GetPersonalDataManager()) {}
+#else
 BrowserAutofillManager::BrowserAutofillManager(
     AutofillDriver* driver,
     AutofillClient* client,
@@ -459,7 +474,6 @@ BrowserAutofillManager::BrowserAutofillManager(
       suggestion_generator_(
           std::make_unique<AutofillSuggestionGenerator>(client,
                                                         personal_data_)) {
-#ifndef TOOLKIT_QT
   address_form_event_logger_ = std::make_unique<AddressFormEventLogger>(
       driver->IsInAnyMainFrame(), form_interactions_ukm_logger(), client);
   credit_card_form_event_logger_ = std::make_unique<CreditCardFormEventLogger>(
@@ -468,7 +482,6 @@ BrowserAutofillManager::BrowserAutofillManager(
 
   credit_card_access_manager_ = std::make_unique<CreditCardAccessManager>(
       driver, client, personal_data_, credit_card_form_event_logger_.get());
-#endif
   CountryNames::SetLocaleString(app_locale_);
   offer_manager_ = client->GetAutofillOfferManager();
 
@@ -486,11 +499,13 @@ BrowserAutofillManager::~BrowserAutofillManager() {
 
   single_field_form_fill_router_->CancelPendingQueries(this);
 }
+#endif  // defined(TOOLKIT_QT)
 
 base::WeakPtr<AutofillManager> BrowserAutofillManager::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
+#if !defined(TOOLKIT_QT)
 AutofillOfferManager* BrowserAutofillManager::GetOfferManager() {
   return offer_manager_;
 }
@@ -1013,8 +1028,8 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
   external_delegate_->OnQuery(query_id, form, field, transformed_box);
 
   std::vector<Suggestion> suggestions;
-  SuggestionsContext context;
 #if !defined(TOOLKIT_QT)
+  SuggestionsContext context;
   GetAvailableSuggestions(form, field, &suggestions, &context);
 
   if (context.is_autofill_available) {
@@ -1129,10 +1144,14 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
     return;
   }
   // Send Autofill suggestions (could be an empty list).
-#endif  // !defined(TOOLKIT_QT)
   external_delegate_->OnSuggestionsReturned(query_id, suggestions,
                                             autoselect_first_suggestion,
                                             context.should_display_gpay_logo);
+#else
+  external_delegate_->OnSuggestionsReturned(query_id, suggestions,
+                                            autoselect_first_suggestion,
+                                            /* is_all_server_suggestions = */ false);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 #if !defined(TOOLKIT_QT)
@@ -1445,9 +1464,11 @@ void BrowserAutofillManager::OnHidePopupImpl() {
     return;
 
   single_field_form_fill_router_->CancelPendingQueries(this);
-#endif
   client()->HideAutofillPopup(PopupHidingReason::kRendererEvent);
   touch_to_fill_delegate_->HideTouchToFill();
+#else
+  client()->HideAutofillPopup(PopupHidingReason::kRendererEvent);
+#endif
 }
 
 #if !defined(TOOLKIT_QT)
@@ -1591,6 +1612,7 @@ void BrowserAutofillManager::OnJavaScriptChangedAutofilledValueImpl(
     const FormData& form,
     const FormFieldData& field,
     const std::u16string& old_value) {
+#if !defined(TOOLKIT_QT)
   // Log to chrome://autofill-internals that a field's value was set by
   // JavaScript.
   auto StructureOfString = [](std::u16string str) {
@@ -1627,8 +1649,10 @@ void BrowserAutofillManager::OnJavaScriptChangedAutofilledValueImpl(
                         << std::move(change);
 
   MaybeTriggerRefillForExpirationDate(form, field, old_value);
+#endif  // !defined(TOOLKIT_QT)
 }
 
+#if !defined(TOOLKIT_QT)
 void BrowserAutofillManager::MaybeTriggerRefillForExpirationDate(
     const FormData& form,
     const FormFieldData& field,
@@ -1692,7 +1716,6 @@ void BrowserAutofillManager::PropagateAutofillPredictions(
   client()->PropagateAutofillPredictions(driver(), forms);
 }
 
-#if !defined(TOOLKIT_QT)
 void BrowserAutofillManager::OnCreditCardFetched(CreditCardFetchResult result,
                                                  const CreditCard* credit_card,
                                                  const std::u16string& cvc) {
@@ -1862,7 +1885,6 @@ void BrowserAutofillManager::Reset() {
   form_interactions_counter_ = std::make_unique<FormInteractionsCounter>();
 #else
   external_delegate_->Reset();
-  touch_to_fill_delegate_->Reset();
 #endif  // !defined(TOOLKIT_QT)
 }
 
@@ -2364,6 +2386,7 @@ void BrowserAutofillManager::OnAfterProcessParsedForms(
 #endif  // !defined(TOOLKIT_QT)
 }
 
+#if !defined(TOOLKIT_QT)
 void BrowserAutofillManager::UpdateInitialInteractionTimestamp(
     const TimeTicks& interaction_timestamp) {
   if (initial_interaction_timestamp_.is_null() ||
@@ -2999,7 +3022,6 @@ void BrowserAutofillManager::PreProcessStateMatchingTypes(
     }
   }
 }
-#endif  // !defined(TOOLKIT_QT)
 
 void BrowserAutofillManager::ReportAutofillWebOTPMetrics(bool used_web_otp) {
   // It's possible that a frame without any form uses WebOTP. e.g. a server may
@@ -3033,5 +3055,6 @@ void BrowserAutofillManager::OnSeePromoCodeOfferDetailsSelected(
   client()->OpenPromoCodeOfferDetailsURL(offer_details_url);
   OnSingleFieldSuggestionSelected(value, frontend_id);
 }
+#endif  // !defined(TOOLKIT_QT)
 
 }  // namespace autofill

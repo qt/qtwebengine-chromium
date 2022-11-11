@@ -128,6 +128,8 @@ class AutofillManager {
 
 #if !defined(TOOLKIT_QT)
   ~AutofillManager() override;
+#else
+  ~AutofillManager() = default;
 #endif
 
   // The following will fail a DCHECK if called for a prerendered main frame.
@@ -144,6 +146,7 @@ class AutofillManager {
   // Returns a WeakPtr to the leaf class.
   virtual base::WeakPtr<AutofillManager> GetWeakPtr() = 0;
 
+#if !defined(TOOLKIT_QT)
   // May return nullptr.
   virtual AutofillOfferManager* GetOfferManager() = 0;
 
@@ -154,6 +157,7 @@ class AutofillManager {
 
   // Returns true only if the previewed form should be cleared.
   virtual bool ShouldClearPreviewedForm() = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Invoked when the value of textfield is changed.
   // |bounding_box| are viewport coordinates.
@@ -219,6 +223,7 @@ class AutofillManager {
   virtual void OnDidFillAutofillFormData(const FormData& form,
                                          const base::TimeTicks timestamp);
 
+#if !defined(TOOLKIT_QT)
   // Profile Autofill was triggered by assistant's |intent|. This only affects
   // metrics logging.
   virtual void SetProfileFillViaAutofillAssistantIntent(
@@ -228,6 +233,7 @@ class AutofillManager {
   // affects metrics logging.
   virtual void SetCreditCardFillViaAutofillAssistantIntent(
       const autofill_assistant::AutofillAssistantIntent intent) = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Invoked when changes of the forms have been detected: the forms in
   // |updated_forms| are either new or have changed, and the forms in
@@ -265,6 +271,7 @@ class AutofillManager {
 
   // Other events.
 
+#if !defined(TOOLKIT_QT)
   // Invoked when the field type predictions are downloaded from the autofill
   // server.
   virtual void PropagateAutofillPredictions(
@@ -275,7 +282,6 @@ class AutofillManager {
   // Resets cache.
   virtual void Reset();
 
-#if !defined(TOOLKIT_QT)
   // translate::TranslateDriver::LanguageDetectionObserver:
   void OnTranslateDriverDestroyed(
       translate::TranslateDriver* translate_driver) override;
@@ -318,12 +324,10 @@ class AutofillManager {
   form_structures() const {
     return form_structures_;
   }
-#endif  // !defined(TOOLKIT_QT)
 
   AutofillDriver* driver() { return driver_; }
   const AutofillDriver* driver() const { return driver_; }
 
-#if !defined(TOOLKIT_QT)
   AutofillDownloadManager* download_manager() {
     return download_manager_.get();
   }
@@ -347,6 +351,10 @@ class AutofillManager {
       int http_error) {
     OnServerRequestError(form_signature, request_type, http_error);
   }
+#else
+  virtual void Reset() {}
+  AutofillDriver* driver() { return driver_; }
+  const AutofillDriver* driver() const { return driver_; }
 #endif  // !defined(TOOLKIT_QT)
 
 #ifdef UNIT_TEST
@@ -418,6 +426,7 @@ class AutofillManager {
       const FormData& form,
       const base::TimeTicks timestamp) = 0;
 
+#if !defined(TOOLKIT_QT)
   virtual void FillCreditCardFormImpl(const FormData& form,
                                       const FormFieldData& field,
                                       const CreditCard& credit_card,
@@ -426,6 +435,7 @@ class AutofillManager {
   virtual void FillProfileFormImpl(const FormData& form,
                                    const FormFieldData& field,
                                    const AutofillProfile& profile) = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   virtual void OnFocusNoLongerOnFormImpl(bool had_interacted_form) = 0;
 

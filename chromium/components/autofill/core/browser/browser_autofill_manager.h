@@ -104,13 +104,13 @@ enum class ValuePatternsMetric {
 
 // Manages saving and restoring the user's personal information entered into web
 // forms. One per frame; owned by the AutofillDriver.
-#if !defined(TOOLKIT_QT)
+#if defined(TOOLKIT_QT)
+class BrowserAutofillManager : public AutofillManager {
+#else
 class BrowserAutofillManager : public AutofillManager,
                                public SingleFieldFormFiller::SuggestionsHandler,
                                public CreditCardAccessManager::Accessor {
-#else
-class BrowserAutofillManager : public AutofillManager {
-#endif  // !defined(TOOLKIT_QT)
+#endif  // defined(TOOLKIT_QT)
  public:
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
@@ -252,9 +252,11 @@ class BrowserAutofillManager : public AutofillManager {
 
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
+#if !defined(TOOLKIT_QT)
   AutofillOfferManager* GetOfferManager() override;
   CreditCardAccessManager* GetCreditCardAccessManager() override;
   bool ShouldClearPreviewedForm() override;
+#endif  // !defined(TOOLKIT_QT)
   void OnFocusNoLongerOnFormImpl(bool had_interacted_form) override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -269,8 +271,11 @@ class BrowserAutofillManager : public AutofillManager {
       const FormData& form,
       const FormFieldData& field,
       const std::u16string& old_value) override;
+#if !defined(TOOLKIT_QT)
   void PropagateAutofillPredictions(
       const std::vector<FormStructure*>& forms) override;
+#endif
+
   void Reset() override;
 
 #if !defined(TOOLKIT_QT)
@@ -315,7 +320,6 @@ class BrowserAutofillManager : public AutofillManager {
   bool has_observed_one_time_code_field() const {
     return has_observed_one_time_code_field_;
   }
-#endif  // !defined(TOOLKIT_QT)
 
   // Reports whether a document collects phone numbers, uses one time code, uses
   // WebOTP. There are cases that the reporting is not expected:
@@ -330,6 +334,7 @@ class BrowserAutofillManager : public AutofillManager {
   void OnSeePromoCodeOfferDetailsSelected(const GURL& offer_details_url,
                                           const std::u16string& value,
                                           int frontend_id);
+#endif  // !defined(TOOLKIT_QT)
 
 #if defined(UNIT_TEST)
   void SetExternalDelegateForTest(
@@ -378,6 +383,7 @@ class BrowserAutofillManager : public AutofillManager {
 #endif  // defined(UNIT_TEST)
 
  protected:
+#if !defined(TOOLKIT_QT)
   // Test code should prefer to use this constructor.
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
@@ -386,7 +392,6 @@ class BrowserAutofillManager : public AutofillManager {
                          AutofillDownloadManagerState enable_download_manager =
                              DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 
-#if !defined(TOOLKIT_QT)
   // Uploads the form data to the Autofill server. |observed_submission|
   // indicates that upload is the result of a submission event.
   virtual void UploadFormData(const FormStructure& submitted_form,
@@ -706,7 +711,9 @@ class BrowserAutofillManager : public AutofillManager {
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<TouchToFillDelegateImpl> touch_to_fill_delegate_;
+#endif
 
   std::string app_locale_;
 

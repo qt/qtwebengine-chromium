@@ -160,12 +160,14 @@ void ContentAutofillDriverFactory::RenderFrameDeleted(
   ContentAutofillDriver* driver = it->second.get();
   DCHECK(driver);
 
+#if !defined(TOOLKIT_QT)
   if (!render_frame_host->IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering) &&
       driver->autofill_manager()) {
     driver->autofill_manager()->ReportAutofillWebOTPMetrics(
         render_frame_host->DocumentUsedWebOTP());
   }
+#endif  // !defined(TOOLKIT_QT)
 
   // If the popup menu has been triggered from within an iframe and that
   // frame is deleted, hide the popup. This is necessary because the popup

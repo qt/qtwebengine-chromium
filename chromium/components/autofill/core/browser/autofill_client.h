@@ -333,15 +333,15 @@ class AutofillClient {
   // client (can be null for unsupported platforms).
   virtual MerchantPromoCodeManager* GetMerchantPromoCodeManager();
 
+#if !defined(TOOLKIT_QT)
   // Can be null on unsupported platforms.
   virtual CreditCardCVCAuthenticator* GetCVCAuthenticator();
   virtual CreditCardOtpAuthenticator* GetOtpAuthenticator();
 
-#if !defined(TOOLKIT_QT)
   // Creates and returns a SingleFieldFormFillRouter using the
   // AutocompleteHistoryManager instance associated with the client.
   std::unique_ptr<SingleFieldFormFillRouter> GetSingleFieldFormFillRouter();
-#endif
+#endif  // !defined(TOOLKIT_QT)
 
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
@@ -597,7 +597,6 @@ class AutofillClient {
   // when a credit card is scanned successfully. Should be called only if
   // HasCreditCardScanFeature() returns true.
   virtual void ScanCreditCard(CreditCardScanCallback callback) = 0;
-#endif  // !defined(TOOLKIT_QT)
 
   // Returns true if the Touch To Fill feature is both supported by platform and
   // enabled. Should be called before |ShowTouchToFillCreditCard| or
@@ -615,6 +614,7 @@ class AutofillClient {
   // if one is currently shown. Should be called only if
   // |IsTouchToFillCreditCardSupported| returns true.
   virtual void HideTouchToFillCreditCard() = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Shows an Autofill popup with the given |values|, |labels|, |icons|, and
   // |identifiers| for the element at |element_bounds|. |delegate| will be
@@ -727,7 +727,6 @@ class AutofillClient {
 
 #if !defined(TOOLKIT_QT)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
-#endif
 
 #if BUILDFLAG(IS_IOS)
   // Checks whether the current query is the most recent one.
@@ -738,6 +737,7 @@ class AutofillClient {
   // details page for the offers in a promo code suggestions popup. Every offer
   // in a promo code suggestions popup links to the same offer details page.
   virtual void OpenPromoCodeOfferDetailsURL(const GURL& url) = 0;
+#endif  // !defined(TOOLKIT_QT)
 };
 
 }  // namespace autofill
