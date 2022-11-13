@@ -810,8 +810,8 @@ class MediaStreamManager::DeviceRequest {
   }
 
   void RunMojoCallbacks() {
-    if (generate_stream_cb) {
-      std::move(generate_stream_cb)
+    if (generate_streams_cb_) {
+      std::move(generate_streams_cb_)
           .Run(MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN, std::string(),
                MediaStreamDevices(), MediaStreamDevices(),
                /*pan_tilt_zoom_allowed=*/false);
@@ -821,6 +821,18 @@ class MediaStreamManager::DeviceRequest {
       std::move(open_device_cb)
           .Run(false /* success */, std::string(), MediaStreamDevice());
     }
+  }
+
+  void SetGenerateStreamsCallback(GenerateStreamCallback callback) {
+    generate_streams_cb_ = std::move(callback);
+  }
+
+  GenerateStreamCallback&& MoveGenerateStreamsCallback() {
+    return std::move(generate_streams_cb_);
+  }
+
+  bool HasGenerateStreamsCallback() const {
+    return !generate_streams_cb_.is_null();
   }
 
   // The render process id that requested this stream to be generated and that
@@ -863,8 +875,6 @@ class MediaStreamManager::DeviceRequest {
   // Currently it is only used by |DEVICE_ACCESS| type.
   MediaAccessRequestCallback media_access_request_cb;
 
-  GenerateStreamCallback generate_stream_cb;
-
   // This callback is used by transferred MediaStreamTracks to access and clone
   // an existing open MediaStreamDevice (identified by its session_id). If the
   // device is found, it is returned to this callback along with a
@@ -902,6 +912,7 @@ class MediaStreamManager::DeviceRequest {
   MediaStreamType video_type_;
   int target_process_id_;
   int target_frame_id_;
+  GenerateStreamCallback generate_streams_cb_;
 };
 
 // static
@@ -1113,7 +1124,7 @@ void MediaStreamManager::GenerateStream(
     MediaDeviceSaltAndOrigin salt_and_origin,
     bool user_gesture,
     StreamSelectionInfoPtr audio_stream_selection_info_ptr,
-    GenerateStreamCallback generate_stream_cb,
+    GenerateStreamCallback generate_streams_cb,
     DeviceStoppedCallback device_stopped_cb,
     DeviceChangedCallback device_changed_cb,
     DeviceRequestStateChangeCallback device_request_state_change_cb,
@@ -1128,7 +1139,7 @@ void MediaStreamManager::GenerateStream(
       std::move(device_stopped_cb), std::move(device_changed_cb),
       std::move(device_request_state_change_cb),
       std::move(device_capture_handle_change_cb));
-  request->generate_stream_cb = std::move(generate_stream_cb);
+  request->SetGenerateStreamsCallback(std::move(generate_streams_cb));
   DeviceRequest* const request_ptr = request.get();
   const std::string label = AddRequest(std::move(request));
 
@@ -2165,7 +2176,7 @@ void MediaStreamManager::FinalizeGenerateStream(const std::string& label,
                                                 DeviceRequest* request) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(request);
-  DCHECK(request->generate_stream_cb);
+  DCHECK(request->HasGenerateStreamsCallback());
   SendLogMessage(
       base::StringPrintf("FinalizeGenerateStream({label=%s}, {requester_id="
                          "%d}, {request_type=%s})",
@@ -2199,7 +2210,7 @@ void MediaStreamManager::FinalizeGenerateStream(const std::string& label,
                      request->requesting_frame_id),
       base::BindOnce(&MediaStreamManager::PanTiltZoomPermissionChecked,
                      base::Unretained(this), label, video_devices,
-                     base::BindOnce(std::move(request->generate_stream_cb),
+                     base::BindOnce(request->MoveGenerateStreamsCallback(),
                                     MediaStreamRequestResult::OK, label,
                                     audio_devices, video_devices)));
 }
@@ -2315,10 +2326,10 @@ void MediaStreamManager::FinalizeRequestFailed(
 
   switch (request->request_type()) {
     case blink::MEDIA_GENERATE_STREAM: {
-      DCHECK(request->generate_stream_cb);
-      std::move(request->generate_stream_cb)
-          .Run(result, std::string(), MediaStreamDevices(),
-               MediaStreamDevices(), /*pan_tilt_zoom_allowed=*/false);
+      DCHECK(request->HasGenerateStreamsCallback());
+      request->MoveGenerateStreamsCallback().Run(
+          result, std::string(), MediaStreamDevices(),
+          MediaStreamDevices(), /*pan_tilt_zoom_allowed=*/false);
       break;
     }
     case blink::MEDIA_GET_OPEN_DEVICE: {
@@ -2540,6 +2551,10 @@ void MediaStreamManager::HandleRequestDone(const std::string& label,
       break;
     case blink::MEDIA_GENERATE_STREAM: {
       FinalizeGenerateStream(label, request);
+      if (base::FeatureList::IsEnabled(
+              blink::features::kStartMediaStreamCaptureIndicatorInBrowser)) {
+        OnStreamStarted(label);
+      }
       break;
     }
     case blink::MEDIA_GET_OPEN_DEVICE: {

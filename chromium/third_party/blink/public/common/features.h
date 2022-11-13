@@ -723,6 +723,9 @@ BLINK_COMMON_EXPORT extern const base::Feature
 BLINK_COMMON_EXPORT extern const base::FeatureParam<base::TimeDelta>
     kRecentBeginMainFrameCutoff;
 
+// Make the browser decide when to turn on the capture indicator (red button)
+BLINK_COMMON_EXPORT extern const base::Feature
+    kStartMediaStreamCaptureIndicatorInBrowser;
 }  // namespace features
 }  // namespace blink
 

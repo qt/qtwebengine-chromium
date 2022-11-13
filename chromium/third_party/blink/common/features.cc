@@ -1437,5 +1437,8 @@ const base::FeatureParam<base::TimeDelta> kRecentBeginMainFrameCutoff = {
     &kDeferBeginMainFrameDuringLoading, "recent_begin_main_frame_cutoff",
     base::Milliseconds(150)};
 
+const base::Feature kStartMediaStreamCaptureIndicatorInBrowser("StartMediaStreamCaptureIndicatorInBrowser",
+                                                               base::FEATURE_ENABLED_BY_DEFAULT);
+
 }  // namespace features
 }  // namespace blink
