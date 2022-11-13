@@ -885,6 +885,9 @@ BLINK_COMMON_EXPORT extern const base::FeatureParam<int>
 BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kPostMessageDifferentPartitionSameOriginBlocked);
 
+// Make the browser decide when to turn on the capture indicator (red button)
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kStartMediaStreamCaptureIndicatorInBrowser);
 }  // namespace features
 }  // namespace blink
 
