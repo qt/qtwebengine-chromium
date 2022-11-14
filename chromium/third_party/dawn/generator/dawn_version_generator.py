@@ -32,12 +32,15 @@ from generator_lib import Generator, run_generator, FileRender, GeneratorOutput
 
 
 def get_git():
+    """
     # Will find git, git.exe, git.bat...
     git_exec = shutil.which("git")
     if not git_exec:
         raise Exception("No git executable found")
 
     return git_exec
+    """
+    return ""
 
 
 def get_git_hash(dawn_dir):
@@ -101,11 +104,14 @@ def get_git_resolved_head(dawn_dir):
 
 
 def get_version(args):
+    """
     version_file = args.version_file
     if version_file:
         with open(version_file) as f:
             return f.read()
     return get_git_hash(os.path.abspath(args.dawn_dir))
+    """
+    return ""
 
 
 def get_version_byte_array(version_str):
