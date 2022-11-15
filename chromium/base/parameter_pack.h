@@ -89,13 +89,13 @@ template <>
 struct ParameterPack<> {
   // Checks if |Type| occurs in the parameter pack.
   template <typename Type>
-  using HasType = bool_constant<false>;
+  using HasType = std::bool_constant<false>;
   // Checks if the parameter pack only contains |Type|.
   template <typename Type>
-  using OnlyHasType = bool_constant<true>;
+  using OnlyHasType = std::bool_constant<true>;
   // Checks if |Type| occurs only once in the parameter pack.
   template <typename Type>
-  using IsUniqueInPack = bool_constant<false>;
+  using IsUniqueInPack = std::bool_constant<false>;
   // Returns the zero-based index of |Type| within |Pack...| or |pack_npos| if
   // it's not within the pack.
   template <typename Type>
@@ -107,7 +107,7 @@ struct ParameterPack<> {
   using NthType = void;
   // Checks if every type in the parameter pack is the same.
   using IsAllSameType =
-      bool_constant<true>;
+      std::bool_constant<true>;
 };
 
 }  // namespace base

@@ -181,7 +181,9 @@ absl::optional<HtmlFieldType> ParseNonStandarizedAutocompleteAttribute(
 // `ParseFieldTypesFromAutocompleteAttributes()`.
 bool ShouldIgnoreAutocompleteValue(base::StringPiece value) {
   static constexpr char16_t kRegex[] = u"address";
-  return MatchesRegex<kRegex>(base::UTF8ToUTF16(value));
+  static base::NoDestructor<std::unique_ptr<const icu::RegexPattern>>
+      regex_pattern(CompileRegex(kRegex));
+  return MatchesRegex(base::UTF8ToUTF16(value), **regex_pattern, nullptr);
 }
 
 }  // namespace

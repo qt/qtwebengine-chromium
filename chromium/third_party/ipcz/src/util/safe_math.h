@@ -22,6 +22,7 @@ constexpr Dst checked_cast(Src value) {
   return static_cast<Dst>(value);
 }
 
+#if !defined(_MSC_VER) || defined(__clang__)
 template <typename T>
 constexpr T CheckAdd(T a, T b) {
   T result;
@@ -29,7 +30,16 @@ constexpr T CheckAdd(T a, T b) {
       !ABSL_PREDICT_FALSE(__builtin_add_overflow(a, b, &result)));
   return result;
 }
+#else
+constexpr size_t CheckAdd(size_t a, size_t b) {
+  size_t result = 0;
+  ABSL_HARDENING_ASSERT(
+      !ABSL_PREDICT_FALSE(_addcarry_u64(0, a, b, &result)));
+  return result;
+}
+#endif
 
+#if !defined(_MSC_VER) || defined(__clang__)
 template <typename T>
 constexpr T CheckMul(T a, T b) {
   T result;
@@ -37,7 +47,17 @@ constexpr T CheckMul(T a, T b) {
       !ABSL_PREDICT_FALSE(__builtin_mul_overflow(a, b, &result)));
   return result;
 }
+#else
+inline size_t CheckMul(size_t a, size_t b) {
+  size_t high_product = 0;
+  size_t result = _umul128(a, b, &high_product);
+  ABSL_HARDENING_ASSERT(
+      !ABSL_PREDICT_FALSE(high_product != 0));
+  return result;
+}
+#endif
 
+#if !defined(_MSC_VER) || defined(__clang__)
 template <typename T>
 T SaturatedAdd(T a, T b) {
   T result;
@@ -46,6 +66,15 @@ T SaturatedAdd(T a, T b) {
   }
   return std::numeric_limits<T>::max();
 }
+#else
+inline size_t SaturatedAdd(size_t a, size_t b) {
+  size_t result;
+  if (!_addcarry_u64(0, a, b, &result)) {
+    return result;
+  }
+  return std::numeric_limits<size_t>::max();
+}
+#endif
 
 }  // namespace ipcz
 

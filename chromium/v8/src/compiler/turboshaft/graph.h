@@ -520,6 +520,7 @@ class Graph {
                   std::is_same_v<std::remove_const_t<GraphT>, Graph>);
     using value_type = OperationT;
 
+    OperationIterator() = default;
     explicit OperationIterator(OpIndex index, GraphT* graph)
         : index_(index), graph_(graph) {}
     value_type& operator*() { return graph_->Get(index_); }
