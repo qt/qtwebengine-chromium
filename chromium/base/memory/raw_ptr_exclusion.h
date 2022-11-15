@@ -6,7 +6,9 @@
 #define BASE_MEMORY_RAW_PTR_EXCLUSION_H_
 
 #include "build/build_config.h"
+#include "base/compiler_specific.h"
 
+#if HAS_ATTRIBUTE(annotate)
 #if defined(OFFICIAL_BUILD)
 // The annotation changed compiler output and increased binary size so disable
 // for official builds.
@@ -16,6 +18,9 @@
 // Marks a field as excluded from the raw_ptr usage enforcement clang plugin.
 // Example: RAW_PTR_EXCLUSION Foo* foo_;
 #define RAW_PTR_EXCLUSION __attribute__((annotate("raw_ptr_exclusion")))
+#endif
+#else
+#define RAW_PTR_EXCLUSION
 #endif
 
 #endif  // BASE_MEMORY_RAW_PTR_EXCLUSION_H_
