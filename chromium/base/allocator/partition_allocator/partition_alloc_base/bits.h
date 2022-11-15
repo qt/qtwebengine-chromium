@@ -81,11 +81,24 @@ PA_ALWAYS_INLINE constexpr
                             int>::type
     CountLeadingZeroBits(T value) {
   static_assert(bits > 0, "invalid instantiation");
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  // We would prefer to use the _BitScanReverse(64) intrinsics, but they
+  // aren't constexpr and thus unusable here.
+  if (PA_LIKELY(value)) {
+    int leading_zeros = 0;
+    constexpr T kMostSignificantBitMask = 1ull << (bits - 1);
+    for (; !(value & kMostSignificantBitMask); value <<= 1, ++leading_zeros) {
+    }
+    return leading_zeros;
+  }
+  return bits;
+#else
   return PA_LIKELY(value)
              ? bits == 64
                    ? __builtin_clzll(static_cast<uint64_t>(value))
                    : __builtin_clz(static_cast<uint32_t>(value)) - (32 - bits)
              : bits;
+#endif  // defined(COMPILER_MSVC) && !defined(__clang__)
 }
 
 template <typename T, int bits = sizeof(T) * 8>
@@ -93,13 +106,25 @@ PA_ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 8,
                             int>::type
     CountTrailingZeroBits(T value) {
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  // We would prefer to use the _BitScanForward(64) intrinsics, but they
+  // aren't constexpr and thus unusable here.
+  if (PA_LIKELY(value)) {
+    int trailing_zeros = 0;
+    constexpr T kLeastSignificantBitMask = 1ull;
+    for (; !(value & kLeastSignificantBitMask); value >>= 1, ++trailing_zeros) {
+    }
+    return trailing_zeros;
+  }
+  return bits;
+
+#else
   return PA_LIKELY(value) ? bits == 64
                                 ? __builtin_ctzll(static_cast<uint64_t>(value))
                                 : __builtin_ctz(static_cast<uint32_t>(value))
                           : bits;
+#endif  // defined(COMPILER_MSVC) && !defined(__clang__)
 }
-
-#undef PA_BITOPS_CONSTEXPR
 
 // Returns the integer i such as 2^i <= n < 2^(i+1).
 //
@@ -107,11 +132,7 @@ PA_ALWAYS_INLINE constexpr
 // required to represent a value. Rather than implement that function,
 // use `Log2Floor` and add 1 to the result.
 constexpr int Log2Floor(uint32_t n) {
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-  return 31 - qConstexprCountLeadingZeroBits32(n);
-#else
   return 31 - CountLeadingZeroBits(n);
-#endif
 }
 
 // Returns the integer i such as 2^(i-1) < n <= 2^i.
@@ -119,11 +140,7 @@ constexpr int Log2Ceiling(uint32_t n) {
   // When n == 0, we want the function to return -1.
   // When n == 0, (n - 1) will underflow to 0xFFFFFFFF, which is
   // why the statement below starts with (n ? 32 : -1).
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-  return (n ? 32 : -1) - qConstexprCountLeadingZeroBits32(n - 1);
-#else
   return (n ? 32 : -1) - CountLeadingZeroBits(n - 1);
-#endif
 }
 
 // Returns a value of type T with a single bit set in the left-most position.
