@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/v8_target_cpu.gni")
+import("//ui/qt/qt.gni")
 
 # These are primarily relevant in current_cpu == "arm" contexts, where
 # ARM code is being compiled.  But they can also be relevant in the
@@ -139,7 +140,7 @@ if (current_cpu == "arm" || v8_current_cpu == "arm") {
     # - "none": No branch protection.
     arm_control_flow_integrity = "none"
 
-    if ((is_android || is_linux) && target_cpu == "arm64") {
+    if ((is_android || is_linux) && target_cpu == "arm64" && !is_qtwebengine) {
       # Enable PAC and BTI on AArch64 Linux/Android systems.
       # target_cpu == "arm64" filters out some cases (e.g. the ChromeOS x64
       # MSAN build) where the target platform is x64, but V8 is configured to
