@@ -311,6 +311,7 @@ enum BadMessageReason {
   FF_FROZEN_SANDBOX_FLAGS_CHANGED = 284,
   MSM_GET_OPEN_DEVICE_FOR_UNSUPPORTED_STREAM_TYPE = 285,
   MSDH_KEEP_DEVICE_ALIVE_USE_WITHOUT_FEATURE = 286,
+  MSDH_ON_STREAM_STARTED_DISALLOWED = 292,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
