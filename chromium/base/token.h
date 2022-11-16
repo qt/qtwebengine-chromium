@@ -29,7 +29,7 @@ class BASE_EXPORT Token {
   constexpr Token() = default;
 
   // Constructs a Token with |high| and |low| as its contents.
-  constexpr Token(uint64_t high, uint64_t low) : words_{high, low} {}
+  constexpr Token(uint64_t high, uint64_t low) : words_{{high, low}} {}
 
   constexpr Token(const Token&) = default;
   constexpr Token& operator=(const Token&) = default;
