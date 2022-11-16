@@ -764,6 +764,7 @@ void GLDisplayEGL::SetDisplay(EGLDisplay display) {
   display_ = display;
 }
 
+#if !defined(TOOLKIT_QT) || BUILDFLAG(IS_MAC)
 EGLDisplayPlatform GLDisplayEGL::GetNativeDisplay() const {
   return native_display_;
 }
@@ -1030,6 +1031,7 @@ void GLDisplayEGL::InitializeCommon() {
 #endif  // BUILDFLAG(IS_ANDROID)
 }
 #endif  // defined(USE_EGL)
+#endif // !defined(TOOLKIT_QT) || BUILDFLAG(IS_MAC)
 
 #if defined(USE_GLX)
 GLDisplayX11::GLDisplayX11(uint64_t system_device_id)

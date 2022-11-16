@@ -241,7 +241,7 @@ if (build_with_internal_optimization_guide) {
   }
 }
 
-if (use_qt) {
+if (use_qt5) {
   strip_binary("strip_qt5_shim") {
     binary_input = "$root_out_dir/libqt5_shim.so"
     deps = [ "//ui/qt:qt5_shim" ]

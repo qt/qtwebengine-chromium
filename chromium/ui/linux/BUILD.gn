@@ -59,7 +59,7 @@ source_set("linux_ui_factory") {
     # This is the only component that can interact with gtk.
     deps += [ "//ui/gtk" ]
   }
-  if (use_qt) {
+  if (use_qt5) {
     deps += [ "//ui/qt" ]
   }
 }

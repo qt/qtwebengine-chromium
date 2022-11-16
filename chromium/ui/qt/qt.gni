@@ -5,4 +5,6 @@
 declare_args() {
   # https://crbug.com/1317782 enable QT UI by default on Linux.
   use_qt = false
+
+  use_qt5 = false
 }
