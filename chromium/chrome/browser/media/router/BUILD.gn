@@ -224,6 +224,10 @@ if (!is_android && enable_extensions) {
       "test/provider_test_helpers.h",
     ]
   }
+} else {
+  static_library("test_support") {
+    testonly = true
+  }
 }
 
 source_set("unittests") {

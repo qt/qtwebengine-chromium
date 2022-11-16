@@ -657,8 +657,13 @@ group("unit_tests") {
   deps = [
     ":web_applications_unit_tests",
     "//chrome/browser/web_applications/app_service:unit_tests",
-    "//chrome/browser/web_applications/extensions:unit_tests",
   ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/web_applications/extensions:unit_tests",
+    ]
+  }
 }
 
 source_set("web_applications_browser_tests") {
