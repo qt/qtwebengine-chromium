@@ -1651,7 +1651,7 @@ assert(
 group("chromium_builder_perf") {
   testonly = true
 
-  if (!is_ios && !is_android && !is_castos && !use_qt) {
+  if (!is_ios && !is_android && !is_castos) {
     data_deps = [
       "//cc:cc_perftests",
       "//chrome/test:load_library_perf_tests",
