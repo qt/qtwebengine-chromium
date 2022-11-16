@@ -317,7 +317,7 @@ class ZipReader {
 
   // Progress time delta.
   // TODO(crbug.com/953256) Add this as parameter to the unzip options.
-  base::TimeDelta progress_period_ = base::Milliseconds(1000);
+  base::TimeDelta progress_period_ = base::TimeDelta::FromMilliseconds(1000);
 
   // Number of bytes read since last progress report callback executed.
   mutable uint64_t delta_bytes_read_ = 0;

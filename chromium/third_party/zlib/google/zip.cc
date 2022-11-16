@@ -62,11 +62,11 @@ class DirectFileAccessor : public FileAccessor {
         files->emplace_back();
         LOG(ERROR) << "Cannot open " << Redact(path) << ": It is a directory";
       } else {
-        const base::File& file = files->emplace_back(
+        files->emplace_back(
             absolute_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
-        LOG_IF(ERROR, !file.IsValid())
+        LOG_IF(ERROR, !files->back().IsValid())
             << "Cannot open " << Redact(path) << ": "
-            << base::File::ErrorToString(file.error_details());
+            << base::File::ErrorToString(files->back().error_details());
       }
     }
 
