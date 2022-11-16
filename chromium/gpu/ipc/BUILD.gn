@@ -5,7 +5,7 @@
 import("//build/config/ui.gni")
 
 component("gl_in_process_context") {
-  testonly = true
+  testonly = !use_qt
 
   sources = [
     "gl_in_process_context.cc",
