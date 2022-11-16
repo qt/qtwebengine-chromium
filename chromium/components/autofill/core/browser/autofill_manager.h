@@ -129,7 +129,7 @@ class AutofillManager {
 #if !defined(TOOLKIT_QT)
   ~AutofillManager() override;
 #else
-  ~AutofillManager() = default;
+  virtual ~AutofillManager() = default;
 #endif
 
   // The following will fail a DCHECK if called for a prerendered main frame.
