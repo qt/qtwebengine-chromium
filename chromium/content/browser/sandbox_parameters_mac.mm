@@ -23,6 +23,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "components/services/screen_ai/buildflags/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/mac/seatbelt_exec.h"
@@ -250,9 +251,11 @@ void SetupSandboxParameters(sandbox::mojom::Sandbox sandbox_type,
                    << static_cast<int>(sandbox_type);
       break;
     // Setup parameters for sandbox types handled by embedders below.
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
     case sandbox::mojom::Sandbox::kScreenAI:
       AddDarwinDirs(client);
       [[fallthrough]];
+#endif
     case sandbox::mojom::Sandbox::kSpeechRecognition:
       SetupCommonSandboxParameters(client);
       CHECK(GetContentClient()->browser()->SetupEmbedderSandboxParameters(
