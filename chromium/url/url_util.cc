@@ -378,10 +378,13 @@ bool DoResolveRelative(const char* base_spec,
     // schemes since the rest are already canonicalized to start with a slash.
     // The effect is to allow, for example, GURL("qrc:foo").Resolve("bar") to
     // return "qrc:bar" instead of just erroring out.
-    base::StringPiece scheme_piece(&base_spec[base_parsed.scheme.begin],
-                                   base_parsed.scheme.len);
-    if (CustomScheme::FindScheme(scheme_piece)) {
+    std::string_view scheme_piece(&base_spec[base_parsed.scheme.begin],
+                                  base_parsed.scheme.len);
+    if (const CustomScheme* scheme = CustomScheme::FindScheme(scheme_piece)) {
       base_is_hierarchical = true;
+      if (scheme->type == SCHEME_WITHOUT_AUTHORITY) {
+        base_is_authority_based = false;
+      }
     }
   }
 
