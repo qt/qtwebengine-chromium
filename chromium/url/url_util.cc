@@ -348,8 +348,11 @@ bool DoResolveRelative(std::string_view base_spec,
     // return "qrc:bar" instead of just erroring out.
     std::string_view scheme_piece(&base_spec[base_parsed.scheme.begin],
                                   base_parsed.scheme.len);
-    if (CustomScheme::FindScheme(scheme_piece)) {
+    if (const CustomScheme* scheme = CustomScheme::FindScheme(scheme_piece)) {
       base_is_hierarchical = true;
+      if (scheme->type == SCHEME_WITHOUT_AUTHORITY) {
+        base_is_authority_based = false;
+      }
     }
   }
 
