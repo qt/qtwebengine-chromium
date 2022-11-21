@@ -132,13 +132,12 @@ jumbo_source_set("utility") {
     }
     if (!use_qt) {
       deps += [
-        "//components/services/screen_ai:screen_ai_sandbox_hook",
         "//content/utility/speech:speech_recognition_sandbox_hook",
       ]
     }
   }
 
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && !use_qt) {
     deps += [ "//components/services/screen_ai:screen_ai_sandbox_hook" ]
   }
 
