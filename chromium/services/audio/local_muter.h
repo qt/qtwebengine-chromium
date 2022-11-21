@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
@@ -40,6 +41,8 @@ class LocalMuter : public mojom::LocalMuter,
   void OnMemberJoinedGroup(LoopbackGroupMember* member) final;
   void OnMemberLeftGroup(LoopbackGroupMember* member) final;
 
+  base::WeakPtr<LocalMuter> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
  private:
   // Runs the |all_bindings_lost_callback_| when |bindings_| becomes empty.
   void OnBindingLost();
@@ -51,6 +54,8 @@ class LocalMuter : public mojom::LocalMuter,
   base::OnceClosure all_bindings_lost_callback_;
 
   SEQUENCE_CHECKER(sequence_checker_);
+
+  base::WeakPtrFactory<LocalMuter> weak_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(LocalMuter);
 };

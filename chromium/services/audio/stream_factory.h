@@ -94,7 +94,7 @@ class StreamFactory final : public mojom::StreamFactory {
 
   void DestroyInputStream(InputStream* stream);
   void DestroyOutputStream(OutputStream* stream);
-  void DestroyMuter(LocalMuter* muter);
+  void DestroyMuter(base::WeakPtr<LocalMuter> muter);
   void DestroyLoopbackStream(LoopbackStream* stream);
 
   SEQUENCE_CHECKER(owning_sequence_);
