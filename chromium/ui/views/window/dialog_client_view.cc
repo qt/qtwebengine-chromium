@@ -225,6 +225,10 @@ void DialogClientView::OnThemeChanged() {
   }
 }
 
+void DialogClientView::UpdateInputProtectorTimeStamp() {
+  input_protector_.UpdateViewShownTimeStamp();
+}
+
 void DialogClientView::ResetViewShownTimeStampForTesting() {
   input_protector_.ResetForTesting();
 }
