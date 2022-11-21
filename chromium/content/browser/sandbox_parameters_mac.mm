@@ -23,7 +23,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
-#include "components/services/screen_ai/buildflags/buildflags.h
+#include "components/services/screen_ai/buildflags/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/mac/seatbelt_exec.h"
