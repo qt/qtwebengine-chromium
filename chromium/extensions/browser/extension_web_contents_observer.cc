@@ -223,11 +223,11 @@ void ExtensionWebContentsObserver::ReadyToCommitNavigation(
   content::RenderFrameHost* parent_or_outerdoc =
       navigation_handle->GetParentFrameOrOuterDocument();
 
+#ifndef TOOLKIT_QT
   content::RenderFrameHost* outermost_main_rfh =
       parent_or_outerdoc ? parent_or_outerdoc->GetOutermostMainFrame()
                          : navigation_handle->GetRenderFrameHost();
 
-#ifndef TOOLKIT_QT
   const Extension* const extension =
       GetExtensionFromFrame(outermost_main_rfh, false);
   KioskDelegate* const kiosk_delegate =
