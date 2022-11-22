@@ -362,6 +362,7 @@ config("compiler") {
         "-Wno-unknown-argument",
         "-Wno-unknown-attributes",
         "-Wno-unknown-warning-option",
+        "-Wno-predefined-identifier-outside-function",
       ]
       cflags_cc += [
         "-Wno-parentheses-equality",
