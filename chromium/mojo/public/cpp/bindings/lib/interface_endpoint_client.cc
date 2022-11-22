@@ -458,7 +458,7 @@ InterfaceEndpointClient::InterfaceEndpointClient(
       method_info_callback_(method_info_callback),
       method_name_callback_(method_name_callback) {
   DCHECK(handle_.is_valid());
-  DETACH_FROM_SEQUENCE(sequence_checker_);
+  sequence_checker_.DetachFromSequence();
 
   // TODO(yzshen): the way to use validator (or message filter in general)
   // directly is a little awkward.
@@ -482,7 +482,7 @@ InterfaceEndpointClient::InterfaceEndpointClient(
 }
 
 InterfaceEndpointClient::~InterfaceEndpointClient() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
   if (controller_)
     handle_.group_controller()->DetachEndpointClient(handle_);
 }
@@ -501,7 +501,7 @@ scoped_refptr<ThreadSafeProxy> InterfaceEndpointClient::CreateThreadSafeProxy(
 }
 
 ScopedInterfaceEndpointHandle InterfaceEndpointClient::PassHandle() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
   DCHECK(!has_pending_responders());
 
   if (!handle_.is_valid())
@@ -523,7 +523,7 @@ void InterfaceEndpointClient::SetFilter(std::unique_ptr<MessageFilter> filter) {
 }
 
 void InterfaceEndpointClient::RaiseError() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
 
   if (!handle_.pending_association())
     handle_.group_controller()->RaiseError();
@@ -531,7 +531,7 @@ void InterfaceEndpointClient::RaiseError() {
 
 void InterfaceEndpointClient::CloseWithReason(uint32_t custom_reason,
                                               base::StringPiece description) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
 
   auto handle = PassHandle();
   handle.ResetWithReason(custom_reason, description);
@@ -567,7 +567,7 @@ bool InterfaceEndpointClient::AcceptWithResponder(
 
 bool InterfaceEndpointClient::SendMessage(Message* message,
                                           bool is_control_message) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
   DCHECK(!message->has_flag(Message::kFlagExpectsResponse));
   DCHECK(!handle_.pending_association());
 
@@ -603,7 +603,7 @@ bool InterfaceEndpointClient::SendMessageWithResponder(
     bool is_control_message,
     SyncSendMode sync_send_mode,
     std::unique_ptr<MessageReceiver> responder) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
   DCHECK(message->has_flag(Message::kFlagExpectsResponse));
   DCHECK(!handle_.pending_association());
 
@@ -684,7 +684,7 @@ bool InterfaceEndpointClient::SendMessageWithResponder(
 }
 
 bool InterfaceEndpointClient::HandleIncomingMessage(Message* message) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
 
   // Accept() may invalidate `this` and `message` so we need to copy the
   // members we need for logging in case of an error.
@@ -707,7 +707,7 @@ void InterfaceEndpointClient::NotifyError(
                 info->set_mojo_interface_tag(interface_name_);
               });
 
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  CHECK(sequence_checker_.CalledOnValidSequence());
 
   if (encountered_error_)
     return;
@@ -830,7 +830,7 @@ void InterfaceEndpointClient::MaybeSendNotifyIdle() {
 }
 
 void InterfaceEndpointClient::ResetFromAnotherSequenceUnsafe() {
-  DETACH_FROM_SEQUENCE(sequence_checker_);
+  sequence_checker_.DetachFromSequence();
 
   if (controller_) {
     controller_ = nullptr;
