@@ -78,6 +78,7 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
   void ToggleMicrophone() override;
   void ToggleCamera() override;
   void HangUp() override;
+  absl::optional<gfx::Rect> GetWindowBounds() override;
 
   // Called by the MediaSessionImpl when the MediaSessionInfo changes.
   void MediaSessionInfoChanged(

@@ -425,6 +425,13 @@ void VideoPictureInPictureWindowControllerImpl::EnsureWindow() {
       GetContentClient()->browser()->CreateWindowForVideoPictureInPicture(this);
 }
 
+absl::optional<gfx::Rect>
+VideoPictureInPictureWindowControllerImpl::GetWindowBounds() {
+  if (!window_)
+    return absl::nullopt;
+  return window_->GetBounds();
+}
+
 void VideoPictureInPictureWindowControllerImpl::
     UpdatePlayPauseButtonVisibility() {
   if (!window_)

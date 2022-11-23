@@ -6,6 +6,8 @@
 #define CONTENT_PUBLIC_BROWSER_PICTURE_IN_PICTURE_WINDOW_CONTROLLER_H_
 
 #include "content/common/content_export.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace content {
 class WebContents;
@@ -49,6 +51,9 @@ class PictureInPictureWindowController {
   virtual void OnWindowDestroyed(bool should_pause_video) = 0;
 
   virtual WebContents* GetWebContents() = 0;
+
+  // Called to get the Picture-in-Picture window bounds.
+  virtual absl::optional<gfx::Rect> GetWindowBounds() = 0;
 
  protected:
   // Use PictureInPictureWindowController::GetOrCreateForWebContents() to

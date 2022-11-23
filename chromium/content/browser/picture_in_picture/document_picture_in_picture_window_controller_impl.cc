@@ -120,6 +120,13 @@ void DocumentPictureInPictureWindowControllerImpl::WebContentsDestroyed() {
   ForceClosePictureInPicture();
 }
 
+absl::optional<gfx::Rect>
+DocumentPictureInPictureWindowControllerImpl::GetWindowBounds() {
+  if (!child_contents_)
+    return absl::nullopt;
+  return child_contents_->GetContainerBounds();
+}
+
 void DocumentPictureInPictureWindowControllerImpl::PrimaryPageChanged(Page&) {
   ForceClosePictureInPicture();
 }
