@@ -686,6 +686,11 @@ GLDisplayPlatform* GLDisplay::GetAs() {
       type_checked = std::is_same<GLDisplayPlatform, GLDisplayX11>::value;
 #endif  // defined(USE_GLX)
       break;
+    case WGL:
+#if BUILDFLAG(IS_WIN)
+      type_checked = std::is_same<GLDisplayPlatform, GLDisplayWGL>::value;
+#endif  // BUILDFLAG(IS_WIN)
+      break;
   }
   if (type_checked)
     return static_cast<GLDisplayPlatform*>(this);
@@ -702,6 +707,11 @@ template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
 template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
     GLDisplayX11* GLDisplay::GetAs<GLDisplayX11>();
 #endif  // defined(USE_GLX)
+
+#if BUILDFLAG(IS_WIN)
+template EXPORT_TEMPLATE_DEFINE(GL_EXPORT)
+    GLDisplayWGL* GLDisplay::GetAs<GLDisplayWGL>();
+#endif  // BUILDFLAG(IS_WIN)
 
 #if defined(USE_EGL)
 GLDisplayEGL::EGLGpuSwitchingObserver::EGLGpuSwitchingObserver(
