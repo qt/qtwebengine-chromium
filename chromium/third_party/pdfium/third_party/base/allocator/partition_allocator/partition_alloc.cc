@@ -486,7 +486,7 @@ static size_t PartitionPurgePage(internal::PartitionPage* page, bool discard) {
 #if defined(PAGE_ALLOCATOR_CONSTANTS_ARE_CONSTEXPR)
   constexpr size_t kMaxSlotCount =
       (PartitionPageSize() * kMaxPartitionPagesPerSlotSpan) / SystemPageSize();
-#elif defined(OS_APPLE)
+#elif defined(OS_APPLE) || (defined(OS_LINUX) && defined(ARCH_CPU_ARM64))
   // It's better for slot_usage to be stack-allocated and fixed-size, which
   // demands that its size be constexpr. On OS_APPLE, PartitionPageSize() is
   // always SystemPageSize() << 2, so regardless of what the run time page size

@@ -50,10 +50,11 @@ PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE int
 PartitionPageShift() {
   return 18;  // 256 KiB
 }
-#elif defined(OS_APPLE)
+#elif defined(OS_APPLE) || \
+    (defined(OS_LINUX) && defined(ARCH_CPU_ARM64))
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE int
 PartitionPageShift() {
-  return vm_page_shift + 2;
+  return PageAllocationGranularityShift() + 2;
 }
 #else
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE int

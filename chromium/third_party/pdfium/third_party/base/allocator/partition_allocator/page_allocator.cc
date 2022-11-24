@@ -255,5 +255,13 @@ uint32_t GetAllocPageErrorCode() {
   return s_allocPageErrorCode;
 }
 
+#if defined(OS_LINUX) && defined(ARCH_CPU_ARM64)
+
+namespace internal {
+PageCharacteristics page_characteristics;
+}
+
+#endif  // defined(OS_LINUX) && defined(ARCH_CPU_ARM64)
+
 }  // namespace base
 }  // namespace pdfium

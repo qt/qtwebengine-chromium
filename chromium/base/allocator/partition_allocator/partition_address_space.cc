@@ -75,6 +75,12 @@ void PartitionAddressSpace::UninitForTesting() {
   internal::AddressPoolManager::GetInstance()->ResetForTesting();
 }
 
+#if defined(OS_LINUX) && defined(ARCH_CPU_ARM64)
+
+PageCharacteristics page_characteristics;
+
+#endif  // defined(OS_LINUX) && defined(ARCH_CPU_ARM64)
+
 #endif  // defined(PA_HAS_64_BITS_POINTERS)
 
 }  // namespace internal
