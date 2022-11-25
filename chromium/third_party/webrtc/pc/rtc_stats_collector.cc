@@ -1904,7 +1904,7 @@ void RTCStatsCollector::ProduceAudioRTPStreamStats_n(
     }
     // Remote-outbound.
     auto remote_outbound_audio = CreateRemoteOutboundAudioStreamStats(
-        voice_receiver_info, mid, inbound_audio->id(), transport_id);
+        voice_receiver_info, mid, inbound_audio_ptr->id(), transport_id);
     // Add stats.
     if (remote_outbound_audio) {
       // When the remote outbound stats are available, the remote ID for the
