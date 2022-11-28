@@ -46,7 +46,6 @@ ci.builder(
             config = "chromium",
             apply_configs = [
                 "android",
-                "enable_reclient",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -83,7 +82,6 @@ ci.builder(
             config = "chromium",
             apply_configs = [
                 "android",
-                "enable_reclient",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -125,6 +123,25 @@ ci.builder(
 ci.builder(
     name = "android-official",
     branch_selector = branches.STANDARD_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "android",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "android",
+            apply_configs = [
+                "mb",
+            ],
+            target_platform = builder_config.target_platform.ANDROID,
+            target_arch = builder_config.target_arch.ARM,
+        ),
+        android_config = builder_config.android_config(
+            config = "main_builder",
+        ),
+    ),
     builderless = False,
     console_view_entry = consoles.console_view_entry(
         category = "android",
@@ -143,6 +160,22 @@ ci.builder(
 ci.builder(
     name = "fuchsia-official",
     branch_selector = branches.FUCHSIA_LTS_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "fuchsia_x64",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            target_bits = 64,
+            target_platform = builder_config.target_platform.FUCHSIA,
+        ),
+    ),
     builderless = False,
     console_view_entry = [
         consoles.console_view_entry(
@@ -260,7 +293,6 @@ ci.builder(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = [
-                "enable_reclient",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -291,7 +323,6 @@ ci.builder(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = [
-                "enable_reclient",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -330,6 +361,21 @@ ci.builder(
 ci.builder(
     name = "linux-official",
     branch_selector = branches.STANDARD_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "checkout_pgo_profiles",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            target_bits = 64,
+        ),
+    ),
     builderless = False,
     console_view_entry = consoles.console_view_entry(
         category = "linux",
