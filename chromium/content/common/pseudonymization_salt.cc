@@ -11,7 +11,8 @@
 #include "base/rand_util.h"
 
 #if DCHECK_IS_ON()
-#include "sandbox/policy/sandbox.h"
+#include "base/command_line.h"
+#include "sandbox/policy/switches.h"
 #endif
 
 namespace content {
@@ -43,9 +44,9 @@ uint32_t GetPseudonymizationSalt() {
   if (salt == 0) {
 #if DCHECK_IS_ON()
     // Only the Browser process needs to initialize the `salt` on demand.
-    // Other processes (identified via the IsProcessSandboxed heuristic) should
+    // Other processes (identified via the process-type arg) should
     // receive the salt from their parent processes.
-    DCHECK(!sandbox::policy::Sandbox::IsProcessSandboxed());
+    DCHECK(!command_line.HasSwitch(switches::kProcessType));
 #endif
     salt = InitializeSalt();
   }
