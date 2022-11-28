@@ -298,6 +298,9 @@ typedef struct {
   int resize_buffer_underflow;
   int resize_count;
   /*!\endcond */
+
+  int prev_coded_width;
+  int prev_coded_height;
 } RATE_CONTROL;
 
 /*!\cond */
