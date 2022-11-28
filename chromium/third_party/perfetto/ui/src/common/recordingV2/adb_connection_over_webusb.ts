@@ -17,24 +17,19 @@ import {_TextDecoder, _TextEncoder} from 'custom_utils';
 import {defer, Deferred} from '../../base/deferred';
 import {assertExists, assertFalse, assertTrue} from '../../base/logging';
 import {CmdType} from '../../controller/adb_interfaces';
-import {ArrayBufferBuilder} from '../array_buffer_builder';
 
-import {AdbFileHandler} from './adb_file_handler';
-import {findInterfaceAndEndpoint} from './adb_over_webusb_utils';
-import {ALLOW_USB_DEBUGGING} from './adb_targets_utils';
+import {AdbConnectionImpl} from './adb_connection_impl';
 import {AdbKeyManager, maybeStoreKey} from './auth/adb_key_manager';
 import {
   RecordingError,
   wrapRecordingError,
 } from './recording_error_handling';
 import {
-  AdbConnection,
   ByteStream,
-  OnDisconnectCallback,
-  OnMessageCallback,
   OnStreamCloseCallback,
   OnStreamDataCallback,
 } from './recording_interfaces_v2';
+import {ALLOW_USB_DEBUGGING, findInterfaceAndEndpoint} from './recording_utils';
 
 const textEncoder = new _TextEncoder();
 const textDecoder = new _TextDecoder();
@@ -72,7 +67,7 @@ interface WriteQueueElement {
   localStreamId: number;
 }
 
-export class AdbConnectionOverWebusb implements AdbConnection {
+export class AdbConnectionOverWebusb extends AdbConnectionImpl {
   private state: AdbState = AdbState.DISCONNECTED;
   private connectingStreams = new Map<number, Deferred<AdbOverWebusbStream>>();
   private streams = new Set<AdbOverWebusbStream>();
@@ -92,12 +87,6 @@ export class AdbConnectionOverWebusb implements AdbConnection {
 
   private pendingConnPromises: Array<Deferred<void>> = [];
 
-  // onStatus and onDisconnect are set to callbacks passed from the caller.
-  // This happens for instance in the AndroidWebusbTarget, which instantiates
-  // them with callbacks passed from the UI.
-  onStatus: OnMessageCallback = () => {};
-  onDisconnect: OnDisconnectCallback = (_) => {};
-
   // We use a key pair for authenticating with the device, which we do in
   // two ways:
   // - Firstly, signing with the private key.
@@ -106,37 +95,17 @@ export class AdbConnectionOverWebusb implements AdbConnection {
   // Once we've sent the public key, for future recordings we only need to
   // sign with the private key, so the user doesn't need to give permissions
   // again.
-  constructor(private device: USBDevice, private keyManager: AdbKeyManager) {}
-
-  // Starts a shell command, then gathers all its output and returns it as
-  // a string.
-  async shellAndGetOutput(cmd: string): Promise<string> {
-    const adbStream = await this.shell(cmd);
-    const commandOutput = new ArrayBufferBuilder();
-    const onStreamingEnded = defer<string>();
-
-    adbStream.onStreamData = (data: Uint8Array) => {
-      commandOutput.append(data);
-    };
-    adbStream.onStreamClose = () => {
-      onStreamingEnded.resolve(
-          textDecoder.decode(commandOutput.toArrayBuffer()));
-    };
-    return onStreamingEnded;
+  constructor(private device: USBDevice, private keyManager: AdbKeyManager) {
+    super();
   }
 
-  async push(binary: Uint8Array, path: string): Promise<void> {
-    const byteStream = await this.openStream('sync:');
-    await (new AdbFileHandler(byteStream)).pushBinary(binary, path);
-    byteStream.close();
-  }
 
   shell(cmd: string): Promise<AdbOverWebusbStream> {
     return this.openStream('shell:' + cmd);
   }
 
   connectSocket(path: string): Promise<AdbOverWebusbStream> {
-    return this.openStream('localfilesystem:' + path);
+    return this.openStream(path);
   }
 
   async canConnectWithoutContention(): Promise<boolean> {
@@ -151,7 +120,8 @@ export class AdbConnectionOverWebusb implements AdbConnection {
     }
   }
 
-  private async openStream(destination: string): Promise<AdbOverWebusbStream> {
+  protected async openStream(destination: string):
+      Promise<AdbOverWebusbStream> {
     const streamId = ++this.lastStreamId;
     const connectingStream = defer<AdbOverWebusbStream>();
     this.connectingStreams.set(streamId, connectingStream);
@@ -212,15 +182,15 @@ export class AdbConnectionOverWebusb implements AdbConnection {
 
     this.streams.delete(stream);
     if (this.streams.size === 0) {
-      // We disconnect BEFORE calling `onStreamClose`. Otherwise there can be a
-      // race condition:
+      // We disconnect BEFORE calling `signalStreamClosed`. Otherwise, there can
+      // be a race condition:
       // Stream A: streamA.onStreamClose
       // Stream B: device.open
       // Stream A: device.releaseInterface
       // Stream B: device.transferOut -> CRASH
       await this.disconnect();
     }
-    stream.onStreamClose();
+    stream.signalStreamClosed();
   }
 
   streamWrite(msg: string|Uint8Array, stream: AdbOverWebusbStream): void {
@@ -423,7 +393,7 @@ export class AdbConnectionOverWebusb implements AdbConnection {
         const stream = assertExists(this.getStreamForLocalStreamId(msg.arg1));
         await this.sendMessage(
             'OKAY', stream.localStreamId, stream.remoteStreamId);
-        stream.onStreamData(msg.data);
+        stream.signalStreamData(msg.data);
       } else {
         this.isUsbReceiveLoopRunning = false;
         throw new RecordingError(
@@ -479,12 +449,11 @@ export class AdbConnectionOverWebusb implements AdbConnection {
 // of this class based on a stream id match.
 export class AdbOverWebusbStream implements ByteStream {
   private adbConnection: AdbConnectionOverWebusb;
-  private _isOpen: boolean;
+  private _isConnected: boolean;
+  private onStreamDataCallbacks: OnStreamDataCallback[] = [];
+  private onStreamCloseCallbacks: OnStreamCloseCallback[] = [];
   localStreamId: number;
   remoteStreamId = -1;
-
-  onStreamData: OnStreamDataCallback = (_) => {};
-  onStreamClose: OnStreamCloseCallback = () => {};
 
   constructor(
       adb: AdbConnectionOverWebusb, localStreamId: number,
@@ -493,20 +462,51 @@ export class AdbOverWebusbStream implements ByteStream {
     this.localStreamId = localStreamId;
     this.remoteStreamId = remoteStreamId;
     // When the stream is created, the connection has been already established.
-    this._isOpen = true;
+    this._isConnected = true;
   }
 
+  addOnStreamDataCallback(onStreamData: OnStreamDataCallback): void {
+    this.onStreamDataCallbacks.push(onStreamData);
+  }
+
+  addOnStreamCloseCallback(onStreamClose: OnStreamCloseCallback): void {
+    this.onStreamCloseCallbacks.push(onStreamClose);
+  }
+
+  // Used by the connection object to signal newly received data, not exposed
+  // in the interface.
+  signalStreamData(data: Uint8Array): void {
+    for (const onStreamData of this.onStreamDataCallbacks) {
+      onStreamData(data);
+    }
+  }
+
+  // Used by the connection object to signal the stream is closed, not exposed
+  // in the interface.
+  signalStreamClosed(): void {
+    for (const onStreamClose of this.onStreamCloseCallbacks) {
+      onStreamClose();
+    }
+    this.onStreamDataCallbacks = [];
+    this.onStreamCloseCallbacks = [];
+  }
+
+
   close(): void {
-    this.adbConnection.streamClose(this);
-    this._isOpen = false;
+    this.closeAndWaitForTeardown();
+  }
+
+  async closeAndWaitForTeardown(): Promise<void> {
+    this._isConnected = false;
+    await this.adbConnection.streamClose(this);
   }
 
   write(msg: string|Uint8Array): void {
     this.adbConnection.streamWrite(msg, this);
   }
 
-  isOpen(): boolean {
-    return this._isOpen;
+  isConnected(): boolean {
+    return this._isConnected;
   }
 }
 

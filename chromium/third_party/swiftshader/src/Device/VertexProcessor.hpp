@@ -82,6 +82,7 @@ public:
 		bool robustBufferAccess : 1;
 		bool isPoint : 1;
 		bool depthClipEnable : 1;
+		bool depthClipNegativeOneToOne : 1;
 	};
 
 	struct State : States
@@ -96,8 +97,8 @@ public:
 	VertexProcessor();
 
 	const State update(const vk::GraphicsState &pipelineState, const sw::SpirvShader *vertexShader, const vk::Inputs &inputs);
-	RoutineType routine(const State &state, vk::PipelineLayout const *pipelineLayout,
-	                    SpirvShader const *vertexShader, const vk::DescriptorSet::Bindings &descriptorSets);
+	RoutineType routine(const State &state, const vk::PipelineLayout *pipelineLayout,
+	                    const SpirvShader *vertexShader, const vk::DescriptorSet::Bindings &descriptorSets);
 
 	void setRoutineCacheSize(int cacheSize);
 

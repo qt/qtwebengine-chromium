@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -600,10 +600,14 @@ message RecordBrowserActionMetricReply {
 
 // Defined RO verification status for showing in metrics.
 // Keep this in sync with metrics/structured/structured.xml.
-enum RoVerification {
+enum RoVerificationStatus {
   RMAD_RO_VERIFICATION_UNKNOWN = 0;
   RMAD_RO_VERIFICATION_PASS = 1;
   RMAD_RO_VERIFICATION_UNSUPPORTED = 2;
+  RMAD_RO_VERIFICATION_NOT_TRIGGERED = 3;
+  RMAD_RO_VERIFICATION_FAIL = 4;
+  RMAD_RO_VERIFICATION_UNSUPPORTED_NOT_TRIGGERED = 5;
+  RMAD_RO_VERIFICATION_UNSUPPORTED_TRIGGERED = 6;
 }
 
 // Defined returning owner for showing in metrics.

@@ -117,7 +117,7 @@ private:
 			return res;
 		}
 
-		Color operator+(Color const &obj) const
+		Color operator+(const Color &obj) const
 		{
 			Color res;
 			for(int i = 0; i < 4; ++i)
@@ -580,10 +580,10 @@ Color interpolate(RGBf e0, RGBf e1, const IndexInfo &index, bool isSigned)
 	static constexpr uint32_t weights3[] = { 0, 9, 18, 27, 37, 46, 55, 64 };
 	static constexpr uint32_t weights4[] = { 0, 4, 9, 13, 17, 21, 26, 30,
 		                                     34, 38, 43, 47, 51, 55, 60, 64 };
-	static constexpr uint32_t const *weightsN[] = {
+	static const uint32_t constexpr *weightsN[] = {
 		nullptr, nullptr, nullptr, weights3, weights4
 	};
-	auto weights = weightsN[index.numBits];
+	const uint32_t *weights = weightsN[index.numBits];
 	ASSERT_MSG(weights != nullptr, "Unexpected number of index bits: %d", (int)index.numBits);
 	Color color;
 	uint32_t e0Weight = 64 - weights[index.value];
@@ -1437,17 +1437,17 @@ struct Block
 		static constexpr uint16_t weights3[] = { 0, 9, 18, 27, 37, 46, 55, 64 };
 		static constexpr uint16_t weights4[] = { 0, 4, 9, 13, 17, 21, 26, 30,
 			                                     34, 38, 43, 47, 51, 55, 60, 64 };
-		static constexpr uint16_t const *weightsN[] = {
+		static const uint16_t constexpr *weightsN[] = {
 			nullptr, nullptr, weights2, weights3, weights4
 		};
-		auto weights = weightsN[index.numBits];
+		const uint16_t *weights = weightsN[index.numBits];
 		ASSERT_MSG(weights != nullptr, "Unexpected number of index bits: %d", (int)index.numBits);
 		return (uint8_t)(((64 - weights[index.value]) * uint16_t(e0) + weights[index.value] * uint16_t(e1) + 32) >> 6);
 	}
 
 	void decode(uint8_t *dst, int dstX, int dstY, int dstWidth, int dstHeight, size_t dstPitch) const
 	{
-		auto const &mode = this->mode();
+		const auto &mode = this->mode();
 
 		if(mode.IDX < 0)  // Invalid mode:
 		{
@@ -1507,8 +1507,8 @@ struct Block
 			}
 		}
 
-		auto const colorBits = mode.CB + mode.SPB + mode.EPB;
-		auto const alphaBits = mode.AB + mode.SPB + mode.EPB;
+		const auto colorBits = mode.CB + mode.SPB + mode.EPB;
+		const auto alphaBits = mode.AB + mode.SPB + mode.EPB;
 
 		for(int i = 0; i < mode.NS; i++)
 		{
@@ -1538,7 +1538,7 @@ struct Block
 				ASSERT(partitionIdx < MaxPartitions);
 				auto subsetIdx = subsetIndex(mode, partitionIdx, texelIdx);
 				ASSERT(subsetIdx < MaxSubsets);
-				auto const &subset = subsets[subsetIdx];
+				const auto &subset = subsets[subsetIdx];
 
 				auto anchorIdx = anchorIndex(mode, partitionIdx, subsetIdx);
 				auto isAnchor = anchorIdx == texelIdx;

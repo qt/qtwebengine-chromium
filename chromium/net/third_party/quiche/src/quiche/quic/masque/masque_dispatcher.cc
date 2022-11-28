@@ -16,11 +16,12 @@ MasqueDispatcher::MasqueDispatcher(
     std::unique_ptr<QuicCryptoServerStreamBase::Helper> session_helper,
     std::unique_ptr<QuicAlarmFactory> alarm_factory,
     MasqueServerBackend* masque_server_backend,
-    uint8_t expected_server_connection_id_length)
+    uint8_t expected_server_connection_id_length,
+    ConnectionIdGeneratorInterface& generator)
     : QuicSimpleDispatcher(config, crypto_config, version_manager,
                            std::move(helper), std::move(session_helper),
                            std::move(alarm_factory), masque_server_backend,
-                           expected_server_connection_id_length),
+                           expected_server_connection_id_length, generator),
       masque_mode_(masque_mode),
       event_loop_(event_loop),
       masque_server_backend_(masque_server_backend) {}
@@ -31,11 +32,11 @@ std::unique_ptr<QuicSession> MasqueDispatcher::CreateQuicSession(
     const ParsedQuicVersion& version,
     const ParsedClientHello& /*parsed_chlo*/) {
   // The MasqueServerSession takes ownership of |connection| below.
-  QuicConnection* connection =
-      new QuicConnection(connection_id, self_address, peer_address, helper(),
-                         alarm_factory(), writer(),
-                         /*owns_writer=*/false, Perspective::IS_SERVER,
-                         ParsedQuicVersionVector{version});
+  QuicConnection* connection = new QuicConnection(
+      connection_id, self_address, peer_address, helper(), alarm_factory(),
+      writer(),
+      /*owns_writer=*/false, Perspective::IS_SERVER,
+      ParsedQuicVersionVector{version}, connection_id_generator());
 
   auto session = std::make_unique<MasqueServerSession>(
       masque_mode_, config(), GetSupportedVersions(), connection, this,

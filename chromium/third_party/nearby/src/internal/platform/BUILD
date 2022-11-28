@@ -48,6 +48,7 @@ cc_library(
     defines = ["NO_WEBRTC"],
     visibility = [
         "//connections:__subpackages__",
+        "//internal:__pkg__",
         "//internal/analytics:__subpackages__",
         "//internal/platform:__subpackages__",
         "//internal/platform/implementation:__subpackages__",
@@ -142,6 +143,27 @@ cc_library(
 )
 
 cc_library(
+    name = "connection_info",
+    srcs = [
+        "bluetooth_connection_info.cc",
+    ],
+    hdrs = [
+        "bluetooth_connection_info.h",
+        "connection_info.h",
+    ],
+    defines = ["NO_WEBRTC"],
+    visibility = [
+        "//connections:__subpackages__",
+        "//internal:__pkg__",
+        "//internal/platform/implementation:__subpackages__",
+    ],
+    deps = [
+        "//internal/platform:base",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "error_code_recorder",
     srcs = [
         "error_code_recorder.cc",
@@ -198,14 +220,18 @@ cc_library(
         "//connections:__subpackages__",
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         ":base",
         ":logging",
+        ":uuid",
         "//internal/platform:types",
         "//internal/platform/implementation:comm",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
     ],
 )
 
@@ -289,6 +315,7 @@ cc_library(
         "condition_variable.h",
         "count_down_latch.h",
         "crypto.h",
+        "direct_executor.h",
         "file.h",
         "future.h",
         "lockable.h",
@@ -315,6 +342,7 @@ cc_library(
         "//internal/platform/implementation/ios:__subpackages__",
         "//internal/platform/implementation/windows:__subpackages__",
         "//location/nearby/cpp/sharing:__subpackages__",
+        "//presence:__subpackages__",
     ],
     deps = [
         ":base",
@@ -334,6 +362,7 @@ cc_library(
         "ble.cc",
         "ble_v2.cc",
         "bluetooth_classic.cc",
+        "credential_storage_impl.cc",
         "file.cc",
         "wifi_hotspot.cc",
         "wifi_lan.cc",
@@ -344,7 +373,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
-        "credential_storage.h",
+        "credential_storage_impl.h",
         "wifi.h",
         "wifi_hotspot.h",
         "wifi_lan.h",
@@ -385,10 +414,13 @@ cc_test(
         "ble_v2_test.cc",
         "bluetooth_adapter_test.cc",
         "bluetooth_classic_test.cc",
+        "bluetooth_connection_info_test.cc",
         "cancelable_alarm_test.cc",
         "condition_variable_test.cc",
         "count_down_latch_test.cc",
+        "credential_storage_impl_test.cc",
         "crypto_test.cc",
+        "direct_executor_test.cc",
         "future_test.cc",
         "logging_test.cc",
         "multi_thread_executor_test.cc",
@@ -406,13 +438,16 @@ cc_test(
     defines = ["NO_WEBRTC"],
     shard_count = 16,
     deps = [
+        ":base",
         ":comm",
+        ":connection_info",
         ":logging",
+        ":test_util",
         ":types",
         ":uuid",
-        "//internal/platform:base",
-        "//internal/platform:test_util",
+        "//internal/platform/implementation:comm",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
+        "//internal/proto:credential_cc_proto",
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",

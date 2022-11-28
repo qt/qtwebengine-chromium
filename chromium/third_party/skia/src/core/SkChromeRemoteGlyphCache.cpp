@@ -180,7 +180,6 @@ public:
     }
 
     SkRect prepareForMaskDrawing(
-            SkScalar strikeToSourceScale,
             SkDrawableGlyphBuffer* accepted,
             SkSourceGlyphBuffer* rejected) override;
 
@@ -402,7 +401,6 @@ SkScalar RemoteStrike::findMaximumGlyphDimension(SkSpan<const SkGlyphID> glyphs)
 }
 
 SkRect RemoteStrike::prepareForMaskDrawing(
-        SkScalar strikeToSourceScale,
         SkDrawableGlyphBuffer* accepted,
         SkSourceGlyphBuffer* rejected) {
     SkGlyphRect boundingRect = skglyph::empty_rect();
@@ -411,8 +409,7 @@ SkRect RemoteStrike::prepareForMaskDrawing(
         SkGlyphDigest digest = this->digest(packedID);
         if (digest.canDrawAsMask()) {
             if (!digest.isEmpty()) {
-                const SkGlyphRect glyphBounds =
-                        digest.bounds().scaleAndOffset(strikeToSourceScale, pos);
+                const SkGlyphRect glyphBounds = digest.bounds().offset(pos);
                 boundingRect = skglyph::rect_union(boundingRect, glyphBounds);
                 accepted->accept(packedID, glyphBounds.leftTop(), digest.maskFormat());
             }
@@ -839,11 +836,13 @@ SkStrikeServer::~SkStrikeServer() = default;
 std::unique_ptr<SkCanvas> SkStrikeServer::makeAnalysisCanvas(int width, int height,
                                                              const SkSurfaceProps& props,
                                                              sk_sp<SkColorSpace> colorSpace,
-                                                             bool DFTSupport) {
+                                                             bool DFTSupport,
+                                                             bool DFTPerspSupport) {
 #if SK_SUPPORT_GPU
     GrContextOptions ctxOptions;
     auto control = sktext::gpu::SDFTControl{DFTSupport,
                                             props.isUseDeviceIndependentFonts(),
+                                            DFTPerspSupport,
                                             ctxOptions.fMinDistanceFieldFontSize,
                                             ctxOptions.fGlyphsAsPathsFontSize};
 

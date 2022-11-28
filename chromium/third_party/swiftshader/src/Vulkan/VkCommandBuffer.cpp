@@ -43,20 +43,32 @@ class CmdBeginRenderPass : public vk::CommandBuffer::Command
 {
 public:
 	CmdBeginRenderPass(vk::RenderPass *renderPass, vk::Framebuffer *framebuffer, VkRect2D renderArea,
-	                   uint32_t clearValueCount, const VkClearValue *pClearValues)
+	                   uint32_t clearValueCount, const VkClearValue *pClearValues,
+	                   const VkRenderPassAttachmentBeginInfo *attachmentInfo)
 	    : renderPass(renderPass)
 	    , framebuffer(framebuffer)
 	    , renderArea(renderArea)
 	    , clearValueCount(clearValueCount)
+	    , attachmentCount(attachmentInfo ? attachmentInfo->attachmentCount : 0)
+	    , attachments(nullptr)
 	{
 		// FIXME(b/119409619): use an allocator here so we can control all memory allocations
 		clearValues = new VkClearValue[clearValueCount];
 		memcpy(clearValues, pClearValues, clearValueCount * sizeof(VkClearValue));
+		if(attachmentCount > 0)
+		{
+			attachments = new vk::ImageView *[attachmentCount];
+			for(uint32_t i = 0; i < attachmentCount; i++)
+			{
+				attachments[i] = vk::Cast(attachmentInfo->pAttachments[i]);
+			}
+		}
 	}
 
 	~CmdBeginRenderPass() override
 	{
 		delete[] clearValues;
+		delete[] attachments;
 	}
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
@@ -64,6 +76,11 @@ public:
 		executionState.renderPass = renderPass;
 		executionState.renderPassFramebuffer = framebuffer;
 		executionState.subpassIndex = 0;
+
+		for(uint32_t i = 0; i < attachmentCount; i++)
+		{
+			framebuffer->setAttachment(attachments[i], i);
+		}
 
 		// Vulkan specifies that the attachments' `loadOp` gets executed "at the beginning of the subpass where it is first used."
 		// Since we don't discard any contents between subpasses, this is equivalent to executing it at the start of the renderpass.
@@ -78,6 +95,8 @@ private:
 	const VkRect2D renderArea;
 	const uint32_t clearValueCount;
 	VkClearValue *clearValues;
+	uint32_t attachmentCount;
+	vk::ImageView **attachments;
 };
 
 class CmdNextSubpass : public vk::CommandBuffer::Command
@@ -134,7 +153,9 @@ public:
 
 		if(!executionState.dynamicRendering->resume())
 		{
-			VkRect2D renderArea = executionState.dynamicRendering->getRenderArea();
+			VkClearRect rect = {};
+			rect.rect = executionState.dynamicRendering->getRenderArea();
+			rect.layerCount = executionState.dynamicRendering->getLayerCount();
 			uint32_t viewMask = executionState.dynamicRendering->getViewMask();
 
 			// Vulkan specifies that the attachments' `loadOp` gets executed "at the beginning of the subpass where it is first used."
@@ -148,7 +169,7 @@ public:
 					vk::ImageView *imageView = vk::Cast(colorAttachment->imageView);
 					if(imageView)
 					{
-						imageView->clear(colorAttachment->clearValue, VK_IMAGE_ASPECT_COLOR_BIT, renderArea, viewMask);
+						imageView->clear(colorAttachment->clearValue, VK_IMAGE_ASPECT_COLOR_BIT, rect, viewMask);
 					}
 				}
 			}
@@ -159,7 +180,7 @@ public:
 				vk::ImageView *imageView = vk::Cast(stencilAttachment.imageView);
 				if(imageView)
 				{
-					imageView->clear(stencilAttachment.clearValue, VK_IMAGE_ASPECT_STENCIL_BIT, renderArea, viewMask);
+					imageView->clear(stencilAttachment.clearValue, VK_IMAGE_ASPECT_STENCIL_BIT, rect, viewMask);
 				}
 			}
 
@@ -170,7 +191,7 @@ public:
 
 				if(imageView)
 				{
-					imageView->clear(depthAttachment.clearValue, VK_IMAGE_ASPECT_DEPTH_BIT, renderArea, viewMask);
+					imageView->clear(depthAttachment.clearValue, VK_IMAGE_ASPECT_DEPTH_BIT, rect, viewMask);
 				}
 			}
 		}
@@ -285,7 +306,7 @@ public:
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		auto const &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_COMPUTE];
+		const auto &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_COMPUTE];
 
 		vk::ComputePipeline *pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
 		pipeline->run(baseGroupX, baseGroupY, baseGroupZ,
@@ -318,11 +339,11 @@ public:
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		auto cmd = reinterpret_cast<VkDispatchIndirectCommand const *>(buffer->getOffsetPointer(offset));
+		const auto *cmd = reinterpret_cast<const VkDispatchIndirectCommand *>(buffer->getOffsetPointer(offset));
 
-		auto const &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_COMPUTE];
+		const auto &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_COMPUTE];
 
-		auto pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
+		auto *pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
 		pipeline->run(0, 0, 0, cmd->x, cmd->y, cmd->z,
 		              pipelineState.descriptorSetObjects,
 		              pipelineState.descriptorSets,
@@ -896,7 +917,7 @@ public:
 	void draw(vk::CommandBuffer::ExecutionState &executionState, bool indexed,
 	          uint32_t count, uint32_t instanceCount, uint32_t first, int32_t vertexOffset, uint32_t firstInstance)
 	{
-		auto const &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_GRAPHICS];
+		const auto &pipelineState = executionState.pipelineState[VK_PIPELINE_BIND_POINT_GRAPHICS];
 
 		auto *pipeline = static_cast<vk::GraphicsPipeline *>(pipelineState.pipeline);
 		bool hasDynamicVertexStride = pipeline->hasDynamicVertexStride();
@@ -1008,7 +1029,7 @@ public:
 	{
 		for(auto drawId = 0u; drawId < drawCount; drawId++)
 		{
-			auto cmd = reinterpret_cast<VkDrawIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
+			const auto *cmd = reinterpret_cast<const VkDrawIndirectCommand *>(buffer->getOffsetPointer(offset + drawId * stride));
 			draw(executionState, false, cmd->vertexCount, cmd->instanceCount, 0, cmd->firstVertex, cmd->firstInstance);
 		}
 	}
@@ -1037,7 +1058,7 @@ public:
 	{
 		for(auto drawId = 0u; drawId < drawCount; drawId++)
 		{
-			auto cmd = reinterpret_cast<VkDrawIndexedIndirectCommand const *>(buffer->getOffsetPointer(offset + drawId * stride));
+			const auto *cmd = reinterpret_cast<const VkDrawIndexedIndirectCommand *>(buffer->getOffsetPointer(offset + drawId * stride));
 			draw(executionState, true, cmd->indexCount, cmd->instanceCount, cmd->firstIndex, cmd->vertexOffset, cmd->firstInstance);
 		}
 	}
@@ -1498,7 +1519,7 @@ private:
 class CmdSetPushConstants : public vk::CommandBuffer::Command
 {
 public:
-	CmdSetPushConstants(uint32_t offset, uint32_t size, void const *pValues)
+	CmdSetPushConstants(uint32_t offset, uint32_t size, const void *pValues)
 	    : offset(offset)
 	    , size(size)
 	{
@@ -1780,19 +1801,6 @@ VkResult CommandBuffer::end()
 
 	state = EXECUTABLE;
 
-#ifdef ENABLE_VK_DEBUGGER
-	auto debuggerContext = device->getDebuggerContext();
-	if(debuggerContext)
-	{
-		std::string source;
-		for(auto &command : commands)
-		{
-			source += command->description() + "\n";
-		}
-		debuggerFile = debuggerContext->lock().createVirtualFile("VkCommandBuffer", source.c_str());
-	}
-#endif  // ENABLE_VK_DEBUGGER
-
 	return VK_SUCCESS;
 }
 
@@ -1818,14 +1826,7 @@ void CommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *framebu
 {
 	ASSERT(state == RECORDING);
 
-	if(attachmentInfo)
-	{
-		for(uint32_t i = 0; i < attachmentInfo->attachmentCount; i++)
-		{
-			framebuffer->setAttachment(vk::Cast(attachmentInfo->pAttachments[i]), i);
-		}
-	}
-	addCommand<::CmdBeginRenderPass>(renderPass, framebuffer, renderArea, clearValueCount, clearValues);
+	addCommand<::CmdBeginRenderPass>(renderPass, framebuffer, renderArea, clearValueCount, clearValues, attachmentInfo);
 }
 
 void CommandBuffer::nextSubpass(VkSubpassContents contents)
@@ -2317,30 +2318,8 @@ void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)
 	// Perform recorded work
 	state = PENDING;
 
-#ifdef ENABLE_VK_DEBUGGER
-	std::shared_ptr<vk::dbg::Thread> debuggerThread;
-	auto debuggerContext = device->getDebuggerContext();
-	if(debuggerContext)
-	{
-		debuggerThread = debuggerContext->lock().currentThread();
-		debuggerThread->setName("vkQueue processor");
-		debuggerThread->enter(debuggerFile, "vkCommandBuffer::submit");
-	}
-	defer(if(debuggerThread) { debuggerThread->exit(); });
-	int line = 1;
-#endif  // ENABLE_VK_DEBUGGER
-
 	for(auto &command : commands)
 	{
-#ifdef ENABLE_VK_DEBUGGER
-		if(debuggerThread)
-		{
-			debuggerThread->update(true, [&](vk::dbg::Frame &frame) {
-				frame.location = { debuggerFile, line++, 0 };
-			});
-		}
-#endif  // ENABLE_VK_DEBUGGER
-
 		command->execute(executionState);
 	}
 
@@ -2365,7 +2344,7 @@ void CommandBuffer::ExecutionState::bindAttachments(Attachments *attachments)
 
 	if(renderPass)
 	{
-		auto const &subpass = renderPass->getSubpass(subpassIndex);
+		const auto &subpass = renderPass->getSubpass(subpassIndex);
 
 		for(auto i = 0u; i < subpass.colorAttachmentCount; i++)
 		{
@@ -2379,7 +2358,7 @@ void CommandBuffer::ExecutionState::bindAttachments(Attachments *attachments)
 		auto attachmentReference = subpass.pDepthStencilAttachment;
 		if(attachmentReference && attachmentReference->attachment != VK_ATTACHMENT_UNUSED)
 		{
-			auto attachment = renderPassFramebuffer->getAttachment(attachmentReference->attachment);
+			auto *attachment = renderPassFramebuffer->getAttachment(attachmentReference->attachment);
 			if(attachment->hasDepthAspect())
 			{
 				attachments->depthBuffer = attachment;

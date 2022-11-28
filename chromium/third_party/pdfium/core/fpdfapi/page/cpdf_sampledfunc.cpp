@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/page/cpdf_sampledfunc.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
@@ -40,14 +42,13 @@ CPDF_SampledFunc::CPDF_SampledFunc() : CPDF_Function(Type::kType0Sampled) {}
 
 CPDF_SampledFunc::~CPDF_SampledFunc() = default;
 
-bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj,
-                              std::set<const CPDF_Object*>* pVisited) {
-  const CPDF_Stream* pStream = pObj->AsStream();
+bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj, VisitedSet* pVisited) {
+  RetainPtr<const CPDF_Stream> pStream(pObj->AsStream());
   if (!pStream)
     return false;
 
-  const CPDF_Dictionary* pDict = pStream->GetDict();
-  const CPDF_Array* pSize = pDict->GetArrayFor("Size");
+  RetainPtr<const CPDF_Dictionary> pDict = pStream->GetDict();
+  RetainPtr<const CPDF_Array> pSize = pDict->GetArrayFor("Size");
   if (!pSize || pSize->IsEmpty())
     return false;
 
@@ -57,7 +58,7 @@ bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj,
 
   FX_SAFE_UINT32 nTotalSampleBits = m_nBitsPerSample;
   nTotalSampleBits *= m_nOutputs;
-  const CPDF_Array* pEncode = pDict->GetArrayFor("Encode");
+  RetainPtr<const CPDF_Array> pEncode = pDict->GetArrayFor("Encode");
   m_EncodeInfo.resize(m_nInputs);
   for (uint32_t i = 0; i < m_nInputs; i++) {
     int size = pSize->GetIntegerAt(i);
@@ -67,8 +68,8 @@ bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj,
     m_EncodeInfo[i].sizes = size;
     nTotalSampleBits *= m_EncodeInfo[i].sizes;
     if (pEncode) {
-      m_EncodeInfo[i].encode_min = pEncode->GetNumberAt(i * 2);
-      m_EncodeInfo[i].encode_max = pEncode->GetNumberAt(i * 2 + 1);
+      m_EncodeInfo[i].encode_min = pEncode->GetFloatAt(i * 2);
+      m_EncodeInfo[i].encode_max = pEncode->GetFloatAt(i * 2 + 1);
     } else {
       m_EncodeInfo[i].encode_min = 0;
       m_EncodeInfo[i].encode_max =
@@ -80,17 +81,17 @@ bool CPDF_SampledFunc::v_Init(const CPDF_Object* pObj,
     return false;
 
   m_SampleMax = 0xffffffff >> (32 - m_nBitsPerSample);
-  m_pSampleStream = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  m_pSampleStream = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
   m_pSampleStream->LoadAllDataFiltered();
   if (nTotalSampleBytes.ValueOrDie() > m_pSampleStream->GetSize())
     return false;
 
-  const CPDF_Array* pDecode = pDict->GetArrayFor("Decode");
+  RetainPtr<const CPDF_Array> pDecode = pDict->GetArrayFor("Decode");
   m_DecodeInfo.resize(m_nOutputs);
   for (uint32_t i = 0; i < m_nOutputs; i++) {
     if (pDecode) {
-      m_DecodeInfo[i].decode_min = pDecode->GetNumberAt(2 * i);
-      m_DecodeInfo[i].decode_max = pDecode->GetNumberAt(2 * i + 1);
+      m_DecodeInfo[i].decode_min = pDecode->GetFloatAt(2 * i);
+      m_DecodeInfo[i].decode_max = pDecode->GetFloatAt(2 * i + 1);
     } else {
       m_DecodeInfo[i].decode_min = m_Ranges[i * 2];
       m_DecodeInfo[i].decode_max = m_Ranges[i * 2 + 1];

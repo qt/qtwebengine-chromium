@@ -393,7 +393,6 @@ export interface MetricsState {
 // correctly. Generated together with the text of query and passed without the
 // change to the query response.
 export interface PivotTableReduxQueryMetadata {
-  tableName: string;
   pivotColumns: TableColumn[];
   aggregationColumns: Aggregation[];
 }
@@ -428,18 +427,18 @@ export interface PivotTableReduxState {
   // Query response
   queryResult: PivotTableReduxResult|null;
 
-  // Selected pivots for tables other than slice/thread_slice.
+  // Selected pivots for tables other than slice.
   // Because of the query generation, pivoting happens first on non-slice
   // pivots; therefore, those can't be put after slice pivots. In order to
   // maintain the separation more clearly, slice and non-slice pivots are
   // located in separate arrays.
   selectedPivots: RegularColumn[];
 
-  // Selected pivots for slice/thread_slice table.
+  // Selected pivots for slice table.
   selectedSlicePivots: TableColumn[];
 
   // Selected aggregation columns. Stored same way as pivots.
-  selectedAggregations: Map<string, Aggregation>;
+  selectedAggregations: Aggregation[];
 
   // Present if the result should be sorted, and in which direction.
   sortCriteria?: {column: TableColumn, order: SortDirection};
@@ -602,8 +601,8 @@ export function isAdbTarget(target: RecordingTarget):
 }
 
 export function hasActiveProbes(config: RecordConfig) {
-  const fieldsWithEmptyResult =
-      new Set<string>(['hpBlockClient', 'allAtraceApps']);
+  const fieldsWithEmptyResult = new Set<string>(
+      ['hpBlockClient', 'allAtraceApps', 'chromePrivacyFiltering']);
   let key: keyof RecordConfig;
   for (key in config) {
     if (typeof (config[key]) === 'boolean' && config[key] === true &&

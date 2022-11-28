@@ -24,24 +24,23 @@ CPDF_StitchFunc::CPDF_StitchFunc() : CPDF_Function(Type::kType3Stitching) {}
 
 CPDF_StitchFunc::~CPDF_StitchFunc() = default;
 
-bool CPDF_StitchFunc::v_Init(const CPDF_Object* pObj,
-                             std::set<const CPDF_Object*>* pVisited) {
+bool CPDF_StitchFunc::v_Init(const CPDF_Object* pObj, VisitedSet* pVisited) {
   if (m_nInputs != kRequiredNumInputs)
     return false;
 
-  const CPDF_Dictionary* pDict = pObj->GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = pObj->GetDict();
   if (!pDict)
     return false;
 
-  const CPDF_Array* pFunctionsArray = pDict->GetArrayFor("Functions");
+  RetainPtr<const CPDF_Array> pFunctionsArray = pDict->GetArrayFor("Functions");
   if (!pFunctionsArray)
     return false;
 
-  const CPDF_Array* pBoundsArray = pDict->GetArrayFor("Bounds");
+  RetainPtr<const CPDF_Array> pBoundsArray = pDict->GetArrayFor("Bounds");
   if (!pBoundsArray)
     return false;
 
-  const CPDF_Array* pEncodeArray = pDict->GetArrayFor("Encode");
+  RetainPtr<const CPDF_Array> pEncodeArray = pDict->GetArrayFor("Encode");
   if (!pEncodeArray)
     return false;
 
@@ -68,11 +67,12 @@ bool CPDF_StitchFunc::v_Init(const CPDF_Object* pObj,
   {
     absl::optional<uint32_t> nOutputs;
     for (uint32_t i = 0; i < nSubs; ++i) {
-      const CPDF_Object* pSub = pFunctionsArray->GetDirectObjectAt(i);
+      RetainPtr<const CPDF_Object> pSub = pFunctionsArray->GetDirectObjectAt(i);
       if (pSub == pObj)
         return false;
 
-      std::unique_ptr<CPDF_Function> pFunc(CPDF_Function::Load(pSub, pVisited));
+      std::unique_ptr<CPDF_Function> pFunc =
+          CPDF_Function::Load(std::move(pSub), pVisited);
       if (!pFunc)
         return false;
 
@@ -99,10 +99,10 @@ bool CPDF_StitchFunc::v_Init(const CPDF_Object* pObj,
   m_bounds.reserve(nSubs + 1);
   m_bounds.push_back(m_Domains[0]);
   for (uint32_t i = 0; i < nSubs - 1; i++)
-    m_bounds.push_back(pBoundsArray->GetNumberAt(i));
+    m_bounds.push_back(pBoundsArray->GetFloatAt(i));
   m_bounds.push_back(m_Domains[1]);
 
-  m_encode = ReadArrayElementsToVector(pEncodeArray, nSubs * 2);
+  m_encode = ReadArrayElementsToVector(pEncodeArray.Get(), nSubs * 2);
   return true;
 }
 

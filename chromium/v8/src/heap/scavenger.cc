@@ -18,6 +18,7 @@
 #include "src/heap/memory-chunk-inl.h"
 #include "src/heap/memory-chunk.h"
 #include "src/heap/objects-visiting-inl.h"
+#include "src/heap/pretenuring-handler.h"
 #include "src/heap/remembered-set-inl.h"
 #include "src/heap/scavenger-inl.h"
 #include "src/heap/slot-set.h"
@@ -142,13 +143,18 @@ class IterateAndScavengePromotedObjectsVisitor final : public ObjectVisitor {
       DCHECK_IMPLIES(V8_EXTERNAL_CODE_SPACE_BOOL,
                      !MemoryChunk::FromHeapObject(target)->IsFlagSet(
                          MemoryChunk::IS_EXECUTABLE));
+      // Shared heap pages do not have evacuation candidates outside an atomic
+      // shared GC pause.
+      DCHECK(!target.InSharedWritableHeap());
 
       // We cannot call MarkCompactCollector::RecordSlot because that checks
       // that the host page is not in young generation, which does not hold
       // for pending large pages.
       RememberedSet<OLD_TO_OLD>::Insert<AccessMode::ATOMIC>(
           MemoryChunk::FromHeapObject(host), slot.address());
-    } else if (target.InSharedWritableHeap()) {
+    }
+
+    if (target.InSharedWritableHeap()) {
       DCHECK(!scavenger_->heap()->IsShared());
       MemoryChunk* chunk = MemoryChunk::FromHeapObject(host);
       RememberedSet<OLD_TO_SHARED>::Insert<AccessMode::ATOMIC>(chunk,
@@ -194,6 +200,9 @@ ScavengerCollector::JobTask::JobTask(
       promotion_list_(promotion_list) {}
 
 void ScavengerCollector::JobTask::Run(JobDelegate* delegate) {
+  // The task accesses code pages and thus the permissions must be set to
+  // default state.
+  RwxMemoryWriteScope::SetDefaultPermissionsForNewThread();
   DCHECK_LT(delegate->GetTaskId(), scavengers_->size());
   Scavenger* scavenger = (*scavengers_)[delegate->GetTaskId()].get();
   if (delegate->IsJoiningThread()) {
@@ -227,7 +236,7 @@ void ScavengerCollector::JobTask::ProcessItems(JobDelegate* delegate,
     ConcurrentScavengePages(scavenger);
     scavenger->Process(delegate);
   }
-  if (FLAG_trace_parallel_scavenge) {
+  if (v8_flags.trace_parallel_scavenge) {
     PrintIsolate(outer_->heap_->isolate(),
                  "scavenge[%p]: time=%.2f copied=%zu promoted=%zu\n",
                  static_cast<void*>(this), scavenging_time,
@@ -322,7 +331,7 @@ void ScavengerCollector::CollectGarbage() {
   EphemeronTableList ephemeron_table_list;
 
   {
-    Sweeper* sweeper = heap_->mark_compact_collector()->sweeper();
+    Sweeper* sweeper = heap_->sweeper();
 
     // Pause the concurrent sweeper.
     Sweeper::PauseScope pause_scope(sweeper);
@@ -367,7 +376,7 @@ void ScavengerCollector::CollectGarbage() {
       base::EnumSet<SkipRoot> options({SkipRoot::kExternalStringTable,
                                        SkipRoot::kGlobalHandles,
                                        SkipRoot::kOldGeneration});
-      if (V8_UNLIKELY(FLAG_scavenge_separate_stack_scanning)) {
+      if (V8_UNLIKELY(v8_flags.scavenge_separate_stack_scanning)) {
         options.Add(SkipRoot::kStack);
       }
       heap_->IterateRoots(&root_scavenge_visitor, options);
@@ -388,7 +397,7 @@ void ScavengerCollector::CollectGarbage() {
       DCHECK(promotion_list.IsEmpty());
     }
 
-    if (V8_UNLIKELY(FLAG_scavenge_separate_stack_scanning)) {
+    if (V8_UNLIKELY(v8_flags.scavenge_separate_stack_scanning)) {
       IterateStackAndScavenge(&root_scavenge_visitor, &scavengers,
                               kMainThreadId);
       DCHECK(copied_list.IsEmpty());
@@ -427,11 +436,11 @@ void ScavengerCollector::CollectGarbage() {
 
     heap_->incremental_marking()->UpdateMarkingWorklistAfterYoungGenGC();
 
-    if (V8_UNLIKELY(FLAG_track_retaining_path)) {
+    if (V8_UNLIKELY(v8_flags.track_retaining_path)) {
       heap_->UpdateRetainersAfterScavenge();
     }
 
-    if (V8_UNLIKELY(FLAG_always_use_string_forwarding_table)) {
+    if (V8_UNLIKELY(v8_flags.always_use_string_forwarding_table)) {
       isolate_->string_forwarding_table()->UpdateAfterEvacuation();
     }
   }
@@ -439,7 +448,7 @@ void ScavengerCollector::CollectGarbage() {
   SemiSpaceNewSpace* semi_space_new_space =
       SemiSpaceNewSpace::From(heap_->new_space());
 
-  if (FLAG_concurrent_marking) {
+  if (v8_flags.concurrent_marking) {
     // Ensure that concurrent marker does not track pages that are
     // going to be unmapped.
     for (Page* p :
@@ -460,7 +469,7 @@ void ScavengerCollector::CollectGarbage() {
 
   {
     TRACE_GC(heap_->tracer(), GCTracer::Scope::SCAVENGER_FREE_REMEMBERED_SET);
-    Scavenger::EmptyChunksList::Local empty_chunks_local(&empty_chunks);
+    Scavenger::EmptyChunksList::Local empty_chunks_local(empty_chunks);
     MemoryChunk* chunk;
     while (empty_chunks_local.Pop(&chunk)) {
       // Since sweeping was already restarted only check chunks that already got
@@ -515,7 +524,7 @@ void ScavengerCollector::IterateStackAndScavenge(
                "V8.GCScavengerStackScanning", "survived_bytes_before",
                survived_bytes_before, "survived_bytes_after",
                survived_bytes_after);
-  if (FLAG_trace_gc_verbose && !FLAG_trace_gc_ignore_scavenger) {
+  if (v8_flags.trace_gc_verbose && !v8_flags.trace_gc_ignore_scavenger) {
     isolate_->PrintWithTimestamp(
         "Scavenge stack scanning: survived_before=%4zuKB, "
         "survived_after=%4zuKB delta=%.1f%%\n",
@@ -532,8 +541,7 @@ void ScavengerCollector::SweepArrayBufferExtensions() {
 
 void ScavengerCollector::HandleSurvivingNewLargeObjects() {
   const bool is_compacting = heap_->incremental_marking()->IsCompacting();
-  AtomicMarkingState* marking_state =
-      heap_->incremental_marking()->atomic_marking_state();
+  AtomicMarkingState* marking_state = heap_->atomic_marking_state();
 
   for (SurvivingNewLargeObjectMapEntry update_info :
        surviving_new_large_objects_) {
@@ -565,7 +573,7 @@ void ScavengerCollector::MergeSurvivingNewLargeObjects(
 }
 
 int ScavengerCollector::NumberOfScavengeTasks() {
-  if (!FLAG_parallel_scavenge) return 1;
+  if (!v8_flags.parallel_scavenge) return 1;
   const int num_scavenge_tasks =
       static_cast<int>(
           SemiSpaceNewSpace::From(heap_->new_space())->TotalCapacity()) /
@@ -584,14 +592,14 @@ int ScavengerCollector::NumberOfScavengeTasks() {
 
 Scavenger::PromotionList::Local::Local(Scavenger::PromotionList* promotion_list)
     : regular_object_promotion_list_local_(
-          &promotion_list->regular_object_promotion_list_),
+          promotion_list->regular_object_promotion_list_),
       large_object_promotion_list_local_(
-          &promotion_list->large_object_promotion_list_) {}
+          promotion_list->large_object_promotion_list_) {}
 
 namespace {
 ConcurrentAllocator* CreateSharedOldAllocator(Heap* heap) {
-  if (FLAG_shared_string_table && heap->isolate()->shared_isolate()) {
-    return new ConcurrentAllocator(nullptr, heap->shared_old_space());
+  if (v8_flags.shared_string_table && heap->isolate()->has_shared_heap()) {
+    return new ConcurrentAllocator(nullptr, heap->shared_allocation_space());
   }
   return nullptr;
 }
@@ -603,11 +611,13 @@ Scavenger::Scavenger(ScavengerCollector* collector, Heap* heap, bool is_logging,
                      EphemeronTableList* ephemeron_table_list, int task_id)
     : collector_(collector),
       heap_(heap),
-      empty_chunks_local_(empty_chunks),
+      empty_chunks_local_(*empty_chunks),
       promotion_list_local_(promotion_list),
-      copied_list_local_(copied_list),
-      ephemeron_table_list_local_(ephemeron_table_list),
-      local_pretenuring_feedback_(kInitialLocalPretenuringFeedbackCapacity),
+      copied_list_local_(*copied_list),
+      ephemeron_table_list_local_(*ephemeron_table_list),
+      pretenuring_handler_(heap_->pretenuring_handler()),
+      local_pretenuring_feedback_(
+          PretenturingHandler::kInitialFeedbackCapacity),
       copied_size_(0),
       promoted_size_(0),
       allocator_(heap, CompactionSpaceKind::kCompactionSpaceForScavenge),
@@ -615,8 +625,10 @@ Scavenger::Scavenger(ScavengerCollector* collector, Heap* heap, bool is_logging,
       is_logging_(is_logging),
       is_incremental_marking_(heap->incremental_marking()->IsMarking()),
       is_compacting_(heap->incremental_marking()->IsCompacting()),
-      is_compacting_including_map_space_(is_compacting_ && FLAG_compact_maps),
-      shared_string_table_(shared_old_allocator_.get() != nullptr) {}
+      is_compacting_including_map_space_(is_compacting_ &&
+                                         v8_flags.compact_maps),
+      shared_string_table_(shared_old_allocator_.get() != nullptr),
+      mark_shared_heap_(heap->isolate()->is_shared_space_isolate()) {}
 
 void Scavenger::IterateAndScavengePromotedObject(HeapObject target, Map map,
                                                  int size) {
@@ -627,8 +639,7 @@ void Scavenger::IterateAndScavengePromotedObject(HeapObject target, Map map,
   // the end of collection it would be a violation of the invariant to record
   // its slots.
   const bool record_slots =
-      is_compacting_ &&
-      heap()->incremental_marking()->atomic_marking_state()->IsBlack(target);
+      is_compacting_ && heap()->atomic_marking_state()->IsBlack(target);
 
   IterateAndScavengePromotedObjectsVisitor visitor(this, record_slots);
 
@@ -654,27 +665,29 @@ void Scavenger::RememberPromotedEphemeron(EphemeronHashTable table, int entry) {
 void Scavenger::AddPageToSweeperIfNecessary(MemoryChunk* page) {
   AllocationSpace space = page->owner_identity();
   if ((space == OLD_SPACE) && !page->SweepingDone()) {
-    heap()->mark_compact_collector()->sweeper()->AddPage(
-        space, reinterpret_cast<Page*>(page),
-        Sweeper::READD_TEMPORARY_REMOVED_PAGE);
+    heap()->sweeper()->AddPage(space, reinterpret_cast<Page*>(page),
+                               Sweeper::READD_TEMPORARY_REMOVED_PAGE);
   }
 }
 
 void Scavenger::ScavengePage(MemoryChunk* page) {
   CodePageMemoryModificationScope memory_modification_scope(page);
-  const bool has_shared_isolate = heap_->isolate()->shared_isolate();
+  const bool record_old_to_shared_slots = heap_->isolate()->has_shared_heap();
 
   if (page->slot_set<OLD_TO_NEW, AccessMode::ATOMIC>() != nullptr) {
     InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToNew(
         page, InvalidatedSlotsFilter::LivenessCheck::kNo);
     RememberedSet<OLD_TO_NEW>::IterateAndTrackEmptyBuckets(
         page,
-        [this, page, has_shared_isolate, &filter](MaybeObjectSlot slot) {
+        [this, page, record_old_to_shared_slots,
+         &filter](MaybeObjectSlot slot) {
           if (!filter.IsValid(slot.address())) return REMOVE_SLOT;
           SlotCallbackResult result = CheckAndScavengeObject(heap_, slot);
           // A new space string might have been promoted into the shared heap
           // during GC.
-          if (has_shared_isolate) CheckOldToNewSlotForSharedUntyped(page, slot);
+          if (record_old_to_shared_slots) {
+            CheckOldToNewSlotForSharedUntyped(page, slot);
+          }
           return result;
         },
         &empty_chunks_local_);
@@ -691,11 +704,11 @@ void Scavenger::ScavengePage(MemoryChunk* page) {
         return UpdateTypedSlotHelper::UpdateTypedSlot(
             heap_, slot_type, slot_address,
             [this, page, slot_type, slot_address,
-             has_shared_isolate](FullMaybeObjectSlot slot) {
+             record_old_to_shared_slots](FullMaybeObjectSlot slot) {
               SlotCallbackResult result = CheckAndScavengeObject(heap(), slot);
               // A new space string might have been promoted into the shared
               // heap during GC.
-              if (has_shared_isolate) {
+              if (record_old_to_shared_slots) {
                 CheckOldToNewSlotForSharedTyped(page, slot_type, slot_address);
               }
               return result;
@@ -800,8 +813,9 @@ void ScavengerCollector::ClearOldEphemerons() {
 }
 
 void Scavenger::Finalize() {
-  heap()->MergeAllocationSitePretenuringFeedback(local_pretenuring_feedback_);
-  heap()->IncrementSemiSpaceCopiedObjectSize(copied_size_);
+  pretenuring_handler_->MergeAllocationSitePretenuringFeedback(
+      local_pretenuring_feedback_);
+  heap()->IncrementNewSpaceSurvivingObjectSize(copied_size_);
   heap()->IncrementPromotedObjectsSize(promoted_size_);
   collector_->MergeSurvivingNewLargeObjects(surviving_new_large_objects_);
   allocator_.Finalize();

@@ -16,10 +16,10 @@
 
 #include <vector>
 
-class SkRuntimeEffect;
+class SkPixmap;
+class SkRuntimeEffectDictionary;
 class SkTextureDataBlock;
 class SkUniformDataBlock;
-class SkUniformDataBlockPassThrough;  // TODO: remove
 
 namespace skgpu { class TokenTracker; }
 
@@ -46,13 +46,13 @@ class TaskGraph;
 class TextureInfo;
 class UploadBufferManager;
 
-template<typename StorageT, typename BaseT> class PipelineDataCache;
-using UniformDataCache = PipelineDataCache<SkUniformDataBlockPassThrough, SkUniformDataBlock>;
-using TextureDataCache = PipelineDataCache<std::unique_ptr<SkTextureDataBlock>, SkTextureDataBlock>;
+template<typename T> class PipelineDataCache;
+using UniformDataCache = PipelineDataCache<SkUniformDataBlock>;
+using TextureDataCache = PipelineDataCache<SkTextureDataBlock>;
 
 struct SK_API RecorderOptions final {
-    RecorderOptions() = default;
-    RecorderOptions(const RecorderOptions&) = default;
+    RecorderOptions();
+    RecorderOptions(const RecorderOptions&);
     ~RecorderOptions();
 
     sk_sp<ImageProvider> fImageProvider;
@@ -69,9 +69,8 @@ public:
 
     std::unique_ptr<Recording> snap();
 
-    ImageProvider* clientImageProvider() const {
-        return fClientImageProvider.get();
-    }
+    ImageProvider* clientImageProvider() { return fClientImageProvider.get(); }
+    const ImageProvider* clientImageProvider() const { return fClientImageProvider.get(); }
 
     /**
      * Creates a new backend gpu texture matching the dimensions and TextureInfo. If an invalid
@@ -80,11 +79,30 @@ public:
      * if it succeeded or not.
      *
      * If this does return a valid BackendTexture, the caller is required to use
-     * Recorder::deleteBackendTexture or Context::deleteBAckendTexture to delete the texture. It is
+     * Recorder::deleteBackendTexture or Context::deleteBackendTexture to delete the texture. It is
      * safe to use the Context that created this Recorder or any other Recorder created from the
      * same Context to call deleteBackendTexture.
      */
     BackendTexture createBackendTexture(SkISize dimensions, const TextureInfo&);
+
+    /**
+     * If possible, updates a backend texture with the provided pixmap data. The client
+     * should check the return value to see if the update was successful. The client is required
+     * to insert a Recording into the Context and call `submit` to send the upload work to the gpu.
+     * The backend texture must be compatible with the provided pixmap(s). Compatible, in this case,
+     * means that the backend format is compatible with the base pixmap's colortype. The src data
+     * can be deleted when this call returns.
+     * If the backend texture is mip mapped, the data for all the mipmap levels must be provided.
+     * In the mipmapped case all the colortypes of the provided pixmaps must be the same.
+     * Additionally, all the miplevels must be sized correctly (please see
+     * SkMipmap::ComputeLevelSize and ComputeLevelCount).
+     * Note: the pixmap's alphatypes and colorspaces are ignored.
+     * For the Vulkan backend after a successful update the layout of the created VkImage will be:
+     *      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+     */
+    bool updateBackendTexture(const BackendTexture&,
+                              const SkPixmap srcData[],
+                              int numLevels);
 
     /**
      * Called to delete the passed in BackendTexture. This should only be called if the
@@ -110,7 +128,7 @@ private:
     friend class Device; // For registering and deregistering Devices;
     friend class RecorderPriv; // for ctor and hidden methods
 
-    Recorder(sk_sp<SharedContext>, sk_sp<GlobalCache>, const RecorderOptions&);
+    Recorder(sk_sp<SharedContext>, const RecorderOptions&);
 
     SingleOwner* singleOwner() const { return &fSingleOwner; }
 
@@ -138,6 +156,7 @@ private:
 
     sk_sp<SharedContext> fSharedContext;
     std::unique_ptr<ResourceProvider> fResourceProvider;
+    std::unique_ptr<SkRuntimeEffectDictionary> fRuntimeEffectDict;
 
     std::unique_ptr<TaskGraph> fGraph;
     std::unique_ptr<UniformDataCache> fUniformDataCache;

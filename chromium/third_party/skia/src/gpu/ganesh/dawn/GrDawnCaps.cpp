@@ -25,6 +25,9 @@ GrDawnCaps::GrDawnCaps(const GrContextOptions& contextOptions) : INHERITED(conte
     fDynamicStateArrayGeometryProcessorTextureSupport = true;
     fTwoSidedStencilRefsAndMasksMustMatch = true;
 
+    // WebGPU zero-initializes resources. https://www.w3.org/TR/webgpu/#security-uninitialized
+    fBuffersAreInitiallyZero = true;
+
     fShaderCaps->fFlatInterpolationSupport = true;
     fShaderCaps->fIntegerSupport = true;
     // FIXME: each fragment sampler takes two binding slots in Dawn (sampler + texture). Limit to
@@ -32,6 +35,7 @@ GrDawnCaps::GrDawnCaps(const GrContextOptions& contextOptions) : INHERITED(conte
     // non-texture bindings. Eventually, we may be able to increase kMaxBindingsPerGroup in Dawn.
     fShaderCaps->fMaxFragmentSamplers = 6;
     fShaderCaps->fShaderDerivativeSupport = true;
+    fShaderCaps->fExplicitTextureLodSupport = true;
 
     // We haven't yet implemented GrGpu::transferFromBufferToBuffer for Dawn but GrDawnBuffer uses
     // transfers to implement buffer mapping and updates and transfers must be 4 byte aligned.

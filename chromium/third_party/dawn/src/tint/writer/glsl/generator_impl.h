@@ -293,38 +293,38 @@ class GeneratorImpl : public TextGenerator {
     /// @returns true on success
     bool EmitGlobalVariable(const ast::Variable* global);
 
-    /// Handles emitting a global variable with the uniform storage class
+    /// Handles emitting a global variable with the uniform address space
     /// @param var the AST node for the 'var'
     /// @param sem the semantic node for the 'var'
     /// @returns true on success
     bool EmitUniformVariable(const ast::Var* var, const sem::Variable* sem);
 
-    /// Handles emitting a global variable with the storage storage class
+    /// Handles emitting a global variable with the storage address space
     /// @param var the AST node for the 'var'
     /// @param sem the semantic node for the 'var'
     /// @returns true on success
     bool EmitStorageVariable(const ast::Var* var, const sem::Variable* sem);
 
-    /// Handles emitting a global variable with the handle storage class
+    /// Handles emitting a global variable with the handle address space
     /// @param var the AST node for the 'var'
     /// @param sem the semantic node for the 'var'
     /// @returns true on success
     bool EmitHandleVariable(const ast::Var* var, const sem::Variable* sem);
 
-    /// Handles emitting a global variable with the private storage class
+    /// Handles emitting a global variable with the private address space
     /// @param var the global variable
     /// @returns true on success
     bool EmitPrivateVariable(const sem::Variable* var);
 
-    /// Handles emitting a global variable with the workgroup storage class
+    /// Handles emitting a global variable with the workgroup address space
     /// @param var the global variable
     /// @returns true on success
     bool EmitWorkgroupVariable(const sem::Variable* var);
 
-    /// Handles emitting a global variable with the input or output storage class
+    /// Handles emitting a global variable with the input or output address space
     /// @param var the global variable
     /// @returns true on success
-    bool EmitIOVariable(const sem::Variable* var);
+    bool EmitIOVariable(const sem::GlobalVariable* var);
 
     /// Handles emitting interpolation qualifiers
     /// @param out the output of the expression stream
@@ -333,9 +333,12 @@ class GeneratorImpl : public TextGenerator {
                                      utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting attributes
     /// @param out the output of the expression stream
+    /// @param var the global variable semantics
     /// @param attrs the attributes
     /// @returns true if the attributes were emitted
-    bool EmitAttributes(std::ostream& out, utils::VectorRef<const ast::Attribute*> attrs);
+    bool EmitAttributes(std::ostream& out,
+                        const sem::GlobalVariable* var,
+                        utils::VectorRef<const ast::Attribute*> attrs);
     /// Handles emitting the entry point function
     /// @param func the entry point
     /// @returns true if the entry point function was emitted
@@ -391,7 +394,7 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating type
     /// @param out the output stream
     /// @param type the type to generate
-    /// @param storage_class the storage class of the variable
+    /// @param address_space the address space of the variable
     /// @param access the access control type of the variable
     /// @param name the name of the variable, used for array emission.
     /// @param name_printed (optional) if not nullptr and an array was printed
@@ -399,20 +402,20 @@ class GeneratorImpl : public TextGenerator {
     /// @returns true if the type is emitted
     bool EmitType(std::ostream& out,
                   const sem::Type* type,
-                  ast::StorageClass storage_class,
+                  ast::AddressSpace address_space,
                   ast::Access access,
                   const std::string& name,
                   bool* name_printed = nullptr);
     /// Handles generating type and name
     /// @param out the output stream
     /// @param type the type to generate
-    /// @param storage_class the storage class of the variable
+    /// @param address_space the address space of the variable
     /// @param access the access control type of the variable
     /// @param name the name to emit
     /// @returns true if the type is emitted
     bool EmitTypeAndName(std::ostream& out,
                          const sem::Type* type,
-                         ast::StorageClass storage_class,
+                         ast::AddressSpace address_space,
                          ast::Access access,
                          const std::string& name);
     /// Handles generating a structure declaration
@@ -429,9 +432,8 @@ class GeneratorImpl : public TextGenerator {
     /// Handles generating the members of a structure
     /// @param buffer the text buffer that the struct members will be written to
     /// @param ty the struct to generate
-    /// @param emit_offsets whether offsets should be emitted as offset=
     /// @returns true if the struct members are emitted
-    bool EmitStructMembers(TextBuffer* buffer, const sem::Struct* ty, bool emit_offsets);
+    bool EmitStructMembers(TextBuffer* buffer, const sem::Struct* ty);
     /// Handles a unary op expression
     /// @param out the output of the expression stream
     /// @param expr the expression to emit
@@ -454,10 +456,6 @@ class GeneratorImpl : public TextGenerator {
     /// @param let the 'let' to emit
     /// @returns true if the variable was emitted
     bool EmitProgramConstVariable(const ast::Variable* let);
-    /// Handles generating a module-scope 'override' declaration
-    /// @param override the 'override' to emit
-    /// @returns true if the variable was emitted
-    bool EmitOverride(const ast::Override* override);
     /// Handles generating a builtin method name
     /// @param builtin the semantic info for the builtin
     /// @returns the name or "" if not valid

@@ -91,8 +91,8 @@ class GlslGeneratorImplTest_MemberAccessorBase : public BASE {
 
         auto* s = b.Structure("Data", members);
 
-        b.GlobalVar("data", b.ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-                    b.GroupAndBinding(1u, 0u));
+        b.GlobalVar("data", b.ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite,
+                    b.Group(1_a), b.Binding(0_a));
     }
 
     void SetupFunction(utils::VectorRef<const ast::Statement*> statements) {
@@ -112,10 +112,10 @@ using GlslGeneratorImplTest_MemberAccessorWithParam =
 
 TEST_F(GlslGeneratorImplTest_MemberAccessor, EmitExpression_MemberAccessor) {
     auto* s = Structure("Data", utils::Vector{Member("mem", ty.f32())});
-    GlobalVar("str", ty.Of(s), ast::StorageClass::kPrivate);
+    GlobalVar("str", ty.Of(s), ast::AddressSpace::kPrivate);
 
     auto* expr = MemberAccessor("str", "mem");
-    WrapInFunction(Var("expr", ty.f32(), ast::StorageClass::kNone, expr));
+    WrapInFunction(Var("expr", ty.f32(), expr));
 
     GeneratorImpl& gen = SanitizeAndBuild();
 
@@ -168,7 +168,7 @@ TEST_P(GlslGeneratorImplTest_MemberAccessor_StorageBufferLoad, Test) {
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone, MemberAccessor("data", "b"))),
+        Decl(Var("x", MemberAccessor("data", "b"))),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -219,8 +219,7 @@ TEST_P(GlslGeneratorImplTest_MemberAccessor_StorageBufferStore, Test) {
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("value", p.member_type(ty), ast::StorageClass::kNone,
-                 Construct(p.member_type(ty)))),
+        Decl(Var("value", p.member_type(ty), Construct(p.member_type(ty)))),
         Assign(MemberAccessor("data", "b"), Expr("value")),
     });
 
@@ -278,15 +277,14 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_Matrix_Empty) {
         R"(#version 310 es
 precision mediump float;
 
-struct Data {
+layout(binding = 0, std430) buffer Data_ssbo {
   int a;
-  mat2x3 b;
-};
-
-layout(binding = 0, std430) buffer Data_1 {
-  int a;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
   mat2x3 b;
 } data;
+
 void tint_symbol() {
   data.b = mat2x3(vec3(0.0f), vec3(0.0f));
 }
@@ -313,8 +311,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_Matrix_Single_El
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
-                 IndexAccessor(IndexAccessor(MemberAccessor("data", "a"), 2_i), 1_i))),
+        Decl(Var("x", IndexAccessor(IndexAccessor(MemberAccessor("data", "a"), 2_i), 1_i))),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -324,15 +321,14 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_Matrix_Single_El
         R"(#version 310 es
 precision mediump float;
 
-struct Data {
+layout(binding = 0, std430) buffer Data_ssbo {
   float z;
-  mat4x3 a;
-};
-
-layout(binding = 0, std430) buffer Data_1 {
-  float z;
+  uint pad;
+  uint pad_1;
+  uint pad_2;
   mat4x3 a;
 } data;
+
 void tint_symbol() {
   float x = data.a[2][1];
 }
@@ -359,8 +355,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
-                 IndexAccessor(MemberAccessor("data", "a"), 2_i))),
+        Decl(Var("x", IndexAccessor(MemberAccessor("data", "a"), 2_i))),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -370,15 +365,11 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
         R"(#version 310 es
 precision mediump float;
 
-struct Data {
-  float z;
-  int a[5];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   float z;
   int a[5];
 } data;
+
 void tint_symbol() {
   int x = data.a[2];
 }
@@ -405,11 +396,10 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("a", nullptr, Expr(2_i))),
-        Decl(Var("b", nullptr, Expr(4_i))),
-        Decl(Var("c", nullptr, Expr(3_i))),
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
-                 IndexAccessor(MemberAccessor("data", "a"), Sub(Add("a", "b"), "c")))),
+        Decl(Var("a", Expr(2_i))),
+        Decl(Var("b", Expr(4_i))),
+        Decl(Var("c", Expr(3_i))),
+        Decl(Var("x", IndexAccessor(MemberAccessor("data", "a"), Sub(Add("a", "b"), "c")))),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -419,15 +409,11 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
         R"(#version 310 es
 precision mediump float;
 
-struct Data {
-  float z;
-  int a[5];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   float z;
   int a[5];
 } data;
+
 void tint_symbol() {
   int a = 2;
   int b = 4;
@@ -466,15 +452,11 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_ToArray) {
         R"(#version 310 es
 precision mediump float;
 
-struct Data {
-  float z;
-  int a[5];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   float z;
   int a[5];
 } data;
+
 void tint_symbol() {
   data.a[2] = 2;
 }
@@ -509,8 +491,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel) {
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
-                 MemberAccessor(IndexAccessor(MemberAccessor("data", "c"), 2_i), "b"))),
+        Decl(Var("x", MemberAccessor(IndexAccessor(MemberAccessor("data", "c"), 2_i), "b"))),
     });
 
     GeneratorImpl& gen = SanitizeAndBuild();
@@ -522,16 +503,15 @@ precision mediump float;
 
 struct Inner {
   vec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   vec3 x = data.c[2].b;
 }
@@ -566,7 +546,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Swizz
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
+        Decl(Var("x",
                  MemberAccessor(
                      MemberAccessor(IndexAccessor(MemberAccessor("data", "c"), 2_i), "b"), "xy"))),
     });
@@ -580,16 +560,15 @@ precision mediump float;
 
 struct Inner {
   vec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   vec2 x = data.c[2].b.xy;
 }
@@ -625,7 +604,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor,
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
+        Decl(Var("x",
                  MemberAccessor(
                      MemberAccessor(IndexAccessor(MemberAccessor("data", "c"), 2_i), "b"), "g"))),
     });
@@ -639,16 +618,15 @@ precision mediump float;
 
 struct Inner {
   vec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   float x = data.c[2].b.g;
 }
@@ -683,7 +661,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel_Index
     });
 
     SetupFunction(utils::Vector{
-        Decl(Var("x", nullptr, ast::StorageClass::kNone,
+        Decl(Var("x",
                  IndexAccessor(MemberAccessor(IndexAccessor(MemberAccessor("data", "c"), 2_i), "b"),
                                1_i))),
     });
@@ -697,16 +675,15 @@ precision mediump float;
 
 struct Inner {
   vec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   float x = data.c[2].b[1];
 }
@@ -754,16 +731,15 @@ precision mediump float;
 
 struct Inner {
   vec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   data.c[2].b = vec3(1.0f, 2.0f, 3.0f);
 }
@@ -812,16 +788,15 @@ precision mediump float;
 
 struct Inner {
   ivec3 a;
+  uint pad;
   vec3 b;
+  uint pad_1;
 };
 
-struct Data {
-  Inner c[4];
-};
-
-layout(binding = 0, std430) buffer Data_1 {
+layout(binding = 0, std430) buffer Data_ssbo {
   Inner c[4];
 } data;
+
 void tint_symbol() {
   data.c[2].b.y = 1.0f;
 }
@@ -835,8 +810,7 @@ void main() {
 }
 
 TEST_F(GlslGeneratorImplTest_MemberAccessor, Swizzle_xyz) {
-    auto* var =
-        Var("my_vec", ty.vec4<f32>(), ast::StorageClass::kNone, vec4<f32>(1_f, 2_f, 3_f, 4_f));
+    auto* var = Var("my_vec", ty.vec4<f32>(), vec4<f32>(1_f, 2_f, 3_f, 4_f));
     auto* expr = MemberAccessor("my_vec", "xyz");
     WrapInFunction(var, expr);
 
@@ -846,8 +820,7 @@ TEST_F(GlslGeneratorImplTest_MemberAccessor, Swizzle_xyz) {
 }
 
 TEST_F(GlslGeneratorImplTest_MemberAccessor, Swizzle_gbr) {
-    auto* var =
-        Var("my_vec", ty.vec4<f32>(), ast::StorageClass::kNone, vec4<f32>(1_f, 2_f, 3_f, 4_f));
+    auto* var = Var("my_vec", ty.vec4<f32>(), vec4<f32>(1_f, 2_f, 3_f, 4_f));
     auto* expr = MemberAccessor("my_vec", "gbr");
     WrapInFunction(var, expr);
 

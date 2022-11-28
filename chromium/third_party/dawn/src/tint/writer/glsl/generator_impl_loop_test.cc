@@ -66,8 +66,8 @@ TEST_F(GlslGeneratorImplTest_Loop, Emit_LoopWithContinuing) {
 TEST_F(GlslGeneratorImplTest_Loop, Emit_LoopNestedWithContinuing) {
     Func("a_statement", {}, ty.void_(), {});
 
-    GlobalVar("lhs", ty.f32(), ast::StorageClass::kPrivate);
-    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("lhs", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::AddressSpace::kPrivate);
 
     auto* body = Block(create<ast::DiscardStatement>());
     auto* continuing = Block(CallStmt(Call("a_statement")));
@@ -112,7 +112,7 @@ TEST_F(GlslGeneratorImplTest_Loop, Emit_LoopWithVarUsedInContinuing) {
     //   }
     // }
 
-    GlobalVar("rhs", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("rhs", ty.f32(), ast::AddressSpace::kPrivate);
 
     auto* body = Block(Decl(Var("lhs", ty.f32(), Expr(2.4_f))),  //
                        Decl(Var("other", ty.f32())),             //
@@ -188,7 +188,7 @@ TEST_F(GlslGeneratorImplTest_Loop, Emit_ForLoopWithMultiStmtInit) {
 
     auto* multi_stmt =
         create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
-    auto* f = For(Decl(Var("b", nullptr, multi_stmt)), nullptr, nullptr, Block(Return()));
+    auto* f = For(Decl(Var("b", multi_stmt)), nullptr, nullptr, Block(Return()));
     WrapInFunction(f);
 
     GeneratorImpl& gen = Build();
@@ -348,9 +348,8 @@ TEST_F(GlslGeneratorImplTest_Loop, Emit_ForLoopWithMultiStmtInitCondCont) {
     auto* multi_stmt_c =
         create<ast::BinaryExpression>(ast::BinaryOp::kLogicalAnd, Expr(true), Expr(false));
 
-    auto* f =
-        For(Decl(Var("i", nullptr, multi_stmt_a)), multi_stmt_b, Assign("i", multi_stmt_c),  //
-            Block(Return()));
+    auto* f = For(Decl(Var("i", multi_stmt_a)), multi_stmt_b, Assign("i", multi_stmt_c),  //
+                  Block(Return()));
     WrapInFunction(f);
 
     GeneratorImpl& gen = Build();

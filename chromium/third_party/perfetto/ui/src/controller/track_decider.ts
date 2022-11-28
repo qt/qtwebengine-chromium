@@ -85,6 +85,7 @@ const F2FS_IOSTAT_LAT_GROUP_NAME = 'f2fs_iostat_latency';
 const UFS_CMD_TAG = 'io.ufs.command.tag';
 const UFS_CMD_TAG_GROUP_NAME = 'io.ufs.command.tags';
 const BUDDY_INFO_TAG = 'mem.buddyinfo';
+const KERNEL_WAKELOCK_PREFIX = 'Wakelock';
 
 // Sets the default 'scale' for counter tracks. If the regex matches
 // then the paired mode is used. Entries are in priority order so the
@@ -608,6 +609,42 @@ class TrackDecider {
     }
   }
 
+  async groupKernelWakelockTracks(): Promise<void> {
+    let groupUuid = undefined;
+
+    for (const track of this.tracksToAdd) {
+      // NB: Userspace wakelocks start with "WakeLock" not "Wakelock".
+      if (track.name.startsWith(KERNEL_WAKELOCK_PREFIX)) {
+        if (groupUuid === undefined) {
+          groupUuid = uuidv4();
+        }
+        track.trackGroup = groupUuid;
+      }
+    }
+
+    if (groupUuid !== undefined) {
+      const summaryTrackId = uuidv4();
+      this.tracksToAdd.push({
+        id: summaryTrackId,
+        engineId: this.engineId,
+        kind: NULL_TRACK_KIND,
+        trackSortKey: PrimaryTrackSortKey.NULL_TRACK,
+        name: 'Kernel wakelocks',
+        trackGroup: undefined,
+        config: {},
+      });
+
+      const addGroup = Actions.addTrackGroup({
+        engineId: this.engineId,
+        summaryTrackId,
+        name: 'Kernel wakelocks',
+        id: groupUuid,
+        collapsed: true,
+      });
+      this.addTrackGroupActions.push(addGroup);
+    }
+  }
+
   async addLogsTrack(): Promise<void> {
     const result =
         await this.engine.query(`select count(1) as cnt from android_logs`);
@@ -1088,13 +1125,11 @@ class TrackDecider {
           tid,
           thread.name as threadName,
           max(slice.depth) as maxDepth,
-          (count(thread_slice.id) = count(slice.id)) as onlyThreadSlice,
           process.upid as upid
         from slice
         join thread_track on slice.track_id = thread_track.id
         join thread using(utid)
         left join process using(upid)
-        left join thread_slice on slice.id = thread_slice.id
         group by thread_track.id
   `);
 
@@ -1107,7 +1142,6 @@ class TrackDecider {
       threadName: STR_NULL,
       maxDepth: NUM,
       upid: NUM_NULL,
-      onlyThreadSlice: NUM,
     });
     for (; it.valid(); it.next()) {
       const utid = it.utid;
@@ -1119,7 +1153,6 @@ class TrackDecider {
       const threadName = it.threadName;
       const upid = it.upid;
       const maxDepth = it.maxDepth;
-      const onlyThreadSlice = it.onlyThreadSlice;
 
       const uuid = this.getUuid(utid, upid);
 
@@ -1141,7 +1174,6 @@ class TrackDecider {
           trackId,
           maxDepth,
           tid,
-          isThreadSlice: onlyThreadSlice === 1,
         },
       });
 
@@ -1587,6 +1619,7 @@ class TrackDecider {
     await this.groupGlobalUfsCmdTagTracks(
         UFS_CMD_TAG, UFS_CMD_TAG_GROUP_NAME);
     await this.groupGlobalBuddyInfoTracks();
+    await this.groupKernelWakelockTracks();
 
     // Pre-group all kernel "threads" (actually processes) if this is a linux
     // system trace. Below, addProcessTrackGroups will skip them due to an

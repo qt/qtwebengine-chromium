@@ -2210,13 +2210,6 @@ and @var{pan} audio filters support many formats). If the @var{amix}
 input has integer samples then @ref{aresample} will be automatically
 inserted to perform the conversion to float samples.
 
-For example
-@example
-ffmpeg -i INPUT1 -i INPUT2 -i INPUT3 -filter_complex amix=inputs=3:duration=first:dropout_transition=3 OUTPUT
-@end example
-will mix 3 input audio streams to a single output with the same duration as the
-first input and a dropout transition time of 3 seconds.
-
 It accepts the following parameters:
 @table @option
 
@@ -2243,14 +2236,36 @@ The transition time, in seconds, for volume renormalization when an input
 stream ends. The default value is 2 seconds.
 
 @item weights
-Specify weight of each input audio stream as sequence.
-Each weight is separated by space. By default all inputs have same weight.
+Specify weight of each input audio stream as a sequence of numbers separated
+by a space. If fewer weights are specified compared to number of inputs, the
+last weight is assigned to the remaining inputs.
+Default weight for each input is 1.
 
 @item normalize
 Always scale inputs instead of only doing summation of samples.
 Beware of heavy clipping if inputs are not normalized prior or after filtering
 by this filter if this option is disabled. By default is enabled.
 @end table
+
+@subsection Examples
+
+@itemize
+
+@item
+This will mix 3 input audio streams to a single output with the same duration as the
+first input and a dropout transition time of 3 seconds:
+@example
+ffmpeg -i INPUT1 -i INPUT2 -i INPUT3 -filter_complex amix=inputs=3:duration=first:dropout_transition=3 OUTPUT
+@end example
+
+@item
+This will mix one vocal and one music input audio stream to a single output with the same duration as the
+longest input. The music will have quarter the weight as the vocals, and the inputs are not normalized:
+@example
+ffmpeg -i VOCALS -i MUSIC -filter_complex amix=inputs=2:duration=longest:dropout_transition=0:weights="1 0.25":normalize=0 OUTPUT
+@end example
+
+@end itemize
 
 @subsection Commands
 
@@ -6315,6 +6330,40 @@ is enabled the minimum of all possible gains for each filtered channel is used.
 
 This filter supports the all above options as @ref{commands}.
 
+@subsection Examples
+
+@itemize
+@item
+Weak and slow amplification:
+@example
+speechnorm=e=3:r=0.00001:l=1
+@end example
+
+@item
+Moderate and slow amplification:
+@example
+speechnorm=e=6.25:r=0.00001:l=1
+@end example
+
+@item
+Strong and fast amplification:
+@example
+speechnorm=e=12.5:r=0.0001:l=1
+@end example
+
+@item
+Very strong and fast amplification:
+@example
+speechnorm=e=25:r=0.0001:l=1
+@end example
+
+@item
+Extreme and fast amplification:
+@example
+speechnorm=e=50:r=0.0001:l=1
+@end example
+@end itemize
+
 @section stereotools
 
 This filter has some handy utilities to manage stereo signals, for converting
@@ -7964,6 +8013,45 @@ Set planes to filter. Default is first only.
 @subsection Commands
 
 This filter supports the all above options as @ref{commands}.
+
+@section bilateral_cuda
+CUDA accelerated bilateral filter, an edge preserving filter.
+This filter is mathematically accurate thanks to the use of GPU acceleration.
+For best output quality, use one to one chroma subsampling, i.e. yuv444p format.
+
+The filter accepts the following options:
+@table @option
+@item sigmaS
+Set sigma of gaussian function to calculate spatial weight, also called sigma space.
+Allowed range is 0.1 to 512. Default is 0.1.
+
+@item sigmaR
+Set sigma of gaussian function to calculate color range weight, also called sigma color.
+Allowed range is 0.1 to 512. Default is 0.1.
+
+@item window_size
+Set window size of the bilateral function to determine the number of neighbours to loop on.
+If the number entered is even, one will be added automatically.
+Allowed range is 1 to 255. Default is 1.
+@end table
+@subsection Examples
+
+@itemize
+@item
+Apply the bilateral filter on a video.
+
+@example
+./ffmpeg -v verbose \
+-hwaccel cuda -hwaccel_output_format cuda -i input.mp4  \
+-init_hw_device cuda \
+-filter_complex \
+" \
+[0:v]scale_cuda=format=yuv444p[scaled_video];
+[scaled_video]bilateral_cuda=window_size=9:sigmaS=3.0:sigmaR=50.0" \
+-an -sn -c:v h264_nvenc -cq 20 out.mp4
+@end example
+
+@end itemize
 
 @section bitplanenoise
 
@@ -9671,6 +9759,38 @@ For example to convert the input to SMPTE-240M, use the command:
 colorspace=smpte240m
 @end example
 
+@section colorspace_cuda
+
+CUDA accelerated implementation of the colorspace filter.
+
+It is by no means feature complete compared to the software colorspace filter,
+and at the current time only supports color range conversion between jpeg/full
+and mpeg/limited range.
+
+The filter accepts the following options:
+
+@table @option
+@item range
+Specify output color range.
+
+The accepted values are:
+@table @samp
+@item tv
+TV (restricted) range
+
+@item mpeg
+MPEG (restricted) range
+
+@item pc
+PC (full) range
+
+@item jpeg
+JPEG (full) range
+
+@end table
+
+@end table
+
 @section colortemperature
 Adjust color temperature in video to simulate variations in ambient color temperature.
 
@@ -10138,11 +10258,22 @@ Auto-detect the crop size.
 
 It calculates the necessary cropping parameters and prints the
 recommended parameters via the logging system. The detected dimensions
-correspond to the non-black area of the input video.
+correspond to the non-black or video area of the input video according to @var{mode}.
 
 It accepts the following parameters:
 
 @table @option
+
+@item mode
+Depending on @var{mode} crop detection is based on either the mere black value of surrounding pixels or a combination of motion vectors and edge pixels.
+
+@table @samp
+@item black
+Detect black pixels surrounding the playing video. For fine control use option @var{limit}.
+
+@item mvedges
+Detect the playing video by the motion vectors inside the video and scanning for edge pixels typically forming the border of a playing video.
+@end table
 
 @item limit
 Set higher black value threshold, which can be optionally specified
@@ -10169,7 +10300,47 @@ detect the current optimal crop area. Default value is 0.
 This can be useful when channel logos distort the video area. 0
 indicates 'never reset', and returns the largest area encountered during
 playback.
+
+@item mv_threshold
+Set motion in pixel units as threshold for motion detection. It defaults to 8.
+
+@item low
+@item high
+Set low and high threshold values used by the Canny thresholding
+algorithm.
+
+The high threshold selects the "strong" edge pixels, which are then
+connected through 8-connectivity with the "weak" edge pixels selected
+by the low threshold.
+
+@var{low} and @var{high} threshold values must be chosen in the range
+[0,1], and @var{low} should be lesser or equal to @var{high}.
+
+Default value for @var{low} is @code{5/255}, and default value for @var{high}
+is @code{15/255}.
 @end table
+
+@subsection Examples
+
+@itemize
+@item
+Find video area surrounded by black borders:
+@example
+ffmpeg -i file.mp4 -vf cropdetect,metadata=mode=print -f null -
+@end example
+
+@item
+Find an embedded video area, generate motion vectors beforehand:
+@example
+ffmpeg -i file.mp4 -vf mestimate,cropdetect=mode=mvedges,metadata=mode=print -f null -
+@end example
+
+@item
+Find an embedded video area, use motion vectors from decoder:
+@example
+ffmpeg -flags2 +export_mvs -i file.mp4 -vf cropdetect=mode=mvedges,metadata=mode=print -f null -
+@end example
+@end itemize
 
 @anchor{cue}
 @section cue
@@ -26117,9 +26288,9 @@ Set the height of the overlaid video on the main video.
 Default value is the height of input overlay video.
 
 @item alpha
-Set blocking detection thresholds. Allowed range is 0.0 to 1.0, it
-requires an input video with alpha channel.
-Default value is @code{0.0}.
+Set transparency of overlaid video. Allowed range is 0.0 to 1.0.
+Higher value means lower transparency.
+Default value is @code{1.0}.
 
 @end table
 
@@ -26479,6 +26650,22 @@ Horizontal offset of the captured video.
 
 @item offset_y
 Vertical offset of the captured video.
+
+@item output_fmt
+Desired filter output format.
+Defaults to 8 Bit BGRA.
+
+It accepts the following values:
+@table @samp
+@item auto
+Passes all supported output formats to DDA and returns what DDA decides to use.
+@item 8bit
+@item bgra
+8 Bit formats always work, and DDA will convert to them if neccesary.
+@item 10bit
+@item x2bgr10
+Filter initialization will fail if 10 bit format is requested but unavailable.
+@end table
 
 @end table
 
@@ -27149,6 +27336,61 @@ tools.
 @c man begin MULTIMEDIA FILTERS
 
 Below is a description of the currently available multimedia filters.
+
+@section a3dscope
+
+Convert input audio to 3d scope video output.
+
+The filter accepts the following options:
+
+@table @option
+@item rate, r
+Set frame rate, expressed as number of frames per second. Default
+value is "25".
+
+@item size, s
+Specify the video size for the output. For the syntax of this option, check the
+@ref{video size syntax,,"Video size" section in the ffmpeg-utils manual,ffmpeg-utils}.
+Default value is @code{hd720}.
+
+@item fov
+Set the camera field of view. Default is 90 degrees.
+Allowed range is from 40 to 150.
+
+@item roll
+Set the camera roll.
+
+@item pitch
+Set the camera pitch.
+
+@item yaw
+Set the camera yaw.
+
+@item xzoom
+Set the camera zoom on X-axis.
+
+@item yzoom
+Set the camera zoom on Y-axis.
+
+@item zzoom
+Set the camera zoom on Z-axis.
+
+@item xpos
+Set the camera position on X-axis.
+
+@item ypos
+Set the camera position on Y-axis.
+
+@item zpos
+Set the camera position on Z-axis.
+
+@item length
+Set the length of displayed audio waves in number of frames.
+@end table
+
+@subsection Commands
+
+Filter supports the some above options as @ref{commands}.
 
 @section abitscope
 

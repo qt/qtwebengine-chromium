@@ -80,27 +80,44 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
 
   static loadFromEvents(events: SDK.TracingManager.EventPayload[], client: Client): TimelineLoader {
     const loader = new TimelineLoader(client);
-
     window.setTimeout(async () => {
-      const eventsPerChunk = 5000;
-      client.loadingStarted();
-      for (let i = 0; i < events.length; i += eventsPerChunk) {
-        const chunk = events.slice(i, i + eventsPerChunk);
-        (loader.tracingModel as SDK.TracingModel.TracingModel).addEvents(chunk);
-        client.loadingProgress((i + chunk.length) / events.length);
-        await new Promise(r => window.setTimeout(r));  // Yield event loop to paint.
-      }
-      void loader.close();
+      void loader.addEvents(events);
     });
-
     return loader;
   }
 
   static loadFromURL(url: Platform.DevToolsPath.UrlString, client: Client): TimelineLoader {
     const loader = new TimelineLoader(client);
+    const stream = new Common.StringOutputStream.StringOutputStream();
+    client.loadingStarted();
+
     const allowFileUNCPaths = Common.Settings.Settings.instance().moduleSetting('network.enable-unc-loading').get();
-    Host.ResourceLoader.loadAsStream(url, null, loader, undefined, allowFileUNCPaths);
+    Host.ResourceLoader.loadAsStream(url, null, stream, finishedCallback, allowFileUNCPaths);
+
+    function finishedCallback(
+        success: boolean, _headers: {[x: string]: string},
+        errorDescription: Host.ResourceLoader.LoadErrorDescription): void {
+      if (!success) {
+        return loader.reportErrorAndCancelLoading(errorDescription.message);
+      }
+      const txt = stream.data();
+      const events = JSON.parse(txt);
+      void loader.addEvents(events);
+    }
+
     return loader;
+  }
+
+  async addEvents(events: SDK.TracingManager.EventPayload[]): Promise<void> {
+    this.client?.loadingStarted();
+    const eventsPerChunk = 5000;
+    for (let i = 0; i < events.length; i += eventsPerChunk) {
+      const chunk = events.slice(i, i + eventsPerChunk);
+      (this.tracingModel as SDK.TracingModel.TracingModel).addEvents(chunk);
+      this.client?.loadingProgress((i + chunk.length) / events.length);
+      await new Promise(r => window.setTimeout(r));  // Yield event loop to paint.
+    }
+    void this.close();
   }
 
   cancel(): void {
@@ -136,7 +153,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     this.firstRawChunk = false;
 
     if (this.state === State.Initial) {
-      if (chunk.startsWith('{"nodes":[')) {
+      if (chunk.match(/^{(\s)*"nodes":(\s)*\[/)) {
         this.state = State.LoadingCPUProfileFormat;
       } else if (chunk[0] === '{') {
         this.state = State.LookingForEvents;

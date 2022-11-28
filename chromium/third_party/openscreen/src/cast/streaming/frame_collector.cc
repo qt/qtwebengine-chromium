@@ -74,11 +74,11 @@ bool FrameCollector::CollectRtpPacket(const RtpPacketParser::ParseResult& part,
   // contain a complete set of values.
   if (part.packet_id == FramePacketId{0}) {
     if (part.is_key_frame) {
-      frame_.dependency = EncodedFrame::KEY_FRAME;
+      frame_.dependency = EncodedFrame::Dependency::kKeyFrame;
     } else if (part.frame_id == part.referenced_frame_id) {
-      frame_.dependency = EncodedFrame::INDEPENDENTLY_DECODABLE;
+      frame_.dependency = EncodedFrame::Dependency::kIndependent;
     } else {
-      frame_.dependency = EncodedFrame::DEPENDS_ON_ANOTHER;
+      frame_.dependency = EncodedFrame::Dependency::kDependent;
     }
     frame_.referenced_frame_id = part.referenced_frame_id;
     frame_.rtp_timestamp = part.rtp_timestamp;

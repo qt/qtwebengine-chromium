@@ -107,6 +107,28 @@ std::unique_ptr<FtraceProcfs> FtraceProcfs::Create(const std::string& root) {
 FtraceProcfs::FtraceProcfs(const std::string& root) : root_(root) {}
 FtraceProcfs::~FtraceProcfs() = default;
 
+bool FtraceProcfs::SetSyscallFilter(const std::set<size_t>& filter) {
+  std::vector<std::string> parts;
+  for (size_t id : filter) {
+    base::StackString<16> m("id == %zu", id);
+    parts.push_back(m.ToStdString());
+  }
+
+  std::string filter_str = "0";
+  if (!parts.empty()) {
+    filter_str = base::Join(parts, " || ");
+  }
+
+  for (const std::string& event : {"sys_enter", "sys_exit"}) {
+    std::string path = root_ + "events/raw_syscalls/" + event + "/filter";
+    if (!WriteToFile(path, filter_str)) {
+      PERFETTO_ELOG("Failed to write file: %s", path.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
 bool FtraceProcfs::EnableEvent(const std::string& group,
                                const std::string& name) {
   std::string path = root_ + "events/" + group + "/" + name + "/enable";
@@ -146,6 +168,51 @@ std::string FtraceProcfs::ReadEventFormat(const std::string& group,
                                           const std::string& name) const {
   std::string path = root_ + "events/" + group + "/" + name + "/format";
   return ReadFileIntoString(path);
+}
+
+bool FtraceProcfs::SetCurrentTracer(const std::string& tracer) {
+  std::string path = root_ + "current_tracer";
+  return WriteToFile(path, tracer);
+}
+
+bool FtraceProcfs::ResetCurrentTracer() {
+  return SetCurrentTracer("nop");
+}
+
+bool FtraceProcfs::AppendFunctionFilters(
+    const std::vector<std::string>& filters) {
+  std::string path = root_ + "set_ftrace_filter";
+  std::string filter = base::Join(filters, "\n");
+
+  // The same file accepts special actions to perform when a corresponding
+  // kernel function is hit (regardless of active tracer). For example
+  // "__schedule_bug:traceoff" would disable tracing once __schedule_bug is
+  // called.
+  // We disallow these commands as most of them break the isolation of
+  // concurrent ftrace data sources (as the underlying ftrace instance is
+  // shared).
+  if (base::Contains(filter, ':')) {
+    PERFETTO_ELOG("Filter commands are disallowed.");
+    return false;
+  }
+  return AppendToFile(path, filter);
+}
+
+bool FtraceProcfs::ClearFunctionFilters() {
+  std::string path = root_ + "set_ftrace_filter";
+  return ClearFile(path);
+}
+
+bool FtraceProcfs::AppendFunctionGraphFilters(
+    const std::vector<std::string>& filters) {
+  std::string path = root_ + "set_graph_function";
+  std::string filter = base::Join(filters, "\n");
+  return AppendToFile(path, filter);
+}
+
+bool FtraceProcfs::ClearFunctionGraphFilters() {
+  std::string path = root_ + "set_graph_function";
+  return ClearFile(path);
 }
 
 std::vector<std::string> FtraceProcfs::ReadEventTriggers(

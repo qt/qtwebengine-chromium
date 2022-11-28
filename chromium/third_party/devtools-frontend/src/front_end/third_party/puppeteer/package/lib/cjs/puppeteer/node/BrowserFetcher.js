@@ -68,7 +68,7 @@ const rimraf_1 = __importDefault(require("rimraf"));
 const URL = __importStar(require("url"));
 const https_proxy_agent_1 = __importDefault(require("https-proxy-agent"));
 const proxy_from_env_1 = require("proxy-from-env");
-const assert_js_1 = require("../common/assert.js");
+const assert_js_1 = require("../util/assert.js");
 const tar_fs_1 = __importDefault(require("tar-fs"));
 const unbzip2_stream_1 = __importDefault(require("unbzip2-stream"));
 const { PUPPETEER_EXPERIMENTAL_CHROMIUM_MAC_ARM } = process.env;
@@ -163,7 +163,9 @@ function existsAsync(filePath) {
  * ```ts
  * const browserFetcher = puppeteer.createBrowserFetcher();
  * const revisionInfo = await browserFetcher.download('533271');
- * const browser = await puppeteer.launch({executablePath: revisionInfo.executablePath})
+ * const browser = await puppeteer.launch({
+ *   executablePath: revisionInfo.executablePath,
+ * });
  * ```
  *
  * **NOTE** BrowserFetcher is not designed to work concurrently with other
@@ -208,7 +210,11 @@ class BrowserFetcher {
                     __classPrivateFieldSet(this, _BrowserFetcher_platform, 'linux', "f");
                     break;
                 case 'win32':
-                    __classPrivateFieldSet(this, _BrowserFetcher_platform, os.arch() === 'x64' ? 'win64' : 'win32', "f");
+                    __classPrivateFieldSet(this, _BrowserFetcher_platform, os.arch() === 'x64' ||
+                        // Windows 11 for ARM supports x64 emulation
+                        (os.arch() === 'arm64' && _isWindows11(os.release()))
+                        ? 'win64'
+                        : 'win32', "f");
                     return;
                 default:
                     (0, assert_js_1.assert)(false, 'Unsupported platform: ' + platform);
@@ -279,7 +285,7 @@ class BrowserFetcher {
             await mkdirAsync(__classPrivateFieldGet(this, _BrowserFetcher_downloadsFolder, "f"));
         }
         // Use system Chromium builds on Linux ARM devices
-        if (os.platform() !== 'darwin' && os.arch() === 'arm64') {
+        if (os.platform() === 'linux' && os.arch() === 'arm64') {
             handleArm64();
             return;
         }
@@ -408,6 +414,22 @@ function parseFolderPath(product, folderPath) {
         return;
     }
     return { product, platform, revision };
+}
+/**
+ * Windows 11 is identified by 10.0.22000 or greater
+ * @internal
+ */
+function _isWindows11(version) {
+    const parts = version.split('.');
+    if (parts.length > 2) {
+        const major = parseInt(parts[0], 10);
+        const minor = parseInt(parts[1], 10);
+        const patch = parseInt(parts[2], 10);
+        return (major > 10 ||
+            (major === 10 && minor > 0) ||
+            (major === 10 && minor === 0 && patch >= 22000));
+    }
+    return false;
 }
 /**
  * @internal

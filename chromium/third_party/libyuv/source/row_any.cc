@@ -359,6 +359,9 @@ ANY31C(I422ToAR30Row_Any_AVX2, I422ToAR30Row_AVX2, 1, 0, 4, 15)
 #ifdef HAS_I444TOARGBROW_SSSE3
 ANY31C(I444ToARGBRow_Any_SSSE3, I444ToARGBRow_SSSE3, 0, 0, 4, 7)
 #endif
+#ifdef HAS_I444TORGB24ROW_SSSE3
+ANY31C(I444ToRGB24Row_Any_SSSE3, I444ToRGB24Row_SSSE3, 0, 0, 3, 15)
+#endif
 #ifdef HAS_I422TORGB24ROW_AVX2
 ANY31C(I422ToRGB24Row_Any_AVX2, I422ToRGB24Row_AVX2, 1, 0, 3, 31)
 #endif
@@ -374,6 +377,9 @@ ANY31C(I422ToRGBARow_Any_AVX2, I422ToRGBARow_AVX2, 1, 0, 4, 15)
 #ifdef HAS_I444TOARGBROW_AVX2
 ANY31C(I444ToARGBRow_Any_AVX2, I444ToARGBRow_AVX2, 0, 0, 4, 15)
 #endif
+#ifdef HAS_I444TORGB24ROW_AVX2
+ANY31C(I444ToRGB24Row_Any_AVX2, I444ToRGB24Row_AVX2, 0, 0, 3, 31)
+#endif
 #ifdef HAS_I422TOARGB4444ROW_AVX2
 ANY31C(I422ToARGB4444Row_Any_AVX2, I422ToARGB4444Row_AVX2, 1, 0, 2, 15)
 #endif
@@ -382,6 +388,9 @@ ANY31C(I422ToARGB1555Row_Any_AVX2, I422ToARGB1555Row_AVX2, 1, 0, 2, 15)
 #endif
 #ifdef HAS_I422TORGB565ROW_AVX2
 ANY31C(I422ToRGB565Row_Any_AVX2, I422ToRGB565Row_AVX2, 1, 0, 2, 15)
+#endif
+#ifdef HAS_I444TORGB24ROW_NEON
+ANY31C(I444ToRGB24Row_Any_NEON, I444ToRGB24Row_NEON, 0, 0, 3, 7)
 #endif
 #ifdef HAS_I422TOARGBROW_NEON
 ANY31C(I444ToARGBRow_Any_NEON, I444ToARGBRow_NEON, 0, 0, 4, 7)
@@ -663,6 +672,35 @@ ANY21(SobelXYRow_Any_MSA, SobelXYRow_MSA, 0, 1, 1, 4, 15)
 ANY21(SobelXYRow_Any_LSX, SobelXYRow_LSX, 0, 1, 1, 4, 15)
 #endif
 #undef ANY21
+
+// Any 2 planes to 1 with stride
+// width is measured in source pixels. 4 bytes contains 2 pixels
+#define ANY21S(NAMEANY, ANY_SIMD, SBPP, BPP, MASK)                        \
+  void NAMEANY(const uint8_t* src_yuy2, int stride_yuy2, uint8_t* dst_uv, \
+               int width) {                                               \
+    SIMD_ALIGNED(uint8_t temp[32 * 3]);                                   \
+    memset(temp, 0, 32 * 2); /* for msan */                               \
+    int awidth = (width + 1) / 2;                                         \
+    int r = awidth & MASK;                                                \
+    int n = awidth & ~MASK;                                               \
+    if (n > 0) {                                                          \
+      ANY_SIMD(src_yuy2, stride_yuy2, dst_uv, n * 2);                     \
+    }                                                                     \
+    memcpy(temp, src_yuy2 + n * SBPP, r * SBPP);                          \
+    memcpy(temp + 32, src_yuy2 + stride_yuy2 + n * SBPP, r * SBPP);       \
+    ANY_SIMD(temp, 32, temp + 64, MASK + 1);                              \
+    memcpy(dst_uv + n * BPP, temp + 64, r * BPP);                         \
+  }
+
+#ifdef HAS_YUY2TONVUVROW_NEON
+ANY21S(YUY2ToNVUVRow_Any_NEON, YUY2ToNVUVRow_NEON, 4, 2, 7)
+#endif
+#ifdef HAS_YUY2TONVUVROW_SSE2
+ANY21S(YUY2ToNVUVRow_Any_SSE2, YUY2ToNVUVRow_SSE2, 4, 2, 7)
+#endif
+#ifdef HAS_YUY2TONVUVROW_AVX2
+ANY21S(YUY2ToNVUVRow_Any_AVX2, YUY2ToNVUVRow_AVX2, 4, 2, 15)
+#endif
 
 // Any 2 planes to 1 with yuvconstants
 #define ANY21C(NAMEANY, ANY_SIMD, UVSHIFT, SBPP, SBPP2, BPP, MASK)            \
@@ -2270,6 +2308,10 @@ ANYDETILESPLITUV(DetileSplitUVRow_Any_SSSE3, DetileSplitUVRow_SSSE3, 15)
 
 #ifdef HAS_DETILETOYUY2_NEON
 ANYDETILEMERGE(DetileToYUY2_Any_NEON, DetileToYUY2_NEON, 15)
+#endif
+
+#ifdef HAS_DETILETOYUY2_SSE2
+ANYDETILEMERGE(DetileToYUY2_Any_SSE2, DetileToYUY2_SSE2, 15)
 #endif
 
 #ifdef __cplusplus

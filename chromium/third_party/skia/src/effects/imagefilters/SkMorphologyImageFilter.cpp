@@ -5,34 +5,63 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkVx.h"
+#include "include/private/SkSLSampleUsage.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <utility>
+
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/gpu/KeyBuilder.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrTexture.h"
-#include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramDataManager.h"
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
+
+struct GrShaderCaps;
+#endif
+
+#if GR_TEST_UTILS
+#include "include/utils/SkRandom.h"
 #endif
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
-    #include <immintrin.h>
+    #include <emmintrin.h>
 #endif
 
 namespace {
@@ -443,8 +472,6 @@ static sk_sp<SkSpecialImage> apply_morphology(
     GrSurfaceProxyView srcView = input->view(rContext);
     SkAlphaType srcAlphaType = input->alphaType();
     SkASSERT(srcView.asTextureProxy());
-    sk_sp<SkColorSpace> colorSpace = ctx.refColorSpace();
-    GrColorType colorType = ctx.grColorType();
 
     GrSurfaceProxy* proxy = srcView.proxy();
 
@@ -454,14 +481,17 @@ static sk_sp<SkSpecialImage> apply_morphology(
     srcRect.offset(input->subset().x(), input->subset().y());
     SkASSERT(radius.width() > 0 || radius.height() > 0);
 
+    GrImageInfo info(ctx.grColorType(), kPremul_SkAlphaType, ctx.refColorSpace(), rect.size());
+
     if (radius.fWidth > 0) {
-        GrImageInfo info(colorType, kPremul_SkAlphaType, colorSpace, rect.size());
-        auto dstFillContext = rContext->priv().makeSFC(info,
-                                                       SkBackingFit::kApprox,
-                                                       1,
-                                                       GrMipmapped::kNo,
-                                                       proxy->isProtected(),
-                                                       kBottomLeft_GrSurfaceOrigin);
+        auto dstFillContext =
+                rContext->priv().makeSFC(info,
+                                         "SpecialImage_ApplyMorphology_Width",
+                                         SkBackingFit::kApprox,
+                                         1,
+                                         GrMipmapped::kNo,
+                                         proxy->isProtected(),
+                                         kBottomLeft_GrSurfaceOrigin);
         if (!dstFillContext) {
             return nullptr;
         }
@@ -479,13 +509,14 @@ static sk_sp<SkSpecialImage> apply_morphology(
         srcRect = dstRect;
     }
     if (radius.fHeight > 0) {
-        GrImageInfo info(colorType, kPremul_SkAlphaType, colorSpace, rect.size());
-        auto dstFillContext = rContext->priv().makeSFC(info,
-                                                       SkBackingFit::kApprox,
-                                                       1,
-                                                       GrMipmapped::kNo,
-                                                       srcView.proxy()->isProtected(),
-                                                       kBottomLeft_GrSurfaceOrigin);
+        auto dstFillContext =
+                rContext->priv().makeSFC(info,
+                                         "SpecialImage_ApplyMorphology_Height",
+                                         SkBackingFit::kApprox,
+                                         1,
+                                         GrMipmapped::kNo,
+                                         srcView.proxy()->isProtected(),
+                                         kBottomLeft_GrSurfaceOrigin);
         if (!dstFillContext) {
             return nullptr;
         }
@@ -499,8 +530,9 @@ static sk_sp<SkSpecialImage> apply_morphology(
     return SkSpecialImage::MakeDeferredFromGpu(rContext,
                                                SkIRect::MakeWH(rect.width(), rect.height()),
                                                kNeedNewImageUniqueID_SpecialImage,
-                                               std::move(srcView), colorType,
-                                               std::move(colorSpace), input->props());
+                                               std::move(srcView),
+                                               info.colorInfo(),
+                                               input->props());
 }
 #endif
 

@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <utility>
 
 #include "absl/strings/string_view.h"
+#include "quiche/quic/core/io/quic_default_event_loop.h"
+#include "quiche/quic/core/io/quic_event_loop.h"
 #include "quiche/quic/core/proto/crypto_server_config_proto.h"
 #include "quiche/quic/core/quic_alarm_factory.h"
-#include "quiche/quic/core/quic_epoll_alarm_factory.h"
+#include "quiche/quic/core/quic_default_clock.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/platform/api/quic_test_loopback.h"
@@ -19,6 +22,7 @@
 #include "quiche/quic/qbone/qbone_server_session.h"
 #include "quiche/quic/test_tools/crypto_test_utils.h"
 #include "quiche/quic/test_tools/mock_clock.h"
+#include "quiche/quic/test_tools/mock_connection_id_generator.h"
 #include "quiche/quic/test_tools/quic_connection_peer.h"
 #include "quiche/quic/test_tools/quic_session_peer.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
@@ -295,7 +299,8 @@ class QboneSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
                                      bool send_qbone_alpn = true) {
     // Quic crashes if packets are sent at time 0, and the clock defaults to 0.
     helper_.AdvanceTime(QuicTime::Delta::FromMilliseconds(1000));
-    alarm_factory_ = std::make_unique<QuicEpollAlarmFactory>(&epoll_server_);
+    event_loop_ = GetDefaultEventLoop()->Create(QuicDefaultClock::Get());
+    alarm_factory_ = event_loop_->CreateAlarmFactory();
     client_writer_ = std::make_unique<DataSavingQbonePacketWriter>();
     server_writer_ = std::make_unique<DataSavingQbonePacketWriter>();
     client_handler_ =
@@ -314,7 +319,8 @@ class QboneSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
       client_connection_ = new QuicConnection(
           TestConnectionId(), client_address, server_address, &helper_,
           alarm_factory_.get(), new NiceMock<MockPacketWriter>(), true,
-          Perspective::IS_CLIENT, supported_versions_);
+          Perspective::IS_CLIENT, supported_versions_,
+          connection_id_generator_);
       client_connection_->SetSelfAddress(client_address);
       QuicConfig config;
       client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
@@ -333,7 +339,8 @@ class QboneSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
       server_connection_ = new QuicConnection(
           TestConnectionId(), server_address, client_address, &helper_,
           alarm_factory_.get(), new NiceMock<MockPacketWriter>(), true,
-          Perspective::IS_SERVER, supported_versions_);
+          Perspective::IS_SERVER, supported_versions_,
+          connection_id_generator_);
       server_connection_->SetSelfAddress(server_address);
       QuicConfig config;
       server_crypto_config_ = std::make_unique<QuicCryptoServerConfig>(
@@ -519,7 +526,7 @@ class QboneSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
 
  protected:
   const ParsedQuicVersionVector supported_versions_;
-  QuicEpollServer epoll_server_;
+  std::unique_ptr<QuicEventLoop> event_loop_;
   std::unique_ptr<QuicAlarmFactory> alarm_factory_;
   FakeTaskRunner runner_;
   MockQuicConnectionHelper helper_;
@@ -538,6 +545,7 @@ class QboneSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
 
   std::unique_ptr<QboneServerSession> server_peer_;
   std::unique_ptr<QboneClientSession> client_peer_;
+  MockConnectionIdGenerator connection_id_generator_;
 };
 
 INSTANTIATE_TEST_SUITE_P(Tests, QboneSessionTest,

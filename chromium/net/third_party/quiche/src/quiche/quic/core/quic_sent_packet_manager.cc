@@ -131,21 +131,6 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
     ignore_ack_delay_ = true;
   }
 
-  if (!remove_blackhole_detection_experiments_) {
-    if (config.HasClientRequestedIndependentOption(kPDP1, perspective)) {
-      num_ptos_for_path_degrading_ = 1;
-    }
-    if (config.HasClientRequestedIndependentOption(kPDP2, perspective)) {
-      num_ptos_for_path_degrading_ = 2;
-    }
-    if (config.HasClientRequestedIndependentOption(kPDP3, perspective)) {
-      num_ptos_for_path_degrading_ = 3;
-    }
-    if (config.HasClientRequestedIndependentOption(kPDP5, perspective)) {
-      num_ptos_for_path_degrading_ = 5;
-    }
-  }
-
   // Configure congestion control.
   if (config.HasClientRequestedIndependentOption(kTBBR, perspective)) {
     SetSendAlgorithm(kBBR);
@@ -165,27 +150,21 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
   }
 
   // Initial window.
-  if (GetQuicReloadableFlag(quic_unified_iw_options)) {
-    if (config.HasClientRequestedIndependentOption(kIW03, perspective)) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_unified_iw_options, 1, 4);
-      initial_congestion_window_ = 3;
-      send_algorithm_->SetInitialCongestionWindowInPackets(3);
-    }
-    if (config.HasClientRequestedIndependentOption(kIW10, perspective)) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_unified_iw_options, 2, 4);
-      initial_congestion_window_ = 10;
-      send_algorithm_->SetInitialCongestionWindowInPackets(10);
-    }
-    if (config.HasClientRequestedIndependentOption(kIW20, perspective)) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_unified_iw_options, 3, 4);
-      initial_congestion_window_ = 20;
-      send_algorithm_->SetInitialCongestionWindowInPackets(20);
-    }
-    if (config.HasClientRequestedIndependentOption(kIW50, perspective)) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_unified_iw_options, 4, 4);
-      initial_congestion_window_ = 50;
-      send_algorithm_->SetInitialCongestionWindowInPackets(50);
-    }
+  if (config.HasClientRequestedIndependentOption(kIW03, perspective)) {
+    initial_congestion_window_ = 3;
+    send_algorithm_->SetInitialCongestionWindowInPackets(3);
+  }
+  if (config.HasClientRequestedIndependentOption(kIW10, perspective)) {
+    initial_congestion_window_ = 10;
+    send_algorithm_->SetInitialCongestionWindowInPackets(10);
+  }
+  if (config.HasClientRequestedIndependentOption(kIW20, perspective)) {
+    initial_congestion_window_ = 20;
+    send_algorithm_->SetInitialCongestionWindowInPackets(20);
+  }
+  if (config.HasClientRequestedIndependentOption(kIW50, perspective)) {
+    initial_congestion_window_ = 50;
+    send_algorithm_->SetInitialCongestionWindowInPackets(50);
   }
   if (config.HasClientRequestedIndependentOption(kBWS5, perspective)) {
     initial_congestion_window_ = 10;
@@ -196,7 +175,7 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
     ignore_pings_ = true;
   }
 
-  using_pacing_ = !GetQuicFlag(FLAGS_quic_disable_pacing_for_perf_tests);
+  using_pacing_ = !GetQuicFlag(quic_disable_pacing_for_perf_tests);
   // Configure loss detection.
   if (config.HasClientRequestedIndependentOption(kILD0, perspective)) {
     uber_loss_algorithm_.SetReorderingShift(kDefaultIetfLossDelayShift);

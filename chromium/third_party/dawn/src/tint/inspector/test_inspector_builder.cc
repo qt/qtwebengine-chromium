@@ -54,7 +54,7 @@ const ast::Struct* InspectorBuilder::MakeInOutStruct(std::string name,
         std::tie(member_name, location) = var;
         members.Push(Member(member_name, ty.u32(),
                             utils::Vector{
-                                Location(location),
+                                Location(AInt(location)),
                                 Flat(),
                             }));
     }
@@ -126,15 +126,11 @@ void InspectorBuilder::AddUniformBuffer(const std::string& name,
                                         const ast::Type* type,
                                         uint32_t group,
                                         uint32_t binding) {
-    GlobalVar(name, type, ast::StorageClass::kUniform,
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, type, ast::AddressSpace::kUniform, Binding(AInt(binding)), Group(AInt(group)));
 }
 
 void InspectorBuilder::AddWorkgroupStorage(const std::string& name, const ast::Type* type) {
-    GlobalVar(name, type, ast::StorageClass::kWorkgroup);
+    GlobalVar(name, type, ast::AddressSpace::kWorkgroup);
 }
 
 void InspectorBuilder::AddStorageBuffer(const std::string& name,
@@ -142,11 +138,8 @@ void InspectorBuilder::AddStorageBuffer(const std::string& name,
                                         ast::Access access,
                                         uint32_t group,
                                         uint32_t binding) {
-    GlobalVar(name, type, ast::StorageClass::kStorage, access,
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, type, ast::AddressSpace::kStorage, access, Binding(AInt(binding)),
+              Group(AInt(group)));
 }
 
 void InspectorBuilder::MakeStructVariableReferenceBodyFunction(
@@ -178,36 +171,24 @@ void InspectorBuilder::MakeStructVariableReferenceBodyFunction(
 }
 
 void InspectorBuilder::AddSampler(const std::string& name, uint32_t group, uint32_t binding) {
-    GlobalVar(name, sampler_type(),
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, sampler_type(), Binding(AInt(binding)), Group(AInt(group)));
 }
 
 void InspectorBuilder::AddComparisonSampler(const std::string& name,
                                             uint32_t group,
                                             uint32_t binding) {
-    GlobalVar(name, comparison_sampler_type(),
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, comparison_sampler_type(), Binding(AInt(binding)), Group(AInt(group)));
 }
 
 void InspectorBuilder::AddResource(const std::string& name,
                                    const ast::Type* type,
                                    uint32_t group,
                                    uint32_t binding) {
-    GlobalVar(name, type,
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, type, Binding(AInt(binding)), Group(AInt(group)));
 }
 
 void InspectorBuilder::AddGlobalVariable(const std::string& name, const ast::Type* type) {
-    GlobalVar(name, type, ast::StorageClass::kPrivate);
+    GlobalVar(name, type, ast::AddressSpace::kPrivate);
 }
 
 const ast::Function* InspectorBuilder::MakeSamplerReferenceBodyFunction(
@@ -305,11 +286,7 @@ void InspectorBuilder::AddStorageTexture(const std::string& name,
                                          const ast::Type* type,
                                          uint32_t group,
                                          uint32_t binding) {
-    GlobalVar(name, type,
-              utils::Vector{
-                  create<ast::BindingAttribute>(binding),
-                  create<ast::GroupAttribute>(group),
-              });
+    GlobalVar(name, type, Binding(AInt(binding)), Group(AInt(group)));
 }
 
 const ast::Function* InspectorBuilder::MakeStorageTextureBodyFunction(

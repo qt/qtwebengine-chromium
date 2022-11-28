@@ -27,13 +27,15 @@
 #endif  // BENCHMARK_RUY
 #include "bench/gemm.h"
 #include "bench/utils.h"
+
+#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
 #include <xnnpack/gemm.h>
 #include <xnnpack/math.h>
-#include <xnnpack/pack.h>
+#include <xnnpack/microfnptr.h>
 #include <xnnpack/microparams-init.h>
-#include <xnnpack/params.h>
+#include <xnnpack/pack.h>
 
 
 static void GEMMBenchmark(benchmark::State& state,
@@ -646,35 +648,35 @@ static void ruy_st(benchmark::State& state, const char* net)
 
 
 #if XNN_ARCH_ARM
-  static void qu8_gemm_1x1c4__armv6simd(benchmark::State& state, const char* net) {
+  static void qu8_gemm_1x1c4__armsimd32(benchmark::State& state, const char* net) {
     GEMMBenchmark(state,
-      xnn_qu8_gemm_minmax_fp32_ukernel_1x1c4__armv6simd,
-      xnn_init_qu8_conv_minmax_fp32_armv6simd_params,
+      xnn_qu8_gemm_minmax_fp32_ukernel_1x1c4__armsimd32,
+      xnn_init_qu8_conv_minmax_fp32_armsimd32_params,
       1, 1, 4, 1, benchmark::utils::CheckARMV6);
   }
-  static void qu8_gemm_2x1c4__armv6simd(benchmark::State& state, const char* net) {
+  static void qu8_gemm_2x1c4__armsimd32(benchmark::State& state, const char* net) {
     GEMMBenchmark(state,
-      xnn_qu8_gemm_minmax_fp32_ukernel_1x1c4__armv6simd,
-      xnn_init_qu8_conv_minmax_fp32_armv6simd_params,
+      xnn_qu8_gemm_minmax_fp32_ukernel_1x1c4__armsimd32,
+      xnn_init_qu8_conv_minmax_fp32_armsimd32_params,
       2, 1, 4, 1, benchmark::utils::CheckARMV6);
   }
-  static void qu8_gemm_1x2c4__armv6simd(benchmark::State& state, const char* net) {
+  static void qu8_gemm_1x2c4__armsimd32(benchmark::State& state, const char* net) {
     GEMMBenchmark(state,
-      xnn_qu8_gemm_minmax_fp32_ukernel_1x2c4__armv6simd,
-      xnn_init_qu8_conv_minmax_fp32_armv6simd_params,
+      xnn_qu8_gemm_minmax_fp32_ukernel_1x2c4__armsimd32,
+      xnn_init_qu8_conv_minmax_fp32_armsimd32_params,
       1, 2, 4, 1, benchmark::utils::CheckARMV6);
   }
-  static void qu8_gemm_2x2c4__armv6simd(benchmark::State& state, const char* net) {
+  static void qu8_gemm_2x2c4__armsimd32(benchmark::State& state, const char* net) {
     GEMMBenchmark(state,
-      xnn_qu8_gemm_minmax_fp32_ukernel_1x2c4__armv6simd,
-      xnn_init_qu8_conv_minmax_fp32_armv6simd_params,
+      xnn_qu8_gemm_minmax_fp32_ukernel_1x2c4__armsimd32,
+      xnn_init_qu8_conv_minmax_fp32_armsimd32_params,
       2, 2, 4, 1, benchmark::utils::CheckARMV6);
   }
 
-  BENCHMARK_GEMM(qu8_gemm_1x1c4__armv6simd)
-  BENCHMARK_GEMM(qu8_gemm_2x1c4__armv6simd)
-  BENCHMARK_GEMM(qu8_gemm_1x2c4__armv6simd)
-  BENCHMARK_GEMM(qu8_gemm_2x2c4__armv6simd)
+  BENCHMARK_GEMM(qu8_gemm_1x1c4__armsimd32)
+  BENCHMARK_GEMM(qu8_gemm_2x1c4__armsimd32)
+  BENCHMARK_GEMM(qu8_gemm_1x2c4__armsimd32)
+  BENCHMARK_GEMM(qu8_gemm_2x2c4__armsimd32)
 #endif  // XNN_ARCH_ARM
 
 

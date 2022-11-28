@@ -25,7 +25,7 @@ set_target_properties(pixbufloader-jxl PROPERTIES
 # shared library.
 target_link_libraries(pixbufloader-jxl jxl jxl_threads skcms-interface PkgConfig::Gdk-Pixbuf)
 
-pkg_get_variable(GDK_PIXBUF_MODULEDIR gdk-pixbuf-2.0 gdk_pixbuf_moduledir)
+execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} gdk-pixbuf-2.0 --variable gdk_pixbuf_moduledir --define-variable=prefix=${CMAKE_INSTALL_PREFIX} OUTPUT_VARIABLE GDK_PIXBUF_MODULEDIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 install(TARGETS pixbufloader-jxl LIBRARY DESTINATION "${GDK_PIXBUF_MODULEDIR}")
 
 # Instead of the following, we might instead add the
@@ -33,7 +33,7 @@ install(TARGETS pixbufloader-jxl LIBRARY DESTINATION "${GDK_PIXBUF_MODULEDIR}")
 # /usr/share/thumbnailers/gdk-pixbuf-thumbnailer.thumbnailer
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/jxl.thumbnailer DESTINATION share/thumbnailers/)
 
-if(BUILD_TESTING AND NOT MINGW)
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
   pkg_check_modules(Gdk IMPORTED_TARGET gdk-2.0)
   if (Gdk_FOUND)
     # Test for loading a .jxl file using the pixbufloader library via GDK. This
@@ -63,14 +63,18 @@ if(BUILD_TESTING AND NOT MINGW)
       set(XVFB_PROGRAM_PREFIX "")
     endif()
 
-    add_test(
-      NAME pixbufloader_test_jxl
-      COMMAND
-        ${XVFB_PROGRAM_PREFIX} $<TARGET_FILE:pixbufloader_test>
-        "${CMAKE_CURRENT_SOURCE_DIR}/loaders_test.cache"
-        "${CMAKE_SOURCE_DIR}/third_party/testdata/jxl/blending/cropped_traffic_light.jxl"
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    )
-    set_tests_properties(pixbufloader_test_jxl PROPERTIES SKIP_RETURN_CODE 254)
+    # libX11.so and libgdk-x11-2.0.so are not compiled with MSAN -> report
+    # use-of-uninitialized-value for string some internal string value.
+    if (NOT (SANITIZER STREQUAL "msan"))
+      add_test(
+        NAME pixbufloader_test_jxl
+        COMMAND
+          ${XVFB_PROGRAM_PREFIX} $<TARGET_FILE:pixbufloader_test>
+          "${CMAKE_CURRENT_SOURCE_DIR}/loaders_test.cache"
+          "${CMAKE_SOURCE_DIR}/testdata/jxl/blending/cropped_traffic_light.jxl"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      )
+      set_tests_properties(pixbufloader_test_jxl PROPERTIES SKIP_RETURN_CODE 254)
+    endif()
   endif()  # Gdk_FOUND
 endif()  # BUILD_TESTING

@@ -25,6 +25,7 @@
 #include "src/tint/sem/pointer.h"
 #include "src/tint/sem/reference.h"
 #include "src/tint/sem/sampler.h"
+#include "src/tint/sem/struct.h"
 #include "src/tint/sem/texture.h"
 #include "src/tint/sem/u32.h"
 #include "src/tint/sem/vector.h"
@@ -105,7 +106,7 @@ bool Type::is_integer_scalar() const {
 }
 
 bool Type::is_signed_integer_scalar() const {
-    return Is<I32>();
+    return IsAnyOf<I32, AbstractInt>();
 }
 
 bool Type::is_unsigned_integer_scalar() const {
@@ -113,7 +114,7 @@ bool Type::is_unsigned_integer_scalar() const {
 }
 
 bool Type::is_signed_integer_vector() const {
-    return Is([](const Vector* v) { return v->type()->IsAnyOf<I32>(); });
+    return Is([](const Vector* v) { return v->type()->IsAnyOf<I32, AbstractInt>(); });
 }
 
 bool Type::is_unsigned_integer_vector() const {
@@ -125,7 +126,7 @@ bool Type::is_unsigned_scalar_or_vector() const {
 }
 
 bool Type::is_signed_scalar_or_vector() const {
-    return Is<I32>() || is_signed_integer_vector();
+    return IsAnyOf<I32, AbstractInt>() || is_signed_integer_vector();
 }
 
 bool Type::is_integer_scalar_or_vector() const {
@@ -170,6 +171,23 @@ bool Type::is_numeric_scalar_or_vector() const {
 
 bool Type::is_handle() const {
     return IsAnyOf<Sampler, Texture>();
+}
+
+bool Type::HoldsAbstract() const {
+    return Switch(
+        this,  //
+        [&](const AbstractNumeric*) { return true; },
+        [&](const Vector* v) { return v->type()->HoldsAbstract(); },
+        [&](const Matrix* m) { return m->type()->HoldsAbstract(); },
+        [&](const Array* a) { return a->ElemType()->HoldsAbstract(); },
+        [&](const Struct* s) {
+            for (auto* m : s->Members()) {
+                if (m->Type()->HoldsAbstract()) {
+                    return true;
+                }
+            }
+            return false;
+        });
 }
 
 uint32_t Type::ConversionRank(const Type* from, const Type* to) {
@@ -246,15 +264,17 @@ const Type* Type::ElementOf(const Type* ty, uint32_t* count /* = nullptr */) {
         },
         [&](const Array* a) {
             if (count) {
-                *count = a->Count();
+                if (auto* const_count = std::get_if<ConstantArrayCount>(&a->Count())) {
+                    *count = const_count->value;
+                }
             }
             return a->ElemType();
         },
         [&](Default) {
             if (count) {
-                *count = 0;
+                *count = 1;
             }
-            return nullptr;
+            return ty;
         });
 }
 

@@ -31,9 +31,9 @@
 #include "avcodec.h"
 #include "blockdsp.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "hwconfig.h"
-#include "internal.h"
 #include "mpeg_er.h"
 #include "mpegvideo.h"
 #include "mpegvideodec.h"
@@ -391,7 +391,7 @@ av_cold int ff_vc1_decode_init_alloc_tables(VC1Context *v)
                 goto error;
     }
 
-    ret = ff_intrax8_common_init(s->avctx, &v->x8, &s->idsp,
+    ret = ff_intrax8_common_init(s->avctx, &v->x8,
                                  s->block, s->block_last_index,
                                  s->mb_width, s->mb_height);
     if (ret < 0)
@@ -540,7 +540,7 @@ static av_cold int vc1_decode_init(AVCodecContext *avctx)
     // That this is necessary might indicate a bug.
     ff_vc1_decode_end(avctx);
 
-    ff_blockdsp_init(&s->bdsp, avctx);
+    ff_blockdsp_init(&s->bdsp);
     ff_h264chroma_init(&v->h264chroma, 8);
     ff_qpeldsp_init(&s->qdsp);
 
@@ -1203,7 +1203,7 @@ static const enum AVPixelFormat vc1_hwaccel_pixfmt_list_420[] = {
 
 const FFCodec ff_vc1_decoder = {
     .p.name         = "vc1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("SMPTE VC-1"),
+    CODEC_LONG_NAME("SMPTE VC-1"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_VC1,
     .priv_data_size = sizeof(VC1Context),
@@ -1240,7 +1240,7 @@ const FFCodec ff_vc1_decoder = {
 #if CONFIG_WMV3_DECODER
 const FFCodec ff_wmv3_decoder = {
     .p.name         = "wmv3",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Windows Media Video 9"),
+    CODEC_LONG_NAME("Windows Media Video 9"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_WMV3,
     .priv_data_size = sizeof(VC1Context),
@@ -1278,7 +1278,7 @@ const FFCodec ff_wmv3_decoder = {
 #if CONFIG_WMV3IMAGE_DECODER
 const FFCodec ff_wmv3image_decoder = {
     .p.name         = "wmv3image",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Windows Media Video 9 Image"),
+    CODEC_LONG_NAME("Windows Media Video 9 Image"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_WMV3IMAGE,
     .priv_data_size = sizeof(VC1Context),
@@ -1297,7 +1297,7 @@ const FFCodec ff_wmv3image_decoder = {
 #if CONFIG_VC1IMAGE_DECODER
 const FFCodec ff_vc1image_decoder = {
     .p.name         = "vc1image",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Windows Media Video 9 Image v2"),
+    CODEC_LONG_NAME("Windows Media Video 9 Image v2"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_VC1IMAGE,
     .priv_data_size = sizeof(VC1Context),

@@ -191,8 +191,8 @@ enum aome_enc_control_id {
 
   /* NOTE: enum 10 unused */
 
-  /*!\brief Codec control function to set encoder scaling mode,
-   * aom_scaling_mode_t* parameter.
+  /*!\brief Codec control function to set encoder scaling mode for the next
+   * frame to be coded, aom_scaling_mode_t* parameter.
    */
   AOME_SET_SCALEMODE = 11,
 
@@ -432,7 +432,7 @@ enum aome_enc_control_id {
 
   /*!\brief Codec control function to enable error_resilient_mode, int parameter
    *
-   * AV1 has a bitstream feature to guarantee parseability of a frame
+   * AV1 has a bitstream feature to guarantee parsability of a frame
    * by turning on the error_resilient_decoding mode, even though the
    * reference buffers are unreliable or not received.
    *
@@ -1271,7 +1271,7 @@ enum aome_enc_control_id {
    */
   AV1E_SET_SVC_LAYER_ID = 131,
 
-  /*!\brief Codec control function to set SVC paramaeters, aom_svc_params_t*
+  /*!\brief Codec control function to set SVC parameters, aom_svc_params_t*
    * parameter
    */
   AV1E_SET_SVC_PARAMS = 132,
@@ -1454,6 +1454,17 @@ enum aome_enc_control_id {
    * parameter.
    */
   AV1E_GET_NUM_OPERATING_POINTS = 156,
+
+  /*!\brief Codec control function to skip the application of post-processing
+   * filters on reconstructed frame, unsigned int parameter
+   *
+   * - 0 = disable (default)
+   * - 1 = enable
+   *
+   * \attention For this value to be used aom_codec_enc_cfg_t::g_usage
+   *            must be set to AOM_USAGE_ALL_INTRA.
+   */
+  AV1E_SET_SKIP_POSTPROC_FILTERING = 157,
 
   // Any new encoder control IDs should be added above.
   // Maximum allowed encoder control ID is 229.
@@ -2070,6 +2081,9 @@ AOM_CTRL_USE_TYPE(AV1E_GET_TARGET_SEQ_LEVEL_IDX, int *)
 
 AOM_CTRL_USE_TYPE(AV1E_GET_NUM_OPERATING_POINTS, int *)
 #define AOM_CTRL_AV1E_GET_NUM_OPERATING_POINTS
+
+AOM_CTRL_USE_TYPE(AV1E_SET_SKIP_POSTPROC_FILTERING, unsigned int)
+#define AOM_CTRL_AV1E_SET_SKIP_POSTPROC_FILTERING
 
 /*!\endcond */
 /*! @} - end defgroup aom_encoder */

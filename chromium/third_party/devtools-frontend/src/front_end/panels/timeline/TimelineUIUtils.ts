@@ -3263,17 +3263,6 @@ export class TimelineUIUtils {
     };
   }
 
-  static markerStyleForFrame(): TimelineMarkerStyle {
-    return {
-      title: i18nString(UIStrings.frame),
-      color: 'rgba(100, 100, 100, 0.4)',
-      lineWidth: 3,
-      dashStyle: [3],
-      tall: true,
-      lowPriority: true,
-    };
-  }
-
   static colorForId(id: string): string {
     if (!colorGenerator) {
       colorGenerator =
@@ -3325,7 +3314,7 @@ export class TimelineUIUtils {
 
       case warnings.LongTask: {
         const longTaskLink =
-            UI.XLink.XLink.create('https://web.dev/rail/#goals-and-guidelines', i18nString(UIStrings.longTask));
+            UI.XLink.XLink.create('https://web.dev/optimize-long-tasks/', i18nString(UIStrings.longTask));
         span.appendChild(i18n.i18n.getFormatLocalizedString(
             str_, UIStrings.sTookS,
             {PH1: longTaskLink, PH2: i18n.TimeUtilities.millisToString((event.duration || 0), true)}));

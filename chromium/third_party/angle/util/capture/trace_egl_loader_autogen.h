@@ -74,6 +74,7 @@
 #define eglReleaseDeviceANGLE t_eglReleaseDeviceANGLE
 #define eglQueryDisplayAttribANGLE t_eglQueryDisplayAttribANGLE
 #define eglQueryStringiANGLE t_eglQueryStringiANGLE
+#define eglCopyMetalSharedEventANGLE t_eglCopyMetalSharedEventANGLE
 #define eglForceGPUSwitchANGLE t_eglForceGPUSwitchANGLE
 #define eglHandleGPUSwitchANGLE t_eglHandleGPUSwitchANGLE
 #define eglReacquireHighPowerGPUANGLE t_eglReacquireHighPowerGPUANGLE
@@ -190,6 +191,7 @@ ANGLE_TRACE_LOADER_EXPORT extern PFNEGLCREATEDEVICEANGLEPROC t_eglCreateDeviceAN
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLRELEASEDEVICEANGLEPROC t_eglReleaseDeviceANGLE;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLQUERYDISPLAYATTRIBANGLEPROC t_eglQueryDisplayAttribANGLE;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLQUERYSTRINGIANGLEPROC t_eglQueryStringiANGLE;
+ANGLE_TRACE_LOADER_EXPORT extern PFNEGLCOPYMETALSHAREDEVENTANGLEPROC t_eglCopyMetalSharedEventANGLE;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLFORCEGPUSWITCHANGLEPROC t_eglForceGPUSwitchANGLE;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLHANDLEGPUSWITCHANGLEPROC t_eglHandleGPUSwitchANGLE;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLREACQUIREHIGHPOWERGPUANGLEPROC
@@ -249,11 +251,8 @@ ANGLE_TRACE_LOADER_EXPORT extern PFNEGLPOSTSUBBUFFERNVPROC t_eglPostSubBufferNV;
 ANGLE_TRACE_LOADER_EXPORT extern PFNEGLSTREAMCONSUMERGLTEXTUREEXTERNALATTRIBSNVPROC
     t_eglStreamConsumerGLTextureExternalAttribsNV;
 
-namespace trace_angle
-{
 using GenericProc = void (*)();
 using LoadProc    = GenericProc(KHRONOS_APIENTRY *)(const char *);
-ANGLE_TRACE_LOADER_EXPORT void LoadEGL(LoadProc loadProc);
-}  // namespace trace_angle
+ANGLE_TRACE_LOADER_EXPORT void LoadTraceEGL(LoadProc loadProc);
 
 #endif  // ANGLE_TRACES_UTIL_EGL_LOADER_AUTOGEN_H_

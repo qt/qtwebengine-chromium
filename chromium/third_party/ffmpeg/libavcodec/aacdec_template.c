@@ -91,6 +91,7 @@
 
 #include "libavutil/channel_layout.h"
 #include "libavutil/thread.h"
+#include "decode.h"
 #include "internal.h"
 
 static VLC vlc_scalefactors;
@@ -2584,6 +2585,10 @@ static int decode_extension_payload(AACContext *ac, GetBitContext *gb, int cnt,
             ac->avctx->profile = FF_PROFILE_AAC_HE;
         }
         res = AAC_RENAME(ff_decode_sbr_extension)(ac, &che->sbr, gb, crc_flag, cnt, elem_type);
+        if (ac->oc[1].m4ac.ps == 1 && !ac->warned_he_aac_mono) {
+            av_log(ac->avctx, AV_LOG_VERBOSE, "Treating HE-AAC mono as stereo.\n");
+            ac->warned_he_aac_mono = 1;
+        }
         break;
     case EXT_DYNAMIC_RANGE:
         res = decode_dynamic_range(&ac->che_drc, gb);
@@ -3091,7 +3096,7 @@ static void spectral_to_sample(AACContext *ac, int samples)
                     /* preparation for resampler */
                     for(j = 0; j<samples; j++){
                         che->ch[0].ret[j] = (int32_t)av_clip64((int64_t)che->ch[0].ret[j]*128, INT32_MIN, INT32_MAX-0x8000)+0x8000;
-                        if(type == TYPE_CPE)
+                        if (type == TYPE_CPE || (type == TYPE_SCE && ac->oc[1].m4ac.ps == 1))
                             che->ch[1].ret[j] = (int32_t)av_clip64((int64_t)che->ch[1].ret[j]*128, INT32_MIN, INT32_MAX-0x8000)+0x8000;
                     }
                 }

@@ -82,10 +82,12 @@ std::vector<CrossRefV5IndexEntry> GetCrossRefV5Indices(const CPDF_Array* array,
   std::vector<CrossRefV5IndexEntry> indices;
   if (array) {
     for (size_t i = 0; i < array->size() / 2; i++) {
-      const CPDF_Number* pStartNumObj = ToNumber(array->GetObjectAt(i * 2));
-      const CPDF_Number* pCountObj = ToNumber(array->GetObjectAt(i * 2 + 1));
+      RetainPtr<const CPDF_Number> pStartNumObj = array->GetNumberAt(i * 2);
+      if (!pStartNumObj)
+        continue;
 
-      if (!pStartNumObj || !pCountObj)
+      RetainPtr<const CPDF_Number> pCountObj = array->GetNumberAt(i * 2 + 1);
+      if (!pCountObj)
         continue;
 
       int nStartNum = pStartNumObj->GetInteger();
@@ -269,7 +271,7 @@ CPDF_Parser::Error CPDF_Parser::StartParseInternal() {
       return eRet;
   }
   if (m_pSecurityHandler && !m_pSecurityHandler->IsMetadataEncrypted()) {
-    const CPDF_Reference* pMetadata =
+    RetainPtr<const CPDF_Reference> pMetadata =
         ToReference(GetRoot()->GetObjectFor("Metadata"));
     if (pMetadata)
       m_MetadataObjnum = pMetadata->GetRefObjNum();
@@ -482,11 +484,11 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
   // Each entry shall be exactly 20 byte.
   // A sample entry looks like:
   // "0000000000 00007 f\r\n"
-  static constexpr int32_t kEntryConstSize = 20;
+  static constexpr int32_t kEntrySize = 20;
 
   if (!out_objects) {
     FX_SAFE_FILESIZE pos = count;
-    pos *= kEntryConstSize;
+    pos *= kEntrySize;
     pos += m_pSyntax->GetPos();
     if (!pos.IsValid())
       return false;
@@ -502,33 +504,33 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
   if (new_size.ValueOrDie() > kMaxXRefSize)
     return false;
 
-  const size_t max_entries_in_file =
-      m_pSyntax->GetDocumentSize() / kEntryConstSize;
+  const size_t max_entries_in_file = m_pSyntax->GetDocumentSize() / kEntrySize;
   if (new_size.ValueOrDie() > max_entries_in_file)
     return false;
 
   out_objects->resize(new_size.ValueOrDie());
 
-  DataVector<char> buf(1024 * kEntryConstSize + 1);
+  DataVector<char> buf(1024 * kEntrySize + 1);
   buf.back() = '\0';
 
-  uint32_t nBytesToRead = count;
-  while (nBytesToRead > 0) {
-    const uint32_t block_size = std::min(nBytesToRead, 1024u);
+  uint32_t entries_to_read = count;
+  while (entries_to_read > 0) {
+    const uint32_t entries_in_block = std::min(entries_to_read, 1024u);
+    const uint32_t bytes_to_read = entries_in_block * kEntrySize;
     if (!m_pSyntax->ReadBlock(reinterpret_cast<uint8_t*>(buf.data()),
-                              block_size * kEntryConstSize)) {
+                              bytes_to_read)) {
       return false;
     }
 
-    for (uint32_t i = 0; i < block_size; i++) {
-      uint32_t iObjectIndex = count - nBytesToRead + i;
+    for (uint32_t i = 0; i < entries_in_block; i++) {
+      uint32_t iObjectIndex = count - entries_to_read + i;
       CrossRefObjData& obj_data =
           (*out_objects)[start_obj_index + iObjectIndex];
       const uint32_t objnum = start_objnum + iObjectIndex;
       obj_data.obj_num = objnum;
       ObjectInfo& info = obj_data.info;
 
-      char* pEntry = &buf[i * kEntryConstSize];
+      const char* pEntry = &buf[i * kEntrySize];
       if (pEntry[17] == 'f') {
         info.pos = 0;
         info.type = ObjectType::kFree;
@@ -553,7 +555,7 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
         info.type = ObjectType::kNotCompressed;
       }
     }
-    nBytesToRead -= block_size;
+    entries_to_read -= entries_in_block;
   }
   return true;
 }
@@ -723,11 +725,11 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
   if (!pObject || !pObject->GetObjNum())
     return false;
 
-  CPDF_Stream* pStream = pObject->AsStream();
+  RetainPtr<const CPDF_Stream> pStream(pObject->AsStream());
   if (!pStream)
     return false;
 
-  const CPDF_Dictionary* pDict = pStream->GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = pStream->GetDict();
   int32_t prev = pDict->GetIntegerFor("Prev");
   if (prev < 0)
     return false;
@@ -750,9 +752,10 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
   }
 
   std::vector<CrossRefV5IndexEntry> indices =
-      GetCrossRefV5Indices(pDict->GetArrayFor("Index"), size);
+      GetCrossRefV5Indices(pDict->GetArrayFor("Index").Get(), size);
 
-  std::vector<uint32_t> field_widths = GetFieldWidths(pDict->GetArrayFor("W"));
+  std::vector<uint32_t> field_widths =
+      GetFieldWidths(pDict->GetArrayFor("W").Get());
   if (field_widths.size() < kMinFieldCount)
     return false;
 
@@ -763,7 +766,7 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
     return false;
 
   uint32_t total_width = dwAccWidth.ValueOrDie();
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
   pAcc->LoadAllDataFiltered();
 
   pdfium::span<const uint8_t> data_span = pAcc->GetSpan();
@@ -848,26 +851,27 @@ void CPDF_Parser::ProcessCrossRefV5Entry(
   m_CrossRefTable->AddCompressed(obj_num, archive_obj_num, archive_obj_index);
 }
 
-const CPDF_Array* CPDF_Parser::GetIDArray() const {
+RetainPtr<const CPDF_Array> CPDF_Parser::GetIDArray() const {
   return GetTrailer() ? GetTrailer()->GetArrayFor("ID") : nullptr;
 }
 
-const CPDF_Dictionary* CPDF_Parser::GetRoot() const {
-  CPDF_Object* obj =
+RetainPtr<const CPDF_Dictionary> CPDF_Parser::GetRoot() const {
+  RetainPtr<CPDF_Object> obj =
       m_pObjectsHolder->GetOrParseIndirectObject(GetRootObjNum());
   return obj ? obj->GetDict() : nullptr;
 }
 
-const CPDF_Dictionary* CPDF_Parser::GetEncryptDict() const {
+RetainPtr<const CPDF_Dictionary> CPDF_Parser::GetEncryptDict() const {
   if (!GetTrailer())
     return nullptr;
 
-  const CPDF_Object* pEncryptObj = GetTrailer()->GetObjectFor("Encrypt");
+  RetainPtr<const CPDF_Object> pEncryptObj =
+      GetTrailer()->GetObjectFor("Encrypt");
   if (!pEncryptObj)
     return nullptr;
 
   if (pEncryptObj->IsDictionary())
-    return ToDictionary(pEncryptObj);
+    return pdfium::WrapRetain(pEncryptObj->AsDictionary());
 
   if (pEncryptObj->IsReference()) {
     return ToDictionary(m_pObjectsHolder->GetOrParseIndirectObject(
@@ -895,7 +899,7 @@ RetainPtr<CPDF_Dictionary> CPDF_Parser::GetCombinedTrailer() const {
 }
 
 uint32_t CPDF_Parser::GetInfoObjNum() const {
-  const CPDF_Reference* pRef =
+  RetainPtr<const CPDF_Reference> pRef =
       ToReference(m_CrossRefTable->trailer()
                       ? m_CrossRefTable->trailer()->GetObjectFor("Info")
                       : nullptr);
@@ -903,7 +907,7 @@ uint32_t CPDF_Parser::GetInfoObjNum() const {
 }
 
 uint32_t CPDF_Parser::GetRootObjNum() const {
-  const CPDF_Reference* pRef =
+  RetainPtr<const CPDF_Reference> pRef =
       ToReference(m_CrossRefTable->trailer()
                       ? m_CrossRefTable->trailer()->GetObjectFor("Root")
                       : nullptr);
@@ -1086,7 +1090,7 @@ CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
   }
 
   if (m_pSecurityHandler && m_pSecurityHandler->IsMetadataEncrypted()) {
-    const CPDF_Reference* pMetadata =
+    RetainPtr<const CPDF_Reference> pMetadata =
         ToReference(GetRoot()->GetObjectFor("Metadata"));
     if (pMetadata)
       m_MetadataObjnum = pMetadata->GetRefObjNum();

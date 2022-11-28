@@ -47,6 +47,9 @@
           return 0;
         }
         GL.makeContextCurrent(handle);
+        // Emscripten does not enable this by default and Skia needs this to handle certain GPU
+        // corner cases.
+        GL.currentContext.GLctx.getExtension('WEBGL_debug_renderer_info');
         return handle;
       };
 
@@ -75,12 +78,39 @@
         }
         // This context is an index into the emscripten-provided GL wrapper.
         grCtx._context = ctx;
+        var oldDelete = grCtx.delete.bind(grCtx);
+        // We need to make sure we are focusing on the correct webgl context
+        // when Skia cleans up the context.
+        grCtx['delete'] = function() {
+          CanvasKit.setCurrentContext(this._context);
+          oldDelete();
+        }.bind(grCtx);
         // Save this so it is easy to access (e.g. Image.readPixels)
         GL.currentContext.grDirectContext = grCtx;
         return grCtx;
-      }
+      };
 
       CanvasKit.MakeGrContext = CanvasKit.MakeWebGLContext;
+
+      CanvasKit.GrDirectContext.prototype.getResourceCacheLimitBytes = function() {
+          CanvasKit.setCurrentContext(this._context);
+          this._getResourceCacheLimitBytes();
+      };
+
+      CanvasKit.GrDirectContext.prototype.getResourceCacheUsageBytes = function() {
+          CanvasKit.setCurrentContext(this._context);
+          this._getResourceCacheUsageBytes();
+      };
+
+      CanvasKit.GrDirectContext.prototype.releaseResourcesAndAbandonContext = function() {
+          CanvasKit.setCurrentContext(this._context);
+          this._releaseResourcesAndAbandonContext();
+      };
+
+      CanvasKit.GrDirectContext.prototype.setResourceCacheLimitBytes = function(maxResourceBytes) {
+          CanvasKit.setCurrentContext(this._context);
+          this._setResourceCacheLimitBytes(maxResourceBytes);
+      };
 
       CanvasKit.MakeOnScreenGLSurface = function(grCtx, w, h, colorspace) {
         if (!this.setCurrentContext(grCtx._context)) {
@@ -350,10 +380,12 @@
       };
 
       CanvasKit.getCurrentGrDirectContext = function() {
-        if (GL.currentContext) {
+        if (GL.currentContext && GL.currentContext.grDirectContext &&
+            !GL.currentContext.grDirectContext['isDeleted']()) {
           return GL.currentContext.grDirectContext;
         }
         return null;
       };
+
     });
 }(Module)); // When this file is loaded in, the high level object is "Module";

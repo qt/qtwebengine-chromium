@@ -98,6 +98,8 @@ const char * avifResultToString(avifResult result)
         case AVIF_RESULT_INVALID_ARGUMENT:              return "Invalid argument";
         case AVIF_RESULT_NOT_IMPLEMENTED:               return "Not implemented";
         case AVIF_RESULT_OUT_OF_MEMORY:                 return "Out of memory";
+        case AVIF_RESULT_CANNOT_CHANGE_SETTING:         return "Cannot change some setting during encoding";
+        case AVIF_RESULT_INCOMPATIBLE_IMAGE:            return "The image is incompatible with already encoded images";
         case AVIF_RESULT_UNKNOWN_ERROR:
         default:
             break;
@@ -129,7 +131,7 @@ static void avifImageSetDefaults(avifImage * image)
     image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED;
 }
 
-avifImage * avifImageCreate(int width, int height, int depth, avifPixelFormat yuvFormat)
+avifImage * avifImageCreate(uint32_t width, uint32_t height, uint32_t depth, avifPixelFormat yuvFormat)
 {
     avifImage * image = (avifImage *)avifAlloc(sizeof(avifImage));
     avifImageSetDefaults(image);
@@ -174,7 +176,7 @@ avifResult avifImageCopy(avifImage * dstImage, const avifImage * srcImage, avifP
 
     avifImageSetProfileICC(dstImage, srcImage->icc.data, srcImage->icc.size);
 
-    avifImageSetMetadataExif(dstImage, srcImage->exif.data, srcImage->exif.size);
+    avifRWDataSet(&dstImage->exif, srcImage->exif.data, srcImage->exif.size);
     avifImageSetMetadataXMP(dstImage, srcImage->xmp.data, srcImage->xmp.size);
 
     if ((planes & AVIF_PLANES_YUV) && srcImage->yuvPlanes[AVIF_CHAN_Y]) {
@@ -263,11 +265,6 @@ void avifImageDestroy(avifImage * image)
 void avifImageSetProfileICC(avifImage * image, const uint8_t * icc, size_t iccSize)
 {
     avifRWDataSet(&image->icc, icc, iccSize);
-}
-
-void avifImageSetMetadataExif(avifImage * image, const uint8_t * exif, size_t exifSize)
-{
-    avifRWDataSet(&image->exif, exif, exifSize);
 }
 
 void avifImageSetMetadataXMP(avifImage * image, const uint8_t * xmp, size_t xmpSize)
@@ -457,6 +454,7 @@ void avifRGBImageSetDefaults(avifRGBImage * rgb, const avifImage * image)
     rgb->format = AVIF_RGB_FORMAT_RGBA;
     rgb->chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
     rgb->chromaDownsampling = AVIF_CHROMA_DOWNSAMPLING_AUTOMATIC;
+    rgb->avoidLibYUV = AVIF_FALSE;
     rgb->ignoreAlpha = AVIF_FALSE;
     rgb->pixels = NULL;
     rgb->rowBytes = 0;
@@ -507,7 +505,7 @@ static clapFraction calcCenter(int32_t dim)
     return f;
 }
 
-// |a| and |b| hold int32_t values. The int64_t type is used so that we can negate INT_MIN without
+// |a| and |b| hold int32_t values. The int64_t type is used so that we can negate INT32_MIN without
 // overflowing int32_t.
 static int64_t calcGCD(int64_t a, int64_t b)
 {
@@ -517,15 +515,12 @@ static int64_t calcGCD(int64_t a, int64_t b)
     if (b < 0) {
         b *= -1;
     }
-    while (a > 0) {
-        if (a < b) {
-            int64_t t = a;
-            a = b;
-            b = t;
-        }
-        a = a - b;
+    while (b != 0) {
+        int64_t r = a % b;
+        a = b;
+        b = r;
     }
-    return b;
+    return a;
 }
 
 static void clapFractionSimplify(clapFraction * f)
@@ -876,17 +871,24 @@ error:
     return NULL;
 }
 
+void avifCodecSpecificOptionsClear(avifCodecSpecificOptions * csOptions)
+{
+    for (uint32_t i = 0; i < csOptions->count; ++i) {
+        avifCodecSpecificOption * entry = &csOptions->entries[i];
+        avifFree(entry->key);
+        avifFree(entry->value);
+    }
+
+    csOptions->count = 0;
+}
+
 void avifCodecSpecificOptionsDestroy(avifCodecSpecificOptions * csOptions)
 {
     if (!csOptions) {
         return;
     }
 
-    for (uint32_t i = 0; i < csOptions->count; ++i) {
-        avifCodecSpecificOption * entry = &csOptions->entries[i];
-        avifFree(entry->key);
-        avifFree(entry->value);
-    }
+    avifCodecSpecificOptionsClear(csOptions);
     avifArrayDestroy(csOptions);
     avifFree(csOptions);
 }
@@ -914,10 +916,12 @@ void avifCodecSpecificOptionsSet(avifCodecSpecificOptions * csOptions, const cha
         }
     }
 
-    // Add a new key
-    avifCodecSpecificOption * entry = (avifCodecSpecificOption *)avifArrayPushPtr(csOptions);
-    entry->key = avifStrdup(key);
-    entry->value = avifStrdup(value);
+    if (value) {
+        // Add a new key
+        avifCodecSpecificOption * entry = (avifCodecSpecificOption *)avifArrayPushPtr(csOptions);
+        entry->key = avifStrdup(key);
+        entry->value = avifStrdup(value);
+    }
 }
 
 // ---------------------------------------------------------------------------

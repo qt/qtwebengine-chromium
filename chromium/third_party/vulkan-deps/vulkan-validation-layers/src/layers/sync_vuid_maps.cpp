@@ -734,7 +734,7 @@ static const std::map<QueueError, std::vector<Entry>> kBarrierQueueErrors{
 const std::map<QueueError, std::string> kQueueErrorSummary{
     {QueueError::kSrcOrDstMustBeIgnore, "Source or destination queue family must be ignored."},
     {QueueError::kSpecialOrIgnoreOnly, "Source or destination queue family must be special or ignored."},
-    {QueueError::kSrcAndDstValidOrSpecial, "Destination queue family must be valid, ignored, or special."},
+    {QueueError::kSrcAndDstValidOrSpecial, "Source and destination queue family must be valid, ignored, or special."},
     {QueueError::kSrcAndDestMustBeIgnore, "Source and destination queue family must both be ignored."},
     {QueueError::kSrcAndDstBothValid, "Source and destination queue family must both be valid."},
     {QueueError::kSubmitQueueMustMatchSrcOrDst,
@@ -796,6 +796,11 @@ static const std::map<VkImageLayout, std::array<Entry, 2>> kImageLayoutErrors{
      {{
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-oldLayout-01659"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-oldLayout-01659"},
+     }}},
+    {VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT,
+     {{
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-srcQueueFamilyIndex-07006"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-srcQueueFamilyIndex-07006"},
      }}},
 };
 
@@ -862,6 +867,11 @@ static const std::map<ImageError, std::vector<Entry>> kImageErrors{
      {
          {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-newLayout-01198"},
          {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-newLayout-01198"},
+     }},
+    {ImageError::kBadAttFeedbackLoopLayout,
+     {
+         {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-attachmentFeedbackLoopLayout-07313"},
+         {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-attachmentFeedbackLoopLayout-07313"},
      }},
     {ImageError::kNotColorAspect,
      {

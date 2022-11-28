@@ -37,6 +37,7 @@
           'android_r',
           'flame',
           'gpu-swarming-pool',
+          'timeout_120m',
         ],
         'test_suites': {
           'isolated_scripts': 'angle_perf_isolated_scripts',
@@ -85,6 +86,7 @@
         'os_type': 'linux',
         'mixins': [
           'linux_intel_uhd_630_stable',
+          'timeout_120m',
         ],
         'test_suites': {
           'isolated_scripts': 'angle_perf_isolated_scripts',
@@ -104,6 +106,7 @@
         'os_type': 'linux',
         'mixins': [
           'linux_nvidia_gtx_1660_stable',
+          'timeout_120m',
         ],
         'test_suites': {
           'isolated_scripts': 'angle_perf_isolated_scripts',
@@ -211,6 +214,7 @@
       'win10-x64-intel-perf': {
         'os_type': 'win',
         'mixins': [
+          'timeout_120m',
           'win10_intel_hd_630_stable',
         ],
         'test_suites': {
@@ -229,6 +233,7 @@
       'win10-x64-nvidia-perf': {
         'os_type': 'win',
         'mixins': [
+          'timeout_120m',
           'win10_nvidia_gtx_1660_stable',
         ],
         'test_suites': {

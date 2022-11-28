@@ -60,6 +60,7 @@ cc_library(
         "bluetooth_classic_socket.h",
         "condition_variable.h",
         "executor.h",
+        "file.h",
         "mutex.h",
         "scheduled_executor.h",
         "server_sync.h",
@@ -84,6 +85,16 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "mediums_api",
+    hdrs = ["mediums_api.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//internal/platform/implementation/windows/mediums_manager:types",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -113,6 +124,7 @@ cc_library(
         "bluetooth_classic_server_socket.cc",
         "bluetooth_classic_socket.cc",
         "executor.cc",
+        "file.cc",
         "platform.cc",
         "scheduled_executor.cc",
         "submittable_executor.cc",
@@ -127,7 +139,9 @@ cc_library(
         "wifi_lan_socket.cc",
         "wifi_medium.cc",
     ],
-    copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated -Ithird_party/nearby/internal/platform/implementation/windows/json"],
+    # This is the temporary solution to solve compilation error of Win32 WFDxxx() related API.
+    # WFD API is only support after _WIN32_WINNT_WIN8, but the current lexan _WIN32_WINNT is set to _WIN32_WINNT_WIN7
+    copts = ["-Ithird_party/nearby/internal/platform/implementation/windows/generated -Ithird_party/nearby/internal/platform/implementation/windows/json -D_WIN32_WINNT=_WIN32_WINNT_WIN10 -DWINVER=_WIN32_WINNT_WIN10"],
     defines = ["_SILENCE_CLANG_COROUTINE_MESSAGE"],
     visibility = [
         "//location/nearby:__subpackages__",
@@ -136,6 +150,7 @@ cc_library(
     deps = [
         ":comm",
         ":crypto",  # build_cleaner: keep
+        ":mediums_api",
         ":types",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
@@ -146,6 +161,7 @@ cc_library(
         "//internal/platform/implementation/shared:file",
         "//internal/platform/implementation/windows/generated:types",
         "//internal/platform/implementation/windows/json:types",
+        "//internal/platform/implementation/windows/mediums_manager",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],

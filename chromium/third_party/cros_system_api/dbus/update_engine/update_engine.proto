@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium OS Authors. All rights reserved.
+// Copyright 2019 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,18 @@ enum Operation {
 enum UpdateUrgency {
   REGULAR = 0;
   CRITICAL = 1;
+}
+
+enum UpdateDoneAction {
+  REBOOT = 0;
+  SHUTDOWN = 1;
+}
+
+// This is the message transferred from other processes to update_engine for
+// configuring the behavior of applying the deferred update.
+message ApplyUpdateConfig {
+  // The action to take after applying the deferred update.
+  UpdateDoneAction done_action = 1;
 }
 
 message Feature {
@@ -98,6 +110,12 @@ message StatusResult {
 
   // List of features managed by update_engine.
   repeated Feature features = 13;
+
+  // Whether the update is interactive.
+  bool is_interactive = 14;
+
+  // If true, the update will be downloaded but deferred.
+  bool will_defer_update = 15;
 }
 
 // This is the message flags that influences how updates are performed.

@@ -47,6 +47,7 @@ class JSCollator;
 class JSCollection;
 class JSDateTimeFormat;
 class JSDisplayNames;
+class JSDurationFormat;
 class JSListFormat;
 class JSLocale;
 class JSNumberFormat;
@@ -147,6 +148,7 @@ OBJECT_TYPE_CASE(Object)
 OBJECT_TYPE_CASE(Smi)
 OBJECT_TYPE_CASE(TaggedIndex)
 OBJECT_TYPE_CASE(HeapObject)
+OBJECT_TYPE_CASE(HeapObjectReference)
 OBJECT_TYPE_LIST(OBJECT_TYPE_CASE)
 HEAP_OBJECT_ORDINARY_TYPE_LIST(OBJECT_TYPE_CASE)
 STRUCT_LIST(OBJECT_TYPE_STRUCT_CASE)
@@ -243,9 +245,12 @@ class CodeAssemblerParameterizedLabel;
   V(IntPtrAdd, WordT, WordT, WordT)                                     \
   V(IntPtrSub, WordT, WordT, WordT)                                     \
   V(IntPtrMul, WordT, WordT, WordT)                                     \
+  V(IntPtrMulHigh, IntPtrT, IntPtrT, IntPtrT)                           \
+  V(UintPtrMulHigh, UintPtrT, UintPtrT, UintPtrT)                       \
   V(IntPtrDiv, IntPtrT, IntPtrT, IntPtrT)                               \
   V(IntPtrAddWithOverflow, PAIR_TYPE(IntPtrT, BoolT), IntPtrT, IntPtrT) \
   V(IntPtrSubWithOverflow, PAIR_TYPE(IntPtrT, BoolT), IntPtrT, IntPtrT) \
+  V(IntPtrMulWithOverflow, PAIR_TYPE(IntPtrT, BoolT), IntPtrT, IntPtrT) \
   V(Int32Add, Word32T, Word32T, Word32T)                                \
   V(Int32AddWithOverflow, PAIR_TYPE(Int32T, BoolT), Int32T, Int32T)     \
   V(Int32Sub, Word32T, Word32T, Word32T)                                \
@@ -258,6 +263,8 @@ class CodeAssemblerParameterizedLabel;
   V(Int64Sub, Word64T, Word64T, Word64T)                                \
   V(Int64SubWithOverflow, PAIR_TYPE(Int64T, BoolT), Int64T, Int64T)     \
   V(Int64Mul, Word64T, Word64T, Word64T)                                \
+  V(Int64MulHigh, Int64T, Int64T, Int64T)                               \
+  V(Uint64MulHigh, Uint64T, Uint64T, Uint64T)                           \
   V(Int64Div, Int64T, Int64T, Int64T)                                   \
   V(Int64Mod, Int64T, Int64T, Int64T)                                   \
   V(WordOr, WordT, WordT, WordT)                                        \
@@ -425,7 +432,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 
       static_assert(types_have_common_values<A, PreviousType>::value,
                     "Incompatible types: this cast can never succeed.");
-      static_assert(std::is_convertible<TNode<A>, TNode<Object>>::value,
+      static_assert(std::is_convertible<TNode<A>, TNode<MaybeObject>>::value ||
+                        std::is_convertible<TNode<A>, TNode<Object>>::value,
                     "Coercion to untagged values cannot be "
                     "checked.");
       static_assert(
@@ -433,11 +441,7 @@ class V8_EXPORT_PRIVATE CodeAssembler {
               !std::is_convertible<TNode<PreviousType>, TNode<A>>::value,
           "Unnecessary CAST: types are convertible.");
 #ifdef DEBUG
-      if (FLAG_debug_code) {
-        if (std::is_same<PreviousType, MaybeObject>::value) {
-          code_assembler_->GenerateCheckMaybeObjectIsObject(
-              TNode<MaybeObject>::UncheckedCast(node_), location_);
-        }
+      if (v8_flags.debug_code) {
         TNode<ExternalReference> function = code_assembler_->ExternalConstant(
             ExternalReference::check_object_type());
         code_assembler_->CallCFunction(
@@ -500,11 +504,6 @@ class V8_EXPORT_PRIVATE CodeAssembler {
 #else
 #define CAST(x) Cast(x)
 #define TORQUE_CAST(x) ca_.Cast(x)
-#endif
-
-#ifdef DEBUG
-  void GenerateCheckMaybeObjectIsObject(TNode<MaybeObject> node,
-                                        const char* location);
 #endif
 
   // Constants.
@@ -625,13 +624,13 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   void DebugBreak();
   void Unreachable();
   void Comment(const char* msg) {
-    if (!FLAG_code_comments) return;
+    if (!v8_flags.code_comments) return;
     Comment(std::string(msg));
   }
   void Comment(std::string msg);
   template <class... Args>
   void Comment(Args&&... args) {
-    if (!FLAG_code_comments) return;
+    if (!v8_flags.code_comments) return;
     std::ostringstream s;
     USE((s << std::forward<Args>(args))...);
     Comment(s.str());
@@ -861,6 +860,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
                                       TNode<UintPtrT> new_value,
                                       TNode<UintPtrT> old_value_high,
                                       TNode<UintPtrT> new_value_high);
+
+  void MemoryBarrier(AtomicMemoryOrder order);
 
   // Store a value to the root array.
   void StoreRoot(RootIndex root_index, TNode<Object> value);

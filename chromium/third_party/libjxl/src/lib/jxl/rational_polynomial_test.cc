@@ -14,7 +14,6 @@
 #include <hwy/highway.h>
 #include <hwy/tests/test_util-inl.h>
 
-#include "lib/jxl/base/descriptive_statistics.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/rational_polynomial-inl.h"
@@ -27,8 +26,11 @@ using T = float;  // required by EvalLog2
 using D = HWY_FULL(T);
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::GetLane;
 using hwy::HWY_NAMESPACE::ShiftLeft;
 using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Sub;
 
 // Generic: only computes polynomial
 struct EvalPoly {
@@ -51,17 +53,17 @@ struct EvalLog2 {
     const HWY_FULL(int32_t) di;
     const auto x_bits = BitCast(di, vx);
     // Cannot handle negative numbers / NaN.
-    JXL_DASSERT(AllTrue(Abs(x_bits) == x_bits));
+    JXL_DASSERT(AllTrue(di, Eq(Abs(x_bits), x_bits)));
 
     // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
-    const auto exp_bits = x_bits - Set(di, 0x3f2aaaab);  // = 2/3
+    const auto exp_bits = Sub(x_bits, Set(di, 0x3f2aaaab));  // = 2/3
     // Shifted exponent = log2; also used to clear mantissa.
     const auto exp_shifted = ShiftRight<23>(exp_bits);
-    const auto mantissa = BitCast(d, x_bits - ShiftLeft<23>(exp_shifted));
+    const auto mantissa = BitCast(d, Sub(x_bits, ShiftLeft<23>(exp_shifted)));
     const auto exp_val = ConvertTo(d, exp_shifted);
-    vx = mantissa - Set(d, 1.0f);
+    vx = Sub(mantissa, Set(d, 1.0f));
 
-    const auto approx = EvalRationalPolynomial(d, vx, p, q) + exp_val;
+    const auto approx = Add(EvalRationalPolynomial(d, vx, p, q), exp_val);
     return GetLane(approx);
   }
 };
@@ -100,23 +102,20 @@ T SimpleGamma(T v) {
 template <size_t NP, size_t NQ, class Eval>
 T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
                    const Eval& eval, T func_to_approx(T)) {
-  Stats err;
-
+  float maxerr = 0;
   T lastPrint = 0;
   // NOLINTNEXTLINE(clang-analyzer-security.FloatLoopCounter)
   for (T x = x0; x <= x1; x += (x1 - x0) / 10000.0) {
     const T f = func_to_approx(x);
     const T g = eval(x, p, q);
-    err.Notify(fabs(g - f));
+    maxerr = std::max(fabsf(g - f), maxerr);
     if (x == x0 || x - lastPrint > (x1 - x0) / 20.0) {
       printf("x: %11.6f, f: %11.6f, g: %11.6f, e: %11.6f\n", x, f, g,
              fabs(g - f));
       lastPrint = x;
     }
   }
-  printf("%s\n", err.ToString().c_str());
-
-  return err.Max();
+  return maxerr;
 }
 
 void TestSimpleGamma() {

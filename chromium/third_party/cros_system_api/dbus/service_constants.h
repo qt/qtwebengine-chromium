@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
+// Copyright 2012 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@
 #include "discod/dbus-constants.h"
 #include "dlp/dbus-constants.h"
 #include "drivefs/dbus-constants.h"
+#include "faced/dbus-constants.h"
 #include "featured/dbus-constants.h"
 #include "fusebox/dbus-constants.h"
 #include "hammerd/dbus-constants.h"

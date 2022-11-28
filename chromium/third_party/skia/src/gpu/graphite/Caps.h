@@ -14,6 +14,7 @@
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
+#include "src/text/gpu/SDFTControl.h"
 
 class SkCapabilities;
 
@@ -29,10 +30,11 @@ class GraphicsPipelineDesc;
 class GraphiteResourceKey;
 struct RenderPassDesc;
 class TextureInfo;
+class TextureProxy;
 
-class Caps : public SkRefCnt {
+class Caps {
 public:
-    ~Caps() override;
+    virtual ~Caps();
 
     const SkSL::ShaderCaps* shaderCaps() const { return fShaderCaps.get(); }
 
@@ -43,7 +45,8 @@ public:
                                                      Protected,
                                                      Renderable) const = 0;
 
-    virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo) const = 0;
+    virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
+                                                  Discardable discardable) const = 0;
 
     virtual TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
                                                           uint32_t sampleCount,
@@ -78,7 +81,54 @@ public:
     // to transfer to or from a Texture with the given bytes per pixel.
     virtual size_t getTransferBufferAlignment(size_t bytesPerPixel) const = 0;
 
+    // Returns the aligned rowBytes when transfering to or from a Texture
+    size_t getAlignedTextureDataRowBytes(size_t rowBytes) const {
+        return SkAlignTo(rowBytes, fTextureDataRowBytesAlignment);
+    }
+
+    /**
+     * Backends may have restrictions on what types of textures support Device::writePixels().
+     * If this returns false then the caller should implement a fallback where a temporary texture
+     * is created, pixels are written to it, and then that is copied or drawn into the the surface.
+     */
+    virtual bool supportsWritePixels(const TextureInfo& textureInfo) const = 0;
+
+    /**
+     * Backends may have restrictions on what types of textures support Device::readPixels().
+     * If this returns false then the caller should implement a fallback where a temporary texture
+     * is created, the original texture is copied or drawn into it, and then pixels read from
+     * the temporary texture.
+     */
+    virtual bool supportsReadPixels(const TextureInfo& textureInfo) const = 0;
+
+    /**
+     * Given a dst pixel config and a src color type what color type must the caller coax the
+     * the data into in order to use writePixels.
+     */
+    virtual SkColorType supportedWritePixelsColorType(SkColorType dstColorType,
+                                                      const TextureInfo& dstTextureInfo,
+                                                      SkColorType srcColorType) const = 0;
+
+    /**
+     * Given a src surface's color type and its texture info as well as a color type the caller
+     * would like read into, this provides a legal color type that the caller can use for
+     * readPixels. The returned color type may differ from the passed dstColorType, in
+     * which case the caller must convert the read pixel data (see GrConvertPixels). When converting
+     * to dstColorType the swizzle in the returned struct should be applied. The caller must check
+     * the returned color type for kUnknown.
+     */
+    virtual SkColorType supportedReadPixelsColorType(SkColorType srcColorType,
+                                                     const TextureInfo& srcTextureInfo,
+                                                     SkColorType dstColorType) const = 0;
+
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
+
+    // Returns whether storage buffers are supported.
+    bool storageBufferSupport() const { return fStorageBufferSupport; }
+
+    // Returns whether storage buffers are preferred over uniform buffers, when both will yield
+    // correct results.
+    bool storageBufferPreferred() const { return fStorageBufferPreferred; }
 
     // Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
     // passed in SkColorType and TextureInfo.
@@ -97,6 +147,8 @@ public:
 
     bool allowMultipleGlyphCacheTextures() const { return fAllowMultipleGlyphCacheTextures; }
     bool supportBilerpFromGlyphAtlas() const { return fSupportBilerpFromGlyphAtlas; }
+
+    sktext::gpu::SDFTControl getSDFTControl(bool useSDFTForSmallText) const;
 
 protected:
     Caps();
@@ -127,10 +179,14 @@ protected:
     int fMaxTextureSize = 0;
     size_t fRequiredUniformBufferAlignment = 0;
     size_t fRequiredStorageBufferAlignment = 0;
+    size_t fTextureDataRowBytesAlignment = 1;
 
     std::unique_ptr<SkSL::ShaderCaps> fShaderCaps;
 
     bool fClampToBorderSupport = true;
+
+    bool fStorageBufferSupport = false;
+    bool fStorageBufferPreferred = false;
 
     //////////////////////////////////////////////////////////////////////////////////////////
     // Client-provided Caps

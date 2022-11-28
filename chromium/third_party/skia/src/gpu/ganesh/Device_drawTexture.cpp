@@ -19,6 +19,7 @@
 #include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrOpsTypes.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrStyle.h"
@@ -717,15 +718,11 @@ void Device::drawSpecial(SkSpecialImage* special,
     GrAA aa = fSurfaceDrawContext->chooseAA(paint);
     GrQuadAAFlags aaFlags = (aa == GrAA::kYes) ? GrQuadAAFlags::kAll : GrQuadAAFlags::kNone;
 
-    SkColorInfo colorInfo(special->colorType(),
-                          special->alphaType(),
-                          sk_ref_sp(special->getColorSpace()));
-
     GrSurfaceProxyView view = special->view(this->recordingContext());
     SkImage_Gpu image(sk_ref_sp(special->getContext()),
                       special->uniqueID(),
                       std::move(view),
-                      std::move(colorInfo));
+                      special->colorInfo());
     // In most cases this ought to hit draw_texture since there won't be a color filter,
     // alpha-only texture+shader, or a high filter quality.
     SkOverrideDeviceMatrixProvider matrixProvider(localToDevice);

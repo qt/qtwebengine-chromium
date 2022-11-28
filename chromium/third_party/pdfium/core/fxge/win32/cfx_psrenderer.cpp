@@ -19,7 +19,9 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontcache.h"
@@ -197,6 +199,26 @@ struct CFX_PSRenderer::Glyph {
   const uint32_t glyph_index;
   absl::optional<std::array<float, 4>> adjust_matrix;
 };
+
+CFX_PSRenderer::FaxCompressResult::FaxCompressResult() = default;
+
+CFX_PSRenderer::FaxCompressResult::FaxCompressResult(
+    FaxCompressResult&&) noexcept = default;
+
+CFX_PSRenderer::FaxCompressResult& CFX_PSRenderer::FaxCompressResult::operator=(
+    FaxCompressResult&&) noexcept = default;
+
+CFX_PSRenderer::FaxCompressResult::~FaxCompressResult() = default;
+
+CFX_PSRenderer::PSCompressResult::PSCompressResult() = default;
+
+CFX_PSRenderer::PSCompressResult::PSCompressResult(
+    PSCompressResult&&) noexcept = default;
+
+CFX_PSRenderer::PSCompressResult& CFX_PSRenderer::PSCompressResult::operator=(
+    PSCompressResult&&) noexcept = default;
+
+CFX_PSRenderer::PSCompressResult::~PSCompressResult() = default;
 
 CFX_PSRenderer::CFX_PSRenderer(CFX_PSFontTracker* font_tracker,
                                const EncoderIface* encoder_iface)
@@ -501,24 +523,15 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
   buf << "[" << matrix.a << " " << matrix.b << " " << matrix.c << " "
       << matrix.d << " " << matrix.e << " " << matrix.f << "]cm ";
 
-  int width = pSource->GetWidth();
-  int height = pSource->GetHeight();
+  const int width = pSource->GetWidth();
+  const int height = pSource->GetHeight();
   buf << width << " " << height;
 
   if (pSource->GetBPP() == 1 && !pSource->HasPalette()) {
-    int pitch = (width + 7) / 8;
-    uint32_t src_size = height * pitch;
-    std::unique_ptr<uint8_t, FxFreeDeleter> src_buf(
-        FX_Alloc(uint8_t, src_size));
-    for (int row = 0; row < height; row++) {
-      const uint8_t* src_scan = pSource->GetScanline(row).data();
-      memcpy(src_buf.get() + row * pitch, src_scan, pitch);
-    }
+    FaxCompressResult compress_result = FaxCompressData(pSource);
+    if (compress_result.data.empty())
+      return false;
 
-    std::unique_ptr<uint8_t, FxFreeDeleter> output_buf;
-    uint32_t output_size;
-    bool compressed = FaxCompressData(std::move(src_buf), width, height,
-                                      &output_buf, &output_size);
     if (pSource->IsMaskFormat()) {
       SetColor(color);
       m_bColorSet = false;
@@ -529,7 +542,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     buf << width << " 0 0 -" << height << " 0 " << height
         << "]currentfile/ASCII85Decode filter ";
 
-    if (compressed) {
+    if (compress_result.compressed) {
       buf << "<</K -1/EndOfBlock false/Columns " << width << "/Rows " << height
           << ">>/CCITTFaxDecode filter ";
     }
@@ -539,7 +552,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
       buf << "false 1 colorimage\n";
 
     WriteStream(buf);
-    WritePSBinary({output_buf.get(), output_size});
+    WritePSBinary(compress_result.data);
   } else {
     CFX_DIBExtractor source_extractor(pSource);
     RetainPtr<CFX_DIBBase> pConverted = source_extractor.GetBitmap();
@@ -565,13 +578,14 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     int bpp = pConverted->GetBPP() / 8;
     uint8_t* output_buf = nullptr;
     size_t output_size = 0;
-    const char* filter = nullptr;
+    bool output_buf_is_owned = true;
+    absl::optional<PSCompressResult> compress_result;
+    ByteString filter;
     if ((m_Level.value() == RenderingLevel::kLevel2 || options.bLossy) &&
         m_pEncoderIface->pJpegEncodeFunc(pConverted, &output_buf,
                                          &output_size)) {
       filter = "/DCTDecode filter ";
-    }
-    if (!filter) {
+    } else {
       int src_pitch = width * bpp;
       output_size = height * src_pitch;
       output_buf = FX_Alloc(uint8_t, output_size);
@@ -589,21 +603,19 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
           memcpy(dest_scan, src_scan, src_pitch);
         }
       }
-      uint8_t* compressed_buf;
-      uint32_t compressed_size;
-      PSCompressData(output_buf,
-                     pdfium::base::checked_cast<uint32_t>(output_size),
-                     &compressed_buf, &compressed_size, &filter);
-      if (output_buf != compressed_buf)
+      compress_result = PSCompressData({output_buf, output_size});
+      if (compress_result.has_value()) {
         FX_Free(output_buf);
-
-      output_buf = compressed_buf;
-      output_size = compressed_size;
+        output_buf_is_owned = false;
+        output_buf = compress_result.value().data.data();
+        output_size = compress_result.value().data.size();
+        filter = compress_result.value().filter;
+      }
     }
     buf << " 8[";
     buf << width << " 0 0 -" << height << " 0 " << height << "]";
     buf << "currentfile/ASCII85Decode filter ";
-    if (filter)
+    if (!filter.IsEmpty())
       buf << filter;
 
     buf << "false " << bpp;
@@ -611,7 +623,8 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     WriteStream(buf);
 
     WritePSBinary({output_buf, output_size});
-    FX_Free(output_buf);
+    if (output_buf_is_owned)
+      FX_Free(output_buf);
   }
   WriteString("\nQ\n");
   return true;
@@ -821,59 +834,58 @@ bool CFX_PSRenderer::DrawText(int nChars,
   return true;
 }
 
-bool CFX_PSRenderer::FaxCompressData(
-    std::unique_ptr<uint8_t, FxFreeDeleter> src_buf,
-    int width,
-    int height,
-    std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
-    uint32_t* dest_size) const {
-  if (width * height <= 128) {
-    *dest_buf = std::move(src_buf);
-    *dest_size = (width + 7) / 8 * height;
-    return false;
+CFX_PSRenderer::FaxCompressResult CFX_PSRenderer::FaxCompressData(
+    RetainPtr<CFX_DIBBase> src) const {
+  DCHECK_EQ(1, src->GetBPP());
+
+  FaxCompressResult result;
+  const int height = src->GetHeight();
+  const int pitch = src->GetPitch();
+  FX_SAFE_UINT32 safe_size = pitch;
+  safe_size *= height;
+  if (!safe_size.IsValid())
+    return result;
+
+  if (safe_size.ValueOrDie() > 128) {
+    result.data = m_pEncoderIface->pFaxEncodeFunc(std::move(src));
+    result.compressed = true;
+    return result;
   }
 
-  m_pEncoderIface->pFaxEncodeFunc(src_buf.get(), width, height, (width + 7) / 8,
-                                  dest_buf, dest_size);
-  return true;
+  result.data.resize(safe_size.ValueOrDie());
+  auto dest_span = pdfium::make_span(result.data);
+  for (int row = 0; row < height; row++) {
+    pdfium::span<const uint8_t> src_scan = src->GetScanline(row);
+    fxcrt::spancpy(dest_span.subspan(row * pitch, pitch), src_scan);
+  }
+  result.compressed = false;
+  return result;
 }
 
-void CFX_PSRenderer::PSCompressData(uint8_t* src_buf,
-                                    uint32_t src_size,
-                                    uint8_t** output_buf,
-                                    uint32_t* output_size,
-                                    const char** filter) const {
-  *output_buf = src_buf;
-  *output_size = src_size;
-  *filter = "";
-  if (src_size < 1024)
-    return;
+absl::optional<CFX_PSRenderer::PSCompressResult> CFX_PSRenderer::PSCompressData(
+    pdfium::span<const uint8_t> src_span) const {
+  if (src_span.size() < 1024)
+    return absl::nullopt;
 
-  uint8_t* dest_buf = nullptr;
-  uint32_t dest_size = src_size;
+  DataVector<uint8_t> (*encode_func)(pdfium::span<const uint8_t> src_span);
+  ByteString filter;
   if (m_Level.value() == RenderingLevel::kLevel3 ||
       m_Level.value() == RenderingLevel::kLevel3Type42) {
-    std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf_unique;
-    if (m_pEncoderIface->pFlateEncodeFunc(pdfium::make_span(src_buf, src_size),
-                                          &dest_buf_unique, &dest_size)) {
-      dest_buf = dest_buf_unique.release();
-      *filter = "/FlateDecode filter ";
-    }
+    encode_func = m_pEncoderIface->pFlateEncodeFunc;
+    filter = "/FlateDecode filter ";
   } else {
-    std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf_unique;
-    if (m_pEncoderIface->pRunLengthEncodeFunc({src_buf, src_size},
-                                              &dest_buf_unique, &dest_size)) {
-      dest_buf = dest_buf_unique.release();
-      *filter = "/RunLengthDecode filter ";
-    }
+    encode_func = m_pEncoderIface->pRunLengthEncodeFunc;
+    filter = "/RunLengthDecode filter ";
   }
-  if (dest_size < src_size) {
-    *output_buf = dest_buf;
-    *output_size = dest_size;
-  } else {
-    *filter = nullptr;
-    FX_Free(dest_buf);
-  }
+
+  DataVector<uint8_t> decode_result = encode_func(src_span);
+  if (decode_result.size() == 0 || decode_result.size() >= src_span.size())
+    return absl::nullopt;
+
+  PSCompressResult result;
+  result.data = std::move(decode_result);
+  result.filter = filter;
+  return result;
 }
 
 void CFX_PSRenderer::WritePreambleString(ByteStringView str) {
@@ -881,13 +893,10 @@ void CFX_PSRenderer::WritePreambleString(ByteStringView str) {
 }
 
 void CFX_PSRenderer::WritePSBinary(pdfium::span<const uint8_t> data) {
-  std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf;
-  uint32_t dest_size;
-  if (m_pEncoderIface->pA85EncodeFunc(data, &dest_buf, &dest_size)) {
-    m_Output.write(reinterpret_cast<const char*>(dest_buf.get()), dest_size);
-  } else {
-    m_Output.write(reinterpret_cast<const char*>(data.data()), data.size());
-  }
+  DataVector<uint8_t> encoded_data = m_pEncoderIface->pA85EncodeFunc(data);
+  pdfium::span<const uint8_t> result =
+      encoded_data.empty() ? data : encoded_data;
+  m_Output.write(reinterpret_cast<const char*>(result.data()), result.size());
 }
 
 void CFX_PSRenderer::WriteStream(fxcrt::ostringstream& stream) {

@@ -48,7 +48,8 @@ CREATE TABLE launches(
   ts BIG INT,
   ts_end BIG INT,
   dur BIG INT,
-  package STRING
+  package STRING,
+  launch_type STRING
 );
 
 -- Note: on Q, we didn't have Android fingerprints but we *did*
@@ -62,20 +63,21 @@ SELECT CASE
   ELSE RUN_METRIC('android/startup/launches_maxsdk28.sql')
 END;
 
--- Maps a launch to the corresponding set of processes that handled the
--- activity start. The vast majority of cases should be a single process.
--- However it is possible that the process dies during the activity launch
--- and is respawned.
-DROP TABLE IF EXISTS launch_processes;
-CREATE TABLE launch_processes(launch_id INT, upid BIG INT, launch_type STRING);
+-- Create a table containing only the slices which are necessary for determining
+-- whether a launch happened
+DROP TABLE IF EXISTS launch_indicator_slices;
+CREATE TABLE launch_indicator_slices AS
+SELECT ts, name, track_id
+FROM slice
+WHERE name IN ('bindApplication', 'activityStart', 'activityResume');
 
 SELECT CREATE_FUNCTION(
-  'STARTUP_SLICE_COUNT(start_ts LONG, end_ts LONG, utid INT, name STRING)',
+  'LAUNCH_INDICATOR_SLICE_COUNT(start_ts LONG, end_ts LONG, utid INT, name STRING)',
   'INT',
   '
     SELECT COUNT(1)
     FROM thread_track t
-    JOIN slice s ON s.track_id = t.id
+    JOIN launch_indicator_slices s ON s.track_id = t.id
     WHERE
       t.utid = $utid AND
       s.ts >= $start_ts AND
@@ -84,16 +86,23 @@ SELECT CREATE_FUNCTION(
   '
 );
 
+-- Maps a launch to the corresponding set of processes that handled the
+-- activity start. The vast majority of cases should be a single process.
+-- However it is possible that the process dies during the activity launch
+-- and is respawned.
+DROP TABLE IF EXISTS launch_processes;
+CREATE TABLE launch_processes(launch_id INT, upid BIG INT, launch_type STRING);
+
 INSERT INTO launch_processes(launch_id, upid, launch_type)
-SELECT *
-FROM (
-  -- This is intentionally a nested subquery. For some reason, if we put
-  -- the `WHERE launch_type IS NOT NULL` constraint inside, we end up with a
-  -- query which is an order of magnitude slower than being outside :(
+-- This is intentionally a materizlied query. For some reason, if we don't
+-- materialize, we end up with a query which is an order of magnitude slower :(
+WITH launch_with_type AS MATERIALIZED (
   SELECT
     launch_id,
     upid,
     CASE
+      -- type parsed from platform event takes precedence if available
+      WHEN launch_type IS NOT NULL THEN launch_type
       WHEN bind_app > 0 AND a_start > 0 AND a_resume > 0 THEN 'cold'
       WHEN a_start > 0 AND a_resume > 0 THEN 'warm'
       WHEN a_resume > 0 THEN 'hot'
@@ -102,15 +111,27 @@ FROM (
   FROM (
     SELECT
       l.id AS launch_id,
+      l.launch_type,
       p.upid,
-      STARTUP_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'bindApplication') bind_app,
-      STARTUP_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'activityStart') a_start,
-      STARTUP_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'activityResume') a_resume
+      LAUNCH_INDICATOR_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'bindApplication') bind_app,
+      LAUNCH_INDICATOR_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'activityStart') a_start,
+      LAUNCH_INDICATOR_SLICE_COUNT(l.ts, l.ts_end, t.utid, 'activityResume') a_resume
     FROM launches l
-    JOIN process_metadata_table p ON (l.package = p.package_name)
+    JOIN process_metadata_table p ON (
+      l.package = p.package_name OR
+      -- If the package list data source was not enabled in the trace, nothing
+      -- will match the above constraint so also match any process whose name
+      -- is a prefix of the package name.
+      (
+        (SELECT COUNT(1) = 0 FROM package_list) AND
+        p.process_name GLOB l.package || '*'
+      )
+    )
     JOIN thread t ON (p.upid = t.upid AND t.is_main_thread)
   )
 )
+SELECT *
+FROM launch_with_type
 WHERE launch_type IS NOT NULL;
 
 -- Tracks all main process threads.

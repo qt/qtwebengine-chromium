@@ -40,6 +40,10 @@
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Log.h"
+#endif
+
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
@@ -327,8 +331,26 @@ sk_sp<SkImage> SkImage_Gpu::onReinterpretColorSpace(sk_sp<SkColorSpace> newCS) c
                                    this->imageInfo().colorInfo().makeColorSpace(std::move(newCS)));
 }
 
+void SkImage_Gpu::onAsyncReadPixels(const SkImageInfo& info,
+                                    SkIRect srcRect,
+                                    ReadPixelsCallback callback,
+                                    ReadPixelsContext context) const {
+    auto dContext = fContext->asDirectContext();
+    if (!dContext) {
+        // DDL TODO: buffer up the readback so it occurs when the DDL is drawn?
+        callback(context, nullptr);
+        return;
+    }
+    auto ctx = dContext->priv().makeSC(this->makeView(dContext), this->imageInfo().colorInfo());
+    if (!ctx) {
+        callback(context, nullptr);
+        return;
+    }
+    ctx->asyncReadPixels(dContext, srcRect, info.colorType(), callback, context);
+}
+
 void SkImage_Gpu::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
-                                              const SkIRect& srcRect,
+                                              SkIRect srcRect,
                                               RescaleGamma rescaleGamma,
                                               RescaleMode rescaleMode,
                                               ReadPixelsCallback callback,
@@ -350,8 +372,8 @@ void SkImage_Gpu::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 
 void SkImage_Gpu::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
                                                     sk_sp<SkColorSpace> dstColorSpace,
-                                                    const SkIRect& srcRect,
-                                                    const SkISize& dstSize,
+                                                    SkIRect srcRect,
+                                                    SkISize dstSize,
                                                     RescaleGamma rescaleGamma,
                                                     RescaleMode rescaleMode,
                                                     ReadPixelsCallback callback,
@@ -861,6 +883,15 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Gpu::onAsView(
     }
     return {std::move(view), ct};
 }
+
+#ifdef SK_GRAPHITE_ENABLED
+sk_sp<SkImage> SkImage_Gpu::onMakeTextureImage(skgpu::graphite::Recorder*,
+                                               SkImage::RequiredImageProperties) const {
+    SKGPU_LOG_W("Cannot convert Ganesh-backed image to Graphite");
+    return nullptr;
+}
+#endif
+
 
 std::unique_ptr<GrFragmentProcessor> SkImage_Gpu::onAsFragmentProcessor(
         GrRecordingContext* rContext,

@@ -5,23 +5,51 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "include/private/SkColorData.h"
 #include "include/private/SkVx.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+#include <utility>
+
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrRecordingContext.h"
-#include "src/core/SkRuntimeEffectPriv.h"
+#include "include/gpu/GrTypes.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
@@ -305,22 +333,22 @@ std::unique_ptr<GrFragmentProcessor> make_arithmetic_fp(
         std::unique_ptr<GrFragmentProcessor> dstFP,
         const SkV4& k,
         bool enforcePMColor) {
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
-        uniform shader srcFP;
-        uniform shader dstFP;
-        uniform half4 k;
-        uniform half pmClamp;
-        half4 main(float2 xy) {
-            half4 src = srcFP.eval(xy);
-            half4 dst = dstFP.eval(xy);
-            half4 color = saturate(k.x * src * dst +
-                                   k.y * src +
-                                   k.z * dst +
-                                   k.w);
-            color.rgb = min(color.rgb, max(color.a, pmClamp));
-            return color;
-        }
-    )");
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+        "uniform shader srcFP;"
+        "uniform shader dstFP;"
+        "uniform half4 k;"
+        "uniform half pmClamp;"
+        "half4 main(float2 xy) {"
+            "half4 src = srcFP.eval(xy);"
+            "half4 dst = dstFP.eval(xy);"
+            "half4 color = saturate(k.x * src * dst +"
+                                   "k.y * src +"
+                                   "k.z * dst +"
+                                   "k.w);"
+            "color.rgb = min(color.rgb, max(color.a, pmClamp));"
+            "return color;"
+        "}"
+    );
     return GrSkSLFP::Make(effect, "arithmetic_fp", /*inputFP=*/nullptr, GrSkSLFP::OptFlags::kNone,
                           "srcFP", std::move(srcFP),
                           "dstFP", std::move(dstFP),
@@ -400,6 +428,7 @@ sk_sp<SkSpecialImage> SkArithmeticImageFilter::filterImageGPU(
 
     GrImageInfo info(ctx.grColorType(), kPremul_SkAlphaType, ctx.refColorSpace(), bounds.size());
     auto sfc = rContext->priv().makeSFC(info,
+                                        "ArithmeticImageFilter_FilterImageGPU",
                                         SkBackingFit::kApprox,
                                         1,
                                         GrMipmapped::kNo,
@@ -415,8 +444,7 @@ sk_sp<SkSpecialImage> SkArithmeticImageFilter::filterImageGPU(
                                                SkIRect::MakeWH(bounds.width(), bounds.height()),
                                                kNeedNewImageUniqueID_SpecialImage,
                                                sfc->readSurfaceView(),
-                                               sfc->colorInfo().colorType(),
-                                               sfc->colorInfo().refColorSpace(),
+                                               sfc->colorInfo(),
                                                ctx.surfaceProps());
 }
 #endif

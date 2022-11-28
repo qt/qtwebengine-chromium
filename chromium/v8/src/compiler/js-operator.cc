@@ -726,7 +726,7 @@ Type JSWasmCallNode::TypeForWasmReturnType(const wasm::ValueType& type) {
     case wasm::kI32:
       return Type::Signed32();
     case wasm::kI64:
-      return Type::BigInt();
+      return Type::SignedBigInt64();
     case wasm::kF32:
     case wasm::kF64:
       return Type::Number();
@@ -770,6 +770,7 @@ Type JSWasmCallNode::TypeForWasmReturnType(const wasm::ValueType& type) {
   V(RejectPromise, Operator::kNoDeopt | Operator::kNoThrow, 3, 1)        \
   V(ResolvePromise, Operator::kNoDeopt | Operator::kNoThrow, 2, 1)       \
   V(GetSuperConstructor, Operator::kNoWrite | Operator::kNoThrow, 1, 1)  \
+  V(FindNonDefaultConstructorOrConstruct, Operator::kNoProperties, 2, 2) \
   V(ParseInt, Operator::kNoProperties, 2, 1)                             \
   V(RegExpTest, Operator::kNoProperties, 2, 1)
 

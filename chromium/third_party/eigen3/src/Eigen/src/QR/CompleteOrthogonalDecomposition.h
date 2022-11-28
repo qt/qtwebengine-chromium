@@ -197,6 +197,21 @@ template <typename MatrixType_> class CompleteOrthogonalDecomposition
     return m_cpqr.colsPermutation();
   }
 
+    /** \returns the determinant of the matrix of which
+   * *this is the complete orthogonal decomposition. It has only linear
+   * complexity (that is, O(n) where n is the dimension of the square matrix)
+   * as the complete orthogonal decomposition has already been computed.
+   *
+   * \note This is only for square matrices.
+   *
+   * \warning a determinant can be very big or small, so for matrices
+   * of large enough dimension, there is a risk of overflow/underflow.
+   * One way to work around that is to use logAbsDeterminant() instead.
+   *
+   * \sa absDeterminant(), logAbsDeterminant(), MatrixBase::determinant()
+   */
+  typename MatrixType::Scalar determinant() const;
+
   /** \returns the absolute value of the determinant of the matrix of which
    * *this is the complete orthogonal decomposition. It has only linear
    * complexity (that is, O(n) where n is the dimension of the square matrix)
@@ -208,7 +223,7 @@ template <typename MatrixType_> class CompleteOrthogonalDecomposition
    * of large enough dimension, there is a risk of overflow/underflow.
    * One way to work around that is to use logAbsDeterminant() instead.
    *
-   * \sa logAbsDeterminant(), MatrixBase::determinant()
+   * \sa determinant(), logAbsDeterminant(), MatrixBase::determinant()
    */
   typename MatrixType::RealScalar absDeterminant() const;
 
@@ -223,7 +238,7 @@ template <typename MatrixType_> class CompleteOrthogonalDecomposition
    * \note This method is useful to work around the risk of overflow/underflow
    * that's inherent to determinant computation.
    *
-   * \sa absDeterminant(), MatrixBase::determinant()
+   * \sa determinant(), absDeterminant(), MatrixBase::determinant()
    */
   typename MatrixType::RealScalar logAbsDeterminant() const;
 
@@ -406,6 +421,12 @@ template <typename MatrixType_> class CompleteOrthogonalDecomposition
   HCoeffsType m_zCoeffs;
   RowVectorType m_temp;
 };
+
+template <typename MatrixType>
+typename MatrixType::Scalar
+CompleteOrthogonalDecomposition<MatrixType>::determinant() const {
+  return m_cpqr.determinant();
+}
 
 template <typename MatrixType>
 typename MatrixType::RealScalar

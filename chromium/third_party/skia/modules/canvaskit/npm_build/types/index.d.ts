@@ -983,6 +983,55 @@ export interface ParagraphBuilder extends EmbindObject<ParagraphBuilder> {
     build(): Paragraph;
 
     /**
+     * Returns a Paragraph object that can be used to be layout and
+     * paint the text to an Canvas.
+     * @param bidiRegions is an array of unsigned integers that should be
+     * treated as triples (starting index, ending index, direction).
+     * Direction == 1 means left-to-right, direction == 0 is right-to-left. It's
+     * recommended to use `CanvasKit.TextDirection.RTL.value` or
+     * `CanvasKit.TextDirection.LTR.value` instead of hardcoding 0 or 1.
+     *
+     * The indices are expected to be relative to the UTF-16 representation of
+     * the text.
+     * @param words is an array of word edges (starting or ending). You can
+     * pass 2 elements (0 as a start of the entire text and text.size as the
+     * end). This information only needed for a specific API method getWords.
+     *
+     * The indices are expected to be relative to the UTF-16 representation of
+     * the text.
+     *
+     * The `Intl.Segmenter` API can be used as a source for this data.
+     *
+     * @param graphemes is an array of indexes in the input text that point
+     * to the start of each grapheme.
+     *
+     * The indices are expected to be relative to the UTF-16 representation of
+     * the text.
+     *
+     * The `Intl.Segmenter` API can be used as a source for this data.
+     *
+     * @param lineBreaks is an array of unsigned integers that should be
+     * treated as pairs (index, break type) that point to the places of possible
+     * line breaking if needed. It should include 0 as the first element.
+     * Break type == 0 means soft break, break type == 1 is a hard break.
+     *
+     * The indices are expected to be relative to the UTF-16 representation of
+     * the text.
+     *
+     * Chrome's `v8BreakIterator` API can be used as a source for this data.
+     */
+    buildWithClientInfo(bidiRegions?: InputBidiRegions | null,
+                        words?: InputWords | null,
+                        graphemes?: InputGraphemes | null,
+                        lineBreaks?: InputLineBreaks | null): Paragraph;
+
+    /**
+     * Returns the entire Paragraph text (which is useful in case that text
+     * was produced as a set of addText calls).
+     */
+    getText(): string;
+
+    /**
      * Remove a style from the stack. Useful to apply different styles to chunks
      * of text such as bolding.
      */
@@ -1015,6 +1064,7 @@ export interface ParagraphStyle {
     ellipsis?: string;
     heightMultiplier?: number;
     maxLines?: number;
+    replaceTabCharacters?: boolean;
     strutStyle?: StrutStyle;
     textAlign?: TextAlign;
     textDirection?: TextDirection;
@@ -4132,6 +4182,24 @@ export type InputFlattenedRSXFormArray = MallocObj | Float32Array | number[];
  * For example, this is the x, y, z coordinates.
  */
 export type InputVector3 = MallocObj | Vector3 | Float32Array;
+
+/**
+ * CanvasKit APIs accept normal arrays, typed arrays, or Malloc'd memory
+ * for bidi regions. Regions are triples of integers
+ * [startIdx, stopIdx, bidiLevel]
+ * where startIdx is inclusive and stopIdx is exclusive.
+ * Length 3 * n where n is the number of regions.
+ */
+export type InputBidiRegions = MallocObj | Uint32Array | number[];
+
+/**
+ * CanvasKit APIs accept normal arrays, typed arrays, or Malloc'd memory for
+ * words, graphemes or line breaks.
+ */
+export type InputWords = MallocObj | Uint32Array | number[];
+export type InputGraphemes = MallocObj | Uint32Array | number[];
+export type InputLineBreaks = MallocObj | Uint32Array | number[];
+
 /**
  * These are the types that webGL's texImage2D supports as a way to get data from as a texture.
  * Not listed, but also supported are https://developer.mozilla.org/en-US/docs/Web/API/VideoFrame
@@ -4171,6 +4239,7 @@ export type RectWidthStyle = EmbindEnumEntity;
 export type TextAlign = EmbindEnumEntity;
 export type TextBaseline = EmbindEnumEntity;
 export type TextDirection = EmbindEnumEntity;
+export type LineBreakType = EmbindEnumEntity;
 export type TextHeightBehavior = EmbindEnumEntity;
 
 export interface AffinityEnumValues extends EmbindEnum {
@@ -4428,6 +4497,11 @@ export interface TextBaselineEnumValues extends EmbindEnum {
 export interface TextDirectionEnumValues extends EmbindEnum {
     LTR: TextDirection;
     RTL: TextDirection;
+}
+
+export interface LineBreakTypeEnumValues extends EmbindEnum {
+    SoftLineBreak: LineBreakType;
+    HardtLineBreak: LineBreakType;
 }
 
 export interface TextHeightBehaviorEnumValues extends EmbindEnum {

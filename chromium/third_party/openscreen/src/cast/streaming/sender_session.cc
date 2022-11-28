@@ -30,6 +30,35 @@ namespace openscreen {
 namespace cast {
 
 namespace {
+// Default error message for a bad CAPABILITIES_RESPONSE message.
+const Error& InvalidCapabilitiesResponseError() {
+  static const Error kError(
+      Error::Code::kRemotingNotSupported,
+      "Invalid CAPABILITIES_RESPONSE message, assuming remoting is not "
+      "supported");
+  return kError;
+}
+
+// Default error message for a bad ANSWER message.
+const Error& InvalidAnswerError() {
+  static const Error kError(Error::Code::kInvalidAnswer,
+                            "Invalid ANSWER message.");
+  return kError;
+}
+
+// Error message for an ANSWER timeout.
+const Error& AnswerTimeoutError() {
+  static const Error kError(Error::Code::kAnswerTimeout,
+                            "Didn't receive an ANSWER message before timeout.");
+  return kError;
+}
+
+// Default error message for a bad RPC message.
+const Error& InvalidRpcError() {
+  static const Error kError(Error::Code::kJsonParseError,
+                            "Invalid RPC message.");
+  return kError;
+}
 
 AudioStream CreateStream(int index,
                          const AudioCaptureConfig& config,
@@ -226,7 +255,7 @@ SenderSession::SenderSession(Configuration config)
   // is not negotiation-specific and registering on construction here allows us
   // to record any unexpected RPC messages.
   messenger_.SetHandler(ReceiverMessage::Type::kRpc,
-                        [this](ReceiverMessage message) {
+                        [this](ErrorOr<ReceiverMessage> message) {
                           this->OnRpcMessage(std::move(message));
                         });
 }
@@ -264,6 +293,16 @@ Error SenderSession::NegotiateRemoting(AudioCaptureConfig audio_config,
   return StartNegotiation({audio_config}, {video_config}, std::move(offer));
 }
 
+Error SenderSession::RequestCapabilities() {
+  return messenger_.SendRequest(
+      SenderMessage{SenderMessage::Type::kGetCapabilities,
+                    ++current_sequence_number_, true},
+      ReceiverMessage::Type::kCapabilitiesResponse,
+      [this](ErrorOr<ReceiverMessage> message) {
+        OnCapabilitiesResponse(std::move(message));
+      });
+}
+
 int SenderSession::GetEstimatedNetworkBandwidth() const {
   return packet_router_.ComputeNetworkBandwidth();
 }
@@ -271,8 +310,6 @@ int SenderSession::GetEstimatedNetworkBandwidth() const {
 void SenderSession::ResetState() {
   state_ = State::kIdle;
   current_negotiation_.reset();
-  current_audio_sender_.reset();
-  current_video_sender_.reset();
 }
 
 Error SenderSession::StartNegotiation(
@@ -286,65 +323,63 @@ Error SenderSession::StartNegotiation(
   return messenger_.SendRequest(
       SenderMessage{SenderMessage::Type::kOffer, ++current_sequence_number_,
                     true, std::move(offer)},
-      ReceiverMessage::Type::kAnswer,
-      [this](ReceiverMessage message) { OnAnswer(message); });
+      ReceiverMessage::Type::kAnswer, [this](ErrorOr<ReceiverMessage> message) {
+        OnAnswer(std::move(message));
+      });
 }
 
-void SenderSession::OnAnswer(ReceiverMessage message) {
-  if (!message.valid) {
-    HandleErrorMessage(message, "Invalid answer response message");
+void SenderSession::OnAnswer(ErrorOr<ReceiverMessage> message) {
+  if (!message) {
+    // Answer timeouts are reported separately since API consumers
+    // may wish to track them in metrics.
+    if (message.error().code() == Error::Code::kMessageTimeout) {
+      config_.client->OnError(this, AnswerTimeoutError());
+    } else {
+      config_.client->OnError(this, message.error());
+    }
     return;
   }
 
-  // There isn't an obvious way to tell from the Answer whether it is mirroring
-  // or remoting specific--the only clues are in the original offer message.
-  const Answer& answer = absl::get<Answer>(message.body);
-  if (current_negotiation_->offer.cast_mode == CastMode::kMirroring) {
-    ConfiguredSenders senders = SpawnSenders(answer);
-    // If we didn't select any senders, the negotiation was unsuccessful.
-    if (senders.audio_sender == nullptr && senders.video_sender == nullptr) {
-      return;
-    }
+  if (!message.value().valid ||
+      message.value().type != ReceiverMessage::Type::kAnswer) {
+    HandleErrorMessage(message.value(), InvalidAnswerError());
+    return;
+  }
 
+  const Answer& answer = absl::get<Answer>(message.value().body);
+  ConfiguredSenders senders = SelectSenders(answer);
+  // If we didn't select any senders, the negotiation was unsuccessful.
+  if (!senders.audio_sender && !senders.video_sender) {
+    config_.client->OnError(this, Error(Error::Code::kNoStreamSelected,
+                                        "Invalid answer response message"));
+    return;
+  }
+
+  capture_recommendations::Recommendations recommendations{};
+  if (current_negotiation_->offer.cast_mode == CastMode::kMirroring) {
     state_ = State::kStreaming;
-    config_.client->OnNegotiated(
-        this, std::move(senders),
-        capture_recommendations::GetRecommendations(answer));
+    recommendations = capture_recommendations::GetRecommendations(answer);
   } else {
     state_ = State::kRemoting;
-
-    // We don't want to spawn senders yet, since we don't know what the
-    // receiver's capabilities are. So, we cache the Answer until the
-    // capabilites request is completed.
-    current_negotiation_->answer = answer;
-    const Error result = messenger_.SendRequest(
-        SenderMessage{SenderMessage::Type::kGetCapabilities,
-                      ++current_sequence_number_, true},
-        ReceiverMessage::Type::kCapabilitiesResponse,
-        [this](ReceiverMessage msg) { OnCapabilitiesResponse(msg); });
-    if (!result.ok()) {
-      config_.client->OnError(
-          this, Error(Error::Code::kNegotiationFailure,
-                      "Failed to set a GET_CAPABILITIES request"));
-    }
   }
+
+  config_.client->OnNegotiated(this, std::move(senders), recommendations);
 }
 
-void SenderSession::OnCapabilitiesResponse(ReceiverMessage message) {
-  if (!current_negotiation_ || !current_negotiation_->answer.IsValid()) {
-    OSP_LOG_INFO
-        << "Received a capabilities response, but not negotiating anything.";
+void SenderSession::OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message) {
+  if (!message) {
+    config_.client->OnError(this, message.error());
     return;
   }
 
-  if (!message.valid) {
-    HandleErrorMessage(
-        message,
-        "Bad CAPABILITIES_RESPONSE, assuming remoting is not supported");
+  if (!message.value().valid ||
+      message.value().type != ReceiverMessage::Type::kCapabilitiesResponse) {
+    HandleErrorMessage(message.value(), InvalidCapabilitiesResponseError());
     return;
   }
 
-  const ReceiverCapability& caps = absl::get<ReceiverCapability>(message.body);
+  const ReceiverCapability& caps =
+      absl::get<ReceiverCapability>(message.value().body);
   int remoting_version = caps.remoting_version;
   // If not set, we assume it is version 1.
   if (remoting_version == ReceiverCapability::kRemotingVersionUnknown) {
@@ -360,39 +395,40 @@ void SenderSession::OnCapabilitiesResponse(ReceiverMessage message) {
     return;
   }
 
-  ConfiguredSenders senders = SpawnSenders(current_negotiation_->answer);
-  // If we didn't select any senders, the negotiation was unsuccessful.
-  if (senders.audio_sender == nullptr && senders.video_sender == nullptr) {
-    config_.client->OnError(this,
-                            Error(Error::Code::kNegotiationFailure,
-                                  "Failed to negotiate a remoting session."));
-    return;
-  }
-
-  config_.client->OnRemotingNegotiated(
-      this, RemotingNegotiation{std::move(senders), ToCapabilities(caps)});
+  config_.client->OnCapabilitiesDetermined(this, ToCapabilities(caps));
 }
 
-void SenderSession::OnRpcMessage(ReceiverMessage message) {
-  if (!message.valid) {
-    HandleErrorMessage(
-        message,
-        "Bad RPC message. This may or may not represent a serious problem");
+void SenderSession::OnRpcMessage(ErrorOr<ReceiverMessage> message) {
+  if (!message) {
+    config_.client->OnError(this, message.error());
     return;
   }
 
-  const auto& body = absl::get<std::vector<uint8_t>>(message.body);
+  if (!message.value().valid ||
+      message.value().type != ReceiverMessage::Type::kRpc) {
+    HandleErrorMessage(message.value(), InvalidRpcError());
+    return;
+  }
+
+  const auto& body = absl::get<std::vector<uint8_t>>(message.value().body);
   rpc_messenger_.ProcessMessageFromRemote(body.data(), body.size());
 }
 
 void SenderSession::HandleErrorMessage(ReceiverMessage message,
-                                       const std::string& text) {
+                                       const Error& default_error) {
   OSP_DCHECK(!message.valid);
   if (absl::holds_alternative<ReceiverError>(message.body)) {
     const ReceiverError& error = absl::get<ReceiverError>(message.body);
-    config_.client->OnError(this, error.ToError());
+    Error converted_error = error.ToError();
+
+    // If the receiver error code was an invalid value, fallback to
+    // the default error code instead of returning unknown error.
+    if (converted_error.code() == Error::Code::kUnknownError) {
+      converted_error = Error(default_error.code(), converted_error.message());
+    }
+    config_.client->OnError(this, converted_error);
   } else {
-    config_.client->OnError(this, Error(Error::Code::kJsonParseError, text));
+    config_.client->OnError(this, default_error);
   }
 }
 
@@ -423,9 +459,8 @@ void SenderSession::SpawnAudioSender(ConfiguredSenders* senders,
       GetPayloadType(config.codec, config_.use_android_rtp_hack);
   for (const AudioStream& stream : current_negotiation_->offer.audio_streams) {
     if (stream.stream.index == send_index) {
-      current_audio_sender_ =
+      senders->audio_sender =
           CreateSender(receiver_ssrc, stream.stream, payload_type);
-      senders->audio_sender = current_audio_sender_.get();
       senders->audio_config = config;
       break;
     }
@@ -442,16 +477,15 @@ void SenderSession::SpawnVideoSender(ConfiguredSenders* senders,
       GetPayloadType(config.codec, config_.use_android_rtp_hack);
   for (const VideoStream& stream : current_negotiation_->offer.video_streams) {
     if (stream.stream.index == send_index) {
-      current_video_sender_ =
+      senders->video_sender =
           CreateSender(receiver_ssrc, stream.stream, payload_type);
-      senders->video_sender = current_video_sender_.get();
       senders->video_config = config;
       break;
     }
   }
 }
 
-SenderSession::ConfiguredSenders SenderSession::SpawnSenders(
+SenderSession::ConfiguredSenders SenderSession::SelectSenders(
     const Answer& answer) {
   OSP_DCHECK(current_negotiation_);
 

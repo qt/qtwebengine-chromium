@@ -14,12 +14,18 @@
 
 
 void xnn_qu8_vaddc_minmax_ukernel__scalar_x1(
-    size_t n,
+    size_t batch,
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
     const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
+  assert(batch != 0);
+  assert(batch % sizeof(uint8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const int32_t vbias = params->scalar.bias + (int32_t) *input_b * params->scalar.b_multiplier;
   const int32_t va_multiplier = params->scalar.a_multiplier;
   const uint32_t vshift = params->scalar.shift;
@@ -36,6 +42,6 @@ void xnn_qu8_vaddc_minmax_ukernel__scalar_x1(
     vout = math_min_s32(vout, voutput_max_less_zero_point);
     *output++ = (uint8_t) (vout + voutput_zero_point);
 
-    n -= sizeof(uint8_t);
-  } while (n != 0);
+    batch -= sizeof(uint8_t);
+  } while (batch != 0);
 }

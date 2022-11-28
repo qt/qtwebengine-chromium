@@ -535,7 +535,7 @@ void V8Debugger::BreakOnInstrumentation(
       });
   {
     v8::Context::Scope scope(pausedContext);
-    m_inspector->client()->runMessageLoopOnPause(contextGroupId);
+    m_inspector->client()->runMessageLoopOnInstrumentationPause(contextGroupId);
     m_pausedContextGroupId = 0;
   }
 
@@ -786,6 +786,11 @@ v8::MaybeLocal<v8::Array> V8Debugger::internalProperties(
                        toV8StringInternalized(m_isolate, "[[Entries]]"));
     createDataProperty(context, properties, properties->Length(), entries);
   }
+
+  if (v8::debug::isExperimentalRemoveInternalScopesPropertyEnabled()) {
+    return properties;
+  }
+
   if (value->IsGeneratorObject()) {
     v8::Local<v8::Value> scopes;
     if (generatorScopes(context, value).ToLocal(&scopes)) {

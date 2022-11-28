@@ -37,7 +37,7 @@ func (cmd) Name() string {
 }
 
 func (cmd) Desc() string {
-	return "formats a WebGPUExpectation file"
+	return "formats a WebGPU expectations.txt file"
 }
 
 func (c *cmd) RegisterFlags(ctx context.Context, cfg common.Config) ([]string, error) {

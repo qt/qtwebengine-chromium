@@ -200,15 +200,34 @@ struct CaretValueFormat3
   bool subset (hb_subset_context_t *c) const
   {
     TRACE_SUBSET (this);
-    auto *out = c->serializer->embed (this);
+    auto *out = c->serializer->start_embed (*this);
     if (unlikely (!out)) return_trace (false);
+    if (!c->serializer->embed (caretValueFormat)) return_trace (false);
+    if (!c->serializer->embed (coordinate)) return_trace (false);
+
+    unsigned varidx = (this+deviceTable).get_variation_index ();
+    if (c->plan->layout_variation_idx_delta_map->has (varidx))
+    {
+      int delta = hb_second (c->plan->layout_variation_idx_delta_map->get (varidx));
+      if (delta != 0)
+      {
+        if (!c->serializer->check_assign (out->coordinate, coordinate + delta, HB_SERIALIZE_ERROR_INT_OVERFLOW))
+          return_trace (false);
+      }
+    }
+
+    if (c->plan->all_axes_pinned)
+      return_trace (c->serializer->check_assign (out->caretValueFormat, 1, HB_SERIALIZE_ERROR_INT_OVERFLOW));
+
+    if (!c->serializer->embed (deviceTable))
+      return_trace (false);
 
     return_trace (out->deviceTable.serialize_copy (c->serializer, deviceTable, this, c->serializer->to_bias (out),
-						   hb_serialize_context_t::Head, c->plan->layout_variation_idx_map));
+						   hb_serialize_context_t::Head, c->plan->layout_variation_idx_delta_map));
   }
 
-  void collect_variation_indices (hb_set_t *layout_variation_indices) const
-  { (this+deviceTable).collect_variation_indices (layout_variation_indices); }
+  void collect_variation_indices (hb_collect_variation_indices_context_t *c) const
+  { (this+deviceTable).collect_variation_indices (c); }
 
   bool sanitize (hb_sanitize_context_t *c) const
   {
@@ -255,14 +274,14 @@ struct CaretValue
     }
   }
 
-  void collect_variation_indices (hb_set_t *layout_variation_indices) const
+  void collect_variation_indices (hb_collect_variation_indices_context_t *c) const
   {
     switch (u.format) {
     case 1:
     case 2:
       return;
     case 3:
-      u.format3.collect_variation_indices (layout_variation_indices);
+      u.format3.collect_variation_indices (c);
       return;
     default: return;
     }
@@ -329,7 +348,7 @@ struct LigGlyph
   void collect_variation_indices (hb_collect_variation_indices_context_t *c) const
   {
     for (const Offset16To<CaretValue>& offset : carets.iter ())
-      (this+offset).collect_variation_indices (c->layout_variation_indices);
+      (this+offset).collect_variation_indices (c);
   }
 
   bool sanitize (hb_sanitize_context_t *c) const
@@ -586,7 +605,10 @@ struct GDEFVersion1_2
     bool subset_varstore = false;
     if (version.to_int () >= 0x00010003u)
     {
-      subset_varstore = out->varStore.serialize_subset (c, varStore, this);
+      if (c->plan->all_axes_pinned)
+        out->varStore = 0;
+      else
+        subset_varstore = out->varStore.serialize_subset (c, varStore, this, c->plan->gdef_varstore_inner_maps.as_array ());
     }
 
     if (subset_varstore)
@@ -621,7 +643,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.get_size ();
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.get_size ();
 #endif
     default: return u.version.static_size;
@@ -634,7 +656,7 @@ struct GDEF
     if (unlikely (!u.version.sanitize (c))) return_trace (false);
     switch (u.version.major) {
     case 1: return_trace (u.version1.sanitize (c));
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return_trace (u.version2.sanitize (c));
 #endif
     default: return_trace (true);
@@ -645,7 +667,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.subset (c);
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.subset (c);
 #endif
     default: return false;
@@ -656,7 +678,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.glyphClassDef != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.glyphClassDef != 0;
 #endif
     default: return false;
@@ -666,7 +688,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return this+u.version1.glyphClassDef;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.glyphClassDef;
 #endif
     default: return Null(ClassDef);
@@ -676,7 +698,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.attachList != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.attachList != 0;
 #endif
     default: return false;
@@ -686,7 +708,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return this+u.version1.attachList;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.attachList;
 #endif
     default: return Null(AttachList);
@@ -696,7 +718,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.ligCaretList != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.ligCaretList != 0;
 #endif
     default: return false;
@@ -706,7 +728,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return this+u.version1.ligCaretList;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.ligCaretList;
 #endif
     default: return Null(LigCaretList);
@@ -716,7 +738,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version1.markAttachClassDef != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.markAttachClassDef != 0;
 #endif
     default: return false;
@@ -726,7 +748,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return this+u.version1.markAttachClassDef;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.markAttachClassDef;
 #endif
     default: return Null(ClassDef);
@@ -736,7 +758,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version.to_int () >= 0x00010002u && u.version1.markGlyphSetsDef != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.markGlyphSetsDef != 0;
 #endif
     default: return false;
@@ -746,7 +768,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version.to_int () >= 0x00010002u ? this+u.version1.markGlyphSetsDef : Null(MarkGlyphSets);
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.markGlyphSetsDef;
 #endif
     default: return Null(MarkGlyphSets);
@@ -756,7 +778,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version.to_int () >= 0x00010003u && u.version1.varStore != 0;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.varStore != 0;
 #endif
     default: return false;
@@ -766,7 +788,7 @@ struct GDEF
   {
     switch (u.version.major) {
     case 1: return u.version.to_int () >= 0x00010003u ? this+u.version1.varStore : Null(VariationStore);
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.varStore;
 #endif
     default: return Null(VariationStore);
@@ -846,7 +868,7 @@ struct GDEF
   { get_lig_caret_list ().collect_variation_indices (c); }
 
   void remap_layout_variation_indices (const hb_set_t *layout_variation_indices,
-				       hb_map_t *layout_variation_idx_map /* OUT */) const
+				       hb_hashmap_t<unsigned, hb_pair_t<unsigned, int>> *layout_variation_idx_delta_map /* OUT */) const
   {
     if (!has_var_store ()) return;
     if (layout_variation_indices->is_empty ()) return;
@@ -864,7 +886,11 @@ struct GDEF
       }
 
       unsigned new_idx = (new_major << 16) + new_minor;
-      layout_variation_idx_map->set (idx, new_idx);
+      if (!layout_variation_idx_delta_map->has (idx))
+        continue;
+      int delta = hb_second (layout_variation_idx_delta_map->get (idx));
+
+      layout_variation_idx_delta_map->set (idx, hb_pair_t<unsigned, int> (new_idx, delta));
       ++new_minor;
       last_major = major;
     }
@@ -874,7 +900,7 @@ struct GDEF
   union {
   FixedVersion<>		version;	/* Version identifier */
   GDEFVersion1_2<SmallTypes>	version1;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
   GDEFVersion1_2<MediumTypes>	version2;
 #endif
   } u;

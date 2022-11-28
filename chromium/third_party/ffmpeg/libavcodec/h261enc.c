@@ -139,7 +139,7 @@ void ff_h261_reorder_mb_index(MpegEncContext *s)
         s->mb_y += 3 * index;
 
         ff_init_block_index(s);
-        ff_update_block_index(s);
+        ff_update_block_index(s, 8, 0, 1);
     }
 }
 
@@ -402,7 +402,7 @@ av_cold void ff_h261_encode_init(MpegEncContext *s)
 
 const FFCodec ff_h261_encoder = {
     .p.name         = "h261",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("H.261"),
+    CODEC_LONG_NAME("H.261"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_H261,
     .p.priv_class   = &ff_mpv_enc_class,

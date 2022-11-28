@@ -72,7 +72,8 @@ enum DescriptorReqBits {
     DESCRIPTOR_REQ_COMPONENT_TYPE_UINT = DESCRIPTOR_REQ_COMPONENT_TYPE_SINT << 1,
 
     DESCRIPTOR_REQ_VIEW_ATOMIC_OPERATION = DESCRIPTOR_REQ_COMPONENT_TYPE_UINT << 1,
-    DESCRIPTOR_REQ_SAMPLER_IMPLICITLOD_DREF_PROJ = DESCRIPTOR_REQ_VIEW_ATOMIC_OPERATION << 1,
+    DESCRIPTOR_REQ_SAMPLER_SAMPLED = DESCRIPTOR_REQ_VIEW_ATOMIC_OPERATION << 1,
+    DESCRIPTOR_REQ_SAMPLER_IMPLICITLOD_DREF_PROJ = DESCRIPTOR_REQ_SAMPLER_SAMPLED << 1,
     DESCRIPTOR_REQ_SAMPLER_BIAS_OFFSET = DESCRIPTOR_REQ_SAMPLER_IMPLICITLOD_DREF_PROJ << 1,
     DESCRIPTOR_REQ_IMAGE_READ_WITHOUT_FORMAT = DESCRIPTOR_REQ_SAMPLER_BIAS_OFFSET << 1,
     DESCRIPTOR_REQ_IMAGE_WRITE_WITHOUT_FORMAT = DESCRIPTOR_REQ_IMAGE_READ_WITHOUT_FORMAT << 1,
@@ -91,9 +92,9 @@ struct DescriptorRequirement {
     DescriptorRequirement() : reqs(0), is_writable(false) {}
 };
 
-inline bool operator==(const DescriptorRequirement &a, const DescriptorRequirement &b) NOEXCEPT { return a.reqs == b.reqs; }
+inline bool operator==(const DescriptorRequirement &a, const DescriptorRequirement &b) noexcept { return a.reqs == b.reqs; }
 
-inline bool operator<(const DescriptorRequirement &a, const DescriptorRequirement &b) NOEXCEPT { return a.reqs < b.reqs; }
+inline bool operator<(const DescriptorRequirement &a, const DescriptorRequirement &b) noexcept { return a.reqs < b.reqs; }
 
 typedef std::map<uint32_t, DescriptorRequirement> BindingReqMap;
 

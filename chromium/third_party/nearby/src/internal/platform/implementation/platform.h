@@ -28,6 +28,7 @@
 #include "internal/platform/implementation/bluetooth_classic.h"
 #include "internal/platform/implementation/condition_variable.h"
 #include "internal/platform/implementation/count_down_latch.h"
+#include "internal/platform/implementation/credential_storage.h"
 #include "internal/platform/implementation/crypto.h"
 #include "internal/platform/implementation/input_file.h"
 #include "internal/platform/implementation/log_message.h"
@@ -64,10 +65,10 @@ class ImplementationPlatform {
   //   - CountDownLatch : to ensure at least N threads are waiting.
   // - file I/O
   // - Logging
-  static std::string GetDownloadPath(std::string& parent_folder,
-                                     std::string& file_name);
+  static std::string GetDownloadPath(absl::string_view parent_folder,
+                                     absl::string_view file_name);
 
-  static std::string GetDownloadPath(std::string& file_name);
+  static std::string GetDownloadPath(absl::string_view file_name);
 
   static std::string GetAppDataPath(absl::string_view file_name);
 
@@ -116,6 +117,7 @@ class ImplementationPlatform {
   static std::unique_ptr<BleMedium> CreateBleMedium(BluetoothAdapter&);
   static std::unique_ptr<api::ble_v2::BleMedium> CreateBleV2Medium(
       api::BluetoothAdapter&);
+  static std::unique_ptr<api::CredentialStorage> CreateCredentialStorage();
   static std::unique_ptr<ServerSyncMedium> CreateServerSyncMedium();
   static std::unique_ptr<WifiMedium> CreateWifiMedium();
   static std::unique_ptr<WifiLanMedium> CreateWifiLanMedium();

@@ -14,6 +14,7 @@
 
 #include "internal/platform/implementation/g3/ble_v2.h"
 
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -35,6 +36,7 @@ namespace g3 {
 namespace {
 
 using ::location::nearby::api::ble_v2::BleAdvertisementData;
+using ::location::nearby::api::ble_v2::BleOperationStatus;
 using ::location::nearby::api::ble_v2::TxPowerLevel;
 
 std::string TxPowerLevelToName(TxPowerLevel power_mode) {
@@ -242,25 +244,88 @@ bool BleV2Medium::StopAdvertising() {
   return true;
 }
 
+std::unique_ptr<BleV2Medium::AdvertisingSession> BleV2Medium::StartAdvertising(
+    const api::ble_v2::BleAdvertisementData& advertising_data,
+    api::ble_v2::AdvertiseParameters advertise_parameters,
+    BleV2Medium::AdvertisingCallback callback) {
+  NEARBY_LOGS(INFO)
+      << "G3 Ble StartAdvertising: advertising_data.is_extended_advertisement="
+      << advertising_data.is_extended_advertisement
+      << ", advertising_data.service_data size="
+      << advertising_data.service_data.size() << ", tx_power_level="
+      << TxPowerLevelToName(advertise_parameters.tx_power_level)
+      << ", is_connectable=" << advertise_parameters.is_connectable;
+  if (advertising_data.is_extended_advertisement &&
+      !is_support_extended_advertisement_) {
+    NEARBY_LOGS(INFO)
+        << "G3 Ble StartAdvertising does not support extended advertisement";
+    return nullptr;
+  }
+
+  absl::MutexLock lock(&mutex_);
+  MediumEnvironment::Instance().UpdateBleV2MediumForAdvertising(
+      /*enabled=*/true, *this, adapter_->GetPeripheralV2(), advertising_data);
+  return std::make_unique<AdvertisingSession>(AdvertisingSession{});
+}
+
 bool BleV2Medium::StartScanning(const Uuid& service_uuid,
                                 TxPowerLevel tx_power_level,
                                 ScanCallback callback) {
   NEARBY_LOGS(INFO) << "G3 Ble StartScanning";
+  auto internal_session_id = Prng().NextUint32();
   absl::MutexLock lock(&mutex_);
-
   MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
-      /*enabled=*/true, service_uuid, std::move(callback), *this);
+      /*enabled=*/true, service_uuid, internal_session_id,
+      {.advertisement_found_cb = callback.advertisement_found_cb}, *this);
+  scanning_internal_session_ids_.insert({service_uuid, internal_session_id});
   return true;
 }
 
 bool BleV2Medium::StopScanning() {
   NEARBY_LOGS(INFO) << "G3 Ble StopScanning";
   absl::MutexLock lock(&mutex_);
-
-  MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
-      /*enabled=*/false,
-      /*service_uuid=*/{}, /*callback=*/{}, *this);
+  for (auto element : scanning_internal_session_ids_) {
+    MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
+        /*enabled=*/false,
+        /*service_uuid=*/element.first, /*internal_session_id*/ element.second,
+        /*callback=*/{}, *this);
+  }
   return true;
+}
+
+std::unique_ptr<BleV2Medium::ScanningSession> BleV2Medium::StartScanning(
+    const Uuid& service_uuid, TxPowerLevel tx_power_level,
+    BleV2Medium::ScanningCallback callback) {
+  NEARBY_LOGS(INFO) << "G3 Ble StartScanning";
+  auto internal_session_id = Prng().NextUint32();
+
+  {
+    absl::MutexLock lock(&mutex_);
+
+    MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
+        /*enabled=*/true, service_uuid, internal_session_id, callback, *this);
+    scanning_internal_session_ids_.insert({service_uuid, internal_session_id});
+  }
+  callback.start_scanning_result(api::ble_v2::BleOperationStatus::kSucceeded);
+  return std::make_unique<ScanningSession>(ScanningSession{
+      .stop_scanning =
+          [this, service_uuid = service_uuid,
+           internal_session_id = internal_session_id]() {
+            absl::MutexLock lock(&mutex_);
+            if (scanning_internal_session_ids_.find(
+                    {service_uuid, internal_session_id}) ==
+                scanning_internal_session_ids_.end()) {
+              // can't find the provided internal session.
+              return BleOperationStatus::kFailed;
+            }
+            MediumEnvironment::Instance().UpdateBleV2MediumForScanning(
+                /*enabled=*/false, service_uuid, internal_session_id,
+                /*callback=*/{}, *this);
+            scanning_internal_session_ids_.erase(
+                {service_uuid, internal_session_id});
+            return BleOperationStatus::kSucceeded;
+          },
+  });
 }
 
 std::unique_ptr<api::ble_v2::GattServer> BleV2Medium::StartGattServer(

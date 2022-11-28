@@ -4,19 +4,31 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
+#include "include/pathops/SkPathOps.h"
+#include "include/private/SkTDArray.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/pathops/SkAddIntersections.h"
+#include "src/pathops/SkOpAngle.h"
 #include "src/pathops/SkOpCoincidence.h"
+#include "src/pathops/SkOpContour.h"
 #include "src/pathops/SkOpEdgeBuilder.h"
+#include "src/pathops/SkOpSegment.h"
+#include "src/pathops/SkOpSpan.h"
 #include "src/pathops/SkPathOpsCommon.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "src/pathops/SkPathWriter.h"
 
 #include <utility>
 
 static bool findChaseOp(SkTDArray<SkOpSpanBase*>& chase, SkOpSpanBase** startPtr,
         SkOpSpanBase** endPtr, SkOpSegment** result) {
-    while (chase.count()) {
-        SkOpSpanBase* span;
-        chase.pop(&span);
+    while (!chase.empty()) {
+        SkOpSpanBase* span = chase.back();
+        chase.pop_back();
         // OPTIMIZE: prev makes this compatible with old code -- but is it necessary?
         *startPtr = span->ptT()->prev()->span();
         SkOpSegment* segment = (*startPtr)->segment();
@@ -243,7 +255,7 @@ bool OpDebug(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result
     const char* testName = "release";
 #endif
     if (SkPathOpsDebug::gDumpOp) {
-        SkPathOpsDebug::DumpOp(one, two, op, testName);
+        DumpOp(one, two, op, testName);
     }
 #endif
     op = gOpInverse[op][one.isInverseFillType()][two.isInverseFillType()];
@@ -371,10 +383,10 @@ bool Op(const SkPath& one, const SkPath& two, SkPathOp op, SkPath* result) {
 #if DEBUG_DUMP_VERIFY
     if (SkPathOpsDebug::gVerifyOp) {
         if (!OpDebug(one, two, op, result  SkDEBUGPARAMS(false) SkDEBUGPARAMS(nullptr))) {
-            SkPathOpsDebug::ReportOpFail(one, two, op);
+            ReportOpFail(one, two, op);
             return false;
         }
-        SkPathOpsDebug::VerifyOp(one, two, op, *result);
+        VerifyOp(one, two, op, *result);
         return true;
     }
 #endif

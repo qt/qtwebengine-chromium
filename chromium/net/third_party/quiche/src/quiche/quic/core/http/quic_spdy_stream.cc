@@ -254,22 +254,6 @@ size_t QuicSpdyStream::WriteHeaders(
   }
 
   QuicConnection::ScopedPacketFlusher flusher(spdy_session_->connection());
-  // Send stream type for server push stream
-  if (VersionUsesHttp3(transport_version()) && type() == WRITE_UNIDIRECTIONAL &&
-      send_buffer().stream_offset() == 0) {
-    char data[sizeof(kServerPushStream)];
-    QuicDataWriter writer(ABSL_ARRAYSIZE(data), data);
-    writer.WriteVarInt62(kServerPushStream);
-
-    // Similar to frame headers, stream type byte shouldn't be exposed to upper
-    // layer applications.
-    unacked_frame_headers_offsets_.Add(0, writer.length());
-
-    QUIC_LOG(INFO) << ENDPOINT << "Stream " << id()
-                   << " is writing type as server push";
-    WriteOrBufferData(absl::string_view(writer.data(), writer.length()), false,
-                      nullptr);
-  }
 
   MaybeProcessSentWebTransportHeaders(header_block);
 
@@ -306,6 +290,10 @@ size_t QuicSpdyStream::WriteHeaders(
                             sizeof(capsule_data))));
       WriteGreaseCapsule();
     }
+  }
+
+  if (connect_ip_visitor_ != nullptr) {
+    connect_ip_visitor_->OnHeadersWritten();
   }
 
   return bytes_written;
@@ -383,7 +371,7 @@ QuicConsumedData QuicSpdyStream::WritevBody(const struct iovec* iov, int count,
   quiche::QuicheMemSliceStorage storage(
       iov, count,
       session()->connection()->helper()->GetStreamSendBufferAllocator(),
-      GetQuicFlag(FLAGS_quic_send_buffer_max_data_slice_size));
+      GetQuicFlag(quic_send_buffer_max_data_slice_size));
   return WriteBodySlices(storage.ToSpan(), fin);
 }
 
@@ -625,8 +613,6 @@ void QuicSpdyStream::OnInitialHeadersComplete(
                               : header_list.empty();
   if (!AreHeaderFieldValuesValid(header_list)) {
     OnInvalidHeaders();
-    QUIC_RELOADABLE_FLAG_COUNT_N(
-        quic_validate_header_field_value_at_spdy_stream, 2, 2);
     return;
   }
   // Validate request headers if it did not exceed size limit. If it did,
@@ -828,6 +814,9 @@ void QuicSpdyStream::OnDataAvailable() {
     QuicByteCount processed_bytes = decoder_.ProcessInput(
         reinterpret_cast<const char*>(iov.iov_base), iov.iov_len);
     is_decoder_processing_input_ = false;
+    if (!session()->connection()->connected()) {
+      return;
+    }
     sequencer_offset_ += processed_bytes;
     if (blocked_on_decoding_headers_) {
       return;
@@ -1126,9 +1115,11 @@ bool QuicSpdyStream::OnUnknownFrameStart(uint64_t frame_type,
     spdy_session_->debug_visitor()->OnUnknownFrameReceived(id(), frame_type,
                                                            payload_length);
   }
+  spdy_session_->OnUnknownFrameStart(id(), frame_type, header_length,
+                                     payload_length);
 
-  // Ignore unknown frames, but consume frame header.
-  QUIC_DVLOG(1) << ENDPOINT << "Discarding " << header_length
+  // Consume the frame header.
+  QUIC_DVLOG(1) << ENDPOINT << "Consuming " << header_length
                 << " byte long frame header of frame of unknown type "
                 << frame_type << ".";
   sequencer()->MarkConsumed(body_manager_.OnNonBody(header_length));
@@ -1136,8 +1127,10 @@ bool QuicSpdyStream::OnUnknownFrameStart(uint64_t frame_type,
 }
 
 bool QuicSpdyStream::OnUnknownFramePayload(absl::string_view payload) {
-  // Ignore unknown frames, but consume frame payload.
-  QUIC_DVLOG(1) << ENDPOINT << "Discarding " << payload.size()
+  spdy_session_->OnUnknownFramePayload(id(), payload);
+
+  // Consume the frame payload.
+  QUIC_DVLOG(1) << ENDPOINT << "Consuming " << payload.size()
                 << " bytes of payload of frame of unknown type.";
   sequencer()->MarkConsumed(body_manager_.OnNonBody(payload.size()));
   return true;
@@ -1172,16 +1165,28 @@ size_t QuicSpdyStream::WriteHeadersImpl(
       send_buffer().stream_offset(),
       send_buffer().stream_offset() + headers_frame_header.length());
 
-  QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
-                  << " is writing HEADERS frame header of length "
-                  << headers_frame_header.length();
-  WriteOrBufferData(headers_frame_header, /* fin = */ false,
-                    /* ack_listener = */ nullptr);
+  if (GetQuicReloadableFlag(quic_one_write_for_headers)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_one_write_for_headers);
 
-  QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
-                  << " is writing HEADERS frame payload of length "
-                  << encoded_headers.length() << " with fin " << fin;
-  WriteOrBufferData(encoded_headers, fin, nullptr);
+    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
+                    << " is writing HEADERS frame header of length "
+                    << headers_frame_header.length()
+                    << ", and payload of length " << encoded_headers.length()
+                    << " with fin " << fin;
+    WriteOrBufferData(absl::StrCat(headers_frame_header, encoded_headers), fin,
+                      /*ack_listener=*/nullptr);
+  } else {
+    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
+                    << " is writing HEADERS frame header of length "
+                    << headers_frame_header.length();
+    WriteOrBufferData(headers_frame_header, /* fin = */ false,
+                      /* ack_listener = */ nullptr);
+
+    QUIC_DLOG(INFO) << ENDPOINT << "Stream " << id()
+                    << " is writing HEADERS frame payload of length "
+                    << encoded_headers.length() << " with fin " << fin;
+    WriteOrBufferData(encoded_headers, fin, nullptr);
+  }
 
   QuicSpdySession::LogHeaderCompressionRatioHistogram(
       /* using_qpack = */ true,
@@ -1372,6 +1377,24 @@ bool QuicSpdyStream::OnCapsule(const Capsule& capsule) {
           capsule.close_web_transport_session_capsule().error_code,
           capsule.close_web_transport_session_capsule().error_message);
     } break;
+    case CapsuleType::ADDRESS_ASSIGN:
+      if (connect_ip_visitor_ == nullptr) {
+        return true;
+      }
+      return connect_ip_visitor_->OnAddressAssignCapsule(
+          capsule.address_assign_capsule());
+    case CapsuleType::ADDRESS_REQUEST:
+      if (connect_ip_visitor_ == nullptr) {
+        return true;
+      }
+      return connect_ip_visitor_->OnAddressRequestCapsule(
+          capsule.address_request_capsule());
+    case CapsuleType::ROUTE_ADVERTISEMENT:
+      if (connect_ip_visitor_ == nullptr) {
+        return true;
+      }
+      return connect_ip_visitor_->OnRouteAdvertisementCapsule(
+          capsule.route_advertisement_capsule());
   }
   return true;
 }
@@ -1450,6 +1473,43 @@ void QuicSpdyStream::ReplaceHttp3DatagramVisitor(
       << "Attempted to move missing datagram visitor on HTTP/3 stream ID "
       << id();
   datagram_visitor_ = visitor;
+}
+
+void QuicSpdyStream::RegisterConnectIpVisitor(ConnectIpVisitor* visitor) {
+  if (visitor == nullptr) {
+    QUIC_BUG(null connect - ip visitor)
+        << ENDPOINT << "Null connect-ip visitor for stream ID " << id();
+    return;
+  }
+  QUIC_DLOG(INFO) << ENDPOINT
+                  << "Registering CONNECT-IP visitor with stream ID " << id();
+
+  if (connect_ip_visitor_ != nullptr) {
+    QUIC_BUG(connect - ip double registration)
+        << ENDPOINT << "Attempted to doubly register CONNECT-IP with stream ID "
+        << id();
+    return;
+  }
+  connect_ip_visitor_ = visitor;
+}
+
+void QuicSpdyStream::UnregisterConnectIpVisitor() {
+  if (connect_ip_visitor_ == nullptr) {
+    QUIC_BUG(connect - ip visitor empty during unregistration)
+        << ENDPOINT << "Cannot unregister CONNECT-IP visitor for stream ID "
+        << id();
+    return;
+  }
+  QUIC_DLOG(INFO) << ENDPOINT
+                  << "Unregistering CONNECT-IP visitor for stream ID " << id();
+  connect_ip_visitor_ = nullptr;
+}
+
+void QuicSpdyStream::ReplaceConnectIpVisitor(ConnectIpVisitor* visitor) {
+  QUIC_BUG_IF(connect - ip unknown move, connect_ip_visitor_ == nullptr)
+      << "Attempted to move missing CONNECT-IP visitor on HTTP/3 stream ID "
+      << id();
+  connect_ip_visitor_ = visitor;
 }
 
 void QuicSpdyStream::SetMaxDatagramTimeInQueue(
@@ -1564,12 +1624,9 @@ bool QuicSpdyStream::AreHeadersValid(const QuicHeaderList& header_list) const {
 
 bool QuicSpdyStream::AreHeaderFieldValuesValid(
     const QuicHeaderList& header_list) const {
-  if (!GetQuicReloadableFlag(quic_validate_header_field_value_at_spdy_stream) ||
-      !VersionUsesHttp3(transport_version())) {
+  if (!VersionUsesHttp3(transport_version())) {
     return true;
   }
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_validate_header_field_value_at_spdy_stream,
-                               1, 2);
   // According to https://www.rfc-editor.org/rfc/rfc9114.html#section-10.3
   // "[...] HTTP/3 can transport field values that are not valid. While most
   // values that can be encoded will not alter field parsing, carriage return

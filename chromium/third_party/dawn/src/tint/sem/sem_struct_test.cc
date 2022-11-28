@@ -19,6 +19,7 @@
 namespace tint::sem {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
 using StructTest = TestHelper;
 
 TEST_F(StructTest, Creation) {
@@ -103,6 +104,24 @@ TEST_F(StructTest, Layout) {
 /* offset(64) align( 4) size( 4) */   a : i32;
 /* offset(68) align( 1) size(12) */   // -- implicit struct size padding --;
 /*                               */ };)");
+}
+
+TEST_F(StructTest, Location) {
+    auto* st = Structure("st", utils::Vector{
+                                   Member("a", ty.i32(), utils::Vector{Location(1_u)}),
+                                   Member("b", ty.u32()),
+                               });
+
+    auto p = Build();
+    ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+
+    auto* sem = p.Sem().Get(st);
+    ASSERT_EQ(2u, sem->Members().size());
+
+    EXPECT_TRUE(sem->Members()[0]->Location().has_value());
+    EXPECT_EQ(sem->Members()[0]->Location().value(), 1u);
+
+    EXPECT_FALSE(sem->Members()[1]->Location().has_value());
 }
 
 }  // namespace

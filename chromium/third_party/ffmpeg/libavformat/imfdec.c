@@ -233,7 +233,12 @@ static int parse_imf_asset_map_from_xml_dom(AVFormatContext *s,
 
         asset = &(asset_map->assets[asset_map->asset_count]);
 
-        if (ff_imf_xml_read_uuid(ff_imf_xml_get_child_element_by_name(asset_element, "Id"), asset->uuid)) {
+        if (!(node = ff_imf_xml_get_child_element_by_name(asset_element, "Id"))) {
+            av_log(s, AV_LOG_ERROR, "Unable to parse asset map XML - missing Id node\n");
+            return AVERROR_INVALIDDATA;
+        }
+
+        if (ff_imf_xml_read_uuid(node, asset->uuid)) {
             av_log(s, AV_LOG_ERROR, "Could not parse UUID from asset in asset map.\n");
             return AVERROR_INVALIDDATA;
         }
@@ -573,18 +578,14 @@ static int set_context_streams_from_tracks(AVFormatContext *s)
         first_resource_stream = c->tracks[i]->resources[0].ctx->streams[0];
         av_log(s, AV_LOG_DEBUG, "Open the first resource of track %d\n", c->tracks[i]->index);
 
-        /* Copy stream information */
-        asset_stream = avformat_new_stream(s, NULL);
+        asset_stream = ff_stream_clone(s, first_resource_stream);
         if (!asset_stream) {
-            av_log(s, AV_LOG_ERROR, "Could not create stream\n");
+            av_log(s, AV_LOG_ERROR, "Could not clone stream\n");
             return AVERROR(ENOMEM);
         }
+
         asset_stream->id = i;
-        ret = avcodec_parameters_copy(asset_stream->codecpar, first_resource_stream->codecpar);
-        if (ret < 0) {
-            av_log(s, AV_LOG_ERROR, "Could not copy stream parameters\n");
-            return ret;
-        }
+        asset_stream->nb_frames = 0;
         avpriv_set_pts_info(asset_stream,
                             first_resource_stream->pts_wrap_bits,
                             first_resource_stream->time_base.num,

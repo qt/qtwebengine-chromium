@@ -28,16 +28,12 @@ class SpirvShader;
 
 namespace vk {
 
-namespace dbg {
-class Context;
-}  // namespace dbg
-
 class ShaderModule;
 
 class Pipeline
 {
 public:
-	Pipeline(PipelineLayout *layout, Device *device);
+	Pipeline(PipelineLayout *layout, Device *device, bool robustBufferAccess);
 	virtual ~Pipeline() = default;
 
 	operator VkPipeline()
@@ -92,13 +88,15 @@ public:
 #endif
 
 	static size_t ComputeRequiredAllocationSize(const VkGraphicsPipelineCreateInfo *pCreateInfo);
+	static VkGraphicsPipelineLibraryFlagsEXT GetGraphicsPipelineSubset(const VkGraphicsPipelineCreateInfo *pCreateInfo);
 
 	VkResult compileShaders(const VkAllocationCallbacks *pAllocator, const VkGraphicsPipelineCreateInfo *pCreateInfo, PipelineCache *pipelineCache);
 
-	const GraphicsState getState(const DynamicState &ds) const { return state.combineStates(ds); }
+	GraphicsState getCombinedState(const DynamicState &ds) const { return state.combineStates(ds); }
+	const GraphicsState &getState() const { return state; }
 
 	void getIndexBuffers(const vk::DynamicState &dynamicState, uint32_t count, uint32_t first, bool indexed, std::vector<std::pair<uint32_t, void *>> *indexBuffers) const;
-	bool hasDynamicVertexStride() const { return state.hasDynamicVertexStride(); }
+	bool hasDynamicVertexStride() const { return state.getVertexInputInterfaceState().hasDynamicVertexStride(); }
 
 	IndexBuffer &getIndexBuffer() { return indexBuffer; }
 	const IndexBuffer &getIndexBuffer() const { return indexBuffer; }
@@ -107,7 +105,8 @@ public:
 	Inputs &getInputs() { return inputs; }
 	const Inputs &getInputs() const { return inputs; }
 
-	bool containsImageWrite() const;
+	bool preRasterizationContainsImageWrite() const;
+	bool fragmentContainsImageWrite() const;
 
 	const std::shared_ptr<sw::SpirvShader> getShader(const VkShaderStageFlagBits &stage) const;
 
@@ -144,10 +143,10 @@ public:
 
 	void run(uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
 	         uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ,
-	         vk::DescriptorSet::Array const &descriptorSetObjects,
-	         vk::DescriptorSet::Bindings const &descriptorSets,
-	         vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
-	         vk::Pipeline::PushConstantStorage const &pushConstants);
+	         const vk::DescriptorSet::Array &descriptorSetObjects,
+	         const vk::DescriptorSet::Bindings &descriptorSets,
+	         const vk::DescriptorSet::DynamicOffsets &descriptorDynamicOffsets,
+	         const vk::Pipeline::PushConstantStorage &pushConstants);
 
 protected:
 	std::shared_ptr<sw::SpirvShader> shader;

@@ -168,7 +168,6 @@ void FunctionBodyDisassembler::DecodeAsWat(MultiLineStringBuilder& out,
 
   // Decode and print locals.
   uint32_t locals_length;
-  InitializeLocalsFromSig();
   DecodeLocals(pc_, &locals_length);
   if (failed()) {
     // TODO(jkummerow): Improve error handling.
@@ -373,13 +372,6 @@ class ImmediatesPrinter {
 
   void Length(IndexImmediate<validate>& imm) {
     out_ << " " << imm.index;  // --
-  }
-
-  void Wtf8Policy(Wtf8PolicyImmediate<validate>& imm) {
-    out_ << (imm.value == kWtf8PolicyReject    ? " reject"
-             : imm.value == kWtf8PolicyAccept  ? " accept"
-             : imm.value == kWtf8PolicyReplace ? " replace"
-                                               : " unknown-policy");
   }
 
   void TagIndex(TagIndexImmediate<validate>& imm) {

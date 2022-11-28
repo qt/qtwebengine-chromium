@@ -5,6 +5,7 @@
 #ifndef V8_COMPILER_TYPE_CACHE_H_
 #define V8_COMPILER_TYPE_CACHE_H_
 
+#include "src/compiler/globals.h"
 #include "src/compiler/types.h"
 #include "src/date/date.h"
 #include "src/objects/js-array-buffer.h"
@@ -130,10 +131,9 @@ class V8_EXPORT_PRIVATE TypeCache final {
   Type const kStringLengthType = CreateRange(0.0, String::kMaxLength);
 
   // A time value always contains a tagged number in the range
-  // [-kMaxTimeInMs, kMaxTimeInMs] or -0.
-  Type const kTimeValueType = Type::Union(
-      CreateRange(-DateCache::kMaxTimeInMs, DateCache::kMaxTimeInMs),
-      Type::MinusZero(), zone());
+  // [-kMaxTimeInMs, kMaxTimeInMs].
+  Type const kTimeValueType =
+      CreateRange(-DateCache::kMaxTimeInMs, DateCache::kMaxTimeInMs);
 
   // The JSDate::day property always contains a tagged number in the range
   // [1, 31] or NaN.
@@ -203,10 +203,6 @@ class V8_EXPORT_PRIVATE TypeCache final {
   }
 
   Zone* zone() { return &zone_; }
-
-  static constexpr double kMaxDoubleRepresentableInt64 = 9223372036854774784.0;
-  static constexpr double kMaxDoubleRepresentableUint64 =
-      18446744073709549568.0;
 };
 
 }  // namespace compiler

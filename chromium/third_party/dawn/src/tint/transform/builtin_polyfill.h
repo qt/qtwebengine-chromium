@@ -59,6 +59,10 @@ class BuiltinPolyfill final : public Castable<BuiltinPolyfill, Transform> {
         bool first_trailing_bit = false;
         /// Should `insertBits()` be polyfilled?
         Level insert_bits = Level::kNone;
+        /// Should `saturate()` be polyfilled?
+        bool saturate = false;
+        /// Should `textureSampleBaseClampToEdge()` be polyfilled for texture_2d<f32> textures?
+        bool texture_sample_base_clamp_to_edge_2d_f32 = false;
     };
 
     /// Config is consumed by the BuiltinPolyfill transform.

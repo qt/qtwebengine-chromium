@@ -8,6 +8,7 @@
 #include "src/execution/isolate.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/incremental-marking.h"
+#include "src/heap/marking-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -27,16 +28,6 @@ void IncrementalMarking::TransferColor(HeapObject from, HeapObject to) {
     bool success = atomic_marking_state()->WhiteToBlack(to);
     DCHECK(success);
     USE(success);
-  }
-}
-
-void IncrementalMarking::RestartIfNotMarking() {
-  if (state_ == COMPLETE) {
-    state_ = MARKING;
-    if (FLAG_trace_incremental_marking) {
-      heap()->isolate()->PrintWithTimestamp(
-          "[IncrementalMarking] Restarting (new grey objects)\n");
-    }
   }
 }
 

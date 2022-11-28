@@ -215,7 +215,8 @@ struct SK_API SkIRect {
         @return   true if members are equal
     */
     friend bool operator==(const SkIRect& a, const SkIRect& b) {
-        return !memcmp(&a, &b, sizeof(a));
+        return a.fLeft == b.fLeft && a.fTop == b.fTop &&
+               a.fRight == b.fRight && a.fBottom == b.fBottom;
     }
 
     /** Returns true if any member in a: fLeft, fTop, fRight, and fBottom; is not
@@ -226,7 +227,8 @@ struct SK_API SkIRect {
         @return   true if members are not equal
     */
     friend bool operator!=(const SkIRect& a, const SkIRect& b) {
-        return !(a == b);
+        return a.fLeft != b.fLeft || a.fTop != b.fTop ||
+               a.fRight != b.fRight || a.fBottom != b.fBottom;
     }
 
     /** Sets SkIRect to (0, 0, 0, 0).

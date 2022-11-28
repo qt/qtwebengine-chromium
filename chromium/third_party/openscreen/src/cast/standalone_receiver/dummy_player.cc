@@ -35,7 +35,9 @@ void DummyPlayer::OnFramesReady(int buffer_size) {
       frame.rtp_timestamp.ToTimeSinceOrigin<microseconds>(
           receiver_->rtp_timebase());
   OSP_LOG_INFO << "[SSRC " << receiver_->ssrc() << "] "
-               << (frame.dependency == EncodedFrame::KEY_FRAME ? "KEY " : "")
+               << (frame.dependency == EncodedFrame::Dependency::kKeyFrame
+                       ? "KEY "
+                       : "")
                << frame.frame_id << " at " << media_timestamp.count() << "µs, "
                << buffer_size << " bytes";
 }

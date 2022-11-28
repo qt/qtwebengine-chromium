@@ -2,11 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+visibility = [ ":*" ]
+
 source_set("msgs") {
-  sources = [
-    target_gen_dir + "/osp_messages.cc",
-    target_gen_dir + "/osp_messages.h",
+  visibility += [
+    "../..:gn_all",
+    "../impl/*",
+    "../public/*",
   ]
+  public = [ target_gen_dir + "/osp_messages.h" ]
+  sources = [ target_gen_dir + "/osp_messages.cc" ]
 
   public_deps = [ ":cddl_gen" ]
   deps = [
@@ -61,7 +66,8 @@ action("cddl_gen") {
 
 source_set("unittests") {
   testonly = true
-
+  visibility += [ "../..:openscreen_unittests_all" ]
+  public = []
   sources = [ "messages_unittest.cc" ]
 
   deps = [

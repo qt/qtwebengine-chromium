@@ -21,15 +21,11 @@ public:
     Poison(Position pos, const Type* type)
         : INHERITED(pos, kExpressionKind, type) {}
 
-    bool hasProperty(Property property) const override {
-        return false;
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::make_unique<Poison>(pos, &this->type());
     }
 
-    std::string description() const override {
+    std::string description(OperatorPrecedence) const override {
         return Compiler::POISON_TAG;
     }
 

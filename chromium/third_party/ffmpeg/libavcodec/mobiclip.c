@@ -27,12 +27,12 @@
 #include "libavutil/thread.h"
 
 #include "avcodec.h"
-#include "bytestream.h"
 #include "bswapdsp.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "golomb.h"
-#include "internal.h"
+#include "mathops.h"
 
 #define MOBI_RL_VLC_BITS 12
 #define MOBI_MV_VLC_BITS 6
@@ -330,7 +330,7 @@ static av_cold int mobiclip_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int setup_qtables(AVCodecContext *avctx, int quantizer)
+static int setup_qtables(AVCodecContext *avctx, int64_t quantizer)
 {
     MobiClipContext *s = avctx->priv_data;
     int qx, qy;
@@ -1256,7 +1256,7 @@ static int mobiclip_decode(AVCodecContext *avctx, AVFrame *rframe,
         frame->key_frame = 0;
         s->dct_tab_idx = 0;
 
-        ret = setup_qtables(avctx, s->quantizer + get_se_golomb(gb));
+        ret = setup_qtables(avctx, s->quantizer + (int64_t)get_se_golomb(gb));
         if (ret < 0)
             return ret;
 
@@ -1342,7 +1342,7 @@ static av_cold int mobiclip_close(AVCodecContext *avctx)
 
 const FFCodec ff_mobiclip_decoder = {
     .p.name         = "mobiclip",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("MobiClip Video"),
+    CODEC_LONG_NAME("MobiClip Video"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MOBICLIP,
     .priv_data_size = sizeof(MobiClipContext),

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
@@ -30,30 +31,30 @@ static_assert(std::size(kZoomModes) == std::size(kZoomModeMaxParamCount),
 
 }  // namespace
 
-CPDF_Dest::CPDF_Dest(const CPDF_Array* pArray) : m_pArray(pArray) {}
+CPDF_Dest::CPDF_Dest(RetainPtr<const CPDF_Array> pArray)
+    : m_pArray(std::move(pArray)) {}
 
 CPDF_Dest::CPDF_Dest(const CPDF_Dest& that) = default;
 
 CPDF_Dest::~CPDF_Dest() = default;
 
 // static
-CPDF_Dest CPDF_Dest::Create(CPDF_Document* pDoc, const CPDF_Object* pDest) {
+CPDF_Dest CPDF_Dest::Create(CPDF_Document* pDoc,
+                            RetainPtr<const CPDF_Object> pDest) {
   if (!pDest)
     return CPDF_Dest(nullptr);
 
-  if (pDest->IsString() || pDest->IsName()) {
-    // TODO(tsepez): make CPDF_Dest constructor take retained args.
-    return CPDF_Dest(
-        CPDF_NameTree::LookupNamedDest(pDoc, pDest->GetString()).Get());
-  }
-  return CPDF_Dest(pDest->AsArray());
+  if (pDest->IsString() || pDest->IsName())
+    return CPDF_Dest(CPDF_NameTree::LookupNamedDest(pDoc, pDest->GetString()));
+
+  return CPDF_Dest(ToArray(pDest));
 }
 
 int CPDF_Dest::GetDestPageIndex(CPDF_Document* pDoc) const {
   if (!m_pArray)
     return -1;
 
-  const CPDF_Object* pPage = m_pArray->GetDirectObjectAt(0);
+  RetainPtr<const CPDF_Object> pPage = m_pArray->GetDirectObjectAt(0);
   if (!pPage)
     return -1;
 
@@ -66,11 +67,22 @@ int CPDF_Dest::GetDestPageIndex(CPDF_Document* pDoc) const {
   return pDoc->GetPageIndex(pPage->GetObjNum());
 }
 
+std::vector<float> CPDF_Dest::GetScrollPositionArray() const {
+  std::vector<float> result;
+  if (m_pArray) {
+    // Skip over index 0 which contains destination page details, and index 1
+    // which contains a parameter that describes the rest of the array.
+    for (size_t i = 2; i < m_pArray->size(); i++)
+      result.push_back(m_pArray->GetFloatAt(i));
+  }
+  return result;
+}
+
 int CPDF_Dest::GetZoomMode() const {
   if (!m_pArray)
     return 0;
 
-  const CPDF_Object* pArray = m_pArray->GetDirectObjectAt(1);
+  RetainPtr<const CPDF_Object> pArray = m_pArray->GetDirectObjectAt(1);
   if (!pArray)
     return 0;
 
@@ -99,13 +111,14 @@ bool CPDF_Dest::GetXYZ(bool* pHasX,
   if (m_pArray->size() < 5)
     return false;
 
-  const CPDF_Name* xyz = ToName(m_pArray->GetDirectObjectAt(1));
+  RetainPtr<const CPDF_Name> xyz = ToName(m_pArray->GetDirectObjectAt(1));
   if (!xyz || xyz->GetString() != "XYZ")
     return false;
 
-  const CPDF_Number* numX = ToNumber(m_pArray->GetDirectObjectAt(2));
-  const CPDF_Number* numY = ToNumber(m_pArray->GetDirectObjectAt(3));
-  const CPDF_Number* numZoom = ToNumber(m_pArray->GetDirectObjectAt(4));
+  RetainPtr<const CPDF_Number> numX = ToNumber(m_pArray->GetDirectObjectAt(2));
+  RetainPtr<const CPDF_Number> numY = ToNumber(m_pArray->GetDirectObjectAt(3));
+  RetainPtr<const CPDF_Number> numZoom =
+      ToNumber(m_pArray->GetDirectObjectAt(4));
 
   // If the value is a CPDF_Null then ToNumber will return nullptr.
   *pHasX = !!numX;
@@ -139,5 +152,5 @@ size_t CPDF_Dest::GetNumParams() const {
 }
 
 float CPDF_Dest::GetParam(size_t index) const {
-  return m_pArray ? m_pArray->GetNumberAt(2 + index) : 0;
+  return m_pArray ? m_pArray->GetFloatAt(2 + index) : 0;
 }

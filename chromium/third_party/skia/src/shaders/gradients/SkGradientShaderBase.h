@@ -24,21 +24,25 @@ class SkWriteBuffer;
 
 class SkGradientShaderBase : public SkShaderBase {
 public:
+    using Interpolation = SkGradientShader::Interpolation;
+
     struct Descriptor {
         Descriptor();
         ~Descriptor();
 
-        Descriptor(const SkColor4f colors[], sk_sp<SkColorSpace> colorSpace,
-                   const SkScalar pos[], int colorCount,
-                   SkTileMode mode, uint32_t flags, const SkMatrix* localMatrix);
+        Descriptor(const SkColor4f colors[],
+                   sk_sp<SkColorSpace> colorSpace,
+                   const SkScalar pos[],
+                   int colorCount,
+                   SkTileMode mode,
+                   const Interpolation& interpolation);
 
-        const SkMatrix*     fLocalMatrix;
         const SkColor4f*    fColors;
         sk_sp<SkColorSpace> fColorSpace;
         const SkScalar*     fPos;
         int                 fCount;
         SkTileMode          fTileMode;
-        uint32_t            fGradFlags;
+        Interpolation       fInterpolation;
 
         void flatten(SkWriteBuffer&) const;
     };
@@ -47,7 +51,7 @@ public:
     public:
         DescriptorScope() {}
 
-        bool unflatten(SkReadBuffer&);
+        bool unflatten(SkReadBuffer&, SkMatrix* legacyLocalMatrix);
 
         // fColors and fPos always point into local memory, so they can be safely mutated
         //
@@ -57,7 +61,6 @@ public:
     private:
         SkSTArray<16, SkColor4f, true> fColorStorage;
         SkSTArray<16, SkScalar , true> fPosStorage;
-        SkMatrix                       fLocalMatrixStorage;
     };
 
     SkGradientShaderBase(const Descriptor& desc, const SkMatrix& ptsToUnit);
@@ -65,7 +68,9 @@ public:
 
     bool isOpaque() const override;
 
-    uint32_t getGradFlags() const { return fGradFlags; }
+    bool interpolateInPremul() const {
+        return fInterpolation.fInPremul == SkGradientShader::Interpolation::InPremul::kYes;
+    }
 
     const SkMatrix& getGradientMatrix() const { return fPtsToUnit; }
 
@@ -122,8 +127,8 @@ protected:
     }
 
     const SkMatrix fPtsToUnit;
-    SkTileMode      fTileMode;
-    uint8_t        fGradFlags;
+    SkTileMode     fTileMode;
+    Interpolation  fInterpolation;
 
 public:
     SkScalar getPos(int i) const {
@@ -174,6 +179,13 @@ struct SkColor4fXformer {
     SkSTArray<4, SkColor4f, true> fStorage;
 };
 
+struct SkColorConverter {
+    SkColorConverter(const SkColor* colors, int count);
+
+    SkSTArray<2, SkColor4f, true> fColors4f;
+};
+
+void SkRegisterLinearGradientShaderFlattenable();
 void SkRegisterRadialGradientShaderFlattenable();
 void SkRegisterSweepGradientShaderFlattenable();
 void SkRegisterTwoPointConicalGradientShaderFlattenable();

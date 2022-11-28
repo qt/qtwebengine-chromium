@@ -57,18 +57,19 @@ class AugmentedOptions(optparse.Values):
 
   def fuzzer_configs(self):
     fuzzers = []
-    def add(name, prob, *args):
+    def add(name, prob):
       if prob:
-        fuzzers.append(fuzzer.create_fuzzer_config(name, prob, *args))
+        fuzzers.append(fuzzer.create_fuzzer_config(name, prob))
 
     add('compaction', self.stress_compaction)
+    add('interrupt', self.stress_interrupt_budget)
     add('marking', self.stress_marking)
     add('scavenge', self.stress_scavenge)
     add('gc_interval', self.stress_gc)
     add('stack', self.stress_stack_size)
     add('threads', self.stress_thread_pool_size)
     add('delay', self.stress_delay_tasks)
-    add('deopt', self.stress_deopt, self.stress_deopt_min)
+    add('deopt', self.stress_deopt)
     return fuzzers
 
   def fuzzer_tests_count(self):

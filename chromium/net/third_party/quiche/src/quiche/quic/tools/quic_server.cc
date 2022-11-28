@@ -4,13 +4,6 @@
 
 #include "quiche/quic/tools/quic_server.h"
 
-#include <errno.h>
-#include <features.h>
-#include <netinet/in.h>
-#include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
-
 #include <cstdint>
 #include <memory>
 
@@ -76,7 +69,8 @@ QuicServer::QuicServer(
       packet_reader_(new QuicPacketReader()),
       quic_simple_server_backend_(quic_simple_server_backend),
       expected_server_connection_id_length_(
-          expected_server_connection_id_length) {
+          expected_server_connection_id_length),
+      connection_id_generator_(expected_server_connection_id_length) {
   QUICHE_DCHECK(quic_simple_server_backend_);
   Initialize();
 }
@@ -170,7 +164,7 @@ QuicDispatcher* QuicServer::CreateQuicDispatcher() {
       std::unique_ptr<QuicCryptoServerStreamBase::Helper>(
           new QuicSimpleCryptoServerStreamHelper()),
       event_loop_->CreateAlarmFactory(), quic_simple_server_backend_,
-      expected_server_connection_id_length_);
+      expected_server_connection_id_length_, connection_id_generator_);
 }
 
 std::unique_ptr<QuicEventLoop> QuicServer::CreateEventLoop() {

@@ -62,10 +62,18 @@ using WGSLExtensionSet = std::unordered_set<std::string>;
 
 class DeviceBase : public RefCountedWithExternalCount {
   public:
-    DeviceBase(AdapterBase* adapter, const DeviceDescriptor* descriptor);
+    DeviceBase(AdapterBase* adapter,
+               const DeviceDescriptor* descriptor,
+               const TripleStateTogglesSet& userProvidedToggles);
     ~DeviceBase() override;
 
-    void HandleError(InternalErrorType type, const char* message);
+    // Handles the error, causing a device loss if applicable. Almost always when a device loss
+    // occurs because of an error, we want to call the device loss callback with an undefined
+    // reason, but the ForceLoss API allows for an injection of the reason, hence the default
+    // argument.
+    void HandleError(InternalErrorType type,
+                     const char* message,
+                     WGPUDeviceLostReason lost_reason = WGPUDeviceLostReason_Undefined);
 
     bool ConsumedError(MaybeError maybeError) {
         if (DAWN_UNLIKELY(maybeError.IsError())) {
@@ -269,14 +277,11 @@ class DeviceBase : public RefCountedWithExternalCount {
     ExternalTextureBase* APICreateErrorExternalTexture();
     TextureBase* APICreateErrorTexture(const TextureDescriptor* desc);
 
+    AdapterBase* APIGetAdapter();
     QueueBase* APIGetQueue();
 
     bool APIGetLimits(SupportedLimits* limits) const;
-    // Note that we should not use this function to query the features which can only be enabled
-    // behind toggles (use IsFeatureEnabled() instead).
     bool APIHasFeature(wgpu::FeatureName feature) const;
-    // Note that we should not use this function to query the features which can only be enabled
-    // behind toggles (use IsFeatureEnabled() instead).
     size_t APIEnumerateFeatures(wgpu::FeatureName* features) const;
     void APIInjectError(wgpu::ErrorType type, const char* message);
     bool APITick();
@@ -328,8 +333,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     };
     State GetState() const;
     bool IsLost() const;
-    void TrackObject(ApiObjectBase* object);
-    std::mutex* GetObjectListMutex(ObjectType type);
+    ApiObjectList* GetObjectTrackingList(ObjectType type);
 
     std::vector<const char*> GetTogglesUsed() const;
     WGSLExtensionSet GetWGSLExtensionAllowList() const;
@@ -342,7 +346,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     void EmitDeprecationWarning(const char* warning);
     void EmitLog(const char* message);
     void EmitLog(WGPULoggingType loggingType, const char* message);
-    void APILoseForTesting();
+    void APIForceLoss(wgpu::DeviceLostReason reason, const char* message);
     QueueBase* GetQueue() const;
 
     // AddFutureSerial is used to update the mFutureSerial with the max serial needed to be
@@ -374,9 +378,7 @@ class DeviceBase : public RefCountedWithExternalCount {
     virtual bool ShouldDuplicateParametersForDrawIndirect(
         const RenderPipelineBase* renderPipelineBase) const;
 
-    // TODO(crbug.com/dawn/1434): Make this function non-overridable when we support requesting
-    // Adapter with toggles.
-    virtual bool IsFeatureEnabled(Feature feature) const;
+    bool HasFeature(Feature feature) const;
 
     const CombinedLimits& GetLimits() const;
 
@@ -475,7 +477,6 @@ class DeviceBase : public RefCountedWithExternalCount {
                                                    WGPUCreateRenderPipelineAsyncCallback callback,
                                                    void* userdata);
 
-    void ApplyToggleOverrides(const DawnTogglesDeviceDescriptor* togglesDescriptor);
     void ApplyFeatures(const DeviceDescriptor* deviceDescriptor);
 
     void SetDefaultToggles();
@@ -526,12 +527,7 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     std::unique_ptr<ErrorScopeStack> mErrorScopeStack;
 
-    // The Device keeps a ref to the Instance so that any live Device keeps the Instance alive.
-    // The Instance shouldn't need to ref child objects so this shouldn't introduce ref cycles.
-    // The Device keeps a simple pointer to the Adapter because the Adapter is owned by the
-    // Instance.
-    Ref<InstanceBase> mInstance;
-    AdapterBase* mAdapter = nullptr;
+    Ref<AdapterBase> mAdapter;
 
     // The object caches aren't exposed in the header as they would require a lot of
     // additional includes.
@@ -551,12 +547,6 @@ class DeviceBase : public RefCountedWithExternalCount {
 
     State mState = State::BeingCreated;
 
-    // Encompasses the mutex and the actual list that contains all live objects "owned" by the
-    // device.
-    struct ApiObjectList {
-        std::mutex mutex;
-        LinkedList<ApiObjectBase> objects;
-    };
     PerObjectType<ApiObjectList> mObjectLists;
 
     FormatTable mFormatTable;

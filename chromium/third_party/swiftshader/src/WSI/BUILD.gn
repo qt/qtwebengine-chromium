@@ -14,6 +14,7 @@
 
 import("../swiftshader.gni")
 import("//build_overrides/wayland.gni")
+import("//build/config/ozone.gni")
 
 config("WSI_metal_weak_framework") {
   if (is_mac) {
@@ -35,12 +36,14 @@ swiftshader_source_set("WSI") {
   ]
 
   if (is_linux) {
-    sources += [
-      "XcbSurfaceKHR.cpp",
-      "XcbSurfaceKHR.hpp",
-      "libXCB.cpp",
-      "libXCB.hpp",
-    ]
+    if (ozone_platform_x11) {
+      sources += [
+        "XcbSurfaceKHR.cpp",
+        "XcbSurfaceKHR.hpp",
+        "libXCB.cpp",
+        "libXCB.hpp",
+      ]
+    }
 
     if (ozone_platform_wayland) {
       sources += [
@@ -84,7 +87,7 @@ swiftshader_source_set("WSI") {
     "../Vulkan:swiftshader_libvulkan_headers",
   ]
 
-  if (is_linux && !use_system_libwayland) {
+  if (is_linux && ozone_platform_wayland && !use_system_libwayland) {
     # Use third-party targets
     deps += [ "$wayland_gn_dir:wayland_client" ]
   }

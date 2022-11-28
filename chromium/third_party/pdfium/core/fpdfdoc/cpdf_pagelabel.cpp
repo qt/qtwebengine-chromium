@@ -6,6 +6,8 @@
 
 #include "core/fpdfdoc/cpdf_pagelabel.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
@@ -90,12 +92,12 @@ absl::optional<WideString> CPDF_PageLabel::GetLabel(int nPage) const {
   if (!pPDFRoot)
     return absl::nullopt;
 
-  const CPDF_Dictionary* pLabels = pPDFRoot->GetDictFor("PageLabels");
+  RetainPtr<const CPDF_Dictionary> pLabels = pPDFRoot->GetDictFor("PageLabels");
   if (!pLabels)
     return absl::nullopt;
 
-  CPDF_NumberTree numberTree(pLabels);
-  const CPDF_Object* pValue = nullptr;
+  CPDF_NumberTree numberTree(std::move(pLabels));
+  RetainPtr<const CPDF_Object> pValue;
   int n = nPage;
   while (n >= 0) {
     pValue = numberTree.LookupValue(n);
@@ -111,7 +113,7 @@ absl::optional<WideString> CPDF_PageLabel::GetLabel(int nPage) const {
       if (pLabel->KeyExist("P"))
         label += pLabel->GetUnicodeTextFor("P");
 
-      ByteString bsNumberingStyle = pLabel->GetStringFor("S", ByteString());
+      ByteString bsNumberingStyle = pLabel->GetByteStringFor("S", ByteString());
       int nLabelNum = nPage - n + pLabel->GetIntegerFor("St", 1);
       WideString wsNumPortion = GetLabelNumPortion(nLabelNum, bsNumberingStyle);
       label += wsNumPortion;

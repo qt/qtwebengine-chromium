@@ -17,8 +17,10 @@ EXTRA_FLAGS = [
     (0.1, '--force-slow-path'),
     (0.2, '--future'),
     (0.1, '--interrupt-budget=100'),
+    (0.1, '--interrupt-budget-for-maglev=100'),
     (0.1, '--liftoff'),
     (0.1, '--maglev'),
+    (0.1, '--minor-mc'),
     (0.2, '--no-analyze-environment-liveness'),
     # TODO(machenbach): Enable when it doesn't collide with crashing on missing
     # simd features.
@@ -50,6 +52,9 @@ EXTRA_FLAGS = [
     (0.1, '--turbo-stress-instruction-scheduling'),
     (0.1, '--turbo-force-mid-tier-regalloc'),
 ]
+
+MIN_DEOPT = 1
+MAX_DEOPT = 10**9
 
 
 def random_extra_flags(rng):
@@ -191,7 +196,7 @@ class FuzzerProc(base.TestProcProducer):
 
   def _result_for(self, test, subtest, result):
     if not self._disable_analysis:
-      if result is not None:
+      if result is not None and subtest.procid.endswith('Fuzzer-analysis'):
         # Analysis phase, for fuzzing we drop the result.
         if result.has_unexpected_output:
           self._send_result(test, None)
@@ -243,10 +248,11 @@ class FuzzerProc(base.TestProcProducer):
       i += 1
 
   def _try_send_next_test(self, test):
-    if not self.is_stopped:
-      for subtest in self._gens[test.procid]:
-        if self._send_test(subtest):
-          return True
+    for subtest in self._gens[test.procid]:
+      if self._send_test(subtest):
+        return True
+      elif self.is_stopped:
+        return False
 
     del self._gens[test.procid]
     return False
@@ -319,17 +325,18 @@ class CompactionFuzzer(Fuzzer):
 class InterruptBudgetFuzzer(Fuzzer):
   def create_flags_generator(self, rng, test, analysis_value):
     while True:
-      # Half with half without lazy feedback allocation. The first flag
+      # Half with, half without lazy feedback allocation. The first flag
       # overwrites potential flag negations from the extra flags list.
       flag1 = rng.choice(
-          '--lazy-feedback-allocation', '--no-lazy-feedback-allocation')
-      # For most code paths, only one of the flags below has a meaning
-      # based on the flag above.
+          ['--lazy-feedback-allocation', '--no-lazy-feedback-allocation'])
       flag2 = '--interrupt-budget=%d' % rng.randint(0, 135168)
-      flag3 = '--interrupt-budget-for-feedback-allocation=%d' % rng.randint(
+      flag3 = '--interrupt-budget-for-maglev=%d' % rng.randint(0, 40960)
+      flag4 = '--interrupt-budget-for-feedback-allocation=%d' % rng.randint(
           0, 940)
+      flag5 = '--interrupt-budget-factor-for-feedback-allocation=%d' % rng.randint(
+          1, 8)
 
-      yield [flag1, flag2, flag3]
+      yield [flag1, flag2, flag3, flag4, flag5]
 
 
 class StackSizeFuzzer(Fuzzer):
@@ -351,21 +358,15 @@ class ThreadPoolSizeFuzzer(Fuzzer):
 
 
 class DeoptAnalyzer(Analyzer):
-  MAX_DEOPT=1000000000
-
-  def __init__(self, min_interval):
-    super(DeoptAnalyzer, self).__init__()
-    self._min = min_interval
-
   def get_analysis_flags(self):
-    return ['--deopt-every-n-times=%d' % self.MAX_DEOPT,
+    return ['--deopt-every-n-times=%d' % MAX_DEOPT,
             '--print-deopt-stress']
 
   def do_analysis(self, result):
     for line in reversed(result.output.stdout.splitlines()):
       if line.startswith('=== Stress deopt counter: '):
-        counter = self.MAX_DEOPT - int(line.split(' ')[-1])
-        if counter < self._min:
+        counter = MAX_DEOPT - int(line.split(' ')[-1])
+        if counter < MIN_DEOPT:
           # Skip this test since we won't generate any meaningful interval with
           # given minimum.
           return None
@@ -373,30 +374,26 @@ class DeoptAnalyzer(Analyzer):
 
 
 class DeoptFuzzer(Fuzzer):
-  def __init__(self, min_interval):
-    super(DeoptFuzzer, self).__init__()
-    self._min = min_interval
-
   def create_flags_generator(self, rng, test, analysis_value):
     while True:
       if analysis_value:
         value = analysis_value // 2
       else:
         value = 10000
-      interval = rng.randint(self._min, max(value, self._min))
+      interval = rng.randint(MIN_DEOPT, max(value, MIN_DEOPT))
       yield ['--deopt-every-n-times=%d' % interval]
 
 
 FUZZERS = {
-  'compaction': (None, CompactionFuzzer),
-  'delay': (None, TaskDelayFuzzer),
-  'deopt': (DeoptAnalyzer, DeoptFuzzer),
-  'gc_interval': (GcIntervalAnalyzer, GcIntervalFuzzer),
-  'interrupt': InterruptBudgetFuzzer,
-  'marking': (MarkingAnalyzer, MarkingFuzzer),
-  'scavenge': (ScavengeAnalyzer, ScavengeFuzzer),
-  'stack': (None, StackSizeFuzzer),
-  'threads': (None, ThreadPoolSizeFuzzer),
+    'compaction': (None, CompactionFuzzer),
+    'delay': (None, TaskDelayFuzzer),
+    'deopt': (DeoptAnalyzer, DeoptFuzzer),
+    'gc_interval': (GcIntervalAnalyzer, GcIntervalFuzzer),
+    'interrupt': (None, InterruptBudgetFuzzer),
+    'marking': (MarkingAnalyzer, MarkingFuzzer),
+    'scavenge': (ScavengeAnalyzer, ScavengeFuzzer),
+    'stack': (None, StackSizeFuzzer),
+    'threads': (None, ThreadPoolSizeFuzzer),
 }
 
 

@@ -7,9 +7,12 @@ import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert, unreachable } from '../../../../common/util/util.js';
 import {
   kDepthStencilFormats,
+  kBufferUsages,
+  kTextureUsages,
   depthStencilBufferTextureCopySupported,
   depthStencilFormatAspectSize,
 } from '../../../capability_info.js';
+import { GPUConst } from '../../../constants.js';
 import { align } from '../../../util/math.js';
 import { kBufferCopyAlignment, kBytesPerRowAlignment } from '../../../util/texture/layout.js';
 import { ValidationTest } from '../validation_test.js';
@@ -302,5 +305,150 @@ g.test('depth_stencil_format,copy_buffer_offset')
       );
     } else {
       unreachable();
+    }
+  });
+
+g.test('sample_count')
+  .desc(
+    `
+  Test that the texture sample count. Check that a validation error is generated if sample count is
+  not 1.
+  `
+  )
+  .params(u =>
+    u //
+      // writeTexture is handled by writeTexture.spec.ts.
+      .combine('copyType', ['CopyB2T', 'CopyT2B'] as const)
+      .beginSubcases()
+      .combine('sampleCount', [1, 4])
+  )
+  .fn(async t => {
+    const { sampleCount, copyType } = t.params;
+
+    let usage = GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
+    // WebGPU SPEC requires multisampled textures must have RENDER_ATTACHMENT usage.
+    if (sampleCount > 1) {
+      usage |= GPUTextureUsage.RENDER_ATTACHMENT;
+    }
+    const texture = t.device.createTexture({
+      size: { width: 16, height: 16 },
+      sampleCount,
+      format: 'bgra8unorm',
+      usage,
+    });
+
+    const uploadBufferSize = 32;
+    const buffer = t.device.createBuffer({
+      size: uploadBufferSize,
+      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    const textureSize = { width: 1, height: 1, depthOrArrayLayers: 1 };
+
+    const isSuccess = sampleCount === 1;
+
+    if (copyType === 'CopyB2T') {
+      t.testCopyBufferToTexture({ buffer }, { texture }, textureSize, isSuccess);
+    } else if (copyType === 'CopyT2B') {
+      t.testCopyTextureToBuffer({ texture }, { buffer }, textureSize, isSuccess);
+    }
+  });
+
+const kRequiredTextureUsage = {
+  CopyT2B: GPUConst.TextureUsage.COPY_SRC,
+  CopyB2T: GPUConst.TextureUsage.COPY_DST,
+};
+const kRequiredBufferUsage = {
+  CopyB2T: GPUConst.BufferUsage.COPY_SRC,
+  CopyT2B: GPUConst.BufferUsage.COPY_DST,
+};
+
+g.test('texture_buffer_usages')
+  .desc(
+    `
+  Tests calling copyTextureToBuffer or copyBufferToTexture with the texture and the buffer missed
+  COPY_SRC, COPY_DST usage respectively.
+    - texture and buffer {with, without} COPY_SRC and COPY_DST usage.
+  `
+  )
+  .params(u =>
+    u //
+      .combine('copyType', ['CopyB2T', 'CopyT2B'] as const)
+      .beginSubcases()
+      .combine('textureUsage', kTextureUsages)
+      .expand('_textureUsageValid', p => [p.textureUsage === kRequiredTextureUsage[p.copyType]])
+      .combine('bufferUsage', kBufferUsages)
+      .expand('_bufferUsageValid', p => [p.bufferUsage === kRequiredBufferUsage[p.copyType]])
+      .filter(p => p._textureUsageValid || p._bufferUsageValid)
+  )
+  .fn(async t => {
+    const { copyType, textureUsage, _textureUsageValid, bufferUsage, _bufferUsageValid } = t.params;
+
+    const texture = t.device.createTexture({
+      size: { width: 16, height: 16 },
+      format: 'rgba8unorm',
+      usage: textureUsage,
+    });
+
+    const uploadBufferSize = 32;
+    const buffer = t.device.createBuffer({
+      size: uploadBufferSize,
+      usage: bufferUsage,
+    });
+
+    const textureSize = { width: 1, height: 1, depthOrArrayLayers: 1 };
+
+    const isSuccess = _textureUsageValid && _bufferUsageValid;
+    if (copyType === 'CopyB2T') {
+      t.testCopyBufferToTexture({ buffer }, { texture }, textureSize, isSuccess);
+    } else if (copyType === 'CopyT2B') {
+      t.testCopyTextureToBuffer({ texture }, { buffer }, textureSize, isSuccess);
+    }
+  });
+
+g.test('device_mismatch')
+  .desc(
+    `
+    Tests copyBufferToTexture and copyTextureToBuffer cannot be called with a buffer or a texture
+    created from another device.
+  `
+  )
+  .params(u =>
+    u //
+      .combine('copyType', ['CopyB2T', 'CopyT2B'] as const)
+      .beginSubcases()
+      .combineWithParams([
+        { bufMismatched: false, texMismatched: false }, // control case
+        { bufMismatched: true, texMismatched: false },
+        { bufMismatched: false, texMismatched: true },
+      ] as const)
+  )
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
+  .fn(async t => {
+    const { copyType, bufMismatched, texMismatched } = t.params;
+
+    const uploadBufferSize = 32;
+    const buffer = (bufMismatched ? t.mismatchedDevice : t.device).createBuffer({
+      size: uploadBufferSize,
+      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+    t.trackForCleanup(buffer);
+
+    const textureSize = { width: 1, height: 1, depthOrArrayLayers: 1 };
+    const texture = (texMismatched ? t.mismatchedDevice : t.device).createTexture({
+      size: textureSize,
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
+    });
+    t.trackForCleanup(texture);
+
+    const isValid = !bufMismatched && !texMismatched;
+
+    if (copyType === 'CopyB2T') {
+      t.testCopyBufferToTexture({ buffer }, { texture }, textureSize, isValid);
+    } else if (copyType === 'CopyT2B') {
+      t.testCopyTextureToBuffer({ texture }, { buffer }, textureSize, isValid);
     }
   });

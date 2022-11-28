@@ -30,7 +30,8 @@ class ModularFrameEncoder {
                              Image3F* JXL_RESTRICT color,
                              const std::vector<ImageF>& extra_channels,
                              PassesEncoderState* JXL_RESTRICT enc_state,
-                             ThreadPool* pool, AuxOut* aux_out, bool do_color);
+                             const JxlCmsInterface& cms, ThreadPool* pool,
+                             AuxOut* aux_out, bool do_color);
   // Encodes global info (tree + histograms) in the `writer`.
   Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out);
   // Encodes a specific modular image (identified by `stream`) in the `writer`,
@@ -42,7 +43,7 @@ class ModularFrameEncoder {
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
   // not.
   void AddVarDCTDC(const Image3F& dc, size_t group_index, bool nl_dc,
-                   PassesEncoderState* enc_state);
+                   PassesEncoderState* enc_state, bool jpeg_transcode);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
   void AddACMetadata(size_t group_index, bool jpeg_transcode,
@@ -62,29 +63,28 @@ class ModularFrameEncoder {
   std::vector<uint8_t> extra_dc_precision;
 
  private:
-  Status PrepareEncoding(ThreadPool* pool, const FrameDimensions& frame_dim,
+  Status PrepareEncoding(const FrameHeader& frame_header, ThreadPool* pool,
                          EncoderHeuristics* heuristics,
                          AuxOut* aux_out = nullptr);
   Status PrepareStreamParams(const Rect& rect, const CompressParams& cparams,
                              int minShift, int maxShift,
                              const ModularStreamId& stream, bool do_color);
-  std::vector<Image> stream_images;
-  std::vector<ModularOptions> stream_options;
+  std::vector<Image> stream_images_;
+  std::vector<ModularOptions> stream_options_;
 
-  Tree tree;
-  std::vector<std::vector<Token>> tree_tokens;
-  std::vector<GroupHeader> stream_headers;
-  std::vector<std::vector<Token>> tokens;
-  EntropyEncodingData code;
-  std::vector<uint8_t> context_map;
-  FrameDimensions frame_dim;
-  CompressParams cparams;
-  float quality = cparams.quality_pair.first;
-  float cquality = cparams.quality_pair.second;
-  std::vector<size_t> tree_splits;
-  std::vector<ModularMultiplierInfo> multiplier_info;
-  std::vector<std::vector<uint32_t>> gi_channel;
-  std::vector<size_t> image_widths;
+  Tree tree_;
+  std::vector<std::vector<Token>> tree_tokens_;
+  std::vector<GroupHeader> stream_headers_;
+  std::vector<std::vector<Token>> tokens_;
+  EntropyEncodingData code_;
+  std::vector<uint8_t> context_map_;
+  FrameDimensions frame_dim_;
+  CompressParams cparams_;
+  std::vector<size_t> tree_splits_;
+  std::vector<ModularMultiplierInfo> multiplier_info_;
+  std::vector<std::vector<uint32_t>> gi_channel_;
+  std::vector<size_t> image_widths_;
+  Predictor delta_pred_ = Predictor::Average4;
 };
 
 }  // namespace jxl

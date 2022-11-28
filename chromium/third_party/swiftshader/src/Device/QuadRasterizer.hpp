@@ -25,7 +25,7 @@ namespace sw {
 class QuadRasterizer : public Rasterizer
 {
 public:
-	QuadRasterizer(const PixelProcessor::State &state, SpirvShader const *spirvShader);
+	QuadRasterizer(const PixelProcessor::State &state, const SpirvShader *spirvShader);
 	virtual ~QuadRasterizer();
 
 	void generate();
@@ -33,6 +33,12 @@ public:
 protected:
 	Pointer<Byte> constants;
 
+	// Fragment coordinates relative to the polygon's origin
+	// TODO(b/236162233): Use SIMD::Float2
+	SIMD::Float xFragment;
+	SIMD::Float yFragment;
+
+	// B * y + C term of interpolants plane equations
 	SIMD::Float Dz[4];
 	SIMD::Float Dw;
 	SIMD::Float Dv[MAX_INTERFACE_COMPONENTS];

@@ -27,36 +27,35 @@
 
 namespace skgpu::graphite {
 
-ResourceProvider::ResourceProvider(const SharedContext* sharedContext,
-                                   sk_sp<GlobalCache> globalCache,
+ResourceProvider::ResourceProvider(SharedContext* sharedContext,
                                    SingleOwner* singleOwner)
         : fSharedContext(sharedContext)
         , fResourceCache(ResourceCache::Make(singleOwner))
-        , fGlobalCache(std::move(globalCache)) {
-    SkASSERT(fResourceCache);
-    fCompiler = std::make_unique<SkSL::Compiler>(fSharedContext->caps()->shaderCaps());
-}
+        , fCompiler(std::make_unique<SkSL::Compiler>(fSharedContext->caps()->shaderCaps())) {}
 
 ResourceProvider::~ResourceProvider() {
     fResourceCache->shutdown();
 }
 
 sk_sp<GraphicsPipeline> ResourceProvider::findOrCreateGraphicsPipeline(
-        const GraphicsPipelineDesc& pipelineDesc, const RenderPassDesc& renderPassDesc) {
+        const SkRuntimeEffectDictionary* runtimeDict,
+        const GraphicsPipelineDesc& pipelineDesc,
+        const RenderPassDesc& renderPassDesc) {
+    auto globalCache = fSharedContext->globalCache();
     UniqueKey pipelineKey = fSharedContext->caps()->makeGraphicsPipelineKey(pipelineDesc,
                                                                             renderPassDesc);
-    sk_sp<GraphicsPipeline> pipeline = fGlobalCache->findGraphicsPipeline(pipelineKey);
+    sk_sp<GraphicsPipeline> pipeline = globalCache->findGraphicsPipeline(pipelineKey);
     if (!pipeline) {
         // Haven't encountered this pipeline, so create a new one. Since pipelines are shared
         // across Recorders, we could theoretically create equivalent pipelines on different
         // threads. If this happens, GlobalCache returns the first-through-gate pipeline and we
         // discard the redundant pipeline. While this is wasted effort in the rare event of a race,
         // it allows pipeline creation to be performed without locking the global cache.
-        pipeline = this->createGraphicsPipeline(pipelineDesc, renderPassDesc);
+        pipeline = this->createGraphicsPipeline(runtimeDict, pipelineDesc, renderPassDesc);
         if (pipeline) {
             // TODO: Should we store a null pipeline if we failed to create one so that subsequent
             // usage immediately sees that the pipeline cannot be created, vs. retrying every time?
-            pipeline = fGlobalCache->addGraphicsPipeline(pipelineKey, std::move(pipeline));
+            pipeline = globalCache->addGraphicsPipeline(pipelineKey, std::move(pipeline));
         }
     }
     return pipeline;
@@ -64,19 +63,16 @@ sk_sp<GraphicsPipeline> ResourceProvider::findOrCreateGraphicsPipeline(
 
 sk_sp<ComputePipeline> ResourceProvider::findOrCreateComputePipeline(
         const ComputePipelineDesc& pipelineDesc) {
+    auto globalCache = fSharedContext->globalCache();
     UniqueKey pipelineKey = fSharedContext->caps()->makeComputePipelineKey(pipelineDesc);
-    sk_sp<ComputePipeline> pipeline = fGlobalCache->findComputePipeline(pipelineKey);
+    sk_sp<ComputePipeline> pipeline = globalCache->findComputePipeline(pipelineKey);
     if (!pipeline) {
         pipeline = this->createComputePipeline(pipelineDesc);
         if (pipeline) {
-            pipeline = fGlobalCache->addComputePipeline(pipelineKey, std::move(pipeline));
+            pipeline = globalCache->addComputePipeline(pipelineKey, std::move(pipeline));
         }
     }
     return pipeline;
-}
-
-SkShaderCodeDictionary* ResourceProvider::shaderCodeDictionary() const {
-    return fGlobalCache->shaderCodeDictionary();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -216,7 +212,12 @@ sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
         size_t szKey = size;
         for (int i = 0; i < kSizeKeyNum32DataCnt; ++i) {
             builder[i + 1] = (uint32_t) szKey;
-            szKey = szKey >> 32;
+
+            // If size_t is 4 bytes, we cannot do a shift of 32 or else we get a warning/error that
+            // shift amount is >= width of the type.
+            if constexpr(kSizeKeyNum32DataCnt > 1) {
+                szKey = szKey >> 32;
+            }
         }
     }
 
@@ -232,10 +233,6 @@ sk_sp<Buffer> ResourceProvider::findOrCreateBuffer(size_t size,
     buffer->setKey(key);
     fResourceCache->insertResource(buffer.get());
     return buffer;
-}
-
-void ResourceProvider::resetAfterSnap() {
-    fRuntimeEffectDictionary.reset();
 }
 
 BackendTexture ResourceProvider::createBackendTexture(SkISize dimensions, const TextureInfo& info) {
@@ -257,6 +254,5 @@ void ResourceProvider::deleteBackendTexture(BackendTexture& texture) {
     // Invalidate the texture;
     texture = BackendTexture();
 }
-
 
 }  // namespace skgpu::graphite

@@ -477,7 +477,7 @@ struct hb_ot_apply_context_t :
     {
       c = c_;
       match_glyph_data16 = nullptr;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
       match_glyph_data24 = nullptr;
 #endif
       matcher.set_match_func (nullptr, nullptr);
@@ -501,11 +501,11 @@ struct hb_ot_apply_context_t :
     void set_glyph_data (const HBUINT16 glyph_data[])
     {
       match_glyph_data16 = glyph_data;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
       match_glyph_data24 = nullptr;
 #endif
     }
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     void set_glyph_data (const HBUINT24 glyph_data[])
     {
       match_glyph_data16 = nullptr;
@@ -603,7 +603,7 @@ struct hb_ot_apply_context_t :
     get_glyph_data ()
     {
       if (match_glyph_data16) return *match_glyph_data16;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
       else
       if (match_glyph_data24) return *match_glyph_data24;
 #endif
@@ -613,7 +613,7 @@ struct hb_ot_apply_context_t :
     advance_glyph_data ()
     {
       if (match_glyph_data16) match_glyph_data16++;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
       else
       if (match_glyph_data24) match_glyph_data24++;
 #endif
@@ -622,7 +622,7 @@ struct hb_ot_apply_context_t :
     backup_glyph_data ()
     {
       if (match_glyph_data16) match_glyph_data16--;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
       else
       if (match_glyph_data24) match_glyph_data24--;
 #endif
@@ -633,7 +633,7 @@ struct hb_ot_apply_context_t :
     hb_ot_apply_context_t *c;
     matcher_t matcher;
     const HBUINT16 *match_glyph_data16;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     const HBUINT24 *match_glyph_data24;
 #endif
 
@@ -1043,7 +1043,7 @@ static inline void intersected_coverage_glyphs (const hb_set_t *glyphs, const vo
 {
   Offset16To<Coverage> coverage;
   coverage = value;
-  (data+coverage).intersected_coverage_glyphs (glyphs, intersected_glyphs);
+  (data+coverage).intersect_set (*glyphs, *intersected_glyphs);
 }
 
 
@@ -1602,8 +1602,27 @@ static inline void apply_lookup (hb_ot_apply_context_t *c,
     if (unlikely (buffer->max_ops <= 0))
       break;
 
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      if (buffer->have_output)
+        c->buffer->sync_so_far ();
+      c->buffer->message (c->font,
+			  "recursing to lookup %u at %d",
+			  (unsigned) lookupRecord[i].lookupListIndex,
+			  buffer->idx);
+    }
+
     if (!c->recurse (lookupRecord[i].lookupListIndex))
       continue;
+
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      if (buffer->have_output)
+        c->buffer->sync_so_far ();
+      c->buffer->message (c->font,
+			  "recursed to lookup %u",
+			  (unsigned) lookupRecord[i].lookupListIndex);
+    }
 
     unsigned int new_len = buffer->backtrack_len () + buffer->lookahead_len ();
     int delta = new_len - orig_len;
@@ -2066,9 +2085,8 @@ struct ContextFormat1_4
 
   void closure (hb_closure_context_t *c) const
   {
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
-                                                 cur_active_glyphs);
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (), cur_active_glyphs);
 
     struct ContextClosureLookupContext lookup_context = {
       {intersects_glyph, intersected_glyph},
@@ -2209,7 +2227,7 @@ struct ContextFormat2_5
     };
 
     hb_set_t retained_coverage_glyphs;
-    (this+coverage).intersected_coverage_glyphs (glyphs, &retained_coverage_glyphs);
+    (this+coverage).intersect_set (*glyphs, retained_coverage_glyphs);
 
     hb_set_t coverage_glyph_classes;
     class_def.intersected_classes (&retained_coverage_glyphs, &coverage_glyph_classes);
@@ -2235,8 +2253,8 @@ struct ContextFormat2_5
     if (!(this+coverage).intersects (c->glyphs))
       return;
 
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (),
                                                  cur_active_glyphs);
 
     const ClassDef &class_def = this+classDef;
@@ -2381,7 +2399,7 @@ struct ContextFormat2_5
 
     const hb_set_t* glyphset = c->plan->glyphset_gsub ();
     hb_set_t retained_coverage_glyphs;
-    (this+coverage).intersected_coverage_glyphs (glyphset, &retained_coverage_glyphs);
+    (this+coverage).intersect_set (*glyphset, retained_coverage_glyphs);
 
     hb_set_t coverage_glyph_classes;
     (this+classDef).intersected_classes (&retained_coverage_glyphs, &coverage_glyph_classes);
@@ -2468,8 +2486,8 @@ struct ContextFormat3
     if (!(this+coverageZ[0]).intersects (c->glyphs))
       return;
 
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (),
                                                  cur_active_glyphs);
 
 
@@ -2608,7 +2626,7 @@ struct Context
     case 1: return_trace (c->dispatch (u.format1, std::forward<Ts> (ds)...));
     case 2: return_trace (c->dispatch (u.format2, std::forward<Ts> (ds)...));
     case 3: return_trace (c->dispatch (u.format3, std::forward<Ts> (ds)...));
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 4: return_trace (c->dispatch (u.format4, std::forward<Ts> (ds)...));
     case 5: return_trace (c->dispatch (u.format5, std::forward<Ts> (ds)...));
 #endif
@@ -2622,7 +2640,7 @@ struct Context
   ContextFormat1_4<SmallTypes>	format1;
   ContextFormat2_5<SmallTypes>	format2;
   ContextFormat3		format3;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
   ContextFormat1_4<MediumTypes>	format4;
   ContextFormat2_5<MediumTypes>	format5;
 #endif
@@ -3124,8 +3142,8 @@ struct ChainContextFormat1_4
 
   void closure (hb_closure_context_t *c) const
   {
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (),
                                                  cur_active_glyphs);
 
     struct ChainContextClosureLookupContext lookup_context = {
@@ -3269,7 +3287,7 @@ struct ChainContextFormat2_5
     };
 
     hb_set_t retained_coverage_glyphs;
-    (this+coverage).intersected_coverage_glyphs (glyphs, &retained_coverage_glyphs);
+    (this+coverage).intersect_set (*glyphs, retained_coverage_glyphs);
 
     hb_set_t coverage_glyph_classes;
     input_class_def.intersected_classes (&retained_coverage_glyphs, &coverage_glyph_classes);
@@ -3294,8 +3312,8 @@ struct ChainContextFormat2_5
     if (!(this+coverage).intersects (c->glyphs))
       return;
 
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (),
                                                  cur_active_glyphs);
 
 
@@ -3479,7 +3497,7 @@ struct ChainContextFormat2_5
 
     const hb_set_t* glyphset = c->plan->glyphset_gsub ();
     hb_set_t retained_coverage_glyphs;
-    (this+coverage).intersected_coverage_glyphs (glyphset, &retained_coverage_glyphs);
+    (this+coverage).intersect_set (*glyphset, retained_coverage_glyphs);
 
     hb_set_t coverage_glyph_classes;
     (this+inputClassDef).intersected_classes (&retained_coverage_glyphs, &coverage_glyph_classes);
@@ -3590,8 +3608,8 @@ struct ChainContextFormat3
     if (!(this+input[0]).intersects (c->glyphs))
       return;
 
-    hb_set_t* cur_active_glyphs = &c->push_cur_active_glyphs ();
-    get_coverage ().intersected_coverage_glyphs (&c->previous_parent_active_glyphs (),
+    hb_set_t& cur_active_glyphs = c->push_cur_active_glyphs ();
+    get_coverage ().intersect_set (c->previous_parent_active_glyphs (),
                                                  cur_active_glyphs);
 
 
@@ -3782,7 +3800,7 @@ struct ChainContext
     case 1: return_trace (c->dispatch (u.format1, std::forward<Ts> (ds)...));
     case 2: return_trace (c->dispatch (u.format2, std::forward<Ts> (ds)...));
     case 3: return_trace (c->dispatch (u.format3, std::forward<Ts> (ds)...));
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 4: return_trace (c->dispatch (u.format4, std::forward<Ts> (ds)...));
     case 5: return_trace (c->dispatch (u.format5, std::forward<Ts> (ds)...));
 #endif
@@ -3796,7 +3814,7 @@ struct ChainContext
   ChainContextFormat1_4<SmallTypes>	format1;
   ChainContextFormat2_5<SmallTypes>	format2;
   ChainContextFormat3			format3;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
   ChainContextFormat1_4<MediumTypes>	format4;
   ChainContextFormat2_5<MediumTypes>	format5;
 #endif
@@ -4011,6 +4029,11 @@ struct GSUBGPOSVersion1_2
 	   (version.to_int () >= 0x00010001u ? featureVars.static_size : 0);
   }
 
+  const typename Types::template OffsetTo<LookupList<Types>>* get_lookup_list_offset () const
+  {
+    return &lookupList;
+  }
+
   template <typename TLookup>
   bool sanitize (hb_sanitize_context_t *c) const
   {
@@ -4076,7 +4099,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return u.version1.get_size ();
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.get_size ();
 #endif
     default: return u.version.static_size;
@@ -4090,7 +4113,7 @@ struct GSUBGPOS
     if (unlikely (!u.version.sanitize (c))) return_trace (false);
     switch (u.version.major) {
     case 1: return_trace (u.version1.sanitize<TLookup> (c));
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return_trace (u.version2.sanitize<TLookup> (c));
 #endif
     default: return_trace (true);
@@ -4102,7 +4125,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return u.version1.subset<TLookup> (c);
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return u.version2.subset<TLookup> (c);
 #endif
     default: return false;
@@ -4113,7 +4136,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return this+u.version1.scriptList;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.scriptList;
 #endif
     default: return Null (ScriptList);
@@ -4123,7 +4146,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return this+u.version1.featureList;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.featureList;
 #endif
     default: return Null (FeatureList);
@@ -4133,7 +4156,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return (this+u.version1.lookupList).len;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return (this+u.version2.lookupList).len;
 #endif
     default: return 0;
@@ -4143,7 +4166,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return (this+u.version1.lookupList)[i];
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return (this+u.version2.lookupList)[i];
 #endif
     default: return Null (Lookup);
@@ -4153,7 +4176,7 @@ struct GSUBGPOS
   {
     switch (u.version.major) {
     case 1: return (u.version.to_int () >= 0x00010001u ? this+u.version1.featureVars : Null (FeatureVariations));
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
     case 2: return this+u.version2.featureVars;
 #endif
     default: return Null (FeatureVariations);
@@ -4238,6 +4261,7 @@ struct GSUBGPOS
   }
 
   void prune_langsys (const hb_map_t *duplicate_feature_map,
+                      const hb_set_t *layout_scripts,
                       hb_hashmap_t<unsigned, hb::unique_ptr<hb_set_t>> *script_langsys_map,
                       hb_set_t       *new_feature_indexes /* OUT */) const
   {
@@ -4246,6 +4270,8 @@ struct GSUBGPOS
     unsigned count = get_script_count ();
     for (unsigned script_index = 0; script_index < count; script_index++)
     {
+      const Tag& tag = get_script_tag (script_index);
+      if (!layout_scripts->has (tag)) continue;
       const Script& s = get_script (script_index);
       s.prune_langsys (&c, script_index);
     }
@@ -4334,7 +4360,7 @@ struct GSUBGPOS
   union {
   FixedVersion<>			version;	/* Version identifier */
   GSUBGPOSVersion1_2<SmallTypes>	version1;
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
   GSUBGPOSVersion1_2<MediumTypes>	version2;
 #endif
   } u;

@@ -22,11 +22,6 @@
 #include <array>
 #include <limits>
 
-enum class SkBackend : uint8_t {
-    kGanesh,
-    kGraphite,
-    kSkVM
-};
 class SkPaintParamsKeyBuilder;
 class SkShaderCodeDictionary;
 class SkShaderInfo;
@@ -175,12 +170,10 @@ private:
 // into the dictionary to be prohibitive since that should be infrequent.
 class SkPaintParamsKeyBuilder {
 public:
-    SkPaintParamsKeyBuilder(const SkShaderCodeDictionary*, SkBackend);
+    SkPaintParamsKeyBuilder(const SkShaderCodeDictionary*);
     ~SkPaintParamsKeyBuilder() {
         SkASSERT(!this->isLocked());
     }
-
-    SkBackend backend() const { return fBackend; }
 
 #ifdef SK_GRAPHITE_ENABLED
     void setBlendInfo(const skgpu::BlendInfo& blendInfo) {
@@ -214,7 +207,7 @@ public:
 
     SkPaintParamsKey lockAsKey();
 
-    int sizeInBytes() const { return fData.count(); }
+    int sizeInBytes() const { return fData.size(); }
 
     bool isValid() const { return fIsValid; }
 
@@ -225,7 +218,7 @@ public:
 
     void unlock() {
         SkASSERT(fLocked);
-        fData.rewind();
+        fData.clear();
 #ifdef SK_GRAPHITE_ENABLED
         fBlendInfo = {};
 #endif
@@ -256,9 +249,6 @@ private:
     };
 
     const SkShaderCodeDictionary* fDict;
-    // TODO: It is probably overkill but we could encode the SkBackend in the first byte of
-    // the key.
-    const SkBackend fBackend;
 
     bool fIsValid = true;
     SkDEBUGCODE(bool fLocked = false;)

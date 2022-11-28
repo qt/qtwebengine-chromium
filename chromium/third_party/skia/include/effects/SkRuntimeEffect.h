@@ -162,10 +162,6 @@ public:
 
     // Shader SkSL requires an entry point that looks like:
     //     vec4 main(vec2 inCoords) { ... }
-    //   -or-
-    //     vec4 main(vec2 inCoords, vec4 inColor) { ... }
-    //
-    // Most shaders don't use the input color, so that parameter is optional.
     static Result MakeForShader(SkString sksl, const Options&);
     static Result MakeForShader(SkString sksl) {
         return MakeForShader(std::move(sksl), Options{});
@@ -196,8 +192,12 @@ public:
         SkBlender* blender() const;
         SkFlattenable* flattenable() const { return fChild.get(); }
 
+        using sk_is_trivially_relocatable = std::true_type;
+
     private:
         sk_sp<SkFlattenable> fChild;
+
+        static_assert(::sk_is_trivially_relocatable<decltype(fChild)>::value);
     };
 
     sk_sp<SkShader> makeShader(sk_sp<const SkData> uniforms,

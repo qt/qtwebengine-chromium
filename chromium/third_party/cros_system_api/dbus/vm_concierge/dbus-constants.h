@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,12 +43,15 @@ const char kMakeRtVcpuMethod[] = "MakeRtVcpu";
 const char kListVmsMethod[] = "ListVms";
 const char kArcVmCompleteBootMethod[] = "ArcVmCompleteBoot";
 const char kSetBalloonTimerMethod[] = "SetBalloonTimer";
+const char kGetVmGpuCachePathMethod[] = "GetVmGpuCachePath";
+const char kAddGroupPermissionMesaMethod[] = "AddGroupPermissionMesa";
 
 const char kDiskImageProgressSignal[] = "DiskImageProgress";
 const char kDnsSettingsChangedSignal[] = "DnsSettingsChanged";
 const char kVmStartedSignal[] = "VmStartedSignal";
 const char kVmStartingUpSignal[] = "VmStartingUpSignal";
 const char kVmStoppedSignal[] = "VmStoppedSignal";
+const char kVmStoppingSignal[] = "VmStoppingSignal";
 
 }  // namespace concierge
 }  // namespace vm_tools

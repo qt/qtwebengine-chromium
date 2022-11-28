@@ -24,6 +24,7 @@ include_rules = [
   # TODO(v8:10496): Don't expose so much (through transitive includes) outside
   # of heap/.
   "+src/heap/heap.h",
+  "+src/heap/heap-verifier.h",
   "+src/heap/heap-inl.h",
   "+src/heap/heap-write-barrier-inl.h",
   "+src/heap/heap-write-barrier.h",
@@ -31,6 +32,7 @@ include_rules = [
   "+src/heap/local-factory.h",
   "+src/heap/local-heap.h",
   "+src/heap/local-heap-inl.h",
+  "+src/heap/pretenuring-handler-inl.h",
   # TODO(v8:10496): Don't expose memory chunk outside of heap/.
   "+src/heap/memory-chunk.h",
   "+src/heap/memory-chunk-inl.h",

@@ -186,6 +186,11 @@ template<typename Derived> class MatrixBase
     const Product<Derived, DiagonalDerived, LazyProduct>
     operator*(const DiagonalBase<DiagonalDerived> &diagonal) const;
 
+    template<typename SkewDerived>
+    EIGEN_DEVICE_FUNC
+    const Product<Derived, SkewDerived, LazyProduct>
+    operator*(const SkewSymmetricBase<SkewDerived> &skew) const;
+
     template<typename OtherDerived>
     EIGEN_DEVICE_FUNC
     typename ScalarBinaryOpTraits<typename internal::traits<Derived>::Scalar,typename internal::traits<OtherDerived>::Scalar>::ReturnType
@@ -259,6 +264,8 @@ template<typename Derived> class MatrixBase
     EIGEN_DEVICE_FUNC
     const DiagonalWrapper<const Derived> asDiagonal() const;
     const PermutationWrapper<const Derived> asPermutation() const;
+    EIGEN_DEVICE_FUNC
+    const SkewSymmetricWrapper<const Derived> asSkewSymmetric() const;
 
     EIGEN_DEVICE_FUNC
     Derived& setIdentity();
@@ -272,6 +279,8 @@ template<typename Derived> class MatrixBase
 
     bool isUpperTriangular(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
     bool isLowerTriangular(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
+
+    bool isSkewSymmetric(const RealScalar& prec = NumTraits<Scalar>::dummy_precision()) const;
 
     template<typename OtherDerived>
     bool isOrthogonal(const MatrixBase<OtherDerived>& other,

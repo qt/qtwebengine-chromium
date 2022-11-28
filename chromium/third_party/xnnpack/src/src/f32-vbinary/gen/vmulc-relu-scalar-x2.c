@@ -15,40 +15,41 @@
 
 
 void xnn_f32_vmulc_relu_ukernel__scalar_x2(
-    size_t n,
-    const float* a,
-    const float* b,
-    float* y,
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
     const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
-  assert(a != NULL);
-  assert(b != NULL);
-  assert(y != NULL);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
+  const float vb = *input_b;
+
+  for (; batch >= 2 * sizeof(float); batch -= 2 * sizeof(float)) {
+    const float va0 = input_a[0];
+    const float va1 = input_a[1];
+    input_a += 2;
+
+    float vacc0 = va0 * vb;
+    float vacc1 = va1 * vb;
 
 
-  const float vb = *b;
-  for (; n >= 2 * sizeof(float); n -= 2 * sizeof(float)) {
-    const float va0 = a[0];
-    const float va1 = a[1];
-    a += 2;
+    vacc0 = math_max_f32(vacc0, 0.0f);
+    vacc1 = math_max_f32(vacc1, 0.0f);
 
-    float vy0 = va0 * vb;
-    float vy1 = va1 * vb;
-
-
-    vy0 = math_max_f32(vy0, 0.0f);
-    vy1 = math_max_f32(vy1, 0.0f);
-
-    y[0] = vy0;
-    y[1] = vy1;
-    y += 2;
+    output[0] = vacc0;
+    output[1] = vacc1;
+    output += 2;
   }
-  if XNN_UNLIKELY(n != 0) {
-    const float va = *a;
-    float vy = va * vb;
-    vy = math_max_f32(vy, 0.0f);
-    *y = vy;
+  if XNN_UNLIKELY(batch != 0) {
+    assert(batch == sizeof(float));
+    const float va = *input_a;
+    float vacc = va * vb;
+    vacc = math_max_f32(vacc, 0.0f);
+    *output = vacc;
   }
 }

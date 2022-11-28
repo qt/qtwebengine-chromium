@@ -43,7 +43,9 @@ class ResourceMemoryAllocator;
 
 class Device final : public DeviceBase {
   public:
-    static ResultOrError<Ref<Device>> Create(Adapter* adapter, const DeviceDescriptor* descriptor);
+    static ResultOrError<Ref<Device>> Create(Adapter* adapter,
+                                             const DeviceDescriptor* descriptor,
+                                             const TripleStateTogglesSet& userProvidedToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -64,6 +66,7 @@ class Device final : public DeviceBase {
     external_semaphore::Service* GetExternalSemaphoreService() const;
 
     CommandRecordingContext* GetPendingRecordingContext();
+    MaybeError SplitRecordingContext(CommandRecordingContext* recordingContext);
     MaybeError SubmitPendingCommands();
 
     void EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator);
@@ -113,7 +116,9 @@ class Device final : public DeviceBase {
     const char* GetDebugPrefix() { return mDebugPrefix.c_str(); }
 
   private:
-    Device(Adapter* adapter, const DeviceDescriptor* descriptor);
+    Device(Adapter* adapter,
+           const DeviceDescriptor* descriptor,
+           const TripleStateTogglesSet& userProvidedToggles);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
@@ -162,6 +167,7 @@ class Device final : public DeviceBase {
 
     MaybeError CheckDebugLayerAndGenerateErrors();
     void AppendDebugLayerMessages(ErrorData* error) override;
+    void CheckDebugMessagesAfterDestruction() const;
 
     void DestroyImpl() override;
     MaybeError WaitForIdleForDestruction() override;
@@ -200,13 +206,15 @@ class Device final : public DeviceBase {
     const std::string mDebugPrefix;
     std::vector<std::string> mDebugMessages;
 
-    MaybeError PrepareRecordingContext();
-    void RecycleCompletedCommands();
-
     struct CommandPoolAndBuffer {
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     };
+
+    MaybeError PrepareRecordingContext();
+    ResultOrError<CommandPoolAndBuffer> BeginVkCommandBuffer();
+    void RecycleCompletedCommands();
+
     SerialQueue<ExecutionSerial, CommandPoolAndBuffer> mCommandsInFlight;
     // Command pools in the unused list haven't been reset yet.
     std::vector<CommandPoolAndBuffer> mUnusedCommands;

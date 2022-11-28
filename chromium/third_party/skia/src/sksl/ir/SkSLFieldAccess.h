@@ -23,6 +23,7 @@ namespace SkSL {
 
 class Context;
 class SymbolTable;
+enum class OperatorPrecedence : uint8_t;
 
 enum class FieldAccessOwnerKind : int8_t {
     kDefault,
@@ -77,10 +78,6 @@ public:
         return fOwnerKind;
     }
 
-    bool hasProperty(Property property) const override {
-        return this->base()->hasProperty(property);
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::make_unique<FieldAccess>(pos,
                                              this->base()->clone(),
@@ -88,10 +85,7 @@ public:
                                              this->ownerKind());
     }
 
-    std::string description() const override {
-        return this->base()->description() + "." +
-               std::string(this->base()->type().fields()[this->fieldIndex()].fName);
-    }
+    std::string description(OperatorPrecedence) const override;
 
 private:
     int fFieldIndex;

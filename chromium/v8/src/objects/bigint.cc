@@ -146,7 +146,6 @@ class MutableBigInt : public FreshlyAllocatedBigInt {
 OBJECT_CONSTRUCTORS_IMPL(MutableBigInt, FreshlyAllocatedBigInt)
 NEVER_READ_ONLY_SPACE_IMPL(MutableBigInt)
 
-#include "src/base/platform/wrappers.h"
 #include "src/objects/object-macros-undef.h"
 
 bigint::Digits GetDigits(BigIntBase bigint) {
@@ -177,7 +176,7 @@ MaybeHandle<T> ThrowBigIntTooBig(Isolate* isolate) {
   // RangeError from being thrown. As this is a performance optimization, this
   // behavior is accepted. To prevent the correctness fuzzer from detecting this
   // difference, we crash the program.
-  if (FLAG_correctness_fuzzer_suppressions) {
+  if (v8_flags.correctness_fuzzer_suppressions) {
     FATAL("Aborting on invalid BigInt length");
   }
   THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kBigIntTooBig), T);
@@ -320,14 +319,19 @@ void MutableBigInt::Canonicalize(MutableBigInt result) {
   while (new_length > 0 && result.digit(new_length - 1) == 0) new_length--;
   int to_trim = old_length - new_length;
   if (to_trim != 0) {
-    int size_delta = to_trim * MutableBigInt::kDigitSize;
-    Address new_end = result.address() + BigInt::SizeFor(new_length);
     Heap* heap = result.GetHeap();
     if (!heap->IsLargeObject(result)) {
       // We do not create a filler for objects in large object space.
       // TODO(hpayer): We should shrink the large object page if the size
       // of the object changed significantly.
-      heap->CreateFillerObjectAt(new_end, size_delta);
+      int old_size = ALIGN_TO_ALLOCATION_ALIGNMENT(BigInt::SizeFor(old_length));
+      int new_size = ALIGN_TO_ALLOCATION_ALIGNMENT(BigInt::SizeFor(new_length));
+      if (!V8_COMPRESS_POINTERS_8GB_BOOL || new_size < old_size) {
+        // A non-zero to_trim already guarantees that the sizes are different,
+        // but their aligned values can be equal.
+        Address new_end = result.address() + new_size;
+        heap->CreateFillerObjectAt(new_end, old_size - new_size);
+      }
     }
     result.set_length(new_length, kReleaseStore);
 
@@ -997,8 +1001,10 @@ MaybeHandle<String> BigInt::ToString(Isolate* isolate, Handle<BigInt> bigint,
   // estimates).
   if (chars_written < chars_allocated) {
     result->set_length(chars_written, kReleaseStore);
-    int string_size = SeqOneByteString::SizeFor(chars_allocated);
-    int needed_size = SeqOneByteString::SizeFor(chars_written);
+    int string_size = ALIGN_TO_ALLOCATION_ALIGNMENT(
+        SeqOneByteString::SizeFor(chars_allocated));
+    int needed_size =
+        ALIGN_TO_ALLOCATION_ALIGNMENT(SeqOneByteString::SizeFor(chars_written));
     if (needed_size < string_size && !isolate->heap()->IsLargeObject(*result)) {
       Address new_end = result->address() + needed_size;
       isolate->heap()->CreateFillerObjectAt(new_end,
@@ -1627,10 +1633,11 @@ void MutableBigInt_AbsoluteSubAndCanonicalize(Address result_addr,
   MutableBigInt::Canonicalize(result);
 }
 
-// Returns true if it succeeded to obtain the result of multiplication.
-// Returns false if the computation is interrupted.
-bool MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
-                                              Address x_addr, Address y_addr) {
+// Returns 0 if it succeeded to obtain the result of multiplication.
+// Returns 1 if the computation is interrupted.
+int32_t MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
+                                                 Address x_addr,
+                                                 Address y_addr) {
   BigInt x = BigInt::cast(Object(x_addr));
   BigInt y = BigInt::cast(Object(y_addr));
   MutableBigInt result = MutableBigInt::cast(Object(result_addr));
@@ -1644,11 +1651,69 @@ bool MutableBigInt_AbsoluteMulAndCanonicalize(Address result_addr,
   bigint::Status status = isolate->bigint_processor()->Multiply(
       GetRWDigits(result), GetDigits(x), GetDigits(y));
   if (status == bigint::Status::kInterrupted) {
-    return false;
+    return 1;
   }
 
   MutableBigInt::Canonicalize(result);
-  return true;
+  return 0;
+}
+
+int32_t MutableBigInt_AbsoluteDivAndCanonicalize(Address result_addr,
+                                                 Address x_addr,
+                                                 Address y_addr) {
+  BigInt x = BigInt::cast(Object(x_addr));
+  BigInt y = BigInt::cast(Object(y_addr));
+  MutableBigInt result = MutableBigInt::cast(Object(result_addr));
+  DCHECK_GE(result.length(),
+            bigint::DivideResultLength(GetDigits(x), GetDigits(y)));
+
+  Isolate* isolate;
+  if (!GetIsolateFromHeapObject(x, &isolate)) {
+    // We should always get the isolate from the BigInt.
+    UNREACHABLE();
+  }
+
+  bigint::Status status = isolate->bigint_processor()->Divide(
+      GetRWDigits(result), GetDigits(x), GetDigits(y));
+  if (status == bigint::Status::kInterrupted) {
+    return 1;
+  }
+
+  MutableBigInt::Canonicalize(result);
+  return 0;
+}
+
+void MutableBigInt_BitwiseAndPosPosAndCanonicalize(Address result_addr,
+                                                   Address x_addr,
+                                                   Address y_addr) {
+  BigInt x = BigInt::cast(Object(x_addr));
+  BigInt y = BigInt::cast(Object(y_addr));
+  MutableBigInt result = MutableBigInt::cast(Object(result_addr));
+
+  bigint::BitwiseAnd_PosPos(GetRWDigits(result), GetDigits(x), GetDigits(y));
+  MutableBigInt::Canonicalize(result);
+}
+
+void MutableBigInt_BitwiseAndNegNegAndCanonicalize(Address result_addr,
+                                                   Address x_addr,
+                                                   Address y_addr) {
+  BigInt x = BigInt::cast(Object(x_addr));
+  BigInt y = BigInt::cast(Object(y_addr));
+  MutableBigInt result = MutableBigInt::cast(Object(result_addr));
+
+  bigint::BitwiseAnd_NegNeg(GetRWDigits(result), GetDigits(x), GetDigits(y));
+  MutableBigInt::Canonicalize(result);
+}
+
+void MutableBigInt_BitwiseAndPosNegAndCanonicalize(Address result_addr,
+                                                   Address x_addr,
+                                                   Address y_addr) {
+  BigInt x = BigInt::cast(Object(x_addr));
+  BigInt y = BigInt::cast(Object(y_addr));
+  MutableBigInt result = MutableBigInt::cast(Object(result_addr));
+
+  bigint::BitwiseAnd_PosNeg(GetRWDigits(result), GetDigits(x), GetDigits(y));
+  MutableBigInt::Canonicalize(result);
 }
 
 }  // namespace internal

@@ -76,7 +76,7 @@ public:
         int64_t count;
     };
 
-    ObjectUseData() : thread(0), writer_reader_count(0) {
+    ObjectUseData() : thread(), writer_reader_count(0) {
         // silence -Wunused-private-field warning
         padding[0] = 0;
     }
@@ -108,7 +108,7 @@ public:
         }
     }
 
-    std::atomic<loader_platform_thread_id> thread;
+    std::atomic<std::thread::id> thread;
 
 private:
     // need to update write and read counts atomically. Writer in high
@@ -116,7 +116,7 @@ private:
     std::atomic<int64_t> writer_reader_count;
 
     // Put each lock on its own cache line to avoid false cache line sharing.
-    char padding[(-int(sizeof(std::atomic<loader_platform_thread_id>) + sizeof(std::atomic<int64_t>))) & 63];
+    char padding[(-int(sizeof(std::atomic<std::thread::id>) + sizeof(std::atomic<int64_t>))) & 63];
 };
 
 
@@ -141,9 +141,9 @@ public:
 
     std::shared_ptr<ObjectUseData> FindObject(T object) {
         assert(object_table.contains(object));
-        auto iter = std::move(object_table.find(object));
+        auto iter = object_table.find(object);
         if (iter != object_table.end()) {
-            return std::move(iter->second);
+            return iter->second;
         } else {
             object_data->LogError(object, kVUID_Threading_Info,
                     "Couldn't find %s Object 0x%" PRIxLEAST64
@@ -158,7 +158,7 @@ public:
             return;
         }
         bool skip = false;
-        loader_platform_thread_id tid = loader_platform_get_thread_id();
+        std::thread::id tid = std::this_thread::get_id();
 
         auto use_data = FindObject(object);
         if (!use_data) {
@@ -174,10 +174,11 @@ public:
                 assert(prevCount.GetWriteCount() != 0);
                 // There are no readers.  Two writers just collided.
                 if (use_data->thread != tid) {
-                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads,
-                        "THREADING ERROR : %s(): object of type %s is simultaneously used in "
-                        "thread 0x%" PRIx64 " and thread 0x%" PRIx64, api_name,
-                        typeName, (uint64_t)use_data->thread.load(std::memory_order_relaxed), (uint64_t)tid);
+                    std::stringstream err_str;
+                    err_str << "THREADING ERROR : " << api_name << "(): object of type " << typeName
+                            <<" is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed)
+                            <<" and thread " << tid;
+                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
                     if (skip) {
                         // Wait for thread-safe access to object instead of skipping call.
                         use_data->WaitForObjectIdle(true);
@@ -194,10 +195,11 @@ public:
             } else {
                 // There are readers.  This writer collided with them.
                 if (use_data->thread != tid) {
-                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads,
-                        "THREADING ERROR : %s(): object of type %s is simultaneously used in "
-                        "thread 0x%" PRIx64 " and thread 0x%" PRIx64, api_name,
-                        typeName, (uint64_t)use_data->thread.load(std::memory_order_relaxed), (uint64_t)tid);
+                    std::stringstream err_str;
+                    err_str << "THREADING ERROR : " << api_name << "(): object of type " << typeName
+                            <<" is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed)
+                            <<" and thread " << tid;
+                    skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
                     if (skip) {
                         // Wait for thread-safe access to object instead of skipping call.
                         use_data->WaitForObjectIdle(true);
@@ -232,7 +234,7 @@ public:
             return;
         }
         bool skip = false;
-        loader_platform_thread_id tid = loader_platform_get_thread_id();
+        std::thread::id tid = std::this_thread::get_id();
 
         auto use_data = FindObject(object);
         if (!use_data) {
@@ -245,10 +247,11 @@ public:
             use_data->thread = tid;
         } else if (prevCount.GetWriteCount() > 0 && use_data->thread != tid) {
             // There is a writer of the object.
-            skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads,
-                "THREADING ERROR : %s(): object of type %s is simultaneously used in "
-                "thread 0x%" PRIx64 " and thread 0x%" PRIx64, api_name,
-                typeName, (uint64_t)use_data->thread.load(std::memory_order_relaxed), (uint64_t)tid);
+            std::stringstream err_str;
+            err_str << "THREADING ERROR : " << api_name << "(): object of type " << typeName
+                    <<" is simultaneously used in thread " << use_data->thread.load(std::memory_order_relaxed)
+                    <<" and thread " << tid;
+            skip |= object_data->LogError(object, kVUID_Threading_MultipleThreads, "%s", err_str.str().c_str());
             if (skip) {
                 // Wait for thread-safe access to object instead of skipping call.
                 use_data->WaitForObjectIdle(false);
@@ -302,7 +305,7 @@ public:
     //     and UAB as reads then they'd appear to conflict with each other.
     // (2) Avoid additional tracking of descriptor binding state in the descriptor set
     //     layout, and tracking of which bindings are accessed by a VkDescriptorUpdateTemplate.
-    // Descriptor sets using VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_VALVE can also
+    // Descriptor sets using VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_EXT can also
     // be used simultaneously in multiple threads
     vl_concurrent_unordered_map<VkDescriptorSetLayout, bool, 4> dsl_read_only_map;
     vl_concurrent_unordered_map<VkDescriptorSet, bool, 6> ds_read_only_map;
@@ -342,6 +345,8 @@ public:
     counter<VkImage> c_VkImage;
     counter<VkImageView> c_VkImageView;
     counter<VkIndirectCommandsLayoutNV> c_VkIndirectCommandsLayoutNV;
+    counter<VkMicromapEXT> c_VkMicromapEXT;
+    counter<VkOpticalFlowSessionNV> c_VkOpticalFlowSessionNV;
     counter<VkPerformanceConfigurationINTEL> c_VkPerformanceConfigurationINTEL;
     counter<VkPipeline> c_VkPipeline;
     counter<VkPipelineCache> c_VkPipelineCache;
@@ -410,6 +415,8 @@ public:
           c_VkImage("VkImage", kVulkanObjectTypeImage, this),
           c_VkImageView("VkImageView", kVulkanObjectTypeImageView, this),
           c_VkIndirectCommandsLayoutNV("VkIndirectCommandsLayoutNV", kVulkanObjectTypeIndirectCommandsLayoutNV, this),
+          c_VkMicromapEXT("VkMicromapEXT", kVulkanObjectTypeMicromapEXT, this),
+          c_VkOpticalFlowSessionNV("VkOpticalFlowSessionNV", kVulkanObjectTypeOpticalFlowSessionNV, this),
           c_VkPerformanceConfigurationINTEL("VkPerformanceConfigurationINTEL", kVulkanObjectTypePerformanceConfigurationINTEL, this),
           c_VkPipeline("VkPipeline", kVulkanObjectTypePipeline, this),
           c_VkPipelineCache("VkPipelineCache", kVulkanObjectTypePipelineCache, this),
@@ -512,6 +519,8 @@ WRAPPER(VkFramebuffer)
 WRAPPER(VkImage)
 WRAPPER(VkImageView)
 WRAPPER(VkIndirectCommandsLayoutNV)
+WRAPPER(VkMicromapEXT)
+WRAPPER(VkOpticalFlowSessionNV)
 WRAPPER(VkPerformanceConfigurationINTEL)
 WRAPPER(VkPipeline)
 WRAPPER(VkPipelineCache)
@@ -3192,27 +3201,27 @@ void PostCallRecordDestroyVideoSessionKHR(
 void PreCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements) override;
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements) override;
 
 void PostCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements,
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements,
     VkResult                                    result) override;
 
 void PreCallRecordBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories) override;
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos) override;
 
 void PostCallRecordBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories,
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos,
     VkResult                                    result) override;
 
 void PreCallRecordCreateVideoSessionParametersKHR(
@@ -3278,11 +3287,11 @@ void PostCallRecordCmdControlVideoCodingKHR(
 
 void PreCallRecordCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
-    const VkVideoDecodeInfoKHR*                 pFrameInfo) override;
+    const VkVideoDecodeInfoKHR*                 pDecodeInfo) override;
 
 void PostCallRecordCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
-    const VkVideoDecodeInfoKHR*                 pFrameInfo) override;
+    const VkVideoDecodeInfoKHR*                 pDecodeInfo) override;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
 void PreCallRecordCmdBeginRenderingKHR(
@@ -5644,6 +5653,17 @@ void PostCallRecordGetImageSubresourceLayout2EXT(
     const VkImageSubresource2EXT*               pSubresource,
     VkSubresourceLayout2EXT*                    pLayout) override;
 
+void PreCallRecordGetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo) override;
+
+void PostCallRecordGetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo,
+    VkResult                                    result) override;
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 
 void PreCallRecordAcquireWinrtDisplayNV(
@@ -5944,6 +5964,166 @@ void PostCallRecordCmdDrawMultiIndexedEXT(
     uint32_t                                    stride,
     const int32_t*                              pVertexOffset) override;
 
+void PreCallRecordCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap) override;
+
+void PostCallRecordCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap,
+    VkResult                                    result) override;
+
+void PreCallRecordDestroyMicromapEXT(
+    VkDevice                                    device,
+    VkMicromapEXT                               micromap,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PostCallRecordDestroyMicromapEXT(
+    VkDevice                                    device,
+    VkMicromapEXT                               micromap,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PreCallRecordCmdBuildMicromapsEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos) override;
+
+void PostCallRecordCmdBuildMicromapsEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos) override;
+
+void PreCallRecordBuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos) override;
+
+void PostCallRecordBuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos,
+    VkResult                                    result) override;
+
+void PreCallRecordCopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo) override;
+
+void PostCallRecordCopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo,
+    VkResult                                    result) override;
+
+void PreCallRecordCopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo) override;
+
+void PostCallRecordCopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo,
+    VkResult                                    result) override;
+
+void PreCallRecordCopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo) override;
+
+void PostCallRecordCopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo,
+    VkResult                                    result) override;
+
+void PreCallRecordWriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride) override;
+
+void PostCallRecordWriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride,
+    VkResult                                    result) override;
+
+void PreCallRecordCmdCopyMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapInfoEXT*                pInfo) override;
+
+void PostCallRecordCmdCopyMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapInfoEXT*                pInfo) override;
+
+void PreCallRecordCmdCopyMicromapToMemoryEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo) override;
+
+void PostCallRecordCmdCopyMicromapToMemoryEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo) override;
+
+void PreCallRecordCmdCopyMemoryToMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo) override;
+
+void PostCallRecordCmdCopyMemoryToMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo) override;
+
+void PreCallRecordCmdWriteMicromapsPropertiesEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    VkQueryPool                                 queryPool,
+    uint32_t                                    firstQuery) override;
+
+void PostCallRecordCmdWriteMicromapsPropertiesEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    VkQueryPool                                 queryPool,
+    uint32_t                                    firstQuery) override;
+
+void PreCallRecordGetDeviceMicromapCompatibilityEXT(
+    VkDevice                                    device,
+    const VkMicromapVersionInfoEXT*             pVersionInfo,
+    VkAccelerationStructureCompatibilityKHR*    pCompatibility) override;
+
+void PostCallRecordGetDeviceMicromapCompatibilityEXT(
+    VkDevice                                    device,
+    const VkMicromapVersionInfoEXT*             pVersionInfo,
+    VkAccelerationStructureCompatibilityKHR*    pCompatibility) override;
+
+void PreCallRecordGetMicromapBuildSizesEXT(
+    VkDevice                                    device,
+    VkAccelerationStructureBuildTypeKHR         buildType,
+    const VkMicromapBuildInfoEXT*               pBuildInfo,
+    VkMicromapBuildSizesInfoEXT*                pSizeInfo) override;
+
+void PostCallRecordGetMicromapBuildSizesEXT(
+    VkDevice                                    device,
+    VkAccelerationStructureBuildTypeKHR         buildType,
+    const VkMicromapBuildInfoEXT*               pBuildInfo,
+    VkMicromapBuildSizesInfoEXT*                pSizeInfo) override;
+
 void PreCallRecordSetDeviceMemoryPriorityEXT(
     VkDevice                                    device,
     VkDeviceMemory                              memory,
@@ -5974,6 +6154,278 @@ void PostCallRecordGetDescriptorSetHostMappingVALVE(
     VkDescriptorSet                             descriptorSet,
     void**                                      ppData) override;
 
+void PreCallRecordCmdSetTessellationDomainOriginEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkTessellationDomainOrigin                  domainOrigin) override;
+
+void PostCallRecordCmdSetTessellationDomainOriginEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkTessellationDomainOrigin                  domainOrigin) override;
+
+void PreCallRecordCmdSetDepthClampEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClampEnable) override;
+
+void PostCallRecordCmdSetDepthClampEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClampEnable) override;
+
+void PreCallRecordCmdSetPolygonModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPolygonMode                               polygonMode) override;
+
+void PostCallRecordCmdSetPolygonModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPolygonMode                               polygonMode) override;
+
+void PreCallRecordCmdSetRasterizationSamplesEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       rasterizationSamples) override;
+
+void PostCallRecordCmdSetRasterizationSamplesEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       rasterizationSamples) override;
+
+void PreCallRecordCmdSetSampleMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       samples,
+    const VkSampleMask*                         pSampleMask) override;
+
+void PostCallRecordCmdSetSampleMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       samples,
+    const VkSampleMask*                         pSampleMask) override;
+
+void PreCallRecordCmdSetAlphaToCoverageEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToCoverageEnable) override;
+
+void PostCallRecordCmdSetAlphaToCoverageEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToCoverageEnable) override;
+
+void PreCallRecordCmdSetAlphaToOneEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToOneEnable) override;
+
+void PostCallRecordCmdSetAlphaToOneEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToOneEnable) override;
+
+void PreCallRecordCmdSetLogicOpEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    logicOpEnable) override;
+
+void PostCallRecordCmdSetLogicOpEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    logicOpEnable) override;
+
+void PreCallRecordCmdSetColorBlendEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkBool32*                             pColorBlendEnables) override;
+
+void PostCallRecordCmdSetColorBlendEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkBool32*                             pColorBlendEnables) override;
+
+void PreCallRecordCmdSetColorBlendEquationEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendEquationEXT*              pColorBlendEquations) override;
+
+void PostCallRecordCmdSetColorBlendEquationEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendEquationEXT*              pColorBlendEquations) override;
+
+void PreCallRecordCmdSetColorWriteMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorComponentFlags*                pColorWriteMasks) override;
+
+void PostCallRecordCmdSetColorWriteMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorComponentFlags*                pColorWriteMasks) override;
+
+void PreCallRecordCmdSetRasterizationStreamEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    rasterizationStream) override;
+
+void PostCallRecordCmdSetRasterizationStreamEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    rasterizationStream) override;
+
+void PreCallRecordCmdSetConservativeRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkConservativeRasterizationModeEXT          conservativeRasterizationMode) override;
+
+void PostCallRecordCmdSetConservativeRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkConservativeRasterizationModeEXT          conservativeRasterizationMode) override;
+
+void PreCallRecordCmdSetExtraPrimitiveOverestimationSizeEXT(
+    VkCommandBuffer                             commandBuffer,
+    float                                       extraPrimitiveOverestimationSize) override;
+
+void PostCallRecordCmdSetExtraPrimitiveOverestimationSizeEXT(
+    VkCommandBuffer                             commandBuffer,
+    float                                       extraPrimitiveOverestimationSize) override;
+
+void PreCallRecordCmdSetDepthClipEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClipEnable) override;
+
+void PostCallRecordCmdSetDepthClipEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClipEnable) override;
+
+void PreCallRecordCmdSetSampleLocationsEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    sampleLocationsEnable) override;
+
+void PostCallRecordCmdSetSampleLocationsEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    sampleLocationsEnable) override;
+
+void PreCallRecordCmdSetColorBlendAdvancedEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendAdvancedEXT*              pColorBlendAdvanced) override;
+
+void PostCallRecordCmdSetColorBlendAdvancedEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendAdvancedEXT*              pColorBlendAdvanced) override;
+
+void PreCallRecordCmdSetProvokingVertexModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkProvokingVertexModeEXT                    provokingVertexMode) override;
+
+void PostCallRecordCmdSetProvokingVertexModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkProvokingVertexModeEXT                    provokingVertexMode) override;
+
+void PreCallRecordCmdSetLineRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkLineRasterizationModeEXT                  lineRasterizationMode) override;
+
+void PostCallRecordCmdSetLineRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkLineRasterizationModeEXT                  lineRasterizationMode) override;
+
+void PreCallRecordCmdSetLineStippleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    stippledLineEnable) override;
+
+void PostCallRecordCmdSetLineStippleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    stippledLineEnable) override;
+
+void PreCallRecordCmdSetDepthClipNegativeOneToOneEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    negativeOneToOne) override;
+
+void PostCallRecordCmdSetDepthClipNegativeOneToOneEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    negativeOneToOne) override;
+
+void PreCallRecordCmdSetViewportWScalingEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    viewportWScalingEnable) override;
+
+void PostCallRecordCmdSetViewportWScalingEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    viewportWScalingEnable) override;
+
+void PreCallRecordCmdSetViewportSwizzleNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstViewport,
+    uint32_t                                    viewportCount,
+    const VkViewportSwizzleNV*                  pViewportSwizzles) override;
+
+void PostCallRecordCmdSetViewportSwizzleNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstViewport,
+    uint32_t                                    viewportCount,
+    const VkViewportSwizzleNV*                  pViewportSwizzles) override;
+
+void PreCallRecordCmdSetCoverageToColorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageToColorEnable) override;
+
+void PostCallRecordCmdSetCoverageToColorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageToColorEnable) override;
+
+void PreCallRecordCmdSetCoverageToColorLocationNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageToColorLocation) override;
+
+void PostCallRecordCmdSetCoverageToColorLocationNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageToColorLocation) override;
+
+void PreCallRecordCmdSetCoverageModulationModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageModulationModeNV                  coverageModulationMode) override;
+
+void PostCallRecordCmdSetCoverageModulationModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageModulationModeNV                  coverageModulationMode) override;
+
+void PreCallRecordCmdSetCoverageModulationTableEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageModulationTableEnable) override;
+
+void PostCallRecordCmdSetCoverageModulationTableEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageModulationTableEnable) override;
+
+void PreCallRecordCmdSetCoverageModulationTableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageModulationTableCount,
+    const float*                                pCoverageModulationTable) override;
+
+void PostCallRecordCmdSetCoverageModulationTableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageModulationTableCount,
+    const float*                                pCoverageModulationTable) override;
+
+void PreCallRecordCmdSetShadingRateImageEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    shadingRateImageEnable) override;
+
+void PostCallRecordCmdSetShadingRateImageEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    shadingRateImageEnable) override;
+
+void PreCallRecordCmdSetRepresentativeFragmentTestEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    representativeFragmentTestEnable) override;
+
+void PostCallRecordCmdSetRepresentativeFragmentTestEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    representativeFragmentTestEnable) override;
+
+void PreCallRecordCmdSetCoverageReductionModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageReductionModeNV                   coverageReductionMode) override;
+
+void PostCallRecordCmdSetCoverageReductionModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageReductionModeNV                   coverageReductionMode) override;
+
 void PreCallRecordGetShaderModuleIdentifierEXT(
     VkDevice                                    device,
     VkShaderModule                              shaderModule,
@@ -5993,6 +6445,54 @@ void PostCallRecordGetShaderModuleCreateInfoIdentifierEXT(
     VkDevice                                    device,
     const VkShaderModuleCreateInfo*             pCreateInfo,
     VkShaderModuleIdentifierEXT*                pIdentifier) override;
+
+void PreCallRecordCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession) override;
+
+void PostCallRecordCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession,
+    VkResult                                    result) override;
+
+void PreCallRecordDestroyOpticalFlowSessionNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PostCallRecordDestroyOpticalFlowSessionNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    const VkAllocationCallbacks*                pAllocator) override;
+
+void PreCallRecordBindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout) override;
+
+void PostCallRecordBindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout,
+    VkResult                                    result) override;
+
+void PreCallRecordCmdOpticalFlowExecuteNV(
+    VkCommandBuffer                             commandBuffer,
+    VkOpticalFlowSessionNV                      session,
+    const VkOpticalFlowExecuteInfoNV*           pExecuteInfo) override;
+
+void PostCallRecordCmdOpticalFlowExecuteNV(
+    VkCommandBuffer                             commandBuffer,
+    VkOpticalFlowSessionNV                      session,
+    const VkOpticalFlowExecuteInfoNV*           pExecuteInfo) override;
 
 void PreCallRecordGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,
@@ -6300,4 +6800,48 @@ void PreCallRecordCmdSetRayTracingPipelineStackSizeKHR(
 void PostCallRecordCmdSetRayTracingPipelineStackSizeKHR(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    pipelineStackSize) override;
+
+void PreCallRecordCmdDrawMeshTasksEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) override;
+
+void PostCallRecordCmdDrawMeshTasksEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) override;
+
+void PreCallRecordCmdDrawMeshTasksIndirectEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    uint32_t                                    drawCount,
+    uint32_t                                    stride) override;
+
+void PostCallRecordCmdDrawMeshTasksIndirectEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    uint32_t                                    drawCount,
+    uint32_t                                    stride) override;
+
+void PreCallRecordCmdDrawMeshTasksIndirectCountEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    VkBuffer                                    countBuffer,
+    VkDeviceSize                                countBufferOffset,
+    uint32_t                                    maxDrawCount,
+    uint32_t                                    stride) override;
+
+void PostCallRecordCmdDrawMeshTasksIndirectCountEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    VkBuffer                                    countBuffer,
+    VkDeviceSize                                countBufferOffset,
+    uint32_t                                    maxDrawCount,
+    uint32_t                                    stride) override;
 };

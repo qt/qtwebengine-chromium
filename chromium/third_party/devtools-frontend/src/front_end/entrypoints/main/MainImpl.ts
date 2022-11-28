@@ -105,6 +105,10 @@ const UIStrings = {
   *@description Text for the viewing the help options
   */
   help: 'Help',
+  /**
+  *@description Text describing how to navigate the dock side menu
+  */
+  dockSideNaviation: 'Use left and right arrow keys to navigate the options',
 };
 const str_ = i18n.i18n.registerUIStrings('entrypoints/main/MainImpl.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -148,10 +152,7 @@ export class MainImpl {
     this.createSettings(prefs);
     await this.requestAndRegisterLocaleData();
 
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.SYNC_SETTINGS)) {
-      Host.userMetrics.syncSetting(
-          Common.Settings.Settings.instance().moduleSetting<boolean>('sync_preferences').get());
-    }
+    Host.userMetrics.syncSetting(Common.Settings.Settings.instance().moduleSetting<boolean>('sync_preferences').get());
 
     void this.#createAppUI();
   }
@@ -298,7 +299,7 @@ export class MainImpl {
         'https://developer.chrome.com/blog/new-in-devtools-92/#source-order');
     Root.Runtime.experiments.register('webauthnPane', 'WebAuthn Pane');
     Root.Runtime.experiments.register(
-        'keyboardShortcutEditor', 'Enable keyboard shortcut editor', true,
+        'keyboardShortcutEditor', 'Enable keyboard shortcut editor', false,
         'https://developer.chrome.com/blog/new-in-devtools-88/#keyboard-shortcuts');
 
     // Back/forward cache
@@ -311,7 +312,6 @@ export class MainImpl {
     Root.Runtime.experiments.register('timelineShowAllEvents', 'Timeline: show all events', true);
     Root.Runtime.experiments.register(
         'timelineV8RuntimeCallStats', 'Timeline: V8 Runtime Call Stats on Timeline', true);
-    Root.Runtime.experiments.register('timelineWebGL', 'Timeline: WebGL-based flamechart');
     Root.Runtime.experiments.register('timelineReplayEvent', 'Timeline: Replay input events', true);
 
     // Debugging
@@ -358,19 +358,7 @@ export class MainImpl {
     Root.Runtime.experiments.register('experimentalCookieFeatures', 'Enable experimental cookie features');
 
     // Hide Issues Feature.
-    Root.Runtime.experiments.register(
-        'hideIssuesFeature', 'Enable experimental hide issues menu', undefined,
-        'https://developer.chrome.com/blog/new-in-devtools-94/#hide-issues');
-
-    // Hide Issues Feature.
     Root.Runtime.experiments.register('groupAndHideIssuesByKind', 'Allow grouping and hiding of issues by IssueKind');
-
-    // Checkbox in the Settings UI to enable Chrome Sync is behind this experiment.
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.SYNC_SETTINGS, 'Sync DevTools settings with Chrome Sync');
-
-    // Debugging of Reporting API
-    Root.Runtime.experiments.register('reportingApiDebugging', 'Enable Reporting API panel in the Application panel');
 
     // CSS <length> authoring tool.
     Root.Runtime.experiments.register(
@@ -397,10 +385,6 @@ export class MainImpl {
     // New Lighthouse panel with timespan and snapshot mode
     Root.Runtime.experiments.register('lighthousePanelFR', 'Use Lighthouse panel with timespan and snapshot modes');
 
-    // Tooling for CSS layers in Styles sidebar pane.
-    Root.Runtime.experiments.register(
-        Root.Runtime.ExperimentName.CSS_LAYERS, 'Tooling for CSS layers in the Styles pane');
-
     // Enable color picking outside the browser window (using Eyedropper API)
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER, 'Enable color picking outside the browser window');
@@ -421,14 +405,13 @@ export class MainImpl {
 
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
-      'hideIssuesFeature',
       'cssTypeComponentLength',
       Root.Runtime.ExperimentName.PRECISE_CHANGES,
-      'reportingApiDebugging',
-      Root.Runtime.ExperimentName.SYNC_SETTINGS,
-      Root.Runtime.ExperimentName.CSS_LAYERS,
       ...('EyeDropper' in window ? [Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER] : []),
       'lighthousePanelFR',
+      'keyboardShortcutEditor',
+      'groupAndHideIssuesByKind',
+      Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
     ]);
 
     Root.Runtime.experiments.setNonConfigurableExperiments([
@@ -641,6 +624,7 @@ export class MainImpl {
 
     // Initialize ARIAUtils.alert Element
     UI.ARIAUtils.alertElementInstance();
+    UI.DockController.DockController.instance().announceDockLocation();
 
     // Allow UI cycles to repaint prior to creating connection.
     window.setTimeout(this.#initializeTarget.bind(this), 0);
@@ -883,8 +867,9 @@ export class MainMenuItem implements UI.Toolbar.Provider {
       const dockItemElement = document.createElement('div');
       dockItemElement.classList.add('flex-centered');
       dockItemElement.classList.add('flex-auto');
+      dockItemElement.classList.add('location-menu');
       dockItemElement.tabIndex = -1;
-      UI.ARIAUtils.setAccessibleName(dockItemElement, UIStrings.dockSide);
+      UI.ARIAUtils.setAccessibleName(dockItemElement, UIStrings.dockSide + UIStrings.dockSideNaviation);
       const titleElement = dockItemElement.createChild('span', 'dockside-title');
       titleElement.textContent = i18nString(UIStrings.dockSide);
       const toggleDockSideShorcuts =
@@ -926,6 +911,10 @@ export class MainMenuItem implements UI.Toolbar.Provider {
           dir = -1;
         } else if (event.key === 'ArrowRight') {
           dir = 1;
+        } else if (event.key === 'ArrowDown') {
+          const contextMenuElement = dockItemElement.closest('.soft-context-menu');
+          contextMenuElement?.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowDown'}));
+          return;
         } else {
           return;
         }

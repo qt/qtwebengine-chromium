@@ -126,11 +126,11 @@ void SkBasicEdgeBuilder::addLine(const SkPoint pts[]) {
     SkEdge* edge = fAlloc.make<SkEdge>();
     if (edge->setLine(pts[0], pts[1], fClipShift)) {
         Combine combine = is_vertical(edge) && !fList.empty()
-            ? this->combineVertical(edge, (SkEdge*)fList.top())
+            ? this->combineVertical(edge, (SkEdge*)fList.back())
             : kNo_Combine;
 
         switch (combine) {
-            case kTotal_Combine:    fList.pop();           break;
+            case kTotal_Combine:    fList.pop_back();      break;
             case kPartial_Combine:                         break;
             case kNo_Combine:       fList.push_back(edge); break;
         }
@@ -141,11 +141,11 @@ void SkAnalyticEdgeBuilder::addLine(const SkPoint pts[]) {
     if (edge->setLine(pts[0], pts[1])) {
 
         Combine combine = is_vertical(edge) && !fList.empty()
-            ? this->combineVertical(edge, (SkAnalyticEdge*)fList.top())
+            ? this->combineVertical(edge, (SkAnalyticEdge*)fList.back())
             : kNo_Combine;
 
         switch (combine) {
-            case kTotal_Combine:    fList.pop();           break;
+            case kTotal_Combine:    fList.pop_back();      break;
             case kPartial_Combine:                         break;
             case kNo_Combine:       fList.push_back(edge); break;
         }
@@ -363,7 +363,7 @@ int SkEdgeBuilder::build(const SkPath& path, const SkIRect* iclip, bool canCullT
         }
     }
     fEdgeList = fList.begin();
-    return is_finite ? fList.count() : 0;
+    return is_finite ? fList.size() : 0;
 }
 
 int SkEdgeBuilder::buildEdges(const SkPath& path,

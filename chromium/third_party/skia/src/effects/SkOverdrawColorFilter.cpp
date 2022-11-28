@@ -5,14 +5,19 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkData.h"
 #include "include/effects/SkOverdrawColorFilter.h"
+
+#include "include/core/SkColorFilter.h"
+
+#ifdef SK_ENABLE_SKSL
+#include "include/core/SkData.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkColorData.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 
+#include <utility>
+
 sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor colors[kNumColors]) {
-#ifdef SK_ENABLE_SKSL
     static const SkRuntimeEffect* effect = SkMakeCachedRuntimeEffect(
         SkRuntimeEffect::MakeForColorFilter,
         "uniform half4 color0;"
@@ -21,15 +26,15 @@ sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor color
         "uniform half4 color3;"
         "uniform half4 color4;"
         "uniform half4 color5;"
-        ""
+
         "half4 main(half4 color) {"
-        "    half alpha = 255.0 * color.a;"
-        "    color = alpha < 0.5 ? color0"
-        "          : alpha < 1.5 ? color1"
-        "          : alpha < 2.5 ? color2"
-        "          : alpha < 3.5 ? color3"
-        "          : alpha < 4.5 ? color4 : color5;"
-        "    return color;"
+            "half alpha = 255.0 * color.a;"
+            "color = alpha < 0.5 ? color0"
+                  ": alpha < 1.5 ? color1"
+                  ": alpha < 2.5 ? color2"
+                  ": alpha < 3.5 ? color3"
+                  ": alpha < 4.5 ? color4 : color5;"
+            "return color;"
         "}"
     ).release();
 
@@ -42,8 +47,10 @@ sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor color
         return effect->makeColorFilter(std::move(data));
     }
     return nullptr;
-#else
+}
+#else // SK_ENABLE_SKSL
+sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor colors[kNumColors]) {
     // TODO(skia:12197)
     return nullptr;
-#endif
 }
+#endif

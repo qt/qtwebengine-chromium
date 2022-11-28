@@ -212,7 +212,7 @@ ContextMtl::ContextMtl(const gl::State &state,
       mBlitEncoder(&mCmdBuffer),
       mComputeEncoder(&mCmdBuffer),
       mDriverUniforms{},
-      mProvokingVertexHelper(this, &display->cmdQueue(), display),
+      mProvokingVertexHelper(this),
       mContextDevice(GetOwnershipIdentity(attribs))
 {}
 
@@ -283,7 +283,7 @@ angle::Result ContextMtl::ensureIncompleteTexturesCreated(const gl::Context *con
 // Flush and finish.
 angle::Result ContextMtl::flush(const gl::Context *context)
 {
-    flushCommandBuffer(mtl::WaitUntilScheduled);
+    flushCommandBuffer(mtl::NoWait);
     return angle::Result::Continue;
 }
 angle::Result ContextMtl::finish(const gl::Context *context)
@@ -1384,6 +1384,10 @@ const gl::Limitations &ContextMtl::getNativeLimitations() const
 {
     return getDisplay()->getNativeLimitations();
 }
+ShPixelLocalStorageType ContextMtl::getNativePixelLocalStorageType() const
+{
+    return getDisplay()->getNativePixelLocalStorageType();
+}
 
 // Shader creation
 CompilerImpl *ContextMtl::createCompiler()
@@ -1404,7 +1408,7 @@ ProgramImpl *ContextMtl::createProgram(const gl::ProgramState &state)
 // Framebuffer creation
 FramebufferImpl *ContextMtl::createFramebuffer(const gl::FramebufferState &state)
 {
-    return new FramebufferMtl(state, this, false, nullptr);
+    return new FramebufferMtl(state, this, /* flipY */ false);
 }
 
 // Texture creation
@@ -1665,8 +1669,24 @@ void ContextMtl::endRenderEncoding(mtl::RenderCommandEncoder *encoder)
     mOcclusionQueryPool.resolveVisibilityResults(this);
 }
 
+void ContextMtl::endBlitAndComputeEncoding()
+{
+    if (mBlitEncoder.valid())
+    {
+        mBlitEncoder.endEncoding();
+    }
+
+    if (mComputeEncoder.valid())
+    {
+        mComputeEncoder.endEncoding();
+        mProvokingVertexHelper.releaseInFlightBuffers(this);
+    }
+}
+
 void ContextMtl::endEncoding(bool forceSaveRenderPassContent)
 {
+    endBlitAndComputeEncoding();
+
     if (mRenderEncoder.valid())
     {
         if (forceSaveRenderPassContent)
@@ -1677,21 +1697,10 @@ void ContextMtl::endEncoding(bool forceSaveRenderPassContent)
 
         endRenderEncoding(&mRenderEncoder);
     }
-
-    if (mBlitEncoder.valid())
-    {
-        mBlitEncoder.endEncoding();
-    }
-
-    if (mComputeEncoder.valid())
-    {
-        mComputeEncoder.endEncoding();
-    }
 }
 
 void ContextMtl::flushCommandBuffer(mtl::CommandBufferFinishOperation operation)
 {
-    mProvokingVertexHelper.commitPreconditionCommandBuffer(this);
     if (!mCmdBuffer.ready())
     {
         return;
@@ -1721,7 +1730,6 @@ void ContextMtl::flushCommandBufferIfNeeded()
 void ContextMtl::present(const gl::Context *context, id<CAMetalDrawable> presentationDrawable)
 {
     ensureCommandBufferReady();
-    mProvokingVertexHelper.commitPreconditionCommandBuffer(this);
 
     FramebufferMtl *currentframebuffer = mtl::GetImpl(getState().getDrawFramebuffer());
     if (currentframebuffer)
@@ -1854,7 +1862,19 @@ mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoder()
     }
 
     endEncoding(true);
+    ensureCommandBufferReady();
 
+    return &mBlitEncoder.restart();
+}
+
+mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoderWithoutEndingRenderEncoder()
+{
+    if (mBlitEncoder.valid())
+    {
+        return &mBlitEncoder;
+    }
+
+    endBlitAndComputeEncoding();
     ensureCommandBufferReady();
 
     return &mBlitEncoder.restart();
@@ -1873,15 +1893,28 @@ mtl::ComputeCommandEncoder *ContextMtl::getComputeCommandEncoder()
     return &mComputeEncoder.restart();
 }
 
+mtl::ComputeCommandEncoder *ContextMtl::getComputeCommandEncoderWithoutEndingRenderEncoder()
+{
+    if (mComputeEncoder.valid())
+    {
+        return &mComputeEncoder;
+    }
+
+    endBlitAndComputeEncoding();
+    ensureCommandBufferReady();
+
+    return &mComputeEncoder.restart();
+}
+
 mtl::ComputeCommandEncoder *ContextMtl::getIndexPreprocessingCommandEncoder()
 {
-    return mProvokingVertexHelper.getComputeCommandEncoder();
+    return getComputeCommandEncoder();
 }
 
 void ContextMtl::ensureCommandBufferReady()
 {
     flushCommandBufferIfNeeded();
-    mProvokingVertexHelper.ensureCommandBufferReady();
+
     if (!mCmdBuffer.ready())
     {
         mCmdBuffer.restart();

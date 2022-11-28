@@ -11,7 +11,6 @@
 #include "include/private/SkHalf.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkPipelineData.h"
-#include "src/core/SkUniform.h"
 #include "src/gpu/graphite/DrawTypes.h"
 
 // ensure that these types are the sizes the uniform data is expecting
@@ -548,14 +547,19 @@ size_t UniformOffsetCalculator::calculateOffset(SkSLType type, unsigned int coun
     return alignedOffset;
 }
 
-SkUniformDataBlock UniformManager::peekData() const {
-    return SkUniformDataBlock(SkSpan(fStorage.begin(), fStorage.count()));
+SkUniformDataBlock UniformManager::finishUniformDataBlock() {
+    size_t size = SkAlignTo(fStorage.size(), fReqAlignment);
+    size_t paddingSize = size - fStorage.size();
+    char* padding = fStorage.append(paddingSize);
+    memset(padding, 0, paddingSize);
+    return SkUniformDataBlock(SkSpan(fStorage.begin(), size));
 }
 
 void UniformManager::reset() {
     fCurUBOOffset = 0;
     fOffset = 0;
-    fStorage.rewind();
+    fReqAlignment = 0;
+    fStorage.clear();
 }
 
 void UniformManager::checkReset() const {
@@ -603,6 +607,8 @@ void UniformManager::write(SkSLType type, unsigned int count, const void* src) {
     uint32_t bytesWritten = fWriteUniform(revisedType, CType::kDefault, dst, count, src);
     SkASSERT(bytesNeeded == bytesWritten);
     fOffset += bytesWritten;
+
+    fReqAlignment = std::max(fReqAlignment, sksltype_to_alignment_mask(revisedType) + 1);
 }
 
 void UniformManager::write(const SkM44& mat) {

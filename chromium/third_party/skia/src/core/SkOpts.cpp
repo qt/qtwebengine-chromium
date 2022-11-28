@@ -92,14 +92,14 @@ namespace SkOpts {
 #undef DEFINE_DEFAULT
 
 #define M(st) (StageFn)SK_OPTS_NS::st,
-    StageFn stages_highp[] = { SK_RASTER_PIPELINE_STAGES(M) };
+    StageFn stages_highp[] = { SK_RASTER_PIPELINE_STAGES_ALL(M) };
     StageFn just_return_highp = (StageFn)SK_OPTS_NS::just_return;
     void (*start_pipeline_highp)(size_t,size_t,size_t,size_t,void**)
         = SK_OPTS_NS::start_pipeline;
 #undef M
 
 #define M(st) (StageFn)SK_OPTS_NS::lowp::st,
-    StageFn stages_lowp[] = { SK_RASTER_PIPELINE_STAGES(M) };
+    StageFn stages_lowp[] = { SK_RASTER_PIPELINE_STAGES_LOWP(M) };
     StageFn just_return_lowp = (StageFn)SK_OPTS_NS::lowp::just_return;
     void (*start_pipeline_lowp)(size_t,size_t,size_t,size_t,void**)
         = SK_OPTS_NS::lowp::start_pipeline;
@@ -115,7 +115,9 @@ namespace SkOpts {
     void Init_crc32();
 
     static void init() {
-    #if defined(SK_CPU_X86)
+    #if defined(SK_ENABLE_OPTIMIZE_SIZE)
+        // All Init_foo functions are omitted when optimizing for size
+    #elif defined(SK_CPU_X86)
         #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSSE3
             if (SkCpu::Supports(SkCpu::SSSE3)) { Init_ssse3(); }
         #endif

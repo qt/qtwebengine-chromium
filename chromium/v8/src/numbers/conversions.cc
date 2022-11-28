@@ -11,7 +11,6 @@
 
 #include "src/base/numbers/dtoa.h"
 #include "src/base/numbers/strtod.h"
-#include "src/base/platform/wrappers.h"
 #include "src/base/small-vector.h"
 #include "src/bigint/bigint.h"
 #include "src/common/assert-scope.h"
@@ -1517,6 +1516,11 @@ bool IsSpecialIndex(String string) {
   }
   return true;
 }
+
+float DoubleToFloat32_NoInline(double x) { return DoubleToFloat32(x); }
+
+int32_t DoubleToInt32_NoInline(double x) { return DoubleToInt32(x); }
+
 }  // namespace internal
 }  // namespace v8
 

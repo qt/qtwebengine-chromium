@@ -101,30 +101,31 @@ namespace Eigen
   EIGEN_ARRAY_DECLARE_GLOBAL_UNARY(isfinite,scalar_isfinite_op,finite value test,\sa Eigen::isinf DOXCOMMA Eigen::isnan DOXCOMMA ArrayBase::isfinite)
   EIGEN_ARRAY_DECLARE_GLOBAL_UNARY(sign,scalar_sign_op,sign (or 0),\sa ArrayBase::sign)
 
+  template <typename Derived, typename ScalarExponent>
+  using GlobalUnaryPowReturnType = std::enable_if_t<
+      !internal::is_arithmetic<typename NumTraits<Derived>::Real>::value &&
+          internal::is_arithmetic<typename NumTraits<ScalarExponent>::Real>::value,
+      CwiseUnaryOp<internal::scalar_unary_pow_op<typename Derived::Scalar, ScalarExponent>, const Derived> >;
+
   /** \returns an expression of the coefficient-wise power of \a x to the given constant \a exponent.
-    *
-    * \tparam ScalarExponent is the scalar type of \a exponent. It must be compatible with the scalar type of the given expression (\c Derived::Scalar).
-    *
-    * \sa ArrayBase::pow()
-    *
-    * \relates ArrayBase
-    */
+   *
+   * \tparam ScalarExponent is the scalar type of \a exponent. It must be compatible with the scalar type of the given
+   * expression (\c Derived::Scalar).
+   *
+   * \sa ArrayBase::pow()
+   *
+   * \relates ArrayBase
+   */
 #ifdef EIGEN_PARSED_BY_DOXYGEN
-  template<typename Derived,typename ScalarExponent>
-  inline const CwiseBinaryOp<internal::scalar_pow_op<Derived::Scalar,ScalarExponent>,Derived,Constant<ScalarExponent> >
-  pow(const Eigen::ArrayBase<Derived>& x, const ScalarExponent& exponent);
+  template <typename Derived, typename ScalarExponent>
+  EIGEN_DEVICE_FUNC inline const GlobalUnaryPowReturnType<Derived, ScalarExponent> pow(
+      const Eigen::ArrayBase<Derived>& x, const ScalarExponent& exponent);
 #else
-  template <typename Derived,typename ScalarExponent>
-  EIGEN_DEVICE_FUNC inline
-    const EIGEN_EXPR_BINARYOP_SCALAR_RETURN_TYPE(Derived,typename internal::promote_scalar_arg<typename Derived::Scalar
-                                                 EIGEN_COMMA ScalarExponent EIGEN_COMMA
-                                                 EIGEN_SCALAR_BINARY_SUPPORTED(pow,typename Derived::Scalar,ScalarExponent)>::type,pow)
-  pow(const Eigen::ArrayBase<Derived>& x, const ScalarExponent& exponent)
-  {
-    typedef typename internal::promote_scalar_arg<typename Derived::Scalar,ScalarExponent,
-                                                  EIGEN_SCALAR_BINARY_SUPPORTED(pow,typename Derived::Scalar,ScalarExponent)>::type PromotedExponent;
-    return EIGEN_EXPR_BINARYOP_SCALAR_RETURN_TYPE(Derived,PromotedExponent,pow)(x.derived(),
-           typename internal::plain_constant_type<Derived,PromotedExponent>::type(x.derived().rows(), x.derived().cols(), internal::scalar_constant_op<PromotedExponent>(exponent)));
+  template <typename Derived, typename ScalarExponent>
+  EIGEN_DEVICE_FUNC inline const GlobalUnaryPowReturnType<Derived, ScalarExponent> pow(
+      const Eigen::ArrayBase<Derived>& x, const ScalarExponent& exponent) {
+    return GlobalUnaryPowReturnType<Derived, ScalarExponent>(
+        x.derived(), internal::scalar_unary_pow_op<typename Derived::Scalar, ScalarExponent>(exponent));
   }
 #endif
 

@@ -5,7 +5,9 @@
 #include "src/wasm/module-compiler.h"
 
 #include <algorithm>
+#include <mutex>  // NOLINT(build/c++11)
 #include <queue>
+#include <shared_mutex>
 
 #include "src/api/api-inl.h"
 #include "src/base/enum-set.h"
@@ -33,19 +35,19 @@
 #include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-serialization.h"
 
-#define TRACE_COMPILE(...)                             \
-  do {                                                 \
-    if (FLAG_trace_wasm_compiler) PrintF(__VA_ARGS__); \
+#define TRACE_COMPILE(...)                                 \
+  do {                                                     \
+    if (v8_flags.trace_wasm_compiler) PrintF(__VA_ARGS__); \
   } while (false)
 
-#define TRACE_STREAMING(...)                            \
-  do {                                                  \
-    if (FLAG_trace_wasm_streaming) PrintF(__VA_ARGS__); \
+#define TRACE_STREAMING(...)                                \
+  do {                                                      \
+    if (v8_flags.trace_wasm_streaming) PrintF(__VA_ARGS__); \
   } while (false)
 
-#define TRACE_LAZY(...)                                        \
-  do {                                                         \
-    if (FLAG_trace_wasm_lazy_compilation) PrintF(__VA_ARGS__); \
+#define TRACE_LAZY(...)                                            \
+  do {                                                             \
+    if (v8_flags.trace_wasm_lazy_compilation) PrintF(__VA_ARGS__); \
   } while (false)
 
 namespace v8 {
@@ -136,14 +138,14 @@ class CompilationUnitQueues {
   Queue* GetQueueForTask(int task_id) {
     int required_queues = task_id + 1;
     {
-      base::SharedMutexGuard<base::kShared> queues_guard(&queues_mutex_);
+      std::shared_lock<std::shared_mutex> queues_guard{queues_mutex_};
       if (V8_LIKELY(static_cast<int>(queues_.size()) >= required_queues)) {
         return queues_[task_id].get();
       }
     }
 
     // Otherwise increase the number of queues.
-    base::SharedMutexGuard<base::kExclusive> queues_guard(&queues_mutex_);
+    std::unique_lock<std::shared_mutex> queues_guard{queues_mutex_};
     int num_queues = static_cast<int>(queues_.size());
     while (num_queues < required_queues) {
       int steal_from = num_queues + 1;
@@ -198,7 +200,7 @@ class CompilationUnitQueues {
     QueueImpl* queue;
     {
       int queue_to_add = next_queue_to_add.load(std::memory_order_relaxed);
-      base::SharedMutexGuard<base::kShared> queues_guard(&queues_mutex_);
+      std::shared_lock<std::shared_mutex> queues_guard{queues_mutex_};
       while (!next_queue_to_add.compare_exchange_weak(
           queue_to_add, next_task_id(queue_to_add, queues_.size()),
           std::memory_order_relaxed)) {
@@ -232,7 +234,7 @@ class CompilationUnitQueues {
   }
 
   void AddTopTierPriorityUnit(WasmCompilationUnit unit, size_t priority) {
-    base::SharedMutexGuard<base::kShared> queues_guard(&queues_mutex_);
+    std::shared_lock<std::shared_mutex> queues_guard{queues_mutex_};
     // Add to the individual queues in a round-robin fashion. No special care is
     // taken to balance them; they will be balanced by work stealing.
     // Priorities should only be seen as a hint here; without balancing, we
@@ -380,7 +382,7 @@ class CompilationUnitQueues {
     // Try to steal from all other queues. If this succeeds, return one of the
     // stolen units.
     {
-      base::SharedMutexGuard<base::kShared> guard(&queues_mutex_);
+      std::shared_lock<std::shared_mutex> guard{queues_mutex_};
       for (size_t steal_trials = 0; steal_trials < queues_.size();
            ++steal_trials, ++steal_task_id) {
         if (steal_task_id >= static_cast<int>(queues_.size())) {
@@ -437,7 +439,7 @@ class CompilationUnitQueues {
     // Try to steal from all other queues. If this succeeds, return one of the
     // stolen units.
     {
-      base::SharedMutexGuard<base::kShared> guard(&queues_mutex_);
+      std::shared_lock<std::shared_mutex> guard{queues_mutex_};
       for (size_t steal_trials = 0; steal_trials < queues_.size();
            ++steal_trials, ++steal_task_id) {
         if (steal_task_id >= static_cast<int>(queues_.size())) {
@@ -512,7 +514,7 @@ class CompilationUnitQueues {
   }
 
   // {queues_mutex_} protectes {queues_};
-  base::SharedMutex queues_mutex_;
+  std::shared_mutex queues_mutex_;
   std::vector<std::unique_ptr<QueueImpl>> queues_;
 
   const int num_declared_functions_;
@@ -558,17 +560,22 @@ class CompilationStateImpl {
 
   bool cancelled() const;
 
+  // Apply a compilation hint to the initial compilation progress, updating all
+  // internal fields accordingly.
+  void ApplyCompilationHintToInitialProgress(const WasmCompilationHint& hint,
+                                             size_t hint_idx);
+
   // Initialize compilation progress. Set compilation tiers to expect for
   // baseline and top tier compilation. Must be set before
   // {CommitCompilationUnits} is invoked which triggers background compilation.
-  void InitializeCompilationProgress(bool lazy_module, int num_import_wrappers,
+  void InitializeCompilationProgress(int num_import_wrappers,
                                      int num_export_wrappers);
 
   // Initialize the compilation progress after deserialization. This is needed
   // for recompilation (e.g. for tier down) to work later.
   void InitializeCompilationProgressAfterDeserialization(
       base::Vector<const int> lazy_functions,
-      base::Vector<const int> liftoff_functions);
+      base::Vector<const int> eager_functions);
 
   // Initializes compilation units based on the information encoded in the
   // {compilation_progress_}.
@@ -609,8 +616,7 @@ class CompilationStateImpl {
 
   std::shared_ptr<JSToWasmWrapperCompilationUnit>
   GetNextJSToWasmWrapperCompilationUnit();
-  void FinalizeJSToWasmWrappers(Isolate* isolate, const WasmModule* module,
-                                Handle<FixedArray>* export_wrappers_out);
+  void FinalizeJSToWasmWrappers(Isolate* isolate, const WasmModule* module);
 
   void OnFinishedUnits(base::Vector<WasmCode*>);
   void OnFinishedJSToWasmWrapperUnits(int num);
@@ -672,10 +678,6 @@ class CompilationStateImpl {
   }
 
  private:
-  uint8_t SetupCompilationProgressForFunction(
-      bool lazy_function, NativeModule* module,
-      const WasmFeatures& enabled_features, int func_index);
-
   // Returns the potentially-updated {function_progress}.
   uint8_t AddCompilationUnitInternal(CompilationUnitBuilder* builder,
                                      int function_index,
@@ -851,9 +853,9 @@ void CompilationState::SetHighPriority() { Impl(this)->SetHighPriority(); }
 
 void CompilationState::InitializeAfterDeserialization(
     base::Vector<const int> lazy_functions,
-    base::Vector<const int> liftoff_functions) {
+    base::Vector<const int> eager_functions) {
   Impl(this)->InitializeCompilationProgressAfterDeserialization(
-      lazy_functions, liftoff_functions);
+      lazy_functions, eager_functions);
 }
 
 bool CompilationState::failed() const { return Impl(this)->failed(); }
@@ -939,46 +941,60 @@ struct ExecutionTierPair {
   ExecutionTier top_tier;
 };
 
-ExecutionTierPair GetRequestedExecutionTiers(
-    NativeModule* native_module, const WasmFeatures& enabled_features,
-    uint32_t func_index) {
+ExecutionTierPair GetDefaultTiersPerModule(NativeModule* native_module,
+                                           DynamicTiering dynamic_tiering,
+                                           bool lazy_module) {
   const WasmModule* module = native_module->module();
-  ExecutionTierPair result;
-
-  result.baseline_tier = WasmCompilationUnit::GetBaselineExecutionTier(module);
-
-  bool dynamic_tiering =
-      Impl(native_module->compilation_state())->dynamic_tiering();
-  bool tier_up_enabled = !dynamic_tiering && FLAG_wasm_tier_up;
-  if (module->origin != kWasmOrigin || !tier_up_enabled ||
-      V8_UNLIKELY(FLAG_wasm_tier_up_filter >= 0 &&
-                  func_index !=
-                      static_cast<uint32_t>(FLAG_wasm_tier_up_filter))) {
-    result.top_tier = result.baseline_tier;
-    return result;
+  if (is_asmjs_module(module)) {
+    return {ExecutionTier::kTurbofan, ExecutionTier::kTurbofan};
   }
+  // TODO(13224): Use lazy compilation for debug code.
+  if (native_module->IsTieredDown()) {
+    return {ExecutionTier::kLiftoff, ExecutionTier::kLiftoff};
+  }
+  if (lazy_module) {
+    return {ExecutionTier::kNone, ExecutionTier::kNone};
+  }
+  ExecutionTier baseline_tier =
+      v8_flags.liftoff ? ExecutionTier::kLiftoff : ExecutionTier::kTurbofan;
+  bool eager_tier_up = !dynamic_tiering && v8_flags.wasm_tier_up;
+  ExecutionTier top_tier =
+      eager_tier_up ? ExecutionTier::kTurbofan : baseline_tier;
+  return {baseline_tier, top_tier};
+}
 
-  // Default tiering behaviour.
-  result.top_tier = ExecutionTier::kTurbofan;
+ExecutionTierPair GetLazyCompilationTiers(NativeModule* native_module,
+                                          uint32_t func_index) {
+  DynamicTiering dynamic_tiering =
+      Impl(native_module->compilation_state())->dynamic_tiering();
+  // For lazy compilation, get the tiers we would use if lazy compilation is
+  // disabled.
+  constexpr bool kNotLazy = false;
+  ExecutionTierPair tiers =
+      GetDefaultTiersPerModule(native_module, dynamic_tiering, kNotLazy);
 
   // Check if compilation hints override default tiering behaviour.
-  if (enabled_features.has_compilation_hints()) {
-    const WasmCompilationHint* hint = GetCompilationHint(module, func_index);
-    if (hint != nullptr) {
-      result.baseline_tier =
-          ApplyHintToExecutionTier(hint->baseline_tier, result.baseline_tier);
-      result.top_tier =
-          ApplyHintToExecutionTier(hint->top_tier, result.top_tier);
+  if (native_module->enabled_features().has_compilation_hints()) {
+    if (auto* hint = GetCompilationHint(native_module->module(), func_index)) {
+      tiers.baseline_tier =
+          ApplyHintToExecutionTier(hint->baseline_tier, tiers.baseline_tier);
+      tiers.top_tier = ApplyHintToExecutionTier(hint->top_tier, tiers.top_tier);
     }
+  }
+
+  if (V8_UNLIKELY(v8_flags.wasm_tier_up_filter >= 0 &&
+                  func_index !=
+                      static_cast<uint32_t>(v8_flags.wasm_tier_up_filter))) {
+    tiers.top_tier = tiers.baseline_tier;
   }
 
   // Correct top tier if necessary.
   static_assert(ExecutionTier::kLiftoff < ExecutionTier::kTurbofan,
                 "Assume an order on execution tiers");
-  if (result.baseline_tier > result.top_tier) {
-    result.top_tier = result.baseline_tier;
+  if (tiers.baseline_tier > tiers.top_tier) {
+    tiers.top_tier = tiers.baseline_tier;
   }
-  return result;
+  return tiers;
 }
 
 // The {CompilationUnitBuilder} builds compilation units and stores them in an
@@ -989,21 +1005,10 @@ class CompilationUnitBuilder {
   explicit CompilationUnitBuilder(NativeModule* native_module)
       : native_module_(native_module) {}
 
-  void AddUnits(uint32_t func_index) {
-    if (func_index < native_module_->module()->num_imported_functions) {
-      baseline_units_.emplace_back(func_index, ExecutionTier::kNone,
-                                   kNoDebugging);
-      return;
-    }
-    ExecutionTierPair tiers = GetRequestedExecutionTiers(
-        native_module_, native_module_->enabled_features(), func_index);
-    // Compile everything for non-debugging initially. If needed, we will tier
-    // down when the module is fully compiled. Synchronization would be pretty
-    // difficult otherwise.
-    baseline_units_.emplace_back(func_index, tiers.baseline_tier, kNoDebugging);
-    if (tiers.baseline_tier != tiers.top_tier) {
-      tiering_units_.emplace_back(func_index, tiers.top_tier, kNoDebugging);
-    }
+  void AddImportUnit(uint32_t func_index) {
+    DCHECK_GT(native_module_->module()->num_imported_functions, func_index);
+    baseline_units_.emplace_back(func_index, ExecutionTier::kNone,
+                                 kNoDebugging);
   }
 
   void AddJSToWasmWrapperUnit(
@@ -1092,10 +1097,9 @@ DecodeResult ValidateSingleFunction(const WasmModule* module, int func_index,
                                     WasmFeatures enabled_features) {
   const WasmFunction* func = &module->functions[func_index];
   FunctionBody body{func->sig, func->code.offset(), code.begin(), code.end()};
-  DecodeResult result;
-
-  WasmFeatures detected;
-  return VerifyWasmCode(allocator, enabled_features, module, &detected, body);
+  WasmFeatures detected_features;
+  return ValidateFunctionBody(allocator, enabled_features, module,
+                              &detected_features, body);
 }
 
 enum OnlyLazyFunctions : bool {
@@ -1134,8 +1138,8 @@ void ValidateSequentially(
 }
 
 bool IsLazyModule(const WasmModule* module) {
-  return FLAG_wasm_lazy_compilation ||
-         (FLAG_asm_wasm_lazy_compilation && is_asmjs_module(module));
+  return v8_flags.wasm_lazy_compilation ||
+         (v8_flags.asm_wasm_lazy_compilation && is_asmjs_module(module));
 }
 
 class CompileLazyTimingScope {
@@ -1160,7 +1164,7 @@ class CompileLazyTimingScope {
 }  // namespace
 
 bool CompileLazy(Isolate* isolate, Handle<WasmInstanceObject> instance,
-                 int func_index, NativeModule** out_native_module) {
+                 int func_index) {
   Handle<WasmModuleObject> module_object(instance->module_object(), isolate);
   NativeModule* native_module = module_object->native_module();
   Counters* counters = isolate->counters();
@@ -1173,9 +1177,6 @@ bool CompileLazy(Isolate* isolate, Handle<WasmInstanceObject> instance,
     lazy_compile_time_scope.emplace(counters, native_module);
   }
 
-  const WasmModule* module = native_module->module();
-  auto enabled_features = native_module->enabled_features();
-
   DCHECK(!native_module->lazy_compile_frozen());
 
   TRACE_LAZY("Compiling wasm-function#%d.\n", func_index);
@@ -1186,8 +1187,7 @@ bool CompileLazy(Isolate* isolate, Handle<WasmInstanceObject> instance,
 
   CompilationStateImpl* compilation_state =
       Impl(native_module->compilation_state());
-  ExecutionTierPair tiers =
-      GetRequestedExecutionTiers(native_module, enabled_features, func_index);
+  ExecutionTierPair tiers = GetLazyCompilationTiers(native_module, func_index);
 
   DCHECK_LE(native_module->num_imported_functions(), func_index);
   DCHECK_LT(func_index, native_module->num_functions());
@@ -1210,7 +1210,7 @@ bool CompileLazy(Isolate* isolate, Handle<WasmInstanceObject> instance,
   // During lazy compilation, we can only get compilation errors when
   // {--wasm-lazy-validation} is enabled. Otherwise, the module was fully
   // verified before starting its execution.
-  CHECK_IMPLIES(result.failed(), FLAG_wasm_lazy_validation);
+  CHECK_IMPLIES(result.failed(), v8_flags.wasm_lazy_validation);
   if (result.failed()) {
     return false;
   }
@@ -1235,22 +1235,21 @@ bool CompileLazy(Isolate* isolate, Handle<WasmInstanceObject> instance,
 
   counters->wasm_lazily_compiled_functions()->Increment();
 
+  const WasmModule* module = native_module->module();
   const bool lazy_module = IsLazyModule(module);
-  if (GetCompileStrategy(module, enabled_features, func_index, lazy_module) ==
-          CompileStrategy::kLazy &&
+  if (GetCompileStrategy(module, native_module->enabled_features(), func_index,
+                         lazy_module) == CompileStrategy::kLazy &&
       tiers.baseline_tier < tiers.top_tier) {
     WasmCompilationUnit tiering_unit{func_index, tiers.top_tier, kNoDebugging};
     compilation_state->CommitTopTierCompilationUnit(tiering_unit);
   }
 
   // Allocate feedback vector if needed.
-  if (result.feedback_vector_slots > 0) {
-    DCHECK(FLAG_wasm_speculative_inlining);
-    // We have to save the native_module on the stack, in case the allocation
-    // triggers a GC and we need the module to scan WasmCompileLazy stack frame.
-    *out_native_module = native_module;
-    Handle<FixedArray> vector = isolate->factory()->NewFixedArrayWithZeroes(
-        result.feedback_vector_slots);
+  int feedback_vector_slots = NumFeedbackSlots(module, func_index);
+  if (feedback_vector_slots > 0) {
+    DCHECK(v8_flags.wasm_speculative_inlining);
+    Handle<FixedArray> vector =
+        isolate->factory()->NewFixedArrayWithZeroes(feedback_vector_slots);
     instance->feedback_vectors().set(
         declared_function_index(module, func_index), *vector);
   }
@@ -1282,21 +1281,30 @@ void ThrowLazyCompilationError(Isolate* isolate,
 
 class TransitiveTypeFeedbackProcessor {
  public:
+  static void Process(WasmInstanceObject instance, int func_index) {
+    TransitiveTypeFeedbackProcessor{instance, func_index}.ProcessQueue();
+  }
+
+ private:
   TransitiveTypeFeedbackProcessor(WasmInstanceObject instance, int func_index)
       : instance_(instance),
         module_(instance.module()),
+        mutex_guard(&module_->type_feedback.mutex),
         feedback_for_function_(module_->type_feedback.feedback_for_function) {
-    base::MutexGuard mutex_guard(&module_->type_feedback.mutex);
     queue_.insert(func_index);
+  }
+
+  ~TransitiveTypeFeedbackProcessor() { DCHECK(queue_.empty()); }
+
+  void ProcessQueue() {
     while (!queue_.empty()) {
       auto next = queue_.cbegin();
-      Process(*next);
+      ProcessFunction(*next);
       queue_.erase(next);
     }
   }
 
- private:
-  void Process(int func_index);
+  void ProcessFunction(int func_index);
 
   void EnqueueCallees(const std::vector<CallSiteFeedback>& feedback) {
     for (size_t i = 0; i < feedback.size(); i++) {
@@ -1319,18 +1327,18 @@ class TransitiveTypeFeedbackProcessor {
   DisallowGarbageCollection no_gc_scope_;
   WasmInstanceObject instance_;
   const WasmModule* const module_;
-  std::map<uint32_t, FunctionTypeFeedback>& feedback_for_function_;
-  std::unordered_set<int> queue_;
+  base::MutexGuard mutex_guard;
+  std::unordered_map<uint32_t, FunctionTypeFeedback>& feedback_for_function_;
+  std::set<int> queue_;
 };
 
 class FeedbackMaker {
  public:
-  FeedbackMaker(WasmInstanceObject instance, int func_index_, int num_calls)
+  FeedbackMaker(WasmInstanceObject instance, int func_index, int num_calls)
       : instance_(instance),
         num_imported_functions_(
             static_cast<int>(instance.module()->num_imported_functions)),
-        targets_cache_(kMaxPolymorphism),
-        counts_cache_(kMaxPolymorphism) {
+        func_index_(func_index) {
     result_.reserve(num_calls);
   }
 
@@ -1368,13 +1376,13 @@ class FeedbackMaker {
     if (cache_usage_ == 0) {
       result_.emplace_back();
     } else if (cache_usage_ == 1) {
-      if (FLAG_trace_wasm_speculative_inlining) {
+      if (v8_flags.trace_wasm_speculative_inlining) {
         PrintF("[Function #%d call_ref #%zu inlineable (monomorphic)]\n",
                func_index_, result_.size());
       }
       result_.emplace_back(targets_cache_[0], counts_cache_[0]);
     } else {
-      if (FLAG_trace_wasm_speculative_inlining) {
+      if (v8_flags.trace_wasm_speculative_inlining) {
         PrintF("[Function #%d call_ref #%zu inlineable (polymorphic %d)]\n",
                func_index_, result_.size(), cache_usage_);
       }
@@ -1389,25 +1397,29 @@ class FeedbackMaker {
     cache_usage_ = 0;
   }
 
-  std::vector<CallSiteFeedback>&& GetResult() { return std::move(result_); }
+  // {GetResult} can only be called on a r-value reference to make it more
+  // obvious at call sites that {this} should not be used after this operation.
+  std::vector<CallSiteFeedback>&& GetResult() && { return std::move(result_); }
 
  private:
-  WasmInstanceObject instance_;
+  const WasmInstanceObject instance_;
   std::vector<CallSiteFeedback> result_;
-  int num_imported_functions_;
-  int func_index_;
+  const int num_imported_functions_;
+  const int func_index_;
   int cache_usage_{0};
-  std::vector<int> targets_cache_;
-  std::vector<int> counts_cache_;
+  int targets_cache_[kMaxPolymorphism];
+  int counts_cache_[kMaxPolymorphism];
 };
 
-void TransitiveTypeFeedbackProcessor::Process(int func_index) {
+void TransitiveTypeFeedbackProcessor::ProcessFunction(int func_index) {
   int which_vector = declared_function_index(module_, func_index);
   Object maybe_feedback = instance_.feedback_vectors().get(which_vector);
   if (!maybe_feedback.IsFixedArray()) return;
   FixedArray feedback = FixedArray::cast(maybe_feedback);
-  const std::vector<uint32_t>& call_direct_targets(
-      module_->type_feedback.feedback_for_function[func_index].call_targets);
+  base::Vector<uint32_t> call_direct_targets =
+      module_->type_feedback.feedback_for_function[func_index]
+          .call_targets.as_vector();
+  DCHECK_EQ(feedback.length(), call_direct_targets.size() * 2);
   FeedbackMaker fm(instance_, func_index, feedback.length() / 2);
   for (int i = 0; i < feedback.length(); i += 2) {
     Object value = feedback.get(i);
@@ -1429,17 +1441,17 @@ void TransitiveTypeFeedbackProcessor::Process(int func_index) {
       if (target != FunctionTypeFeedback::kNonDirectCall) {
         int count = Smi::cast(value).value();
         fm.AddCall(static_cast<int>(target), count);
-      } else if (FLAG_trace_wasm_speculative_inlining) {
+      } else if (v8_flags.trace_wasm_speculative_inlining) {
         PrintF("[Function #%d call #%d: uninitialized]\n", func_index, i / 2);
       }
-    } else if (FLAG_trace_wasm_speculative_inlining) {
+    } else if (v8_flags.trace_wasm_speculative_inlining) {
       if (value == ReadOnlyRoots(instance_.GetIsolate()).megamorphic_symbol()) {
         PrintF("[Function #%d call #%d: megamorphic]\n", func_index, i / 2);
       }
     }
     fm.FinalizeCall();
   }
-  std::vector<CallSiteFeedback> result(fm.GetResult());
+  std::vector<CallSiteFeedback> result = std::move(fm).GetResult();
   EnqueueCallees(result);
   feedback_for_function_[func_index].feedback_vector = std::move(result);
 }
@@ -1457,7 +1469,7 @@ void TriggerTierUp(WasmInstanceObject instance, int func_index) {
     base::MutexGuard mutex_guard(&module->type_feedback.mutex);
     int array_index =
         wasm::declared_function_index(instance.module(), func_index);
-    instance.tiering_budget_array()[array_index] = FLAG_wasm_tiering_budget;
+    instance.tiering_budget_array()[array_index] = v8_flags.wasm_tiering_budget;
     int& stored_priority =
         module->type_feedback.feedback_for_function[func_index].tierup_priority;
     if (stored_priority < kMaxInt) ++stored_priority;
@@ -1471,14 +1483,25 @@ void TriggerTierUp(WasmInstanceObject instance, int func_index) {
 
   // Before adding the tier-up unit or increasing priority, do process type
   // feedback for best code generation.
-  if (FLAG_wasm_speculative_inlining) {
+  if (v8_flags.wasm_speculative_inlining) {
     // TODO(jkummerow): we could have collisions here if different instances
     // of the same module have collected different feedback. If that ever
     // becomes a problem, figure out a solution.
-    TransitiveTypeFeedbackProcessor process(instance, func_index);
+    TransitiveTypeFeedbackProcessor::Process(instance, func_index);
   }
 
   compilation_state->AddTopTierPriorityCompilationUnit(tiering_unit, priority);
+}
+
+void TierUpNowForTesting(Isolate* isolate, WasmInstanceObject instance,
+                         int func_index) {
+  if (v8_flags.wasm_speculative_inlining) {
+    TransitiveTypeFeedbackProcessor::Process(instance, func_index);
+  }
+  auto* native_module = instance.module_object().native_module();
+  wasm::GetWasmEngine()->CompileFunction(isolate, native_module, func_index,
+                                         wasm::ExecutionTier::kTurbofan);
+  CHECK(!native_module->compilation_state()->failed());
 }
 
 namespace {
@@ -1687,7 +1710,8 @@ CompilationExecutionResult ExecuteCompilationUnits(
   UNREACHABLE();
 }
 
-using JSToWasmWrapperKey = std::pair<bool, FunctionSig>;
+// (function is imported, canonical type index)
+using JSToWasmWrapperKey = std::pair<bool, uint32_t>;
 
 // Returns the number of units added.
 int AddExportWrapperUnits(Isolate* isolate, NativeModule* native_module,
@@ -1696,11 +1720,14 @@ int AddExportWrapperUnits(Isolate* isolate, NativeModule* native_module,
   for (auto exp : native_module->module()->export_table) {
     if (exp.kind != kExternalFunction) continue;
     auto& function = native_module->module()->functions[exp.index];
-    JSToWasmWrapperKey key(function.imported, *function.sig);
+    uint32_t canonical_type_index =
+        native_module->module()
+            ->isorecursive_canonical_type_ids[function.sig_index];
+    JSToWasmWrapperKey key(function.imported, canonical_type_index);
     if (keys.insert(key).second) {
       auto unit = std::make_shared<JSToWasmWrapperCompilationUnit>(
-          isolate, function.sig, native_module->module(), function.imported,
-          native_module->enabled_features(),
+          isolate, function.sig, canonical_type_index, native_module->module(),
+          function.imported, native_module->enabled_features(),
           JSToWasmWrapperCompilationUnit::kAllowGeneric);
       builder->AddJSToWasmWrapperUnit(std::move(unit));
     }
@@ -1717,20 +1744,24 @@ int AddImportWrapperUnits(NativeModule* native_module,
       keys;
   int num_imported_functions = native_module->num_imported_functions();
   for (int func_index = 0; func_index < num_imported_functions; func_index++) {
-    const FunctionSig* sig = native_module->module()->functions[func_index].sig;
-    if (!IsJSCompatibleSignature(sig, native_module->module(),
+    const WasmFunction& function =
+        native_module->module()->functions[func_index];
+    if (!IsJSCompatibleSignature(function.sig, native_module->module(),
                                  native_module->enabled_features())) {
       continue;
     }
+    uint32_t canonical_type_index =
+        native_module->module()
+            ->isorecursive_canonical_type_ids[function.sig_index];
     WasmImportWrapperCache::CacheKey key(
-        compiler::kDefaultImportCallKind, sig,
-        static_cast<int>(sig->parameter_count()), kNoSuspend);
+        compiler::kDefaultImportCallKind, canonical_type_index,
+        static_cast<int>(function.sig->parameter_count()), kNoSuspend);
     auto it = keys.insert(key);
     if (it.second) {
       // Ensure that all keys exist in the cache, so that we can populate the
       // cache later without locking.
       (*native_module->import_wrapper_cache())[key] = nullptr;
-      builder->AddUnits(func_index);
+      builder->AddImportUnit(func_index);
     }
   }
   return static_cast<int>(keys.size());
@@ -1763,13 +1794,12 @@ std::unique_ptr<CompilationUnitBuilder> InitializeCompilation(
   InitializeLazyCompilation(native_module);
   CompilationStateImpl* compilation_state =
       Impl(native_module->compilation_state());
-  const bool lazy_module = IsLazyModule(native_module->module());
   auto builder = std::make_unique<CompilationUnitBuilder>(native_module);
   int num_import_wrappers = AddImportWrapperUnits(native_module, builder.get());
   int num_export_wrappers =
       AddExportWrapperUnits(isolate, native_module, builder.get());
-  compilation_state->InitializeCompilationProgress(
-      lazy_module, num_import_wrappers, num_export_wrappers);
+  compilation_state->InitializeCompilationProgress(num_import_wrappers,
+                                                   num_export_wrappers);
   return builder;
 }
 
@@ -1825,7 +1855,7 @@ class CompilationTimeCallback : public CompilationEventCallback {
           (compile_mode_ == kStreaming),           // streamed
           false,                                   // cached
           false,                                   // deserialized
-          FLAG_wasm_lazy_compilation,              // lazy
+          v8_flags.wasm_lazy_compilation,          // lazy
           true,                                    // success
           native_module->liftoff_code_size(),      // code_size_in_bytes
           native_module->liftoff_bailout_count(),  // liftoff_bailout_count
@@ -1840,7 +1870,7 @@ class CompilationTimeCallback : public CompilationEventCallback {
           (compile_mode_ == kStreaming),           // streamed
           false,                                   // cached
           false,                                   // deserialized
-          FLAG_wasm_lazy_compilation,              // lazy
+          v8_flags.wasm_lazy_compilation,          // lazy
           false,                                   // success
           native_module->liftoff_code_size(),      // code_size_in_bytes
           native_module->liftoff_bailout_count(),  // liftoff_bailout_count
@@ -1863,12 +1893,11 @@ class CompilationTimeCallback : public CompilationEventCallback {
 void CompileNativeModule(Isolate* isolate,
                          v8::metrics::Recorder::ContextId context_id,
                          ErrorThrower* thrower, const WasmModule* wasm_module,
-                         std::shared_ptr<NativeModule> native_module,
-                         Handle<FixedArray>* export_wrappers_out) {
-  CHECK(!FLAG_jitless);
+                         std::shared_ptr<NativeModule> native_module) {
+  CHECK(!v8_flags.jitless);
   ModuleWireBytes wire_bytes(native_module->wire_bytes());
   const bool lazy_module = IsLazyModule(wasm_module);
-  if (!FLAG_wasm_lazy_validation && wasm_module->origin == kWasmOrigin &&
+  if (!v8_flags.wasm_lazy_validation && wasm_module->origin == kWasmOrigin &&
       MayCompriseLazyFunctions(wasm_module, native_module->enabled_features(),
                                lazy_module)) {
     // Validate wasm modules for lazy compilation if requested. Never validate
@@ -1900,15 +1929,14 @@ void CompileNativeModule(Isolate* isolate,
       CompilationEvent::kFinishedExportWrappers);
 
   if (compilation_state->failed()) {
-    DCHECK_IMPLIES(lazy_module, !FLAG_wasm_lazy_validation);
+    DCHECK_IMPLIES(lazy_module, !v8_flags.wasm_lazy_validation);
     ValidateSequentially(wasm_module, native_module.get(), isolate->counters(),
                          isolate->allocator(), thrower, lazy_module);
     CHECK(thrower->error());
     return;
   }
 
-  compilation_state->FinalizeJSToWasmWrappers(isolate, native_module->module(),
-                                              export_wrappers_out);
+  compilation_state->FinalizeJSToWasmWrappers(isolate, native_module->module());
 
   compilation_state->WaitForCompilationEvent(
       CompilationEvent::kFinishedBaselineCompilation);
@@ -1916,7 +1944,7 @@ void CompileNativeModule(Isolate* isolate,
   compilation_state->PublishDetectedFeatures(isolate);
 
   if (compilation_state->failed()) {
-    DCHECK_IMPLIES(lazy_module, !FLAG_wasm_lazy_validation);
+    DCHECK_IMPLIES(lazy_module, !v8_flags.wasm_lazy_validation);
     ValidateSequentially(wasm_module, native_module.get(), isolate->counters(),
                          isolate->allocator(), thrower, lazy_module);
     CHECK(thrower->error());
@@ -1944,7 +1972,7 @@ class BackgroundCompileJob final : public JobTask {
     // NumOutstandingCompilations() does not reflect the units that running
     // workers are processing, thus add the current worker count to that number.
     return std::min(
-        static_cast<size_t>(FLAG_wasm_num_compilation_tasks),
+        static_cast<size_t>(v8_flags.wasm_num_compilation_tasks),
         worker_count +
             compile_scope.compilation_state()->NumOutstandingCompilations());
   }
@@ -1960,8 +1988,7 @@ class BackgroundCompileJob final : public JobTask {
 std::shared_ptr<NativeModule> CompileToNativeModule(
     Isolate* isolate, const WasmFeatures& enabled, ErrorThrower* thrower,
     std::shared_ptr<const WasmModule> module, const ModuleWireBytes& wire_bytes,
-    Handle<FixedArray>* export_wrappers_out, int compilation_id,
-    v8::metrics::Recorder::ContextId context_id) {
+    int compilation_id, v8::metrics::Recorder::ContextId context_id) {
   const WasmModule* wasm_module = module.get();
   WasmEngine* engine = GetWasmEngine();
   base::OwnedVector<uint8_t> wire_bytes_copy =
@@ -1973,13 +2000,15 @@ std::shared_ptr<NativeModule> CompileToNativeModule(
   std::shared_ptr<NativeModule> native_module = engine->MaybeGetNativeModule(
       wasm_module->origin, wire_bytes_copy.as_vector(), isolate);
   if (native_module) {
-    // TODO(thibaudm): Look into sharing export wrappers.
-    CompileJsToWasmWrappers(isolate, wasm_module, export_wrappers_out);
+    CompileJsToWasmWrappers(isolate, wasm_module);
     return native_module;
   }
 
-  TimedHistogramScope wasm_compile_module_time_scope(SELECT_WASM_COUNTER(
-      isolate->counters(), wasm_module->origin, wasm_compile, module_time));
+  base::Optional<TimedHistogramScope> wasm_compile_module_time_scope;
+  if (base::TimeTicks::IsHighResolution()) {
+    wasm_compile_module_time_scope.emplace(SELECT_WASM_COUNTER(
+        isolate->counters(), wasm_module->origin, wasm_compile, module_time));
+  }
 
   // Embedder usage count for declared shared memories.
   if (wasm_module->has_shared_memory) {
@@ -1987,11 +2016,12 @@ std::shared_ptr<NativeModule> CompileToNativeModule(
   }
 
   // Create a new {NativeModule} first.
-  const bool include_liftoff = module->origin == kWasmOrigin && FLAG_liftoff;
+  const bool include_liftoff =
+      module->origin == kWasmOrigin && v8_flags.liftoff;
   size_t code_size_estimate =
       wasm::WasmCodeManager::EstimateNativeModuleCodeSize(
           module.get(), include_liftoff,
-          DynamicTiering{FLAG_wasm_dynamic_tiering.value()});
+          DynamicTiering{v8_flags.wasm_dynamic_tiering.value()});
   native_module =
       engine->NewNativeModule(isolate, enabled, module, code_size_estimate);
   native_module->SetWireBytes(std::move(wire_bytes_copy));
@@ -1999,14 +2029,13 @@ std::shared_ptr<NativeModule> CompileToNativeModule(
   // Sync compilation is user blocking, so we increase the priority.
   native_module->compilation_state()->SetHighPriority();
 
-  CompileNativeModule(isolate, context_id, thrower, wasm_module, native_module,
-                      export_wrappers_out);
+  CompileNativeModule(isolate, context_id, thrower, wasm_module, native_module);
   bool cache_hit = !engine->UpdateNativeModuleCache(thrower->error(),
                                                     &native_module, isolate);
   if (thrower->error()) return {};
 
   if (cache_hit) {
-    CompileJsToWasmWrappers(isolate, wasm_module, export_wrappers_out);
+    CompileJsToWasmWrappers(isolate, wasm_module);
     return native_module;
   }
 
@@ -2062,8 +2091,8 @@ AsyncCompileJob::AsyncCompileJob(
     : isolate_(isolate),
       api_method_name_(api_method_name),
       enabled_features_(enabled),
-      dynamic_tiering_(DynamicTiering{FLAG_wasm_dynamic_tiering.value()}),
-      wasm_lazy_compilation_(FLAG_wasm_lazy_compilation),
+      dynamic_tiering_(DynamicTiering{v8_flags.wasm_dynamic_tiering.value()}),
+      wasm_lazy_compilation_(v8_flags.wasm_lazy_compilation),
       start_time_(base::TimeTicks::Now()),
       bytes_copy_(std::move(bytes_copy)),
       wire_bytes_(bytes_copy_.get(), bytes_copy_.get() + length),
@@ -2071,8 +2100,8 @@ AsyncCompileJob::AsyncCompileJob(
       compilation_id_(compilation_id) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
                "wasm.AsyncCompileJob");
-  CHECK(FLAG_wasm_async_compilation);
-  CHECK(!FLAG_jitless);
+  CHECK(v8_flags.wasm_async_compilation);
+  CHECK(!v8_flags.jitless);
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
   v8::Platform* platform = V8::GetCurrentPlatform();
   foreground_task_runner_ = platform->GetForegroundTaskRunner(v8_isolate);
@@ -2216,7 +2245,8 @@ void AsyncCompileJob::PrepareRuntimeObjects() {
   // Create heap objects for script and module bytes to be stored in the
   // module object. Asm.js is not compiled asynchronously.
   DCHECK(module_object_.is_null());
-  auto source_url = stream_ ? stream_->url() : base::Vector<const char>();
+  auto source_url =
+      stream_ ? base::VectorOf(stream_->url()) : base::Vector<const char>();
   auto script =
       GetWasmEngine()->GetOrCreateScript(isolate_, native_module_, source_url);
   Handle<WasmModuleObject> module_object =
@@ -2285,16 +2315,14 @@ void AsyncCompileJob::FinishCompile(bool is_after_cache_hit) {
   // TODO(bbudge) Allow deserialization without wrapper compilation, so we can
   // just compile wrappers here.
   if (!is_after_deserialization) {
-    Handle<FixedArray> export_wrappers;
     if (is_after_cache_hit) {
       // TODO(thibaudm): Look into sharing wrappers.
-      CompileJsToWasmWrappers(isolate_, module, &export_wrappers);
+      CompileJsToWasmWrappers(isolate_, module);
     } else {
-      compilation_state->FinalizeJSToWasmWrappers(isolate_, module,
-                                                  &export_wrappers);
+      compilation_state->FinalizeJSToWasmWrappers(isolate_, module);
     }
-    module_object_->set_export_wrappers(*export_wrappers);
   }
+
   // We can only update the feature counts once the entire compile is done.
   compilation_state->PublishDetectedFeatures(isolate_);
 
@@ -2495,7 +2523,7 @@ void AsyncCompileJob::StartBackgroundTask() {
 
   // If --wasm-num-compilation-tasks=0 is passed, do only spawn foreground
   // tasks. This is used to make timing deterministic.
-  if (FLAG_wasm_num_compilation_tasks > 0) {
+  if (v8_flags.wasm_num_compilation_tasks > 0) {
     V8::GetCurrentPlatform()->CallOnWorkerThread(std::move(task));
   } else {
     foreground_task_runner_->PostTask(std::move(task));
@@ -2553,7 +2581,7 @@ class AsyncCompileJob::DecodeModule : public AsyncCompileJob::CompileStep {
           DecodingMethod::kAsync, GetWasmEngine()->allocator());
 
       // Validate lazy functions here if requested.
-      if (!FLAG_wasm_lazy_validation && result.ok()) {
+      if (!v8_flags.wasm_lazy_validation && result.ok()) {
         const WasmModule* module = result.value().get();
         DCHECK_EQ(module->origin, kWasmOrigin);
         const bool lazy_module = job->wasm_lazy_compilation_;
@@ -2593,7 +2621,7 @@ class AsyncCompileJob::DecodeModule : public AsyncCompileJob::CompileStep {
     } else {
       // Decode passed.
       std::shared_ptr<WasmModule> module = std::move(result).value();
-      const bool include_liftoff = FLAG_liftoff;
+      const bool include_liftoff = v8_flags.liftoff;
       size_t code_size_estimate =
           wasm::WasmCodeManager::EstimateNativeModuleCodeSize(
               module.get(), include_liftoff, job->dynamic_tiering_);
@@ -2673,7 +2701,7 @@ class AsyncCompileJob::PrepareAndStartCompile : public CompileStep {
       // We are in single-threaded mode, so there are no worker tasks that will
       // do the compilation. We call {WaitForCompilationEvent} here so that the
       // main thread paticipates and finishes the compilation.
-      if (FLAG_wasm_num_compilation_tasks == 0) {
+      if (v8_flags.wasm_num_compilation_tasks == 0) {
         compilation_state->WaitForCompilationEvent(
             CompilationEvent::kFinishedBaselineCompilation);
       }
@@ -2796,10 +2824,10 @@ bool AsyncStreamingProcessor::ProcessModuleHeader(
                          job_->context_id(), GetWasmEngine()->allocator());
   decoder_.DecodeModuleHeader(bytes, offset);
   if (!decoder_.ok()) {
-    FinishAsyncCompileJobWithError(decoder_.FinishDecoding(false).error());
+    FinishAsyncCompileJobWithError(decoder_.FinishDecoding().error());
     return false;
   }
-  prefix_hash_ = NativeModuleCache::WireBytesHash(bytes);
+  prefix_hash_ = GetWireBytesHash(bytes);
   return true;
 }
 
@@ -2816,14 +2844,13 @@ bool AsyncStreamingProcessor::ProcessSection(SectionCode section_code,
   }
   if (before_code_section_) {
     // Combine section hashes until code section.
-    prefix_hash_ = base::hash_combine(prefix_hash_,
-                                      NativeModuleCache::WireBytesHash(bytes));
+    prefix_hash_ = base::hash_combine(prefix_hash_, GetWireBytesHash(bytes));
   }
   if (section_code == SectionCode::kUnknownSectionCode) {
     size_t bytes_consumed = ModuleDecoder::IdentifyUnknownSection(
         &decoder_, bytes, offset, &section_code);
     if (!decoder_.ok()) {
-      FinishAsyncCompileJobWithError(decoder_.FinishDecoding(false).error());
+      FinishAsyncCompileJobWithError(decoder_.FinishDecoding().error());
       return false;
     }
     if (section_code == SectionCode::kUnknownSectionCode) {
@@ -2834,10 +2861,9 @@ bool AsyncStreamingProcessor::ProcessSection(SectionCode section_code,
     offset += bytes_consumed;
     bytes = bytes.SubVector(bytes_consumed, bytes.size());
   }
-  constexpr bool verify_functions = false;
-  decoder_.DecodeSection(section_code, bytes, offset, verify_functions);
+  decoder_.DecodeSection(section_code, bytes, offset);
   if (!decoder_.ok()) {
-    FinishAsyncCompileJobWithError(decoder_.FinishDecoding(false).error());
+    FinishAsyncCompileJobWithError(decoder_.FinishDecoding().error());
     return false;
   }
   return true;
@@ -2856,7 +2882,7 @@ bool AsyncStreamingProcessor::ProcessCodeSectionHeader(
                                     static_cast<uint32_t>(code_section_length));
   if (!decoder_.CheckFunctionsCount(static_cast<uint32_t>(num_functions),
                                     functions_mismatch_error_offset)) {
-    FinishAsyncCompileJobWithError(decoder_.FinishDecoding(false).error());
+    FinishAsyncCompileJobWithError(decoder_.FinishDecoding().error());
     return false;
   }
 
@@ -2874,7 +2900,7 @@ bool AsyncStreamingProcessor::ProcessCodeSectionHeader(
   int num_imported_functions =
       static_cast<int>(decoder_.module()->num_imported_functions);
   DCHECK_EQ(kWasmOrigin, decoder_.module()->origin);
-  const bool include_liftoff = FLAG_liftoff;
+  const bool include_liftoff = v8_flags.liftoff;
   size_t code_size_estimate =
       wasm::WasmCodeManager::EstimateNativeModuleCodeSize(
           num_functions, num_imported_functions, code_section_length,
@@ -2926,7 +2952,7 @@ void AsyncStreamingProcessor::ProcessFunctionBody(
   CompileStrategy strategy =
       GetCompileStrategy(module, enabled_features, func_index, lazy_module);
   bool validate_lazily_compiled_function =
-      !FLAG_wasm_lazy_validation &&
+      !v8_flags.wasm_lazy_validation &&
       (strategy == CompileStrategy::kLazy ||
        strategy == CompileStrategy::kLazyBaselineEagerTopTier);
   if (validate_lazily_compiled_function) {
@@ -2961,7 +2987,7 @@ void AsyncStreamingProcessor::OnFinishedStream(
     base::OwnedVector<uint8_t> bytes) {
   TRACE_STREAMING("Finish stream...\n");
   DCHECK_EQ(NativeModuleCache::PrefixHash(bytes.as_vector()), prefix_hash_);
-  ModuleResult result = decoder_.FinishDecoding(false);
+  ModuleResult result = decoder_.FinishDecoding();
   if (result.failed()) {
     FinishAsyncCompileJobWithError(result.error());
     return;
@@ -2983,7 +3009,7 @@ void AsyncStreamingProcessor::OnFinishedStream(
   if (prefix_cache_hit_) {
     // Restart as an asynchronous, non-streaming compilation. Most likely
     // {PrepareAndStartCompile} will get the native module from the cache.
-    const bool include_liftoff = FLAG_liftoff;
+    const bool include_liftoff = v8_flags.liftoff;
     size_t code_size_estimate =
         wasm::WasmCodeManager::EstimateNativeModuleCodeSize(
             result.value().get(), include_liftoff, job_->dynamic_tiering_);
@@ -3048,16 +3074,19 @@ bool AsyncStreamingProcessor::Deserialize(
     base::Vector<const uint8_t> module_bytes,
     base::Vector<const uint8_t> wire_bytes) {
   TRACE_EVENT0("v8.wasm", "wasm.Deserialize");
-  TimedHistogramScope time_scope(
-      job_->isolate()->counters()->wasm_deserialization_time(),
-      job_->isolate());
+  base::Optional<TimedHistogramScope> time_scope;
+  if (base::TimeTicks::IsHighResolution()) {
+    time_scope.emplace(job_->isolate()->counters()->wasm_deserialization_time(),
+                       job_->isolate());
+  }
   // DeserializeNativeModule and FinishCompile assume that they are executed in
   // a HandleScope, and that a context is set on the isolate.
   HandleScope scope(job_->isolate_);
   SaveAndSwitchContext saved_context(job_->isolate_, *job_->native_context_);
 
-  MaybeHandle<WasmModuleObject> result = DeserializeNativeModule(
-      job_->isolate_, module_bytes, wire_bytes, job_->stream_->url());
+  MaybeHandle<WasmModuleObject> result =
+      DeserializeNativeModule(job_->isolate_, module_bytes, wire_bytes,
+                              base::VectorOf(job_->stream_->url()));
 
   if (result.is_null()) return false;
 
@@ -3110,68 +3139,81 @@ bool CompilationStateImpl::cancelled() const {
   return compile_cancelled_.load(std::memory_order_relaxed);
 }
 
-uint8_t CompilationStateImpl::SetupCompilationProgressForFunction(
-    bool lazy_function, NativeModule* native_module,
-    const WasmFeatures& enabled_features, int func_index) {
-  ExecutionTierPair requested_tiers =
-      GetRequestedExecutionTiers(native_module, enabled_features, func_index);
-  CompileStrategy strategy = GetCompileStrategy(
-      native_module->module(), enabled_features, func_index, lazy_function);
+void CompilationStateImpl::ApplyCompilationHintToInitialProgress(
+    const WasmCompilationHint& hint, size_t hint_idx) {
+  // Get old information.
+  uint8_t& progress = compilation_progress_[hint_idx];
+  ExecutionTier old_baseline_tier = RequiredBaselineTierField::decode(progress);
+  ExecutionTier old_top_tier = RequiredTopTierField::decode(progress);
 
-  bool required_for_baseline = strategy == CompileStrategy::kEager;
-  bool required_for_top_tier = strategy != CompileStrategy::kLazy;
-  DCHECK_EQ(required_for_top_tier,
-            strategy == CompileStrategy::kEager ||
-                strategy == CompileStrategy::kLazyBaselineEagerTopTier);
+  // Compute new information.
+  ExecutionTier new_baseline_tier =
+      ApplyHintToExecutionTier(hint.baseline_tier, old_baseline_tier);
+  ExecutionTier new_top_tier =
+      ApplyHintToExecutionTier(hint.top_tier, old_top_tier);
+  switch (hint.strategy) {
+    case WasmCompilationHintStrategy::kDefault:
+      // Be careful not to switch from lazy to non-lazy.
+      if (old_baseline_tier == ExecutionTier::kNone) {
+        new_baseline_tier = ExecutionTier::kNone;
+      }
+      if (old_top_tier == ExecutionTier::kNone) {
+        new_top_tier = ExecutionTier::kNone;
+      }
+      break;
+    case WasmCompilationHintStrategy::kLazy:
+      new_baseline_tier = ExecutionTier::kNone;
+      new_top_tier = ExecutionTier::kNone;
+      break;
+    case WasmCompilationHintStrategy::kEager:
+      // Nothing to do, use the encoded (new) tiers.
+      break;
+    case WasmCompilationHintStrategy::kLazyBaselineEagerTopTier:
+      new_baseline_tier = ExecutionTier::kNone;
+      break;
+  }
 
-  // Count functions to complete baseline and top tier compilation.
-  if (required_for_baseline) outstanding_baseline_units_++;
+  progress = RequiredBaselineTierField::update(progress, new_baseline_tier);
+  progress = RequiredTopTierField::update(progress, new_top_tier);
 
-  // Initialize function's compilation progress.
-  ExecutionTier required_baseline_tier = required_for_baseline
-                                             ? requested_tiers.baseline_tier
-                                             : ExecutionTier::kNone;
-  ExecutionTier required_top_tier =
-      required_for_top_tier ? requested_tiers.top_tier : ExecutionTier::kNone;
-  uint8_t function_progress =
-      ReachedTierField::encode(ExecutionTier::kNone) |
-      RequiredBaselineTierField::encode(required_baseline_tier) |
-      RequiredTopTierField::encode(required_top_tier);
-
-  return function_progress;
+  // Update counter for outstanding baseline units.
+  outstanding_baseline_units_ += (new_baseline_tier != ExecutionTier::kNone) -
+                                 (old_baseline_tier != ExecutionTier::kNone);
 }
 
 void CompilationStateImpl::InitializeCompilationProgress(
-    bool lazy_module, int num_import_wrappers, int num_export_wrappers) {
+    int num_import_wrappers, int num_export_wrappers) {
   DCHECK(!failed());
-  auto enabled_features = native_module_->enabled_features();
   auto* module = native_module_->module();
 
   base::MutexGuard guard(&callbacks_mutex_);
   DCHECK_EQ(0, outstanding_baseline_units_);
   DCHECK_EQ(0, outstanding_export_wrappers_);
-  compilation_progress_.reserve(module->num_declared_functions);
-  int start = module->num_imported_functions;
-  int end = start + module->num_declared_functions;
 
-  const bool prefer_liftoff = native_module_->IsTieredDown();
-  for (int func_index = start; func_index < end; func_index++) {
-    if (prefer_liftoff) {
-      constexpr uint8_t kLiftoffOnlyFunctionProgress =
-          RequiredTopTierField::encode(ExecutionTier::kLiftoff) |
-          RequiredBaselineTierField::encode(ExecutionTier::kLiftoff) |
-          ReachedTierField::encode(ExecutionTier::kNone);
-      compilation_progress_.push_back(kLiftoffOnlyFunctionProgress);
-      outstanding_baseline_units_++;
-      continue;
-    }
-    uint8_t function_progress = SetupCompilationProgressForFunction(
-        lazy_module, native_module_, enabled_features, func_index);
-    compilation_progress_.push_back(function_progress);
+  // Compute the default compilation progress for all functions, and set it.
+  const ExecutionTierPair default_tiers = GetDefaultTiersPerModule(
+      native_module_, dynamic_tiering_, IsLazyModule(module));
+  const uint8_t default_progress =
+      RequiredBaselineTierField::encode(default_tiers.baseline_tier) |
+      RequiredTopTierField::encode(default_tiers.top_tier) |
+      ReachedTierField::encode(ExecutionTier::kNone);
+  compilation_progress_.assign(module->num_declared_functions,
+                               default_progress);
+  if (default_tiers.baseline_tier != ExecutionTier::kNone) {
+    outstanding_baseline_units_ += module->num_declared_functions;
   }
-  DCHECK_IMPLIES(lazy_module && !prefer_liftoff,
-                 outstanding_baseline_units_ == 0);
-  DCHECK_LE(0, outstanding_baseline_units_);
+
+  // Apply compilation hints, if enabled.
+  if (native_module_->enabled_features().has_compilation_hints()) {
+    size_t num_hints = std::min(module->compilation_hints.size(),
+                                size_t{module->num_declared_functions});
+    for (size_t hint_idx = 0; hint_idx < num_hints; ++hint_idx) {
+      const auto& hint = module->compilation_hints[hint_idx];
+      ApplyCompilationHintToInitialProgress(hint, hint_idx);
+    }
+  }
+
+  // Account for outstanding wrapper compilation.
   outstanding_baseline_units_ += num_import_wrappers;
   outstanding_export_wrappers_ = num_export_wrappers;
 
@@ -3191,7 +3233,7 @@ uint8_t CompilationStateImpl::AddCompilationUnitInternal(
   ExecutionTier reached_tier =
       CompilationStateImpl::ReachedTierField::decode(function_progress);
 
-  if (FLAG_experimental_wasm_gc && !FLAG_wasm_lazy_compilation) {
+  if (v8_flags.experimental_wasm_gc && !v8_flags.wasm_lazy_compilation) {
     // The Turbofan optimizations we enable for WasmGC code can (for now)
     // take a very long time, so skip Turbofan compilation for super-large
     // functions.
@@ -3276,15 +3318,17 @@ void CompilationStateImpl::AddCompilationUnit(CompilationUnitBuilder* builder,
 
 void CompilationStateImpl::InitializeCompilationProgressAfterDeserialization(
     base::Vector<const int> lazy_functions,
-    base::Vector<const int> liftoff_functions) {
+    base::Vector<const int> eager_functions) {
   TRACE_EVENT2("v8.wasm", "wasm.CompilationAfterDeserialization",
                "num_lazy_functions", lazy_functions.size(),
-               "num_liftoff_functions", liftoff_functions.size());
-  TimedHistogramScope lazy_compile_time_scope(
-      counters()->wasm_compile_after_deserialize());
+               "num_eager_functions", eager_functions.size());
+  base::Optional<TimedHistogramScope> lazy_compile_time_scope;
+  if (base::TimeTicks::IsHighResolution()) {
+    lazy_compile_time_scope.emplace(
+        counters()->wasm_compile_after_deserialize());
+  }
 
   auto* module = native_module_->module();
-  auto enabled_features = native_module_->enabled_features();
   base::Optional<CodeSpaceWriteScope> lazy_code_space_write_scope;
   if (IsLazyModule(module) || !lazy_functions.empty()) {
     lazy_code_space_write_scope.emplace(native_module_);
@@ -3292,41 +3336,53 @@ void CompilationStateImpl::InitializeCompilationProgressAfterDeserialization(
   {
     base::MutexGuard guard(&callbacks_mutex_);
     DCHECK(compilation_progress_.empty());
+
+    // Initialize the compilation progress as if everything was
+    // TurboFan-compiled.
     constexpr uint8_t kProgressAfterTurbofanDeserialization =
         RequiredBaselineTierField::encode(ExecutionTier::kTurbofan) |
         RequiredTopTierField::encode(ExecutionTier::kTurbofan) |
         ReachedTierField::encode(ExecutionTier::kTurbofan);
-    finished_events_.Add(CompilationEvent::kFinishedExportWrappers);
-    if (liftoff_functions.empty()) {
-      // We have to trigger the compilation events to finish compilation.
-      // Typically the events get triggered when a CompilationUnit finishes, but
-      // with lazy compilation there are no compilation units.
-      // The {kFinishedBaselineCompilation} event is needed for module
-      // compilation to finish.
-      finished_events_.Add(CompilationEvent::kFinishedBaselineCompilation);
-    }
     compilation_progress_.assign(module->num_declared_functions,
                                  kProgressAfterTurbofanDeserialization);
+
+    // Update compilation state for lazy functions.
+    constexpr uint8_t kProgressForLazyFunctions =
+        RequiredBaselineTierField::encode(ExecutionTier::kNone) |
+        RequiredTopTierField::encode(ExecutionTier::kNone) |
+        ReachedTierField::encode(ExecutionTier::kNone);
     for (auto func_index : lazy_functions) {
       native_module_->UseLazyStub(func_index);
 
       compilation_progress_[declared_function_index(module, func_index)] =
-          SetupCompilationProgressForFunction(/*lazy_function =*/true,
-                                              native_module_, enabled_features,
-                                              func_index);
+          kProgressForLazyFunctions;
     }
-    for (auto func_index : liftoff_functions) {
+
+    // Update compilation state for eagerly compiled functions.
+    constexpr bool kNotLazy = false;
+    ExecutionTierPair default_tiers =
+        GetDefaultTiersPerModule(native_module_, dynamic_tiering_, kNotLazy);
+    uint8_t progress_for_eager_functions =
+        RequiredBaselineTierField::encode(default_tiers.baseline_tier) |
+        RequiredTopTierField::encode(default_tiers.top_tier) |
+        ReachedTierField::encode(ExecutionTier::kNone);
+    for (auto func_index : eager_functions) {
       // Check that {func_index} is not contained in {lazy_functions}.
       DCHECK_EQ(
           compilation_progress_[declared_function_index(module, func_index)],
           kProgressAfterTurbofanDeserialization);
-      // We want to force Liftoff compilation here, as we have a strong hint
-      // that the function will be needed anyways. Therefore we disable
-      // lazy compilation.
-      constexpr bool kNoLazyCompilation = false;
       compilation_progress_[declared_function_index(module, func_index)] =
-          SetupCompilationProgressForFunction(
-              kNoLazyCompilation, native_module_, enabled_features, func_index);
+          progress_for_eager_functions;
+    }
+    DCHECK_NE(ExecutionTier::kNone, default_tiers.baseline_tier);
+    outstanding_baseline_units_ += eager_functions.size();
+
+    // Export wrappers are compiled synchronously after deserialization, so set
+    // that as finished already. Baseline compilation is done if we do not have
+    // any Liftoff functions to compile.
+    finished_events_.Add(CompilationEvent::kFinishedExportWrappers);
+    if (eager_functions.empty()) {
+      finished_events_.Add(CompilationEvent::kFinishedBaselineCompilation);
     }
   }
   auto builder = std::make_unique<CompilationUnitBuilder>(native_module_);
@@ -3488,11 +3544,8 @@ CompilationStateImpl::GetNextJSToWasmWrapperCompilationUnit() {
   return js_to_wasm_wrapper_units_[outstanding_units - 1];
 }
 
-void CompilationStateImpl::FinalizeJSToWasmWrappers(
-    Isolate* isolate, const WasmModule* module,
-    Handle<FixedArray>* export_wrappers_out) {
-  *export_wrappers_out = isolate->factory()->NewFixedArray(
-      MaxNumExportWrappers(module), AllocationType::kOld);
+void CompilationStateImpl::FinalizeJSToWasmWrappers(Isolate* isolate,
+                                                    const WasmModule* module) {
   // TODO(6792): Wrappers below are allocated with {Factory::NewCode}. As an
   // optimization we create a code memory modification scope that avoids
   // changing the page permissions back-and-forth between RWX and RX, because
@@ -3500,13 +3553,17 @@ void CompilationStateImpl::FinalizeJSToWasmWrappers(
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("v8.wasm.detailed"),
                "wasm.FinalizeJSToWasmWrappers", "wrappers",
                js_to_wasm_wrapper_units_.size());
+
+  isolate->heap()->EnsureWasmCanonicalRttsSize(module->MaxCanonicalTypeIndex() +
+                                               1);
   CodePageCollectionMemoryModificationScope modification_scope(isolate->heap());
   for (auto& unit : js_to_wasm_wrapper_units_) {
     DCHECK_EQ(isolate, unit->isolate());
     Handle<CodeT> code = unit->Finalize();
-    int wrapper_index =
-        GetExportWrapperIndex(module, unit->sig(), unit->is_import());
-    (*export_wrappers_out)->set(wrapper_index, *code);
+    uint32_t index =
+        GetExportWrapperIndex(unit->canonical_sig_index(), unit->is_import());
+    isolate->heap()->js_to_wasm_wrappers().Set(index,
+                                               MaybeObject::FromObject(*code));
     RecordStats(*code, isolate->counters());
   }
 }
@@ -3626,8 +3683,8 @@ void CompilationStateImpl::TriggerCallbacks(
   }
 
   // For dynamic tiering, trigger "compilation chunk finished" after a new chunk
-  // of size {FLAG_wasm_caching_threshold}.
-  if (dynamic_tiering_ && static_cast<size_t>(FLAG_wasm_caching_threshold) <
+  // of size {v8_flags.wasm_caching_threshold}.
+  if (dynamic_tiering_ && static_cast<size_t>(v8_flags.wasm_caching_threshold) <
                               bytes_since_last_chunk_) {
     triggered_events.Add(CompilationEvent::kFinishedCompilationChunk);
     bytes_since_last_chunk_ = 0;
@@ -3703,11 +3760,14 @@ void CompilationStateImpl::PublishCompilationResults(
     DCHECK_LE(0, func_index);
     DCHECK_LT(func_index, native_module_->num_functions());
     if (func_index < num_imported_functions) {
-      const FunctionSig* sig =
-          native_module_->module()->functions[func_index].sig;
+      const WasmFunction& function =
+          native_module_->module()->functions[func_index];
+      uint32_t canonical_type_index =
+          native_module_->module()
+              ->isorecursive_canonical_type_ids[function.sig_index];
       WasmImportWrapperCache::CacheKey key(
-          compiler::kDefaultImportCallKind, sig,
-          static_cast<int>(sig->parameter_count()), kNoSuspend);
+          compiler::kDefaultImportCallKind, canonical_type_index,
+          static_cast<int>(function.sig->parameter_count()), kNoSuspend);
       // If two imported functions have the same key, only one of them should
       // have been added as a compilation unit. So it is always the first time
       // we compile a wrapper for this key here.
@@ -3840,8 +3900,8 @@ void CompilationStateImpl::WaitForCompilationEvent(
 }
 
 namespace {
-using JSToWasmWrapperQueue =
-    WrapperQueue<JSToWasmWrapperKey, base::hash<JSToWasmWrapperKey>>;
+using JSToWasmWrapperQueue = WrapperQueue<JSToWasmWrapperKey, std::nullptr_t,
+                                          base::hash<JSToWasmWrapperKey>>;
 using JSToWasmWrapperUnitMap =
     std::unordered_map<JSToWasmWrapperKey,
                        std::unique_ptr<JSToWasmWrapperCompilationUnit>,
@@ -3856,8 +3916,10 @@ class CompileJSToWasmWrapperJob final : public JobTask {
         outstanding_units_(queue->size()) {}
 
   void Run(JobDelegate* delegate) override {
-    while (base::Optional<JSToWasmWrapperKey> key = queue_->pop()) {
-      JSToWasmWrapperCompilationUnit* unit = (*compilation_units_)[*key].get();
+    while (base::Optional<std::pair<JSToWasmWrapperKey, std::nullptr_t>> key =
+               queue_->pop()) {
+      JSToWasmWrapperCompilationUnit* unit =
+          (*compilation_units_)[key->first].get();
       unit->Execute();
       outstanding_units_.fetch_sub(1, std::memory_order_relaxed);
       if (delegate && delegate->ShouldYield()) return;
@@ -3865,11 +3927,11 @@ class CompileJSToWasmWrapperJob final : public JobTask {
   }
 
   size_t GetMaxConcurrency(size_t /* worker_count */) const override {
-    DCHECK_GE(FLAG_wasm_num_compilation_tasks, 1);
+    DCHECK_GE(v8_flags.wasm_num_compilation_tasks, 1);
     // {outstanding_units_} includes the units that other workers are currently
     // working on, so we can safely ignore the {worker_count} and just return
     // the current number of outstanding units.
-    return std::min(static_cast<size_t>(FLAG_wasm_num_compilation_tasks),
+    return std::min(static_cast<size_t>(v8_flags.wasm_num_compilation_tasks),
                     outstanding_units_.load(std::memory_order_relaxed));
   }
 
@@ -3880,11 +3942,11 @@ class CompileJSToWasmWrapperJob final : public JobTask {
 };
 }  // namespace
 
-void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
-                             Handle<FixedArray>* export_wrappers_out) {
+void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module) {
   TRACE_EVENT0("v8.wasm", "wasm.CompileJsToWasmWrappers");
-  *export_wrappers_out = isolate->factory()->NewFixedArray(
-      MaxNumExportWrappers(module), AllocationType::kOld);
+
+  isolate->heap()->EnsureWasmCanonicalRttsSize(module->MaxCanonicalTypeIndex() +
+                                               1);
 
   JSToWasmWrapperQueue queue;
   JSToWasmWrapperUnitMap compilation_units;
@@ -3893,11 +3955,24 @@ void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
   // Prepare compilation units in the main thread.
   for (auto exp : module->export_table) {
     if (exp.kind != kExternalFunction) continue;
+
     auto& function = module->functions[exp.index];
-    JSToWasmWrapperKey key(function.imported, *function.sig);
-    if (queue.insert(key)) {
+    uint32_t canonical_type_index =
+        module->isorecursive_canonical_type_ids[function.sig_index];
+    int wrapper_index =
+        GetExportWrapperIndex(canonical_type_index, function.imported);
+    auto existing_wrapper =
+        isolate->heap()->js_to_wasm_wrappers().Get(wrapper_index);
+    if (existing_wrapper.IsStrongOrWeak() &&
+        !existing_wrapper.GetHeapObject().IsUndefined()) {
+      continue;
+    }
+
+    JSToWasmWrapperKey key(function.imported, canonical_type_index);
+    if (queue.insert(key, nullptr)) {
       auto unit = std::make_unique<JSToWasmWrapperCompilationUnit>(
-          isolate, function.sig, module, function.imported, enabled_features,
+          isolate, function.sig, canonical_type_index, module,
+          function.imported, enabled_features,
           JSToWasmWrapperCompilationUnit::kAllowGeneric);
       compilation_units.emplace(key, std::move(unit));
     }
@@ -3910,7 +3985,7 @@ void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
                  compilation_units.size());
     auto job =
         std::make_unique<CompileJSToWasmWrapperJob>(&queue, &compilation_units);
-    if (FLAG_wasm_num_compilation_tasks > 0) {
+    if (v8_flags.wasm_num_compilation_tasks > 0) {
       auto job_handle = V8::GetCurrentPlatform()->CreateJob(
           TaskPriority::kUserVisible, std::move(job));
 
@@ -3932,8 +4007,9 @@ void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
     JSToWasmWrapperCompilationUnit* unit = pair.second.get();
     DCHECK_EQ(isolate, unit->isolate());
     Handle<CodeT> code = unit->Finalize();
-    int wrapper_index = GetExportWrapperIndex(module, &key.second, key.first);
-    (*export_wrappers_out)->set(wrapper_index, *code);
+    int wrapper_index = GetExportWrapperIndex(key.second, key.first);
+    isolate->heap()->js_to_wasm_wrappers().Set(
+        wrapper_index, HeapObjectReference::Strong(*code));
     RecordStats(*code, isolate->counters());
   }
 }
@@ -3941,12 +4017,13 @@ void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
 WasmCode* CompileImportWrapper(
     NativeModule* native_module, Counters* counters,
     compiler::WasmImportCallKind kind, const FunctionSig* sig,
-    int expected_arity, Suspend suspend,
+    uint32_t canonical_type_index, int expected_arity, Suspend suspend,
     WasmImportWrapperCache::ModificationScope* cache_scope) {
   // Entry should exist, so that we don't insert a new one and invalidate
   // other threads' iterators/references, but it should not have been compiled
   // yet.
-  WasmImportWrapperCache::CacheKey key(kind, sig, expected_arity, suspend);
+  WasmImportWrapperCache::CacheKey key(kind, canonical_type_index,
+                                       expected_arity, suspend);
   DCHECK_NULL((*cache_scope)[key]);
   bool source_positions = is_asmjs_module(native_module->module());
   // Keep the {WasmCode} alive until we explicitly call {IncRef}.

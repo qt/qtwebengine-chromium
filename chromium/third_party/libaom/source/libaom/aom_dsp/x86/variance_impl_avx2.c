@@ -163,17 +163,17 @@ DECLARE_ALIGNED(32, static const uint8_t, bilinear_filters_avx2[512]) = {
   src_lo = _mm_srai_epi16(src_lo, 4);         \
   src_hi = _mm_srai_epi16(src_hi, 4);
 
-unsigned int aom_sub_pixel_variance32xh_avx2(const uint8_t *src, int src_stride,
-                                             int x_offset, int y_offset,
-                                             const uint8_t *dst, int dst_stride,
-                                             int height, unsigned int *sse) {
+int aom_sub_pixel_variance32xh_avx2(const uint8_t *src, int src_stride,
+                                    int x_offset, int y_offset,
+                                    const uint8_t *dst, int dst_stride,
+                                    int height, unsigned int *sse) {
   __m256i src_reg, dst_reg, exp_src_lo, exp_src_hi, exp_dst_lo, exp_dst_hi;
   __m256i sse_reg, sum_reg, sse_reg_hi, res_cmp, sum_reg_lo, sum_reg_hi;
   __m256i zero_reg;
   int i, sum;
-  sum_reg = _mm256_set1_epi16(0);
-  sse_reg = _mm256_set1_epi16(0);
-  zero_reg = _mm256_set1_epi16(0);
+  sum_reg = _mm256_setzero_si256();
+  sse_reg = _mm256_setzero_si256();
+  zero_reg = _mm256_setzero_si256();
 
   // x_offset = 0 and y_offset = 0
   if (x_offset == 0) {
@@ -351,17 +351,17 @@ unsigned int aom_sub_pixel_variance32xh_avx2(const uint8_t *src, int src_stride,
   return sum;
 }
 
-unsigned int aom_sub_pixel_variance16xh_avx2(const uint8_t *src, int src_stride,
-                                             int x_offset, int y_offset,
-                                             const uint8_t *dst, int dst_stride,
-                                             int height, unsigned int *sse) {
+int aom_sub_pixel_variance16xh_avx2(const uint8_t *src, int src_stride,
+                                    int x_offset, int y_offset,
+                                    const uint8_t *dst, int dst_stride,
+                                    int height, unsigned int *sse) {
   __m256i src_reg, dst_reg, exp_src_lo, exp_src_hi, exp_dst_lo, exp_dst_hi;
   __m256i sse_reg, sum_reg, sse_reg_hi, res_cmp, sum_reg_lo, sum_reg_hi;
   __m256i zero_reg;
   int i, sum;
-  sum_reg = _mm256_set1_epi16(0);
-  sse_reg = _mm256_set1_epi16(0);
-  zero_reg = _mm256_set1_epi16(0);
+  sum_reg = _mm256_setzero_si256();
+  sse_reg = _mm256_setzero_si256();
+  zero_reg = _mm256_setzero_si256();
 
   // x_offset = 0 and y_offset = 0
   if (x_offset == 0) {
@@ -589,18 +589,19 @@ unsigned int aom_sub_pixel_variance16xh_avx2(const uint8_t *src, int src_stride,
   return sum;
 }
 
-unsigned int aom_sub_pixel_avg_variance32xh_avx2(
-    const uint8_t *src, int src_stride, int x_offset, int y_offset,
-    const uint8_t *dst, int dst_stride, const uint8_t *sec, int sec_stride,
-    int height, unsigned int *sse) {
+int aom_sub_pixel_avg_variance32xh_avx2(const uint8_t *src, int src_stride,
+                                        int x_offset, int y_offset,
+                                        const uint8_t *dst, int dst_stride,
+                                        const uint8_t *sec, int sec_stride,
+                                        int height, unsigned int *sse) {
   __m256i sec_reg;
   __m256i src_reg, dst_reg, exp_src_lo, exp_src_hi, exp_dst_lo, exp_dst_hi;
   __m256i sse_reg, sum_reg, sse_reg_hi, res_cmp, sum_reg_lo, sum_reg_hi;
   __m256i zero_reg;
   int i, sum;
-  sum_reg = _mm256_set1_epi16(0);
-  sse_reg = _mm256_set1_epi16(0);
-  zero_reg = _mm256_set1_epi16(0);
+  sum_reg = _mm256_setzero_si256();
+  sse_reg = _mm256_setzero_si256();
+  zero_reg = _mm256_setzero_si256();
 
   // x_offset = 0 and y_offset = 0
   if (x_offset == 0) {

@@ -10,7 +10,6 @@
 
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/DrawPass.h"
-#include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/Log.h"
 
 #include <memory>
@@ -18,25 +17,34 @@
 #include "include/core/SkTypes.h"
 #include "include/ports/SkCFObject.h"
 
+#ifdef SK_ENABLE_PIET_GPU
+#include "src/gpu/piet/Render.h"
+#endif
+
 #import <Metal/Metal.h>
 
 namespace skgpu::graphite {
 class MtlBlitCommandEncoder;
 class MtlComputeCommandEncoder;
 class MtlRenderCommandEncoder;
+class MtlResourceProvider;
 class MtlSharedContext;
 
 class MtlCommandBuffer final : public CommandBuffer {
 public:
-    static sk_sp<MtlCommandBuffer> Make(id<MTLCommandQueue>, const MtlSharedContext*);
+    static std::unique_ptr<MtlCommandBuffer> Make(id<MTLCommandQueue>,
+                                                  const MtlSharedContext*,
+                                                  MtlResourceProvider*);
     ~MtlCommandBuffer() override;
+
+    bool setNewCommandBufferResources() override;
 
     bool isFinished() {
         return (*fCommandBuffer).status == MTLCommandBufferStatusCompleted ||
                (*fCommandBuffer).status == MTLCommandBufferStatusError;
 
     }
-    void waitUntilFinished(const SharedContext*) {
+    void waitUntilFinished() {
         // TODO: it's not clear what do to if status is Enqueued. Commit and then wait?
         if ((*fCommandBuffer).status == MTLCommandBufferStatusScheduled ||
             (*fCommandBuffer).status == MTLCommandBufferStatusCommitted) {
@@ -50,8 +58,18 @@ public:
     }
     bool commit();
 
+#ifdef SK_ENABLE_PIET_GPU
+    void setPietRenderer(const skgpu::piet::MtlRenderer* renderer) { fPietRenderer = renderer; }
+#endif
+
 private:
-    MtlCommandBuffer(sk_cfp<id<MTLCommandBuffer>> cmdBuffer, const MtlSharedContext* sharedContext);
+    MtlCommandBuffer(id<MTLCommandQueue>,
+                     const MtlSharedContext* sharedContext,
+                     MtlResourceProvider* resourceProvider);
+
+    bool createNewMTLCommandBuffer();
+
+    void onResetCommandBuffer() override;
 
     bool onAddRenderPass(const RenderPassDesc&,
                          const Texture* colorTexture,
@@ -116,6 +134,15 @@ private:
                                const Texture*,
                                const BufferTextureCopyData* copyData,
                                int count) override;
+    bool onCopyTextureToTexture(const Texture* src,
+                                SkIRect srcRect,
+                                const Texture* dst,
+                                SkIPoint dstPoint) override;
+    bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
+
+#ifdef SK_ENABLE_PIET_GPU
+    void onRenderPietScene(const skgpu::piet::Scene& scene, const Texture* target) override;
+#endif
 
     MtlBlitCommandEncoder* getBlitCommandEncoder();
     void endBlitCommandEncoder();
@@ -125,12 +152,17 @@ private:
     sk_sp<MtlComputeCommandEncoder> fActiveComputeCommandEncoder;
     sk_sp<MtlBlitCommandEncoder> fActiveBlitCommandEncoder;
 
-    size_t fCurrentVertexStride = 0;
-    size_t fCurrentInstanceStride = 0;
     id<MTLBuffer> fCurrentIndexBuffer;
     size_t fCurrentIndexBufferOffset = 0;
 
+    // The command buffer will outlive the MtlQueueManager which owns the MTLCommandQueue.
+    id<MTLCommandQueue> fQueue;
     const MtlSharedContext* fSharedContext;
+    MtlResourceProvider* fResourceProvider;
+
+#ifdef SK_ENABLE_PIET_GPU
+    const skgpu::piet::MtlRenderer* fPietRenderer = nullptr;  // owned by MtlQueueManager
+#endif
 };
 
 } // namespace skgpu::graphite

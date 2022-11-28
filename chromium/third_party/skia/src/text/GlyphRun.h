@@ -71,7 +71,6 @@ public:
     SkSpan<const uint32_t> clusters() const { return fClusters; }
     SkSpan<const char> text() const { return fText; }
     SkSpan<const SkVector> scaledRotations() const { return fScaledRotations; }
-    SkRect sourceBounds(const SkPaint& paint) const;
 
 private:
     // GlyphIDs and positions.
@@ -126,6 +125,7 @@ public:
 
     SkPoint origin() const { return fOrigin; }
     SkRect sourceBounds() const { return fSourceBounds; }
+    SkRect sourceBoundsWithOrigin() const { return fSourceBounds.makeOffset(fOrigin); }
     const SkTextBlob* blob() const { return fOriginalTextBlob; }
     GlyphRunBuilder* builder() const { return fBuilder; }
     SkSubRunBuffers* buffers() const;
@@ -149,8 +149,7 @@ private:
 
 class GlyphRunBuilder {
 public:
-    GlyphRunList makeGlyphRunList(
-            const GlyphRun& run, SkRect bounds, SkPoint origin);
+    GlyphRunList makeGlyphRunList(const GlyphRun& run, const SkPaint& paint, SkPoint origin);
     const GlyphRunList& textToGlyphRunList(const SkFont& font,
                                            const SkPaint& paint,
                                            const void* bytes,

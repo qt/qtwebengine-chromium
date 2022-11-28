@@ -18,6 +18,7 @@
 #include "cast/streaming/constants.h"
 #include "cast/streaming/frame_id.h"
 #include "cast/streaming/rtp_time.h"
+#include "cast/streaming/sender.h"
 #include "platform/api/task_runner.h"
 #include "platform/api/time.h"
 
@@ -26,8 +27,6 @@ namespace openscreen {
 class TaskRunner;
 
 namespace cast {
-
-class Sender;
 
 class StreamingVideoEncoder {
  public:
@@ -163,7 +162,7 @@ class StreamingVideoEncoder {
  protected:
   StreamingVideoEncoder(const Parameters& params,
                         TaskRunner* task_runner,
-                        Sender* sender);
+                        std::unique_ptr<Sender> sender);
 
   // This is the equivalent change in encoding speed per one quantizer step.
   static constexpr double kEquivalentEncodingSpeedStepPerQuantizerStep =
@@ -175,7 +174,7 @@ class StreamingVideoEncoder {
 
   const Parameters params_;
   TaskRunner* const main_task_runner_;
-  Sender* const sender_;
+  std::unique_ptr<Sender> sender_;
 
   // These represent the magnitude of the AV1 speed setting, where larger values
   // (i.e., faster speed) request less CPU usage but will provide lower video

@@ -30,88 +30,89 @@ $}[OP]
 $SUFFIX = {"LINEAR": "", "RELU": "_relu", "MINMAX": "_minmax"}[ACTIVATION]
 $PARAMS = {"LINEAR": "xnn_f32_default_params", "RELU": "xnn_f32_relu_params", "MINMAX": "xnn_f32_minmax_params"}[ACTIVATION]
 void xnn_f32_v${OP.lower()}c${SUFFIX}_ukernel__${"wasm" if WASM else "scalar"}_x${BATCH_TILE}(
-    size_t n,
-    const float* a,
-    const float* b,
-    float* y,
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
     const union ${PARAMS} params[restrict XNN_MIN_ELEMENTS(1)])
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
-  assert(a != NULL);
-  assert(b != NULL);
-  assert(y != NULL);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
 
   $if ACTIVATION == "MINMAX":
-    const float vy_min = params->scalar.min;
-    const float vy_max = params->scalar.max;
+    const float voutput_min = params->scalar.min;
+    const float voutput_max = params->scalar.max;
+  const float vb = *input_b;
 
-  const float vb = *b;
-  $if BATCH_TILE > 1:
-    for (; n >= ${BATCH_TILE} * sizeof(float); n -= ${BATCH_TILE} * sizeof(float)) {
-      $for N in range(BATCH_TILE):
-        const float va${ABC[N]} = a[${N}];
-      a += ${BATCH_TILE};
-
-      $for N in range(BATCH_TILE):
-        float vy${ABC[N]} = ${OP_FUNC("va" + ABC[N])};
-
+  $if BATCH_TILE == 1:
+    for (; batch >= sizeof(float); batch -= sizeof(float)) {
+      const float va = *input_a++;
+      float vacc = ${OP_FUNC("va")};
       $if OP == "SQRDIFF":
-        $for N in range(BATCH_TILE):
-          vy${ABC[N]} = vy${ABC[N]} * vy${ABC[N]};
-
+        vacc = vacc * vacc;
       $if ACTIVATION == "MINMAX":
-        $for N in range(BATCH_TILE):
-          vy${ABC[N]} = ${MAX_F32}(vy${ABC[N]}, vy_min);
-
-        $for N in range(BATCH_TILE):
-          vy${ABC[N]} = ${MIN_F32}(vy${ABC[N]}, vy_max);
+        vacc = ${MAX_F32}(vacc, voutput_min);
+        vacc = ${MIN_F32}(vacc, voutput_max);
       $elif ACTIVATION == "RELU":
-        $for N in range(BATCH_TILE):
-          vy${ABC[N]} = ${MAX_F32}(vy${ABC[N]}, 0.0f);
-
-      $for N in range(BATCH_TILE):
-        y[${N}] = vy${ABC[N]};
-      y += ${BATCH_TILE};
-    }
-    if XNN_UNLIKELY(n != 0) {
-      $if BATCH_TILE > 2:
-        do {
-          const float va = *a++;
-          float vy = ${OP_FUNC("va")};
-          $if OP == "SQRDIFF":
-            vy = vy * vy;
-          $if ACTIVATION == "MINMAX":
-            vy = ${MAX_F32}(vy, vy_min);
-            vy = ${MIN_F32}(vy, vy_max);
-          $elif ACTIVATION == "RELU":
-            vy = ${MAX_F32}(vy, 0.0f);
-          *y++ = vy;
-          n -= sizeof(float);
-        } while (n != 0);
-      $else:
-        const float va = *a;
-        float vy = ${OP_FUNC("va")};
-        $if OP == "SQRDIFF":
-          vy = vy * vy;
-        $if ACTIVATION == "MINMAX":
-          vy = ${MAX_F32}(vy, vy_min);
-          vy = ${MIN_F32}(vy, vy_max);
-        $elif ACTIVATION == "RELU":
-          vy = ${MAX_F32}(vy, 0.0f);
-        *y = vy;
+        vacc = ${MAX_F32}(vacc, 0.0f);
+      *output++ = vacc;
     }
   $else:
-    for (; n >= sizeof(float); n -= sizeof(float)) {
-      const float va = *a++;
-      float vy = ${OP_FUNC("va")};
+    for (; batch >= ${BATCH_TILE} * sizeof(float); batch -= ${BATCH_TILE} * sizeof(float)) {
+      $for N in range(BATCH_TILE):
+        const float va${ABC[N]} = input_a[${N}];
+      input_a += ${BATCH_TILE};
+
+      $for N in range(BATCH_TILE):
+        float vacc${ABC[N]} = ${OP_FUNC("va" + ABC[N])};
+
       $if OP == "SQRDIFF":
-        vy = vy * vy;
+        $for N in range(BATCH_TILE):
+          vacc${ABC[N]} = vacc${ABC[N]} * vacc${ABC[N]};
+
       $if ACTIVATION == "MINMAX":
-        vy = ${MAX_F32}(vy, vy_min);
-        vy = ${MIN_F32}(vy, vy_max);
+        $for N in range(BATCH_TILE):
+          vacc${ABC[N]} = ${MAX_F32}(vacc${ABC[N]}, voutput_min);
+
+        $for N in range(BATCH_TILE):
+          vacc${ABC[N]} = ${MIN_F32}(vacc${ABC[N]}, voutput_max);
       $elif ACTIVATION == "RELU":
-        vy = ${MAX_F32}(vy, 0.0f);
-      *y++ = vy;
+        $for N in range(BATCH_TILE):
+          vacc${ABC[N]} = ${MAX_F32}(vacc${ABC[N]}, 0.0f);
+
+      $for N in range(BATCH_TILE):
+        output[${N}] = vacc${ABC[N]};
+      output += ${BATCH_TILE};
+    }
+    if XNN_UNLIKELY(batch != 0) {
+      $if BATCH_TILE == 2:
+        assert(batch == sizeof(float));
+        const float va = *input_a;
+        float vacc = ${OP_FUNC("va")};
+        $if OP == "SQRDIFF":
+          vacc = vacc * vacc;
+        $if ACTIVATION == "MINMAX":
+          vacc = ${MAX_F32}(vacc, voutput_min);
+          vacc = ${MIN_F32}(vacc, voutput_max);
+        $elif ACTIVATION == "RELU":
+          vacc = ${MAX_F32}(vacc, 0.0f);
+        *output = vacc;
+      $else:
+        do {
+          const float va = *input_a++;
+          float vacc = ${OP_FUNC("va")};
+          $if OP == "SQRDIFF":
+            vacc = vacc * vacc;
+          $if ACTIVATION == "MINMAX":
+            vacc = ${MAX_F32}(vacc, voutput_min);
+            vacc = ${MIN_F32}(vacc, voutput_max);
+          $elif ACTIVATION == "RELU":
+            vacc = ${MAX_F32}(vacc, 0.0f);
+          *output++ = vacc;
+          batch -= sizeof(float);
+        } while (batch != 0);
     }
 }

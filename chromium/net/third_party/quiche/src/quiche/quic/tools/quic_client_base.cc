@@ -18,24 +18,6 @@
 
 namespace quic {
 
-// A path context which owns the writer.
-class QUIC_EXPORT_PRIVATE PathMigrationContext
-    : public QuicPathValidationContext {
- public:
-  PathMigrationContext(std::unique_ptr<QuicPacketWriter> writer,
-                       const QuicSocketAddress& self_address,
-                       const QuicSocketAddress& peer_address)
-      : QuicPathValidationContext(self_address, peer_address),
-        alternative_writer_(std::move(writer)) {}
-
-  QuicPacketWriter* WriterToUse() override { return alternative_writer_.get(); }
-
-  QuicPacketWriter* ReleaseWriter() { return alternative_writer_.release(); }
-
- private:
-  std::unique_ptr<QuicPacketWriter> alternative_writer_;
-};
-
 // Implements the basic feature of a result delegate for path validation for
 // connection migration. If the validation succeeds, migrate to the alternative
 // path. Otherwise, stay on the current path.
@@ -67,7 +49,8 @@ class QuicClientSocketMigrationValidationResultDelegate
       std::unique_ptr<QuicPathValidationContext> context) override {
     QUIC_LOG(WARNING) << "Fail to validate path " << *context
                       << ", stop migrating.";
-    client_->session()->connection()->OnPathValidationFailureAtClient();
+    client_->session()->connection()->OnPathValidationFailureAtClient(
+        /*is_multi_port=*/false);
   }
 
  private:
@@ -183,7 +166,7 @@ void QuicClientBase::StartConnect() {
       new QuicConnection(GetNextConnectionId(), QuicSocketAddress(),
                          server_address(), helper(), alarm_factory(), writer,
                          /* owns_writer= */ false, Perspective::IS_CLIENT,
-                         client_supported_versions));
+                         client_supported_versions, connection_id_generator_));
   if (can_reconnect_with_different_version) {
     session()->set_client_original_supported_versions(supported_versions());
   }
@@ -482,7 +465,8 @@ class ValidationResultDelegate : public QuicPathValidator::ResultDelegate {
       std::unique_ptr<QuicPathValidationContext> context) override {
     QUIC_LOG(WARNING) << "Fail to validate path " << *context
                       << ", stop migrating.";
-    client_->session()->connection()->OnPathValidationFailureAtClient();
+    client_->session()->connection()->OnPathValidationFailureAtClient(
+        /*is_multi_port=*/false);
   }
 
  private:

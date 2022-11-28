@@ -113,8 +113,8 @@ private:
     void initFormatTable();
 
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override;
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
+    bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                          const GrSurfaceProxy* src, const SkIRect& srcRect) const override;
     GrBackendFormat onGetDefaultBackendFormat(GrColorType) const override;
     bool onAreColorTypeAndFormatCompatible(GrColorType, const GrBackendFormat&) const override;
 
@@ -163,9 +163,9 @@ private:
         int fColorTypeInfoCount = 0;
     };
 #ifdef SK_BUILD_FOR_IOS
-    inline static constexpr size_t kNumMtlFormats = 17;
+    inline static constexpr size_t kNumMtlFormats = 18;
 #else
-    inline static constexpr size_t kNumMtlFormats = 16;
+    inline static constexpr size_t kNumMtlFormats = 19;
 #endif
     static size_t GetFormatIndex(MTLPixelFormat);
     FormatInfo fFormatTable[kNumMtlFormats];

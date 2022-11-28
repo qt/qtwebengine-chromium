@@ -14,7 +14,6 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_file.h"
 
 namespace jpegxl {
@@ -92,9 +91,7 @@ struct JpegXlContainer {
   size_t jpeg_reconstruction_size = 0;
 
   // The main JPEG XL codestream, of which there must be 1 in the container.
-  // TODO(lode): support split codestream: there may be multiple jxlp boxes.
-  const uint8_t* codestream = nullptr;  // Not owned
-  size_t codestream_size = 0;
+  jxl::PaddedBytes codestream;
 };
 
 // Returns whether `data` starts with a container header; definitely returns
@@ -109,12 +106,6 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 // TODO(lode): streaming C API
 jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          jxl::PaddedBytes* out);
-
-// TODO(veluca): this doesn't really belong here.
-jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
-                               const JpegXlContainer& container,
-                               jxl::CodecInOut* io,
-                               jxl::ThreadPool* pool = nullptr);
 
 }  // namespace tools
 }  // namespace jpegxl

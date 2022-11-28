@@ -680,6 +680,12 @@ TESTBIPLANARTOP(MM21, uint8_t, 1, 2, 2, I420, uint8_t, 1, 2, 2, 8, 16, 32)
 #define I422ToARGBFilter(a, b, c, d, e, f, g, h, i, j)                     \
   I422ToARGBMatrixFilter(a, b, c, d, e, f, g, h, &kYuvI601Constants, i, j, \
                          kFilterBilinear)
+#define I420ToRGB24Filter(a, b, c, d, e, f, g, h, i, j)                     \
+  I420ToRGB24MatrixFilter(a, b, c, d, e, f, g, h, &kYuvI601Constants, i, j, \
+                          kFilterBilinear)
+#define I422ToRGB24Filter(a, b, c, d, e, f, g, h, i, j)                     \
+  I420ToRGB24MatrixFilter(a, b, c, d, e, f, g, h, &kYuvI601Constants, i, j, \
+                          kFilterBilinear)
 
 #define ALIGNINT(V, ALIGN) (((V) + (ALIGN)-1) / (ALIGN) * (ALIGN))
 
@@ -792,8 +798,12 @@ TESTPLANARTOB(V422, 2, 1, ARGB, 4, 4, 1)
 TESTPLANARTOB(V422, 2, 1, ABGR, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, BGRA, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, RGBA, 4, 4, 1)
+TESTPLANARTOB(I422, 1, 1, RGB24, 3, 3, 1)
+TESTPLANARTOB(I422, 1, 1, RAW, 3, 3, 1)
 TESTPLANARTOB(I444, 1, 1, ARGB, 4, 4, 1)
 TESTPLANARTOB(I444, 1, 1, ABGR, 4, 4, 1)
+TESTPLANARTOB(I444, 1, 1, RGB24, 3, 3, 1)
+TESTPLANARTOB(I444, 1, 1, RAW, 3, 3, 1)
 TESTPLANARTOB(J444, 1, 1, ARGB, 4, 4, 1)
 TESTPLANARTOB(J444, 1, 1, ABGR, 4, 4, 1)
 TESTPLANARTOB(H444, 1, 1, ARGB, 4, 4, 1)
@@ -816,6 +826,8 @@ TESTPLANARTOB(H420, 2, 2, AB30, 4, 4, 1)
 #endif
 TESTPLANARTOB(I420, 2, 2, ARGBFilter, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, ARGBFilter, 4, 4, 1)
+TESTPLANARTOB(I420, 2, 2, RGB24Filter, 3, 3, 1)
+TESTPLANARTOB(I422, 2, 2, RGB24Filter, 3, 3, 1)
 #else
 TESTPLANARTOB(I420, 2, 2, ABGR, 4, 4, 1)
 TESTPLANARTOB(I420, 2, 2, ARGB, 4, 4, 1)
@@ -832,14 +844,15 @@ TESTPLANARTOB(I422, 2, 1, RGB565, 2, 2, 1)
 TESTPLANARTOB(I420, 2, 2, I400, 1, 1, 1)
 TESTPLANARTOB(I420, 2, 2, UYVY, 2, 4, 1)
 TESTPLANARTOB(I420, 2, 2, YUY2, 2, 4, 1)
-TESTPLANARTOB(I420, 2, 2, ARGBFilter, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, ABGR, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, ARGB, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, BGRA, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, RGBA, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, UYVY, 2, 4, 1)
 TESTPLANARTOB(I422, 2, 1, YUY2, 2, 4, 1)
+TESTPLANARTOB(I420, 2, 2, ARGBFilter, 4, 4, 1)
 TESTPLANARTOB(I422, 2, 1, ARGBFilter, 4, 4, 1)
+TESTPLANARTOB(I420, 2, 2, RGB24Filter, 3, 3, 1)
 TESTPLANARTOB(I444, 1, 1, ABGR, 4, 4, 1)
 TESTPLANARTOB(I444, 1, 1, ARGB, 4, 4, 1)
 #endif
@@ -1412,7 +1425,7 @@ TESTATOBIPLANAR(AYUV, 1, 4, NV21, 2, 2)
                  EPP_B, STRIDE_B, HEIGHT_B)
 #else
 #define TESTATOB(FMT_A, TYPE_A, EPP_A, STRIDE_A, HEIGHT_A, FMT_B, TYPE_B,   \
-                 EPP_B, STRIDE_B, HEIGHT_B, INPLACE)                        \
+                 EPP_B, STRIDE_B, HEIGHT_B)                                 \
   TESTATOBI(FMT_A, TYPE_A, EPP_A, STRIDE_A, HEIGHT_A, FMT_B, TYPE_B, EPP_B, \
             STRIDE_B, HEIGHT_B, benchmark_width_, _Opt, +, 0)
 #endif

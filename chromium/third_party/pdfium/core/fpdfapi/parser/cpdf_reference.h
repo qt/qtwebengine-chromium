@@ -22,17 +22,15 @@ class CPDF_Reference final : public CPDF_Object {
   // CPDF_Object:
   Type GetType() const override;
   RetainPtr<CPDF_Object> Clone() const override;
-  const CPDF_Object* GetDirect() const override;
+  RetainPtr<CPDF_Object> GetMutableDirect() override;
   ByteString GetString() const override;
   float GetNumber() const override;
   int GetInteger() const override;
-  const CPDF_Dictionary* GetDict() const override;
-  bool IsReference() const override;
-  CPDF_Reference* AsReference() override;
-  const CPDF_Reference* AsReference() const override;
+  RetainPtr<const CPDF_Dictionary> GetDict() const override;
+  CPDF_Reference* AsMutableReference() override;
   bool WriteTo(IFX_ArchiveStream* archive,
                const CPDF_Encryptor* encryptor) const override;
-  RetainPtr<CPDF_Object> MakeReference(
+  RetainPtr<CPDF_Reference> MakeReference(
       CPDF_IndirectObjectHolder* holder) const override;
 
   uint32_t GetRefObjNum() const { return m_RefObjNum; }
@@ -45,15 +43,15 @@ class CPDF_Reference final : public CPDF_Object {
   RetainPtr<CPDF_Object> CloneNonCyclic(
       bool bDirect,
       std::set<const CPDF_Object*>* pVisited) const override;
-  CPDF_Object* SafeGetDirect();
-  const CPDF_Object* SafeGetDirect() const;
+
+  const CPDF_Object* FastGetDirect() const;
 
   UnownedPtr<CPDF_IndirectObjectHolder> m_pObjList;
   uint32_t m_RefObjNum;
 };
 
 inline CPDF_Reference* ToReference(CPDF_Object* obj) {
-  return obj ? obj->AsReference() : nullptr;
+  return obj ? obj->AsMutableReference() : nullptr;
 }
 
 inline const CPDF_Reference* ToReference(const CPDF_Object* obj) {
@@ -62,6 +60,11 @@ inline const CPDF_Reference* ToReference(const CPDF_Object* obj) {
 
 inline RetainPtr<CPDF_Reference> ToReference(RetainPtr<CPDF_Object> obj) {
   return RetainPtr<CPDF_Reference>(ToReference(obj.Get()));
+}
+
+inline RetainPtr<const CPDF_Reference> ToReference(
+    RetainPtr<const CPDF_Object> obj) {
+  return RetainPtr<const CPDF_Reference>(ToReference(obj.Get()));
 }
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_REFERENCE_H_

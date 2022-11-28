@@ -100,7 +100,7 @@ using ResolverBuiltinsStageTest = ResolverTestWithParam<Params>;
 TEST_P(ResolverBuiltinsStageTest, All_input) {
     const Params& params = GetParam();
 
-    auto* p = GlobalVar("p", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    auto* p = GlobalVar("p", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
     auto* input = Param("input", params.type(*this),
                         utils::Vector{Builtin(Source{{12, 34}}, params.builtin)});
     switch (params.stage) {
@@ -163,7 +163,7 @@ TEST_F(ResolverBuiltinsValidationTest, FragDepthIsInput_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
@@ -198,13 +198,13 @@ TEST_F(ResolverBuiltinsValidationTest, FragDepthIsInputStruct_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
               "12:34 error: builtin(frag_depth) cannot be used in input of "
               "fragment pipeline stage\n"
-              "note: while analysing entry point 'fragShader'");
+              "note: while analyzing entry point 'fragShader'");
 }
 
 TEST_F(ResolverBuiltinsValidationTest, StructBuiltinInsideEntryPoint_Ignored) {
@@ -256,7 +256,7 @@ TEST_F(ResolverBuiltinsValidationTest, PositionNotF32_Struct_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -301,7 +301,7 @@ TEST_F(ResolverBuiltinsValidationTest, FragDepthNotF32_Struct_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -330,7 +330,7 @@ TEST_F(ResolverBuiltinsValidationTest, SampleMaskNotU32_Struct_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -372,7 +372,7 @@ TEST_F(ResolverBuiltinsValidationTest, SampleMaskIsNotU32_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: store type of builtin(sample_mask) must be 'u32'");
@@ -400,7 +400,7 @@ TEST_F(ResolverBuiltinsValidationTest, SampleIndexIsNotU32_Struct_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -427,7 +427,7 @@ TEST_F(ResolverBuiltinsValidationTest, SampleIndexIsNotU32_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: store type of builtin(sample_index) must be 'u32'");
@@ -453,7 +453,7 @@ TEST_F(ResolverBuiltinsValidationTest, PositionIsNotF32_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(), "12:34 error: store type of builtin(position) must be 'vec4<f32>'");
@@ -745,7 +745,7 @@ TEST_F(ResolverBuiltinsValidationTest, FragmentBuiltinStruct_Pass) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
@@ -768,7 +768,7 @@ TEST_F(ResolverBuiltinsValidationTest, FrontFacingParamIsNotBool_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());
@@ -797,7 +797,7 @@ TEST_F(ResolverBuiltinsValidationTest, FrontFacingMemberIsNotBool_Fail) {
              Stage(ast::PipelineStage::kFragment),
          },
          utils::Vector{
-             Location(0),
+             Location(0_a),
          });
 
     EXPECT_FALSE(r()->Resolve());

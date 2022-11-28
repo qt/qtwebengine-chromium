@@ -313,7 +313,7 @@ void CPDF_PageContentGenerator::ProcessImage(fxcrt::ostringstream* buf,
   if (pImage->IsInline())
     return;
 
-  const CPDF_Stream* pStream = pImage->GetStream();
+  RetainPtr<const CPDF_Stream> pStream = pImage->GetStream();
   if (!pStream)
     return;
 
@@ -340,14 +340,14 @@ void CPDF_PageContentGenerator::ProcessForm(fxcrt::ostringstream* buf,
     return;
   }
 
-  const CPDF_Stream* pStream = pFormObj->form()->GetStream();
+  RetainPtr<const CPDF_Stream> pStream = pFormObj->form()->GetStream();
   if (!pStream)
     return;
 
   *buf << "q\n";
   WriteMatrix(*buf, pFormObj->form_matrix()) << " cm ";
 
-  ByteString name = RealizeResource(pStream, "XObject");
+  ByteString name = RealizeResource(pStream.Get(), "XObject");
   *buf << "/" << PDF_NameEncode(name) << " Do Q\n";
 }
 
@@ -571,7 +571,7 @@ void CPDF_PageContentGenerator::ProcessText(fxcrt::ostringstream* buf,
   if (maybe_name.has_value()) {
     dictName = std::move(maybe_name.value());
   } else {
-    const CPDF_Object* pIndirectFont = pFont->GetFontDict();
+    RetainPtr<const CPDF_Object> pIndirectFont = pFont->GetFontDict();
     if (pIndirectFont->IsInline()) {
       // In this case we assume it must be a standard font
       auto pFontDict = pdfium::MakeRetain<CPDF_Dictionary>();

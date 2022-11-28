@@ -14,38 +14,25 @@
 
 #include "presence/presence_client.h"
 
+#include <memory>
+#include <vector>
+
 #include "presence/presence_device.h"
+#include "presence/status.h"
 
 namespace nearby {
 namespace presence {
 
-using ::nearby::internal::IdentityType;
-
-void PresenceClient::StartDiscovery(const DiscoveryFilter& filter,
-                                    const DiscoveryOptions& options,
-                                    ResultCallback callback) {}
-
-void PresenceClient::UpdateDiscoveryFilter(const DiscoveryFilter& filter,
-                                           ResultCallback callback) {}
-
-void PresenceClient::StopDiscovery(ResultCallback callback) {}
-
-std::vector<PresenceDevice> PresenceClient::GetCachedDevices(
-    const DiscoveryFilter& filter) {
-  return std::vector<PresenceDevice>{};
+std::unique_ptr<ScanSession> PresenceClient::StartScan(ScanRequest scan_request,
+                                                       ScanCallback callback) {
+  callback.start_scan_cb({Status::Value::kError});
+  return nullptr;
 }
-
-void PresenceClient::StartBroadcast(const IdentityType& identity,
-                                    const std::vector<PresenceAction>& actions,
-                                    const BroadcastOptions& options,
-                                    ResultCallback callback) {}
-
-void PresenceClient::UpdateBroadcastActions(
-    const IdentityType& identity, const std::vector<PresenceAction>& actions,
-    ResultCallback callback) {}
-
-void PresenceClient::StopBroadcast(const IdentityType& identity,
-                                   ResultCallback callback) {}
+std::unique_ptr<BroadcastSession> PresenceClient::StartBroadcast(
+    BroadcastRequest broadcast_request, BroadcastCallback callback) {
+  callback.start_broadcast_cb({Status::Value::kError});
+  return nullptr;
+}
 
 }  // namespace presence
 }  // namespace nearby

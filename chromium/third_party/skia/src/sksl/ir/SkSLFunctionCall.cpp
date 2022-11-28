@@ -10,17 +10,20 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkHalf.h"
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/DSLCore.h"
 #include "include/sksl/DSLExpression.h"
 #include "include/sksl/DSLType.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
 #include "src/core/SkMatrixInvert.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLChildCall.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -39,7 +42,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cfloat>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -54,7 +56,7 @@ using IntrinsicArguments = std::array<const Expression*, 3>;
 static bool has_compile_time_constant_arguments(const ExpressionArray& arguments) {
     for (const std::unique_ptr<Expression>& arg : arguments) {
         const Expression* expr = ConstantFolder::GetConstantValueForVariable(*arg);
-        if (!expr->isCompileTimeConstant()) {
+        if (!Analysis::IsCompileTimeConstant(*expr)) {
             return false;
         }
     }
@@ -114,6 +116,8 @@ static std::unique_ptr<Expression> coalesce_n_way_vector(const Expression* arg0,
     // every component.
 
     Position pos = arg0->fPosition;
+    double minimumValue = returnType.componentType().minimumValue();
+    double maximumValue = returnType.componentType().maximumValue();
 
     const Type& vecType =          arg0->type().isVector()  ? arg0->type() :
                           (arg1 && arg1->type().isVector()) ? arg1->type() :
@@ -138,8 +142,8 @@ static std::unique_ptr<Expression> coalesce_n_way_vector(const Expression* arg0,
 
         value = coalesce(value, *arg0Value, *arg1Value);
 
-        if (value >= -FLT_MAX && value <= FLT_MAX) {
-            // This result will fit inside a float Literal.
+        if (value >= minimumValue && value <= maximumValue) {
+            // This result will fit inside the return type.
         } else {
             // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
@@ -232,6 +236,8 @@ static std::unique_ptr<Expression> evaluate_n_way_intrinsic(const Context& conte
     // of scalars and compounds, scalars are interpreted as a compound containing the same value for
     // every component.
 
+    double minimumValue = returnType.componentType().minimumValue();
+    double maximumValue = returnType.componentType().maximumValue();
     int slots = returnType.slotCount();
     double array[16];
 
@@ -259,8 +265,8 @@ static std::unique_ptr<Expression> evaluate_n_way_intrinsic(const Context& conte
 
         array[index] = eval(*arg0Value, *arg1Value, *arg2Value);
 
-        if (array[index] >= -FLT_MAX && array[index] <= FLT_MAX) {
-            // This result will fit inside a float Literal.
+        if (array[index] >= minimumValue && array[index] <= maximumValue) {
+            // This result will fit inside the return type.
         } else {
             // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
@@ -416,6 +422,7 @@ double evaluate_fract(double a, double, double)        { return a - std::floor(a
 double evaluate_min(double a, double b, double)        { return (a < b) ? a : b; }
 double evaluate_max(double a, double b, double)        { return (a > b) ? a : b; }
 double evaluate_clamp(double x, double l, double h)    { return (x < l) ? l : (x > h) ? h : x; }
+double evaluate_fma(double a, double b, double c)      { return a * b + c; }
 double evaluate_saturate(double a, double, double)     { return (a < 0) ? 0 : (a > 1) ? 1 : a; }
 double evaluate_mix(double x, double y, double a)      { return x * (1 - a) + y * a; }
 double evaluate_step(double e, double x, double)       { return (x < e) ? 0 : 1; }
@@ -572,6 +579,9 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
         case k_clamp_IntrinsicKind:
             return evaluate_3_way_intrinsic(context, arguments, returnType,
                                             Intrinsics::evaluate_clamp);
+        case k_fma_IntrinsicKind:
+            return evaluate_3_way_intrinsic(context, arguments, returnType,
+                                            Intrinsics::evaluate_fma);
         case k_saturate_IntrinsicKind:
             return evaluate_intrinsic<float>(context, arguments, returnType,
                                              Intrinsics::evaluate_saturate);
@@ -632,10 +642,41 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
             return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
                         ((Pack(1) << 16) & 0xFFFF0000)).release();
         }
+        case k_packSnorm2x16_IntrinsicKind: {
+            auto Pack = [&](int n) -> unsigned int {
+                float x = Get(0, n);
+                return (int)std::round(Intrinsics::evaluate_clamp(x, -1.0, 1.0) * 32767.0);
+            };
+            return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
+                        ((Pack(1) << 16) & 0xFFFF0000)).release();
+        }
+        case k_packHalf2x16_IntrinsicKind: {
+            auto Pack = [&](int n) -> unsigned int {
+                return SkFloatToHalf(Get(0, n));
+            };
+            return UInt(((Pack(0) << 0)  & 0x0000FFFF) |
+                        ((Pack(1) << 16) & 0xFFFF0000)).release();
+        }
         case k_unpackUnorm2x16_IntrinsicKind: {
             SKSL_INT x = *arguments[0]->getConstantValue(0);
-            return Float2(double((x >> 0)  & 0x0000FFFF) / 65535.0,
-                          double((x >> 16) & 0x0000FFFF) / 65535.0).release();
+            uint16_t a = ((x >> 0)  & 0x0000FFFF);
+            uint16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(double(a) / 65535.0,
+                          double(b) / 65535.0).release();
+        }
+        case k_unpackSnorm2x16_IntrinsicKind: {
+            SKSL_INT x = *arguments[0]->getConstantValue(0);
+            int16_t a = ((x >> 0)  & 0x0000FFFF);
+            int16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(Intrinsics::evaluate_clamp(double(a) / 32767.0, -1.0, 1.0),
+                          Intrinsics::evaluate_clamp(double(b) / 32767.0, -1.0, 1.0)).release();
+        }
+        case k_unpackHalf2x16_IntrinsicKind: {
+            SKSL_INT x = *arguments[0]->getConstantValue(0);
+            uint16_t a = ((x >> 0)  & 0x0000FFFF);
+            uint16_t b = ((x >> 16) & 0x0000FFFF);
+            return Float2(SkHalfToFloat(a),
+                          SkHalfToFloat(b)).release();
         }
         // 8.5 : Geometric Functions
         case k_length_IntrinsicKind:
@@ -803,30 +844,17 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
     }
 }
 
-bool FunctionCall::hasProperty(Property property) const {
-    if (property == Property::kSideEffects &&
-        (this->function().modifiers().fFlags & Modifiers::kHasSideEffects_Flag)) {
-        return true;
-    }
-    for (const auto& arg : this->arguments()) {
-        if (arg->hasProperty(property)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 std::unique_ptr<Expression> FunctionCall::clone(Position pos) const {
     return std::make_unique<FunctionCall>(pos, &this->type(), &this->function(),
                                           this->arguments().clone());
 }
 
-std::string FunctionCall::description() const {
+std::string FunctionCall::description(OperatorPrecedence) const {
     std::string result = std::string(this->function().name()) + "(";
     const char* separator = "";
     for (const std::unique_ptr<Expression>& arg : this->arguments()) {
         result += separator;
-        result += arg->description();
+        result += arg->description(OperatorPrecedence::kSequence);
         separator = ", ";
     }
     result += ")";

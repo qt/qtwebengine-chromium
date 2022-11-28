@@ -4,6 +4,8 @@
 
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_null.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,7 +30,7 @@ TEST(IndirectObjectHolderTest, RecursiveParseOfSameObject) {
   EXPECT_CALL(mock_holder, ParseIndirectObject(::testing::_))
       .WillOnce(::testing::WithArg<0>(::testing::Invoke(
           [&mock_holder](uint32_t objnum) -> RetainPtr<CPDF_Object> {
-            const CPDF_Object* same_parse =
+            RetainPtr<const CPDF_Object> same_parse =
                 mock_holder.GetOrParseIndirectObject(objnum);
             CHECK(!same_parse);
             return pdfium::MakeRetain<CPDF_Null>();
@@ -74,4 +76,17 @@ TEST(IndirectObjectHolderTest, ReplaceObjectWithInvalidObjNum) {
   EXPECT_CALL(mock_holder, ParseIndirectObject(::testing::_)).Times(0);
   EXPECT_FALSE(mock_holder.ReplaceIndirectObjectIfHigherGeneration(
       CPDF_Object::kInvalidObjNum, pdfium::MakeRetain<CPDF_Null>()));
+}
+
+TEST(IndirectObjectHolderTest, TemplateNewMethods) {
+  MockIndirectObjectHolder mock_holder;
+
+  auto pDict = mock_holder.NewIndirect<CPDF_Dictionary>();
+  auto pArray = mock_holder.NewIndirect<CPDF_Array>();
+  mock_holder.DeleteIndirectObject(pDict->GetObjNum());
+  mock_holder.DeleteIndirectObject(pArray->GetObjNum());
+
+  // No longer UAF since NewIndirect<> returns retained objects.
+  EXPECT_TRUE(pDict->IsDictionary());
+  EXPECT_TRUE(pArray->IsArray());
 }

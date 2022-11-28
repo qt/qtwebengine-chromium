@@ -17,6 +17,7 @@ namespace internal {
     "32 bit value in register is not zero-extended")                           \
   V(kSignedBitOfSmiIsNotZero, "Signed bit of 31 bit smi register is not zero") \
   V(kAPICallReturnedInvalidObject, "API call returned invalid object")         \
+  V(kAccumulatorClobbered, "Accumulator clobbered")                            \
   V(kAllocatingNonEmptyPackedArray, "Allocating non-empty packed array")       \
   V(kAllocationIsNotDoubleAligned, "Allocation is not double aligned")         \
   V(kExpectedOptimizationSentinel,                                             \
@@ -27,6 +28,7 @@ namespace internal {
   V(kFunctionDataShouldBeBytecodeArrayOnInterpreterEntry,                      \
     "The function_data field should be a BytecodeArray on interpreter entry")  \
   V(kInputStringTooLong, "Input string too long")                              \
+  V(kInputDoesNotFitSmi, "Input number is too large to fit in a Smi")          \
   V(kInvalidBytecode, "Invalid bytecode")                                      \
   V(kInvalidBytecodeAdvance, "Cannot advance current bytecode, ")              \
   V(kInvalidHandleScopeLevel, "Invalid HandleScope level")                     \
@@ -104,6 +106,7 @@ namespace internal {
   V(kLiveEdit, "LiveEdit")                                                  \
   V(kNativeFunctionLiteral, "Native function literal")                      \
   V(kOptimizationDisabled, "Optimization disabled")                         \
+  V(kHigherTierAvailable, "A higher tier is already available")             \
   V(kNeverOptimize, "Optimization is always disabled")
 
 #define ERROR_MESSAGES_CONSTANTS(C, T) C,

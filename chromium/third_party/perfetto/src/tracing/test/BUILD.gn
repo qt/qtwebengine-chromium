@@ -59,7 +59,7 @@ perfetto_unittest_source_set("test_support") {
   }
 }
 
-if (enable_perfetto_ipc) {
+if (enable_perfetto_ipc && enable_perfetto_system_consumer) {
   perfetto_unittest_source_set("tracing_integration_test") {
     testonly = true
     deps = [
@@ -118,6 +118,7 @@ if (enable_perfetto_integration_tests) {
     ]
     sources = [
       "api_integrationtest.cc",
+      "api_integrationtest_main.cc",
       "tracing_module.cc",
       "tracing_module.h",
       "tracing_module2.cc",

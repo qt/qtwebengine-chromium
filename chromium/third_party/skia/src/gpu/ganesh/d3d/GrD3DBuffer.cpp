@@ -148,6 +148,38 @@ void GrD3DBuffer::onUnmap(MapType type) {
     this->internalUnmap(type, 0, this->size());
 }
 
+bool GrD3DBuffer::onClearToZero() {
+    if (!fD3DResource) {
+        return false;
+    }
+
+    if (this->accessPattern() == kStatic_GrAccessPattern) {
+        GrStagingBufferManager::Slice slice =
+                this->getD3DGpu()->stagingBufferManager()->allocateStagingBufferSlice(this->size());
+        if (!slice.fBuffer) {
+            return false;
+        }
+        std::memset(slice.fOffsetMapPtr, 0, this->size());
+        this->setResourceState(this->getD3DGpu(), D3D12_RESOURCE_STATE_COPY_DEST);
+        this->getD3DGpu()->currentCommandList()->copyBufferToBuffer(
+                sk_ref_sp<GrD3DBuffer>(this),
+                0,
+                static_cast<const GrD3DBuffer*>(slice.fBuffer)->d3dResource(),
+                slice.fOffset,
+                this->size());
+        return true;
+    }
+
+    void* ptr = this->internalMap(MapType::kWriteDiscard, 0, this->size());
+    if (!ptr) {
+        return false;
+    }
+    std::memset(ptr, 0, this->size());
+    this->internalUnmap(MapType::kWriteDiscard, 0, this->size());
+
+    return true;
+}
+
 bool GrD3DBuffer::onUpdateData(const void* src, size_t offset, size_t size, bool /*preserve*/) {
     if (!fD3DResource) {
         return false;
@@ -238,8 +270,8 @@ void GrD3DBuffer::internalUnmap(MapType type, size_t offset, size_t size) {
 void GrD3DBuffer::onSetLabel() {
     SkASSERT(fD3DResource);
     if (!this->getLabel().empty()) {
-        const std::string label = "_Skia_" + this->getLabel();
-        fD3DResource->SetName((LPCWSTR)label.c_str());
+        const std::wstring label = L"_Skia_" + GrD3DMultiByteToWide(this->getLabel());
+        this->d3dResource()->SetName(label.c_str());
     }
 }
 

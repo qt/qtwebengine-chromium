@@ -61,8 +61,8 @@ class FakeExpr final : public Castable<FakeExpr, ast::Expression> {
 };
 
 TEST_F(ResolverValidationTest, WorkgroupMemoryUsedInVertexStage) {
-    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::StorageClass::kWorkgroup);
-    GlobalVar("dst", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("dst", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
     auto* stmt = Assign(Expr("dst"), Expr(Source{{3, 4}}, "wg"));
 
     Func(Source{{9, 10}}, "f0", utils::Empty, ty.vec4<f32>(),
@@ -93,8 +93,8 @@ TEST_F(ResolverValidationTest, WorkgroupMemoryUsedInFragmentStage) {
     //  f1();
     //}
 
-    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::StorageClass::kWorkgroup);
-    GlobalVar("dst", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar(Source{{1, 2}}, "wg", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
+    GlobalVar("dst", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
     auto* stmt = Assign(Expr("dst"), Expr(Source{{3, 4}}, "wg"));
 
     Func(Source{{5, 6}}, "f2", utils::Empty, ty.void_(), utils::Vector{stmt});
@@ -226,7 +226,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableGlobalVariable_Pass) {
     //   return;
     // }
 
-    GlobalVar("global_var", ty.f32(), ast::StorageClass::kPrivate, Expr(2.1_f));
+    GlobalVar("global_var", ty.f32(), ast::AddressSpace::kPrivate, Expr(2.1_f));
 
     Func("my_func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -242,7 +242,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableInnerScope_Fail) {
     //   if (true) { var a : f32 = 2.0; }
     //   a = 3.14;
     // }
-    auto* var = Var("a", ty.f32(), ast::StorageClass::kNone, Expr(2_f));
+    auto* var = Var("a", ty.f32(), Expr(2_f));
 
     auto* cond = Expr(true);
     auto* body = Block(Decl(var));
@@ -264,7 +264,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableOuterScope_Pass) {
     //   var a : f32 = 2.0;
     //   if (true) { a = 3.14; }
     // }
-    auto* var = Var("a", ty.f32(), ast::StorageClass::kNone, Expr(2_f));
+    auto* var = Var("a", ty.f32(), Expr(2_f));
 
     auto* lhs = Expr(Source{{12, 34}}, "a");
     auto* rhs = Expr(3.14_f);
@@ -284,7 +284,7 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableDifferentScope_Fail) {
     //  { var a : f32 = 2.0; }
     //  { a = 3.14; }
     // }
-    auto* var = Var("a", ty.f32(), ast::StorageClass::kNone, Expr(2_f));
+    auto* var = Var("a", ty.f32(), Expr(2_f));
     auto* first_body = Block(Decl(var));
 
     auto* lhs = Expr(Source{{12, 34}}, "a");
@@ -299,8 +299,8 @@ TEST_F(ResolverValidationTest, UsingUndefinedVariableDifferentScope_Fail) {
     EXPECT_EQ(r()->error(), "12:34 error: unknown identifier: 'a'");
 }
 
-TEST_F(ResolverValidationTest, StorageClass_FunctionVariableWorkgroupClass) {
-    auto* var = Var("var", ty.i32(), ast::StorageClass::kWorkgroup);
+TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableWorkgroupClass) {
+    auto* var = Var("var", ty.i32(), ast::AddressSpace::kWorkgroup);
 
     Func("func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -310,11 +310,11 @@ TEST_F(ResolverValidationTest, StorageClass_FunctionVariableWorkgroupClass) {
     EXPECT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              "error: function-scope 'var' declaration must use 'function' storage class");
+              "error: function-scope 'var' declaration must use 'function' address space");
 }
 
-TEST_F(ResolverValidationTest, StorageClass_FunctionVariableI32) {
-    auto* var = Var("s", ty.i32(), ast::StorageClass::kPrivate);
+TEST_F(ResolverValidationTest, AddressSpace_FunctionVariableI32) {
+    auto* var = Var("s", ty.i32(), ast::AddressSpace::kPrivate);
 
     Func("func", utils::Empty, ty.void_(),
          utils::Vector{
@@ -324,39 +324,31 @@ TEST_F(ResolverValidationTest, StorageClass_FunctionVariableI32) {
     EXPECT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              "error: function-scope 'var' declaration must use 'function' storage class");
+              "error: function-scope 'var' declaration must use 'function' address space");
 }
 
-TEST_F(ResolverValidationTest, StorageClass_SamplerExplicitStorageClass) {
+TEST_F(ResolverValidationTest, AddressSpace_SamplerExplicitAddressSpace) {
     auto* t = ty.sampler(ast::SamplerKind::kSampler);
-    GlobalVar(Source{{12, 34}}, "var", t, ast::StorageClass::kHandle,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{12, 34}}, "var", t, ast::AddressSpace::kHandle, Binding(0_a), Group(0_a));
 
     EXPECT_FALSE(r()->Resolve());
 
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: variables of type 'sampler' must not have a storage class)");
+              R"(12:34 error: variables of type 'sampler' must not have a address space)");
 }
 
-TEST_F(ResolverValidationTest, StorageClass_TextureExplicitStorageClass) {
+TEST_F(ResolverValidationTest, AddressSpace_TextureExplicitAddressSpace) {
     auto* t = ty.sampled_texture(ast::TextureDimension::k1d, ty.f32());
-    GlobalVar(Source{{12, 34}}, "var", t, ast::StorageClass::kHandle,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar(Source{{12, 34}}, "var", t, ast::AddressSpace::kHandle, Binding(0_a), Group(0_a));
 
     EXPECT_FALSE(r()->Resolve()) << r()->error();
 
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: variables of type 'texture_1d<f32>' must not have a storage class)");
+              R"(12:34 error: variables of type 'texture_1d<f32>' must not have a address space)");
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadChar) {
-    GlobalVar("my_vec", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_vec", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* ident = Expr(Source{{{3, 3}, {3, 7}}}, "xyqz");
 
@@ -368,7 +360,7 @@ TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadChar) {
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_MixedChars) {
-    GlobalVar("my_vec", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_vec", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
 
     auto* ident = Expr(Source{{{3, 3}, {3, 7}}}, "rgyw");
 
@@ -381,7 +373,7 @@ TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_MixedChars) {
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadLength) {
-    GlobalVar("my_vec", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_vec", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* ident = Expr(Source{{{3, 3}, {3, 8}}}, "zzzzz");
     auto* mem = MemberAccessor("my_vec", ident);
@@ -392,7 +384,7 @@ TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadLength) {
 }
 
 TEST_F(ResolverValidationTest, Expr_MemberAccessor_VectorSwizzle_BadIndex) {
-    GlobalVar("my_vec", ty.vec2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_vec", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
 
     auto* ident = Expr(Source{{3, 3}}, "z");
     auto* mem = MemberAccessor("my_vec", ident);
@@ -425,7 +417,7 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncGoodParent) {
     //     let x: f32 = (*p).z;
     //     return x;
     // }
-    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::StorageClass::kFunction));
+    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction));
     auto* star_p = Deref(p);
     auto* z = Expr(Source{{{3, 3}, {3, 8}}}, "z");
     auto* accessor_expr = MemberAccessor(star_p, z);
@@ -443,7 +435,7 @@ TEST_F(ResolverValidationTest, EXpr_MemberAccessor_FuncBadParent) {
     //     let x: f32 = *p.z;
     //     return x;
     // }
-    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::StorageClass::kFunction));
+    auto* p = Param("p", ty.pointer(ty.vec4<f32>(), ast::AddressSpace::kFunction));
     auto* z = Expr(Source{{{3, 3}, {3, 8}}}, "z");
     auto* accessor_expr = MemberAccessor(p, z);
     auto* star_p = Deref(accessor_expr);
@@ -472,7 +464,7 @@ TEST_F(ResolverValidationTest,
     // }
 
     auto error_loc = Source{{12, 34}};
-    auto* body = Block(Continue(), Decl(error_loc, Var("z", ty.i32(), ast::StorageClass::kNone)));
+    auto* body = Block(Continue(), Decl(error_loc, Var("z", ty.i32())));
     auto* continuing = Block(Assign(Expr("z"), 2_i));
     auto* loop_stmt = Loop(body, continuing);
     WrapInFunction(loop_stmt);
@@ -497,9 +489,8 @@ TEST_F(ResolverValidationTest, Stmt_Loop_ContinueInLoopBodyAfterDecl_UsageInCont
     //     }
     // }
 
-    auto* body =
-        Block(If(false, Block(Break())),  //
-              Decl(Var("z", ty.i32(), ast::StorageClass::kNone)), Block(Block(Block(Continue()))));
+    auto* body = Block(If(false, Block(Break())),  //
+                       Decl(Var("z", ty.i32())), Block(Block(Block(Continue()))));
     auto* continuing = Block(Assign(Expr("z"), 2_i));
     auto* loop_stmt = Loop(body, continuing);
     WrapInFunction(loop_stmt);
@@ -521,8 +512,8 @@ TEST_F(ResolverValidationTest, Stmt_Loop_ContinueInLoopBodySubscopeBeforeDecl_Us
     auto cont_loc = Source{{12, 34}};
     auto decl_loc = Source{{56, 78}};
     auto ref_loc = Source{{90, 12}};
-    auto* body = Block(If(Expr(true), Block(Continue(cont_loc))),
-                       Decl(Var(decl_loc, "z", ty.i32(), ast::StorageClass::kNone)));
+    auto* body =
+        Block(If(Expr(true), Block(Continue(cont_loc))), Decl(Var(decl_loc, "z", ty.i32())));
     auto* continuing = Block(Assign(Expr(ref_loc, "z"), 2_i));
     auto* loop_stmt = Loop(body, continuing);
     WrapInFunction(loop_stmt);
@@ -551,8 +542,8 @@ TEST_F(ResolverValidationTest,
     auto cont_loc = Source{{12, 34}};
     auto decl_loc = Source{{56, 78}};
     auto ref_loc = Source{{90, 12}};
-    auto* body = Block(If(Expr(true), Block(Continue(cont_loc))),
-                       Decl(Var(decl_loc, "z", ty.i32(), ast::StorageClass::kNone)));
+    auto* body =
+        Block(If(Expr(true), Block(Continue(cont_loc))), Decl(Var(decl_loc, "z", ty.i32())));
 
     auto* continuing = Block(If(Expr(true), Block(Assign(Expr(ref_loc, "z"), 2_i))));
     auto* loop_stmt = Loop(body, continuing);
@@ -582,8 +573,8 @@ TEST_F(ResolverValidationTest, Stmt_Loop_ContinueInLoopBodySubscopeBeforeDecl_Us
     auto cont_loc = Source{{12, 34}};
     auto decl_loc = Source{{56, 78}};
     auto ref_loc = Source{{90, 12}};
-    auto* body = Block(If(Expr(true), Block(Continue(cont_loc))),
-                       Decl(Var(decl_loc, "z", ty.i32(), ast::StorageClass::kNone)));
+    auto* body =
+        Block(If(Expr(true), Block(Continue(cont_loc))), Decl(Var(decl_loc, "z", ty.i32())));
     auto* compare =
         create<ast::BinaryExpression>(ast::BinaryOp::kLessThan, Expr(ref_loc, "z"), Expr(2_i));
     auto* continuing = Block(If(compare, Block()));
@@ -614,8 +605,8 @@ TEST_F(ResolverValidationTest,
     auto cont_loc = Source{{12, 34}};
     auto decl_loc = Source{{56, 78}};
     auto ref_loc = Source{{90, 12}};
-    auto* body = Block(If(Expr(true), Block(Continue(cont_loc))),
-                       Decl(Var(decl_loc, "z", ty.i32(), ast::StorageClass::kNone)));
+    auto* body =
+        Block(If(Expr(true), Block(Continue(cont_loc))), Decl(Var(decl_loc, "z", ty.i32())));
 
     auto* continuing = Block(Loop(Block(Assign(Expr(ref_loc, "z"), 2_i))));
     auto* loop_stmt = Loop(body, continuing);
@@ -644,8 +635,8 @@ TEST_F(ResolverValidationTest, Stmt_Loop_ContinueInNestedLoopBodyBeforeDecl_Usag
     auto* inner_loop = Loop(Block(    //
         If(true, Block(Continue())),  //
         Break()));
-    auto* body = Block(inner_loop,                                          //
-                       Decl(Var("z", ty.i32(), ast::StorageClass::kNone)),  //
+    auto* body = Block(inner_loop,                //
+                       Decl(Var("z", ty.i32())),  //
                        Break());
     auto* continuing = Block(Assign("z", 2_i));
     auto* loop_stmt = Loop(body, continuing);
@@ -672,8 +663,8 @@ TEST_F(ResolverValidationTest,
 
     auto* inner_loop = Loop(Block(If(true, Block(Continue())),  //
                                   Break()));
-    auto* body = Block(inner_loop,                                          //
-                       Decl(Var("z", ty.i32(), ast::StorageClass::kNone)),  //
+    auto* body = Block(inner_loop,                //
+                       Decl(Var("z", ty.i32())),  //
                        Break());
     auto* continuing = Block(If(Expr(true), Block(Assign("z", 2_i))));
     auto* loop_stmt = Loop(body, continuing);
@@ -700,8 +691,8 @@ TEST_F(ResolverValidationTest, Stmt_Loop_ContinueInNestedLoopBodyBeforeDecl_Usag
 
     auto* inner_loop = Loop(Block(If(true, Block(Continue())),  //
                                   Break()));
-    auto* body = Block(inner_loop,                                          //
-                       Decl(Var("z", ty.i32(), ast::StorageClass::kNone)),  //
+    auto* body = Block(inner_loop,                //
+                       Decl(Var("z", ty.i32())),  //
                        Break());
     auto* continuing = Block(Loop(Block(Assign("z", 2_i),  //
                                         Break())));
@@ -722,9 +713,8 @@ TEST_F(ResolverTest, Stmt_Loop_ContinueInLoopBodyAfterDecl_UsageInContinuing) {
     // }
 
     auto error_loc = Source{{12, 34}};
-    auto* body =
-        Block(Decl(Var("z", ty.i32(), ast::StorageClass::kNone)), If(true, Block(Continue())),  //
-              Break());
+    auto* body = Block(Decl(Var("z", ty.i32())), If(true, Block(Continue())),  //
+                       Break());
     auto* continuing = Block(Assign(Expr(error_loc, "z"), 2_i));
     auto* loop_stmt = Loop(body, continuing);
     WrapInFunction(loop_stmt);
@@ -1247,27 +1237,36 @@ TEST_F(ResolverValidationTest, StructMemberDuplicateNamePass) {
     EXPECT_TRUE(r()->Resolve());
 }
 
-TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
+TEST_F(ResolverValidationTest, NegativeStructMemberAlignAttribute) {
     Structure("S", utils::Vector{
-                       Member("a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, 3)}),
+                       Member("a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, -2_i)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: align value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
+}
+
+TEST_F(ResolverValidationTest, NonPOTStructMemberAlignAttribute) {
+    Structure("S", utils::Vector{
+                       Member("a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, 3_i)}),
+                   });
+
+    EXPECT_FALSE(r()->Resolve());
+    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberAlignAttribute) {
     Structure("S", utils::Vector{
-                       Member("a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, 0)}),
+                       Member("a", ty.f32(), utils::Vector{MemberAlign(Source{{12, 34}}, 0_i)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(), "12:34 error: align value must be a positive, power-of-two integer");
+    EXPECT_EQ(r()->error(), "12:34 error: 'align' value must be a positive, power-of-two integer");
 }
 
 TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
     Structure("S", utils::Vector{
-                       Member("a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, 0)}),
+                       Member("a", ty.f32(), utils::Vector{MemberSize(Source{{12, 34}}, 0_a)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1277,7 +1276,7 @@ TEST_F(ResolverValidationTest, ZeroStructMemberSizeAttribute) {
 TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
     Structure("S", utils::Vector{
                        Member(Source{{12, 34}}, "a", ty.f32(),
-                              utils::Vector{MemberOffset(0), MemberSize(4)}),
+                              utils::Vector{MemberOffset(0_a), MemberSize(4_a)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1289,7 +1288,7 @@ TEST_F(ResolverValidationTest, OffsetAndSizeAttribute) {
 TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
     Structure("S", utils::Vector{
                        Member(Source{{12, 34}}, "a", ty.f32(),
-                              utils::Vector{MemberOffset(0), MemberAlign(4)}),
+                              utils::Vector{MemberOffset(0_a), MemberAlign(4_i)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1301,7 +1300,7 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAttribute) {
 TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
     Structure("S", utils::Vector{
                        Member(Source{{12, 34}}, "a", ty.f32(),
-                              utils::Vector{MemberOffset(0), MemberAlign(4), MemberSize(4)}),
+                              utils::Vector{MemberOffset(0_a), MemberAlign(4_i), MemberSize(4_a)}),
                    });
 
     EXPECT_FALSE(r()->Resolve());
@@ -1313,8 +1312,8 @@ TEST_F(ResolverValidationTest, OffsetAndAlignAndSizeAttribute) {
 TEST_F(ResolverTest, Expr_Constructor_Cast_Pointer) {
     auto* vf = Var("vf", ty.f32());
     auto* c =
-        Construct(Source{{12, 34}}, ty.pointer<i32>(ast::StorageClass::kFunction), ExprList(vf));
-    auto* ip = Let("ip", ty.pointer<i32>(ast::StorageClass::kFunction), c);
+        Construct(Source{{12, 34}}, ty.pointer<i32>(ast::AddressSpace::kFunction), ExprList(vf));
+    auto* ip = Let("ip", ty.pointer<i32>(ast::AddressSpace::kFunction), c);
     WrapInFunction(Decl(vf), Decl(ip));
 
     EXPECT_FALSE(r()->Resolve());

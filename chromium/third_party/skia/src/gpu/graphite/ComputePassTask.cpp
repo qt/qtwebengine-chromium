@@ -26,15 +26,15 @@ ComputePassTask::ComputePassTask(std::vector<ResourceBinding> bindings,
         , fComputePassDesc(desc)
         , fBindings(std::move(bindings)) {}
 
-bool ComputePassTask::prepareResources(ResourceProvider* provider) {
+bool ComputePassTask::prepareResources(ResourceProvider* provider,
+                                       const SkRuntimeEffectDictionary*) {
     fPipeline = provider->findOrCreateComputePipeline(fPipelineDesc);
     return fPipeline != nullptr;
 }
 
 bool ComputePassTask::addCommands(ResourceProvider* provider, CommandBuffer* commandBuffer) {
     SkASSERT(fPipeline);
-    commandBuffer->addComputePass(fComputePassDesc, fPipeline, fBindings);
-    return true;
+    return commandBuffer->addComputePass(fComputePassDesc, fPipeline, fBindings);
 }
 
 }  // namespace skgpu::graphite

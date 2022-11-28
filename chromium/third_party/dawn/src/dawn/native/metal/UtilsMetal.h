@@ -23,6 +23,7 @@
 #import <Metal/Metal.h>
 
 namespace dawn::native {
+struct BeginRenderPassCmd;
 struct ProgrammableStage;
 struct EntryPointMetadata;
 enum class SingleShaderStage;
@@ -68,15 +69,6 @@ void EnsureDestinationTextureInitialized(CommandRecordingContext* commandContext
 
 MTLBlitOption ComputeMTLBlitOption(const Format& format, Aspect aspect);
 
-// Helper function to create function with constant values wrapped in
-// if available branch
-MaybeError CreateMTLFunction(const ProgrammableStage& programmableStage,
-                             SingleShaderStage singleShaderStage,
-                             PipelineLayout* pipelineLayout,
-                             ShaderModule::MetalFunctionData* functionData,
-                             uint32_t sampleMask = 0xFFFFFFFF,
-                             const RenderPipeline* renderPipeline = nullptr);
-
 // Allow use MTLStoreActionStoreAndMultismapleResolve because the logic in the backend is
 // first to compute what the "best" Metal render pass descriptor is, then fix it up if we
 // are not on macOS 10.12 (i.e. the EmulateStoreAndMSAAResolve toggle is on).
@@ -90,18 +82,25 @@ constexpr MTLStoreAction kMTLStoreActionStoreAndMultisampleResolve =
 // happen at the render pass start and end. Because workarounds wrap the encoding of the render
 // pass, the encoding must be entirely done by the `encodeInside` callback.
 // At the end of this function, `commandContext` will have no encoder open.
-using EncodeInsideRenderPass = std::function<MaybeError(id<MTLRenderCommandEncoder>)>;
+using EncodeInsideRenderPass =
+    std::function<MaybeError(id<MTLRenderCommandEncoder>, BeginRenderPassCmd* renderPassCmd)>;
 MaybeError EncodeMetalRenderPass(Device* device,
                                  CommandRecordingContext* commandContext,
                                  MTLRenderPassDescriptor* mtlRenderPass,
                                  uint32_t width,
                                  uint32_t height,
-                                 EncodeInsideRenderPass encodeInside);
+                                 EncodeInsideRenderPass encodeInside,
+                                 BeginRenderPassCmd* renderPassCmd = nullptr);
 
 MaybeError EncodeEmptyMetalRenderPass(Device* device,
                                       CommandRecordingContext* commandContext,
                                       MTLRenderPassDescriptor* mtlRenderPass,
                                       Extent3D size);
+
+bool SupportCounterSamplingAtCommandBoundary(id<MTLDevice> device)
+    API_AVAILABLE(macos(11.0), ios(14.0));
+bool SupportCounterSamplingAtStageBoundary(id<MTLDevice> device)
+    API_AVAILABLE(macos(11.0), ios(14.0));
 
 }  // namespace dawn::native::metal
 

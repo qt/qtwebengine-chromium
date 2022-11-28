@@ -168,7 +168,14 @@ SELECT
         ),
         'interruptible_sleep_dur_ns', IFNULL(
           MAIN_THREAD_TIME_FOR_LAUNCH_AND_STATE(launches.id, 'S'), 0
+        ),
+        'uninterruptible_io_sleep_dur_ns', IFNULL(
+          MAIN_THREAD_TIME_FOR_LAUNCH_STATE_AND_IO_WAIT(launches.id, 'D*', true), 0
+        ),
+        'uninterruptible_non_io_sleep_dur_ns', IFNULL(
+          MAIN_THREAD_TIME_FOR_LAUNCH_STATE_AND_IO_WAIT(launches.id, 'D*', false), 0
         )
+
       ),
       'mcycles_by_core_type', NULL_IF_EMPTY(AndroidStartupMetric_McyclesByCoreType(
         'little', MCYCLES_FOR_LAUNCH_AND_CORE_TYPE(launches.id, 'little'),
@@ -210,15 +217,7 @@ SELECT
       'time_verify_class',
         DUR_SUM_SLICE_PROTO_FOR_LAUNCH(launches.id, 'VerifyClass*'),
       'time_gc_total', (
-        SELECT NULL_IF_EMPTY(STARTUP_SLICE_PROTO(SUM(slice_dur)))
-        FROM thread_slices_for_all_launches slice
-        WHERE
-          launch_id = launches.id AND
-          (
-            slice_name GLOB "*semispace GC" OR
-            slice_name GLOB "*mark sweep GC" OR
-            slice_name GLOB "*concurrent copying GC"
-          )
+        SELECT NULL_IF_EMPTY(STARTUP_SLICE_PROTO(TOTAL_GC_TIME_BY_LAUNCH(launches.id)))
       ),
       'time_lock_contention_thread_main',
         DUR_SUM_MAIN_THREAD_SLICE_PROTO_FOR_LAUNCH(
@@ -292,9 +291,9 @@ SELECT
     ),
     'system_state', AndroidStartupMetric_SystemState(
       'dex2oat_running',
-        IS_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*dex2oat64'),
+        DUR_OF_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*dex2oat64') > 0,
       'installd_running',
-        IS_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*installd'),
+        DUR_OF_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*installd') > 0,
       'broadcast_dispatched_count',
         COUNT_SLICES_CONCURRENT_TO_LAUNCH(launches.id, 'Broadcast dispatched*'),
       'broadcast_received_count',
@@ -305,11 +304,114 @@ SELECT
     'slow_start_reason', (SELECT RepeatedField(slow_cause)
       FROM (
         SELECT 'dex2oat running during launch' AS slow_cause
-        WHERE IS_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*dex2oat64')
+        WHERE
+          DUR_OF_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*dex2oat64') > 2e9
 
         UNION ALL
         SELECT 'installd running during launch' AS slow_cause
-        WHERE IS_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*installd')
+        WHERE
+          DUR_OF_PROCESS_RUNNING_CONCURRENT_TO_LAUNCH(launches.id, '*installd') > 2e9
+
+        UNION ALL
+        SELECT 'Main Thread - Time spent in Running state'
+        AS slow_cause
+        WHERE MAIN_THREAD_TIME_FOR_LAUNCH_AND_STATE(launches.id, 'Running') > 2e9
+
+        UNION ALL
+        SELECT 'Main Thread - Time spent in Runnable state'
+        AS slow_cause
+        WHERE MAIN_THREAD_TIME_FOR_LAUNCH_AND_STATE(launches.id, 'R') > 1e8
+
+        UNION ALL
+        SELECT 'Main Thread - Time spent in interruptible sleep state'
+        AS slow_cause
+        WHERE MAIN_THREAD_TIME_FOR_LAUNCH_AND_STATE(launches.id, 'S') > 2e9
+
+        UNION ALL
+        SELECT 'Main Thread - Time spent in Blocking I/O'
+        WHERE MAIN_THREAD_TIME_FOR_LAUNCH_STATE_AND_IO_WAIT(launches.id, 'D*', true) > 2e9
+
+        UNION ALL
+        SELECT 'Time spent in OpenDexFilesFromOat*'
+        AS slow_cause
+        WHERE DUR_SUM_FOR_LAUNCH_AND_SLICE(launches.id, 'OpenDexFilesFromOat*') > 1e6
+
+        UNION ALL
+        SELECT 'Time spent in bindApplication'
+        AS slow_cause
+        WHERE DUR_SUM_FOR_LAUNCH_AND_SLICE(launches.id, 'bindApplication') > 10e6
+
+        UNION ALL
+        SELECT 'Time spent in view inflation'
+        AS slow_cause
+        WHERE DUR_SUM_FOR_LAUNCH_AND_SLICE(launches.id, 'inflate') > 2e9
+
+        UNION ALL
+        SELECT 'Time spent in ResourcesManager#getResources'
+        AS slow_cause
+        WHERE DUR_SUM_FOR_LAUNCH_AND_SLICE(
+          launches.id, 'ResourcesManager#getResources') > 10e6
+
+        UNION ALL
+        SELECT 'Time spent verifying classes'
+        AS slow_cause
+        WHERE DUR_SUM_FOR_LAUNCH_AND_SLICE(launches.id, 'VerifyClass*') > 2e9
+
+        UNION ALL
+        SELECT 'JIT Activity'
+        AS slow_cause
+        WHERE THREAD_TIME_FOR_LAUNCH_STATE_AND_THREAD(
+          launches.id,
+          'Running',
+          'Jit thread pool'
+        ) > 120e6
+
+        UNION ALL
+        SELECT 'Main Thread - Lock contention'
+        AS slow_cause
+        WHERE DUR_SUM_MAIN_THREAD_FOR_LAUNCH_AND_SLICE(
+          launches.id,
+          'Lock contention on*'
+        ) > 25e6
+
+        UNION ALL
+        SELECT 'Main Thread - Monitor contention'
+        AS slow_cause
+        WHERE DUR_SUM_MAIN_THREAD_FOR_LAUNCH_AND_SLICE(
+          launches.id,
+          'Lock contention on a monitor*'
+        ) > 2e9
+
+        UNION ALL
+        SELECT 'GC Activity'
+        WHERE TOTAL_GC_TIME_BY_LAUNCH(launches.id) > 0
+
+        UNION ALL
+        SELECT 'JIT compiled methods'
+        WHERE (
+          SELECT COUNT(1)
+          FROM SLICES_FOR_LAUNCH_AND_SLICE_NAME(launches.id, 'JIT compiling*')
+          WHERE thread_name = 'Jit thread pool'
+        ) > 40
+
+        UNION ALL
+        SELECT 'Broadcast dispatched count'
+        Where COUNT_SLICES_CONCURRENT_TO_LAUNCH(
+          launches.id,
+          'Broadcast dispatched*'
+        ) > 10
+
+        UNION ALL
+        SELECT 'Broadcast received count'
+        WHERE COUNT_SLICES_CONCURRENT_TO_LAUNCH(
+          launches.id,
+          'broadcastReceiveReg*'
+        ) > 10
+
+        UNION ALL
+        SELECT 'No baseline or cloud profiles'
+        Where MISSING_BASELINE_PROFILE_FOR_LAUNCH(launches.id, launches.package)
+
       )
     )
   ) as startup

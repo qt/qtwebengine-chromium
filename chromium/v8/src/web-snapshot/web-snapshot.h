@@ -120,7 +120,8 @@ class WebSnapshotSerializerDeserializer {
       static_cast<uint32_t>(FixedArray::kMaxLength - 1);
   // This ensures indices and lengths can be converted between uint32_t and int
   // without problems:
-  static_assert(kMaxItemCount < std::numeric_limits<int32_t>::max());
+  static_assert(kMaxItemCount <
+                static_cast<uint32_t>(std::numeric_limits<int32_t>::max()));
 
  protected:
   explicit WebSnapshotSerializerDeserializer(Isolate* isolate)
@@ -313,7 +314,8 @@ class V8_EXPORT WebSnapshotSerializer
   void SerializeClass(Handle<JSFunction> function);
   void SerializeContext(Handle<Context> context, uint32_t id);
   void SerializeArray(Handle<JSArray> array);
-  void SerializeElements(Handle<JSObject> object, ValueSerializer& serializer);
+  void SerializeElements(Handle<JSObject> object, ValueSerializer& serializer,
+                         Maybe<uint32_t> length);
   void SerializeObject(Handle<JSObject> object);
   void SerializeArrayBufferView(Handle<JSArrayBufferView> array_buffer_view,
                                 ValueSerializer& serializer);

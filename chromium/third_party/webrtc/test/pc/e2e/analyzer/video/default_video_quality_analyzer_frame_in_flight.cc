@@ -16,6 +16,7 @@
 #include "absl/types/optional.h"
 #include "api/units/data_size.h"
 #include "api/units/timestamp.h"
+#include "api/video/video_frame.h"
 #include "api/video/video_frame_type.h"
 #include "test/pc/e2e/analyzer/video/default_video_quality_analyzer_internal_shared_objects.h"
 
@@ -54,6 +55,7 @@ void FrameInFlight::SetFrameId(uint16_t id) {
   if (frame_) {
     frame_->set_id(id);
   }
+  frame_id_ = id;
 }
 
 std::vector<size_t> FrameInFlight::GetPeersWhichDidntReceive() const {
@@ -127,8 +129,14 @@ bool FrameInFlight::HasReceivedTime(size_t peer) const {
 
 void FrameInFlight::OnFrameDecoded(size_t peer,
                                    webrtc::Timestamp time,
-                                   StreamCodecInfo used_decoder) {
+                                   const StreamCodecInfo& used_decoder) {
   receiver_stats_[peer].decode_end_time = time;
+  receiver_stats_[peer].used_decoder = used_decoder;
+}
+
+void FrameInFlight::OnDecoderError(size_t peer,
+                                   const StreamCodecInfo& used_decoder) {
+  receiver_stats_[peer].decoder_failed = true;
   receiver_stats_[peer].used_decoder = used_decoder;
 }
 
@@ -166,7 +174,9 @@ bool FrameInFlight::IsDropped(size_t peer) const {
 }
 
 FrameStats FrameInFlight::GetStatsForPeer(size_t peer) const {
-  FrameStats stats(captured_time_);
+  RTC_DCHECK_NE(frame_id_, VideoFrame::kNotSetId)
+      << "Frame id isn't initialized";
+  FrameStats stats(frame_id_, captured_time_);
   stats.pre_encode_time = pre_encode_time_;
   stats.encoded_time = encoded_time_;
   stats.target_encode_bitrate = target_encode_bitrate_;
@@ -187,6 +197,7 @@ FrameStats FrameInFlight::GetStatsForPeer(size_t peer) const {
     stats.used_decoder = receiver_stats->used_decoder;
     stats.pre_decoded_frame_type = receiver_stats->frame_type;
     stats.pre_decoded_image_size = receiver_stats->encoded_image_size;
+    stats.decoder_failed = receiver_stats->decoder_failed;
   }
   return stats;
 }

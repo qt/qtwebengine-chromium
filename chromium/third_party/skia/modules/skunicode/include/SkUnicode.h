@@ -9,13 +9,15 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h"
+#include "include/private/SkBitmaskEnum.h" // IWYU pragma: keep
+#include "include/private/SkTArray.h"
 #include "src/utils/SkUTF.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #if !defined(SKUNICODE_IMPLEMENTATION)
@@ -130,6 +132,8 @@ class SKUNICODE_API SkUnicode {
         // Methods used in SkParagraph
         static bool isTabulation(SkUnicode::CodeUnitFlags flags);
         static bool isHardLineBreak(SkUnicode::CodeUnitFlags flags);
+        static bool isSoftLineBreak(SkUnicode::CodeUnitFlags flags);
+        static bool isGraphemeStart(SkUnicode::CodeUnitFlags flags);
         static bool isControl(SkUnicode::CodeUnitFlags flags);
         static bool isPartOfWhiteSpaceBreak(SkUnicode::CodeUnitFlags flags);
         virtual bool getBidiRegions(const char utf8[],
@@ -148,7 +152,7 @@ class SKUNICODE_API SkUnicode {
         static std::u16string convertUtf8ToUtf16(const SkString& utf8);
 
         template <typename Appender8, typename Appender16>
-        bool extractUtfConversionMapping(SkSpan<const char> utf8, Appender8&& appender8, Appender16&& appender16) {
+        static bool extractUtfConversionMapping(SkSpan<const char> utf8, Appender8&& appender8, Appender16&& appender16) {
             size_t size8 = 0;
             size_t size16 = 0;
             auto ptr = utf8.begin();
@@ -259,8 +263,9 @@ class SKUNICODE_API SkUnicode {
 
         static std::unique_ptr<SkUnicode> Make();
 
-        static std::unique_ptr<SkUnicode> Make(SkSpan<const char> text,
+        static std::unique_ptr<SkUnicode> Make(SkSpan<char> text,
                                                std::vector<SkUnicode::BidiRegion> bidiRegions,
+                                               std::vector<SkUnicode::Position> words,
                                                std::vector<SkUnicode::Position> graphemeBreaks,
                                                std::vector<SkUnicode::LineBreakBefore> lineBreaks);
 };

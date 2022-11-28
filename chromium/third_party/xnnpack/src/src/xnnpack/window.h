@@ -21,14 +21,24 @@ extern "C" {
     size_t batch_size,                               \
     const int16_t* input,                            \
     const int16_t* weights,                          \
-    uint32_t shift,                                  \
-    int16_t* output);
+    int16_t* output,                                 \
+    uint32_t shift);
 
 
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__neon_x8)
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__neon_x16)
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__neon_x24)
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__neon_x32)
+
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift12_ukernel__neon_x8)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift12_ukernel__neon_x16)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift12_ukernel__neon_x24)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift12_ukernel__neon_x32)
+
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift15_ukernel__neon_x8)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift15_ukernel__neon_x16)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift15_ukernel__neon_x24)
+DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_shift15_ukernel__neon_x32)
 
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__scalar_x1)
 DECLARE_S16_WINDOW_UKERNEL_FUNCTION(xnn_s16_window_ukernel__scalar_x2)

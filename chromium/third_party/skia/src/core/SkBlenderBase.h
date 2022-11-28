@@ -14,7 +14,6 @@
 
 #include <optional>
 
-enum class SkBackend : uint8_t;
 struct GrFPArgs;
 class GrFragmentProcessor;
 class SkColorInfo;
@@ -59,9 +58,13 @@ public:
 
 #ifdef SK_ENABLE_SKSL
     // TODO: make pure virtual
+    // 'primitiveColorBlender' is true when this blender is acting to blend the primitive's color
+    // with the paint's color. When false, the blender is acting to blend the result of the paint
+    // evaluation with the back buffer.
     virtual void addToKey(const SkKeyContext&,
                           SkPaintParamsKeyBuilder*,
-                          SkPipelineDataGatherer*) const;
+                          SkPipelineDataGatherer*,
+                          bool primitiveColorBlender) const;
 #endif
 
     static SkFlattenable::Type GetFlattenableType() { return kSkBlender_Type; }

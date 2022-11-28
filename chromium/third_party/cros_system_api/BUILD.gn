@@ -1,4 +1,4 @@
-# Copyright 2018 The Chromium OS Authors. All rights reserved.
+# Copyright 2018 The ChromiumOS Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,6 +8,8 @@ group("all") {
   deps = [
     ":libsystem_api",
     ":system_api-anomaly_detector-protos",
+    ":system_api-arc-goprotos",
+    ":system_api-arc-protos",
     ":system_api-attestation-goprotos",
     ":system_api-attestation-protos",
     ":system_api-authpolicy-protos",
@@ -24,6 +26,8 @@ group("all") {
     ":system_api-fusebox-protos",
     ":system_api-hps-goprotos",
     ":system_api-hps-protos",
+    ":system_api-imageloader-goprotos",
+    ":system_api-imageloader-protos",
     ":system_api-kerberos-goprotos",
     ":system_api-kerberos-protos",
     ":system_api-login_manager-goprotos",
@@ -45,12 +49,15 @@ group("all") {
     ":system_api-power_manager-goprotos",
     ":system_api-power_manager-protos",
     ":system_api-privacy_screen-protos",
+    ":system_api-private_computing-protos",
     ":system_api-protos",
     ":system_api-rmad-protos",
     ":system_api-runtime_probe-goprotos",
     ":system_api-runtime_probe-protos",
     ":system_api-seneschal-goprotos",
     ":system_api-seneschal-protos",
+    ":system_api-shadercached-goprotos",
+    ":system_api-shadercached-protos",
     ":system_api-smbprovider-protos",
     ":system_api-spaced-protos",
     ":system_api-system_proxy-protos",
@@ -105,6 +112,7 @@ proto_library("system_api-power_manager-protos") {
   proto_out_dir = "include/power_manager/proto_bindings"
   sources = [
     "${proto_in_dir}/backlight.proto",
+    "${proto_in_dir}/charge_history_state.proto",
     "${proto_in_dir}/idle.proto",
     "${proto_in_dir}/input_event.proto",
     "${proto_in_dir}/peripheral_battery_status.proto",
@@ -123,6 +131,7 @@ goproto_library("system_api-power_manager-goprotos") {
   proto_out_dir = "go/src/"
   sources = [
     "${proto_in_dir}/backlight.proto",
+    "${proto_in_dir}/charge_history_state.proto",
     "${proto_in_dir}/idle.proto",
     "${proto_in_dir}/input_event.proto",
     "${proto_in_dir}/peripheral_battery_status.proto",
@@ -198,7 +207,6 @@ proto_library("system_api-login_manager-protos") {
   proto_in_dir = "dbus/login_manager"
   proto_out_dir = "include/login_manager/proto_bindings"
   sources = [
-    "${proto_in_dir}/arc.proto",
     "${proto_in_dir}/login_screen_storage.proto",
     "${proto_in_dir}/policy_descriptor.proto",
   ]
@@ -350,13 +358,16 @@ goproto_library("system_api-vm_cicerone-goprotos") {
 proto_library("system_api-vm_concierge-protos") {
   proto_in_dir = "dbus/vm_concierge"
   proto_out_dir = "include/vm_concierge/proto_bindings"
+  proto_lib_dirs = [ "dbus" ]
   sources = [ "${proto_in_dir}/concierge_service.proto" ]
+  deps = [ ":system_api-arc-protos" ]
   standalone = true
 }
 
 goproto_library("system_api-vm_concierge-goprotos") {
   proto_in_dir = "dbus/vm_concierge"
   proto_out_dir = "go/src/"
+  proto_lib_dirs = [ "dbus" ]
   sources = [ "${proto_in_dir}/concierge_service.proto" ]
 }
 
@@ -449,6 +460,19 @@ goproto_library("system_api-dlcservice-goprotos") {
   proto_in_dir = "dbus/dlcservice"
   proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/dlcservice.proto" ]
+}
+
+proto_library("system_api-imageloader-protos") {
+  proto_in_dir = "dbus/imageloader"
+  proto_out_dir = "include/imageloader/proto_bindings"
+  sources = [ "${proto_in_dir}/imageloader.proto" ]
+  standalone = true
+}
+
+goproto_library("system_api-imageloader-goprotos") {
+  proto_in_dir = "dbus/imageloader"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/imageloader.proto" ]
 }
 
 proto_library("system_api-update_engine-protos") {
@@ -610,4 +634,37 @@ goproto_library("system_api-ml-goprotos") {
   proto_in_dir = "dbus/ml"
   proto_out_dir = "go/src"
   sources = [ "${proto_in_dir}/ranker_example.proto" ]
+}
+
+proto_library("system_api-shadercached-protos") {
+  proto_in_dir = "dbus/shadercached"
+  proto_out_dir = "include/shadercached/proto_bindings"
+  sources = [ "${proto_in_dir}/shadercached.proto" ]
+  standalone = true
+}
+
+goproto_library("system_api-shadercached-goprotos") {
+  proto_in_dir = "dbus/shadercached"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/shadercached.proto" ]
+}
+
+proto_library("system_api-arc-protos") {
+  proto_in_dir = "dbus"
+  proto_out_dir = "include"
+  sources = [ "${proto_in_dir}/arc/arc.proto" ]
+  standalone = true
+}
+
+goproto_library("system_api-arc-goprotos") {
+  proto_in_dir = "dbus/arc"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/arc.proto" ]
+}
+
+proto_library("system_api-private_computing-protos") {
+  proto_in_dir = "dbus/private_computing"
+  proto_out_dir = "include/private_computing/proto_bindings"
+  sources = [ "${proto_in_dir}/private_computing_service.proto" ]
+  standalone = true
 }

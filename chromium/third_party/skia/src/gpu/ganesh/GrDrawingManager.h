@@ -16,12 +16,10 @@
 #include "src/gpu/ganesh/GrDeferredUpload.h"
 #include "src/gpu/ganesh/GrHashMapWithCache.h"
 #include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
-
-#if SK_GPU_V1
 #include "src/gpu/ganesh/PathRenderer.h"
 #include "src/gpu/ganesh/PathRendererChain.h"
-#endif
 
 // Enabling this will print out which path renderers are being chosen
 #define GR_PATH_RENDERER_SPEW 0
@@ -49,7 +47,6 @@ public:
 
     void freeGpuResources();
 
-#if SK_GPU_V1
     // OpsTasks created at flush time are stored and handled different from the others.
     sk_sp<skgpu::v1::OpsTask> newOpsTask(GrSurfaceProxyView,
                                          sk_sp<GrArenas> arenas);
@@ -59,7 +56,6 @@ public:
     // If 'previousAtlasTask' is provided, closes it and configures dependencies to guarantee
     // previousAtlasTask and all its users are completely out of service before atlasTask executes.
     void addAtlasTask(sk_sp<GrRenderTask> atlasTask, GrRenderTask* previousAtlasTask);
-#endif
 
     // Create a render task that can resolve MSAA and/or regenerate mipmap levels on proxies. This
     // method will only add the new render task to the list. However, it adds the task before the
@@ -91,28 +87,37 @@ public:
                                    sk_sp<GrGpuBuffer> dstBuffer, size_t dstOffset);
 
     // Creates a new render task which copies a pixel rectangle from srcView into dstView. The src
-    // pixels copied are specified by srcRect. They are copied to a rect of the same size in
-    // dstProxy with top left at dstPoint. If the src rect is clipped by the src bounds then  pixel
-    // values in the dst rect corresponding to the area clipped by the src rect are not overwritten.
+    // pixels copied are specified by srcRect. They are copied to the dstRect in dstProxy. Some
+    // backends and formats may require dstRect to have the same size as srcRect. Regardless,
+    // srcRect must be contained by src's dimensions and dstRect must be contained by dst's
+    // dimensions. Any clipping, aspect-ratio adjustment, etc. must be handled prior to this call.
+    //
     // This method is not guaranteed to succeed depending on the type of surface, formats, etc, and
-    // the backend-specific limitations. On success the task is returned so that the caller may
-    // mark it skippable if the copy is later deemed unnecessary.
-    sk_sp<GrRenderTask> newCopyRenderTask(sk_sp<GrSurfaceProxy> src,
+    // the backend-specific limitations. On success the task is returned so that the caller may mark
+    // it skippable if the copy is later deemed unnecessary.
+    sk_sp<GrRenderTask> newCopyRenderTask(sk_sp<GrSurfaceProxy> dst,
+                                          SkIRect dstRect,
+                                          sk_sp<GrSurfaceProxy> src,
                                           SkIRect srcRect,
-                                          sk_sp<GrSurfaceProxy> dst,
-                                          SkIPoint dstPoint,
+                                          GrSamplerState::Filter filter,
                                           GrSurfaceOrigin);
 
     // Adds a render task that copies the range [srcOffset, srcOffset + size] from src to
     // [dstOffset, dstOffset + size] in dst. The src buffer must have type kXferCpuToGpu and the
-    // dst must NOT have type kXferCpuToGpu. Neither buffer may be mapped. Because this is used to
-    // insert transfers to vertex/index buffers between draws and we don't track dependencies with
-    // buffers, this task is a hard boundary for task reordering.
+    // dst must NOT have type kXferCpuToGpu. Neither buffer may be mapped when this executes.
+    // Because this is used to insert transfers to vertex/index buffers between draws and we don't
+    // track dependencies with buffers, this task is a hard boundary for task reordering.
     void newBufferTransferTask(sk_sp<GrGpuBuffer> src,
                                size_t srcOffset,
                                sk_sp<GrGpuBuffer> dst,
                                size_t dstOffset,
                                size_t size);
+
+    // Adds a render task that copies the src SkData to [dstOffset, dstOffset + src->size()] in dst.
+    // The dst must not have type kXferCpuToGpu and must not be mapped. Because this is used to
+    // insert updata to vertex/index buffers between draws and we don't track dependencies with
+    // buffers, this task is a hard boundary for task reordering.
+    void newBufferUpdateTask(sk_sp<SkData> src, sk_sp<GrGpuBuffer> dst, size_t dstOffset);
 
     // Adds a task that writes the data from the passed GrMipLevels to dst. The lifetime of the
     // pixel data in the levels should be tied to the passed SkData or the caller must flush the
@@ -128,7 +133,6 @@ public:
 
     GrRecordingContext* getContext() { return fContext; }
 
-#if SK_GPU_V1
     using PathRenderer = skgpu::v1::PathRenderer;
     using PathRendererChain = skgpu::v1::PathRendererChain;
 
@@ -146,7 +150,6 @@ public:
     // Returns a direct pointer to the tessellation path renderer, or null if it is not supported
     // and turned on.
     PathRenderer* getTessellationPathRenderer();
-#endif
 
     void flushIfNecessary();
 
@@ -155,17 +158,15 @@ public:
     GrSemaphoresSubmitted flushSurfaces(SkSpan<GrSurfaceProxy*>,
                                         SkSurface::BackendSurfaceAccess,
                                         const GrFlushInfo&,
-                                        const GrBackendSurfaceMutableState* newState);
+                                        const skgpu::MutableTextureState* newState);
 
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
 #if GR_TEST_UTILS
     void testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject*);
-#if SK_GPU_V1
     PathRendererChain::Options testingOnly_getOptionsForPathRendererChain() {
         return fOptionsForPathRendererChain;
     }
-#endif
 #endif
 
     GrRenderTask* getLastRenderTask(const GrSurfaceProxy*) const;
@@ -178,13 +179,9 @@ public:
                        SkIPoint offset);
 
 private:
-#if SK_GPU_V1
     GrDrawingManager(GrRecordingContext*,
                      const PathRendererChain::Options&,
                      bool reduceOpsTaskSplitting);
-#else
-    GrDrawingManager(GrRecordingContext*, bool reduceOpsTaskSplitting);
-#endif
 
     bool wasAbandoned() const;
 
@@ -210,7 +207,7 @@ private:
     bool flush(SkSpan<GrSurfaceProxy*> proxies,
                SkSurface::BackendSurfaceAccess access,
                const GrFlushInfo&,
-               const GrBackendSurfaceMutableState* newState);
+               const skgpu::MutableTextureState* newState);
 
     bool submitToGpu(bool syncToCpu);
 
@@ -232,14 +229,11 @@ private:
     sk_sp<GrBufferAllocPool::CpuBufferCache> fCpuBufferCache;
 
     SkTArray<sk_sp<GrRenderTask>>            fDAG;
-    std::vector<int>                         fReorderBlockerTaskIndices;
     skgpu::v1::OpsTask*                      fActiveOpsTask = nullptr;
 
-#if SK_GPU_V1
     PathRendererChain::Options               fOptionsForPathRendererChain;
     std::unique_ptr<PathRendererChain>       fPathRendererChain;
     sk_sp<skgpu::v1::SoftwarePathRenderer>   fSoftwarePathRenderer;
-#endif
 
     skgpu::TokenTracker                      fTokenTracker;
     bool                                     fFlushing = false;

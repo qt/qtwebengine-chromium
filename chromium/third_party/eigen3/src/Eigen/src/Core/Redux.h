@@ -200,8 +200,7 @@ struct redux_impl<Func, Evaluator, DefaultTraversal, NoUnrolling>
   Scalar run(const Evaluator &eval, const Func& func, const XprType& xpr)
   {
     eigen_assert(xpr.rows()>0 && xpr.cols()>0 && "you are using an empty matrix");
-    Scalar res;
-    res = eval.coeffByOuterInner(0, 0);
+    Scalar res = eval.coeffByOuterInner(0, 0);
     for(Index i = 1; i < xpr.innerSize(); ++i)
       res = func(res, eval.coeffByOuterInner(0, i));
     for(Index i = 1; i < xpr.outerSize(); ++i)

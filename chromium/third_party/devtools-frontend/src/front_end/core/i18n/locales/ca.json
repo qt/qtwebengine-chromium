@@ -758,6 +758,9 @@
   "core/sdk/sdk-meta.ts | enableNetworkRequestBlocking": {
     "message": "Activa el bloqueig de sol·licituds de xarxa"
   },
+  "core/sdk/sdk-meta.ts | enableUNCLoading": {
+    "message": "Permet que DevTools carregui recursos, com ara mapes d'origen, d'elements compartits a Windows a través de camins UNC. Això està desactivat de manera predeterminada per motius de seguretat."
+  },
   "core/sdk/sdk-meta.ts | enableWebpFormat": {
     "message": "Activa el format WebP"
   },
@@ -1000,6 +1003,15 @@
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | rendering": {
     "message": "Renderització"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeCommand": {
+    "message": "Activa la cerca mentre escrius"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeSetting": {
+    "message": "Cerca a mesura que escrius"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchOnEnterCommand": {
+    "message": "Desactiva la cerca a mesura que escrius (prem Retorn per cercar)"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | showAds": {
     "message": "Mostra anuncis en aquest lloc web, si es permet"
@@ -1397,6 +1409,9 @@
   "models/issues_manager/DeprecationIssue.ts | eventPath": {
     "message": "Event.path està obsoleta i se suprimirà. Substitueix-la per Event.composedPath()."
   },
+  "models/issues_manager/DeprecationIssue.ts | expectCTHeader": {
+    "message": "La capçalera Expect-CT està obsoleta i se suprimirà. Chrome requereix Transparència de certificats per a tots els certificats considerats de confiança públicament que s'hagin emès després del 30 d'abril de 2018."
+  },
   "models/issues_manager/DeprecationIssue.ts | feature": {
     "message": "Consulta la pàgina d'estat de la funció per obtenir informació més detallada."
   },
@@ -1446,7 +1461,10 @@
     "message": "El teu partner està negociant una versió de (D)TLS obsoleta. Demana al teu partner que ho corregeixi."
   },
   "models/issues_manager/DeprecationIssue.ts | openWebDatabaseInsecureContext": {
-    "message": "WebSQL està obsolet en contextos no segurs i se suprimirà a la versió M107. Utilitza l'emmagatzematge web o la base de dades indexada."
+    "message": "WebSQL està obsolet en contextos no segurs i se suprimirà aviat. Utilitza Web Storage o Indexed Database."
+  },
+  "models/issues_manager/DeprecationIssue.ts | persistentQuotaType": {
+    "message": "StorageType.persistent està obsolet. Substitueix-lo per navigator.storage estandarditzat."
   },
   "models/issues_manager/DeprecationIssue.ts | pictureSourceSrc": {
     "message": "<source src> amb un atribut superior <picture> no és vàlid i s'ignorarà. Substitueix-lo per <source srcset>."
@@ -1702,6 +1720,9 @@
   },
   "models/timeline_model/TimelineModel.ts | unknownWorkletS": {
     "message": "Worklet de subhasta: {PH1}"
+  },
+  "models/timeline_model/TimelineModel.ts | userInteractions": {
+    "message": "Interaccions dels usuaris"
   },
   "models/timeline_model/TimelineModel.ts | workerS": {
     "message": "Worker-{PH1}"
@@ -2434,6 +2455,9 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Aplicació"
+  },
+  "panels/application/ApplicationPanelSidebar.ts | applicationSidebarPanel": {
+    "message": "Barra lateral del tauler de l'aplicació"
   },
   "panels/application/ApplicationPanelSidebar.ts | backgroundServices": {
     "message": "Serveis en segon pla"
@@ -3740,6 +3764,9 @@
   "panels/application/components/Prerender2.ts | CrossOriginRedirect": {
     "message": "S'ha provat de renderitzar prèviament un URL que redirigeix a un URL d'altres orígens. Actualment, no es permet renderitzar prèviament pàgines d'altres orígens."
   },
+  "panels/application/components/Prerender2.ts | DataSaverEnabled": {
+    "message": "Estalvi de dades activat"
+  },
   "panels/application/components/Prerender2.ts | Destroyed": {
     "message": "S'ha abandonat una pàgina renderitzada prèviament per motius desconeguts."
   },
@@ -3752,11 +3779,11 @@
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndCrossOriginRedirected": {
     "message": "La renderització prèvia activada per Chrome (p. ex., renderització prèvia de l'omnibox) està cancel·lada perquè la navegació està redirigida a una altra pàgina d'altres orígens."
   },
-  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndDestroyed": {
-    "message": "La renderització prèvia activada per Chrome (p. ex., renderització prèvia de l'omnibox) està destruïda al destructor."
-  },
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndSameOriginRedirected": {
     "message": "La renderització prèvia activada per Chrome (p. ex., renderització prèvia de l'omnibox) està cancel·lada perquè la navegació està redirigida a una altra pàgina del mateix origen."
+  },
+  "panels/application/components/Prerender2.ts | FailToGetMemoryUsage": {
+    "message": "No s'ha pogut obtenir l'ús de memòria"
   },
   "panels/application/components/Prerender2.ts | InProgressNavigation": {
     "message": "InProgressNavigation."
@@ -3778,6 +3805,9 @@
   },
   "panels/application/components/Prerender2.ts | MaxNumOfRunningPrerendersExceeded": {
     "message": "S'ha superat el nombre màxim de renderitzacions prèvies."
+  },
+  "panels/application/components/Prerender2.ts | MemoryLimitExceeded": {
+    "message": "S'ha superat el límit de memòria"
   },
   "panels/application/components/Prerender2.ts | MixedContent": {
     "message": "La renderització prèvia està cancel·lada per un marc de contingut mixt."
@@ -4733,20 +4763,23 @@
   "panels/elements/CSSRuleValidator.ts | deprecatedPropertyHintPrefix": {
     "message": "Propietat obsoleta"
   },
-  "panels/elements/CSSRuleValidator.ts | ruleValidationHintPrefix": {
-    "message": "Regla inactiva"
+  "panels/elements/CSSRuleValidator.ts | inactivePropertyHintPrefix": {
+    "message": "Propietat inactiva"
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
-    "message": "Canvia els elements superiors {EXISTING_PARENT_ELEMENT_RULE} per {TARGET_PARENT_ELEMENT_RULE} a fi de corregir aquest problema."
+    "message": "Prova de canviar la propietat {EXISTING_PARENT_ELEMENT_RULE} a {TARGET_PARENT_ELEMENT_RULE} a l'element superior."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleReason": {
-    "message": "L'element superior té la regla {REASON_RULE_CODE} i, per tant, aquest element {AFFECTED_RULE_CODE} no té cap efecte"
+    "message": "La propietat {REASON_PROPERTY_DECLARATION_CODE} a l'element superior omet l'efecte de {AFFECTED_PROPERTY_DECLARATION_CODE}."
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleChangeSuggestion": {
+    "message": "Prova de canviar la propietat {EXISTING_PROPERTY_DECLARATION} a {TARGET_PROPERTY_DECLARATION}."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleFix": {
-    "message": "Perquè aquesta propietat funcioni, suprimeix o canvia el valor de {REASON_RULE_CODE}"
+    "message": "Prova de suprimir {REASON_PROPERTY_DECLARATION_CODE} o canviar-ne el valor."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
-    "message": "Aquest element té la regla {REASON_RULE_CODE} i, per tant, {AFFECTED_RULE_CODE} no té cap efecte."
+    "message": "La propietat {REASON_PROPERTY_DECLARATION_CODE} a aquest element omet l'efecte de {AFFECTED_PROPERTY_DECLARATION_CODE}."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Afegeix una classe nova"
@@ -5183,8 +5216,8 @@
   "panels/elements/StylesSidebarPane.ts | unknownPropertyName": {
     "message": "Nom de propietat desconegut"
   },
-  "panels/elements/TopLayerContainer.ts | topLayer": {
-    "message": "capa superior"
+  "panels/elements/TopLayerContainer.ts | reveal": {
+    "message": "mostra"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ignorat"
@@ -5200,6 +5233,12 @@
   },
   "panels/elements/components/ElementsBreadcrumbs.ts | breadcrumbs": {
     "message": "Rutes de navegació de l'arbre DOM"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollLeft": {
+    "message": "Desplaça a l'esquerra"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollRight": {
+    "message": "Desplaça a la dreta"
   },
   "panels/elements/components/ElementsBreadcrumbsUtils.ts | text": {
     "message": "(text)"
@@ -5699,11 +5738,11 @@
   "panels/issues/AttributionReportingIssueDetailsView.ts | element": {
     "message": "Element"
   },
-  "panels/issues/AttributionReportingIssueDetailsView.ts | frame": {
-    "message": "Marc"
-  },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidHeaderValue": {
     "message": "Valor de capçalera no vàlid"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | maximumConcurrentRegistrations": {
+    "message": "Nombre màxim de registres simultanis"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n,plural, =1{# infracció}other{# infraccions}}"
@@ -6810,7 +6849,7 @@
     "message": "El patró ja existeix."
   },
   "panels/network/BlockedURLsPane.ts | patternInputCannotBeEmpty": {
-    "message": "L'entrada de patró no es pot deixar en blanc."
+    "message": "L'entrada de patró no pot ser buit."
   },
   "panels/network/BlockedURLsPane.ts | removeAllPatterns": {
     "message": "Suprimeix tots els patrons"
@@ -7479,7 +7518,7 @@
     "message": "General"
   },
   "panels/network/RequestHeadersView.ts | headerOverrides": {
-    "message": "Substitucions de la capçalera"
+    "message": "Anul·lacions de capçaleres"
   },
   "panels/network/RequestHeadersView.ts | learnMore": {
     "message": "Més informació"
@@ -7868,8 +7907,32 @@
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Mostra el certificat"
   },
-  "panels/network/components/RequestHeadersView.ts | chooseThisOptionIfTheResourceAnd": {
-    "message": "Tria aquesta opció si el recurs i el document es difonen des del mateix lloc web."
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariation": {
+    "message": "client experiment variation IDs actius"
+  },
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariationIds": {
+    "message": "Activa els client experiment variation IDs que activen el comportament del servidor."
+  },
+  "panels/network/components/HeaderSectionRow.ts | decoded": {
+    "message": "Descodificat:"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMore": {
+    "message": "Més informació"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMoreInTheIssuesTab": {
+    "message": "Més informació a la pestanya Problemes"
+  },
+  "panels/network/components/RequestHeaderSection.ts | learnMore": {
+    "message": "Més informació"
+  },
+  "panels/network/components/RequestHeaderSection.ts | onlyProvisionalHeadersAre": {
+    "message": "Només estan disponibles les capçaleres provisionals perquè aquesta sol·licitud no s'ha enviat a través de la xarxa, sinó que s'ha difós des d'una memòria cau local, que no emmagatzema les capçaleres de sol·licitud originals. Desactiva la memòria cau per veure les capçaleres de sol·licitud completes."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShown": {
+    "message": "Es mostren capçaleres provisionals."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShownDisableCache": {
+    "message": "Es mostren capçaleres provisionals. Desactiva la memòria cau per veure les capçaleres completes."
   },
   "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
     "message": "(de la memòria cau del disc)"
@@ -7892,23 +7955,8 @@
   "panels/network/components/RequestHeadersView.ts | general": {
     "message": "General"
   },
-  "panels/network/components/RequestHeadersView.ts | learnMore": {
-    "message": "Més informació"
-  },
-  "panels/network/components/RequestHeadersView.ts | learnMoreInTheIssuesTab": {
-    "message": "Més informació a la pestanya Problemes"
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyChooseThisOptionIfAn": {
-    "message": "Tria aquesta opció només si un lloc web arbitrari que inclou aquest recurs no suposa un risc de seguretat."
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyProvisionalHeadersAre": {
-    "message": "Només estan disponibles les capçaleres provisionals perquè aquesta sol·licitud no s'ha enviat a través de la xarxa, sinó que s'ha difós des d'una memòria cau local, que no emmagatzema les capçaleres de sol·licitud originals. Desactiva la memòria cau per veure les capçaleres de sol·licitud completes."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShown": {
-    "message": "Es mostren capçaleres provisionals."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShownDisableCache": {
-    "message": "Es mostren capçaleres provisionals. Desactiva la memòria cau per veure les capçaleres completes."
+  "panels/network/components/RequestHeadersView.ts | headerOverrides": {
+    "message": "Anul·lacions de capçaleres"
   },
   "panels/network/components/RequestHeadersView.ts | raw": {
     "message": "Sense processar"
@@ -7936,21 +7984,6 @@
   },
   "panels/network/components/RequestHeadersView.ts | statusCode": {
     "message": "Codi d'estat"
-  },
-  "panels/network/components/RequestHeadersView.ts | thisDocumentWasBlockedFrom": {
-    "message": "Aquest document s'ha bloquejat per impedir que es carregui en un iframe amb un atribut sandbox, perquè aquest document ha especificat una política de mètodes d'obertura d'altres orígens."
-  },
-  "panels/network/components/RequestHeadersView.ts | toEmbedThisFrameInYourDocument": {
-    "message": "Per inserir aquest marc al teu document, la resposta ha d'activar la política d'inserció d'altres orígens especificant la capçalera de resposta següent:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferent": {
-    "message": "Per utilitzar aquest recurs des d'un altre origen, el servidor ha d'especificar una política de recursos de diversos orígens a les capçaleres de resposta:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentOrigin": {
-    "message": "Per utilitzar aquest recurs des d'un altre origen, el servidor pot relaxar la capçalera de resposta a la política de recursos d'altres orígens:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentSite": {
-    "message": "Per utilitzar aquest recurs des d'un altre lloc web, el servidor pot relaxar la capçalera de resposta a la política de recursos d'altres orígens:"
   },
   "panels/network/components/RequestTrustTokensView.ts | aClientprovidedArgumentWas": {
     "message": "Un argument proporcionat pel client tenia un format incorrecte o no era vàlid."
@@ -8002,6 +8035,27 @@
   },
   "panels/network/components/RequestTrustTokensView.ts | type": {
     "message": "Tipus"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | chooseThisOptionIfTheResourceAnd": {
+    "message": "Tria aquesta opció si el recurs i el document es difonen des del mateix lloc web."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | onlyChooseThisOptionIfAn": {
+    "message": "Tria aquesta opció només si un lloc web arbitrari que inclou aquest recurs no imposa un risc de seguretat."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | thisDocumentWasBlockedFrom": {
+    "message": "Aquest document no es pot carregar en un iframe amb un atribut sandbox perquè aquest document ha especificat una política de mètode d'obertura en diferents orígens."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toEmbedThisFrameInYourDocument": {
+    "message": "Per inserir aquest marc al teu document, la resposta ha d'activar la política d'inserció de diversos orígens especificant la capçalera de resposta següent:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferent": {
+    "message": "Per utilitzar aquest recurs des d'un altre origen, el servidor ha d'especificar una política de recursos de diversos orígens a les capçaleres de resposta:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentOrigin": {
+    "message": "Per utilitzar aquest recurs des d'un altre origen, el servidor pot relaxar la capçalera de resposta a la política de recursos de diversos orígens:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentSite": {
+    "message": "Per utilitzar aquest recurs des d'un altre lloc web, el servidor pot relaxar la capçalera de resposta a la política del recurs de diferents orígens:"
   },
   "panels/network/components/WebBundleInfoView.ts | bundledResource": {
     "message": "Recurs empaquetat"
@@ -8771,6 +8825,9 @@
   "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommand": {
     "message": "Envia una ordre CDP sense processar"
   },
+  "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommandExplanation": {
+    "message": "Format: 'Domain.commandName' per a una ordre sense paràmetres, o '{\"command\":\"Domain.commandName\", \"parameters\": {...}}' com a objecte JSON per a una ordre amb paràmetres. També s'admeten 'cmd'/'method' i 'args'/'params'/'arguments' com a claus alternatives per a l'objecte JSON."
+  },
   "panels/protocol_monitor/ProtocolMonitor.ts | session": {
     "message": "Sessió"
   },
@@ -9228,7 +9285,7 @@
     "message": "Nom de la ubicació"
   },
   "panels/sensors/LocationsSettingsTab.ts | locationNameCannotBeEmpty": {
-    "message": "El nom de la ubicació no pot estar buit"
+    "message": "El nom de la ubicació no pot ser buit"
   },
   "panels/sensors/LocationsSettingsTab.ts | locationNameMustBeLessThanS": {
     "message": "El nom de la ubicació ha de tenir un nombre de caràcters inferior a {PH1}"
@@ -9527,6 +9584,9 @@
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Restaura les opcions de configuració predeterminades i torna a carregar"
   },
+  "panels/settings/SettingsScreen.ts | sendFeedback": {
+    "message": "Envia suggeriments"
+  },
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Configuració"
   },
@@ -9567,7 +9627,7 @@
     "message": "Nom del dispositiu"
   },
   "panels/settings/emulation/DevicesSettingsTab.ts | deviceNameCannotBeEmpty": {
-    "message": "El nom del dispositiu no pot estar buit."
+    "message": "El nom del dispositiu no pot ser buit."
   },
   "panels/settings/emulation/DevicesSettingsTab.ts | deviceNameMustBeLessThanS": {
     "message": "El nom del dispositiu ha de tenir un nombre de caràcters inferior a {PH1}."
@@ -10136,9 +10196,6 @@
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘+Retorn"
   },
-  "panels/sources/SourcesNavigator.ts | authoredDescription": {
-    "message": "Agrupa fitxers per autor/implementació"
-  },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Esborra la configuració"
   },
@@ -10216,6 +10273,9 @@
   },
   "panels/sources/SourcesPanel.ts | hideDebugger": {
     "message": "Amaga el depurador"
+  },
+  "panels/sources/SourcesPanel.ts | hideIgnoreListed": {
+    "message": "Amaga les fonts incloses a la llista d'elements ignorats"
   },
   "panels/sources/SourcesPanel.ts | hideNavigator": {
     "message": "Amaga el navegador"
@@ -10306,6 +10366,18 @@
   },
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Actualitza les expressions d'inspecció"
+  },
+  "panels/sources/components/BreakpointsView.ts | breakpointHit": {
+    "message": "Petició del punt de ruptura {PH1}"
+  },
+  "panels/sources/components/BreakpointsView.ts | checked": {
+    "message": "marcat"
+  },
+  "panels/sources/components/BreakpointsView.ts | indeterminate": {
+    "message": "combinats"
+  },
+  "panels/sources/components/BreakpointsView.ts | unchecked": {
+    "message": "desmarcada"
   },
   "panels/sources/components/HeadersView.ts | addHeader": {
     "message": "Afegeix una capçalera"
@@ -10741,6 +10813,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | timings": {
     "message": "Temps"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | userInteractions": {
+    "message": "Interaccions"
   },
   "panels/timeline/TimelineFlameChartNetworkDataProvider.ts | network": {
     "message": "Xarxa"
@@ -11222,6 +11297,9 @@
   "panels/timeline/TimelineUIUtils.ts | event": {
     "message": "Esdeveniment"
   },
+  "panels/timeline/TimelineUIUtils.ts | eventTiming": {
+    "message": "Temps de l'esdeveniment"
+  },
   "panels/timeline/TimelineUIUtils.ts | evolvedClsLink": {
     "message": "evolucionat"
   },
@@ -11320,6 +11398,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | installTimer": {
     "message": "Instal·la un temporitzador"
+  },
+  "panels/timeline/TimelineUIUtils.ts | interactionEvent": {
+    "message": "Tipus d'interacció: {PH1} identificador: {PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | invalidateLayout": {
     "message": "Invalida el disseny"
@@ -12094,6 +12175,12 @@
   },
   "ui/components/issue_counter/IssueLinkIcon.ts | issueUnavailable": {
     "message": "El problema no està disponible en aquest moment"
+  },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | deleteHighlight": {
+    "message": "Deixa de destacar aquest record"
+  },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | jumpToAddress": {
+    "message": "Ves a aquest record"
   },
   "ui/components/linear_memory_inspector/LinearMemoryInspector.ts | addressHasToBeANumberBetweenSAnd": {
     "message": "L'adreça ha de ser un número entre {PH1} i {PH2}"

@@ -15,10 +15,6 @@
 
 #include <string>
 
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-#include "src/gpu/ganesh/GrShaderCaps.h"
-#endif
-
 namespace SkSL {
 
 // TODO: Once Graphite has its own GPU-caps system, SK_GRAPHITE_ENABLED should get its own mode.
@@ -28,6 +24,7 @@ namespace SkSL {
 std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
     std::unique_ptr<ShaderCaps> standalone = std::make_unique<ShaderCaps>();
     standalone->fShaderDerivativeSupport = true;
+    standalone->fExplicitTextureLodSupport = true;
     standalone->fFlatInterpolationSupport = true;
     standalone->fNoPerspectiveInterpolationSupport = true;
     standalone->fSampleMaskSupport = true;
@@ -36,7 +33,7 @@ std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
 }
 #else
 std::unique_ptr<ShaderCaps> ShaderCapsFactory::MakeShaderCaps() {
-    return std::make_unique<GrShaderCaps>();
+    return std::make_unique<ShaderCaps>();
 }
 #endif  // defined(SKSL_STANDALONE) || !SK_SUPPORT_GPU
 

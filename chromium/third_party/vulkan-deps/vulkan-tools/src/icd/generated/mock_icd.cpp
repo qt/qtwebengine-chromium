@@ -2796,7 +2796,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceWin32PresentationSupportK
 
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
-    const VkVideoProfileKHR*                    pVideoProfile,
+    const VkVideoProfileInfoKHR*                pVideoProfile,
     VkVideoCapabilitiesKHR*                     pCapabilities)
 {
 //Not a CREATE or DESTROY function
@@ -2835,8 +2835,8 @@ static VKAPI_ATTR void VKAPI_CALL DestroyVideoSessionKHR(
 static VKAPI_ATTR VkResult VKAPI_CALL GetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements)
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements)
 {
 //Not a CREATE or DESTROY function
     return VK_SUCCESS;
@@ -2845,8 +2845,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetVideoSessionMemoryRequirementsKHR(
 static VKAPI_ATTR VkResult VKAPI_CALL BindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories)
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos)
 {
 //Not a CREATE or DESTROY function
     return VK_SUCCESS;
@@ -2906,7 +2906,7 @@ static VKAPI_ATTR void VKAPI_CALL CmdControlVideoCodingKHR(
 
 static VKAPI_ATTR void VKAPI_CALL CmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
-    const VkVideoDecodeInfoKHR*                 pFrameInfo)
+    const VkVideoDecodeInfoKHR*                 pDecodeInfo)
 {
 //Not a CREATE or DESTROY function
 }
@@ -5315,6 +5315,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDrmDisplayEXT(
 
 
 
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreatePrivateDataSlotEXT(
     VkDevice                                    device,
     const VkPrivateDataSlotCreateInfo*          pCreateInfo,
@@ -5397,6 +5398,16 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2EXT(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL GetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 
@@ -5452,6 +5463,7 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetVertexInputEXT(
 {
 //Not a CREATE or DESTROY function
 }
+
 
 
 
@@ -5690,6 +5702,133 @@ static VKAPI_ATTR void VKAPI_CALL CmdDrawMultiIndexedEXT(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL CreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap)
+{
+    unique_lock_t lock(global_lock);
+    *pMicromap = (VkMicromapEXT)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyMicromapEXT(
+    VkDevice                                    device,
+    VkMicromapEXT                               micromap,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdBuildMicromapsEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL BuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL WriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapInfoEXT*                pInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMicromapToMemoryEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdWriteMicromapsPropertiesEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    VkQueryPool                                 queryPool,
+    uint32_t                                    firstQuery)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetDeviceMicromapCompatibilityEXT(
+    VkDevice                                    device,
+    const VkMicromapVersionInfoEXT*             pVersionInfo,
+    VkAccelerationStructureCompatibilityKHR*    pCompatibility)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetMicromapBuildSizesEXT(
+    VkDevice                                    device,
+    VkAccelerationStructureBuildTypeKHR         buildType,
+    const VkMicromapBuildInfoEXT*               pBuildInfo,
+    VkMicromapBuildSizesInfoEXT*                pSizeInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+
 
 
 static VKAPI_ATTR void VKAPI_CALL SetDeviceMemoryPriorityEXT(
@@ -5725,6 +5864,237 @@ static VKAPI_ATTR void VKAPI_CALL GetDescriptorSetHostMappingVALVE(
 
 
 
+static VKAPI_ATTR void VKAPI_CALL CmdSetTessellationDomainOriginEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkTessellationDomainOrigin                  domainOrigin)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetDepthClampEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClampEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetPolygonModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPolygonMode                               polygonMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetRasterizationSamplesEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       rasterizationSamples)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetSampleMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       samples,
+    const VkSampleMask*                         pSampleMask)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetAlphaToCoverageEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToCoverageEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetAlphaToOneEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToOneEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetLogicOpEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    logicOpEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetColorBlendEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkBool32*                             pColorBlendEnables)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetColorBlendEquationEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendEquationEXT*              pColorBlendEquations)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetColorWriteMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorComponentFlags*                pColorWriteMasks)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetRasterizationStreamEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    rasterizationStream)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetConservativeRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkConservativeRasterizationModeEXT          conservativeRasterizationMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetExtraPrimitiveOverestimationSizeEXT(
+    VkCommandBuffer                             commandBuffer,
+    float                                       extraPrimitiveOverestimationSize)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetDepthClipEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClipEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetSampleLocationsEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    sampleLocationsEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetColorBlendAdvancedEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendAdvancedEXT*              pColorBlendAdvanced)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetProvokingVertexModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkProvokingVertexModeEXT                    provokingVertexMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetLineRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkLineRasterizationModeEXT                  lineRasterizationMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetLineStippleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    stippledLineEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetDepthClipNegativeOneToOneEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    negativeOneToOne)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetViewportWScalingEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    viewportWScalingEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetViewportSwizzleNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstViewport,
+    uint32_t                                    viewportCount,
+    const VkViewportSwizzleNV*                  pViewportSwizzles)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageToColorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageToColorEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageToColorLocationNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageToColorLocation)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageModulationModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageModulationModeNV                  coverageModulationMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageModulationTableEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageModulationTableEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageModulationTableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageModulationTableCount,
+    const float*                                pCoverageModulationTable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetShadingRateImageEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    shadingRateImageEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetRepresentativeFragmentTestEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    representativeFragmentTestEnable)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageReductionModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageReductionModeNV                   coverageReductionMode)
+{
+//Not a CREATE or DESTROY function
+}
+
+
+
 static VKAPI_ATTR void VKAPI_CALL GetShaderModuleIdentifierEXT(
     VkDevice                                    device,
     VkShaderModule                              shaderModule,
@@ -5740,6 +6110,58 @@ static VKAPI_ATTR void VKAPI_CALL GetShaderModuleCreateInfoIdentifierEXT(
 {
 //Not a CREATE or DESTROY function
 }
+
+
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceOpticalFlowImageFormatsNV(
+    VkPhysicalDevice                            physicalDevice,
+    const VkOpticalFlowImageFormatInfoNV*       pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkOpticalFlowImageFormatPropertiesNV*       pImageFormatProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession)
+{
+    unique_lock_t lock(global_lock);
+    *pSession = (VkOpticalFlowSessionNV)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyOpticalFlowSessionNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL BindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
+    VkCommandBuffer                             commandBuffer,
+    VkOpticalFlowSessionNV                      session,
+    const VkOpticalFlowExecuteInfoNV*           pExecuteInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL GetFramebufferTilePropertiesQCOM(
@@ -5760,6 +6182,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
 //Not a CREATE or DESTROY function
     return VK_SUCCESS;
 }
+
+
 
 
 
@@ -5981,6 +6405,38 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetRayTracingPipelineStackSizeKHR(
 //Not a CREATE or DESTROY function
 }
 
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirectEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    uint32_t                                    drawCount,
+    uint32_t                                    stride)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirectCountEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    VkBuffer                                    countBuffer,
+    VkDeviceSize                                countBufferOffset,
+    uint32_t                                    maxDrawCount,
+    uint32_t                                    stride)
+{
+//Not a CREATE or DESTROY function
+}
 
 
 

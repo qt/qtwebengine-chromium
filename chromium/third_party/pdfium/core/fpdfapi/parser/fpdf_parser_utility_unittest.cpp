@@ -68,7 +68,7 @@ TEST(ParserUtilityTest, ValidateDictAllResourcesOfType) {
     EXPECT_FALSE(ValidateDictAllResourcesOfType(nullptr, "bar"));
 
     // Add two correct dictionary entries and one string entry.
-    CPDF_Dictionary* new_dict = dict->SetNewFor<CPDF_Dictionary>("f1");
+    auto new_dict = dict->SetNewFor<CPDF_Dictionary>("f1");
     new_dict->SetNewFor<CPDF_Name>("Type", "foo");
     new_dict = dict->SetNewFor<CPDF_Dictionary>("f2");
     new_dict->SetNewFor<CPDF_Name>("Type", "foo");
@@ -94,7 +94,7 @@ TEST(ParserUtilityTest, ValidateDictAllResourcesOfType) {
     auto dict = doc->New<CPDF_Dictionary>();
 
     // Add a correct dictionary entry.
-    CPDF_Dictionary* new_dict = doc->NewIndirect<CPDF_Dictionary>();
+    auto new_dict = doc->NewIndirect<CPDF_Dictionary>();
     new_dict->SetNewFor<CPDF_Name>("Type", "foo");
     dict->SetNewFor<CPDF_Reference>("f1", doc.get(), new_dict->GetObjNum());
 

@@ -28,6 +28,12 @@ class IsCompiledScope;
 
 enum class UpdateFeedbackMode { kOptionalFeedback, kGuaranteedFeedback };
 
+// Which feedback slots to clear in Clear().
+enum class ClearBehavior {
+  kDefault,
+  kClearAll,  // .. also ForIn, CompareOp, BinaryOp.
+};
+
 enum class FeedbackSlotKind : uint8_t {
   // This kind means that the slot points to the middle of other slot
   // which occupies more than one feedback vector element.
@@ -56,7 +62,6 @@ enum class FeedbackSlotKind : uint8_t {
   kBinaryOp,
   kCompareOp,
   kDefineKeyedOwnPropertyInLiteral,
-  kTypeProfile,
   kLiteral,
   kForIn,
   kInstanceOf,
@@ -126,10 +131,6 @@ inline bool IsStoreInArrayLiteralICKind(FeedbackSlotKind kind) {
 
 inline bool IsGlobalICKind(FeedbackSlotKind kind) {
   return IsLoadGlobalICKind(kind) || IsStoreGlobalICKind(kind);
-}
-
-inline bool IsTypeProfileKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kTypeProfile;
 }
 
 inline bool IsCloneObjectKind(FeedbackSlotKind kind) {
@@ -206,10 +207,17 @@ class FeedbackVector
                                       HeapObject>::maybe_optimized_code;
   DECL_RELEASE_ACQUIRE_WEAK_ACCESSORS(maybe_optimized_code)
 
-  static constexpr uint32_t kTieringStateIsAnyRequestMask =
-      kNoneOrInProgressMask << TieringStateBits::kShift;
-  static constexpr uint32_t kHasOptimizedCodeOrTieringStateIsAnyRequestMask =
-      MaybeHasOptimizedCodeBit::kMask | kTieringStateIsAnyRequestMask;
+  static constexpr uint32_t kFlagsMaybeHasTurbofanCode =
+      FeedbackVector::MaybeHasTurbofanCodeBit::kMask;
+  static constexpr uint32_t kFlagsMaybeHasMaglevCode =
+      FeedbackVector::MaybeHasMaglevCodeBit::kMask;
+  static constexpr uint32_t kFlagsHasAnyOptimizedCode =
+      FeedbackVector::MaybeHasMaglevCodeBit::kMask |
+      FeedbackVector::MaybeHasTurbofanCodeBit::kMask;
+  static constexpr uint32_t kFlagsTieringStateIsAnyRequested =
+      kNoneOrInProgressMask << FeedbackVector::TieringStateBits::kShift;
+  static constexpr uint32_t kFlagsLogNextExecution =
+      FeedbackVector::LogNextExecutionBit::kMask;
 
   inline bool is_empty() const;
 
@@ -249,11 +257,17 @@ class FeedbackVector
   inline CodeT optimized_code() const;
   // Whether maybe_optimized_code contains a cached Code object.
   inline bool has_optimized_code() const;
+
+  inline bool log_next_execution() const;
+  inline void set_log_next_execution(bool value = true);
   // Similar to above, but represented internally as a bit that can be
   // efficiently checked by generated code. May lag behind the actual state of
   // the world, thus 'maybe'.
-  inline bool maybe_has_optimized_code() const;
-  inline void set_maybe_has_optimized_code(bool value);
+  inline bool maybe_has_maglev_code() const;
+  inline void set_maybe_has_maglev_code(bool value);
+  inline bool maybe_has_turbofan_code() const;
+  inline void set_maybe_has_turbofan_code(bool value);
+
   void SetOptimizedCode(CodeT code);
   void EvictOptimizedCodeMarkedForDeoptimization(SharedFunctionInfo shared,
                                                  const char* reason);
@@ -302,8 +316,6 @@ class FeedbackVector
   V8_EXPORT_PRIVATE FeedbackSlotKind GetKind(FeedbackSlot slot,
                                              AcquireLoadTag tag) const;
 
-  FeedbackSlot GetTypeProfileSlot() const;
-
   V8_EXPORT_PRIVATE static Handle<FeedbackVector> New(
       Isolate* isolate, Handle<SharedFunctionInfo> shared,
       Handle<ClosureFeedbackCellArray> closure_feedback_cell_array,
@@ -326,7 +338,6 @@ class FeedbackVector
   DEFINE_SLOT_KIND_PREDICATE(IsDefineNamedOwnIC)
   DEFINE_SLOT_KIND_PREDICATE(IsStoreGlobalIC)
   DEFINE_SLOT_KIND_PREDICATE(IsKeyedStoreIC)
-  DEFINE_SLOT_KIND_PREDICATE(IsTypeProfile)
 #undef DEFINE_SLOT_KIND_PREDICATE
 
   // Returns typeof mode encoded into kind of given slot.
@@ -344,7 +355,14 @@ class FeedbackVector
   void FeedbackSlotPrint(std::ostream& os, FeedbackSlot slot);
 
   // Clears the vector slots. Return true if feedback has changed.
-  bool ClearSlots(Isolate* isolate);
+  bool ClearSlots(Isolate* isolate) {
+    return ClearSlots(isolate, ClearBehavior::kDefault);
+  }
+  // As above, but clears *all* slots - even those that we usually keep (e.g.:
+  // BinaryOp feedback).
+  bool ClearAllSlotsForTesting(Isolate* isolate) {
+    return ClearSlots(isolate, ClearBehavior::kClearAll);
+  }
 
   // The object that indicates an uninitialized cache.
   static inline Handle<Symbol> UninitializedSentinel(Isolate* isolate);
@@ -371,6 +389,8 @@ class FeedbackVector
   TQ_OBJECT_CONSTRUCTORS(FeedbackVector)
 
  private:
+  bool ClearSlots(Isolate* isolate, ClearBehavior behavior);
+
   static void AddToVectorsForProfilingTools(Isolate* isolate,
                                             Handle<FeedbackVector> vector);
 
@@ -407,13 +427,6 @@ class V8_EXPORT_PRIVATE FeedbackVectorSpec {
   FeedbackSlotKind GetKind(FeedbackSlot slot) const {
     return slot_kinds_.at(slot.ToInt());
   }
-
-  bool HasTypeProfileSlot() const;
-
-  // If used, the TypeProfileSlot is always added as the first slot and its
-  // index is constant. If other slots are added before the TypeProfileSlot,
-  // this number changes.
-  static const int kTypeProfileSlotIndex = 0;
 
   FeedbackSlot AddCallICSlot() { return AddSlot(FeedbackSlotKind::kCall); }
 
@@ -495,8 +508,6 @@ class V8_EXPORT_PRIVATE FeedbackVectorSpec {
   FeedbackSlot AddDefineKeyedOwnPropertyInLiteralICSlot() {
     return AddSlot(FeedbackSlotKind::kDefineKeyedOwnPropertyInLiteral);
   }
-
-  FeedbackSlot AddTypeProfileSlot();
 
   FeedbackSlot AddCloneObjectSlot() {
     return AddSlot(FeedbackSlotKind::kCloneObject);
@@ -583,7 +594,6 @@ class FeedbackMetadata : public HeapObject {
   DECL_VERIFIER(FeedbackMetadata)
 
   static const char* Kind2String(FeedbackSlotKind kind);
-  bool HasTypeProfileSlot() const;
 
   // Garbage collection support.
   // This includes any necessary padding at the end of the object for pointer
@@ -794,11 +804,11 @@ class V8_EXPORT_PRIVATE FeedbackNexus final {
 
   bool IsCleared() const {
     InlineCacheState state = ic_state();
-    return !FLAG_use_ic || state == InlineCacheState::UNINITIALIZED;
+    return !v8_flags.use_ic || state == InlineCacheState::UNINITIALIZED;
   }
 
   // Clear() returns true if the state of the underlying vector was changed.
-  bool Clear();
+  bool Clear(ClearBehavior behavior);
   void ConfigureUninitialized();
   // ConfigureMegamorphic() returns true if the state of the underlying vector
   // was changed. Extra feedback is cleared if the 0 parameter version is used.
@@ -873,16 +883,6 @@ class V8_EXPORT_PRIVATE FeedbackNexus final {
 
   // Make sure we don't overflow the smi.
   static_assert(LEXICAL_MODE_BIT_FIELDS_Ranges::kBitsCount <= kSmiValueSize);
-
-  // For TypeProfile feedback vector slots.
-  // ResetTypeProfile will always reset type profile information.
-  void ResetTypeProfile();
-
-  // Add a type to the list of types for source position <position>.
-  void Collect(Handle<String> type, int position);
-
-  std::vector<int> GetSourcePositions() const;
-  std::vector<Handle<String>> GetTypesForSourcePositions(uint32_t pos) const;
 
  private:
   template <typename FeedbackType>

@@ -32,6 +32,7 @@
 #include "libavutil/attributes.h"
 #include "libavutil/bprint.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/dict_internal.h"
 #include "libavutil/internal.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/intfloat.h"
@@ -1271,15 +1272,18 @@ static int64_t get_stream_info_time(MOVFragmentStreamInfo * frag_stream_info)
     return frag_stream_info->tfdt_dts;
 }
 
-static int64_t get_frag_time(MOVFragmentIndex *frag_index,
-                             int index, int track_id)
+static int64_t get_frag_time(AVFormatContext *s, AVStream *dst_st,
+                             MOVFragmentIndex *frag_index, int index)
 {
     MOVFragmentStreamInfo * frag_stream_info;
+    MOVStreamContext *sc = dst_st->priv_data;
     int64_t timestamp;
-    int i;
+    int i, j;
 
-    if (track_id >= 0) {
-        frag_stream_info = get_frag_stream_info(frag_index, index, track_id);
+    // If the stream is referenced by any sidx, limit the search
+    // to fragments that referenced this stream in the sidx
+    if (sc->has_sidx) {
+        frag_stream_info = get_frag_stream_info(frag_index, index, dst_st->id);
         if (frag_stream_info->sidx_pts != AV_NOPTS_VALUE)
             return frag_stream_info->sidx_pts;
         if (frag_stream_info->first_tfra_pts != AV_NOPTS_VALUE)
@@ -1288,28 +1292,27 @@ static int64_t get_frag_time(MOVFragmentIndex *frag_index,
     }
 
     for (i = 0; i < frag_index->item[index].nb_stream_info; i++) {
+        AVStream *frag_stream = NULL;
         frag_stream_info = &frag_index->item[index].stream_info[i];
+        for (j = 0; j < s->nb_streams; j++)
+            if (s->streams[j]->id == frag_stream_info->id)
+                frag_stream = s->streams[j];
+        if (!frag_stream) {
+            av_log(s, AV_LOG_WARNING, "No stream matching sidx ID found.\n");
+            continue;
+        }
         timestamp = get_stream_info_time(frag_stream_info);
         if (timestamp != AV_NOPTS_VALUE)
-            return timestamp;
+            return av_rescale_q(timestamp, frag_stream->time_base, dst_st->time_base);
     }
     return AV_NOPTS_VALUE;
 }
 
-static int search_frag_timestamp(MOVFragmentIndex *frag_index,
+static int search_frag_timestamp(AVFormatContext *s, MOVFragmentIndex *frag_index,
                                  AVStream *st, int64_t timestamp)
 {
     int a, b, m, m0;
     int64_t frag_time;
-    int id = -1;
-
-    if (st) {
-        // If the stream is referenced by any sidx, limit the search
-        // to fragments that referenced this stream in the sidx
-        MOVStreamContext *sc = st->priv_data;
-        if (sc->has_sidx)
-            id = st->id;
-    }
 
     a = -1;
     b = frag_index->nb_items;
@@ -1318,7 +1321,7 @@ static int search_frag_timestamp(MOVFragmentIndex *frag_index,
         m0 = m = (a + b) >> 1;
 
         while (m < b &&
-               (frag_time = get_frag_time(frag_index, m, id)) == AV_NOPTS_VALUE)
+               (frag_time = get_frag_time(s, st, frag_index, m)) == AV_NOPTS_VALUE)
             m++;
 
         if (m < b && frag_time <= timestamp)
@@ -1369,6 +1372,7 @@ static int update_frag_index(MOVContext *c, int64_t offset)
         frag_stream_info[i].tfdt_dts = AV_NOPTS_VALUE;
         frag_stream_info[i].next_trun_dts = AV_NOPTS_VALUE;
         frag_stream_info[i].first_tfra_pts = AV_NOPTS_VALUE;
+        frag_stream_info[i].index_base = -1;
         frag_stream_info[i].index_entry = -1;
         frag_stream_info[i].encryption_index = NULL;
     }
@@ -1516,10 +1520,6 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_log(c->fc, AV_LOG_TRACE, "time scale = %i\n", c->time_scale);
 
     c->duration = (version == 1) ? avio_rb64(pb) : avio_rb32(pb); /* duration */
-    // set the AVFormatContext duration because the duration of individual tracks
-    // may be inaccurate
-    if (!c->trex_data)
-        c->fc->duration = av_rescale(c->duration, AV_TIME_BASE, c->time_scale);
     avio_rb32(pb); /* preferred scale */
 
     avio_rb16(pb); /* preferred volume */
@@ -2436,6 +2436,11 @@ static int mov_finalize_stsd_codec(MOVContext *c, AVIOContext *pb,
     switch (st->codecpar->codec_id) {
 #if CONFIG_DV_DEMUXER
     case AV_CODEC_ID_DVAUDIO:
+        if (c->dv_fctx) {
+            avpriv_request_sample(c->fc, "multiple DV audio streams");
+            return AVERROR(ENOSYS);
+        }
+
         c->dv_fctx = avformat_alloc_context();
         if (!c->dv_fctx) {
             av_log(c->fc, AV_LOG_ERROR, "dv demux context alloc error\n");
@@ -4723,6 +4728,69 @@ static int mov_read_custom(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return ret;
 }
 
+static int avif_add_stream(MOVContext *c, int item_id)
+{
+    MOVStreamContext *sc;
+    AVStream *st;
+    int item_index = -1;
+    for (int i = 0; i < c->avif_info_size; i++)
+        if (c->avif_info[i].item_id == item_id) {
+            item_index = i;
+            break;
+        }
+    if (item_index < 0)
+        return AVERROR_INVALIDDATA;
+    st = avformat_new_stream(c->fc, NULL);
+    if (!st)
+        return AVERROR(ENOMEM);
+    st->id = c->fc->nb_streams;
+    sc = av_mallocz(sizeof(MOVStreamContext));
+    if (!sc)
+        return AVERROR(ENOMEM);
+
+    st->priv_data = sc;
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_AV1;
+    sc->ffindex = st->index;
+    c->trak_index = st->index;
+    st->avg_frame_rate.num = st->avg_frame_rate.den = 1;
+    st->time_base.num = st->time_base.den = 1;
+    st->nb_frames = 1;
+    sc->time_scale = 1;
+    sc = st->priv_data;
+    sc->pb = c->fc->pb;
+    sc->pb_is_copied = 1;
+
+    // Populate the necessary fields used by mov_build_index.
+    sc->stsc_count = 1;
+    sc->stsc_data = av_malloc_array(1, sizeof(*sc->stsc_data));
+    if (!sc->stsc_data)
+        return AVERROR(ENOMEM);
+    sc->stsc_data[0].first = 1;
+    sc->stsc_data[0].count = 1;
+    sc->stsc_data[0].id = 1;
+    sc->chunk_count = 1;
+    sc->chunk_offsets = av_malloc_array(1, sizeof(*sc->chunk_offsets));
+    if (!sc->chunk_offsets)
+        return AVERROR(ENOMEM);
+    sc->sample_count = 1;
+    sc->sample_sizes = av_malloc_array(1, sizeof(*sc->sample_sizes));
+    if (!sc->sample_sizes)
+        return AVERROR(ENOMEM);
+    sc->stts_count = 1;
+    sc->stts_data = av_malloc_array(1, sizeof(*sc->stts_data));
+    if (!sc->stts_data)
+        return AVERROR(ENOMEM);
+    sc->stts_data[0].count = 1;
+    // Not used for still images. But needed by mov_build_index.
+    sc->stts_data[0].duration = 0;
+    sc->sample_sizes[0] = c->avif_info[item_index].extent_length;
+    sc->chunk_offsets[0] = c->avif_info[item_index].extent_offset;
+
+    mov_build_index(c, st);
+    return 0;
+}
+
 static int mov_read_meta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     while (atom.size > 8) {
@@ -4732,9 +4800,23 @@ static int mov_read_meta(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         tag = avio_rl32(pb);
         atom.size -= 4;
         if (tag == MKTAG('h','d','l','r')) {
+            int ret;
             avio_seek(pb, -8, SEEK_CUR);
             atom.size += 8;
-            return mov_read_default(c, pb, atom);
+            if ((ret = mov_read_default(c, pb, atom)) < 0)
+                return ret;
+            if (c->is_still_picture_avif) {
+                int ret;
+                // Add a stream for the YUV planes (primary item).
+                if ((ret = avif_add_stream(c, c->primary_item_id)) < 0)
+                    return ret;
+                // For still AVIF images, the meta box contains all the
+                // necessary information that would generally be provided by the
+                // moov box. So simply mark that we have found the moov box so
+                // that parsing can continue.
+                c->found_moov = 1;
+            }
+            return ret;
         }
     }
     return 0;
@@ -4893,9 +4975,10 @@ static int mov_read_tfhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_log(c->fc, AV_LOG_TRACE, "frag flags 0x%x\n", frag->flags);
 
     frag_stream_info = get_current_frag_stream_info(&c->frag_index);
-    if (frag_stream_info)
+    if (frag_stream_info) {
         frag_stream_info->next_trun_dts = AV_NOPTS_VALUE;
-
+        frag_stream_info->stsd_id = frag->stsd_id;
+    }
     return 0;
 }
 
@@ -5150,8 +5233,11 @@ static int mov_read_trun(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     sc->ctts_count = sti->nb_index_entries;
 
     // Record the index_entry position in frag_index of this fragment
-    if (frag_stream_info)
+    if (frag_stream_info) {
         frag_stream_info->index_entry = index_entry_pos;
+        if (frag_stream_info->index_base < 0)
+            frag_stream_info->index_base = index_entry_pos;
+    }
 
     if (index_entry_pos > 0)
         prev_dts = sti->index_entries[index_entry_pos-1].timestamp;
@@ -7120,6 +7206,31 @@ static int cenc_decrypt(MOVContext *c, MOVStreamContext *sc, AVEncryptionInfo *s
     }
 }
 
+static MOVFragmentStreamInfo *get_frag_stream_info_from_pkt(MOVFragmentIndex *frag_index, AVPacket *pkt, int id)
+{
+    int current = frag_index->current;
+
+    if (!frag_index->nb_items)
+        return NULL;
+
+    // Check frag_index->current is the right one for pkt. It can out of sync.
+    if (current >= 0 && current < frag_index->nb_items) {
+        if (frag_index->item[current].moof_offset < pkt->pos &&
+            (current + 1 == frag_index->nb_items ||
+             frag_index->item[current + 1].moof_offset > pkt->pos))
+            return get_frag_stream_info(frag_index, current, id);
+    }
+
+
+    for (int i = 0; i < frag_index->nb_items; i++) {
+        if (frag_index->item[i].moof_offset > pkt->pos)
+            break;
+        current = i;
+    }
+    frag_index->current = current;
+    return get_frag_stream_info(frag_index, current, id);
+}
+
 static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPacket *pkt, int current_index)
 {
     MOVFragmentStreamInfo *frag_stream_info;
@@ -7127,16 +7238,14 @@ static int cenc_filter(MOVContext *mov, AVStream* st, MOVStreamContext *sc, AVPa
     AVEncryptionInfo *encrypted_sample;
     int encrypted_index, ret;
 
-    frag_stream_info = get_frag_stream_info(&mov->frag_index, mov->frag_index.current, st->id);
+    frag_stream_info = get_frag_stream_info_from_pkt(&mov->frag_index, pkt, st->id);
     encrypted_index = current_index;
     encryption_index = NULL;
     if (frag_stream_info) {
         // Note this only supports encryption info in the first sample descriptor.
-        if (mov->fragment.stsd_id == 1) {
+        if (frag_stream_info->stsd_id == 1) {
             if (frag_stream_info->encryption_index) {
-                if (!current_index && frag_stream_info->index_entry)
-                    sc->cenc.frag_index_entry_base = frag_stream_info->index_entry;
-                encrypted_index = current_index - (frag_stream_info->index_entry - sc->cenc.frag_index_entry_base);
+                encrypted_index = current_index - frag_stream_info->index_base;
                 encryption_index = frag_stream_info->encryption_index;
             } else {
                 encryption_index = sc->cenc.encryption_index;
@@ -7503,8 +7612,6 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     int item_count, extent_count;
     uint64_t base_offset, extent_offset, extent_length;
     uint8_t value;
-    AVStream *st;
-    MOVStreamContext *sc;
 
     if (!c->is_still_picture_avif) {
         // * For non-avif, we simply ignore the iloc box.
@@ -7517,27 +7624,6 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         av_log(c->fc, AV_LOG_INFO, "Duplicate iloc box found\n");
         return 0;
     }
-
-    st = avformat_new_stream(c->fc, NULL);
-    if (!st)
-        return AVERROR(ENOMEM);
-    st->id = c->fc->nb_streams;
-    sc = av_mallocz(sizeof(MOVStreamContext));
-    if (!sc)
-        return AVERROR(ENOMEM);
-
-    st->priv_data = sc;
-    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codecpar->codec_id = AV_CODEC_ID_AV1;
-    sc->ffindex = st->index;
-    c->trak_index = st->index;
-    st->avg_frame_rate.num = st->avg_frame_rate.den = 1;
-    st->time_base.num = st->time_base.den = 1;
-    st->nb_frames = 1;
-    sc->time_scale = 1;
-    sc = st->priv_data;
-    sc->pb = c->fc->pb;
-    sc->pb_is_copied = 1;
 
     version = avio_r8(pb);
     avio_rb24(pb);  // flags.
@@ -7554,34 +7640,17 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     }
     item_count = (version < 2) ? avio_rb16(pb) : avio_rb32(pb);
 
-    // Populate the necessary fields used by mov_build_index.
-    sc->stsc_count = 1;
-    sc->stsc_data = av_malloc_array(1, sizeof(*sc->stsc_data));
-    if (!sc->stsc_data)
+    c->avif_info = av_malloc_array(item_count, sizeof(*c->avif_info));
+    if (!c->avif_info)
         return AVERROR(ENOMEM);
-    sc->stsc_data[0].first = 1;
-    sc->stsc_data[0].count = 1;
-    sc->stsc_data[0].id = 1;
-    sc->chunk_count = 1;
-    sc->chunk_offsets = av_malloc_array(1, sizeof(*sc->chunk_offsets));
-    if (!sc->chunk_offsets)
-        return AVERROR(ENOMEM);
-    sc->sample_count = 1;
-    sc->sample_sizes = av_malloc_array(1, sizeof(*sc->sample_sizes));
-    if (!sc->sample_sizes)
-        return AVERROR(ENOMEM);
-    sc->stts_count = 1;
-    sc->stts_data = av_malloc_array(1, sizeof(*sc->stts_data));
-    if (!sc->stts_data)
-        return AVERROR(ENOMEM);
-    sc->stts_data[0].count = 1;
-    // Not used for still images. But needed by mov_build_index.
-    sc->stts_data[0].duration = 0;
+    c->avif_info_size = item_count;
 
     for (int i = 0; i < item_count; i++) {
         int item_id = (version < 2) ? avio_rb16(pb) : avio_rb32(pb);
         if (avio_feof(pb))
             return AVERROR_INVALIDDATA;
+        c->avif_info[i].item_id = item_id;
+
         if (version > 0)
             avio_rb16(pb);  // construction_method.
         avio_rb16(pb);  // data_reference_index.
@@ -7597,19 +7666,10 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             if (rb_size(pb, &extent_offset, offset_size) < 0 ||
                 rb_size(pb, &extent_length, length_size) < 0)
                 return AVERROR_INVALIDDATA;
-            if (item_id == c->primary_item_id) {
-                sc->sample_sizes[0] = extent_length;
-                sc->chunk_offsets[0] = base_offset + extent_offset;
-            }
+            c->avif_info[i].extent_length = extent_length;
+            c->avif_info[i].extent_offset = base_offset + extent_offset;
         }
     }
-
-    mov_build_index(c, st);
-
-    // For still AVIF images, the iloc box contains all the necessary
-    // information that would generally be provided by the moov box. So simply
-    // mark that we have found the moov box so that parsing can continue.
-    c->found_moov = 1;
 
     return atom.size;
 }
@@ -8214,6 +8274,7 @@ static int mov_read_close(AVFormatContext *s)
 
     av_freep(&mov->aes_decrypt);
     av_freep(&mov->chapter_tracks);
+    av_freep(&mov->avif_info);
 
     return 0;
 }
@@ -8735,7 +8796,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
 #if CONFIG_DV_DEMUXER
         if (mov->dv_demux && sc->dv_audio_container) {
-            ret = avpriv_dv_produce_packet(mov->dv_demux, pkt, pkt->data, pkt->size, pkt->pos);
+            ret = avpriv_dv_produce_packet(mov->dv_demux, NULL, pkt->data, pkt->size, pkt->pos);
             av_packet_unref(pkt);
             if (ret < 0)
                 return ret;
@@ -8831,7 +8892,7 @@ static int mov_seek_fragment(AVFormatContext *s, AVStream *st, int64_t timestamp
     if (!mov->frag_index.complete || mov->frag_index.nb_items == 0)
         return 0;
 
-    index = search_frag_timestamp(&mov->frag_index, st, timestamp);
+    index = search_frag_timestamp(s, &mov->frag_index, st, timestamp);
     if (index < 0)
         index = 0;
     if (!mov->frag_index.item[index].headers_read)

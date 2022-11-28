@@ -6,6 +6,9 @@
 
 #include "core/fpdfdoc/cpdf_bookmark.h"
 
+#include <utility>
+
+#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcrt/data_vector.h"
@@ -15,7 +18,8 @@ CPDF_Bookmark::CPDF_Bookmark() = default;
 
 CPDF_Bookmark::CPDF_Bookmark(const CPDF_Bookmark& that) = default;
 
-CPDF_Bookmark::CPDF_Bookmark(const CPDF_Dictionary* pDict) : m_pDict(pDict) {}
+CPDF_Bookmark::CPDF_Bookmark(RetainPtr<const CPDF_Dictionary> pDict)
+    : m_pDict(std::move(pDict)) {}
 
 CPDF_Bookmark::~CPDF_Bookmark() = default;
 
@@ -23,7 +27,8 @@ WideString CPDF_Bookmark::GetTitle() const {
   if (!m_pDict)
     return WideString();
 
-  const CPDF_String* pString = ToString(m_pDict->GetDirectObjectFor("Title"));
+  RetainPtr<const CPDF_String> pString =
+      ToString(m_pDict->GetDirectObjectFor("Title"));
   if (!pString)
     return WideString();
 

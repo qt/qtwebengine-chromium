@@ -16,8 +16,10 @@
 
 CPDF_ObjectAvail::CPDF_ObjectAvail(RetainPtr<CPDF_ReadValidator> validator,
                                    CPDF_IndirectObjectHolder* holder,
-                                   const CPDF_Object* root)
-    : validator_(std::move(validator)), holder_(holder), root_(root) {
+                                   RetainPtr<const CPDF_Object> root)
+    : validator_(std::move(validator)),
+      holder_(holder),
+      root_(std::move(root)) {
   DCHECK(validator_);
   DCHECK(holder);
   DCHECK(root_);
@@ -60,15 +62,16 @@ bool CPDF_ObjectAvail::LoadRootObject() {
     }
 
     CPDF_ReadValidator::ScopedSession parse_session(validator_);
-    CPDF_Object* direct = holder_->GetOrParseIndirectObject(ref_obj_num);
+    RetainPtr<CPDF_Object> direct =
+        holder_->GetOrParseIndirectObject(ref_obj_num);
     if (validator_->has_read_problems())
       return false;
 
     parsed_objnums_.insert(ref_obj_num);
-    root_.Reset(direct);
+    root_ = std::move(direct);
   }
   std::stack<uint32_t> non_parsed_objects_in_root;
-  if (AppendObjectSubRefs(root_.Get(), &non_parsed_objects_in_root)) {
+  if (AppendObjectSubRefs(root_, &non_parsed_objects_in_root)) {
     non_parsed_objects_ = std::move(non_parsed_objects_in_root);
     return true;
   }
@@ -90,12 +93,13 @@ bool CPDF_ObjectAvail::CheckObjects() {
       continue;
 
     CPDF_ReadValidator::ScopedSession parse_session(validator_);
-    const CPDF_Object* direct = holder_->GetOrParseIndirectObject(obj_num);
+    RetainPtr<const CPDF_Object> direct =
+        holder_->GetOrParseIndirectObject(obj_num);
     if (direct == root_)
       continue;
 
     if (validator_->has_read_problems() ||
-        !AppendObjectSubRefs(direct, &objects_to_check)) {
+        !AppendObjectSubRefs(std::move(direct), &objects_to_check)) {
       non_parsed_objects_.push(obj_num);
       continue;
     }
@@ -104,21 +108,21 @@ bool CPDF_ObjectAvail::CheckObjects() {
   return non_parsed_objects_.empty();
 }
 
-bool CPDF_ObjectAvail::AppendObjectSubRefs(const CPDF_Object* object,
+bool CPDF_ObjectAvail::AppendObjectSubRefs(RetainPtr<const CPDF_Object> object,
                                            std::stack<uint32_t>* refs) const {
   DCHECK(refs);
   if (!object)
     return true;
 
-  CPDF_ObjectWalker walker(object);
-  while (const CPDF_Object* obj = walker.GetNext()) {
+  CPDF_ObjectWalker walker(std::move(object));
+  while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     CPDF_ReadValidator::ScopedSession parse_session(validator_);
 
     // Skip if this object if it's an inlined root, the parent object or
     // explicitily excluded.
     const bool skip = (walker.GetParent() && obj == root_) ||
                       walker.dictionary_key() == "Parent" ||
-                      (obj != root_ && ExcludeObject(obj));
+                      (obj != root_ && ExcludeObject(obj.Get()));
 
     // We need to parse the object before we can do the exclusion check.
     // This is because the exclusion check may check against a referenced

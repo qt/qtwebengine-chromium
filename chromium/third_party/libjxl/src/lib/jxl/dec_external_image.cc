@@ -22,6 +22,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
@@ -31,28 +32,13 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Clamp;
+using hwy::HWY_NAMESPACE::NearestInt;
+
+// TODO(jon): check if this can be replaced by a FloatToU16 function
 void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
                 size_t bits_per_sample) {
-  // TODO(eustas): investigate 24..31 bpp cases.
-  if (bits_per_sample == 32) {
-    // Conversion to real 32-bit *unsigned* integers requires more intermediate
-    // precision that what is given by the usual f32 -> i32 conversion
-    // instructions, so we run the non-SIMD path for those.
-    const uint32_t cap = (1ull << bits_per_sample) - 1;
-    for (size_t x = 0; x < num; x++) {
-      float v = in[x];
-      if (v >= 1.0f) {
-        out[x] = cap;
-      } else if (v >= 0.0f) {  // Inverted condition => NaN -> 0.
-        out[x] = static_cast<uint32_t>(v * mul + 0.5f);
-      } else {
-        out[x] = 0;
-      }
-    }
-    return;
-  }
-
-  // General SIMD case for less than 32 bits output.
   const HWY_FULL(float) d;
   const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
 
@@ -68,7 +54,7 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
     auto v = Load(d, in + x);
     // Clamp turns NaN to 'min'.
     v = Clamp(v, Zero(d), one);
-    auto i = NearestInt(v * scale);
+    auto i = NearestInt(Mul(v, scale));
     Store(BitCast(du, i), du, out + x);
   }
 
@@ -122,16 +108,16 @@ void StoreLEFloat(float value, uint8_t* p) {
 // The orientation may not be identity.
 // TODO(lode): SIMDify where possible
 template <typename T>
-void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
-                     Plane<T>& out, jxl::ThreadPool* pool) {
+Status UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
+                       Plane<T>& out, jxl::ThreadPool* pool) {
   const size_t xsize = image.xsize();
   const size_t ysize = image.ysize();
 
   if (undo_orientation == Orientation::kFlipHorizontal) {
     out = Plane<T>(xsize, ysize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(y);
@@ -139,12 +125,12 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
             row_out[xsize - x - 1] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kRotate180) {
     out = Plane<T>(xsize, ysize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
@@ -152,12 +138,12 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
             row_out[xsize - x - 1] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kFlipVertical) {
     out = Plane<T>(xsize, ysize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
@@ -165,56 +151,57 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
             row_out[x] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kTranspose) {
     out = Plane<T>(ysize, xsize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
             out.Row(x)[y] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kRotate90) {
     out = Plane<T>(ysize, xsize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
             out.Row(x)[ysize - y - 1] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kAntiTranspose) {
     out = Plane<T>(ysize, xsize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
             out.Row(xsize - x - 1)[ysize - y - 1] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   } else if (undo_orientation == Orientation::kRotate270) {
     out = Plane<T>(ysize, xsize);
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::NoInit,
+        [&](const uint32_t task, size_t /*thread*/) {
           const int64_t y = task;
           const T* JXL_RESTRICT row_in = image.Row(y);
           for (size_t x = 0; x < xsize; ++x) {
             out.Row(xsize - x - 1)[y] = row_in[x];
           }
         },
-        "UndoOrientation");
+        "UndoOrientation"));
   }
+  return true;
 }
 }  // namespace
 
@@ -265,36 +252,36 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
                                  JxlEndianness endianness, size_t stride,
                                  jxl::ThreadPool* pool, void* out_image,
                                  size_t out_size,
-                                 JxlImageOutCallback out_callback,
-                                 void* out_opaque,
+                                 const PixelCallback& out_callback,
                                  jxl::Orientation undo_orientation) {
   JXL_DASSERT(num_channels != 0 && num_channels <= kConvertMaxChannels);
   JXL_DASSERT(channels[0] != nullptr);
-
-  if (bits_per_sample < 1 || bits_per_sample > 32) {
-    return JXL_FAILURE("Invalid bits_per_sample value.");
-  }
-  if (!!out_image == !!out_callback) {
+  JXL_CHECK(float_out ? bits_per_sample == 16 || bits_per_sample == 32
+                      : bits_per_sample > 0 && bits_per_sample <= 16);
+  if (!!out_image == out_callback.IsPresent()) {
     return JXL_FAILURE(
         "Must provide either an out_image or an out_callback, but not both.");
   }
-  // TODO(deymo): Implement 1-bit per pixel packed in 8 samples per byte.
-  if (bits_per_sample == 1) {
-    return JXL_FAILURE("packed 1-bit per sample is not yet supported");
-  }
 
-  // bytes_per_channel and is only valid for bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
   std::vector<std::vector<uint8_t>> row_out_callback;
-  auto InitOutCallback = [&](size_t num_threads) {
-    if (out_callback) {
+  const auto FreeCallbackOpaque = [&out_callback](void* p) {
+    out_callback.destroy(p);
+  };
+  std::unique_ptr<void, decltype(FreeCallbackOpaque)> out_run_opaque(
+      nullptr, FreeCallbackOpaque);
+  auto InitOutCallback = [&](size_t num_threads) -> Status {
+    if (out_callback.IsPresent()) {
+      out_run_opaque.reset(out_callback.Init(num_threads, stride));
+      JXL_RETURN_IF_ERROR(out_run_opaque != nullptr);
       row_out_callback.resize(num_threads);
       for (size_t i = 0; i < num_threads; ++i) {
         row_out_callback[i].resize(stride);
       }
     }
+    return true;
   };
 
   // Channels used to store the transformed original channels if needed.
@@ -302,7 +289,8 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   if (undo_orientation != Orientation::kIdentity) {
     for (size_t c = 0; c < num_channels; ++c) {
       if (channels[c]) {
-        UndoOrientation(undo_orientation, *channels[c], temp_channels[c], pool);
+        JXL_RETURN_IF_ERROR(UndoOrientation(undo_orientation, *channels[c],
+                                            temp_channels[c], pool));
         channels[c] = &(temp_channels[c]);
       }
     }
@@ -311,11 +299,14 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   // First channel may not be nullptr.
   size_t xsize = channels[0]->xsize();
   size_t ysize = channels[0]->ysize();
-
   if (stride < bytes_per_pixel * xsize) {
-    return JXL_FAILURE(
-        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
-        bytes_per_pixel * xsize);
+    return JXL_FAILURE("stride is smaller than scanline width in bytes: %" PRIuS
+                       " vs %" PRIuS,
+                       stride, bytes_per_pixel * xsize);
+  }
+  if (!out_callback.IsPresent() &&
+      out_size < (ysize - 1) * stride + bytes_per_pixel * xsize) {
+    return JXL_FAILURE("out_size is too small to store image");
   }
 
   const bool little_endian =
@@ -337,15 +328,14 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
     if (bits_per_sample == 16) {
       bool swap_endianness = little_endian != IsLittleEndian();
       Plane<hwy::float16_t> f16_cache;
-      RunOnPool(
+      JXL_RETURN_IF_ERROR(RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize),
           [&](size_t num_threads) {
             f16_cache =
                 Plane<hwy::float16_t>(xsize, num_channels * num_threads);
-            InitOutCallback(num_threads);
-            return true;
+            return InitOutCallback(num_threads);
           },
-          [&](const int task, int thread) {
+          [&](const uint32_t task, const size_t thread) {
             const int64_t y = task;
             const float* JXL_RESTRICT row_in[kConvertMaxChannels];
             for (size_t c = 0; c < num_channels; c++) {
@@ -358,7 +348,7 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
               (row_in[c], row_f16[c], xsize);
             }
             uint8_t* row_out =
-                out_callback
+                out_callback.IsPresent()
                     ? row_out_callback[thread].data()
                     : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
             // interleave the one scanline
@@ -375,22 +365,20 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
                 std::swap(row_out[i + 0], row_out[i + 1]);
               }
             }
-            if (out_callback) {
-              (*out_callback)(out_opaque, 0, y, xsize, row_out);
+            if (out_callback.IsPresent()) {
+              out_callback.run(out_run_opaque.get(), thread, 0, y, xsize,
+                               row_out);
             }
           },
-          "ConvertF16");
+          "ConvertF16"));
     } else if (bits_per_sample == 32) {
-      RunOnPool(
+      JXL_RETURN_IF_ERROR(RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize),
-          [&](size_t num_threads) {
-            InitOutCallback(num_threads);
-            return true;
-          },
-          [&](const int task, int thread) {
+          [&](size_t num_threads) { return InitOutCallback(num_threads); },
+          [&](const uint32_t task, const size_t thread) {
             const int64_t y = task;
             uint8_t* row_out =
-                out_callback
+                out_callback.IsPresent()
                     ? row_out_callback[thread].data()
                     : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
             const float* JXL_RESTRICT row_in[kConvertMaxChannels];
@@ -402,11 +390,12 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             } else {
               StoreFloatRow<StoreBEFloat>(row_in, num_channels, xsize, row_out);
             }
-            if (out_callback) {
-              (*out_callback)(out_opaque, 0, y, xsize, row_out);
+            if (out_callback.IsPresent()) {
+              out_callback.run(out_run_opaque.get(), thread, 0, y, xsize,
+                               row_out);
             }
           },
-          "ConvertFloat");
+          "ConvertFloat"));
     } else {
       return JXL_FAILURE("float other than 16-bit and 32-bit not supported");
     }
@@ -415,17 +404,16 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
     // range.
     float mul = (1ull << bits_per_sample) - 1;
     Plane<uint32_t> u32_cache;
-    RunOnPool(
+    JXL_RETURN_IF_ERROR(RunOnPool(
         pool, 0, static_cast<uint32_t>(ysize),
         [&](size_t num_threads) {
           u32_cache = Plane<uint32_t>(xsize, num_channels * num_threads);
-          InitOutCallback(num_threads);
-          return true;
+          return InitOutCallback(num_threads);
         },
-        [&](const int task, int thread) {
+        [&](const uint32_t task, const size_t thread) {
           const int64_t y = task;
           uint8_t* row_out =
-              out_callback
+              out_callback.IsPresent()
                   ? row_out_callback[thread].data()
                   : &(reinterpret_cast<uint8_t*>(out_image))[stride * y];
           const float* JXL_RESTRICT row_in[kConvertMaxChannels];
@@ -441,33 +429,21 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
             HWY_DYNAMIC_DISPATCH(FloatToU32)
             (row_in[c], row_u32[c], xsize, mul, bits_per_sample);
           }
-          // TODO(deymo): add bits_per_sample == 1 case here.
           if (bits_per_sample <= 8) {
             StoreUintRow<Store8>(row_u32, num_channels, xsize, 1, row_out);
-          } else if (bits_per_sample <= 16) {
+          } else {
             if (little_endian) {
               StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, row_out);
             } else {
               StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, row_out);
             }
-          } else if (bits_per_sample <= 24) {
-            if (little_endian) {
-              StoreUintRow<StoreLE24>(row_u32, num_channels, xsize, 3, row_out);
-            } else {
-              StoreUintRow<StoreBE24>(row_u32, num_channels, xsize, 3, row_out);
-            }
-          } else {
-            if (little_endian) {
-              StoreUintRow<StoreLE32>(row_u32, num_channels, xsize, 4, row_out);
-            } else {
-              StoreUintRow<StoreBE32>(row_u32, num_channels, xsize, 4, row_out);
-            }
           }
-          if (out_callback) {
-            (*out_callback)(out_opaque, 0, y, xsize, row_out);
+          if (out_callback.IsPresent()) {
+            out_callback.run(out_run_opaque.get(), thread, 0, y, xsize,
+                             row_out);
           }
         },
-        "ConvertUint");
+        "ConvertUint"));
   }
   return true;
 }
@@ -478,15 +454,16 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
                          bool float_out, size_t num_channels,
                          JxlEndianness endianness, size_t stride,
                          jxl::ThreadPool* pool, void* out_image,
-                         size_t out_size, JxlImageOutCallback out_callback,
-                         void* out_opaque, jxl::Orientation undo_orientation) {
+                         size_t out_size, const PixelCallback& out_callback,
+                         jxl::Orientation undo_orientation,
+                         bool unpremul_alpha) {
   bool want_alpha = num_channels == 2 || num_channels == 4;
   size_t color_channels = num_channels <= 2 ? 1 : 3;
 
   const Image3F* color = &ib.color();
   // Undo premultiplied alpha.
   Image3F unpremul;
-  if (ib.AlphaIsPremultiplied() && ib.HasAlpha()) {
+  if (ib.AlphaIsPremultiplied() && ib.HasAlpha() && unpremul_alpha) {
     unpremul = Image3F(color->xsize(), color->ysize());
     CopyImageTo(*color, &unpremul);
     for (size_t y = 0; y < unpremul.ysize(); y++) {
@@ -509,19 +486,19 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
 
   return ConvertChannelsToExternal(
       channels, num_channels, bits_per_sample, float_out, endianness, stride,
-      pool, out_image, out_size, out_callback, out_opaque, undo_orientation);
+      pool, out_image, out_size, out_callback, undo_orientation);
 }
 
 Status ConvertToExternal(const jxl::ImageF& channel, size_t bits_per_sample,
                          bool float_out, JxlEndianness endianness,
                          size_t stride, jxl::ThreadPool* pool, void* out_image,
-                         size_t out_size, JxlImageOutCallback out_callback,
-                         void* out_opaque, jxl::Orientation undo_orientation) {
+                         size_t out_size, const PixelCallback& out_callback,
+                         jxl::Orientation undo_orientation) {
   const ImageF* channels[1];
   channels[0] = &channel;
-  return ConvertChannelsToExternal(
-      channels, 1, bits_per_sample, float_out, endianness, stride, pool,
-      out_image, out_size, out_callback, out_opaque, undo_orientation);
+  return ConvertChannelsToExternal(channels, 1, bits_per_sample, float_out,
+                                   endianness, stride, pool, out_image,
+                                   out_size, out_callback, undo_orientation);
 }
 
 }  // namespace jxl

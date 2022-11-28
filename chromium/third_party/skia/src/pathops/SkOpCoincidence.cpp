@@ -5,9 +5,18 @@
  * found in the LICENSE file.
  */
 #include "src/pathops/SkOpCoincidence.h"
-#include "src/pathops/SkOpSegment.h"
-#include "src/pathops/SkPathOpsTSect.h"
 
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/private/SkTDArray.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/pathops/SkIntersections.h"
+#include "src/pathops/SkOpSegment.h"
+#include "src/pathops/SkPathOpsCurve.h"
+#include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
+
+#include <algorithm>
 #include <utility>
 
 // returns true if coincident span's start and end are the same
@@ -668,8 +677,8 @@ bool SkOpCoincidence::addOrOverlap(SkOpSegment* coinSeg, SkOpSegment* oppSeg,
             coinTe, oppTs, oppTe, &overlaps)) {
         return true;
     }
-    SkCoincidentSpans* overlap = overlaps.count() ? overlaps[0] : nullptr;
-    for (int index = 1; index < overlaps.count(); ++index) { // combine overlaps before continuing
+    SkCoincidentSpans* overlap = !overlaps.empty() ? overlaps[0] : nullptr;
+    for (int index = 1; index < overlaps.size(); ++index) { // combine overlaps before continuing
         SkCoincidentSpans* test = overlaps[index];
         if (overlap->coinPtTStart()->fT > test->coinPtTStart()->fT) {
             overlap->setCoinPtTStart(test->coinPtTStart());

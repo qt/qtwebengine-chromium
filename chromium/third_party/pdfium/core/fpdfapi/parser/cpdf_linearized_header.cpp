@@ -13,6 +13,7 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_number.h"
+#include "core/fpdfapi/parser/cpdf_parser.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/check.h"
@@ -30,7 +31,7 @@ bool IsValidNumericDictionaryValue(const CPDF_Dictionary* pDict,
                                    bool must_exist = true) {
   if (!pDict->KeyExist(key))
     return !must_exist;
-  const CPDF_Number* pNum = ToNumber(pDict->GetObjectFor(key));
+  RetainPtr<const CPDF_Number> pNum = pDict->GetNumberFor(key);
   if (!pNum || !pNum->IsInteger())
     return false;
   const int raw_value = pNum->GetInteger();
@@ -47,6 +48,7 @@ bool IsLinearizedHeaderValid(const CPDF_LinearizedHeader* header,
          header->GetFirstPageNo() < header->GetPageCount() &&
          header->GetMainXRefTableFirstEntryOffset() < document_size &&
          header->GetFirstPageEndOffset() < document_size &&
+         header->GetFirstPageObjNum() < CPDF_Parser::kMaxObjectNumber &&
          header->GetLastXRefOffset() < document_size &&
          header->GetHintStart() < document_size;
 }
@@ -93,7 +95,7 @@ CPDF_LinearizedHeader::CPDF_LinearizedHeader(const CPDF_Dictionary* pDict,
       m_szFirstPageEndOffset(pDict->GetIntegerFor("E")),
       m_FirstPageObjNum(pDict->GetIntegerFor("O")),
       m_szLastXRefOffset(szLastXRefOffset) {
-  const CPDF_Array* pHintStreamRange = pDict->GetArrayFor("H");
+  RetainPtr<const CPDF_Array> pHintStreamRange = pDict->GetArrayFor("H");
   const size_t nHintStreamSize =
       pHintStreamRange ? pHintStreamRange->size() : 0;
   if (nHintStreamSize == 2 || nHintStreamSize == 4) {

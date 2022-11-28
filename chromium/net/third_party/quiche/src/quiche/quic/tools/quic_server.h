@@ -15,12 +15,13 @@
 
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/quic_crypto_server_config.h"
+#include "quiche/quic/core/deterministic_connection_id_generator.h"
 #include "quiche/quic/core/io/quic_event_loop.h"
-#include "quiche/quic/core/io/socket_factory.h"
 #include "quiche/quic/core/quic_config.h"
 #include "quiche/quic/core/quic_packet_writer.h"
 #include "quiche/quic/core/quic_udp_socket.h"
 #include "quiche/quic/core/quic_version_manager.h"
+#include "quiche/quic/core/socket_factory.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/tools/quic_simple_server_backend.h"
 #include "quiche/quic/tools/quic_spdy_server_base.h"
@@ -108,6 +109,10 @@ class QuicServer : public QuicSpdyServerBase, public QuicSocketEventListener {
     return expected_server_connection_id_length_;
   }
 
+  ConnectionIdGeneratorInterface& connection_id_generator() {
+    return connection_id_generator_;
+  }
+
  private:
   friend class quic::test::QuicServerPeer;
 
@@ -160,6 +165,8 @@ class QuicServer : public QuicSpdyServerBase, public QuicSocketEventListener {
 
   // Connection ID length expected to be read on incoming IETF short headers.
   uint8_t expected_server_connection_id_length_;
+
+  DeterministicConnectionIdGenerator connection_id_generator_;
 };
 
 }  // namespace quic

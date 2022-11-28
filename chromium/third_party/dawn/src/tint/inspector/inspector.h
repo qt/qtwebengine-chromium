@@ -55,6 +55,10 @@ class Inspector {
     /// @returns vector of entry point information
     std::vector<EntryPoint> GetEntryPoints();
 
+    /// @param entry_point name of the entry point to get information about
+    /// @returns the entry point information
+    EntryPoint GetEntryPoint(const std::string& entry_point);
+
     /// @returns map of override identifier to initial value
     std::map<OverrideId, Scalar> GetOverrideDefaultValues();
 
@@ -168,10 +172,12 @@ class Inspector {
     /// @param name the name of the variable being added
     /// @param type the type of the variable
     /// @param attributes the variable attributes
+    /// @param location the location value if provided
     /// @param variables the list to add the variables to
     void AddEntryPointInOutVariables(std::string name,
                                      const sem::Type* type,
                                      utils::VectorRef<const ast::Attribute*> attributes,
+                                     std::optional<uint32_t> location,
                                      std::vector<StageVariable>& variables) const;
 
     /// Recursively determine if the type contains builtin.
@@ -230,6 +236,10 @@ class Inspector {
     /// whenever a set of expressions are resolved to globals.
     template <size_t N, typename F>
     void GetOriginatingResources(std::array<const ast::Expression*, N> exprs, F&& cb);
+
+    /// @param func the function of the entry point. Must be non-nullptr and true for IsEntryPoint()
+    /// @returns the entry point information
+    EntryPoint GetEntryPoint(const tint::ast::Function* func);
 };
 
 }  // namespace tint::inspector

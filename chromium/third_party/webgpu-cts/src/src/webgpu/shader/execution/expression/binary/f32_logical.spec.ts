@@ -6,7 +6,7 @@ import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../gpu_test.js';
 import { anyOf } from '../../../../util/compare.js';
 import { bool, f32, Scalar, TypeBool, TypeF32 } from '../../../../util/conversion.js';
-import { flushSubnormalScalar, fullF32Range } from '../../../../util/math.js';
+import { flushSubnormalScalarF32, fullF32Range } from '../../../../util/math.js';
 import { allInputSources, Case, run } from '../expression.js';
 
 import { binary } from './binary.js';
@@ -24,8 +24,8 @@ function makeCase(
 ): Case {
   const f32_lhs = f32(lhs);
   const f32_rhs = f32(rhs);
-  const lhs_options = new Set([f32_lhs, flushSubnormalScalar(f32_lhs)]);
-  const rhs_options = new Set([f32_rhs, flushSubnormalScalar(f32_rhs)]);
+  const lhs_options = new Set([f32_lhs, flushSubnormalScalarF32(f32_lhs)]);
+  const rhs_options = new Set([f32_rhs, flushSubnormalScalarF32(f32_rhs)]);
   const expected: Array<Scalar> = [];
   lhs_options.forEach(l => {
     rhs_options.forEach(r => {
@@ -63,7 +63,7 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('=='), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('=='), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });
 
 g.test('not_equals')
@@ -90,7 +90,7 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('!='), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('!='), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });
 
 g.test('less_than')
@@ -117,7 +117,7 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('<'), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('<'), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });
 
 g.test('less_equals')
@@ -144,7 +144,7 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('<='), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('<='), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });
 
 g.test('greater_than')
@@ -171,7 +171,7 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('>'), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('>'), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });
 
 g.test('greater_equals')
@@ -198,5 +198,5 @@ Accuracy: Correct result
       });
     });
 
-    run(t, binary('>='), [TypeF32, TypeF32], TypeBool, t.params, cases);
+    await run(t, binary('>='), [TypeF32, TypeF32], TypeBool, t.params, cases);
   });

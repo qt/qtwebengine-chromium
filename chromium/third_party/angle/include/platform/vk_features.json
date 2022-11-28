@@ -233,6 +233,14 @@
             "issue": "http://anglebug.com/4836"
         },
         {
+            "name": "supports_multisampled_render_to_single_sampled_GOOGLEX",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_GOOGLEX_multisampled_render_to_single_sampled extension"
+            ],
+            "issue": "http://anglebug.com/4836"
+        },
+        {
             "name": "supports_multisampled_render_to_single_sampled",
             "category": "Features",
             "description": [
@@ -357,14 +365,6 @@
             "issue": "http://anglebug.com/2162"
         },
         {
-            "name": "extra_buffer_logging_and_checking",
-            "category": "Features",
-            "description": [
-                "Enable extra buffer logging and checking to catch rare crashes"
-            ],
-            "issue": "https://issuetracker.google.com/236098131"
-        },
-        {
             "name": "enable_pre_rotate_surfaces",
             "category": "Features",
             "description": [
@@ -456,6 +456,14 @@
                 "VkDevice supports VK_EXT_depth_clip_control extension."
             ],
             "issue": "http://anglebug.com/5421"
+        },
+        {
+            "name": "supports_primitive_topology_list_restart",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_primitive_topology_list_restart extension."
+            ],
+            "issue": "http://anglebug.com/3832"
         },
         {
             "name": "supports_blend_operation_advanced",
@@ -847,6 +855,15 @@
             "issue": "http://anglebug.com/7047"
         },
         {
+            "name": "force_static_vertex_stride_state",
+            "category": "Workarounds",
+            "description": [
+                "Force static state for VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE_EXT due to",
+                "driver bugs"
+            ],
+            "issue": "https://bugs.fuchsia.dev/p/fuchsia/issues/detail?id=107106"
+        },
+        {
             "name": "supports_extended_dynamic_state",
             "category": "Features",
             "description": [
@@ -861,6 +878,14 @@
                 "VkDevice supports VK_EXT_extended_dynamic_state2 extension"
             ],
             "issue": "http://anglebug.com/5906"
+        },
+        {
+            "name": "supports_logic_op_dynamic_state",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the logicOp feature of VK_EXT_extended_dynamic_state2 extension"
+            ],
+            "issue": "http://anglebug.com/3862"
         },
         {
             "name": "supports_fragment_shading_rate",
@@ -916,7 +941,8 @@
             "category": "Features",
             "description": [
                 "Prefer to use VK_FILTER_LINEAR for VkSamplerYcbcrConversion"
-            ]
+            ],
+            "issue": "https://anglebug.com/7382"
         },
         {
             "name": "supports_yuv_target",
@@ -933,6 +959,98 @@
                 "corresponding dynamic state malfunction in the presence of discard or alpha to coverage"
             ],
             "issue": "http://anglebug.com/7556"
+        },
+        {
+            "name": "map_unspecified_color_space_to_pass_through",
+            "category": "Features",
+            "description": [
+                "Use VK_COLOR_SPACE_PASS_THROUGH_EXT for EGL_NONE or unspecifed color ",
+                "spaces"
+            ]
+        },
+        {
+            "name": "supports_timestamp_surface_attribute",
+            "category": "Features",
+            "description": [
+                "Platform supports setting frame timestamp surface attribute"
+            ],
+            "issue": "https://anglebug.com/7489"
+        },
+        {
+            "name": "supports_rasterization_order_attachment_access",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_rasterization_order_attachment_access extension"
+            ],
+            "issue": "https://anglebug.com/7604"
+        },
+        {
+            "name": "egl_colorspace_attribute_passthrough",
+            "category": "Features",
+            "description": [
+                "Support passthrough of EGL colorspace attribute values"
+            ],
+            "issue": "https://anglebug.com/7319"
+        },
+        {
+            "name": "supports_pipeline_robustness",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_pipeline_robustness extension"
+            ],
+            "issue": "https://anglebug.com/5845"
+        },
+        {
+            "name": "supports_vertex_input_dynamic_state",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_vertex_input_dynamic_state extension"
+            ],
+            "issue": "https://anglebug.com/7162"
+        },
+        {
+            "name": "supports_color_write_enable",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_color_write_enable extension"
+            ],
+            "issue": "https://anglebug.com/7161"
+        },
+        {
+            "name": "supports_presentation",
+            "category": "Features",
+            "description": [
+                "VkDisplay supports presentation through a present family queue"
+            ]
+        },
+        {
+            "name": "supports_compute_transcode_etc_to_bc",
+            "category": "Features",
+            "description": [
+                 "supports compute shader transcode etc format to bc format"
+            ]
+        },
+        {
+            "name": "supports_graphics_pipeline_library",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_EXT_graphics_pipeline_library extension"
+            ],
+            "issue": "https://anglebug.com/7369"
+        },
+        {
+            "name": "supports_pipeline_protected_access",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_EXT_pipeline_protected_access extension"
+            ],
+            "issue": "https://anglebug.com/7714"
+	},
+	{
+            "name": "prefer_submit_on_any_samples_passed_query_end",
+            "category": "Workarounds",
+            "description":["Submit commands to driver when last GL_ANY_SAMPLES_PASSED query is made for performance improvements."],
+            "issue": "https://issuetracker.google.com/250706693"
         }
     ]
 }

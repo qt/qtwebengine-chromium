@@ -6,9 +6,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/gpu/vk/GrVkVulkan.h"
-
-#include "src/gpu/ganesh/vk/GrVkInterface.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 
 #include "tools/gpu/vk/VkTestUtils.h"

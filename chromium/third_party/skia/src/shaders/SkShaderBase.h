@@ -19,13 +19,9 @@
 #include "src/core/SkTLazy.h"
 #include "src/core/SkVM_fwd.h"
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/GrFPArgs.h"
-#endif
-
 class GrFragmentProcessor;
+struct GrFPArgs;
 class SkArenaAlloc;
-enum class SkBackend : uint8_t;
 class SkColorSpace;
 class SkImage;
 struct SkImageInfo;
@@ -52,7 +48,20 @@ public:
      */
     virtual bool isConstant() const { return false; }
 
-    const SkMatrix& getLocalMatrix() const { return fLocalMatrix; }
+    using GradientInfo = SkShader::GradientInfo;
+    enum class GradientType {
+        kNone    = kNone_GradientType,
+        kColor   = kColor_GradientType,
+        kLinear  = kLinear_GradientType,
+        kRadial  = kRadial_GradientType,
+        kSweep   = kSweep_GradientType,
+        kConical = kConical_GradientType,
+    };
+
+    virtual GradientType asGradient(GradientInfo* info    = nullptr,
+                                    SkMatrix* localMatrix = nullptr) const {
+        return GradientType::kNone;
+    }
 
     enum Flags {
         //!< set if all of the colors will be opaque
@@ -173,14 +182,8 @@ public:
     bool appendStages(const SkStageRec&) const;
 
     bool SK_WARN_UNUSED_RESULT computeTotalInverse(const SkMatrix& ctm,
-                                                   const SkMatrix* outerLocalMatrix,
+                                                   const SkMatrix* localMatrix,
                                                    SkMatrix* totalInverse) const;
-
-    // Returns the total local matrix for this shader:
-    //
-    //   M = postLocalMatrix x shaderLocalMatrix x preLocalMatrix
-    //
-    SkTCopyOnFirstWrite<SkMatrix> totalLocalMatrix(const SkMatrix* preLocalMatrix) const;
 
     virtual SkImage* onIsAImage(SkMatrix*, SkTileMode[2]) const {
         return nullptr;
@@ -231,8 +234,12 @@ public:
                           SkPipelineDataGatherer* gatherer) const;
 #endif
 
+    static SkMatrix ConcatLocalMatrices(const SkMatrix& parentLM, const SkMatrix& childLM) {
+        return SkMatrix::Concat(childLM, parentLM);
+    }
+
 protected:
-    SkShaderBase(const SkMatrix* localMatrix = nullptr);
+    SkShaderBase();
 
     void flatten(SkWriteBuffer&) const override;
 
@@ -259,9 +266,6 @@ protected:
     static skvm::Coord ApplyMatrix(skvm::Builder*, const SkMatrix&, skvm::Coord, skvm::Uniforms*);
 
 private:
-    // This is essentially const, but not officially so it can be modified in constructors.
-    SkMatrix fLocalMatrix;
-
     virtual skvm::Color onProgram(skvm::Builder*,
                                   skvm::Coord device, skvm::Coord local, skvm::Color paint,
                                   const SkMatrixProvider&, const SkMatrix* localM,

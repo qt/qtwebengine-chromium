@@ -254,6 +254,7 @@ class ContextGL : public ContextImpl
     const gl::TextureCapsMap &getNativeTextureCaps() const override;
     const gl::Extensions &getNativeExtensions() const override;
     const gl::Limitations &getNativeLimitations() const override;
+    ShPixelLocalStorageType getNativePixelLocalStorageType() const override;
 
     // Handle helpers
     ANGLE_INLINE const FunctionsGL *getFunctions() const { return mRenderer->getFunctions(); }
@@ -271,6 +272,8 @@ class ContextGL : public ContextImpl
 
     angle::Result memoryBarrier(const gl::Context *context, GLbitfield barriers) override;
     angle::Result memoryBarrierByRegion(const gl::Context *context, GLbitfield barriers) override;
+
+    void framebufferFetchBarrier() override;
 
     void setMaxShaderCompilerThreads(GLuint count) override;
 

@@ -18,14 +18,14 @@
 
 // Since this changes visibility, it should always be last in a class
 // definition.
-#define OBJECT_CONSTRUCTORS(Type, ...)             \
- public:                                           \
-  constexpr Type() : __VA_ARGS__() {}              \
-                                                   \
- protected:                                        \
-  template <typename TFieldType, int kFieldOffset> \
-  friend class TaggedField;                        \
-                                                   \
+#define OBJECT_CONSTRUCTORS(Type, ...)                                         \
+ public:                                                                       \
+  constexpr Type() : __VA_ARGS__() {}                                          \
+                                                                               \
+ protected:                                                                    \
+  template <typename TFieldType, int kFieldOffset, typename CompressionScheme> \
+  friend class TaggedField;                                                    \
+                                                                               \
   explicit inline Type(Address ptr)
 
 #define OBJECT_CONSTRUCTORS_IMPL(Type, Super) \
@@ -270,19 +270,27 @@
 #define RELAXED_ACCESSORS(holder, name, type, offset) \
   RELAXED_ACCESSORS_CHECKED(holder, name, type, offset, true)
 
-#define RELEASE_ACQUIRE_ACCESSORS_CHECKED2(holder, name, type, offset,      \
-                                           get_condition, set_condition)    \
+#define RELEASE_ACQUIRE_GETTER_CHECKED(holder, name, type, offset,          \
+                                       get_condition)                       \
   DEF_ACQUIRE_GETTER(holder, name, type) {                                  \
     type value = TaggedField<type, offset>::Acquire_Load(cage_base, *this); \
     DCHECK(get_condition);                                                  \
     return value;                                                           \
-  }                                                                         \
-  void holder::set_##name(type value, ReleaseStoreTag,                      \
-                          WriteBarrierMode mode) {                          \
-    DCHECK(set_condition);                                                  \
-    TaggedField<type, offset>::Release_Store(*this, value);                 \
-    CONDITIONAL_WRITE_BARRIER(*this, offset, value, mode);                  \
   }
+
+#define RELEASE_ACQUIRE_SETTER_CHECKED(holder, name, type, offset, \
+                                       set_condition)              \
+  void holder::set_##name(type value, ReleaseStoreTag,             \
+                          WriteBarrierMode mode) {                 \
+    DCHECK(set_condition);                                         \
+    TaggedField<type, offset>::Release_Store(*this, value);        \
+    CONDITIONAL_WRITE_BARRIER(*this, offset, value, mode);         \
+  }
+
+#define RELEASE_ACQUIRE_ACCESSORS_CHECKED2(holder, name, type, offset,      \
+                                           get_condition, set_condition)    \
+  RELEASE_ACQUIRE_GETTER_CHECKED(holder, name, type, offset, get_condition) \
+  RELEASE_ACQUIRE_SETTER_CHECKED(holder, name, type, offset, set_condition)
 
 #define RELEASE_ACQUIRE_ACCESSORS_CHECKED(holder, name, type, offset,       \
                                           condition)                        \
@@ -398,11 +406,11 @@
                 kRelaxedStore);                                      \
   }
 
-#define DECL_EXTERNAL_POINTER_ACCESSORS(name, type)                 \
-  inline type name() const;                                         \
-  inline type name(i::Isolate* isolate_for_sandbox) const;          \
-  inline void init_##name(i::Isolate* isolate, type initial_value); \
-  inline void set_##name(i::Isolate* isolate, type value);
+#define DECL_EXTERNAL_POINTER_ACCESSORS(name, type)                       \
+  inline type name() const;                                               \
+  inline type name(i::Isolate* isolate_for_sandbox) const;                \
+  inline void init_##name(i::Isolate* isolate, const type initial_value); \
+  inline void set_##name(i::Isolate* isolate, const type value);
 
 #define EXTERNAL_POINTER_ACCESSORS(holder, name, type, offset, tag)         \
   type holder::name() const {                                               \
@@ -417,20 +425,20 @@
         Object::ReadExternalPointerField<tag>(offset, isolate_for_sandbox); \
     return reinterpret_cast<type>(reinterpret_cast<C2440*>(result));        \
   }                                                                         \
-  void holder::init_##name(i::Isolate* isolate, type initial_value) {       \
+  void holder::init_##name(i::Isolate* isolate, const type initial_value) { \
     /* This is a workaround for MSVC error C2440 not allowing  */           \
     /* reinterpret casts to the same type. */                               \
     struct C2440 {};                                                        \
-    Address the_value =                                                     \
-        reinterpret_cast<Address>(reinterpret_cast<C2440*>(initial_value)); \
+    Address the_value = reinterpret_cast<Address>(                          \
+        reinterpret_cast<const C2440*>(initial_value));                     \
     Object::InitExternalPointerField<tag>(offset, isolate, the_value);      \
   }                                                                         \
-  void holder::set_##name(i::Isolate* isolate, type value) {                \
+  void holder::set_##name(i::Isolate* isolate, const type value) {          \
     /* This is a workaround for MSVC error C2440 not allowing  */           \
     /* reinterpret casts to the same type. */                               \
     struct C2440 {};                                                        \
     Address the_value =                                                     \
-        reinterpret_cast<Address>(reinterpret_cast<C2440*>(value));         \
+        reinterpret_cast<Address>(reinterpret_cast<const C2440*>(value));   \
     Object::WriteExternalPointerField<tag>(offset, isolate, the_value);     \
   }
 
@@ -690,15 +698,15 @@ static_assert(sizeof(unsigned) == sizeof(uint32_t),
     set(IndexForEntry(i) + k##name##Offset, value);             \
   }
 
-#define TQ_OBJECT_CONSTRUCTORS(Type)               \
- public:                                           \
-  constexpr Type() = default;                      \
-                                                   \
- protected:                                        \
-  template <typename TFieldType, int kFieldOffset> \
-  friend class TaggedField;                        \
-                                                   \
-  inline explicit Type(Address ptr);               \
+#define TQ_OBJECT_CONSTRUCTORS(Type)                                           \
+ public:                                                                       \
+  constexpr Type() = default;                                                  \
+                                                                               \
+ protected:                                                                    \
+  template <typename TFieldType, int kFieldOffset, typename CompressionScheme> \
+  friend class TaggedField;                                                    \
+                                                                               \
+  inline explicit Type(Address ptr);                                           \
   friend class TorqueGenerated##Type<Type, Super>;
 
 #define TQ_OBJECT_CONSTRUCTORS_IMPL(Type) \

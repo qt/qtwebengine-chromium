@@ -90,7 +90,7 @@ std::unique_ptr<Expression> TernaryExpression::Make(const Context& context,
 
         if (Analysis::IsSameExpressionTree(*ifTrueExpr, *ifFalseExpr)) {
             // If `test` has no side-effects, we can eliminate it too, and just return `ifTrue`.
-            if (!test->hasSideEffects()) {
+            if (!Analysis::HasSideEffects(*test)) {
                 ifTrue->fPosition = pos;
                 return ifTrue;
             }
@@ -102,6 +102,15 @@ std::unique_ptr<Expression> TernaryExpression::Make(const Context& context,
 
     return std::make_unique<TernaryExpression>(pos, std::move(test), std::move(ifTrue),
                                                std::move(ifFalse));
+}
+
+std::string TernaryExpression::description(OperatorPrecedence parentPrecedence) const {
+    bool needsParens = (OperatorPrecedence::kTernary >= parentPrecedence);
+    return std::string(needsParens ? "(" : "") +
+           this->test()->description(OperatorPrecedence::kTernary) + " ? " +
+           this->ifTrue()->description(OperatorPrecedence::kTernary) + " : " +
+           this->ifFalse()->description(OperatorPrecedence::kTernary) +
+           std::string(needsParens ? ")" : "");
 }
 
 }  // namespace SkSL

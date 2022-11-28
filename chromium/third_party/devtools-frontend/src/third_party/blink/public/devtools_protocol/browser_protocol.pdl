@@ -1,4 +1,4 @@
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -701,6 +701,7 @@ experimental domain Audits
   type AttributionReportingIssueType extends string
     enum
       PermissionPolicyDisabled
+      PermissionPolicyNotDelegated
       UntrustworthyReportingOrigin
       InsecureContext
       # TODO(apaseltiner): Rename this to InvalidRegisterSourceHeader
@@ -771,18 +772,17 @@ experimental domain Audits
       HostCandidateAttributeGetter
       IdentityInCanMakePaymentEvent
       InsecurePrivateNetworkSubresourceRequest
-      LegacyConstraintGoogIPv6
       LocalCSSFileExtensionRejected
       MediaSourceAbortRemove
       MediaSourceDurationTruncatingBuffered
-      NavigateEventRestoreScroll
-      NavigateEventTransitionWhile
       NoSysexWebMIDIWithoutPermission
       NotificationInsecureOrigin
       NotificationPermissionRequestedIframe
       ObsoleteWebRtcCipherSuite
       OpenWebDatabaseInsecureContext
       OverflowVisibleOnReplacedElement
+      PaymentInstruments
+      PaymentRequestCSPViolation
       PersistentQuotaType
       PictureSourceSrc
       PrefixedCancelAnimationFrame
@@ -835,7 +835,7 @@ experimental domain Audits
   # all cases except for success.
   type FederatedAuthRequestIssueReason extends string
     enum
-      ApprovalDeclined
+      ShouldEmbargo
       TooManyRequests
       ManifestListHttpNotFound
       ManifestListNoResponse
@@ -860,6 +860,7 @@ experimental domain Audits
       IdTokenInvalidRequest
       ErrorIdToken
       Canceled
+      RpPageNotVisible
 
   # This issue tracks client hints related issues. It's used to deprecate old
   # features, encourage the use of new ones, and provide general guidance.
@@ -2925,7 +2926,7 @@ domain DOM
     parameters
       # Id of the node that has changed.
       NodeId parentNodeId
-      # If of the previous siblint.
+      # Id of the previous sibling.
       NodeId previousNodeId
       # Inserted node data.
       Node node
@@ -5255,6 +5256,30 @@ domain Network
       # Type "send-redemption-record" in the Trust Token API.
       Signing
 
+  # The reason why Chrome uses a specific transport protocol for HTTP semantics.
+  experimental type AlternateProtocolUsage extends string
+    enum
+      # Alternate Protocol was used without racing a normal connection.
+      alternativeJobWonWithoutRace
+      # Alternate Protocol was used by winning a race with a normal connection.
+      alternativeJobWonRace
+      # Alternate Protocol was not used by losing a race with a normal connection.
+      mainJobWonRace
+      # Alternate Protocol was not used because no Alternate-Protocol information
+      # was available when the request was issued, but an Alternate-Protocol header
+      # was present in the response.
+      mappingMissing
+      # Alternate Protocol was not used because it was marked broken.
+      broken
+      # HTTPS DNS protocol upgrade job was used without racing with a normal
+      # connection and an Alternate Protocol job.
+      dnsAlpnH3JobWonWithoutRace
+      # HTTPS DNS protocol upgrade job won a race with a normal connection and
+      # an Alternate Protocol job.
+      dnsAlpnH3JobWonRace
+      # When the reason is unspecified.
+      unspecifiedReason
+
   # HTTP response data.
   type Response extends object
     properties
@@ -5300,6 +5325,8 @@ domain Network
       optional string cacheStorageCacheName
       # Protocol used to fetch this request.
       optional string protocol
+      # The reason why Chrome uses a specific transport protocol for HTTP semantics.
+      experimental optional AlternateProtocolUsage alternateProtocolUsage
       # Security state of the request resource.
       Security.SecurityState securityState
       # Security details for the request.
@@ -7156,7 +7183,7 @@ domain Page
       serial
       shared-autofill
       shared-storage
-      storage-access-api
+      storage-access
       sync-xhr
       trust-token-redemption
       unload
@@ -8457,13 +8484,16 @@ domain Page
       AudioOutputDeviceRequested
       MixedContent
       TriggerBackgrounded
-      EmbedderTriggeredAndSameOriginRedirected
       EmbedderTriggeredAndCrossOriginRedirected
       MemoryLimitExceeded
       # Prerenders can be cancelled when Chrome uses excessive memory. This is
       # recorded when it fails to get the memory usage.
       FailToGetMemoryUsage
       DataSaverEnabled
+      HasEffectiveUrl
+      ActivatedBeforeStarted
+      InactivePageRestriction
+      StartFailed
 
   # Fired when a prerender attempt is completed.
   experimental event prerenderAttemptCompleted
@@ -8472,9 +8502,9 @@ domain Page
       FrameId initiatingFrameId
       string prerenderingUrl
       PrerenderFinalStatus finalStatus
-      # This is used to give users more information about the cancellation details,
-      # and this will be formatted for display.
-      optional string reasonDetails
+      # This is used to give users more information about the name of the API call
+      # that is incompatible with prerender and has caused the cancellation of the attempt
+      optional string disallowedApiMethod
 
   event loadEventFired
     parameters
@@ -9356,6 +9386,9 @@ domain Target
       # Frame id of originating window (is only set if target has an opener).
       experimental optional Page.FrameId openerFrameId
       experimental optional Browser.BrowserContextID browserContextId
+      # Provides additional details for specific target types. For example, for
+      # the type of "page", this may be set to "portal" or "prerender".
+      experimental optional string subtype
 
   # A filter used by target query/discovery/auto-attach operations.
   experimental type FilterEntry extends object

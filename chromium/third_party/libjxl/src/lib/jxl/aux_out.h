@@ -8,6 +8,7 @@
 
 // Optional output information for debugging and analyzing size usage.
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,74 +37,56 @@ namespace jxl {
 enum {
   kLayerHeader = 0,
   kLayerTOC,
+  kLayerDictionary,
+  kLayerSplines,
   kLayerNoise,
   kLayerQuant,
-  kLayerDequantTables,
-  kLayerOrder,
+  kLayerModularTree,
+  kLayerModularGlobal,
   kLayerDC,
+  kLayerModularDcGroup,
   kLayerControlFields,
+  kLayerOrder,
   kLayerAC,
   kLayerACTokens,
-  kLayerDictionary,
-  kLayerDots,
-  kLayerSplines,
-  kLayerLossless,
-  kLayerModularGlobal,
-  kLayerModularDcGroup,
   kLayerModularAcGroup,
-  kLayerModularTree,
-  kLayerAlpha,
-  kLayerDepth,
-  kLayerExtraChannels,
   kNumImageLayers
 };
 
 static inline const char* LayerName(size_t layer) {
   switch (layer) {
     case kLayerHeader:
-      return "headers";
+      return "Headers";
     case kLayerTOC:
       return "TOC";
+    case kLayerDictionary:
+      return "Patches";
+    case kLayerSplines:
+      return "Splines";
     case kLayerNoise:
-      return "noise";
+      return "Noise";
     case kLayerQuant:
-      return "quantizer";
-    case kLayerDequantTables:
-      return "quant tables";
-    case kLayerOrder:
-      return "order";
+      return "Quantizer";
+    case kLayerModularTree:
+      return "ModularTree";
+    case kLayerModularGlobal:
+      return "ModularGlobal";
     case kLayerDC:
       return "DC";
+    case kLayerModularDcGroup:
+      return "ModularDcGroup";
     case kLayerControlFields:
       return "ControlFields";
+    case kLayerOrder:
+      return "CoeffOrder";
     case kLayerAC:
-      return "AC";
+      return "ACHistograms";
     case kLayerACTokens:
       return "ACTokens";
-    case kLayerDictionary:
-      return "dictionary";
-    case kLayerDots:
-      return "dots";
-    case kLayerSplines:
-      return "splines";
-    case kLayerLossless:
-      return "lossless";
-    case kLayerModularGlobal:
-      return "modularGlobal";
-    case kLayerModularDcGroup:
-      return "modularDcGroup";
     case kLayerModularAcGroup:
-      return "modularAcGroup";
-    case kLayerModularTree:
-      return "modularTree";
-    case kLayerAlpha:
-      return "alpha";
-    case kLayerDepth:
-      return "depth";
-    case kLayerExtraChannels:
-      return "extra channels";
+      return "ModularAcGroup";
     default:
-      JXL_ABORT("Invalid layer %zu\n", layer);
+      JXL_ABORT("Invalid layer %d\n", static_cast<int>(layer));
   }
 }
 
@@ -119,11 +102,13 @@ struct AuxOut {
       clustered_entropy += victim.clustered_entropy;
     }
     void Print(size_t num_inputs) const {
-      printf("%10zd", total_bits);
+      printf("%10" PRId64, static_cast<int64_t>(total_bits));
       if (histogram_bits != 0) {
-        printf("   [c/i:%6.2f | hst:%8zd | ex:%8zd | h+c+e:%12.3f",
-               num_clustered_histograms * 1.0 / num_inputs, histogram_bits >> 3,
-               extra_bits >> 3,
+        printf("   [c/i:%6.2f | hst:%8" PRId64 " | ex:%8" PRId64
+               " | h+c+e:%12.3f",
+               num_clustered_histograms * 1.0 / num_inputs,
+               static_cast<int64_t>(histogram_bits >> 3),
+               static_cast<int64_t>(extra_bits >> 3),
                (histogram_bits + clustered_entropy + extra_bits) / 8.0);
         printf("]");
       }
@@ -164,9 +149,21 @@ struct AuxOut {
       dc_pred_usage[i] += victim.dc_pred_usage[i];
       dc_pred_usage_xb[i] += victim.dc_pred_usage_xb[i];
     }
+    max_quant_rescale = std::max(max_quant_rescale, victim.max_quant_rescale);
+    min_quant_rescale = std::min(min_quant_rescale, victim.min_quant_rescale);
+    max_bitrate_error = std::max(max_bitrate_error, victim.max_bitrate_error);
+    min_bitrate_error = std::min(min_bitrate_error, victim.min_bitrate_error);
   }
 
   void Print(size_t num_inputs) const;
+
+  size_t TotalBits() const {
+    size_t total = 0;
+    for (const auto& layer : layers) {
+      total += layer.total_bits;
+    }
+    return total;
+  }
 
   template <typename T>
   void DumpImage(const char* label, const Image3<T>& image) const {
@@ -217,7 +214,7 @@ struct AuxOut {
     Image3MinMax(image, &min, &max);
     Image3B normalized(image.xsize(), image.ysize());
     for (size_t c = 0; c < 3; ++c) {
-      float mul = min[c] == max[c] ? 0 : (1.0f / (max[c] - min[c]));
+      float mul = min[c] == max[c] ? 0 : (255.0f / (max[c] - min[c]));
       for (size_t y = 0; y < image.ysize(); ++y) {
         const T* JXL_RESTRICT row_in = image.ConstPlaneRow(c, y);
         uint8_t* JXL_RESTRICT row_out = normalized.PlaneRow(c, y);
@@ -247,12 +244,6 @@ struct AuxOut {
     }
     DumpImage(label, normalized);
   }
-
-  // This dumps coefficients as a 16-bit PNG with coefficients of a block placed
-  // in the area that would contain that block in a normal image. To view the
-  // resulting image manually, rescale intensities by using:
-  // $ convert -auto-level IMAGE.PNG - | display -
-  void DumpCoeffImage(const char* label, const Image3S& coeff_image) const;
 
   void SetInspectorImage3F(const jxl::InspectorImage3F& inspector) {
     inspector_image3f_ = inspector;
@@ -287,6 +278,11 @@ struct AuxOut {
   std::array<uint32_t, 8> dc_pred_usage_xb = {{0}};
 
   int num_butteraugli_iters = 0;
+
+  float max_quant_rescale = 1.0f;
+  float min_quant_rescale = 1.0f;
+  float min_bitrate_error = 0.0f;
+  float max_bitrate_error = 0.0f;
 
   // If not empty, additional debugging information (e.g. debug images) is
   // saved in files with this prefix.

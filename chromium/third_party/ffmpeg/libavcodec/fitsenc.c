@@ -36,10 +36,9 @@
 #include "encode.h"
 
 static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
-                            const AVFrame *pict, int *got_packet)
+                             const AVFrame *p, int *got_packet)
 {
-    AVFrame * const p = (AVFrame *)pict;
-    uint8_t *bytestream, *ptr;
+    uint8_t *bytestream;
     const uint16_t flip = (1 << 15);
     uint64_t data_size = 0, padded_data_size = 0;
     int ret, bitpix, naxis3 = 1, i, j, k, bytes_left;
@@ -88,7 +87,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     for (k = 0; k < naxis3; k++) {
         for (i = 0; i < avctx->height; i++) {
-            ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
+            const uint8_t *ptr = p->data[map[k]] + (avctx->height - i - 1) * p->linesize[map[k]];
             if (bitpix == 16) {
                 for (j = 0; j < avctx->width; j++) {
                     // subtracting bzero is equivalent to first bit flip
@@ -112,7 +111,7 @@ static int fits_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 const FFCodec ff_fits_encoder = {
     .p.name         = "fits",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Flexible Image Transport System"),
+    CODEC_LONG_NAME("Flexible Image Transport System"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_FITS,
     .p.capabilities = AV_CODEC_CAP_DR1,

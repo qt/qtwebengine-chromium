@@ -196,7 +196,7 @@ Deserializer<IsolateT>::Deserializer(IsolateT* isolate,
       source_(payload),
       magic_number_(magic_number),
       deserializing_user_code_(deserializing_user_code),
-      should_rehash_((FLAG_rehash_snapshot && can_rehash) ||
+      should_rehash_((v8_flags.rehash_snapshot && can_rehash) ||
                      deserializing_user_code) {
   DCHECK_NOT_NULL(isolate);
   isolate->RegisterDeserializerStarted();
@@ -261,10 +261,10 @@ void Deserializer<IsolateT>::DeserializeDeferredObjects() {
 
 template <typename IsolateT>
 void Deserializer<IsolateT>::LogNewMapEvents() {
-  if (V8_LIKELY(!FLAG_log_maps)) return;
+  if (V8_LIKELY(!v8_flags.log_maps)) return;
   DisallowGarbageCollection no_gc;
   for (Handle<Map> map : new_maps_) {
-    DCHECK(FLAG_log_maps);
+    DCHECK(v8_flags.log_maps);
     LOG(isolate(), MapCreate(*map));
     LOG(isolate(), MapDetails(*map));
   }
@@ -403,8 +403,9 @@ void Deserializer<IsolateT>::PostProcessNewJSReceiver(
       auto bs = backing_store(store_index);
       SharedFlag shared =
           bs && bs->is_shared() ? SharedFlag::kShared : SharedFlag::kNotShared;
-      DCHECK_IMPLIES(bs, buffer.is_resizable() == bs->is_resizable());
-      ResizableFlag resizable = bs && bs->is_resizable()
+      DCHECK_IMPLIES(bs,
+                     buffer.is_resizable_by_js() == bs->is_resizable_by_js());
+      ResizableFlag resizable = bs && bs->is_resizable_by_js()
                                     ? ResizableFlag::kResizable
                                     : ResizableFlag::kNotResizable;
       buffer.Setup(shared, resizable, bs);
@@ -452,7 +453,11 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
         String result = *isolate()->string_table()->LookupKey(isolate(), &key);
 
         if (result != raw_obj) {
-          String::cast(raw_obj).MakeThin(isolate(), result);
+          // Updating invalidated object size from a background thread would
+          // race. We are allowed to skip this here since this string hasn't
+          // transitioned so far.
+          String::cast(raw_obj).MakeThin(isolate(), result,
+                                         UpdateInvalidatedObjectSize::kNo);
           // Mutate the given object handle so that the backreference entry is
           // also updated.
           obj.PatchValue(result);
@@ -501,7 +506,7 @@ void Deserializer<IsolateT>::PostProcessNewObject(Handle<Map> map,
     }
 #endif
   } else if (InstanceTypeChecker::IsMap(instance_type)) {
-    if (FLAG_log_maps) {
+    if (v8_flags.log_maps) {
       // Keep track of all seen Maps to log them later since they might be only
       // partially initialized at this point.
       new_maps_.push_back(Handle<Map>::cast(obj));
@@ -597,7 +602,7 @@ Handle<HeapObject> Deserializer<IsolateT>::ReadObject(SnapshotSpace space) {
   // strings internalized strings are allocated in the shared heap.
   //
   // TODO(12007): When shipping, add a new SharedOld SnapshotSpace.
-  if (FLAG_shared_string_table) {
+  if (v8_flags.shared_string_table) {
     InstanceType instance_type = map->instance_type();
     if (InstanceTypeChecker::IsInternalizedString(instance_type) ||
         String::IsInPlaceInternalizable(instance_type)) {
@@ -638,6 +643,14 @@ Handle<HeapObject> Deserializer<IsolateT>::ReadObject(SnapshotSpace space) {
   // break when making them older.
   if (raw_obj.IsBytecodeArray(isolate())) {
     BytecodeArray::cast(raw_obj).set_bytecode_age(0);
+  } else if (raw_obj.IsEphemeronHashTable()) {
+    // Make sure EphemeronHashTables have valid HeapObject keys, so that the
+    // marker does not break when marking EphemeronHashTable, see
+    // MarkingVisitorBase::VisitEphemeronHashTable.
+    EphemeronHashTable table = EphemeronHashTable::cast(raw_obj);
+    MemsetTagged(table.RawField(table.kElementsStartOffset),
+                 ReadOnlyRoots(isolate()).undefined_value(),
+                 (size_in_bytes - table.kElementsStartOffset) / kTaggedSize);
   }
 
 #ifdef DEBUG
@@ -724,7 +737,6 @@ class DeserializerRelocInfoVisitor {
 
   void VisitCodeTarget(Code host, RelocInfo* rinfo);
   void VisitEmbeddedPointer(Code host, RelocInfo* rinfo);
-  void VisitRuntimeEntry(Code host, RelocInfo* rinfo);
   void VisitExternalReference(Code host, RelocInfo* rinfo);
   void VisitInternalReference(Code host, RelocInfo* rinfo);
   void VisitOffHeapTarget(Code host, RelocInfo* rinfo);
@@ -749,12 +761,6 @@ void DeserializerRelocInfoVisitor::VisitEmbeddedPointer(Code host,
   HeapObject object = *objects_->at(current_object_++);
   // Embedded object reference must be a strong one.
   rinfo->set_target_object(isolate()->heap(), object);
-}
-
-void DeserializerRelocInfoVisitor::VisitRuntimeEntry(Code host,
-                                                     RelocInfo* rinfo) {
-  // We no longer serialize code that contains runtime entries.
-  UNREACHABLE();
 }
 
 void DeserializerRelocInfoVisitor::VisitExternalReference(Code host,
@@ -793,6 +799,9 @@ void DeserializerRelocInfoVisitor::VisitInternalReference(Code host,
 
 void DeserializerRelocInfoVisitor::VisitOffHeapTarget(Code host,
                                                       RelocInfo* rinfo) {
+  // Currently we don't serialize code that contains near builtin entries.
+  DCHECK_NE(rinfo->rmode(), RelocInfo::NEAR_BUILTIN_ENTRY);
+
   byte data = source().Get();
   CHECK_EQ(data, Deserializer<Isolate>::kOffHeapTarget);
 

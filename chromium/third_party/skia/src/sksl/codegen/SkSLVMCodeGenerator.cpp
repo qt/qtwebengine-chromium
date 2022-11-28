@@ -20,6 +20,7 @@
 #include "include/private/SkSLProgramElement.h"
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
+#include "include/private/SkStringView.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
 #include "include/private/SkTPin.h"
@@ -27,6 +28,7 @@
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
@@ -548,6 +550,13 @@ int SkVMGenerator::getDebugFunctionInfo(const FunctionDeclaration& decl) {
     SkASSERT(fDebugTrace);
 
     std::string name = decl.description();
+
+    // When generating the debug trace, we typically mark every function as `noinline`. This makes
+    // the trace more confusing, since this isn't in the source program, so remove it.
+    static constexpr std::string_view kNoInline = "noinline ";
+    if (skstd::starts_with(name, kNoInline)) {
+        name = name.substr(kNoInline.size());
+    }
 
     // Look for a matching SkVMFunctionInfo slot.
     for (size_t index = 0; index < fDebugTrace->fFuncInfo.size(); ++index) {

@@ -119,7 +119,7 @@ TEST_F(SpvModuleScopeVarParserTest, NoVar) {
     EXPECT_THAT(module_ast, Not(HasSubstr("Variable"))) << module_ast;
 }
 
-TEST_F(SpvModuleScopeVarParserTest, BadStorageClass_NotAWebGPUStorageClass) {
+TEST_F(SpvModuleScopeVarParserTest, BadAddressSpace_NotAWebGPUAddressSpace) {
     auto p = parser(test::Assemble(Preamble() + FragMain() + R"(
     %float = OpTypeFloat 32
     %ptr = OpTypePointer CrossWorkgroup %float
@@ -135,7 +135,7 @@ TEST_F(SpvModuleScopeVarParserTest, BadStorageClass_NotAWebGPUStorageClass) {
     EXPECT_THAT(p->error(), HasSubstr("unknown SPIR-V storage class: 5"));
 }
 
-TEST_F(SpvModuleScopeVarParserTest, BadStorageClass_Function) {
+TEST_F(SpvModuleScopeVarParserTest, BadAddressSpace_Function) {
     auto p = parser(test::Assemble(Preamble() + FragMain() + R"(
     %float = OpTypeFloat 32
     %ptr = OpTypePointer Function %float
@@ -1301,6 +1301,7 @@ TEST_F(SpvModuleScopeVarParserTest, MatrixStrideDecoration_Natural_Dropped) {
      OpDecorate %s Block
      OpMemberDecorate %s 0 MatrixStride 8
      OpMemberDecorate %s 0 Offset 0
+     OpMemberDecorate %s 0 ColMajor
      %void = OpTypeVoid
      %voidfn = OpTypeFunction %void
      %float = OpTypeFloat 32
@@ -1330,6 +1331,7 @@ TEST_F(SpvModuleScopeVarParserTest, MatrixStrideDecoration) {
      OpDecorate %s Block
      OpMemberDecorate %s 0 MatrixStride 64
      OpMemberDecorate %s 0 Offset 0
+     OpMemberDecorate %s 0 ColMajor
      %void = OpTypeVoid
      %voidfn = OpTypeFunction %void
      %float = OpTypeFloat 32
@@ -1794,7 +1796,7 @@ TEST_F(SpvModuleScopeVarParserTest, SampleId_I32_FunctParam) {
     // as a function parameter.
     EXPECT_FALSE(p->Parse());
     EXPECT_FALSE(p->success());
-    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand 1"));
+    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand '1"));
 }
 
 TEST_F(SpvModuleScopeVarParserTest, SampleId_U32_Load_Direct) {
@@ -1904,7 +1906,7 @@ TEST_F(SpvModuleScopeVarParserTest, SampleId_U32_FunctParam) {
     // This example is invalid because you can't pass pointer-to-Input
     // as a function parameter.
     EXPECT_FALSE(p->Parse());
-    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand 1"));
+    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand '1"));
 }
 
 // Returns the start of a shader for testing SampleMask
@@ -2806,7 +2808,7 @@ TEST_F(SpvModuleScopeVarParserTest, VertexIndex_U32_FunctParam) {
     // This example is invalid because you can't pass pointer-to-Input
     // as a function parameter.
     EXPECT_FALSE(p->Parse());
-    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand 1"));
+    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand '1"));
 }
 
 // Returns the start of a shader for testing InstanceIndex,
@@ -2964,7 +2966,7 @@ TEST_F(SpvModuleScopeVarParserTest, InstanceIndex_I32_FunctParam) {
     // This example is invalid because you can't pass pointer-to-Input
     // as a function parameter.
     EXPECT_FALSE(p->Parse());
-    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand 1"));
+    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand '1"));
 }
 
 TEST_F(SpvModuleScopeVarParserTest, InstanceIndex_U32_Load_Direct) {
@@ -3098,7 +3100,7 @@ TEST_F(SpvModuleScopeVarParserTest, InstanceIndex_U32_FunctParam) {
     // This example is invalid because you can't pass pointer-to-Input
     // as a function parameter.
     EXPECT_FALSE(p->Parse());
-    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand 1"));
+    EXPECT_THAT(p->error(), HasSubstr("Invalid storage class for pointer operand '1"));
 }
 
 // Returns the start of a shader for testing LocalInvocationIndex,

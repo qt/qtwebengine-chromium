@@ -155,14 +155,57 @@ g.test('occlusion_query_set,device_mismatch')
   })
   .fn(async t => {
     const { mismatched } = t.params;
-    const device = mismatched ? t.mismatchedDevice : t.device;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
 
-    const occlusionQuerySet = device.createQuerySet({
+    const occlusionQuerySet = sourceDevice.createQuerySet({
       type: 'occlusion',
       count: 1,
     });
     t.trackForCleanup(occlusionQuerySet);
 
     const encoder = t.createEncoder('render pass', { occlusionQuerySet });
+    encoder.validateFinish(!mismatched);
+  });
+
+g.test('timestamp_query_set,device_mismatch')
+  .desc(
+    `
+  Tests beginRenderPass cannot be called with a timestamp query set created from another device.
+  `
+  )
+  .paramsSubcasesOnly(u => u.combine('mismatched', [true, false]))
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase(['timestamp-query']);
+    t.selectMismatchedDeviceOrSkipTestCase('timestamp-query');
+  })
+  .fn(async t => {
+    const { mismatched } = t.params;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
+
+    const timestampWrite = {
+      querySet: sourceDevice.createQuerySet({ type: 'timestamp', count: 1 }),
+      queryIndex: 0,
+      location: 'beginning' as const,
+    };
+
+    const colorTexture = t.device.createTexture({
+      format: 'rgba8unorm',
+      size: { width: 4, height: 4, depthOrArrayLayers: 1 },
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    const encoder = t.createEncoder('non-pass');
+    const pass = encoder.encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: colorTexture.createView(),
+          loadOp: 'load',
+          storeOp: 'store',
+        },
+      ],
+      timestampWrites: [timestampWrite],
+    });
+    pass.end();
+
     encoder.validateFinish(!mismatched);
   });

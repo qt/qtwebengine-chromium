@@ -67,13 +67,17 @@ void VertexProcessor::setRoutineCacheSize(int cacheSize)
 
 const VertexProcessor::State VertexProcessor::update(const vk::GraphicsState &pipelineState, const sw::SpirvShader *vertexShader, const vk::Inputs &inputs)
 {
+	const vk::VertexInputInterfaceState &vertexInputInterfaceState = pipelineState.getVertexInputInterfaceState();
+	const vk::PreRasterizationState &preRasterizationState = pipelineState.getPreRasterizationState();
+
 	State state;
 
 	state.shaderID = vertexShader->getIdentifier();
-	state.pipelineLayoutIdentifier = pipelineState.getPipelineLayout()->identifier;
-	state.robustBufferAccess = pipelineState.getRobustBufferAccess();
-	state.isPoint = pipelineState.getTopology() == VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-	state.depthClipEnable = pipelineState.getDepthClipEnable();
+	state.pipelineLayoutIdentifier = preRasterizationState.getPipelineLayout()->identifier;
+	state.robustBufferAccess = vertexShader->getRobustBufferAccess();
+	state.isPoint = vertexInputInterfaceState.getTopology() == VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+	state.depthClipEnable = preRasterizationState.getDepthClipEnable();
+	state.depthClipNegativeOneToOne = preRasterizationState.getDepthClipNegativeOneToOne();
 
 	for(size_t i = 0; i < MAX_INTERFACE_COMPONENTS / 4; i++)
 	{
@@ -89,8 +93,8 @@ const VertexProcessor::State VertexProcessor::update(const vk::GraphicsState &pi
 }
 
 VertexProcessor::RoutineType VertexProcessor::routine(const State &state,
-                                                      vk::PipelineLayout const *pipelineLayout,
-                                                      SpirvShader const *vertexShader,
+                                                      const vk::PipelineLayout *pipelineLayout,
+                                                      const SpirvShader *vertexShader,
                                                       const vk::DescriptorSet::Bindings &descriptorSets)
 {
 	auto routine = routineCache->lookup(state);

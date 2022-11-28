@@ -108,8 +108,10 @@ namespace dawn::native::opengl {
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const DeviceDescriptor* descriptor,
                                           const OpenGLFunctions& functions,
-                                          std::unique_ptr<Context> context) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, functions, std::move(context)));
+                                          std::unique_ptr<Context> context,
+                                          const TripleStateTogglesSet& userProvidedToggles) {
+    Ref<Device> device = AcquireRef(
+        new Device(adapter, descriptor, functions, std::move(context), userProvidedToggles));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -117,8 +119,11 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
 Device::Device(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
                const OpenGLFunctions& functions,
-               std::unique_ptr<Context> context)
-    : DeviceBase(adapter, descriptor), mGL(functions), mContext(std::move(context)) {}
+               std::unique_ptr<Context> context,
+               const TripleStateTogglesSet& userProvidedToggles)
+    : DeviceBase(adapter, descriptor, userProvidedToggles),
+      mGL(functions),
+      mContext(std::move(context)) {}
 
 Device::~Device() {
     Destroy();
@@ -299,7 +304,7 @@ ResultOrError<Ref<NewSwapChainBase>> Device::CreateSwapChainImpl(
     Surface* surface,
     NewSwapChainBase* previousSwapChain,
     const SwapChainDescriptor* descriptor) {
-    return DAWN_FORMAT_VALIDATION_ERROR("New swapchains not implemented.");
+    return DAWN_VALIDATION_ERROR("New swapchains not implemented.");
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
     return AcquireRef(new Texture(this, descriptor));
@@ -364,7 +369,7 @@ TextureBase* Device::CreateTextureWrappingEGLImage(const ExternalImageDescriptor
     if (textureDescriptor->size.width != static_cast<uint32_t>(width) ||
         textureDescriptor->size.height != static_cast<uint32_t>(height) ||
         textureDescriptor->size.depthOrArrayLayers != 1) {
-        ConsumedError(DAWN_FORMAT_VALIDATION_ERROR(
+        ConsumedError(DAWN_VALIDATION_ERROR(
             "EGLImage size (width: %u, height: %u, depth: 1) doesn't match descriptor size %s.",
             width, height, &textureDescriptor->size));
         gl.DeleteTextures(1, &tex);

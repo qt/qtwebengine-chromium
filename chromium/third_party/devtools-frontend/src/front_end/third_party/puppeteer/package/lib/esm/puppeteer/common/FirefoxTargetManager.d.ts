@@ -15,7 +15,7 @@
  */
 import { CDPSession, Connection } from './Connection.js';
 import { Target } from './Target.js';
-import { TargetFilterCallback } from './Browser.js';
+import { TargetFilterCallback } from '../api/Browser.js';
 import { TargetFactory, TargetInterceptor, TargetManager } from './TargetManager.js';
 import { EventEmitter } from './EventEmitter.js';
 /**
@@ -27,9 +27,10 @@ import { EventEmitter } from './EventEmitter.js';
  * because Firefox's CDP implementation does not support auto-attach.
  *
  * Firefox does not support targetInfoChanged and detachedFromTarget events:
+ *
  * - https://bugzilla.mozilla.org/show_bug.cgi?id=1610855
  * - https://bugzilla.mozilla.org/show_bug.cgi?id=1636979
- * @internal
+ *   @internal
  */
 export declare class FirefoxTargetManager extends EventEmitter implements TargetManager {
     #private;

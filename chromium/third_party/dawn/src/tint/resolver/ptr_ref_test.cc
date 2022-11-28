@@ -21,13 +21,15 @@
 namespace tint::resolver {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 struct ResolverPtrRefTest : public resolver::TestHelper, public testing::Test {};
 
 TEST_F(ResolverPtrRefTest, AddressOf) {
     // var v : i32;
     // &v
 
-    auto* v = Var("v", ty.i32(), ast::StorageClass::kNone);
+    auto* v = Var("v", ty.i32());
     auto* expr = AddressOf(v);
 
     WrapInFunction(v, expr);
@@ -36,14 +38,14 @@ TEST_F(ResolverPtrRefTest, AddressOf) {
 
     ASSERT_TRUE(TypeOf(expr)->Is<sem::Pointer>());
     EXPECT_TRUE(TypeOf(expr)->As<sem::Pointer>()->StoreType()->Is<sem::I32>());
-    EXPECT_EQ(TypeOf(expr)->As<sem::Pointer>()->StorageClass(), ast::StorageClass::kFunction);
+    EXPECT_EQ(TypeOf(expr)->As<sem::Pointer>()->AddressSpace(), ast::AddressSpace::kFunction);
 }
 
 TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
     // var v : i32;
     // *(&v)
 
-    auto* v = Var("v", ty.i32(), ast::StorageClass::kNone);
+    auto* v = Var("v", ty.i32());
     auto* expr = Deref(AddressOf(v));
 
     WrapInFunction(v, expr);
@@ -54,34 +56,28 @@ TEST_F(ResolverPtrRefTest, AddressOfThenDeref) {
     EXPECT_TRUE(TypeOf(expr)->As<sem::Reference>()->StoreType()->Is<sem::I32>());
 }
 
-TEST_F(ResolverPtrRefTest, DefaultPtrStorageClass) {
+TEST_F(ResolverPtrRefTest, DefaultPtrAddressSpace) {
     // https://gpuweb.github.io/gpuweb/wgsl/#storage-class
 
     auto* buf = Structure("S", utils::Vector{Member("m", ty.i32())});
     auto* function = Var("f", ty.i32());
-    auto* private_ = GlobalVar("p", ty.i32(), ast::StorageClass::kPrivate);
-    auto* workgroup = GlobalVar("w", ty.i32(), ast::StorageClass::kWorkgroup);
-    auto* uniform = GlobalVar("ub", ty.Of(buf), ast::StorageClass::kUniform,
-                              utils::Vector{
-                                  create<ast::BindingAttribute>(0u),
-                                  create<ast::GroupAttribute>(0u),
-                              });
-    auto* storage = GlobalVar("sb", ty.Of(buf), ast::StorageClass::kStorage,
-                              utils::Vector{
-                                  create<ast::BindingAttribute>(1u),
-                                  create<ast::GroupAttribute>(0u),
-                              });
+    auto* private_ = GlobalVar("p", ty.i32(), ast::AddressSpace::kPrivate);
+    auto* workgroup = GlobalVar("w", ty.i32(), ast::AddressSpace::kWorkgroup);
+    auto* uniform =
+        GlobalVar("ub", ty.Of(buf), ast::AddressSpace::kUniform, Binding(0_a), Group(0_a));
+    auto* storage =
+        GlobalVar("sb", ty.Of(buf), ast::AddressSpace::kStorage, Binding(1_a), Group(0_a));
 
     auto* function_ptr =
-        Let("f_ptr", ty.pointer(ty.i32(), ast::StorageClass::kFunction), AddressOf(function));
+        Let("f_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kFunction), AddressOf(function));
     auto* private_ptr =
-        Let("p_ptr", ty.pointer(ty.i32(), ast::StorageClass::kPrivate), AddressOf(private_));
+        Let("p_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kPrivate), AddressOf(private_));
     auto* workgroup_ptr =
-        Let("w_ptr", ty.pointer(ty.i32(), ast::StorageClass::kWorkgroup), AddressOf(workgroup));
+        Let("w_ptr", ty.pointer(ty.i32(), ast::AddressSpace::kWorkgroup), AddressOf(workgroup));
     auto* uniform_ptr =
-        Let("ub_ptr", ty.pointer(ty.Of(buf), ast::StorageClass::kUniform), AddressOf(uniform));
+        Let("ub_ptr", ty.pointer(ty.Of(buf), ast::AddressSpace::kUniform), AddressOf(uniform));
     auto* storage_ptr =
-        Let("sb_ptr", ty.pointer(ty.Of(buf), ast::StorageClass::kStorage), AddressOf(storage));
+        Let("sb_ptr", ty.pointer(ty.Of(buf), ast::AddressSpace::kStorage), AddressOf(storage));
 
     WrapInFunction(function, function_ptr, private_ptr, workgroup_ptr, uniform_ptr, storage_ptr);
 

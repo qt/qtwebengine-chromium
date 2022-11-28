@@ -69,20 +69,23 @@ class CPDF_FormField {
     kSign
   };
 
-  CPDF_FormField(CPDF_InteractiveForm* pForm, CPDF_Dictionary* pDict);
+  CPDF_FormField(CPDF_InteractiveForm* pForm, RetainPtr<CPDF_Dictionary> pDict);
   ~CPDF_FormField();
 
   static absl::optional<FormFieldType> IntToFormFieldType(int value);
-
-  static const CPDF_Object* GetFieldAttr(const CPDF_Dictionary* pFieldDict,
-                                         const ByteString& name);
-  static CPDF_Object* GetFieldAttr(CPDF_Dictionary* pFieldDict,
-                                   const ByteString& name);
-
   static WideString GetFullNameForDict(const CPDF_Dictionary* pFieldDict);
+  static const CPDF_Object* GetFieldAttrForDict(
+      const CPDF_Dictionary* pFieldDict,
+      const ByteString& name);
+  static CPDF_Object* GetFieldAttrForDict(CPDF_Dictionary* pFieldDict,
+                                          const ByteString& name);
 
   WideString GetFullName() const;
   Type GetType() const { return m_Type; }
+
+  const CPDF_Object* GetFieldAttr(const ByteString& name) const {
+    return GetFieldAttrForDict(m_pDict.Get(), name);
+  }
 
   const CPDF_Dictionary* GetFieldDict() const { return m_pDict.Get(); }
   bool ResetField();
@@ -136,7 +139,6 @@ class CPDF_FormField {
   // entries are consistent with the value (/V) object.
   bool UseSelectedIndicesObject() const;
 
-  const CPDF_Dictionary* GetDict() const { return m_pDict.Get(); }
   CPDF_InteractiveForm* GetForm() const { return m_pForm.Get(); }
 
   WideString GetCheckValue(bool bDefault) const;
@@ -154,10 +156,6 @@ class CPDF_FormField {
                      bool bDefault,
                      NotificationOption notify);
   void SetItemSelectionSelected(int index, const WideString& opt_value);
-  bool NotifyBeforeSelectionChange(const WideString& value);
-  void NotifyAfterSelectionChange();
-  bool NotifyBeforeValueChange(const WideString& value);
-  void NotifyAfterValueChange();
   bool NotifyListOrComboBoxBeforeChange(const WideString& value);
   void NotifyListOrComboBoxAfterChange();
 

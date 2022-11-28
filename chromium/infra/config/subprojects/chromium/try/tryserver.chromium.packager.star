@@ -1,4 +1,4 @@
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Definitions of builders in the tryserver.chromium.packager builder group."""
@@ -13,6 +13,9 @@ try_.defaults.set(
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     pool = try_.DEFAULT_POOL,
     service_account = "chromium-cipd-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+
+    # TODO(crbug.com/1362440): remove this.
+    omit_python2 = False,
 )
 
 consoles.list_view(

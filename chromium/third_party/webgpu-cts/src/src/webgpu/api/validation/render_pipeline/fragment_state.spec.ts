@@ -3,7 +3,7 @@ This test dedicatedly tests validation of GPUFragmentState of createRenderPipeli
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
-import { assert, range } from '../../../../common/util/util.js';
+import { range } from '../../../../common/util/util.js';
 import {
   kTextureFormats,
   kRenderableColorTextureFormats,
@@ -192,56 +192,55 @@ g.test('pipeline_output_targets')
   - The componentCount of the fragment output (e.g. f32, vec2, vec3, vec4) must not have fewer
     channels than that of the color attachment texture formats. Extra components are allowed and are discarded.
 
-  Otherwise, color state write mask must be 0.
-
-  MAINTENANCE_TODO: update this test after the WebGPU SPEC ISSUE 50 "define what 'compatible' means
-  for render target formats" is resolved.`
+  Otherwise, color state write mask must be 0.`
   )
   .params(u =>
     u
       .combine('isAsync', [false, true])
-      .combine('writeMask', [0, 0x1, 0x2, 0x4, 0x8, 0xf])
       .combine('format', [undefined, ...kRenderableColorTextureFormats] as const)
       .beginSubcases()
-      .combine('hasShaderOutput', [false, true])
-      .filter(p => p.format === undefined || p.hasShaderOutput === true)
-      .combine('sampleType', ['float', 'uint', 'sint'] as const)
-      .combine('componentCount', [1, 2, 3, 4])
+      .combine('shaderOutput', [
+        undefined,
+        ...u.combine('scalar', ['f32', 'u32', 'i32'] as const).combine('count', [1, 2, 3, 4]),
+      ])
+      // We only care about testing writeMask if there is an attachment but no shader output.
+      .expand('writeMask', p =>
+        p.format !== undefined && p.shaderOutput !== undefined ? [0, 0x1, 0x2, 0x4, 0x8] : [0xf]
+      )
   )
   .beforeAllSubcases(t => {
-    const { format } = t.params;
-    if (format) {
-      const info = kTextureFormatInfo[format];
-      t.selectDeviceOrSkipTestCase(info.feature);
-    }
+    t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
   })
   .fn(async t => {
-    const { isAsync, writeMask, format, hasShaderOutput, sampleType, componentCount } = t.params;
-    const info = format ? kTextureFormatInfo[format] : null;
+    const { isAsync, format, writeMask, shaderOutput } = t.params;
 
     const descriptor = t.getDescriptor({
       targets: format ? [{ format, writeMask }] : [],
       // To have a dummy depthStencil attachment to avoid having no attachment at all which is invalid
       depthStencil: { format: 'depth24plus' },
       fragmentShaderCode: getFragmentShaderCodeWithOutput(
-        hasShaderOutput ? [{ values, plainType: getPlainTypeInfo(sampleType), componentCount }] : []
+        shaderOutput
+          ? [{ values, plainType: shaderOutput.scalar, componentCount: shaderOutput.count }]
+          : []
       ),
     });
 
-    let _success = true;
-    if (hasShaderOutput && info) {
-      // there is a target correspond to the pipeline output
-      assert(format !== undefined);
-      const sampleTypeSuccess =
-        info.sampleType === 'float' || info.sampleType === 'unfilterable-float'
-          ? sampleType === 'float'
-          : info.sampleType === sampleType;
-      _success =
-        sampleTypeSuccess &&
-        componentCount >= kTexelRepresentationInfo[format].componentOrder.length;
+    let success = true;
+    if (format) {
+      // There is a color target
+      if (shaderOutput) {
+        // The shader outputs to the color target
+        const info = kTextureFormatInfo[format];
+        success =
+          shaderOutput.scalar === getPlainTypeInfo(info.sampleType) &&
+          shaderOutput.count >= kTexelRepresentationInfo[format].componentOrder.length;
+      } else {
+        // The shader does not output to the color target
+        success = writeMask === 0;
+      }
     }
 
-    t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
+    t.doCreateRenderPipelineTest(isAsync, success, descriptor);
   });
 
 g.test('pipeline_output_targets,blend')
@@ -254,59 +253,14 @@ g.test('pipeline_output_targets,blend')
     u
       .combine('isAsync', [false, true])
       .combine('format', ['r8unorm', 'rg8unorm', 'rgba8unorm', 'bgra8unorm'] as const)
-      .beginSubcases()
       .combine('componentCount', [1, 2, 3, 4])
+      .beginSubcases()
+      // The default srcFactor and dstFactor are 'one' and 'zero'. Override just one at a time.
       .combineWithParams([
-        // extra requirement does not apply
-        {
-          colorSrcFactor: 'one',
-          colorDstFactor: 'zero',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'zero',
-        },
-        {
-          colorSrcFactor: 'dst-alpha',
-          colorDstFactor: 'zero',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'zero',
-        },
-        // extra requirement applies, fragment output must be vec4 (contain alpha channel)
-        {
-          colorSrcFactor: 'src-alpha',
-          colorDstFactor: 'one',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'zero',
-        },
-        {
-          colorSrcFactor: 'one',
-          colorDstFactor: 'one-minus-src-alpha',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'zero',
-        },
-        {
-          colorSrcFactor: 'src-alpha-saturated',
-          colorDstFactor: 'one',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'zero',
-        },
-        {
-          colorSrcFactor: 'one',
-          colorDstFactor: 'zero',
-          alphaSrcFactor: 'one',
-          alphaDstFactor: 'zero',
-        },
-        {
-          colorSrcFactor: 'one',
-          colorDstFactor: 'zero',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'src',
-        },
-        {
-          colorSrcFactor: 'one',
-          colorDstFactor: 'zero',
-          alphaSrcFactor: 'zero',
-          alphaDstFactor: 'src-alpha',
-        },
+        ...u.combine('colorSrcFactor', kBlendFactors),
+        ...u.combine('colorDstFactor', kBlendFactors),
+        ...u.combine('alphaSrcFactor', kBlendFactors),
+        ...u.combine('alphaDstFactor', kBlendFactors),
       ] as const)
   )
   .beforeAllSubcases(t => {
@@ -332,16 +286,8 @@ g.test('pipeline_output_targets,blend')
         {
           format,
           blend: {
-            color: {
-              srcFactor: colorSrcFactor,
-              dstFactor: colorDstFactor,
-              operation: 'add',
-            },
-            alpha: {
-              srcFactor: alphaSrcFactor,
-              dstFactor: alphaDstFactor,
-              operation: 'add',
-            },
+            color: { srcFactor: colorSrcFactor, dstFactor: colorDstFactor },
+            alpha: { srcFactor: alphaSrcFactor, dstFactor: alphaDstFactor },
           },
         },
       ],
@@ -351,7 +297,7 @@ g.test('pipeline_output_targets,blend')
     });
 
     const colorBlendReadsSrcAlpha =
-      colorSrcFactor.includes('src-alpha') || colorDstFactor.includes('src-alpha');
+      colorSrcFactor?.includes('src-alpha') || colorDstFactor?.includes('src-alpha');
     const meetsExtraBlendingRequirement = !colorBlendReadsSrcAlpha || componentCount === 4;
     const _success =
       info.sampleType === sampleType &&

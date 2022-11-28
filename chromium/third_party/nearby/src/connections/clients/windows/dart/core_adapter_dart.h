@@ -58,6 +58,12 @@ struct AdvertisingOptionsDart {
   // Whether this is intended to be used in conjunction with InjectEndpoint().
   int64_t is_out_of_band_connection = false;
   const char *fast_advertisement_service_uuid;
+
+  // The information about this device (eg. name, device type),
+  // to appear on the remote device.
+  // Defined by client/application.
+  const char *device_info;
+
   Mediums mediums;
   // LINT.ThenChange(//depot/google3/location/nearby/apps/helloconnections/flutter/lib/advertising_options.dart)
 };
@@ -257,6 +263,10 @@ DLL_API void __stdcall RequestConnectionDart(
 DLL_API void __stdcall AcceptConnectionDart(Core *pCore,
                                             const char *endpoint_id,
                                             PayloadListenerDart listener_dart,
+                                            Dart_Port result_cb);
+
+DLL_API void __stdcall RejectConnectionDart(Core *pCore,
+                                            const char *endpoint_id,
                                             Dart_Port result_cb);
 
 // Disconnects from a remote endpoint. {@link Payload}s can no longer be sent

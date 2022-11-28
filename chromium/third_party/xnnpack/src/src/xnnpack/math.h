@@ -85,6 +85,30 @@ XNN_INLINE static uint32_t float_as_uint32(float f) {
   return bits.as_uint32;
 }
 
+XNN_INLINE static double uint64_as_double(uint64_t i) {
+  union {
+    uint64_t as_uint64;
+    double as_double;
+  } bits = { i };
+  return bits.as_double;
+}
+
+XNN_INLINE static uint64_t double_as_uint64(double f) {
+  union {
+    double as_double;
+    uint64_t as_uint64;
+  } bits = { f };
+  return bits.as_uint64;
+}
+
+XNN_INLINE static uint32_t math_abs_s32(int32_t n) {
+  #if defined(_MSC_VER)
+    return (uint32_t) abs((int) n);
+  #else
+    return XNN_UNPREDICTABLE(n >= 0) ? (uint32_t) n : -(uint32_t) n;
+  #endif
+}
+
 XNN_INLINE static int32_t math_min_s32(int32_t a, int32_t b) {
   return XNN_UNPREDICTABLE(a < b) ? a : b;
 }
@@ -99,6 +123,26 @@ XNN_INLINE static uint32_t math_min_u32(uint32_t a, uint32_t b) {
 
 XNN_INLINE static uint32_t math_max_u32(uint32_t a, uint32_t b) {
   return XNN_UNPREDICTABLE(a > b) ? a : b;
+}
+
+XNN_INLINE static uint32_t math_doz_u32(uint32_t a, uint32_t b) {
+  return XNN_UNPREDICTABLE(a > b) ? a - b : 0;
+}
+
+XNN_INLINE static int64_t math_mulext_s32(int32_t a, int32_t b) {
+#if defined(_MSC_VER) && defined(_M_IX86)
+  return (int64_t) __emul((int) a, (int) b);
+#else
+  return (int64_t) a * (int64_t) b;
+#endif
+}
+
+XNN_INLINE static uint64_t math_mulext_u32(uint32_t a, uint32_t b) {
+#if defined(_MSC_VER) && defined(_M_IX86)
+  return (uint64_t) __emulu((unsigned int) a, (unsigned int) b);
+#else
+  return (uint64_t) a * (uint64_t) b;
+#endif
 }
 
 XNN_INLINE static float math_muladd_f32(float x, float y, float acc) {
@@ -126,6 +170,26 @@ XNN_INLINE static float math_max_f32(float a, float b) {
     return __builtin_fmaxf(a, b);
   #elif defined(__clang__) && defined(__riscv)
     return __builtin_fmaxf(a, b);
+  #else
+    return XNN_UNPREDICTABLE(b < a) ? a : b;
+  #endif
+}
+
+XNN_INLINE static double math_min_f64(double a, double b) {
+  #if defined(__GNUC__) && defined(__ARM_ARCH) && (__ARM_ARCH >= 8)
+    return __builtin_fmin(a, b);
+  #elif defined(__clang__) && defined(__riscv)
+    return __builtin_fmin(a, b);
+  #else
+    return XNN_UNPREDICTABLE(b < a) ? b : a;
+  #endif
+}
+
+XNN_INLINE static double math_max_f64(double a, double b) {
+  #if defined(__GNUC__) && defined(__ARM_ARCH) && (__ARM_ARCH >= 8)
+    return __builtin_fmax(a, b);
+  #elif defined(__clang__) && defined(__riscv)
+    return __builtin_fmax(a, b);
   #else
     return XNN_UNPREDICTABLE(b < a) ? a : b;
   #endif
@@ -238,3 +302,33 @@ XNN_INLINE static uint32_t math_rotl_u32(uint32_t x, int8_t r)
     return (x << r) | (x >> (32 - r));
   #endif
 }
+
+#ifndef __cplusplus
+XNN_INLINE static uint32_t math_cvt_sat_u32_f64(double x) {
+  #if defined(__GNUC__) && defined(__arm__)
+    uint32_t i;
+    __asm__ ("vcvt.u32.f64 %[i], %P[x]"
+      : [i] "=t" (i)
+      : [x] "w" (x));
+    return i;
+  #elif defined(__GNUC__) && defined(__aarch64__)
+    uint32_t i;
+    __asm__ ("fcvtnu %w[i], %d[x]"
+      : [i] "=r" (i)
+      : [x] "w" (x));
+    return i;
+  #elif defined(__GNUC__) && defined(__riscv)
+    uint32_t i;
+    __asm__ ("fcvt.wu.d %[i], %[x], rne"
+      : [i] "=r" (i)
+      : [x] "f" (x));
+    return i;
+  #elif defined(__clang__) && defined(__wasm__) && defined(__wasm_nontrapping_fptoint__)
+    return __builtin_wasm_trunc_saturate_u_i32_f64(rint(x));
+  #else
+    x = math_max_f64(x, 0.0);
+    x = math_min_f64(x, 4294967295.0);
+    return (uint32_t) double_as_uint64(x + 0x1.0p+52);
+  #endif
+}
+#endif

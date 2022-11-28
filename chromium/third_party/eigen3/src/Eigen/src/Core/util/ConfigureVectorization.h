@@ -270,6 +270,17 @@
         #ifdef __AVX512BF16__
           #define EIGEN_VECTORIZE_AVX512BF16
         #endif
+        #ifdef __AVX512FP16__
+          #ifdef __AVX512VL__
+            #define EIGEN_VECTORIZE_AVX512FP16
+          #else
+            #if EIGEN_COMP_GNUC
+              #error Please add -mavx512vl to your compiler flags: compiling with -mavx512fp16 alone without AVX512-VL is not supported.
+            #else
+              #error Please enable AVX512-VL in your compiler flags (e.g. -mavx512vl): compiling with AVX512-FP16 alone without AVX512-VL is not supported.
+            #endif
+          #endif 
+        #endif
       #endif
     #endif
 

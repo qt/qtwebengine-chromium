@@ -13,6 +13,7 @@
 #include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
+#include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/mtl/MtlUtils.h"
 #include "src/sksl/SkSLUtil.h"
 
@@ -223,9 +224,9 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
     }
 
     // We use constant address space for our uniform buffers which has various alignment
-    // requirements for the offset when binding the buffer. On MacOS the offset must align to 256.
-    // On iOS we must align to the max of the data type consumed by the vertex function or 4 bytes.
-    // We can ignore the data type and just always use 16 bytes on iOS.
+    // requirements for the offset when binding the buffer. On MacOS Intel the offset must align
+    // to 256. On iOS or Apple Silicon we must align to the max of the data type consumed by the
+    // vertex function or 4 bytes, or we can ignore the data type and just use 16 bytes.
     if (this->isMac()) {
         fRequiredUniformBufferAlignment = 256;
     } else {
@@ -234,6 +235,8 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
 
     // Metal does not distinguish between uniform and storage buffers.
     fRequiredStorageBufferAlignment = fRequiredUniformBufferAlignment;
+    fStorageBufferSupport = true;
+    fStorageBufferPreferred = true;
 
     if (@available(macOS 10.12, ios 14.0, *)) {
         fClampToBorderSupport = (this->isMac() || fFamilyGroup >= 7);
@@ -545,7 +548,19 @@ TextureInfo MtlCaps::getDefaultSampledTextureInfo(SkColorType colorType,
     return info;
 }
 
-TextureInfo MtlCaps::getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo) const {
+MTLStorageMode MtlCaps::getDefaultMSAAStorageMode(Discardable discardable) const {
+    // Try to use memoryless if it's available (only on new Apple silicon)
+    if (discardable == Discardable::kYes && this->isApple()) {
+        if (@available(macOS 11.0, iOS 10.0, *)) {
+            return MTLStorageModeMemoryless;
+        }
+    }
+    // If it's not discardable or not available, private is the best option
+    return MTLStorageModePrivate;
+}
+
+TextureInfo MtlCaps::getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
+                                               Discardable discardable) const {
     const MtlTextureSpec& singleSpec = singleSampledInfo.mtlTextureSpec();
 
     MTLTextureUsage usage = MTLTextureUsageRenderTarget;
@@ -555,7 +570,7 @@ TextureInfo MtlCaps::getDefaultMSAATextureInfo(const TextureInfo& singleSampledI
     info.fLevelCount = 1;
     info.fFormat = singleSpec.fFormat;
     info.fUsage = usage;
-    info.fStorageMode = MTLStorageModePrivate;
+    info.fStorageMode = this->getDefaultMSAAStorageMode(discardable);
     info.fFramebufferOnly = false;
 
     return info;
@@ -570,7 +585,7 @@ TextureInfo MtlCaps::getDefaultDepthStencilTextureInfo(
     info.fLevelCount = 1;
     info.fFormat = MtlDepthStencilFlagsToFormat(depthStencilType);
     info.fUsage = MTLTextureUsageRenderTarget;
-    info.fStorageMode = MTLStorageModePrivate;
+    info.fStorageMode = this->getDefaultMSAAStorageMode(Discardable::kYes);
     info.fFramebufferOnly = false;
 
     return info;
@@ -599,26 +614,30 @@ UniqueKey MtlCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineD
     UniqueKey pipelineKey;
     {
         static const skgpu::UniqueKey::Domain kGraphicsPipelineDomain = UniqueKey::GenerateDomain();
-        SkSpan<const uint32_t> pipelineDescKey = pipelineDesc.asKey();
-        UniqueKey::Builder builder(&pipelineKey, kGraphicsPipelineDomain,
-                                   pipelineDescKey.size() + 2, "GraphicsPipeline");
+        // 4 uint32_t's (render step id, paint id, uint64 renderpass desc)
+        UniqueKey::Builder builder(&pipelineKey, kGraphicsPipelineDomain, 4, "GraphicsPipeline");
         // add graphicspipelinedesc key
-        for (unsigned int i = 0; i < pipelineDescKey.size(); ++i) {
-            builder[i] = pipelineDescKey[i];
-        }
+        builder[0] = pipelineDesc.renderStepID();
+        builder[1] = pipelineDesc.paintParamsID().asUInt();
+
         // add renderpassdesc key
-        MtlTextureInfo colorInfo, depthStencilInfo;
-        renderPassDesc.fColorAttachment.fTextureInfo.getMtlTextureInfo(&colorInfo);
-        renderPassDesc.fDepthStencilAttachment.fTextureInfo.getMtlTextureInfo(&depthStencilInfo);
-        SkASSERT(colorInfo.fFormat < 65535 && depthStencilInfo.fFormat < 65535);
-        uint32_t colorAttachmentKey = colorInfo.fFormat << 16 | colorInfo.fSampleCount;
-        uint32_t dsAttachmentKey = depthStencilInfo.fFormat << 16 | depthStencilInfo.fSampleCount;
-        builder[pipelineDescKey.size()] = colorAttachmentKey;
-        builder[pipelineDescKey.size()+1] = dsAttachmentKey;
+        uint64_t renderPassKey = this->getRenderPassDescKey(renderPassDesc);
+        builder[2] = renderPassKey & 0xFFFFFFFF;
+        builder[3] = (renderPassKey >> 32) & 0xFFFFFFFF;
         builder.finish();
     }
 
     return pipelineKey;
+}
+
+uint64_t MtlCaps::getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const {
+    MtlTextureInfo colorInfo, depthStencilInfo;
+    renderPassDesc.fColorAttachment.fTextureInfo.getMtlTextureInfo(&colorInfo);
+    renderPassDesc.fDepthStencilAttachment.fTextureInfo.getMtlTextureInfo(&depthStencilInfo);
+    SkASSERT(colorInfo.fFormat < 65535 && depthStencilInfo.fFormat < 65535);
+    uint32_t colorAttachmentKey = colorInfo.fFormat << 16 | colorInfo.fSampleCount;
+    uint32_t dsAttachmentKey = depthStencilInfo.fFormat << 16 | depthStencilInfo.fSampleCount;
+    return (((uint64_t) colorAttachmentKey) << 32) | dsAttachmentKey;
 }
 
 UniqueKey MtlCaps::makeComputePipelineKey(const ComputePipelineDesc& pipelineDesc) const {
@@ -680,6 +699,77 @@ uint32_t MtlCaps::maxRenderTargetSampleCount(MTLPixelFormat format) const {
 
 size_t MtlCaps::getTransferBufferAlignment(size_t bytesPerPixel) const {
     return std::max(bytesPerPixel, getMinBufferAlignment());
+}
+
+bool MtlCaps::supportsWritePixels(const TextureInfo& texInfo) const {
+    MtlTextureInfo mtlInfo;
+    texInfo.getMtlTextureInfo(&mtlInfo);
+    if (mtlInfo.fFramebufferOnly) {
+        return false;
+    }
+
+    if (texInfo.numSamples() > 1) {
+        return false;
+    }
+
+    return true;
+}
+
+bool MtlCaps::supportsReadPixels(const TextureInfo& texInfo) const {
+    MtlTextureInfo mtlInfo;
+    texInfo.getMtlTextureInfo(&mtlInfo);
+    if (mtlInfo.fFramebufferOnly) {
+        return false;
+    }
+
+    // We disallow reading back directly from compressed textures.
+    if (MtlFormatIsCompressed((MTLPixelFormat)mtlInfo.fFormat)) {
+        return false;
+    }
+
+    if (texInfo.numSamples() > 1) {
+        return false;
+    }
+
+    return true;
+}
+
+SkColorType MtlCaps::supportedWritePixelsColorType(SkColorType dstColorType,
+                                                   const TextureInfo& dstTextureInfo,
+                                                   SkColorType srcColorType) const {
+    MtlTextureInfo mtlInfo;
+    dstTextureInfo.getMtlTextureInfo(&mtlInfo);
+
+    const FormatInfo& info = this->getFormatInfo((MTLPixelFormat)mtlInfo.fFormat);
+    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
+        const auto& ctInfo = info.fColorTypeInfos[i];
+        if (ctInfo.fColorType == dstColorType) {
+            return dstColorType;
+        }
+    }
+    return kUnknown_SkColorType;
+}
+
+SkColorType MtlCaps::supportedReadPixelsColorType(SkColorType srcColorType,
+                                                  const TextureInfo& srcTextureInfo,
+                                                  SkColorType dstColorType) const {
+    MtlTextureInfo mtlInfo;
+    srcTextureInfo.getMtlTextureInfo(&mtlInfo);
+
+    // TODO: handle compressed formats
+    if (MtlFormatIsCompressed((MTLPixelFormat)mtlInfo.fFormat)) {
+        SkASSERT(this->isTexturable((MTLPixelFormat)mtlInfo.fFormat));
+        return kUnknown_SkColorType;
+    }
+
+    const FormatInfo& info = this->getFormatInfo((MTLPixelFormat)mtlInfo.fFormat);
+    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
+        const auto& ctInfo = info.fColorTypeInfos[i];
+        if (ctInfo.fColorType == srcColorType) {
+            return srcColorType;
+        }
+    }
+    return kUnknown_SkColorType;
 }
 
 // There are only a few possible valid sample counts (1, 2, 4, 8, 16). So we can key on those 5

@@ -37,6 +37,7 @@
 #include "protos/perfetto/trace/ftrace/ftrace_event.pbzero.h"
 #include "protos/perfetto/trace/ftrace/g2d.pbzero.h"
 #include "protos/perfetto/trace/ftrace/irq.pbzero.h"
+#include "protos/perfetto/trace/ftrace/mdss.pbzero.h"
 #include "protos/perfetto/trace/ftrace/power.pbzero.h"
 #include "protos/perfetto/trace/ftrace/sched.pbzero.h"
 #include "protos/perfetto/trace/ftrace/workqueue.pbzero.h"
@@ -204,10 +205,21 @@ void ArgsSerializer::SerializeArgs() {
     WriteArgForField(SS::kPrevStateFieldNumber, [this](const Variadic& value) {
       PERFETTO_DCHECK(value.type == Variadic::Type::kInt);
       auto state = static_cast<uint16_t>(value.int_value);
-      auto kernel_version =
+      // TODO(b/247222275): this is actively bugged when converting modern
+      // traces to systrace. This is called by the systrace converter after the
+      // trace has been fully parsed (and NotifyEndOfFile called), so the
+      // context has been destroyed. Hence this will recreate the tracker and
+      // return base::nullopt. The TaskState::ToString will in turn assume 4.4
+      // kernel even if the trace had an explicit kernel version. So we'll end
+      // up in a situation where the "sched" table is correct (since it used
+      // the kernel version in the trace), but the systrace output is
+      // incorrect. Same issue most likely applies to GFP flags below.
+      base::Optional<VersionNumber> kernel_version =
           SystemInfoTracker::GetOrCreate(context_)->GetKernelVersion();
       writer_->AppendString(
-          ftrace_utils::TaskState(state, kernel_version).ToString('|').data());
+          ftrace_utils::TaskState::FromRawPrevState(state, kernel_version)
+              .ToString('|')
+              .data());
     });
     writer_->AppendLiteral(" ==>");
     WriteArgForField(SS::kNextCommFieldNumber, DVW());
@@ -429,6 +441,18 @@ void ArgsSerializer::SerializeArgs() {
       writer_->AppendString(kActionNames[value.uint_value]);
     });
     writer_->AppendString("]");
+    return;
+  } else if (event_name_ == "tracing_mark_write") {
+    using TMW = protos::pbzero::TracingMarkWriteFtraceEvent;
+    WriteValueForField(TMW::kTraceBeginFieldNumber,
+                       [this](const Variadic& value) {
+                         PERFETTO_DCHECK(value.type == Variadic::Type::kUint);
+                         writer_->AppendChar(value.uint_value ? 'B' : 'E');
+                       });
+    writer_->AppendString("|");
+    WriteValueForField(TMW::kPidFieldNumber, DVW());
+    writer_->AppendString("|");
+    WriteValueForField(TMW::kTraceNameFieldNumber, DVW());
     return;
   } else if (event_name_ == "dpu_tracing_mark_write") {
     using TMW = protos::pbzero::DpuTracingMarkWriteFtraceEvent;

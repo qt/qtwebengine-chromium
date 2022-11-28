@@ -7,6 +7,7 @@
 
 #include "include/core/SkCanvas.h"
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkBlender.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkImage.h"
@@ -17,12 +18,14 @@
 #include "include/core/SkRasterHandleAllocator.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
+#include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkTo.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkBitmapDevice.h"
+#include "src/core/SkBlenderBase.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkColorFilterBase.h"
@@ -984,10 +987,7 @@ void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
 //
 // Assumes that 'filter', and thus its inputs, will remain owned by the caller. Modifies 'paint'
 // to have the updated color filter and returns the image filter to evaluate on restore.
-//
-// FIXME: skbug.com/12083 - we modify 'coversDevice' here because for now, only the color filter
-// produced from an image filter node is checked for affecting transparent black, even though it's
-// better in the long run to have any CF that affects transparent black expand to the clip.
+// TODO(michaelludwig): skbug.com/12083, once this guard goes away, the coversDevice arg can go away
 static const SkImageFilter* optimize_layer_filter(const SkImageFilter* filter, SkPaint* paint,
                                                   bool* coversDevice=nullptr) {
     SkASSERT(paint);
@@ -999,15 +999,19 @@ static const SkImageFilter* optimize_layer_filter(const SkImageFilter* filter, S
             // filter. If there is transparency, we have to apply it between the two filters.
             // FIXME: The Blend CF should allow composing directly at construction.
             inner = SkColorFilters::Compose(
-                    SkColorFilters::Blend(/* src */ paint->getColor(), SkBlendMode::kDstIn),
-                                          /* dst */ std::move(inner));
+                    SkColorFilters::Blend(/*src*/paint->getColor4f(), nullptr, SkBlendMode::kDstIn),
+                                          /*dst*/std::move(inner));
             paint->setAlphaf(1.f);
         }
 
         // Check if the once-wrapped color filter affects transparent black *before* we combine
         // it with any original color filter on the paint.
         if (coversDevice) {
+#if defined(SK_LEGACY_LAYER_BOUNDS_EXPANSION)
             *coversDevice = as_CFB(inner)->affectsTransparentBlack();
+#else
+            *coversDevice = false;
+#endif
         }
 
         paint->setColorFilter(SkColorFilters::Compose(paint->refColorFilter(), std::move(inner)));
@@ -1021,18 +1025,41 @@ static const SkImageFilter* optimize_layer_filter(const SkImageFilter* filter, S
     }
 }
 
-// If there is a backdrop filter, or if the restore paint has a color filter that affects
-// transparent black, then the new layer must be sized such that it covers the entire device
+// If there is a backdrop filter, or if the restore paint has a color filter or blend mode that
+// affects transparent black, then the new layer must be sized such that it covers the entire device
 // clip bounds of the prior device (otherwise edges of the temporary layer would be visible).
 // See skbug.com/8783
 static bool must_cover_prior_device(const SkImageFilter* backdrop,
                                     const SkPaint& restorePaint) {
-    // FIXME(michaelludwig) - see skbug.com/12083, once clients do not depend on user bounds for
-    // clipping a layer visually, we can respect the fact that the color filter affects transparent
-    // black and should cover the device.
-    return SkToBool(backdrop); // ||
-           // (restorePaint.getColorFilter() &&
-           // as_CFB(restorePaint.getColorFilter())->affectsTransparentBlack());
+#if defined(SK_LEGACY_LAYER_BOUNDS_EXPANSION)
+    return SkToBool(backdrop);
+#else
+    const SkColorFilter* cf = restorePaint.getColorFilter();
+    if (backdrop || (cf && as_CFB(cf)->affectsTransparentBlack())) {
+        // Backdrop image filters always affect the entire (clip-limited) layer. A color filter
+        // affecting transparent black will colorize pixels that are outside the drawn bounds hint.
+        return true;
+    }
+    // A custom blender is assumed to modify transparent black; some fixed blend modes also modify
+    // transparent black and the whole layer must be used for the same reason as color filters.
+    if (auto blendMode = restorePaint.asBlendMode()) {
+        SkBlendModeCoeff src, dst;
+        if (SkBlendMode_AsCoeff(*blendMode, &src, &dst)) {
+            // If the source is (0,0,0,0), then dst is preserved as long as its coefficient
+            // evaluates to 1.0. This is true for kOne, kISA, and kISC. Anything else means the
+            // blend mode affects transparent black.
+            return dst != SkBlendModeCoeff::kOne &&
+                   dst != SkBlendModeCoeff::kISA &&
+                   dst != SkBlendModeCoeff::kISC;
+        } else {
+            // else an advanced blend mode, which preserve transparent black
+            return false;
+        }
+    } else {
+        // Blenders that aren't blend modes are assumed to modify transparent black.
+        return true;
+    }
+#endif
 }
 
 void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy strategy) {
@@ -1061,6 +1088,10 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
     const SkImageFilter* filter = optimize_layer_filter(
             rec.fPaint ? rec.fPaint->getImageFilter() : nullptr, &restorePaint,
             &optimizedCFAffectsTransparent);
+
+#if !defined(SK_LEGACY_LAYER_BOUNDS_EXPANSION)
+    SkASSERT(!optimizedCFAffectsTransparent); // shouldn't be needed by new code
+#endif
 
     // Size the new layer relative to the prior device, which may already be aligned for filters.
     SkBaseDevice* priorDevice = this->topDevice();
@@ -1183,7 +1214,7 @@ void SkCanvas::internalSaveBehind(const SkRect* localBounds) {
     // a client, and the drawClippedToSaveBehind below). Since this is not saving a layer, with its
     // own device, we need to explicitly copy the back image contents so that its original content
     // is available when we splat it back later during restore.
-    auto backImage = device->snapSpecial(devBounds, /* copy */ true);
+    auto backImage = device->snapSpecial(devBounds, /* forceCopy= */ true);
     if (!backImage) {
         return;
     }
@@ -2346,7 +2377,7 @@ void SkCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
 }
 
 void SkCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
-    SkRect bounds = glyphRunList.sourceBounds();
+    SkRect bounds = glyphRunList.sourceBoundsWithOrigin();
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }
@@ -2367,7 +2398,7 @@ sk_sp<Slug> SkCanvas::convertBlobToSlug(
 sk_sp<Slug>
 SkCanvas::onConvertGlyphRunListToSlug(
         const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
-    SkRect bounds = glyphRunList.sourceBounds();
+    SkRect bounds = glyphRunList.sourceBoundsWithOrigin();
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
         return nullptr;
     }
@@ -2386,7 +2417,7 @@ void SkCanvas::drawSlug(const Slug* slug) {
 }
 
 void SkCanvas::onDrawSlug(const Slug* slug) {
-    SkRect bounds = slug->sourceBounds();
+    SkRect bounds = slug->sourceBoundsWithOrigin();
     if (this->internalQuickReject(bounds, slug->initialPaint())) {
         return;
     }
@@ -2426,8 +2457,9 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID* glyphs, const SkPoint* pos
             SkSpan(clusters, count),
             SkSpan<SkVector>()
     };
+
     sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
-            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
+            glyphRun, paint, origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2443,8 +2475,9 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint pos
         SkSpan<const uint32_t>(),
         SkSpan<SkVector>()
     };
+
     sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
-            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
+            glyphRun, paint, origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2464,7 +2497,7 @@ void SkCanvas::drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform x
             rotateScales
     };
     sktext::GlyphRunList glyphRunList = fScratchGlyphRunBuilder->makeGlyphRunList(
-            glyphRun, glyphRun.sourceBounds(paint).makeOffset(origin), origin);
+            glyphRun, paint, origin);
     this->onDrawGlyphRunList(glyphRunList, paint);
 }
 
@@ -2907,7 +2940,7 @@ SkTestCanvas<SkSlugTestKey>::SkTestCanvas(SkCanvas* canvas)
 
 void SkTestCanvas<SkSlugTestKey>::onDrawGlyphRunList(
         const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
-    SkRect bounds = glyphRunList.sourceBounds();
+    SkRect bounds = glyphRunList.sourceBoundsWithOrigin();
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }

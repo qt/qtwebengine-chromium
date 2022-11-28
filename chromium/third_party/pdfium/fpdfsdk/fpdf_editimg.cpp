@@ -17,6 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/render/cpdf_imagerenderer.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
@@ -234,7 +235,8 @@ FPDFImageObj_GetRenderedBitmap(FPDF_DOCUMENT document,
   // Set up all the rendering code.
   RetainPtr<CPDF_Dictionary> page_resources =
       optional_page ? optional_page->GetMutablePageResources() : nullptr;
-  CPDF_RenderContext context(doc, page_resources.Get(), /*pPageCache=*/nullptr);
+  CPDF_RenderContext context(doc, std::move(page_resources),
+                             /*pPageCache=*/nullptr);
   CFX_DefaultRenderDevice device;
   device.Attach(result_bitmap);
   CPDF_RenderStatus status(&context, &device);
@@ -255,6 +257,11 @@ FPDFImageObj_GetRenderedBitmap(FPDF_DOCUMENT document,
   if (!renderer.GetResult())
     return nullptr;
 
+#if defined(_SKIA_SUPPORT_)
+  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+    result_bitmap->UnPreMultiply();
+#endif
+
   // Caller takes ownership.
   return FPDFBitmapFromCFXDIBitmap(result_bitmap.Leak());
 }
@@ -271,11 +278,11 @@ FPDFImageObj_GetImageDataDecoded(FPDF_PAGEOBJECT image_object,
   if (!pImg)
     return 0;
 
-  const CPDF_Stream* pImgStream = pImg->GetStream();
+  RetainPtr<const CPDF_Stream> pImgStream = pImg->GetStream();
   if (!pImgStream)
     return 0;
 
-  return DecodeStreamMaybeCopyAndReturnLength(pImgStream, buffer, buflen);
+  return DecodeStreamMaybeCopyAndReturnLength(pImgStream.Get(), buffer, buflen);
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
@@ -290,11 +297,11 @@ FPDFImageObj_GetImageDataRaw(FPDF_PAGEOBJECT image_object,
   if (!pImg)
     return 0;
 
-  const CPDF_Stream* pImgStream = pImg->GetStream();
+  RetainPtr<const CPDF_Stream> pImgStream = pImg->GetStream();
   if (!pImgStream)
     return 0;
 
-  return GetRawStreamMaybeCopyAndReturnLength(pImgStream, buffer, buflen);
+  return GetRawStreamMaybeCopyAndReturnLength(pImgStream.Get(), buffer, buflen);
 }
 
 FPDF_EXPORT int FPDF_CALLCONV
@@ -307,9 +314,11 @@ FPDFImageObj_GetImageFilterCount(FPDF_PAGEOBJECT image_object) {
   if (!pImg)
     return 0;
 
-  const CPDF_Dictionary* pDict = pImg->GetDict();
-  const CPDF_Object* pFilter =
-      pDict ? pDict->GetDirectObjectFor("Filter") : nullptr;
+  RetainPtr<const CPDF_Dictionary> pDict = pImg->GetDict();
+  if (!pDict)
+    return 0;
+
+  RetainPtr<const CPDF_Object> pFilter = pDict->GetDirectObjectFor("Filter");
   if (!pFilter)
     return 0;
 
@@ -331,11 +340,12 @@ FPDFImageObj_GetImageFilter(FPDF_PAGEOBJECT image_object,
     return 0;
 
   CPDF_PageObject* pObj = CPDFPageObjectFromFPDFPageObject(image_object);
-  const CPDF_Dictionary* pDict = pObj->AsImage()->GetImage()->GetDict();
-  const CPDF_Object* pFilter = pDict->GetDirectObjectFor("Filter");
+  RetainPtr<const CPDF_Dictionary> pDict =
+      pObj->AsImage()->GetImage()->GetDict();
+  RetainPtr<const CPDF_Object> pFilter = pDict->GetDirectObjectFor("Filter");
   ByteString bsFilter = pFilter->IsName()
                             ? pFilter->AsName()->GetString()
-                            : pFilter->AsArray()->GetStringAt(index);
+                            : pFilter->AsArray()->GetByteStringAt(index);
 
   return NulTerminateMaybeCopyAndReturnLength(bsFilter, buffer, buflen);
 }
@@ -381,7 +391,7 @@ FPDFImageObj_GetImageMetadata(FPDF_PAGEOBJECT image_object,
 
   RetainPtr<CPDF_DIB> pSource = pImg->CreateNewDIB();
   CPDF_DIB::LoadState ret = pSource->StartLoadDIBBase(
-      false, nullptr, pPage->GetPageResources(), false,
+      false, nullptr, pPage->GetPageResources().Get(), false,
       CPDF_ColorSpace::Family::kUnknown, false);
   if (ret == CPDF_DIB::LoadState::kFail)
     return true;

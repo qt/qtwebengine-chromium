@@ -190,9 +190,9 @@ static inline void dct_get(ASV1Context *a, const AVFrame *frame,
     int linesize = frame->linesize[0];
     int i;
 
-    uint8_t *ptr_y  = frame->data[0] + (mb_y * 16 * linesize)           + mb_x * 16;
-    uint8_t *ptr_cb = frame->data[1] + (mb_y *  8 * frame->linesize[1]) + mb_x *  8;
-    uint8_t *ptr_cr = frame->data[2] + (mb_y *  8 * frame->linesize[2]) + mb_x *  8;
+    const uint8_t *ptr_y  = frame->data[0] + (mb_y * 16 * linesize)           + mb_x * 16;
+    const uint8_t *ptr_cb = frame->data[1] + (mb_y *  8 * frame->linesize[1]) + mb_x *  8;
+    const uint8_t *ptr_cr = frame->data[2] + (mb_y *  8 * frame->linesize[2]) + mb_x *  8;
 
     a->pdsp.get_pixels(block[0], ptr_y,                    linesize);
     a->pdsp.get_pixels(block[1], ptr_y + 8,                linesize);
@@ -345,9 +345,10 @@ static av_cold int encode_init(AVCodecContext *avctx)
 #if CONFIG_ASV1_ENCODER
 const FFCodec ff_asv1_encoder = {
     .p.name         = "asv1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("ASUS V1"),
+    CODEC_LONG_NAME("ASUS V1"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_ASV1,
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(ASV1Context),
     .init           = encode_init,
     FF_CODEC_ENCODE_CB(encode_frame),
@@ -359,9 +360,10 @@ const FFCodec ff_asv1_encoder = {
 #if CONFIG_ASV2_ENCODER
 const FFCodec ff_asv2_encoder = {
     .p.name         = "asv2",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("ASUS V2"),
+    CODEC_LONG_NAME("ASUS V2"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_ASV2,
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(ASV1Context),
     .init           = encode_init,
     FF_CODEC_ENCODE_CB(encode_frame),

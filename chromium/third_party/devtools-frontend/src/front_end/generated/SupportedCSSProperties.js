@@ -2236,9 +2236,6 @@ export const generatedProperties = [
   "name": "max-width"
  },
  {
-  "name": "max-zoom"
- },
- {
   "name": "min-block-size"
  },
  {
@@ -2249,9 +2246,6 @@ export const generatedProperties = [
  },
  {
   "name": "min-width"
- },
- {
-  "name": "min-zoom"
  },
  {
   "keywords": [
@@ -2340,9 +2334,6 @@ export const generatedProperties = [
  },
  {
   "name": "order"
- },
- {
-  "name": "orientation"
  },
  {
   "keywords": [
@@ -2629,12 +2620,6 @@ export const generatedProperties = [
   "name": "pointer-events"
  },
  {
-  "name": "pop-up-hide-delay"
- },
- {
-  "name": "pop-up-show-delay"
- },
- {
   "keywords": [
    "static",
    "relative",
@@ -2868,6 +2853,25 @@ export const generatedProperties = [
    "proximity"
   ],
   "name": "scroll-snap-type"
+ },
+ {
+  "longhands": [
+   "scroll-timeline-axis",
+   "scroll-timeline-name"
+  ],
+  "name": "scroll-timeline"
+ },
+ {
+  "keywords": [
+   "block",
+   "inline",
+   "vertical",
+   "horizontal"
+  ],
+  "name": "scroll-timeline-axis"
+ },
+ {
+  "name": "scroll-timeline-name"
  },
  {
   "inherited": false,
@@ -3147,16 +3151,6 @@ export const generatedProperties = [
  {
   "inherited": true,
   "keywords": [
-   "auto",
-   "none",
-   "inter-word",
-   "distribute"
-  ],
-  "name": "text-justify"
- },
- {
-  "inherited": true,
-  "keywords": [
    "sideways",
    "mixed",
    "upright"
@@ -3358,9 +3352,6 @@ export const generatedProperties = [
   "name": "user-select"
  },
  {
-  "name": "user-zoom"
- },
- {
   "keywords": [
    "none",
    "non-scaling-stroke"
@@ -3379,7 +3370,20 @@ export const generatedProperties = [
   "name": "vertical-align"
  },
  {
-  "name": "viewport-fit"
+  "longhands": [
+   "view-timeline-name",
+   "view-timeline-axis"
+  ],
+  "name": "view-timeline"
+ },
+ {
+  "name": "view-timeline-axis"
+ },
+ {
+  "name": "view-timeline-inset"
+ },
+ {
+  "name": "view-timeline-name"
  },
  {
   "inherited": true,
@@ -4938,6 +4942,14 @@ export const generatedPropertyValues = {
    "proximity"
   ]
  },
+ "scroll-timeline-axis": {
+  "values": [
+   "block",
+   "inline",
+   "vertical",
+   "horizontal"
+  ]
+ },
  "scrollbar-gutter": {
   "values": [
    "auto",
@@ -5087,14 +5099,6 @@ export const generatedPropertyValues = {
  "text-emphasis-color": {
   "values": [
    "currentcolor"
-  ]
- },
- "text-justify": {
-  "values": [
-   "auto",
-   "none",
-   "inter-word",
-   "distribute"
   ]
  },
  "text-orientation": {

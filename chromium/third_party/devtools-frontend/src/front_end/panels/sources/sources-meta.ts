@@ -7,6 +7,7 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as QuickOpen from '../../ui/legacy/components/quick_open/quick_open.js';
@@ -1704,6 +1705,19 @@ Common.Revealer.registerRevealer({
   },
 });
 
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return [
+      Bindings.BreakpointManager.BreakpointLocation,
+    ];
+  },
+  destination: Common.Revealer.RevealerDestination.SOURCES_PANEL,
+  async loadRevealer() {
+    const Sources = await loadSourcesModule();
+    return Sources.DebuggerPlugin.BreakpointLocationRevealer.instance();
+  },
+});
+
 UI.Toolbar.registerToolbarItem({
   actionId: 'sources.add-folder-to-workspace',
   location: UI.Toolbar.ToolbarItemLocation.FILES_NAVIGATION_TOOLBAR,
@@ -1730,7 +1744,7 @@ UI.Context.registerListener({
   },
   async loadListener() {
     const Sources = await loadSourcesModule();
-    return Sources.JavaScriptBreakpointsSidebarPane.JavaScriptBreakpointsSidebarPane.instance();
+    return Sources.BreakpointsSidebarPane.BreakpointsSidebarController.instance();
   },
 });
 

@@ -12,13 +12,13 @@ $assert BATCH_TILE >= 1
 
 
 void xnn_f32_f16_vcvt_ukernel__scalar_bitcast_x${BATCH_TILE}(
-    size_t n,
+    size_t batch,
     const float* input,
     void* output,
     const union xnn_f32_f16_cvt_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
@@ -34,8 +34,42 @@ void xnn_f32_f16_vcvt_ukernel__scalar_bitcast_x${BATCH_TILE}(
 
   const uint32_t* i = (const uint32_t*) input;
   uint16_t* o = (uint16_t*) output;
-  $if BATCH_TILE > 1:
-    for (; n >= ${BATCH_TILE} * sizeof(float); n -= ${BATCH_TILE} * sizeof(float)) {
+  $if BATCH_TILE == 1:
+    do {
+      const uint32_t vw = *i++;
+
+      const uint32_t vnonsignw = vw & vnonsign_mask;
+
+      float vf = uint32_as_float(vnonsignw);
+      const uint32_t vsignw = vw ^ vnonsignw;
+      uint32_t vbias = vnonsignw + vexp_bias;
+
+      vf *= vscale_to_inf;
+      vbias &= vexpw_max;
+
+      vf *= vscale_to_zero;
+      vbias = math_max_u32(vbias, vbias_min);
+
+      vf += uint32_as_float(vbias);
+
+      const uint32_t vbits = float_as_uint32(vf);
+
+      const uint16_t vexph = (uint16_t) (vbits >> 13) & vexph_mask;
+      const uint16_t vmanth = (uint16_t) vbits & vmanth_mask;
+      const uint16_t vsignh = (uint16_t) (vsignw >> 16);
+
+      uint16_t vh = vexph + vmanth;
+      if XNN_UNPREDICTABLE(vnonsignw > vexpw_max) {
+        vh = vnanh;
+      }
+      vh |= vsignh;
+
+      *o++ = vh;
+
+      batch -= sizeof(float);
+    } while (batch != 0);
+  $else:
+    for (; batch >= ${BATCH_TILE} * sizeof(float); batch -= ${BATCH_TILE} * sizeof(float)) {
       $for N in range(BATCH_TILE):
         const uint32_t vw${N} = i[${N}];
       i += ${BATCH_TILE};
@@ -86,76 +120,9 @@ void xnn_f32_f16_vcvt_ukernel__scalar_bitcast_x${BATCH_TILE}(
         o[${N}] = vh${N};
       o += ${BATCH_TILE};
     }
-  $if BATCH_TILE == 1:
-    do {
-      const uint32_t vw = *i++;
-
-      const uint32_t vnonsignw = vw & vnonsign_mask;
-
-      float vf = uint32_as_float(vnonsignw);
-      const uint32_t vsignw = vw ^ vnonsignw;
-      uint32_t vbias = vnonsignw + vexp_bias;
-
-      vf *= vscale_to_inf;
-      vbias &= vexpw_max;
-
-      vf *= vscale_to_zero;
-      vbias = math_max_u32(vbias, vbias_min);
-
-      vf += uint32_as_float(vbias);
-
-      const uint32_t vbits = float_as_uint32(vf);
-
-      const uint16_t vexph = (uint16_t) (vbits >> 13) & vexph_mask;
-      const uint16_t vmanth = (uint16_t) vbits & vmanth_mask;
-      const uint16_t vsignh = (uint16_t) (vsignw >> 16);
-
-      uint16_t vh = vexph + vmanth;
-      if XNN_UNPREDICTABLE(vnonsignw > vexpw_max) {
-        vh = vnanh;
-      }
-      vh |= vsignh;
-
-      *o++ = vh;
-
-      n -= sizeof(float);
-    } while (n != 0);
-  $elif BATCH_TILE == 2:
-    if XNN_UNLIKELY(n != 0) {
-      const uint32_t vw = *i;
-
-      const uint32_t vnonsignw = vw & vnonsign_mask;
-
-      float vf = uint32_as_float(vnonsignw);
-      const uint32_t vsignw = vw ^ vnonsignw;
-      uint32_t vbias = vnonsignw + vexp_bias;
-
-      vf *= vscale_to_inf;
-      vbias &= vexpw_max;
-
-      vf *= vscale_to_zero;
-      vbias = math_max_u32(vbias, vbias_min);
-
-      vf += uint32_as_float(vbias);
-
-      const uint32_t vbits = float_as_uint32(vf);
-
-      const uint16_t vexph = (uint16_t) (vbits >> 13) & vexph_mask;
-      const uint16_t vmanth = (uint16_t) vbits & vmanth_mask;
-      const uint16_t vsignh = (uint16_t) (vsignw >> 16);
-
-      uint16_t vh = vexph + vmanth;
-      if XNN_UNPREDICTABLE(vnonsignw > vexpw_max) {
-        vh = vnanh;
-      }
-      vh |= vsignh;
-
-      *o = vh;
-    }
-  $else:
-    if XNN_UNLIKELY(n != 0) {
-      do {
-        const uint32_t vw = *i++;
+    $if BATCH_TILE == 2:
+      if XNN_UNLIKELY(batch != 0) {
+        const uint32_t vw = *i;
 
         const uint32_t vnonsignw = vw & vnonsign_mask;
 
@@ -183,9 +150,42 @@ void xnn_f32_f16_vcvt_ukernel__scalar_bitcast_x${BATCH_TILE}(
         }
         vh |= vsignh;
 
-        *o++ = vh;
+        *o = vh;
+      }
+    $else:
+      if XNN_UNLIKELY(batch != 0) {
+        do {
+          const uint32_t vw = *i++;
 
-        n -= sizeof(float);
-      } while (n != 0);
-    }
+          const uint32_t vnonsignw = vw & vnonsign_mask;
+
+          float vf = uint32_as_float(vnonsignw);
+          const uint32_t vsignw = vw ^ vnonsignw;
+          uint32_t vbias = vnonsignw + vexp_bias;
+
+          vf *= vscale_to_inf;
+          vbias &= vexpw_max;
+
+          vf *= vscale_to_zero;
+          vbias = math_max_u32(vbias, vbias_min);
+
+          vf += uint32_as_float(vbias);
+
+          const uint32_t vbits = float_as_uint32(vf);
+
+          const uint16_t vexph = (uint16_t) (vbits >> 13) & vexph_mask;
+          const uint16_t vmanth = (uint16_t) vbits & vmanth_mask;
+          const uint16_t vsignh = (uint16_t) (vsignw >> 16);
+
+          uint16_t vh = vexph + vmanth;
+          if XNN_UNPREDICTABLE(vnonsignw > vexpw_max) {
+            vh = vnanh;
+          }
+          vh |= vsignh;
+
+          *o++ = vh;
+
+          batch -= sizeof(float);
+        } while (batch != 0);
+      }
 }

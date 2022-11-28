@@ -180,15 +180,16 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::FindFontSameCharset(ByteString* sFontAlias,
   if (!pRootDict)
     return nullptr;
 
-  const CPDF_Dictionary* pAcroFormDict = pRootDict->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> pAcroFormDict =
+      pRootDict->GetDictFor("AcroForm");
   if (!pAcroFormDict)
     return nullptr;
 
-  const CPDF_Dictionary* pDRDict = pAcroFormDict->GetDictFor("DR");
+  RetainPtr<const CPDF_Dictionary> pDRDict = pAcroFormDict->GetDictFor("DR");
   if (!pDRDict)
     return nullptr;
 
-  return FindResFontSameCharset(pDRDict, sFontAlias, nCharset);
+  return FindResFontSameCharset(pDRDict.Get(), sFontAlias, nCharset);
 }
 
 RetainPtr<CPDF_Font> CPDF_BAFontMap::FindResFontSameCharset(
@@ -198,7 +199,7 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::FindResFontSameCharset(
   if (!pResDict)
     return nullptr;
 
-  const CPDF_Dictionary* pFonts = pResDict->GetDictFor("Font");
+  RetainPtr<const CPDF_Dictionary> pFonts = pResDict->GetDictFor("Font");
   if (!pFonts)
     return nullptr;
 
@@ -237,13 +238,13 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::GetAnnotDefaultFont(ByteString* sAlias) {
 
   ByteString sDA;
   const CPDF_Object* pObj =
-      CPDF_FormField::GetFieldAttr(m_pAnnotDict.Get(), "DA");
+      CPDF_FormField::GetFieldAttrForDict(m_pAnnotDict.Get(), "DA");
   if (pObj)
     sDA = pObj->GetString();
 
   if (bWidget) {
     if (sDA.IsEmpty()) {
-      pObj = CPDF_FormField::GetFieldAttr(pAcroFormDict.Get(), "DA");
+      pObj = CPDF_FormField::GetFieldAttrForDict(pAcroFormDict.Get(), "DA");
       sDA = pObj ? pObj->GetString() : ByteString();
     }
   }
@@ -305,9 +306,8 @@ void CPDF_BAFontMap::AddFontToAnnotDict(const RetainPtr<CPDF_Font>& pFont,
 
   RetainPtr<CPDF_Dictionary> pStreamDict = pStream->GetMutableDict();
   if (!pStreamDict) {
-    auto pOwnedDict = m_pDocument->New<CPDF_Dictionary>();
-    pStreamDict = pOwnedDict.Get();
-    pStream->InitStream({}, std::move(pOwnedDict));
+    pStreamDict = m_pDocument->New<CPDF_Dictionary>();
+    pStream->InitStream({}, pStreamDict);
   }
 
   RetainPtr<CPDF_Dictionary> pStreamResList =
@@ -320,7 +320,7 @@ void CPDF_BAFontMap::AddFontToAnnotDict(const RetainPtr<CPDF_Font>& pFont,
                                               pStreamResFontList->GetObjNum());
   }
   if (!pStreamResFontList->KeyExist(sAlias)) {
-    const CPDF_Dictionary* pFontDict = pFont->GetFontDict();
+    RetainPtr<const CPDF_Dictionary> pFontDict = pFont->GetFontDict();
     RetainPtr<CPDF_Object> pObject =
         pFontDict->IsInline() ? pFontDict->Clone()
                               : pFontDict->MakeReference(m_pDocument.Get());

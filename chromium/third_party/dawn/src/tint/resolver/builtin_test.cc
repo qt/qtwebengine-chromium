@@ -67,7 +67,9 @@ TEST_F(ResolverBuiltinTest, ModuleScopeUsage) {
 
     // TODO(crbug.com/tint/1581): Once 'abs' is implemented as @const, this will no longer be an
     // error.
-    EXPECT_EQ(r()->error(), R"(12:34 error: 'const' initializer must be constant expression)");
+    EXPECT_EQ(
+        r()->error(),
+        R"(12:34 error: const initializer requires a const-expression, but expression is a runtime-expression)");
 }
 
 // Tests for Logical builtins
@@ -78,7 +80,7 @@ using ResolverBuiltinTest_BoolMethod = ResolverTestWithParam<std::string>;
 TEST_P(ResolverBuiltinTest_BoolMethod, Scalar) {
     auto name = GetParam();
 
-    GlobalVar("my_var", ty.bool_(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.bool_(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "my_var");
     WrapInFunction(expr);
@@ -91,7 +93,7 @@ TEST_P(ResolverBuiltinTest_BoolMethod, Scalar) {
 TEST_P(ResolverBuiltinTest_BoolMethod, Vector) {
     auto name = GetParam();
 
-    GlobalVar("my_var", ty.vec3<bool>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<bool>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "my_var");
     WrapInFunction(expr);
@@ -106,9 +108,9 @@ INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          testing::Values("any", "all"));
 
 TEST_F(ResolverBuiltinTest, Select) {
-    GlobalVar("my_var", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
-    GlobalVar("bool_var", ty.vec3<bool>(), ast::StorageClass::kPrivate);
+    GlobalVar("bool_var", ty.vec3<bool>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call("select", "my_var", "my_var", "bool_var");
     WrapInFunction(expr);
@@ -131,9 +133,9 @@ TEST_F(ResolverBuiltinTest, Select_Error_NoParams) {
               R"(error: no matching call to select()
 
 3 candidate functions:
-  select(T, T, bool) -> T  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
+  select(T, T, bool) -> T  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
 )");
 }
 
@@ -147,9 +149,9 @@ TEST_F(ResolverBuiltinTest, Select_Error_SelectorInt) {
               R"(error: no matching call to select(i32, i32, i32)
 
 3 candidate functions:
-  select(T, T, bool) -> T  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
+  select(T, T, bool) -> T  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
 )");
 }
 
@@ -164,9 +166,9 @@ TEST_F(ResolverBuiltinTest, Select_Error_Matrix) {
               R"(error: no matching call to select(mat2x2<f32>, mat2x2<f32>, bool)
 
 3 candidate functions:
-  select(T, T, bool) -> T  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
+  select(T, T, bool) -> T  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
 )");
 }
 
@@ -180,9 +182,9 @@ TEST_F(ResolverBuiltinTest, Select_Error_MismatchTypes) {
               R"(error: no matching call to select(f32, vec2<f32>, bool)
 
 3 candidate functions:
-  select(T, T, bool) -> T  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
+  select(T, T, bool) -> T  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
 )");
 }
 
@@ -196,9 +198,9 @@ TEST_F(ResolverBuiltinTest, Select_Error_MismatchVectorSize) {
               R"(error: no matching call to select(vec2<f32>, vec3<f32>, bool)
 
 3 candidate functions:
-  select(T, T, bool) -> T  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
-  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is f32, f16, i32, u32 or bool
+  select(T, T, bool) -> T  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, bool) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
+  select(vecN<T>, vecN<T>, vecN<bool>) -> vecN<T>  where: T is abstract-int, abstract-float, f32, f16, i32, u32 or bool
 )");
 }
 
@@ -212,11 +214,8 @@ using ResolverBuiltinArrayTest = ResolverTest;
 TEST_F(ResolverBuiltinArrayTest, ArrayLength_Vector) {
     auto* ary = ty.array<i32>();
     auto* str = Structure("S", utils::Vector{Member("x", ary)});
-    GlobalVar("a", ty.Of(str), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("a", ty.Of(str), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     auto* call = Call("arrayLength", AddressOf(MemberAccessor("a", "x")));
     WrapInFunction(call);
@@ -228,7 +227,7 @@ TEST_F(ResolverBuiltinArrayTest, ArrayLength_Vector) {
 }
 
 TEST_F(ResolverBuiltinArrayTest, ArrayLength_Error_ArraySized) {
-    GlobalVar("arr", ty.array<i32, 4>(), ast::StorageClass::kPrivate);
+    GlobalVar("arr", ty.array<i32, 4>(), ast::AddressSpace::kPrivate);
     auto* call = Call("arrayLength", AddressOf("arr"));
     WrapInFunction(call);
 
@@ -1032,7 +1031,7 @@ TEST_F(ResolverBuiltinFloatTest, FrexpVector_f16) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
-    GlobalVar("v", ty.i32(), ast::StorageClass::kWorkgroup);
+    GlobalVar("v", ty.i32(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("frexp", 1_i, AddressOf("v"));
     WrapInFunction(call);
 
@@ -1048,7 +1047,7 @@ TEST_F(ResolverBuiltinFloatTest, Frexp_Error_FirstParamInt) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamFloatPtr) {
-    GlobalVar("v", ty.f32(), ast::StorageClass::kWorkgroup);
+    GlobalVar("v", ty.f32(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("frexp", 1_f, AddressOf("v"));
     WrapInFunction(call);
 
@@ -1078,7 +1077,7 @@ TEST_F(ResolverBuiltinFloatTest, Frexp_Error_SecondParamNotAPointer) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Frexp_Error_VectorSizesDontMatch) {
-    GlobalVar("v", ty.vec4<i32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("v", ty.vec4<i32>(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("frexp", vec2<f32>(1_f, 2_f), AddressOf("v"));
     WrapInFunction(call);
 
@@ -1327,7 +1326,7 @@ TEST_F(ResolverBuiltinFloatTest, ModfVector_f16) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
-    GlobalVar("whole", ty.f32(), ast::StorageClass::kWorkgroup);
+    GlobalVar("whole", ty.f32(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("modf", 1_i, AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1343,7 +1342,7 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_FirstParamInt) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamIntPtr) {
-    GlobalVar("whole", ty.i32(), ast::StorageClass::kWorkgroup);
+    GlobalVar("whole", ty.i32(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("modf", 1_f, AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1373,7 +1372,7 @@ TEST_F(ResolverBuiltinFloatTest, Modf_Error_SecondParamNotAPointer) {
 }
 
 TEST_F(ResolverBuiltinFloatTest, Modf_Error_VectorSizesDontMatch) {
-    GlobalVar("whole", ty.vec4<f32>(), ast::StorageClass::kWorkgroup);
+    GlobalVar("whole", ty.vec4<f32>(), ast::AddressSpace::kWorkgroup);
     auto* call = Call("modf", vec2<f32>(1_f, 2_f), AddressOf("whole"));
     WrapInFunction(call);
 
@@ -1853,7 +1852,7 @@ INSTANTIATE_TEST_SUITE_P(
 namespace matrix_builtin_tests {
 
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
-    GlobalVar("var", ty.mat2x2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat2x2<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1867,7 +1866,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f32) {
 TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
     Enable(ast::Extension::kF16);
 
-    GlobalVar("var", ty.mat2x2<f16>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat2x2<f16>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1879,7 +1878,7 @@ TEST_F(ResolverBuiltinTest, Determinant_2x2_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
-    GlobalVar("var", ty.mat3x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat3x3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1893,7 +1892,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f32) {
 TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
     Enable(ast::Extension::kF16);
 
-    GlobalVar("var", ty.mat3x3<f16>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat3x3<f16>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1905,7 +1904,7 @@ TEST_F(ResolverBuiltinTest, Determinant_3x3_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
-    GlobalVar("var", ty.mat4x4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat4x4<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1919,7 +1918,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f32) {
 TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
     Enable(ast::Extension::kF16);
 
-    GlobalVar("var", ty.mat4x4<f16>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat4x4<f16>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1931,7 +1930,7 @@ TEST_F(ResolverBuiltinTest, Determinant_4x4_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
-    GlobalVar("var", ty.mat2x3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.mat2x3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1946,7 +1945,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotSquare) {
 }
 
 TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
-    GlobalVar("var", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("var", ty.f32(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("determinant", "var");
     WrapInFunction(call);
@@ -1966,7 +1965,7 @@ TEST_F(ResolverBuiltinTest, Determinant_NotMatrix) {
 namespace vector_builtin_tests {
 
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
-    GlobalVar("my_var", ty.vec2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -1980,7 +1979,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f32) {
 TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
     Enable(ast::Extension::kF16);
 
-    GlobalVar("my_var", ty.vec2<f16>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec2<f16>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -1992,7 +1991,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec2_f16) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
-    GlobalVar("my_var", ty.vec3<i32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -2004,7 +2003,7 @@ TEST_F(ResolverBuiltinTest, Dot_Vec3_i32) {
 }
 
 TEST_F(ResolverBuiltinTest, Dot_Vec4_u32) {
-    GlobalVar("my_var", ty.vec4<u32>(), ast::StorageClass::kPrivate);
+    GlobalVar("my_var", ty.vec4<u32>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call("dot", "my_var", "my_var");
     WrapInFunction(expr);
@@ -2039,7 +2038,7 @@ using ResolverBuiltinDerivativeTest = ResolverTestWithParam<std::string>;
 TEST_P(ResolverBuiltinDerivativeTest, Scalar) {
     auto name = GetParam();
 
-    GlobalVar("ident", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("ident", ty.f32(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "ident");
     Func("func", utils::Empty, ty.void_(), utils::Vector{Ignore(expr)},
@@ -2053,7 +2052,7 @@ TEST_P(ResolverBuiltinDerivativeTest, Scalar) {
 
 TEST_P(ResolverBuiltinDerivativeTest, Vector) {
     auto name = GetParam();
-    GlobalVar("ident", ty.vec4<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("ident", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
 
     auto* expr = Call(name, "ident");
     Func("func", utils::Empty, ty.void_(), utils::Vector{Ignore(expr)},
@@ -2146,14 +2145,10 @@ class ResolverBuiltinTest_TextureOperation : public ResolverTestWithParam<Textur
 
     void add_call_param(std::string name, const ast::Type* type, ExpressionList* call_params) {
         if (type->IsAnyOf<ast::Texture, ast::Sampler>()) {
-            GlobalVar(name, type,
-                      utils::Vector{
-                          create<ast::BindingAttribute>(0u),
-                          create<ast::GroupAttribute>(0u),
-                      });
+            GlobalVar(name, type, Binding(0_a), Group(0_a));
 
         } else {
-            GlobalVar(name, type, ast::StorageClass::kPrivate);
+            GlobalVar(name, type, ast::AddressSpace::kPrivate);
         }
 
         call_params->Push(Expr(name));
@@ -2579,7 +2574,7 @@ TEST_P(ResolverBuiltinTest_DataPacking, InferType) {
     auto param = GetParam();
 
     bool pack4 =
-        param.builtin == BuiltinType::kPack4x8snorm || param.builtin == BuiltinType::kPack4x8unorm;
+        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<f32>(1_f, 2_f, 3_f, 4_f))
                        : Call(param.name, vec2<f32>(1_f, 2_f));
@@ -2594,7 +2589,7 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_IncorrectParamType) {
     auto param = GetParam();
 
     bool pack4 =
-        param.builtin == BuiltinType::kPack4x8snorm || param.builtin == BuiltinType::kPack4x8unorm;
+        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<i32>(1_i, 2_i, 3_i, 4_i))
                        : Call(param.name, vec2<i32>(1_i, 2_i));
@@ -2620,7 +2615,7 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
     auto param = GetParam();
 
     bool pack4 =
-        param.builtin == BuiltinType::kPack4x8snorm || param.builtin == BuiltinType::kPack4x8unorm;
+        param.builtin == BuiltinType::kPack4X8Snorm || param.builtin == BuiltinType::kPack4X8Unorm;
 
     auto* call = pack4 ? Call(param.name, vec4<f32>(1_f, 2_f, 3_f, 4_f), 1_f)
                        : Call(param.name, vec2<f32>(1_f, 2_f), 1_f);
@@ -2633,12 +2628,12 @@ TEST_P(ResolverBuiltinTest_DataPacking, Error_TooManyParams) {
 
 INSTANTIATE_TEST_SUITE_P(ResolverTest,
                          ResolverBuiltinTest_DataPacking,
-                         testing::Values(BuiltinData{"pack4x8snorm", BuiltinType::kPack4x8snorm},
-                                         BuiltinData{"pack4x8unorm", BuiltinType::kPack4x8unorm},
-                                         BuiltinData{"pack2x16snorm", BuiltinType::kPack2x16snorm},
-                                         BuiltinData{"pack2x16unorm", BuiltinType::kPack2x16unorm},
+                         testing::Values(BuiltinData{"pack4x8snorm", BuiltinType::kPack4X8Snorm},
+                                         BuiltinData{"pack4x8unorm", BuiltinType::kPack4X8Unorm},
+                                         BuiltinData{"pack2x16snorm", BuiltinType::kPack2X16Snorm},
+                                         BuiltinData{"pack2x16unorm", BuiltinType::kPack2X16Unorm},
                                          BuiltinData{"pack2x16float",
-                                                     BuiltinType::kPack2x16float}));
+                                                     BuiltinType::kPack2X16Float}));
 
 }  // namespace data_packing_builtin_tests
 
@@ -2649,8 +2644,8 @@ using ResolverBuiltinTest_DataUnpacking = ResolverTestWithParam<BuiltinData>;
 TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
     auto param = GetParam();
 
-    bool pack4 = param.builtin == BuiltinType::kUnpack4x8snorm ||
-                 param.builtin == BuiltinType::kUnpack4x8unorm;
+    bool pack4 = param.builtin == BuiltinType::kUnpack4X8Snorm ||
+                 param.builtin == BuiltinType::kUnpack4X8Unorm;
 
     auto* call = Call(param.name, 1_u);
     WrapInFunction(call);
@@ -2668,11 +2663,11 @@ TEST_P(ResolverBuiltinTest_DataUnpacking, InferType) {
 INSTANTIATE_TEST_SUITE_P(
     ResolverTest,
     ResolverBuiltinTest_DataUnpacking,
-    testing::Values(BuiltinData{"unpack4x8snorm", BuiltinType::kUnpack4x8snorm},
-                    BuiltinData{"unpack4x8unorm", BuiltinType::kUnpack4x8unorm},
-                    BuiltinData{"unpack2x16snorm", BuiltinType::kUnpack2x16snorm},
-                    BuiltinData{"unpack2x16unorm", BuiltinType::kUnpack2x16unorm},
-                    BuiltinData{"unpack2x16float", BuiltinType::kUnpack2x16float}));
+    testing::Values(BuiltinData{"unpack4x8snorm", BuiltinType::kUnpack4X8Snorm},
+                    BuiltinData{"unpack4x8unorm", BuiltinType::kUnpack4X8Unorm},
+                    BuiltinData{"unpack2x16snorm", BuiltinType::kUnpack2X16Snorm},
+                    BuiltinData{"unpack2x16unorm", BuiltinType::kUnpack2X16Unorm},
+                    BuiltinData{"unpack2x16float", BuiltinType::kUnpack2X16Float}));
 
 }  // namespace data_unpacking_builtin_tests
 

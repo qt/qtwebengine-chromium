@@ -427,9 +427,12 @@ static int get_surface_sample_cnt(GrSurface* surf) {
     return 0;
 }
 
-bool GrD3DGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                   const SkIPoint& dstPoint) {
-
+bool GrD3DGpu::onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                             GrSurface* src, const SkIRect& srcRect,
+                             GrSamplerState::Filter) {
+    if (srcRect.size() != dstRect.size()) {
+        return false;
+    }
     if (src->isProtected() && !dst->isProtected()) {
         SkDebugf("Can't copy from protected memory to non-protected");
         return false;
@@ -460,6 +463,7 @@ bool GrD3DGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcR
     DXGI_FORMAT dstFormat = dstTexResource->dxgiFormat();
     DXGI_FORMAT srcFormat = srcTexResource->dxgiFormat();
 
+    const SkIPoint dstPoint = dstRect.topLeft();
     if (this->d3dCaps().canCopyAsResolve(dstFormat, dstSampleCnt, srcFormat, srcSampleCnt)) {
         this->copySurfaceAsResolve(dst, src, srcRect, dstPoint);
         return true;
@@ -1376,7 +1380,8 @@ GrBackendTexture GrD3DGpu::onCreateBackendTexture(SkISize dimensions,
                                                   const GrBackendFormat& format,
                                                   GrRenderable renderable,
                                                   GrMipmapped mipmapped,
-                                                  GrProtected isProtected) {
+                                                  GrProtected isProtected,
+                                                  std::string_view label) {
     const GrD3DCaps& caps = this->d3dCaps();
 
     if (this->protectedContext() != (isProtected == GrProtected::kYes)) {
@@ -1518,8 +1523,12 @@ bool GrD3DGpu::onClearBackendTexture(const GrBackendTexture& backendTexture,
 GrBackendTexture GrD3DGpu::onCreateCompressedBackendTexture(
     SkISize dimensions, const GrBackendFormat& format, GrMipmapped mipmapped,
     GrProtected isProtected) {
-    return this->onCreateBackendTexture(dimensions, format, GrRenderable::kNo, mipmapped,
-                                        isProtected);
+    return this->onCreateBackendTexture(dimensions,
+                                        format,
+                                        GrRenderable::kNo,
+                                        mipmapped,
+                                        isProtected,
+                                        /*label=*/"D3DGpu_CreateCompressedBackendTexture");
 }
 
 bool GrD3DGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendTexture,
@@ -1670,7 +1679,7 @@ void GrD3DGpu::testingOnly_startCapture() {
     }
 }
 
-void GrD3DGpu::testingOnly_endCapture() {
+void GrD3DGpu::testingOnly_stopCapture() {
     if (fGraphicsAnalysis) {
         fGraphicsAnalysis->EndCapture();
     }
@@ -1702,7 +1711,7 @@ void GrD3DGpu::addBufferResourceBarriers(GrD3DBuffer* buffer,
 void GrD3DGpu::prepareSurfacesForBackendAccessAndStateUpdates(
         SkSpan<GrSurfaceProxy*> proxies,
         SkSurface::BackendSurfaceAccess access,
-        const GrBackendSurfaceMutableState* newState) {
+        const skgpu::MutableTextureState* newState) {
     // prepare proxies by transitioning to PRESENT renderState
     if (!proxies.empty() && access == SkSurface::BackendSurfaceAccess::kPresent) {
         GrD3DTextureResource* resource;

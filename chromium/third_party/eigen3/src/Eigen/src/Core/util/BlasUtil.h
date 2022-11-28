@@ -292,7 +292,7 @@ public:
   }
 
   template<typename PacketType>
-  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketType loadPacketPartial(Index i, Index n, Index /*offset*/) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketType loadPacketPartial(Index i, Index n, Index /*offset*/ = 0) const {
     return pgather_partial<Scalar,PacketType>(m_data + i*m_incr.value(), m_incr.value(), n);
   }
 
@@ -302,7 +302,7 @@ public:
   }
 
   template<typename PacketType>
-  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void storePacketPartial(Index i, const PacketType &p, Index n, Index /*offset*/) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void storePacketPartial(Index i, const PacketType &p, Index n, Index /*offset*/ = 0) const {
     pscatter_partial<Scalar, PacketType>(m_data + i*m_incr.value(), p, m_incr.value(), n);
   }
 
@@ -343,7 +343,7 @@ public:
   }
 
   template<typename PacketType>
-  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketType loadPacketPartial(Index i, Index j, Index n, Index /*offset*/) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE PacketType loadPacketPartial(Index i, Index j, Index n, Index /*offset*/ = 0) const {
     return pgather_partial<Scalar,PacketType>(&operator()(i, j),m_incr.value(),n);
   }
 
@@ -358,7 +358,7 @@ public:
   }
 
   template<typename PacketType>
-  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void storePacketPartial(Index i, Index j, const PacketType &p, Index n, Index /*offset*/) const {
+  EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE void storePacketPartial(Index i, Index j, const PacketType &p, Index n, Index /*offset*/ = 0) const {
     pscatter_partial<Scalar, PacketType>(&operator()(i, j), p, m_incr.value(), n);
   }
 

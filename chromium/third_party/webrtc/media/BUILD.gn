@@ -98,6 +98,7 @@ rtc_library("rtc_media_base") {
     "../rtc_base/system:rtc_export",
     "../rtc_base/third_party/sigslot",
     "../system_wrappers:field_trial",
+    "../video/config:encoder_config",
   ]
   absl_deps = [
     "//third_party/abseil-cpp/absl/algorithm:container",
@@ -219,7 +220,6 @@ rtc_library("rtc_internal_video_codecs") {
     "../modules/video_coding:webrtc_multiplex",
     "../modules/video_coding:webrtc_vp8",
     "../modules/video_coding:webrtc_vp9",
-    "../modules/video_coding/codecs/av1:libaom_av1_decoder",
     "../rtc_base:checks",
     "../rtc_base:logging",
     "../rtc_base/system:rtc_export",
@@ -344,8 +344,6 @@ rtc_library("rtc_audio_video") {
     "engine/null_webrtc_video_engine.h",
     "engine/payload_type_mapper.cc",
     "engine/payload_type_mapper.h",
-    "engine/simulcast.cc",
-    "engine/simulcast.h",
     "engine/unhandled_packets_buffer.cc",
     "engine/unhandled_packets_buffer.h",
     "engine/webrtc_media_engine.cc",
@@ -406,7 +404,6 @@ rtc_source_set("rtc_data_sctp_transport_internal") {
     "../p2p:rtc_p2p",
     "../rtc_base:copy_on_write_buffer",
     "../rtc_base:threading",
-    "../rtc_base/third_party/sigslot",
   ]
 }
 
@@ -432,6 +429,7 @@ if (rtc_build_dcsctp) {
       "../rtc_base:copy_on_write_buffer",
       "../rtc_base:event_tracer",
       "../rtc_base:logging",
+      "../rtc_base:macromagic",
       "../rtc_base:random",
       "../rtc_base:socket",
       "../rtc_base:stringutils",
@@ -528,6 +526,7 @@ if (rtc_include_tests) {
       "../rtc_base/third_party/sigslot",
       "../test:scoped_key_value_config",
       "../test:test_support",
+      "../video/config:streams_config",
       "//testing/gtest",
     ]
     absl_deps = [
@@ -606,6 +605,7 @@ if (rtc_include_tests) {
         "../api/units:time_delta",
         "../api/units:timestamp",
         "../api/video:builtin_video_bitrate_allocator_factory",
+        "../api/video:resolution",
         "../api/video:video_bitrate_allocation",
         "../api/video:video_codec_constants",
         "../api/video:video_frame",
@@ -626,7 +626,6 @@ if (rtc_include_tests) {
         "../modules/video_coding:video_codec_interface",
         "../modules/video_coding:webrtc_h264",
         "../modules/video_coding:webrtc_vp8",
-        "../modules/video_coding/codecs/av1:libaom_av1_decoder",
         "../p2p:p2p_test_utils",
         "../rtc_base",
         "../rtc_base:byte_order",
@@ -654,6 +653,7 @@ if (rtc_include_tests) {
         "../test:test_support",
         "../test:video_test_common",
         "../test/time_controller",
+        "../video/config:streams_config",
       ]
 
       if (enable_libaom) {
@@ -683,7 +683,6 @@ if (rtc_include_tests) {
         "engine/null_webrtc_video_engine_unittest.cc",
         "engine/payload_type_mapper_unittest.cc",
         "engine/simulcast_encoder_adapter_unittest.cc",
-        "engine/simulcast_unittest.cc",
         "engine/unhandled_packets_buffer_unittest.cc",
         "engine/webrtc_media_engine_unittest.cc",
         "engine/webrtc_video_engine_unittest.cc",

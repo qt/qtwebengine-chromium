@@ -543,8 +543,8 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
             loader_log(
                 ptr_instance, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0,
                 "vkCreateInstance: Found drivers that contain devices which support the portability subset, but the "
-                "portability enumeration bit was not set!. Applications that wish to enumerate portability drivers must set the "
-                "VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR bit in the VkInstanceCreateInfo flags and"
+                "portability enumeration bit was not set! Applications that wish to enumerate portability drivers must set the "
+                "VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR bit in the VkInstanceCreateInfo flags and "
                 "enable the VK_KHR_portability_enumeration instance extension.");
         }
         loader_log(ptr_instance, VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_DRIVER_BIT, 0, "vkCreateInstance: Found no drivers!");
@@ -572,8 +572,10 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
     }
     memcpy(&ptr_instance->disp->layer_inst_disp, &instance_disp, sizeof(instance_disp));
 
+    loader_platform_thread_lock_mutex(&loader_global_instance_list_lock);
     ptr_instance->next = loader.instances;
     loader.instances = ptr_instance;
+    loader_platform_thread_unlock_mutex(&loader_global_instance_list_lock);
 
     // Activate any layers on instance chain
     res = loader_enable_instance_layers(ptr_instance, &ici, &ptr_instance->instance_layer_list);
@@ -611,13 +613,14 @@ out:
 
     if (NULL != ptr_instance) {
         if (res != VK_SUCCESS) {
+            loader_platform_thread_lock_mutex(&loader_global_instance_list_lock);
             // error path, should clean everything up
             if (loader.instances == ptr_instance) {
                 loader.instances = ptr_instance->next;
             }
-            if (NULL != ptr_instance->disp) {
-                loader_instance_heap_free(ptr_instance, ptr_instance->disp);
-            }
+            loader_platform_thread_unlock_mutex(&loader_global_instance_list_lock);
+
+            loader_instance_heap_free(ptr_instance, ptr_instance->disp);
             // Remove any created VK_EXT_debug_report or VK_EXT_debug_utils items
             destroy_debug_callbacks_chain(ptr_instance, pAllocator);
 
@@ -648,6 +651,7 @@ out:
             ptr_instance->InstanceCreationDeletionDebugFunctionHead = ptr_instance->DbgFunctionHead;
             ptr_instance->DbgFunctionHead = NULL;
         }
+        // Only unlock when ptr_instance isn't NULL, as if it is, the above code didn't make it to when loader_lock was locked.
         loader_platform_thread_unlock_mutex(&loader_lock);
     }
 

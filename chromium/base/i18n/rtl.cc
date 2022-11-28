@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,9 +37,15 @@ std::string GetLocaleString(const icu::Locale& locale) {
   const char* language = locale.getLanguage();
   const char* country = locale.getCountry();
   const char* variant = locale.getVariant();
+  const char* script = locale.getScript();
 
   std::string result =
       (language != nullptr && *language != '\0') ? language : "und";
+
+  if (script != nullptr && *script != '\0') {
+    result += '-';
+    result += script;
+  }
 
   if (country != nullptr && *country != '\0') {
     result += '-';

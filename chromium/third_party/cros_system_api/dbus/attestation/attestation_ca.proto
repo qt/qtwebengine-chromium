@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -211,8 +211,8 @@ message DeviceSetupCertificateMetadata {
   // This will be used as the CN of the Remote Attestation certificate.
   optional string id = 1;
 
-  // Unix timestamp of the generation of the request.
-  optional uint64 timestamp = 2;
+  // Unix timestamp (in seconds) of the generation of the request.
+  optional uint64 timestamp_seconds = 2;
 
   // The generated certificate will be bound to this value. This is used to
   // prevent replay attacks. Currently it is the FIDO credential id.
@@ -250,6 +250,10 @@ message AttestationCertificateRequest {
     // `DEVICE_SETUP_CERTIFICATE` specific metadata.
     DeviceSetupCertificateMetadata device_setup_certificate_metadata = 16;
   }
+  // ADID read from the VPD. Used as the host identifier incorporated in the
+  // certificates.
+  // Used for `ENTERPRISE_VTPM_EK_CERTIFICATE` profile only.
+  optional bytes attested_device_id = 17;
 }
 
 // The response from the attestation server for the certificate request.

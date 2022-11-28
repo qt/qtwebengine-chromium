@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#ifndef AtlasTextOp_DEFINED
-#define AtlasTextOp_DEFINED
+#ifndef skgpu_ganesh_AtlasTextOp_DEFINED
+#define skgpu_ganesh_AtlasTextOp_DEFINED
 
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/ganesh/effects/GrDistanceFieldGeoProc.h"
@@ -15,7 +15,7 @@
 
 class GrRecordingContext;
 
-namespace skgpu::v1 {
+namespace skgpu::ganesh {
 
 class AtlasTextOp final : public GrMeshDrawOp {
 public:
@@ -99,7 +99,7 @@ public:
     };
     inline static constexpr int kMaskTypeCount = static_cast<int>(MaskType::kLast) + 1;
 
-#if GR_TEST_UTILS && SK_GPU_V1
+#if GR_TEST_UTILS
     static GrOp::Owner CreateOpTestingOnly(skgpu::v1::SurfaceDrawContext*,
                                            const SkPaint&,
                                            const SkFont&,
@@ -247,6 +247,6 @@ private:
     using INHERITED = GrMeshDrawOp;
 };
 
-} // namespace skgpu::v1
+} // namespace skgpu::ganesh
 
-#endif // AtlasTextOp_DEFINED
+#endif // skgpu_ganesh_AtlasTextOp_DEFINED

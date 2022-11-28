@@ -14,11 +14,11 @@
 #include "include/private/SkTDArray.h"
 #include "include/private/SkVx.h"
 #include "src/core/SkSLTypeShared.h"
+#include "src/core/SkUniform.h"
 
 class SkM44;
 struct SkPoint;
 struct SkRect;
-class SkUniform;
 class SkUniformDataBlock;
 
 namespace skgpu::graphite {
@@ -58,7 +58,7 @@ class UniformManager : public UniformOffsetCalculator {
 public:
     UniformManager(Layout layout) : UniformOffsetCalculator(layout, /*startingOffset=*/0) {}
 
-    SkUniformDataBlock peekData() const;
+    SkUniformDataBlock finishUniformDataBlock();
     size_t size() const { return fStorage.size(); }
 
     void reset();
@@ -89,6 +89,7 @@ private:
 #endif // SK_DEBUG
 
     SkTDArray<char> fStorage;
+    uint32_t fReqAlignment = 0;
 };
 
 } // namespace skgpu

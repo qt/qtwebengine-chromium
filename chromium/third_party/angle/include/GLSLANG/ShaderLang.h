@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 303
+#define ANGLE_SH_VERSION 308
 
 enum ShShaderSpec
 {
@@ -79,15 +79,31 @@ enum ShShaderOutput
     SH_MSL_METAL_OUTPUT = 0x8B4D,
 };
 
+// For ANGLE_shader_pixel_local_storage.
+// Instructs the compiler which pixel local storage configuration to generate code for.
+enum class ShPixelLocalStorageType
+{
+    NotSupported,
+    ImageStoreR32PackedFormats,
+    ImageStoreNativeFormats,
+    FramebufferFetch
+};
+
 // For ANGLE_shader_pixel_local_storage_coherent.
 // Instructs the compiler which fragment synchronization method to use, if any.
 enum class ShFragmentSynchronizationType
 {
-    NoSynchronization,
+    NotSupported,  // Fragments cannot be ordered or synchronized.
+
+    Automatic,  // Fragments are automatically raster-ordered and synchronized.
 
     FragmentShaderInterlock_NV_GL,
     FragmentShaderOrdering_INTEL_GL,
-    FragmentShaderInterlock_ARB_GL,
+    FragmentShaderInterlock_ARB_GL,  // Also compiles to SPV_EXT_fragment_shader_interlock.
+
+    RasterizerOrderViews_D3D,
+
+    RasterOrderGroups_Metal,
 
     InvalidEnum,
     EnumCount = InvalidEnum,
@@ -108,12 +124,18 @@ struct ShCompileOptionsMetal
 
 struct ShCompileOptionsPLS
 {
+    ShPixelLocalStorageType type = ShPixelLocalStorageType::NotSupported;
     // For ANGLE_shader_pixel_local_storage_coherent.
-    ShFragmentSynchronizationType fragmentSynchronizationType;
+    ShFragmentSynchronizationType fragmentSynchronizationType =
+        ShFragmentSynchronizationType::NotSupported;
 };
 
 struct ShCompileOptions
 {
+    ShCompileOptions();
+    ShCompileOptions(const ShCompileOptions &other);
+    ShCompileOptions &operator=(const ShCompileOptions &other);
+
     // Translates intermediate tree to glsl, hlsl, msl, or SPIR-V binary.  Can be queried by
     // calling sh::GetObjectCode().
     uint64_t objectCode : 1;
@@ -401,6 +423,10 @@ using ShHashFunction64 = khronos_uint64_t (*)(const char *, size_t);
 //
 struct ShBuiltInResources
 {
+    ShBuiltInResources();
+    ShBuiltInResources(const ShBuiltInResources &other);
+    ShBuiltInResources &operator=(const ShBuiltInResources &other);
+
     // Constants.
     int MaxVertexAttribs;
     int MaxVertexUniformVectors;
@@ -630,6 +656,11 @@ struct ShBuiltInResources
     int MaxClipDistances;
     int MaxCullDistances;
     int MaxCombinedClipAndCullDistances;
+
+    // ANGLE_shader_pixel_local_storage.
+    int MaxPixelLocalStoragePlanes;
+    int MaxColorAttachmentsWithActivePixelLocalStorage;
+    int MaxCombinedDrawBuffersAndPixelLocalStoragePlanes;
 };
 
 //
@@ -662,6 +693,12 @@ bool Finalize();
 // resources: The object to initialize. Will be comparable with memcmp.
 //
 void InitBuiltInResources(ShBuiltInResources *resources);
+
+//
+// Returns a copy of the current ShBuiltInResources stored in the compiler.
+// Parameters:
+// handle: Specifies the handle of the compiler to be used.
+ShBuiltInResources GetBuiltInResources(const ShHandle handle);
 
 //
 // Returns the a concatenated list of the items in ShBuiltInResources as a null-terminated string.

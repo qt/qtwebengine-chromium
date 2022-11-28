@@ -13,7 +13,6 @@
 #include "src/heap/incremental-marking.h"
 #include "src/heap/local-heap.h"
 #include "src/heap/spaces-inl.h"
-#include "src/heap/spaces.h"
 #include "src/objects/heap-object.h"
 
 namespace v8 {
@@ -22,7 +21,8 @@ namespace internal {
 AllocationResult ConcurrentAllocator::AllocateRaw(int size_in_bytes,
                                                   AllocationAlignment alignment,
                                                   AllocationOrigin origin) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
+  DCHECK(!v8_flags.enable_third_party_heap);
   // TODO(dinfuehr): Add support for allocation observers
 #ifdef DEBUG
   if (local_heap_) local_heap_->VerifyCurrent();
@@ -33,15 +33,46 @@ AllocationResult ConcurrentAllocator::AllocateRaw(int size_in_bytes,
   }
 
   AllocationResult result;
-  if (V8_COMPRESS_POINTERS_8GB_BOOL ||
-      (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned)) {
-    result = lab_.AllocateRawAligned(size_in_bytes, alignment);
+  if (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned) {
+    result = AllocateInLabFastAligned(size_in_bytes, alignment);
   } else {
-    result = lab_.AllocateRawUnaligned(size_in_bytes);
+    result = AllocateInLabFastUnaligned(size_in_bytes);
   }
   return result.IsFailure()
              ? AllocateInLabSlow(size_in_bytes, alignment, origin)
              : result;
+}
+
+AllocationResult ConcurrentAllocator::AllocateInLabFastUnaligned(
+    int size_in_bytes) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
+
+  if (!lab_.CanIncrementTop(size_in_bytes)) {
+    return AllocationResult::Failure();
+  }
+
+  HeapObject object = HeapObject::FromAddress(lab_.IncrementTop(size_in_bytes));
+  return AllocationResult::FromObject(object);
+}
+
+AllocationResult ConcurrentAllocator::AllocateInLabFastAligned(
+    int size_in_bytes, AllocationAlignment alignment) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
+  Address current_top = lab_.top();
+  int filler_size = Heap::GetFillToAlign(current_top, alignment);
+  int aligned_size = filler_size + size_in_bytes;
+
+  if (!lab_.CanIncrementTop(aligned_size)) {
+    return AllocationResult::Failure();
+  }
+
+  HeapObject object = HeapObject::FromAddress(lab_.IncrementTop(aligned_size));
+
+  if (filler_size > 0) {
+    object = owning_heap()->PrecedeWithFiller(object, filler_size);
+  }
+
+  return AllocationResult::FromObject(object);
 }
 
 }  // namespace internal

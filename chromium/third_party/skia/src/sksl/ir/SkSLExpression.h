@@ -14,13 +14,16 @@
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLType.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace SkSL {
 
 class AnyConstructor;
 class Context;
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * Abstract supertype of all expressions.
@@ -58,11 +61,6 @@ public:
 
         kFirst = kBinary,
         kLast = kVariableReference
-    };
-
-    enum class Property {
-        kSideEffects,
-        kContainsRTAdjust
     };
 
     Expression(Position pos, Kind kind, const Type* type)
@@ -125,14 +123,6 @@ public:
     const AnyConstructor& asAnyConstructor() const;
 
     /**
-     * Returns true if this expression is constant. compareConstant must be implemented for all
-     * constants!
-     */
-    virtual bool isCompileTimeConstant() const {
-        return false;
-    }
-
-    /**
      * Returns true if this expression is incomplete. Specifically, dangling function/method-call
      * references that were never invoked, or type references that were never constructed, are
      * considered incomplete expressions and should result in an error.
@@ -153,17 +143,7 @@ public:
         return ComparisonResult::kUnknown;
     }
 
-    virtual bool hasProperty(Property property) const = 0;
-
-    bool hasSideEffects() const {
-        return this->hasProperty(Property::kSideEffects);
-    }
-
-    bool containsRTAdjust() const {
-        return this->hasProperty(Property::kContainsRTAdjust);
-    }
-
-    virtual CoercionCost coercionCost(const Type& target) const {
+    CoercionCost coercionCost(const Type& target) const {
         return this->type().coercionCost(target);
     }
 
@@ -200,6 +180,13 @@ public:
      * Returns a clone at the same position.
      */
     std::unique_ptr<Expression> clone() const { return this->clone(fPosition); }
+
+    /**
+     * Returns a description of the expression.
+     */
+    std::string description() const final;
+    virtual std::string description(OperatorPrecedence parentPrecedence) const = 0;
+
 
 private:
     const Type* fType;

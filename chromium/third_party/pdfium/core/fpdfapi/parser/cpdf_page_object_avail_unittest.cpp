@@ -44,7 +44,7 @@ class TestHolder final : public CPDF_IndirectObjectHolder {
   ~TestHolder() override = default;
 
   // CPDF_IndirectObjectHolder overrides:
-  CPDF_Object* GetOrParseIndirectObject(uint32_t objnum) override {
+  RetainPtr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override {
     auto it = objects_data_.find(objnum);
     if (it == objects_data_.end())
       return nullptr;
@@ -54,7 +54,7 @@ class TestHolder final : public CPDF_IndirectObjectHolder {
       validator_->SimulateReadError();
       return nullptr;
     }
-    return obj_data.object.Get();
+    return obj_data.object;
   }
 
   RetainPtr<CPDF_ReadValidator> GetValidator() { return validator_; }
@@ -102,7 +102,8 @@ TEST(PageObjectAvailTest, ExcludePages) {
       "Kids", &holder, 2);
   holder.AddObject(2, pdfium::MakeRetain<CPDF_Array>(),
                    TestHolder::ObjectState::Available);
-  holder.GetTestObject(2)->AsArray()->AppendNew<CPDF_Reference>(&holder, 3);
+  holder.GetTestObject(2)->AsMutableArray()->AppendNew<CPDF_Reference>(&holder,
+                                                                       3);
 
   holder.AddObject(3, pdfium::MakeRetain<CPDF_Dictionary>(),
                    TestHolder::ObjectState::Available);

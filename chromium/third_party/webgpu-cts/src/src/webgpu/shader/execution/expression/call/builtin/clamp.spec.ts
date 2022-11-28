@@ -15,7 +15,7 @@ Component-wise when T is a vector.
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { kBit, kValue } from '../../../../../util/constants.js';
+import { kBit } from '../../../../../util/constants.js';
 import {
   i32,
   i32Bits,
@@ -27,7 +27,8 @@ import {
   u32Bits,
 } from '../../../../../util/conversion.js';
 import { clampIntervals } from '../../../../../util/f32_interval.js';
-import { allInputSources, Case, makeTernaryF32IntervalCase, run } from '../../expression.js';
+import { sparseF32Range } from '../../../../../util/math.js';
+import { allInputSources, Case, makeTernaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -87,7 +88,7 @@ g.test('u32')
       u32Bits(kBit.u32.max),
     ];
 
-    run(
+    await run(
       t,
       builtin('clamp'),
       [TypeU32, TypeU32, TypeU32],
@@ -117,7 +118,7 @@ g.test('i32')
       i32Bits(kBit.i32.positive.max),
     ];
 
-    run(
+    await run(
       t,
       builtin('clamp'),
       [TypeI32, TypeI32, TypeI32],
@@ -143,28 +144,12 @@ g.test('f32')
   )
   .fn(async t => {
     const makeCase = (x: number, y: number, z: number): Case => {
-      return makeTernaryF32IntervalCase(x, y, z, ...clampIntervals);
+      return makeTernaryToF32IntervalCase(x, y, z, ...clampIntervals);
     };
 
-    const values: Array<number> = [
-      Number.NEGATIVE_INFINITY,
-      kValue.f32.negative.min,
-      -10.0,
-      -1.0,
-      kValue.f32.negative.max,
-      kValue.f32.subnormal.negative.min,
-      kValue.f32.subnormal.negative.max,
-      0.0,
-      kValue.f32.subnormal.positive.min,
-      kValue.f32.subnormal.positive.max,
-      kValue.f32.positive.min,
-      1.0,
-      10.0,
-      kValue.f32.positive.max,
-      Number.POSITIVE_INFINITY,
-    ];
-
-    const cases: Array<Case> = new Array<Case>();
+    // Using sparseF32Range since this will generate N^3 test cases
+    const values = sparseF32Range();
+    const cases: Array<Case> = [];
     values.forEach(x => {
       values.forEach(y => {
         values.forEach(z => {
@@ -173,7 +158,7 @@ g.test('f32')
       });
     });
 
-    run(t, builtin('clamp'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('clamp'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

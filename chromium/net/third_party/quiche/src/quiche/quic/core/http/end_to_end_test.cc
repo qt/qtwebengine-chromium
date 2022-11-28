@@ -47,7 +47,6 @@
 #include "quiche/quic/test_tools/packet_reordering_writer.h"
 #include "quiche/quic/test_tools/qpack/qpack_encoder_peer.h"
 #include "quiche/quic/test_tools/qpack/qpack_test_utils.h"
-#include "quiche/quic/test_tools/quic_client_peer.h"
 #include "quiche/quic/test_tools/quic_client_session_cache_peer.h"
 #include "quiche/quic/test_tools/quic_config_peer.h"
 #include "quiche/quic/test_tools/quic_connection_peer.h"
@@ -68,7 +67,6 @@
 #include "quiche/quic/test_tools/server_thread.h"
 #include "quiche/quic/test_tools/web_transport_test_tools.h"
 #include "quiche/quic/tools/quic_backend_response.h"
-#include "quiche/quic/tools/quic_client.h"
 #include "quiche/quic/tools/quic_memory_cache_backend.h"
 #include "quiche/quic/tools/quic_server.h"
 #include "quiche/quic/tools/quic_simple_client_stream.h"
@@ -2773,7 +2771,7 @@ TEST_P(
     HalfRttResponseBlocksShloRetransmissionWithoutTokenBasedAddressValidation) {
   // Turn off token based address validation to make the server get constrained
   // by amplification factor during handshake.
-  SetQuicFlag(FLAGS_quic_reject_retry_token_in_initial_packet, true);
+  SetQuicFlag(quic_reject_retry_token_in_initial_packet, true);
   ASSERT_TRUE(Initialize());
   if (!version_.SupportsAntiAmplificationLimit()) {
     return;
@@ -2866,7 +2864,7 @@ TEST_P(EndToEndTest, StreamCancelErrorTest) {
 
 TEST_P(EndToEndTest, ConnectionMigrationClientIPChanged) {
   ASSERT_TRUE(Initialize());
-  if (GetQuicFlag(FLAGS_quic_enforce_strict_amplification_factor)) {
+  if (GetQuicFlag(quic_enforce_strict_amplification_factor)) {
     return;
   }
   SendSynchronousFooRequestAndCheckResponse();
@@ -2910,7 +2908,7 @@ TEST_P(EndToEndTest, ConnectionMigrationClientIPChanged) {
 TEST_P(EndToEndTest, IetfConnectionMigrationClientIPChangedMultipleTimes) {
   ASSERT_TRUE(Initialize());
   if (!GetClientConnection()->connection_migration_use_new_cid() ||
-      GetQuicFlag(FLAGS_quic_enforce_strict_amplification_factor)) {
+      GetQuicFlag(quic_enforce_strict_amplification_factor)) {
     return;
   }
   SendSynchronousFooRequestAndCheckResponse();
@@ -3022,7 +3020,7 @@ TEST_P(EndToEndTest, IetfConnectionMigrationClientIPChangedMultipleTimes) {
 TEST_P(EndToEndTest,
        ConnectionMigrationWithNonZeroConnectionIDClientIPChangedMultipleTimes) {
   if (!version_.SupportsClientConnectionIds() ||
-      GetQuicFlag(FLAGS_quic_enforce_strict_amplification_factor)) {
+      GetQuicFlag(quic_enforce_strict_amplification_factor)) {
     ASSERT_TRUE(Initialize());
     return;
   }
@@ -3160,7 +3158,7 @@ TEST_P(EndToEndTest, ConnectionMigrationNewTokenForNewIp) {
   ASSERT_TRUE(Initialize());
   if (!version_.HasIetfQuicFrames() ||
       !client_->client()->session()->connection()->validate_client_address() ||
-      GetQuicFlag(FLAGS_quic_enforce_strict_amplification_factor)) {
+      GetQuicFlag(quic_enforce_strict_amplification_factor)) {
     return;
   }
   SendSynchronousFooRequestAndCheckResponse();
@@ -3501,7 +3499,6 @@ TEST_P(EndToEndTest, ConnectionMigrationClientPortChanged) {
 }
 
 TEST_P(EndToEndTest, NegotiatedInitialCongestionWindow) {
-  SetQuicReloadableFlag(quic_unified_iw_options, true);
   client_extra_copts_.push_back(kIW03);
 
   ASSERT_TRUE(Initialize());
@@ -4080,6 +4077,24 @@ TEST_P(EndToEndTest, ServerSendPublicResetWithDifferentConnectionId) {
   }
 
   client_connection->set_debug_visitor(nullptr);
+}
+
+TEST_P(EndToEndTest, InduceStatelessResetFromServer) {
+  ASSERT_TRUE(Initialize());
+  if (!version_.HasIetfQuicFrames()) {
+    return;
+  }
+  EXPECT_TRUE(client_->client()->WaitForHandshakeConfirmed());
+  SetPacketLossPercentage(100);  // Block PEER_GOING_AWAY message from server.
+  StopServer(true);
+  server_writer_ = new PacketDroppingTestWriter();
+  StartServer();
+  SetPacketLossPercentage(0);
+  // The request should generate a public reset.
+  EXPECT_EQ("", client_->SendSynchronousRequest("/foo"));
+  EXPECT_TRUE(client_->response_headers()->empty());
+  EXPECT_THAT(client_->connection_error(), IsError(QUIC_PUBLIC_RESET));
+  EXPECT_FALSE(client_->connected());
 }
 
 // Send a public reset from the client for a different connection ID.
@@ -4959,7 +4974,7 @@ TEST_P(EndToEndTest,
 TEST_P(EndToEndTest,
        SendStatelessResetIfServerConnectionClosedLocallyAfterHandshake) {
   // Prevent the connection from expiring in the time wait list.
-  SetQuicFlag(FLAGS_quic_time_wait_list_seconds, 10000);
+  SetQuicFlag(quic_time_wait_list_seconds, 10000);
   connect_to_server_on_initialize_ = false;
   ASSERT_TRUE(Initialize());
 
@@ -5400,6 +5415,49 @@ TEST_P(EndToEndTest, ClientValidateNewNetwork) {
     ADD_FAILURE() << "Missing server connection";
   }
   server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, ClientMultiPortConnection) {
+  client_extra_copts_.push_back(kMPQC);
+  ASSERT_TRUE(Initialize());
+  if (!GetClientConnection()->connection_migration_use_new_cid()) {
+    return;
+  }
+  client_.reset(EndToEndTest::CreateQuicClient(nullptr));
+  QuicConnection* client_connection = GetClientConnection();
+  // Increase the probing frequency to speed up this test.
+  client_connection->SetMultiPortProbingInterval(
+      QuicTime::Delta::FromMilliseconds(100));
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_TRUE(client_->WaitUntil(1000, [&]() {
+    return 1u == client_connection->GetStats().num_path_response_received;
+  }));
+  // Verify that the alternative path keeps sending probes periodically.
+  EXPECT_TRUE(client_->WaitUntil(1000, [&]() {
+    return 2u == client_connection->GetStats().num_path_response_received;
+  }));
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  // Verify that no migration has happened.
+  if (server_connection != nullptr) {
+    EXPECT_EQ(0u, server_connection->GetStats()
+                      .num_peer_migration_to_proactively_validated_address);
+  }
+  server_thread_->Resume();
+
+  // This will cause the next periodic probing to fail.
+  server_writer_->set_fake_packet_loss_percentage(100);
+  EXPECT_TRUE(client_->WaitUntil(
+      1000, [&]() { return client_->client()->HasPendingPathValidation(); }));
+  // Now wait for path validation to timeout.
+  EXPECT_TRUE(client_->WaitUntil(
+      2000, [&]() { return !client_->client()->HasPendingPathValidation(); }));
+  server_writer_->set_fake_packet_loss_percentage(0);
+  EXPECT_TRUE(client_->WaitUntil(1000, [&]() {
+    return 3u == client_connection->GetStats().num_path_response_received;
+  }));
+  // Verify that the previous path was retired.
+  EXPECT_EQ(1u, client_connection->GetStats().num_retire_connection_id_sent);
 }
 
 TEST_P(EndToEndPacketReorderingTest, ReorderedPathChallenge) {
@@ -6318,7 +6376,7 @@ TEST_P(EndToEndTest, KeyUpdateInitiatedByBoth) {
 }
 
 TEST_P(EndToEndTest, KeyUpdateInitiatedByConfidentialityLimit) {
-  SetQuicFlag(FLAGS_quic_key_update_confidentiality_limit, 16U);
+  SetQuicFlag(quic_key_update_confidentiality_limit, 16U);
 
   if (!version_.UsesTls()) {
     // Key Update is only supported in TLS handshake.
@@ -6344,8 +6402,8 @@ TEST_P(EndToEndTest, KeyUpdateInitiatedByConfidentialityLimit) {
       },
       QuicTime::Delta::FromSeconds(5));
 
-  for (uint64_t i = 0;
-       i < GetQuicFlag(FLAGS_quic_key_update_confidentiality_limit); ++i) {
+  for (uint64_t i = 0; i < GetQuicFlag(quic_key_update_confidentiality_limit);
+       ++i) {
     SendSynchronousFooRequestAndCheckResponse();
   }
 
@@ -6365,7 +6423,7 @@ TEST_P(EndToEndTest, KeyUpdateInitiatedByConfidentialityLimit) {
 }
 
 TEST_P(EndToEndTest, TlsResumptionEnabledOnTheFly) {
-  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, true);
+  SetQuicFlag(quic_disable_server_tls_resumption, true);
   ASSERT_TRUE(Initialize());
 
   if (!version_.UsesTls()) {
@@ -6382,7 +6440,7 @@ TEST_P(EndToEndTest, TlsResumptionEnabledOnTheFly) {
   EXPECT_FALSE(client_session->EarlyDataAccepted());
   client_->Disconnect();
 
-  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, false);
+  SetQuicFlag(quic_disable_server_tls_resumption, false);
 
   // Send the second request. Client should still have no resumption ticket, but
   // it will receive one which can be used by the next request.
@@ -6407,7 +6465,7 @@ TEST_P(EndToEndTest, TlsResumptionEnabledOnTheFly) {
 }
 
 TEST_P(EndToEndTest, TlsResumptionDisabledOnTheFly) {
-  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, false);
+  SetQuicFlag(quic_disable_server_tls_resumption, false);
   ASSERT_TRUE(Initialize());
 
   if (!version_.UsesTls()) {
@@ -6431,7 +6489,7 @@ TEST_P(EndToEndTest, TlsResumptionDisabledOnTheFly) {
   EXPECT_TRUE(client_session->EarlyDataAccepted());
   client_->Disconnect();
 
-  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, true);
+  SetQuicFlag(quic_disable_server_tls_resumption, true);
 
   // Send the third request. The client should try resumption but server should
   // decline it.
@@ -7035,7 +7093,6 @@ TEST_P(EndToEndTest, RejectRequestWithInvalidToken) {
 }
 
 TEST_P(EndToEndTest, OriginalConnectionIdClearedFromMap) {
-  SetQuicRestartFlag(quic_map_original_connection_ids2, true);
   connect_to_server_on_initialize_ = false;
   ASSERT_TRUE(Initialize());
   if (override_client_connection_id_length_ != kLongConnectionIdLength) {

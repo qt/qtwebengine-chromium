@@ -34,13 +34,12 @@ int CastSocketMessagePort::GetSocketId() {
   return ToCastSocketId(socket_.get());
 }
 
-void CastSocketMessagePort::SetClient(MessagePort::Client* client,
-                                      std::string client_sender_id) {
+void CastSocketMessagePort::SetClient(MessagePort::Client& client) {
   ResetClient();
 
-  client_ = client;
-  client_sender_id_ = std::move(client_sender_id);
-  router_->AddHandlerForLocalId(client_sender_id_, this);
+  client_ = &client;
+  source_id_ = client.source_id();
+  router_->AddHandlerForLocalId(source_id_, this);
 }
 
 void CastSocketMessagePort::ResetClient() {
@@ -49,9 +48,9 @@ void CastSocketMessagePort::ResetClient() {
   }
 
   client_ = nullptr;
-  router_->RemoveHandlerForLocalId(client_sender_id_);
-  router_->RemoveConnectionsByLocalId(client_sender_id_);
-  client_sender_id_.clear();
+  router_->RemoveHandlerForLocalId(source_id_);
+  router_->RemoveConnectionsByLocalId(source_id_);
+  source_id_.clear();
 }
 
 void CastSocketMessagePort::PostMessage(
@@ -68,7 +67,7 @@ void CastSocketMessagePort::PostMessage(
     return;
   }
 
-  VirtualConnection connection{client_sender_id_, destination_sender_id,
+  VirtualConnection connection{source_id_, destination_sender_id,
                                socket_->socket_id()};
   if (!router_->GetConnectionData(connection)) {
     router_->AddConnection(connection, VirtualConnection::AssociatedData{});

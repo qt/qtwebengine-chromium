@@ -30,6 +30,13 @@ void CommandBuffer::releaseResources() {
     fTrackedResources.reset();
 }
 
+void CommandBuffer::resetCommandBuffer() {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    this->releaseResources();
+    this->onResetCommandBuffer();
+}
+
 void CommandBuffer::trackResource(sk_sp<Resource> resource) {
     fTrackedResources.push_back(std::move(resource));
 }
@@ -134,5 +141,47 @@ bool CommandBuffer::copyBufferToTexture(const Buffer* buffer,
 
     return true;
 }
+
+bool CommandBuffer::copyTextureToTexture(sk_sp<Texture> src,
+                                         SkIRect srcRect,
+                                         sk_sp<Texture> dst,
+                                         SkIPoint dstPoint) {
+    SkASSERT(src);
+    SkASSERT(dst);
+
+    if (!this->onCopyTextureToTexture(src.get(), srcRect, dst.get(), dstPoint)) {
+        return false;
+    }
+
+    this->trackResource(std::move(src));
+    this->trackResource(std::move(dst));
+
+    SkDEBUGCODE(fHasWork = true;)
+
+    return true;
+}
+
+bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
+    SkASSERT(buffer);
+
+    bool didResultInWork = false;
+    if (!this->onSynchronizeBufferToCpu(buffer.get(), &didResultInWork)) {
+        return false;
+    }
+
+    if (didResultInWork) {
+        this->trackResource(std::move(buffer));
+        SkDEBUGCODE(fHasWork = true;)
+    }
+
+    return true;
+}
+
+#ifdef SK_ENABLE_PIET_GPU
+void CommandBuffer::renderPietScene(const skgpu::piet::Scene& scene, sk_sp<Texture> target) {
+    this->onRenderPietScene(scene, target.get());
+    this->trackResource(std::move(target));
+}
+#endif
 
 } // namespace skgpu::graphite

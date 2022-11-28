@@ -36,15 +36,7 @@ int CPDF_Number::GetInteger() const {
   return m_Number.GetSigned();
 }
 
-bool CPDF_Number::IsNumber() const {
-  return true;
-}
-
-CPDF_Number* CPDF_Number::AsNumber() {
-  return this;
-}
-
-const CPDF_Number* CPDF_Number::AsNumber() const {
+CPDF_Number* CPDF_Number::AsMutableNumber() {
   return this;
 }
 

@@ -323,110 +323,13 @@ MTLBlitOption ComputeMTLBlitOption(const Format& format, Aspect aspect) {
     return MTLBlitOptionNone;
 }
 
-MaybeError CreateMTLFunction(const ProgrammableStage& programmableStage,
-                             SingleShaderStage singleShaderStage,
-                             PipelineLayout* pipelineLayout,
-                             ShaderModule::MetalFunctionData* functionData,
-                             uint32_t sampleMask,
-                             const RenderPipeline* renderPipeline) {
-    ShaderModule* shaderModule = ToBackend(programmableStage.module.Get());
-    const char* shaderEntryPoint = programmableStage.entryPoint.c_str();
-    const auto& entryPointMetadata = programmableStage.module->GetEntryPoint(shaderEntryPoint);
-    if (entryPointMetadata.overrides.size() == 0) {
-        DAWN_TRY(shaderModule->CreateFunction(shaderEntryPoint, singleShaderStage, pipelineLayout,
-                                              functionData, nil, sampleMask, renderPipeline));
-        return {};
-    }
-
-    if (@available(macOS 10.12, *)) {
-        // MTLFunctionConstantValues can only be created within the if available branch
-        NSRef<MTLFunctionConstantValues> constantValues =
-            AcquireNSRef([MTLFunctionConstantValues new]);
-
-        std::unordered_set<std::string> overriddenConstants;
-
-        auto switchType = [&](EntryPointMetadata::Override::Type dawnType,
-                              MTLDataType* type, OverrideScalar* entry,
-                              double value = 0) {
-            switch (dawnType) {
-                case EntryPointMetadata::Override::Type::Boolean:
-                    *type = MTLDataTypeBool;
-                    if (entry) {
-                        entry->b = static_cast<int32_t>(value);
-                    }
-                    break;
-                case EntryPointMetadata::Override::Type::Float32:
-                    *type = MTLDataTypeFloat;
-                    if (entry) {
-                        entry->f32 = static_cast<float>(value);
-                    }
-                    break;
-                case EntryPointMetadata::Override::Type::Int32:
-                    *type = MTLDataTypeInt;
-                    if (entry) {
-                        entry->i32 = static_cast<int32_t>(value);
-                    }
-                    break;
-                case EntryPointMetadata::Override::Type::Uint32:
-                    *type = MTLDataTypeUInt;
-                    if (entry) {
-                        entry->u32 = static_cast<uint32_t>(value);
-                    }
-                    break;
-                default:
-                    UNREACHABLE();
-            }
-        };
-
-        for (const auto& [name, value] : programmableStage.constants) {
-            overriddenConstants.insert(name);
-
-            // This is already validated so `name` must exist
-            const auto& moduleConstant = entryPointMetadata.overrides.at(name);
-
-            MTLDataType type;
-            OverrideScalar entry{};
-
-            switchType(moduleConstant.type, &type, &entry, value);
-
-            [constantValues.Get() setConstantValue:&entry type:type atIndex:moduleConstant.id];
-        }
-
-        // Set shader initialized default values because MSL function_constant
-        // has no default value
-        for (const std::string& name : entryPointMetadata.initializedOverrides) {
-            if (overriddenConstants.count(name) != 0) {
-                // This constant already has overridden value
-                continue;
-            }
-
-            // Must exist because it is validated
-            const auto& moduleConstant = entryPointMetadata.overrides.at(name);
-            ASSERT(moduleConstant.isInitialized);
-            MTLDataType type;
-
-            switchType(moduleConstant.type, &type, nullptr);
-
-            [constantValues.Get() setConstantValue:&moduleConstant.defaultValue
-                                              type:type
-                                           atIndex:moduleConstant.id];
-        }
-
-        DAWN_TRY(shaderModule->CreateFunction(shaderEntryPoint, singleShaderStage, pipelineLayout,
-                                              functionData, constantValues.Get(), sampleMask,
-                                              renderPipeline));
-    } else {
-        UNREACHABLE();
-    }
-    return {};
-}
-
 MaybeError EncodeMetalRenderPass(Device* device,
                                  CommandRecordingContext* commandContext,
                                  MTLRenderPassDescriptor* mtlRenderPass,
                                  uint32_t width,
                                  uint32_t height,
-                                 EncodeInsideRenderPass encodeInside) {
+                                 EncodeInsideRenderPass encodeInside,
+                                 BeginRenderPassCmd* renderPassCmd) {
     // This function handles multiple workarounds. Because some cases requires multiple
     // workarounds to happen at the same time, it handles workarounds one by one and calls
     // itself recursively to handle the next workaround if needed.
@@ -457,7 +360,7 @@ MaybeError EncodeMetalRenderPass(Device* device,
         // resolve back to the true resolve targets.
         if (workaroundUsed) {
             DAWN_TRY(EncodeMetalRenderPass(device, commandContext, mtlRenderPass, width, height,
-                                           std::move(encodeInside)));
+                                           std::move(encodeInside), renderPassCmd));
 
             for (uint32_t i = 0; i < kMaxColorAttachments; ++i) {
                 if (trueResolveAttachments[i].texture == nullptr) {
@@ -501,7 +404,7 @@ MaybeError EncodeMetalRenderPass(Device* device,
 
         if (workaroundUsed) {
             DAWN_TRY(EncodeMetalRenderPass(device, commandContext, mtlRenderPass, width, height,
-                                           std::move(encodeInside)));
+                                           std::move(encodeInside), renderPassCmd));
 
             for (uint32_t i = 0; i < kMaxColorAttachments; ++i) {
                 if (originalAttachments[i].texture == nullptr) {
@@ -537,7 +440,7 @@ MaybeError EncodeMetalRenderPass(Device* device,
         // If we found a store + MSAA resolve we need to resolve in a different render pass.
         if (hasStoreAndMSAAResolve) {
             DAWN_TRY(EncodeMetalRenderPass(device, commandContext, mtlRenderPass, width, height,
-                                           std::move(encodeInside)));
+                                           std::move(encodeInside), renderPassCmd));
 
             ResolveInAnotherRenderPass(commandContext, mtlRenderPass, resolveTextures);
             return {};
@@ -546,7 +449,7 @@ MaybeError EncodeMetalRenderPass(Device* device,
 
     // No (more) workarounds needed! We can finally encode the actual render pass.
     commandContext->EndBlit();
-    DAWN_TRY(encodeInside(commandContext->BeginRender(mtlRenderPass)));
+    DAWN_TRY(encodeInside(commandContext->BeginRender(mtlRenderPass), renderPassCmd));
     commandContext->EndRender();
     return {};
 }
@@ -555,8 +458,26 @@ MaybeError EncodeEmptyMetalRenderPass(Device* device,
                                       CommandRecordingContext* commandContext,
                                       MTLRenderPassDescriptor* mtlRenderPass,
                                       Extent3D size) {
-    return EncodeMetalRenderPass(device, commandContext, mtlRenderPass, size.width, size.height,
-                                 [&](id<MTLRenderCommandEncoder>) -> MaybeError { return {}; });
+    return EncodeMetalRenderPass(
+        device, commandContext, mtlRenderPass, size.width, size.height,
+        [&](id<MTLRenderCommandEncoder>, BeginRenderPassCmd*) -> MaybeError { return {}; });
+}
+
+DAWN_NOINLINE bool SupportCounterSamplingAtCommandBoundary(id<MTLDevice> device)
+    API_AVAILABLE(macos(11.0), ios(14.0)) {
+    bool isBlitBoundarySupported =
+        [device supportsCounterSampling:MTLCounterSamplingPointAtBlitBoundary];
+    bool isDispatchBoundarySupported =
+        [device supportsCounterSampling:MTLCounterSamplingPointAtDispatchBoundary];
+    bool isDrawBoundarySupported =
+        [device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary];
+
+    return isBlitBoundarySupported && isDispatchBoundarySupported && isDrawBoundarySupported;
+}
+
+DAWN_NOINLINE bool SupportCounterSamplingAtStageBoundary(id<MTLDevice> device)
+    API_AVAILABLE(macos(11.0), ios(14.0)) {
+    return [device supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
 }
 
 }  // namespace dawn::native::metal

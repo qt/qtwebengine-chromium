@@ -203,12 +203,12 @@ public:
     ~FillBounds() {
         // If we have any lingering unpaired Saves, simulate restores to make
         // sure all ops in those Save blocks have their bounds calculated.
-        while (!fSaveStack.isEmpty()) {
+        while (!fSaveStack.empty()) {
             this->popSaveBlock();
         }
 
         // Any control ops not part of any Save/Restore block draw everywhere.
-        while (!fControlIndices.isEmpty()) {
+        while (!fControlIndices.empty()) {
             this->popControl(fCullRect);
         }
     }
@@ -276,7 +276,7 @@ private:
     void trackBounds(const SaveLayer& op)  { this->pushSaveBlock(op.paint); }
     void trackBounds(const SaveBehind&)    { this->pushSaveBlock(nullptr); }
     void trackBounds(const Restore&) {
-        const bool isSaveLayer = fSaveStack.top().paint != nullptr;
+        const bool isSaveLayer = fSaveStack.back().paint != nullptr;
         fBounds[fCurrentOp] = this->popSaveBlock();
         fMeta  [fCurrentOp].isDraw = isSaveLayer;
     }
@@ -359,8 +359,8 @@ private:
 
     Bounds popSaveBlock() {
         // We're done the Save block.  Apply the block's bounds to all control ops inside it.
-        SaveBounds sb;
-        fSaveStack.pop(&sb);
+        SaveBounds sb = fSaveStack.back();
+        fSaveStack.pop_back();
 
         while (sb.controlOps --> 0) {
             this->popControl(sb.bounds);
@@ -375,21 +375,21 @@ private:
 
     void pushControl() {
         fControlIndices.push_back(fCurrentOp);
-        if (!fSaveStack.isEmpty()) {
-            fSaveStack.top().controlOps++;
+        if (!fSaveStack.empty()) {
+            fSaveStack.back().controlOps++;
         }
     }
 
     void popControl(const Bounds& bounds) {
-        fBounds[fControlIndices.top()] = bounds;
-        fMeta  [fControlIndices.top()].isDraw = false;
-        fControlIndices.pop();
+        fBounds[fControlIndices.back()] = bounds;
+        fMeta  [fControlIndices.back()].isDraw = false;
+        fControlIndices.pop_back();
     }
 
     void updateSaveBounds(const Bounds& bounds) {
         // If we're in a Save block, expand its bounds to cover these bounds too.
-        if (!fSaveStack.isEmpty()) {
-            fSaveStack.top().bounds.join(bounds);
+        if (!fSaveStack.empty()) {
+            fSaveStack.back().bounds.join(bounds);
         }
     }
 
@@ -478,7 +478,7 @@ private:
 
 #if SK_SUPPORT_GPU
     Bounds bounds(const DrawSlug& op) const {
-        SkRect dst = op.slug->sourceBounds();
+        SkRect dst = op.slug->sourceBoundsWithOrigin();
         return this->adjustAndMap(dst, &op.slug->initialPaint());
     }
 #else
@@ -532,7 +532,7 @@ private:
     }
 
     bool adjustForSaveLayerPaints(SkRect* rect, int savesToIgnore = 0) const {
-        for (int i = fSaveStack.count() - 1 - savesToIgnore; i >= 0; i--) {
+        for (int i = fSaveStack.size() - 1 - savesToIgnore; i >= 0; i--) {
             SkMatrix inverse;
             if (!fSaveStack[i].ctm.invert(&inverse)) {
                 return false;

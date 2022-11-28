@@ -242,6 +242,10 @@ int ff_wmv2_decode_secondary_picture_header(MpegEncContext *s)
     WMV2DecContext *const w = (WMV2DecContext *) s;
 
     if (s->pict_type == AV_PICTURE_TYPE_I) {
+        /* Is filling with zeroes really the right thing to do? */
+        memset(s->current_picture_ptr->mb_type, 0,
+               sizeof(*s->current_picture_ptr->mb_type) *
+               s->mb_height * s->mb_stride);
         if (w->j_type_bit)
             w->j_type = get_bits1(&s->gb);
         else
@@ -578,7 +582,7 @@ static av_cold int wmv2_decode_init(AVCodecContext *avctx)
     ff_init_scantable(s->idsp.idct_permutation, &w->abt_scantable[1],
                       ff_wmv2_scantableB);
 
-    return ff_intrax8_common_init(avctx, &w->x8, &w->s.idsp,
+    return ff_intrax8_common_init(avctx, &w->x8,
                                   w->s.block, w->s.block_last_index,
                                   w->s.mb_width, w->s.mb_height);
 }
@@ -593,7 +597,7 @@ static av_cold int wmv2_decode_end(AVCodecContext *avctx)
 
 const FFCodec ff_wmv2_decoder = {
     .p.name         = "wmv2",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Windows Media Video 8"),
+    CODEC_LONG_NAME("Windows Media Video 8"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_WMV2,
     .priv_data_size = sizeof(WMV2DecContext),

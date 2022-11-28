@@ -9,7 +9,9 @@
 
 #include "include/core/SkSpan.h"
 #include "include/private/SkSLString.h"
+#include "include/private/SkTArray.h"
 #include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
@@ -178,7 +180,7 @@ static std::unique_ptr<Expression> optimize_constructor_swizzle(const Context& c
             return nullptr;
         }
         // Check that side-effect-bearing expressions are swizzled in exactly once.
-        if (exprUsed[constructorArgIndex] != 1 && baseArg.hasSideEffects()) {
+        if (exprUsed[constructorArgIndex] != 1 && Analysis::HasSideEffects(baseArg)) {
             return nullptr;
         }
     }
@@ -533,6 +535,14 @@ std::unique_ptr<Expression> Swizzle::Make(const Context& context,
 
     // The swizzle could not be simplified, so apply the requested swizzle to the base expression.
     return std::make_unique<Swizzle>(context, pos, std::move(expr), components);
+}
+
+std::string Swizzle::description(OperatorPrecedence) const {
+    std::string result = this->base()->description(OperatorPrecedence::kPostfix) + ".";
+    for (int x : this->components()) {
+        result += "xyzw"[x];
+    }
+    return result;
 }
 
 }  // namespace SkSL

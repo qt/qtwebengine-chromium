@@ -40,7 +40,9 @@ namespace internal {
 typedef __m512 Packet16f;
 typedef __m512i Packet16i;
 typedef __m512d Packet8d;
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 typedef eigen_packet_wrapper<__m256i, 1> Packet16h;
+#endif
 typedef eigen_packet_wrapper<__m256i, 2> Packet16bf;
 
 template <>
@@ -56,6 +58,7 @@ struct is_arithmetic<__m512d> {
   enum { value = true };
 };
 
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> struct is_arithmetic<Packet16h> { enum { value = true }; };
 
 template <>
@@ -100,6 +103,7 @@ struct packet_traits<half> : default_packet_traits {
     HasRint   = 1
   };
 };
+#endif
 
 template<> struct packet_traits<float>  : default_packet_traits
 {
@@ -118,6 +122,9 @@ template<> struct packet_traits<float>  : default_packet_traits
     HasBlend = 0,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasACos = 1,
+    HasASin = 1,
+    HasATan = 1,
 #if EIGEN_HAS_AVX512_MATH
     HasLog = 1,
     HasLog1p  = 1,
@@ -170,6 +177,8 @@ template<> struct packet_traits<int> : default_packet_traits
   enum {
     Vectorizable = 1,
     AlignedOnScalar = 1,
+    HasCmp = 1,
+    HasDiv = 1,
     size=16
   };
 };
@@ -196,12 +205,14 @@ struct unpacket_traits<Packet16i> {
   enum { size = 16, alignment=Aligned64, vectorizable=true, masked_load_available=false, masked_store_available=false };
 };
 
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<>
 struct unpacket_traits<Packet16h> {
   typedef Eigen::half type;
   typedef Packet8h half;
   enum {size=16, alignment=Aligned32, vectorizable=true, masked_load_available=false, masked_store_available=false};
 };
+#endif
 
 template <>
 EIGEN_STRONG_INLINE Packet16f pset1<Packet16f>(const float& from) {
@@ -379,10 +390,19 @@ EIGEN_STRONG_INLINE Packet16f pdiv<Packet16f>(const Packet16f& a,
                                               const Packet16f& b) {
   return _mm512_div_ps(a, b);
 }
+
 template <>
 EIGEN_STRONG_INLINE Packet8d pdiv<Packet8d>(const Packet8d& a,
                                             const Packet8d& b) {
   return _mm512_div_pd(a, b);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet16i pdiv<Packet16i>(const Packet16i& a,
+                                              const Packet16i& b) {
+  Packet8i q_lo = pdiv<Packet8i>(_mm512_extracti64x4_epi64(a, 0), _mm512_extracti64x4_epi64(b,0));
+  Packet8i q_hi = pdiv<Packet8i>(_mm512_extracti64x4_epi64(a, 1), _mm512_extracti64x4_epi64(b, 1));
+  return _mm512_inserti64x4(_mm512_castsi256_si512(q_lo), q_hi, 1);
 }
 
 #ifdef EIGEN_VECTORIZE_FMA
@@ -1368,7 +1388,11 @@ template<> EIGEN_STRONG_INLINE bool predux_any(const Packet16f& x)
   return !_mm512_kortestz(tmp,tmp);
 }
 
-
+template<> EIGEN_STRONG_INLINE bool predux_any(const Packet16i& x)
+{
+  __mmask16 tmp = _mm512_test_epi32_mask(x,x);
+  return !_mm512_kortestz(tmp,tmp);
+}
 
 #define PACK_OUTPUT(OUTPUT, INPUT, INDEX, STRIDE) \
   EIGEN_INSERT_8f_INTO_16f(OUTPUT[INDEX], INPUT[INDEX], INPUT[INDEX + STRIDE]);
@@ -1881,60 +1905,11 @@ ploadquad(const Eigen::half* from) {
 }
 
 EIGEN_STRONG_INLINE Packet16f half2float(const Packet16h& a) {
-#ifdef EIGEN_HAS_FP16_C
   return _mm512_cvtph_ps(a);
-#else
-  EIGEN_ALIGN64 half aux[16];
-  pstore(aux, a);
-  float f0(aux[0]);
-  float f1(aux[1]);
-  float f2(aux[2]);
-  float f3(aux[3]);
-  float f4(aux[4]);
-  float f5(aux[5]);
-  float f6(aux[6]);
-  float f7(aux[7]);
-  float f8(aux[8]);
-  float f9(aux[9]);
-  float fa(aux[10]);
-  float fb(aux[11]);
-  float fc(aux[12]);
-  float fd(aux[13]);
-  float fe(aux[14]);
-  float ff(aux[15]);
-
-  return _mm512_set_ps(
-      ff, fe, fd, fc, fb, fa, f9, f8, f7, f6, f5, f4, f3, f2, f1, f0);
-#endif
 }
 
 EIGEN_STRONG_INLINE Packet16h float2half(const Packet16f& a) {
-#ifdef EIGEN_HAS_FP16_C
   return _mm512_cvtps_ph(a, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC);
-#else
-  EIGEN_ALIGN64 float aux[16];
-  pstore(aux, a);
-  half h0(aux[0]);
-  half h1(aux[1]);
-  half h2(aux[2]);
-  half h3(aux[3]);
-  half h4(aux[4]);
-  half h5(aux[5]);
-  half h6(aux[6]);
-  half h7(aux[7]);
-  half h8(aux[8]);
-  half h9(aux[9]);
-  half ha(aux[10]);
-  half hb(aux[11]);
-  half hc(aux[12]);
-  half hd(aux[13]);
-  half he(aux[14]);
-  half hf(aux[15]);
-
-  return _mm256_set_epi16(
-      hf.x, he.x, hd.x, hc.x, hb.x, ha.x, h9.x, h8.x,
-      h7.x, h6.x, h5.x, h4.x, h3.x, h2.x, h1.x, h0.x);
-#endif
 }
 
 template<> EIGEN_STRONG_INLINE Packet16h ptrue(const Packet16h& a) {
@@ -2024,6 +1999,7 @@ template<> EIGEN_STRONG_INLINE Packet16h pnegate(const Packet16h& a) {
   return _mm256_xor_si256(a, sign_mask);
 }
 
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> EIGEN_STRONG_INLINE Packet16h padd<Packet16h>(const Packet16h& a, const Packet16h& b) {
   Packet16f af = half2float(a);
   Packet16f bf = half2float(b);
@@ -2056,6 +2032,8 @@ template<> EIGEN_STRONG_INLINE half predux<Packet16h>(const Packet16h& from) {
   Packet16f from_float = half2float(from);
   return half(predux(from_float));
 }
+
+#endif
 
 template <>
 EIGEN_STRONG_INLINE Packet8h predux_half_dowto4<Packet16h>(const Packet16h& a) {

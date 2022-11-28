@@ -85,7 +85,7 @@ void SkSurface_Base::onDraw(SkCanvas* canvas, SkScalar x, SkScalar y,
 }
 
 void SkSurface_Base::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
-                                                 const SkIRect& origSrcRect,
+                                                 SkIRect origSrcRect,
                                                  SkSurface::RescaleGamma rescaleGamma,
                                                  RescaleMode rescaleMode,
                                                  SkSurface::ReadPixelsCallback callback,
@@ -110,8 +110,8 @@ void SkSurface_Base::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void SkSurface_Base::onAsyncRescaleAndReadPixelsYUV420(
-        SkYUVColorSpace yuvColorSpace, sk_sp<SkColorSpace> dstColorSpace, const SkIRect& srcRect,
-        const SkISize& dstSize, RescaleGamma rescaleGamma, RescaleMode,
+        SkYUVColorSpace yuvColorSpace, sk_sp<SkColorSpace> dstColorSpace, SkIRect srcRect,
+        SkISize dstSize, RescaleGamma rescaleGamma, RescaleMode,
         ReadPixelsCallback callback, ReadPixelsContext context) {
     // TODO: Call non-YUV asyncRescaleAndReadPixels and then make our callback convert to YUV and
     // call client's callback.
@@ -382,7 +382,7 @@ GrSemaphoresSubmitted SkSurface::flush(BackendSurfaceAccess access, const GrFlus
 }
 
 GrSemaphoresSubmitted SkSurface::flush(const GrFlushInfo& info,
-                                       const GrBackendSurfaceMutableState* newState) {
+                                       const skgpu::MutableTextureState* newState) {
     return asSB(this)->onFlush(BackendSurfaceAccess::kNoAccess, info, newState);
 }
 

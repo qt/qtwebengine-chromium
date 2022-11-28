@@ -65,6 +65,8 @@ class Texture final : public TextureBase {
                                            VkImage nativeImage);
 
     VkImage GetHandle() const;
+    // Returns the aspects used for tracking of Vulkan state. These can be the combined aspects.
+    Aspect GetDisjointVulkanAspects() const;
 
     // Transitions the texture to be used as `usage`, recording any necessary barrier in
     // `commands`.
@@ -80,6 +82,7 @@ class Texture final : public TextureBase {
 
     // Eagerly transition the texture for export.
     void TransitionEagerlyForExport(CommandRecordingContext* recordingContext);
+    std::vector<VkSemaphore> AcquireWaitRequirements();
 
     void EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
                                              const SubresourceRange& range);
@@ -138,24 +141,6 @@ class Texture final : public TextureBase {
                                          size_t transitionBarrierStart);
     bool CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage);
 
-    // In base Vulkan, Depth and stencil can only be transitioned together. This function
-    // indicates whether we should combine depth and stencil barriers to accommodate this
-    // limitation.
-    bool ShouldCombineDepthStencilBarriers() const;
-
-    // This indicates whether the VK_IMAGE_ASPECT_COLOR_BIT instead of
-    // VK_IMAGE_ASPECT_PLANE_n_BIT must be used.
-    bool ShouldCombineMultiPlaneBarriers() const;
-
-    bool ShouldCombineBarriers() const {
-        return ShouldCombineDepthStencilBarriers() || ShouldCombineMultiPlaneBarriers();
-    }
-
-    // Compute the Aspects of the SubresourceStoage for this texture depending on whether we're
-    // doing the workaround for combined depth and stencil barriers, or combining multi-plane
-    // barriers.
-    Aspect ComputeAspectsForSubresourceStorage() const;
-
     VkImage mHandle = VK_NULL_HANDLE;
     ResourceMemoryAllocation mMemoryAllocation;
     VkDeviceMemory mExternalAllocation = VK_NULL_HANDLE;
@@ -176,6 +161,7 @@ class Texture final : public TextureBase {
     };
     ExternalState mExternalState = ExternalState::InternalOnly;
     ExternalState mLastExternalState = ExternalState::InternalOnly;
+    uint32_t mExportQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL_KHR;
 
     VkImageLayout mPendingAcquireOldLayout;
     VkImageLayout mPendingAcquireNewLayout;
@@ -186,12 +172,20 @@ class Texture final : public TextureBase {
 
     std::vector<VkSemaphore> mWaitRequirements;
 
-    // Note that in early Vulkan versions it is not possible to transition depth and stencil
-    // separately so textures with Depth|Stencil aspects will have a single Depth aspect in the
-    // storage.
-    std::unique_ptr<SubresourceStorage<wgpu::TextureUsage>> mSubresourceLastUsages;
+    // Sometimes the WebGPU aspects don't directly map to Vulkan aspects:
+    //
+    //  - In early Vulkan versions it is not possible to transition depth and stencil separetely so
+    //    textures with Depth|Stencil will be promoted to a single CombinedDepthStencil aspect
+    //    internally.
+    //  - Some multiplanar images cannot have planes transitioned separately and instead Vulkan
+    //    requires that the "Color" aspect be used for barriers, so Plane0|Plane1 is promoted to
+    //    just Color.
+    //
+    // This variable, if not Aspect::None, is the combined aspect to use for all transitions.
+    const Aspect mCombinedAspect;
+    SubresourceStorage<wgpu::TextureUsage> mSubresourceLastUsages;
 
-    bool mSupportsDisjointVkImage = false;
+    bool UseCombinedAspects() const;
 };
 
 class TextureView final : public TextureViewBase {

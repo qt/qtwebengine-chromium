@@ -425,6 +425,11 @@ public:
         return fRebindColorAttachmentAfterCheckFramebufferStatus;
     }
 
+    // During writePixels, call glFlush() before issuing glTexSubImage2D().
+    bool flushBeforeWritePixels() const {
+        return fFlushBeforeWritePixels;
+    }
+
     // Returns the observed maximum number of instances the driver can handle in a single draw call
     // without crashing, or 'pendingInstanceCount' if this workaround is not necessary.
     // NOTE: the return value may be larger than pendingInstanceCount.
@@ -442,7 +447,7 @@ public:
                        GrGLFormat srcFormat, int srcSampleCnt,
                        const GrTextureType* srcTypeIfTexture,
                        const SkRect& srcBounds, bool srcBoundsExact,
-                       const SkIRect& srcRect, const SkIPoint& dstPoint) const;
+                       const SkIRect& srcRect, const SkIRect& dstRect) const;
     bool canCopyAsDraw(GrGLFormat dstFormat, bool srcIsTexturable) const;
 
     DstCopyRestrictions getDstCopyRestrictions(const GrRenderTargetProxy* src,
@@ -535,8 +540,8 @@ private:
     void initFormatTable(const GrGLContextInfo&, const GrGLInterface*, const FormatWorkarounds&);
     void setupSampleCounts(const GrGLContextInfo&, const GrGLInterface*);
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override;
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
+    bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                          const GrSurfaceProxy* src, const SkIRect& srcRect) const override;
     GrBackendFormat onGetDefaultBackendFormat(GrColorType) const override;
     bool onAreColorTypeAndFormatCompatible(GrColorType, const GrBackendFormat&) const override;
 
@@ -607,6 +612,7 @@ private:
     bool fMustResetBlendFuncBetweenDualSourceAndDisable : 1;
     bool fBindTexture0WhenChangingTextureFBOMultisampleCount : 1;
     bool fRebindColorAttachmentAfterCheckFramebufferStatus : 1;
+    bool fFlushBeforeWritePixels : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;

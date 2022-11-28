@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as Root from '../../core/root/root.js';
-import * as Puppeteer from '../../services/puppeteer/puppeteer.js';
+import * as PuppeteerService from '../../services/puppeteer/puppeteer.js';
 import type * as SDK from '../../core/sdk/sdk.js';
 
 function disableLoggingForTest(): void {
@@ -97,8 +97,8 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
     notifyFrontendViaWorkerMessage('statusUpdate', {message: message[1]});
   });
 
-  let puppeteerConnection: Awaited<ReturnType<typeof Puppeteer.PuppeteerConnection['getPuppeteerConnection']>>|
-      undefined;
+  let puppeteerHandle: Awaited<ReturnType<
+      typeof PuppeteerService.PuppeteerConnection.PuppeteerConnectionHelper['connectPuppeteerToConnection']>>|undefined;
 
   try {
     // For timespan we only need to perform setup on startTimespan.
@@ -136,11 +136,19 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
       return await self.runLighthouse(url, flags, config, connection);
     }
 
-    const {mainTargetId, mainFrameId, mainSessionId} = args.target;
+    const {mainFrameId, mainSessionId, targetInfos} = args;
     cdpConnection = new ConnectionProxy(mainSessionId);
-    puppeteerConnection =
-        await Puppeteer.PuppeteerConnection.getPuppeteerConnection(cdpConnection, mainFrameId, mainTargetId);
-    const {page} = puppeteerConnection;
+    puppeteerHandle = await PuppeteerService.PuppeteerConnection.PuppeteerConnectionHelper.connectPuppeteerToConnection({
+      connection: cdpConnection,
+      mainFrameId,
+      targetInfos,
+      // For the most part, defer to Lighthouse for which targets are important.
+      // Excluding devtools targets is required for e2e tests to work, and LH doesn't support auditing DT targets anyway.
+      targetFilterCallback: targetInfo => !targetInfo.url.match(/^https:\/\/i0.devtools-frontend/),
+      // Lighthouse can only audit normal pages.
+      isPageTargetCallback: targetInfo => targetInfo.type === 'page',
+    });
+    const {page} = puppeteerHandle;
     const configContext = {
       logLevel: flags.logLevel,
       settingsOverrides: flags,
@@ -172,7 +180,7 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
   } finally {
     // endTimespan will need to use the same connection as startTimespan.
     if (action !== 'startTimespan') {
-      puppeteerConnection?.browser.disconnect();
+      puppeteerHandle?.browser.disconnect();
     }
   }
 }

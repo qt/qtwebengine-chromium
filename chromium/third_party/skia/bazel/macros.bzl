@@ -11,7 +11,7 @@ load("@py_deps//:requirements.bzl", _requirement = "requirement")
 load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", _wasm_cc_binary = "wasm_cc_binary")
 load("@io_bazel_rules_go//go:def.bzl", _go_binary = "go_binary", _go_library = "go_library")
-load("//bazel/common_config_settings:defs.bzl", _bool_flag = "bool_flag", _string_flag_with_values = "string_flag_with_values")
+load("//bazel:flags.bzl", _bool_flag = "bool_flag", _string_flag_with_values = "string_flag_with_values")
 load("//bazel:copts.bzl", "DEFAULT_COPTS", "DEFAULT_OBJC_COPTS")
 load("//bazel:linkopts.bzl", "DEFAULT_LINKOPTS")
 
@@ -201,10 +201,12 @@ def split_srcs_and_hdrs(name, files):
     for f in files:
         if f.endswith(".cpp"):
             srcs.append(f)
+        elif f.endswith(".mm"):
+            srcs.append(f)
         elif f.endswith(".h"):
             hdrs.append(f)
         else:
-            fail("Neither .cpp nor .h file " + f)
+            fail("Neither .cpp, .mm, nor .h file " + f)
 
     if len(srcs) == 0 or len(hdrs) == 0:
         fail("The list consist of either only source or header files. No need to use this macro.")

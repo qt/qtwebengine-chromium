@@ -114,11 +114,11 @@ void CPDF_PageObjectHolder::FontsMapInsert(const FontData& fd,
 }
 
 void CPDF_PageObjectHolder::LoadTransparencyInfo() {
-  const CPDF_Dictionary* pGroup = m_pDict->GetDictFor("Group");
+  RetainPtr<const CPDF_Dictionary> pGroup = m_pDict->GetDictFor("Group");
   if (!pGroup)
     return;
 
-  if (pGroup->GetStringFor(pdfium::transparency::kGroupSubType) !=
+  if (pGroup->GetByteStringFor(pdfium::transparency::kGroupSubType) !=
       pdfium::transparency::kTransparency) {
     return;
   }

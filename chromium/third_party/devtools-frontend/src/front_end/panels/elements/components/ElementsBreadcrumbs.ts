@@ -20,6 +20,14 @@ const UIStrings = {
   * @description Accessible name for DOM tree breadcrumb navigation.
   */
   breadcrumbs: 'DOM tree breadcrumbs',
+  /**
+  * @description A label/tooltip for a button that scrolls the breadcrumbs bar to the left to show more entries.
+  */
+  scrollLeft: 'Scroll left',
+  /**
+  * @description A label/tooltip for a button that scrolls the breadcrumbs bar to the right to show more entries.
+  */
+  scrollRight: 'Scroll right',
 };
 
 const str_ = i18n.i18n.registerUIStrings('panels/elements/components/ElementsBreadcrumbs.ts', UIStrings);
@@ -252,12 +260,15 @@ export class ElementsBreadcrumbs extends HTMLElement {
       hidden: this.#overflowing === false,
     });
 
+    const tooltipString = direction === 'left' ? i18nString(UIStrings.scrollLeft) : i18nString(UIStrings.scrollRight);
+
     return LitHtml.html`
       <button
         class=${buttonStyles}
         @click=${this.#onOverflowClick(direction)}
         ?disabled=${disabled}
-        aria-label="Scroll ${direction}"
+        aria-label=${tooltipString}
+        title=${tooltipString}
       >&hellip;</button>
       `;
   }
@@ -331,7 +342,13 @@ export class ElementsBreadcrumbs extends HTMLElement {
     if (activeCrumb) {
       await coordinator.scroll(() => {
         activeCrumb.scrollIntoView({
-          behavior: 'smooth',
+          // We only want to scroll smoothly when the user is clicking the
+          // buttons manually. If we are automatically scrolling, we could be
+          // scrolling a long distance, so just jump there right away. This
+          // most commonly occurs when the user first opens DevTools on a
+          // deeply nested element, and the slow scrolling of the breadcrumbs
+          // is just a distraction and not useful.
+          behavior: 'auto',
         });
       });
     }

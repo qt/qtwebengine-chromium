@@ -4,6 +4,8 @@
 
 #include "cast/standalone_sender/streaming_video_encoder.h"
 
+#include <utility>
+
 #include "util/chrono_helpers.h"
 
 namespace openscreen {
@@ -11,8 +13,10 @@ namespace cast {
 
 StreamingVideoEncoder::StreamingVideoEncoder(const Parameters& params,
                                              TaskRunner* task_runner,
-                                             Sender* sender)
-    : params_(params), main_task_runner_(task_runner), sender_(sender) {
+                                             std::unique_ptr<Sender> sender)
+    : params_(params),
+      main_task_runner_(task_runner),
+      sender_(std::move(sender)) {
   OSP_DCHECK_LE(1, params_.num_encode_threads);
   OSP_DCHECK_LE(kMinQuantizer, params_.min_quantizer);
   OSP_DCHECK_LE(params_.min_quantizer, params_.max_cpu_saver_quantizer);

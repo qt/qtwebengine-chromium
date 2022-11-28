@@ -25,21 +25,6 @@ namespace dawn::native {
 
 // Format
 
-// TODO(dawn:527): Remove when unused.
-SampleTypeBit ToSampleTypeBit(wgpu::TextureComponentType type) {
-    switch (type) {
-        case wgpu::TextureComponentType::Float:
-            return SampleTypeBit::Float;
-        case wgpu::TextureComponentType::Sint:
-            return SampleTypeBit::Sint;
-        case wgpu::TextureComponentType::Uint:
-            return SampleTypeBit::Uint;
-        case wgpu::TextureComponentType::DepthComparison:
-            return SampleTypeBit::Depth;
-    }
-    UNREACHABLE();
-}
-
 SampleTypeBit SampleTypeToSampleTypeBit(wgpu::TextureSampleType sampleType) {
     switch (sampleType) {
         case wgpu::TextureSampleType::Float:
@@ -245,7 +230,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         firstAspect->block.width = 1;
         firstAspect->block.height = 1;
         firstAspect->baseType = wgpu::TextureComponentType::Float;
-        firstAspect->supportedSampleTypes = SampleTypeBit::Depth;
+        firstAspect->supportedSampleTypes = SampleTypeBit::Depth | SampleTypeBit::UnfilterableFloat;
         firstAspect->format = format;
         AddFormat(internalFormat);
     };
@@ -378,7 +363,8 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddColorFormat(wgpu::TextureFormat::BGRA8UnormSrgb, true, false, true, true, 4, kAnyFloat, 4, wgpu::TextureFormat::BGRA8Unorm);
         AddColorFormat(wgpu::TextureFormat::RGB10A2Unorm, true, false, true, true, 4, kAnyFloat, 4);
 
-        AddColorFormat(wgpu::TextureFormat::RG11B10Ufloat, false, false, false, false, 4, kAnyFloat, 3);
+        bool isRG11B10UfloatRenderable = device->HasFeature(Feature::RG11B10UfloatRenderable);
+        AddColorFormat(wgpu::TextureFormat::RG11B10Ufloat, isRG11B10UfloatRenderable, false, isRG11B10UfloatRenderable, false, 4, kAnyFloat, 3);
         AddColorFormat(wgpu::TextureFormat::RGB9E5Ufloat, false, false, false, false, 4, kAnyFloat, 3);
 
         // 8 bytes color formats
@@ -404,12 +390,12 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddMultiAspectFormat(wgpu::TextureFormat::Depth24PlusStencil8,
                               Aspect::Depth | Aspect::Stencil, wgpu::TextureFormat::Depth24Plus, wgpu::TextureFormat::Stencil8, true, true, true, 2);
         AddDepthFormat(wgpu::TextureFormat::Depth32Float, 4, true);
-        bool isD32S8Supported = device->IsFeatureEnabled(Feature::Depth32FloatStencil8);
+        bool isD32S8Supported = device->HasFeature(Feature::Depth32FloatStencil8);
         AddMultiAspectFormat(wgpu::TextureFormat::Depth32FloatStencil8,
                               Aspect::Depth | Aspect::Stencil, wgpu::TextureFormat::Depth32Float, wgpu::TextureFormat::Stencil8, true, isD32S8Supported, true, 2);
 
         // BC compressed formats
-        bool isBCFormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionBC);
+        bool isBCFormatSupported = device->HasFeature(Feature::TextureCompressionBC);
         AddCompressedFormat(wgpu::TextureFormat::BC1RGBAUnorm, 8, 4, 4, isBCFormatSupported, 4);
         AddCompressedFormat(wgpu::TextureFormat::BC1RGBAUnormSrgb, 8, 4, 4, isBCFormatSupported, 4, wgpu::TextureFormat::BC1RGBAUnorm);
         AddCompressedFormat(wgpu::TextureFormat::BC4RSnorm, 8, 4, 4, isBCFormatSupported, 1);
@@ -426,7 +412,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddCompressedFormat(wgpu::TextureFormat::BC7RGBAUnormSrgb, 16, 4, 4, isBCFormatSupported, 4, wgpu::TextureFormat::BC7RGBAUnorm);
 
         // ETC2/EAC compressed formats
-        bool isETC2FormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionETC2);
+        bool isETC2FormatSupported = device->HasFeature(Feature::TextureCompressionETC2);
         AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8Unorm, 8, 4, 4, isETC2FormatSupported, 3);
         AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8UnormSrgb, 8, 4, 4, isETC2FormatSupported, 3, wgpu::TextureFormat::ETC2RGB8Unorm);
         AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8A1Unorm, 8, 4, 4, isETC2FormatSupported, 4);
@@ -439,7 +425,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddCompressedFormat(wgpu::TextureFormat::EACRG11Snorm, 16, 4, 4, isETC2FormatSupported, 2);
 
         // ASTC compressed formats
-        bool isASTCFormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionASTC);
+        bool isASTCFormatSupported = device->HasFeature(Feature::TextureCompressionASTC);
         AddCompressedFormat(wgpu::TextureFormat::ASTC4x4Unorm, 16, 4, 4, isASTCFormatSupported, 4);
         AddCompressedFormat(wgpu::TextureFormat::ASTC4x4UnormSrgb, 16, 4, 4, isASTCFormatSupported, 4, wgpu::TextureFormat::ASTC4x4Unorm);
         AddCompressedFormat(wgpu::TextureFormat::ASTC5x4Unorm, 16, 5, 4, isASTCFormatSupported, 4);
@@ -470,7 +456,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
         AddCompressedFormat(wgpu::TextureFormat::ASTC12x12UnormSrgb, 16, 12, 12, isASTCFormatSupported, 4, wgpu::TextureFormat::ASTC12x12Unorm);
 
         // multi-planar formats
-        const bool isMultiPlanarFormatSupported = device->IsFeatureEnabled(Feature::MultiPlanarFormats);
+        const bool isMultiPlanarFormatSupported = device->HasFeature(Feature::MultiPlanarFormats);
         AddMultiAspectFormat(wgpu::TextureFormat::R8BG8Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
             wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, false, isMultiPlanarFormatSupported, false, 3);
 

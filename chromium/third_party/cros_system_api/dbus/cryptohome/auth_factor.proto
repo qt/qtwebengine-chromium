@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -23,6 +23,19 @@ enum AuthFactorType {
   AUTH_FACTOR_TYPE_CRYPTOHOME_RECOVERY = 3;
   AUTH_FACTOR_TYPE_KIOSK = 4;
   AUTH_FACTOR_TYPE_SMART_CARD = 5;
+  AUTH_FACTOR_TYPE_LEGACY_FINGERPRINT = 6;
+}
+
+// Enum to define the purpose of AuthFactor preparation. This would be used
+// in PrepareAsyncAuthFactorRequest.
+enum AuthFactorPreparePurpose {
+  PURPOSE_UNSPECIFIED = 0;
+  // For adding a new auth factor. Usually it indicates PrepareAsynAuthFactor()
+  // runs an auth factor enrollment process (based on user input collection).
+  PURPOSE_ADD_AUTH_FACTOR = 1;
+  // For authenticating an existing async auth factor. Usually this indicates
+  // PrepareAsyncAuthFactor() runs an user input collection process.
+  PURPOSE_AUTHENTICATE_AUTH_FACTOR = 2;
 }
 
 // Cryptographic signature algorithm type for smart card requests. Used with
@@ -33,6 +46,23 @@ enum SmartCardSignatureAlgorithm {
   CHALLENGE_RSASSA_PKCS1_V1_5_SHA256 = 2;
   CHALLENGE_RSASSA_PKCS1_V1_5_SHA384 = 3;
   CHALLENGE_RSASSA_PKCS1_V1_5_SHA512 = 4;
+}
+
+// An intent specifies the set of operations that can be performed after
+// successfully authenticating an Auth Session.
+enum AuthIntent {
+  // Default value.
+  AUTH_INTENT_UNSPECIFIED = 0;
+  // Intent to decrypt the user's file system keys. Authorizing for this intent
+  // allows all privileged operations, e.g., preparing user's vault,
+  // adding/updating/removing factors.
+  AUTH_INTENT_DECRYPT = 1;
+  // Intent to simply check whether the authentication succeeds. Authorizing for
+  // this intent doesn't allow any privileged operation.
+  AUTH_INTENT_VERIFY_ONLY = 2;
+  // Intent to specify the WebAuthn secret should be populated after authorizing
+  // when applicable, i.e., when the AuthFactor type isn't kLegacyFingerprint.
+  AUTH_INTENT_WEBAUTHN = 3;
 }
 
 // Password AuthFactor requires a secret to be passed for derivation and
@@ -79,6 +109,10 @@ message SmartCardAuthInput {
   string key_delegate_dbus_service_name = 2;
 }
 
+// LegacyFingerprintAuthInput serves as an auth factor type indicator in
+// AuthenticateAuthFactorRequest.
+message LegacyFingerprintAuthInput {}
+
 // AuthInput is a wrapper around any secret or input data that is required to
 // authenticate or create an AuthFactor on disk.
 message AuthInput {
@@ -91,6 +125,7 @@ message AuthInput {
     CryptohomeRecoveryAuthInput cryptohome_recovery_input = 3;
     KioskAuthInput kiosk_input = 4;
     SmartCardAuthInput smart_card_input = 5;
+    LegacyFingerprintAuthInput legacy_fingerprint_input = 6;
   }
 }
 
@@ -118,6 +153,21 @@ message SmartCardMetadata {
   bytes public_key_spki_der = 1;
 }
 
+message CommonMetadata {
+  // Specifies the version AuthFactor was last updated.
+  // The version number is read from CHROMEOS_RELEASE_VERSION field in
+  // /etc/lsb-release whenever AuthFactor is updated or first persisted.
+  // See:https://chromium.googlesource.com/chromiumos/docs/+/HEAD/os_config.md
+  // For example: "11012.0.2018_08_28_1422" could be returned as part of this.
+  string chromeos_version_last_updated = 1;
+  // This version number will be supplied by chrome when it calls AddAuthFactor
+  // or UpdateAuthFactor.
+  // Note: The format of this version will be maintained by chrome.
+  string chrome_version_last_updated = 2;
+}
+
+message LegacyFingerprintMetadata {}
+
 // AuthFactor is a backing store for any secret stored on Chrome OS in the USS
 // World. This proto definition is used to communicate with the client side.
 // Once it is received on cryptohome side, this proto definition is converted to
@@ -135,9 +185,9 @@ message AuthFactor {
   // only consisting of characters from the set {a-z, A-Z, 0-9, _, -}, and whose
   // length doesn't exceed 1000.
   string label = 2;
-  // is_active indicates if the AuthFactor can be used for Authenticating
-  // AuthFactor.
-  bool is_active_for_login = 3;
+  // Common metadata that is shared across all types.
+  CommonMetadata common_metadata = 9;
+
   // An AuthFactor could also carry with itself some metadata. Since an
   // AuthFactor could only be one type, oneof is used to define the usage of
   // metadata.
@@ -147,5 +197,8 @@ message AuthFactor {
     CryptohomeRecoveryMetadata cryptohome_recovery_metadata = 6;
     KioskMetadata kiosk_metadata = 7;
     SmartCardMetadata smart_card_metadata = 8;
+    LegacyFingerprintMetadata legacy_fingerprint_metadata = 11;
   }
+
+  reserved 3, 10;
 }

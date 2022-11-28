@@ -87,10 +87,14 @@ void SetValidationEnable(CHECK_ENABLED &enable_data, const ValidationCheckEnable
         case VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG:
             enable_data[vendor_specific_img] = true;
             break;
+        case VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA:
+            enable_data[vendor_specific_nvidia] = true;
+            break;
         case VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ALL:
             enable_data[vendor_specific_arm] = true;
             enable_data[vendor_specific_amd] = true;
             enable_data[vendor_specific_img] = true;
+            enable_data[vendor_specific_nvidia] = true;
             break;
         case VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION_QUEUE_SUBMIT:
             enable_data[sync_validation_queue_submit] = true;
@@ -243,9 +247,9 @@ void CreateFilterMessageIdList(std::string raw_id_list, std::string delimiter, s
         token = GetNextToken(&raw_id_list, delimiter, &pos);
         uint32_t int_id = TokenToUint(token);
         if (int_id == 0) {
-            size_t id_hash = XXH32(token.c_str(), strlen(token.c_str()), 8);  // String
+            const uint32_t id_hash = XXH32(token.data(), token.size(), 8);  // String
             if (id_hash != 0) {
-                int_id = static_cast<uint32_t>(id_hash);
+                int_id = id_hash;
             }
         }
         if ((int_id != 0) && (std::find(filter_list.begin(), filter_list.end(), int_id)) == filter_list.end()) {

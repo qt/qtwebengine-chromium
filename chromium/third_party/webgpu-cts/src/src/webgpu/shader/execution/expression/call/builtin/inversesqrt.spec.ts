@@ -13,7 +13,7 @@ import { kValue } from '../../../../../util/constants.js';
 import { TypeF32 } from '../../../../../util/conversion.js';
 import { inverseSqrtInterval } from '../../../../../util/f32_interval.js';
 import { biasedRange, linearRange } from '../../../../../util/math.js';
-import { allInputSources, Case, makeUnaryF32IntervalCase, run } from '../../expression.js';
+import { allInputSources, Case, makeUnaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -35,7 +35,7 @@ g.test('f32')
   )
   .fn(async t => {
     const makeCase = (x: number): Case => {
-      return makeUnaryF32IntervalCase(x, inverseSqrtInterval);
+      return makeUnaryToF32IntervalCase(x, inverseSqrtInterval);
     };
 
     const cases: Array<Case> = [
@@ -45,7 +45,7 @@ g.test('f32')
       ...biasedRange(1, 2 ** 32, 1000),
     ].map(x => makeCase(x));
 
-    run(t, builtin('inverseSqrt'), [TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('inverseSqrt'), [TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

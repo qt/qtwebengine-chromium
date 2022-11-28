@@ -95,6 +95,10 @@ else()
     if(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
         target_compile_definitions(loader_specific_options INTERFACE __BSD_VISIBLE=1)
     endif()
+    check_include_file("alloca.h" HAVE_ALLOCA_H)
+    if(HAVE_ALLOCA_H)
+        target_compile_definitions(loader_specific_options INTERFACE HAVE_ALLOCA_H)
+    endif()
 endif()
 
 set(NORMAL_LOADER_SRCS
@@ -162,7 +166,7 @@ if(WIN32)
         target_include_directories(loader-unknown-chain PUBLIC $<TARGET_PROPERTY:loader_asm_gen_files,BINARY_DIR>)
         add_dependencies(loader-unknown-chain loader_asm_gen_files)
     else()
-        message(WARNING "Could not find working MASM assebler\n${ASM_FAILURE_MSG}")
+        message(WARNING "Could not find working MASM assembler\n${ASM_FAILURE_MSG}")
         add_custom_target(loader_asm_gen_files)
         add_library(loader-unknown-chain OBJECT unknown_ext_chain.c)
         target_link_libraries(loader-unknown-chain loader_specific_options)
@@ -186,7 +190,7 @@ else() # i.e.: Linux
             if(ASSEMBLER_WORKS)
                 set(OPT_LOADER_SRCS ${OPT_LOADER_SRCS} unknown_ext_chain_gas_aarch64.S)
             endif()
-        elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "^i.86$")
+        elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "amd64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "^i.86$")
             check_include_file("cet.h" HAVE_CET_H)
             if(HAVE_CET_H)
                 target_compile_definitions(loader_specific_options INTERFACE HAVE_CET_H)
@@ -235,11 +239,17 @@ if(WIN32)
     endif()
 
     # when adding the suffix the import and runtime library names must be consistent
-    # mingw: libvulkan-1.dll.a / libvulkan-1.dll
+    # mingw: libvulkan-1.dll.a / vulkan-1.dll
     # msvc: vulkan-1.lib / vulkan-1.dll
     set_target_properties(vulkan
                           PROPERTIES
                           OUTPUT_NAME vulkan-1)
+    if(MINGW)
+        # generate the same DLL with mingw
+        set_target_properties(vulkan
+                              PROPERTIES
+                              PREFIX "")
+    endif()
 
     if(MSVC AND ENABLE_WIN10_ONECORE)
         target_link_libraries(vulkan PRIVATE OneCoreUAP.lib LIBCMT.LIB LIBCMTD.LIB LIBVCRUNTIME.LIB LIBUCRT.LIB)
@@ -328,7 +338,11 @@ if(PKG_CONFIG_FOUND)
         set(PRIVATE_LIBS "${PRIVATE_LIBS} -l${LIB}")
     endforeach()
     if(WIN32)
-        set(VULKAN_LIB_SUFFIX "-1")
+        if(MINGW)
+            set(VULKAN_LIB_SUFFIX "-1.dll")
+        else()
+            set(VULKAN_LIB_SUFFIX "-1")
+        endif()
         # Set libdir path as in cmake's FindVulkan.cmake
         # https://github.com/KhronosGroup/Vulkan-Loader/issues/668
         if(CMAKE_SIZEOF_VOID_P EQUAL 8)

@@ -15,6 +15,7 @@
 
 #include "core/fxcrt/unowned_ptr.h"
 #include "third_party/base/check.h"
+#include "third_party/base/compiler_specific.h"
 
 namespace pdfium {
 
@@ -176,7 +177,7 @@ using EnableIfConstSpanCompatibleContainer =
 
 // [span], class template span
 template <typename T>
-class span {
+class TRIVIAL_ABI GSL_POINTER span {
  public:
   using value_type = typename std::remove_cv<T>::type;
   using pointer = T*;
@@ -209,14 +210,15 @@ class span {
   // seamlessly used as a span<const T>, but not the other way around.
   template <typename U, typename = internal::EnableIfLegalSpanConversion<U, T>>
   constexpr span(const span<U>& other) : span(other.data(), other.size()) {}
-  span& operator=(const span& other) noexcept = default;
-  ~span() noexcept {
-    if (!size_) {
-      // Empty spans might point to byte N+1 of a N-byte object, legal for
-      // C pointers but not UnownedPtrs.
-      data_.ReleaseBadPointer();
+  span& operator=(const span& other) noexcept {
+    if (this != &other) {
+      ReleaseEmptySpan();
+      data_ = other.data_;
+      size_ = other.size_;
     }
+    return *this;
   }
+  ~span() noexcept { ReleaseEmptySpan(); }
 
   // [span.sub], span subviews
   const span first(size_t count) const {
@@ -281,6 +283,13 @@ class span {
   }
 
  private:
+  void ReleaseEmptySpan() noexcept {
+    // Empty spans might point to byte N+1 of a N-byte object, legal for
+    // C pointers but not UnownedPtrs.
+    if (!size_)
+      data_.ReleaseBadPointer();
+  }
+
   UnownedPtr<T> data_;
   size_t size_;
 };

@@ -750,7 +750,7 @@ void PostCallRecordCreateWin32SurfaceKHR(
 
 void PostCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
-    const VkVideoProfileKHR*                    pVideoProfile,
+    const VkVideoProfileInfoKHR*                pVideoProfile,
     VkVideoCapabilitiesKHR*                     pCapabilities,
     VkResult                                    result) override;
 
@@ -786,8 +786,8 @@ void PostCallRecordCreateVideoSessionKHR(
 void PostCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements,
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements,
     VkResult                                    result) override;
 
 
@@ -798,8 +798,8 @@ void PostCallRecordGetVideoSessionMemoryRequirementsKHR(
 void PostCallRecordBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories,
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos,
     VkResult                                    result) override;
 
 
@@ -1659,6 +1659,13 @@ void PostCallRecordSetPrivateDataEXT(
     VkResult                                    result) override;
 
 
+void PostCallRecordGetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo,
+    VkResult                                    result) override;
+
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 
 void PostCallRecordAcquireWinrtDisplayNV(
@@ -1814,6 +1821,79 @@ void PostCallRecordCreateScreenSurfaceQNX(
 
 #endif // VK_USE_PLATFORM_SCREEN_QNX
 
+void PostCallRecordCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap,
+    VkResult                                    result) override;
+
+
+void PostCallRecordBuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos,
+    VkResult                                    result) override;
+
+
+void PostCallRecordCopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo,
+    VkResult                                    result) override;
+
+
+void PostCallRecordCopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo,
+    VkResult                                    result) override;
+
+
+void PostCallRecordCopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo,
+    VkResult                                    result) override;
+
+
+void PostCallRecordWriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride,
+    VkResult                                    result) override;
+
+
+void PostCallRecordGetPhysicalDeviceOpticalFlowImageFormatsNV(
+    VkPhysicalDevice                            physicalDevice,
+    const VkOpticalFlowImageFormatInfoNV*       pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkOpticalFlowImageFormatPropertiesNV*       pImageFormatProperties,
+    VkResult                                    result) override;
+
+
+void PostCallRecordCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession,
+    VkResult                                    result) override;
+
+
+void PostCallRecordBindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout,
+    VkResult                                    result) override;
+
+
 void PostCallRecordGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,
     VkFramebuffer                               framebuffer,
@@ -1902,6 +1982,7 @@ const layer_data::unordered_map<std::string, DeprecationData>  deprecated_extens
     {"VK_AMD_gpu_shader_half_float", {kExtDeprecated, "VK_KHR_shader_float16_int8"}},
     {"VK_AMD_gpu_shader_int16", {kExtDeprecated, "VK_KHR_shader_float16_int8"}},
     {"VK_AMD_negative_viewport_height", {kExtObsoleted, "VK_KHR_maintenance1"}},
+    {"VK_ARM_rasterization_order_attachment_access", {kExtPromoted, "VK_EXT_rasterization_order_attachment_access"}},
     {"VK_EXT_4444_formats", {kExtPromoted, "VK_VERSION_1_3"}},
     {"VK_EXT_buffer_device_address", {kExtDeprecated, "VK_KHR_buffer_device_address"}},
     {"VK_EXT_debug_marker", {kExtPromoted, "VK_EXT_debug_utils"}},
@@ -1989,6 +2070,7 @@ const layer_data::unordered_map<std::string, DeprecationData>  deprecated_extens
     {"VK_NV_fragment_shader_barycentric", {kExtPromoted, "VK_KHR_fragment_shader_barycentric"}},
     {"VK_NV_glsl_shader", {kExtDeprecated, ""}},
     {"VK_NV_win32_keyed_mutex", {kExtPromoted, "VK_KHR_win32_keyed_mutex"}},
+    {"VK_VALVE_mutable_descriptor_type", {kExtPromoted, "VK_EXT_mutable_descriptor_type"}},
 };
 
 const layer_data::unordered_map<std::string, std::string> special_use_extensions = {
@@ -2001,9 +2083,12 @@ const layer_data::unordered_map<std::string, std::string> special_use_extensions
     {"VK_EXT_debug_utils", "debugging"},
     {"VK_EXT_depth_clip_control", "glemulation"},
     {"VK_EXT_depth_clip_enable", "d3demulation"},
+    {"VK_EXT_device_address_binding_report", "debugging, devtools"},
     {"VK_EXT_device_memory_report", "devtools"},
     {"VK_EXT_image_2d_view_of_3d", "glemulation"},
+    {"VK_EXT_legacy_dithering", "glemulation"},
     {"VK_EXT_line_rasterization", "cadsupport"},
+    {"VK_EXT_mutable_descriptor_type", "d3demulation"},
     {"VK_EXT_non_seamless_cube_map", "d3demulation, glemulation"},
     {"VK_EXT_pipeline_creation_feedback", "devtools"},
     {"VK_EXT_primitive_topology_list_restart", "glemulation"},

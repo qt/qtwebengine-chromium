@@ -91,7 +91,7 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Document* pDocument,
   pAnnotDict->SetNewFor<CPDF_Name>(pdfium::annotation::kSubtype, "Popup");
   pAnnotDict->SetNewFor<CPDF_String>(
       pdfium::form_fields::kT,
-      pParentDict->GetStringFor(pdfium::form_fields::kT), false);
+      pParentDict->GetByteStringFor(pdfium::form_fields::kT), false);
   pAnnotDict->SetNewFor<CPDF_String>(pdfium::annotation::kContents,
                                      sContents.ToUTF8(), false);
 
@@ -116,19 +116,20 @@ std::unique_ptr<CPDF_Annot> CreatePopupAnnot(CPDF_Document* pDocument,
   pAnnotDict->SetRectFor(pdfium::annotation::kRect, popupRect);
   pAnnotDict->SetNewFor<CPDF_Number>(pdfium::annotation::kF, 0);
 
-  auto pPopupAnnot = std::make_unique<CPDF_Annot>(pAnnotDict.Get(), pDocument);
+  auto pPopupAnnot =
+      std::make_unique<CPDF_Annot>(std::move(pAnnotDict), pDocument);
   pAnnot->SetPopupAnnot(pPopupAnnot.get());
   return pPopupAnnot;
 }
 
 void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
   if (!pAnnotDict ||
-      pAnnotDict->GetStringFor(pdfium::annotation::kSubtype) != "Widget") {
+      pAnnotDict->GetByteStringFor(pdfium::annotation::kSubtype) != "Widget") {
     return;
   }
 
   CPDF_Object* pFieldTypeObj =
-      CPDF_FormField::GetFieldAttr(pAnnotDict, pdfium::form_fields::kFT);
+      CPDF_FormField::GetFieldAttrForDict(pAnnotDict, pdfium::form_fields::kFT);
   if (!pFieldTypeObj)
     return;
 
@@ -140,7 +141,7 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
   }
 
   CPDF_Object* pFieldFlagsObj =
-      CPDF_FormField::GetFieldAttr(pAnnotDict, pdfium::form_fields::kFf);
+      CPDF_FormField::GetFieldAttrForDict(pAnnotDict, pdfium::form_fields::kFf);
   uint32_t flags = pFieldFlagsObj ? pFieldFlagsObj->GetInteger() : 0;
   if (field_type == pdfium::form_fields::kCh) {
     auto type = (flags & pdfium::form_flags::kChoiceCombo)
@@ -157,27 +158,26 @@ void GenerateAP(CPDF_Document* pDoc, CPDF_Dictionary* pAnnotDict) {
   if (pAnnotDict->KeyExist(pdfium::annotation::kAS))
     return;
 
-  const CPDF_Dictionary* pParentDict =
+  RetainPtr<const CPDF_Dictionary> pParentDict =
       pAnnotDict->GetDictFor(pdfium::form_fields::kParent);
   if (!pParentDict || !pParentDict->KeyExist(pdfium::annotation::kAS))
     return;
 
   pAnnotDict->SetNewFor<CPDF_String>(
       pdfium::annotation::kAS,
-      pParentDict->GetStringFor(pdfium::annotation::kAS), false);
+      pParentDict->GetByteStringFor(pdfium::annotation::kAS), false);
 }
 
 }  // namespace
 
 CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     : m_pDocument(pPage->GetDocument()) {
-  RetainPtr<CPDF_Array> pAnnots =
-      pPage->GetMutableDict()->GetMutableArrayFor("Annots");
+  RetainPtr<CPDF_Array> pAnnots = pPage->GetMutableAnnotsArray();
   if (!pAnnots)
     return;
 
   const CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
-  const CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
   bool bRegenerateAP =
       pAcroForm && pAcroForm->GetBooleanFor("NeedAppearances", false);
   for (size_t i = 0; i < pAnnots->size(); ++i) {
@@ -186,7 +186,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     if (!pDict)
       continue;
     const ByteString subtype =
-        pDict->GetStringFor(pdfium::annotation::kSubtype);
+        pDict->GetByteStringFor(pdfium::annotation::kSubtype);
     if (subtype == "Popup") {
       // Skip creating Popup annotations in the PDF document since PDFium
       // provides its own Popup annotations.
@@ -194,7 +194,7 @@ CPDF_AnnotList::CPDF_AnnotList(CPDF_Page* pPage)
     }
     pAnnots->ConvertToIndirectObjectAt(i, m_pDocument.Get());
     m_AnnotList.push_back(
-        std::make_unique<CPDF_Annot>(pDict.Get(), m_pDocument.Get()));
+        std::make_unique<CPDF_Annot>(pDict, m_pDocument.Get()));
     if (bRegenerateAP && subtype == "Widget" &&
         CPDF_InteractiveForm::IsUpdateAPEnabled() &&
         !pDict->GetDictFor(pdfium::annotation::kAP)) {

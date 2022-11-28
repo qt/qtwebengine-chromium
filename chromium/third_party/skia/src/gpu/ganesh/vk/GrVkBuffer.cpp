@@ -22,7 +22,7 @@ GrVkBuffer::GrVkBuffer(GrVkGpu* gpu,
                        GrGpuBufferType bufferType,
                        GrAccessPattern accessPattern,
                        VkBuffer buffer,
-                       const GrVkAlloc& alloc,
+                       const skgpu::VulkanAlloc& alloc,
                        const GrVkDescriptorSet* uniformDescriptorSet,
                        std::string_view label)
         : GrGpuBuffer(gpu, sizeInBytes, bufferType, accessPattern, label)
@@ -70,7 +70,7 @@ sk_sp<GrVkBuffer> GrVkBuffer::Make(GrVkGpu* gpu,
                                    GrGpuBufferType bufferType,
                                    GrAccessPattern accessPattern) {
     VkBuffer buffer;
-    GrVkAlloc alloc;
+    skgpu::VulkanAlloc alloc;
 
     // The only time we don't require mappable buffers is when we have a static access pattern and
     // we're on a device where gpu only memory has faster reads on the gpu than memory that is also
@@ -80,7 +80,7 @@ sk_sp<GrVkBuffer> GrVkBuffer::Make(GrVkGpu* gpu,
                             accessPattern == kStream_GrAccessPattern ||
                             !gpu->vkCaps().gpuOnlyBuffersMorePerformant();
 
-    using BufferUsage = GrVkMemoryAllocator::BufferUsage;
+    using BufferUsage = skgpu::VulkanMemoryAllocator::BufferUsage;
     BufferUsage allocUsage;
 
     // create the buffer object
@@ -282,6 +282,8 @@ void GrVkBuffer::onMap(MapType type) {
 void GrVkBuffer::onUnmap(MapType type) {
     this->vkUnmap(0, type == MapType::kWriteDiscard ? this->size() : 0);
 }
+
+bool GrVkBuffer::onClearToZero() { return this->getVkGpu()->zeroBuffer(sk_ref_sp(this)); }
 
 bool GrVkBuffer::onUpdateData(const void* src, size_t offset, size_t size, bool /*preserve*/) {
     if (this->isVkMappable()) {

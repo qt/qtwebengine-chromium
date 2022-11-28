@@ -42,8 +42,10 @@ bool operator==(const InternalStatsKey& a, const InternalStatsKey& b);
 // Final stats computed for frame after it went through the whole video
 // pipeline from capturing to rendering or dropping.
 struct FrameStats {
-  explicit FrameStats(Timestamp captured_time) : captured_time(captured_time) {}
+  FrameStats(uint16_t frame_id, Timestamp captured_time)
+      : frame_id(frame_id), captured_time(captured_time) {}
 
+  uint16_t frame_id;
   // Frame events timestamp.
   Timestamp captured_time;
   Timestamp pre_encode_time = Timestamp::MinusInfinity();
@@ -68,6 +70,8 @@ struct FrameStats {
   absl::optional<StreamCodecInfo> used_encoder = absl::nullopt;
   // Can be not set if frame was dropped in the network.
   absl::optional<StreamCodecInfo> used_decoder = absl::nullopt;
+
+  bool decoder_failed = false;
 };
 
 // Describes why comparison was done in overloaded mode (without calculating

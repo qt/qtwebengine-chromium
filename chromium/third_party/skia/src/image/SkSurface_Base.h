@@ -40,7 +40,7 @@ public:
      * gpu and inits the array of GrBackendSemaphores with the signaled semaphores.
      */
     virtual GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, const GrFlushInfo&,
-                                          const GrBackendSurfaceMutableState*) {
+                                          const skgpu::MutableTextureState*) {
         return GrSemaphoresSubmitted::kNo;
     }
 #endif
@@ -69,10 +69,25 @@ public:
     virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
 
     /**
+     * Default implementation calls onAsyncRescaleAndReadPixels with default rescale params.
+     */
+    virtual void onAsyncReadPixels(const SkImageInfo& info,
+                                   const SkIRect srcRect,
+                                   ReadPixelsCallback callback,
+                                   ReadPixelsContext context) {
+        this->onAsyncRescaleAndReadPixels(info,
+                                          srcRect,
+                                          RescaleGamma::kSrc,
+                                          RescaleMode::kNearest,
+                                          callback,
+                                          context);
+    }
+
+    /**
      * Default implementation does a rescale/read and then calls the callback.
      */
     virtual void onAsyncRescaleAndReadPixels(const SkImageInfo&,
-                                             const SkIRect& srcRect,
+                                             const SkIRect srcRect,
                                              RescaleGamma,
                                              RescaleMode,
                                              ReadPixelsCallback,
@@ -82,8 +97,8 @@ public:
      */
     virtual void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
                                                    sk_sp<SkColorSpace> dstColorSpace,
-                                                   const SkIRect& srcRect,
-                                                   const SkISize& dstSize,
+                                                   SkIRect srcRect,
+                                                   SkISize dstSize,
                                                    RescaleGamma,
                                                    RescaleMode,
                                                    ReadPixelsCallback,

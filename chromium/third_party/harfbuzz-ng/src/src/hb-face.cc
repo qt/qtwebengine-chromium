@@ -132,7 +132,7 @@ hb_face_create_for_tables (hb_reference_table_func_t  reference_table_func,
   face->user_data = user_data;
   face->destroy = destroy;
 
-  face->num_glyphs.set_relaxed (-1);
+  face->num_glyphs = -1;
 
   face->data.init0 (face);
   face->table.init0 (face);
@@ -342,7 +342,7 @@ hb_face_set_user_data (hb_face_t          *face,
  * Since: 0.9.2
  **/
 void *
-hb_face_get_user_data (hb_face_t          *face,
+hb_face_get_user_data (const hb_face_t    *face,
 		       hb_user_data_key_t *key)
 {
   return hb_object_get_user_data (face, key);
@@ -479,7 +479,7 @@ hb_face_set_upem (hb_face_t    *face,
   if (hb_object_is_immutable (face))
     return;
 
-  face->upem.set_relaxed (upem);
+  face->upem = upem;
 }
 
 /**
@@ -514,7 +514,7 @@ hb_face_set_glyph_count (hb_face_t    *face,
   if (hb_object_is_immutable (face))
     return;
 
-  face->num_glyphs.set_relaxed (glyph_count);
+  face->num_glyphs = glyph_count;
 }
 
 /**

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -124,9 +124,20 @@ message RequestFileAccessResponse {
   optional bool allowed = 2;
 }
 
-message IsDlpPolicyMatchedRequest {
+message FileMetadata {
+  // File inode number.
+  optional uint64 inode = 1;
   // URL from where the file was downloaded.
+  optional string source_url = 2;
+  // File path.
+  optional string path = 3;
+}
+
+message IsDlpPolicyMatchedRequest {
+  // TODO(crbug.com/1352431): Remove when it's not used in Chrome.
   optional string source_url = 1;
+  // File metadata.
+  optional FileMetadata file_metadata = 2;
 }
 
 message IsDlpPolicyMatchedResponse {
@@ -137,15 +148,6 @@ message IsDlpPolicyMatchedResponse {
 message GetFilesSourcesRequest {
   // A list of files inodes.
   repeated uint64 files_inodes = 1;
-}
-
-message FileMetadata {
-  // File inode number.
-  optional uint64 inode = 1;
-  // URL from where the file was downloaded.
-  optional string source_url = 2;
-  // File path.
-  optional string path = 3;
 }
 
 message GetFilesSourcesResponse {

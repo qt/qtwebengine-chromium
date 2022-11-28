@@ -1,12 +1,14 @@
 export const description = `
 copyExternalImageToTexture Validation Tests in Queue.
+Note that we don't need to add tests on the destination texture dimension as currently we require
+the destination texture should have RENDER_ATTACHMENT usage, which is only allowed to be used on 2D
+textures.
 `;
 
 import { getResourcePath } from '../../../../../common/framework/resources.js';
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { raceWithRejectOnTimeout, unreachable, assert } from '../../../../../common/util/util.js';
 import {
-  kTextureDimensions,
   kTextureFormatInfo,
   kTextureFormats,
   kTextureUsages,
@@ -45,16 +47,16 @@ interface WithDstOriginMipLevel extends WithMipLevel {
 }
 
 // Helper function to generate copySize for src OOB test
-function generateCopySizeForSrcOOB({ srcOrigin }: { srcOrigin: Required<GPUOrigin3DDict> }) {
+function generateCopySizeForSrcOOB({ srcOrigin }: { srcOrigin: Required<GPUOrigin2DDict> }) {
   // OOB origin fails even with no-op copy.
-  if (srcOrigin.x > kDefaultWidth || srcOrigin.y > kDefaultHeight || srcOrigin.z > kDefaultDepth) {
+  if (srcOrigin.x > kDefaultWidth || srcOrigin.y > kDefaultHeight) {
     return [{ width: 0, height: 0, depthOrArrayLayers: 0 }];
   }
 
   const justFitCopySize = {
     width: kDefaultWidth - srcOrigin.x,
     height: kDefaultHeight - srcOrigin.y,
-    depthOrArrayLayers: kDefaultDepth - srcOrigin.z,
+    depthOrArrayLayers: 1,
   };
 
   return [
@@ -633,10 +635,10 @@ g.test('destination_texture,device_mismatch')
   })
   .fn(async t => {
     const { mismatched } = t.params;
-    const device = mismatched ? t.mismatchedDevice : t.device;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
     const copySize = { width: 1, height: 1, depthOrArrayLayers: 1 };
 
-    const texture = device.createTexture({
+    const texture = sourceDevice.createTexture({
       size: copySize,
       format: 'rgba8unorm',
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -709,36 +711,6 @@ g.test('destination_texture,sample_count')
     });
 
     t.runTest({ source: imageBitmap }, { texture: dstTexture }, copySize, sampleCount === 1);
-  });
-
-g.test('destination_texture,dimension')
-  .desc(
-    `
-  Test dst texture dimension.
-
-  Check that an error is generated when dimension is not 2d.
-  `
-  )
-  .params(u =>
-    u //
-      .combine('dimension', kTextureDimensions)
-      .beginSubcases()
-      .combine('copySize', [
-        { width: 0, height: 0, depthOrArrayLayers: 0 },
-        { width: 1, height: 1, depthOrArrayLayers: 1 },
-      ])
-  )
-  .fn(async t => {
-    const { dimension, copySize } = t.params;
-    const imageBitmap = await t.createImageBitmap(t.getImageData(1, 1));
-    const dstTexture = t.device.createTexture({
-      size: { width: 1, height: 1, depthOrArrayLayers: 1 },
-      dimension,
-      format: 'bgra8unorm',
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    t.runTest({ source: imageBitmap }, { texture: dstTexture }, copySize, dimension === '2d');
   });
 
 g.test('destination_texture,mipLevel')
@@ -828,14 +800,12 @@ g.test('OOB,source')
   .paramsSubcasesOnly(u =>
     u
       .combine('srcOrigin', [
-        { x: 0, y: 0, z: 0 }, // origin is on top-left
-        { x: kDefaultWidth - 1, y: 0, z: 0 }, // x near the border
-        { x: 0, y: kDefaultHeight - 1, z: 0 }, // y is near the border
-        { x: kDefaultWidth, y: kDefaultHeight, z: 0 }, // origin is on bottom-right
-        { x: 0, y: 0, z: kDefaultDepth },
-        { x: kDefaultWidth + 1, y: 0, z: 0 }, // x is too large
-        { x: 0, y: kDefaultHeight + 1, z: 0 }, // y is too large
-        { x: 0, y: 0, z: kDefaultDepth + 1 }, // z is too large
+        { x: 0, y: 0 }, // origin is on top-left
+        { x: kDefaultWidth - 1, y: 0 }, // x near the border
+        { x: 0, y: kDefaultHeight - 1 }, // y is near the border
+        { x: kDefaultWidth, y: kDefaultHeight }, // origin is on bottom-right
+        { x: kDefaultWidth + 1, y: 0 }, // x is too large
+        { x: 0, y: kDefaultHeight + 1 }, // y is too large
       ])
       .expand('copySize', generateCopySizeForSrcOOB)
   )
@@ -858,7 +828,7 @@ g.test('OOB,source')
     if (
       srcOrigin.x + copySize.width > kDefaultWidth ||
       srcOrigin.y + copySize.height > kDefaultHeight ||
-      srcOrigin.z + copySize.depthOrArrayLayers > 1
+      copySize.depthOrArrayLayers > 1
     ) {
       success = false;
     }

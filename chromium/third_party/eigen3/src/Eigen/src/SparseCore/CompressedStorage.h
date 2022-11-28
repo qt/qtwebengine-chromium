@@ -71,8 +71,8 @@ class CompressedStorage
 
     ~CompressedStorage()
     {
-      delete[] m_values;
-      delete[] m_indices;
+      conditional_aligned_delete_auto<Scalar, true>(m_values, m_allocatedSize);
+      conditional_aligned_delete_auto<StorageIndex, true>(m_indices, m_allocatedSize);
     }
 
     void reserve(Index size)
@@ -180,24 +180,13 @@ class CompressedStorage
       {
         if (m_allocatedSize<m_size+1)
         {
-          m_allocatedSize = 2*(m_size+1);
-          internal::scoped_array<Scalar> newValues(m_allocatedSize);
-          internal::scoped_array<StorageIndex> newIndices(m_allocatedSize);
-
-          // copy first chunk
-          internal::smart_copy(m_values,  m_values +id, newValues.ptr());
-          internal::smart_copy(m_indices, m_indices+id, newIndices.ptr());
-
-          // copy the rest
-          if(m_size>id)
-          {
-            internal::smart_copy(m_values +id,  m_values +m_size, newValues.ptr() +id+1);
-            internal::smart_copy(m_indices+id,  m_indices+m_size, newIndices.ptr()+id+1);
-          }
-          std::swap(m_values,newValues.ptr());
-          std::swap(m_indices,newIndices.ptr());
+          Index newAllocatedSize = 2 * (m_size + 1);
+          m_values = conditional_aligned_realloc_new_auto<Scalar, true>(m_values, newAllocatedSize, m_allocatedSize);
+          m_indices =
+              conditional_aligned_realloc_new_auto<StorageIndex, true>(m_indices, newAllocatedSize, m_allocatedSize);
+          m_allocatedSize = newAllocatedSize;
         }
-        else if(m_size>id)
+        if(m_size>id)
         {
           internal::smart_memmove(m_values +id, m_values +m_size, m_values +id+1);
           internal::smart_memmove(m_indices+id, m_indices+m_size, m_indices+id+1);
@@ -233,15 +222,8 @@ class CompressedStorage
         EIGEN_SPARSE_COMPRESSED_STORAGE_REALLOCATE_PLUGIN
       #endif
       eigen_internal_assert(size!=m_allocatedSize);
-      internal::scoped_array<Scalar> newValues(size);
-      internal::scoped_array<StorageIndex> newIndices(size);
-      Index copySize = (std::min)(size, m_size);
-      if (copySize>0) {
-        internal::smart_copy(m_values, m_values+copySize, newValues.ptr());
-        internal::smart_copy(m_indices, m_indices+copySize, newIndices.ptr());
-      }
-      std::swap(m_values,newValues.ptr());
-      std::swap(m_indices,newIndices.ptr());
+      m_values = conditional_aligned_realloc_new_auto<Scalar, true>(m_values, size, m_allocatedSize);
+      m_indices = conditional_aligned_realloc_new_auto<StorageIndex, true>(m_indices, size, m_allocatedSize);
       m_allocatedSize = size;
     }
 

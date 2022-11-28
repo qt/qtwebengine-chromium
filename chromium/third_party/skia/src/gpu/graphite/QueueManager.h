@@ -12,6 +12,9 @@
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/private/SkDeque.h"
 
+#include <memory>
+#include <vector>
+
 namespace skgpu::graphite {
 
 class CommandBuffer;
@@ -31,9 +34,11 @@ public:
     void checkForFinishedWork(SyncToCpu);
 
 #if GRAPHITE_TEST_UTILS
-    virtual void testingOnly_startCapture() {}
-    virtual void testingOnly_endCapture() {}
+    virtual void startCapture() {}
+    virtual void stopCapture() {}
 #endif
+
+    void returnCommandBuffer(std::unique_ptr<CommandBuffer>);
 
 protected:
     QueueManager(const SharedContext* sharedContext);
@@ -41,13 +46,15 @@ protected:
     using OutstandingSubmission = std::unique_ptr<GpuWorkSubmission>;
 
     const SharedContext* fSharedContext;
-    sk_sp<CommandBuffer> fCurrentCommandBuffer;
+    std::unique_ptr<CommandBuffer> fCurrentCommandBuffer;
 
 private:
-    virtual sk_sp<CommandBuffer> getNewCommandBuffer() = 0;
+    virtual std::unique_ptr<CommandBuffer> getNewCommandBuffer(ResourceProvider*) = 0;
     virtual OutstandingSubmission onSubmitToGpu() = 0;
 
     SkDeque fOutstandingSubmissions;
+
+    std::vector<std::unique_ptr<CommandBuffer>> fAvailableCommandBuffers;
 };
 
 } // namespace skgpu::graphite

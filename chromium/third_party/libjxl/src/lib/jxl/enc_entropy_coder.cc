@@ -38,6 +38,12 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Add;
+using hwy::HWY_NAMESPACE::AndNot;
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::GetLane;
+
 // Returns number of non-zero coefficients (but skip LLF).
 // We cannot rely on block[] being all-zero bits, so first truncate to integer.
 // Also writes the per-8x8 block nzeros starting at nzeros_pos.
@@ -71,7 +77,7 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
         const auto coef =
             AndNot(llf_mask, Load(di, &block[y * cx * kBlockDim + x]));
 
-        neg_sum_zero += VecFromMask(di, coef == zero);
+        neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
       }
     }
   }
@@ -80,13 +86,13 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
   for (size_t y = cy; y < cy * kBlockDim; y++) {
     for (size_t x = 0; x < cx * kBlockDim; x += Lanes(di)) {
       const auto coef = Load(di, &block[y * cx * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
   // We want area - sum_zero, add because neg_sum_zero is already negated.
   const int32_t nzeros =
-      int32_t(cx * cy * kDCTBlockSize) + GetLane(SumOfLanes(neg_sum_zero));
+      int32_t(cx * cy * kDCTBlockSize) + GetLane(SumOfLanes(di, neg_sum_zero));
 
   const int32_t shifted_nzeros = static_cast<int32_t>(
       (nzeros + covered_blocks - 1) >> log2_covered_blocks);
@@ -121,7 +127,7 @@ int32_t NumNonZero8x8ExceptDC(const int32_t* JXL_RESTRICT block,
       // DC counts as zero so we don't include it in nzeros.
       const auto coef = AndNot(dc_mask, Load(di, &block[y * kBlockDim + x]));
 
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
@@ -129,13 +135,13 @@ int32_t NumNonZero8x8ExceptDC(const int32_t* JXL_RESTRICT block,
   for (size_t y = 1; y < kBlockDim; y++) {
     for (size_t x = 0; x < kBlockDim; x += Lanes(di)) {
       const auto coef = Load(di, &block[y * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(di, coef == zero);
+      neg_sum_zero = Add(neg_sum_zero, VecFromMask(di, Eq(coef, zero)));
     }
   }
 
   // We want 64 - sum_zero, add because neg_sum_zero is already negated.
   const int32_t nzeros =
-      int32_t(kDCTBlockSize) + GetLane(SumOfLanes(neg_sum_zero));
+      int32_t(kDCTBlockSize) + GetLane(SumOfLanes(di, neg_sum_zero));
 
   *nzeros_pos = nzeros;
 

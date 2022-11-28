@@ -920,6 +920,14 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   int prune_comp_using_best_single_mode_ref;
 
   // Skip NEARESTMV and NEARMV using weight computed in ref mv list population
+  // This speed feature sometimes leads to severe visual artifacts for
+  // the overlay frame. It makes inter RD mode search skip NEARESTMV
+  // and NEARMV, and no valid inter mode is evaluated when the NEWMV mode
+  // is also early terminated due to the constraint that it does not handle
+  // zero mv difference. In this cases, intra modes will be chosen, leading
+  // to bad prediction and flickering artifacts.
+  // Turn off this feature for now. Be careful to check visual quality if
+  // anyone is going to turn it on.
   int prune_nearest_near_mv_using_refmv_weight;
 
   // Based on previous ref_mv_idx search result, prune the following search.
@@ -1293,9 +1301,11 @@ typedef struct WINNER_MODE_SPEED_FEATURES {
   // 1 / 2 : Use configured number of winner candidates
   int motion_mode_for_winner_cand;
 
-  // Early DC only txfm block prediction
-  // 0: speed feature OFF
-  // 1 / 2 : Use the configured level for different modes
+  // Controls the prediction of transform skip block or DC only block.
+  //
+  // Different speed feature values (0 to 3) decide the aggressiveness of
+  // prediction (refer to predict_dc_levels[][] in speed_features.c) to be used
+  // during different mode evaluation stages.
   int dc_blk_pred_level;
 
   // If on, disables interpolation filter search in handle_inter_mode loop, and
@@ -1421,9 +1431,6 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // temporal variance.
   int short_circuit_low_temp_var;
 
-  // Use modeled (currently CurvFit model) RDCost for fast non-RD mode
-  int use_modeled_non_rd_cost;
-
   // Reuse inter prediction in fast non-rd mode.
   int reuse_inter_pred_nonrd;
 
@@ -1457,7 +1464,7 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   int check_scene_detection;
 
   // For nonrd mode: Prefer larger partition blks in variance based partitioning
-  // 0: disabled, 1-4: increasing aggressiveness
+  // 0: disabled, 1-3: increasing aggressiveness
   int prefer_large_partition_blocks;
 
   // uses results of temporal noise estimate
@@ -1473,8 +1480,8 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // separately, for nonrd pickmode.
   int intra_y_mode_bsize_mask_nrd[BLOCK_SIZES];
 
-  // Skips mode checks more agressively in nonRD mode
-  int nonrd_agressive_skip;
+  // Skips mode checks more aggressively in nonRD mode
+  int nonrd_aggressive_skip;
 
   // Skip cdef on 64x64 blocks when NEWMV or INTRA is not picked or color
   // sensitivity is off. When color sensitivity is on for a superblock, all
@@ -1506,8 +1513,19 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // variance wrt LAST reference.
   int prune_inter_modes_using_temp_var;
 
-  // Force half_pel at block level.
-  int force_half_pel_block;
+  // Reduce MV precision to halfpel for higher int MV value & frame-level motion
+  // 0: disabled
+  // 1-2: Reduce precision to halfpel, fullpel based on conservative
+  // thresholds, aggressiveness increases with increase in level
+  // 3: Reduce precision to halfpel using more aggressive thresholds
+  int reduce_mv_pel_precision_highmotion;
+
+  // Reduce MV precision for low complexity blocks
+  // 0: disabled
+  // 1: Reduce the mv resolution for zero mv if the variance is low
+  // 2: Switch to halfpel, fullpel based on low block spatial-temporal
+  // complexity.
+  int reduce_mv_pel_precision_lowcomplex;
 
   // Prune intra mode evaluation in inter frames based on mv range.
   BLOCK_SIZE prune_intra_mode_based_on_mv_range;
@@ -1527,6 +1545,7 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   int gf_refresh_based_on_qp;
 
   // Temporal filtering
+  // The value can be 1 or 2, which indicates the threshold to use.
   int use_rtc_tf;
 
   // Prune the use of the identity transform in nonrd_pickmode,
@@ -1541,6 +1560,9 @@ typedef struct REAL_TIME_SPEED_FEATURES {
 
   // For nonrd: early exit out of variance partition that sets the
   // block size to superblock size, and sets mode to zeromv-last skip.
+  // 0: disabled
+  // 1: zeromv-skip is enabled at SB level only
+  // 2: zeromv-skip is enabled at SB level and coding block level
   int part_early_exit_zeromv;
 
   // Early terminate inter mode search based on sse in non-rd path.
@@ -1552,14 +1574,8 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // Enable/disable partition direct merging.
   int partition_direct_merging;
 
-  // SAD based compound mode pruning
-  int sad_based_comp_prune;
-
   // Level of aggressiveness for obtaining tx size based on qstep
   int tx_size_level_based_on_qstep;
-
-  // Reduce the mv resolution for zero mv if the variance is low.
-  bool reduce_zeromv_mvres;
 
   // Avoid the partitioning of a 16x16 block in variance based partitioning
   // (VBP) by making use of minimum and maximum sub-block variances.
@@ -1571,21 +1587,39 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // gain of 0.78%.
   bool vbp_prune_16x16_split_using_min_max_sub_blk_var;
 
-  // A qindex threshold that determines whether to use qindex based
-  // CDEF filter strength estimation for screen content types.
-  // This speed feature has a substantial gain on coding metrics,
-  // with moderate increased encoding time.
-  // Set to zero to turn off this speed feature.
+  // A qindex threshold that determines whether to use qindex based CDEF filter
+  // strength estimation for screen content types. The strength estimation model
+  // used for screen contents prefers to allow cdef filtering for more frames.
+  // This sf is used to limit the frames which go through cdef filtering and
+  // following explains the setting of the same.
+  // MAXQ (255): This disables the usage of this sf. Here, frame does not use a
+  // screen content model thus reduces the number of frames that go through cdef
+  // filtering.
+  // MINQ (0): Frames always use screen content model thus increasing the number
+  // of frames that go through cdef filtering.
+  // This speed feature has a substantial gain on coding metrics, with moderate
+  // increase encoding time. Select threshold based on speed vs quality
+  // trade-off.
   int screen_content_cdef_filter_qindex_thresh;
 
-  // Prunes global_globalmv search if its variance is \gt the globalmv's
-  // variance.
-  bool prune_global_globalmv_with_zeromv;
+  // Prune compound mode if its variance is higher than the variance of single
+  // modes.
+  bool prune_compoundmode_with_singlecompound_var;
 
   // Allow mode cost update at frame level every couple frames. This
   // overrides the command line setting --mode-cost-upd-freq=3 (never update
   // except on key frame and first delta).
   bool frame_level_mode_cost_update;
+
+  // Prune H_PRED during intra mode evaluation in the nonrd path based on best
+  // mode so far.
+  //
+  // For allintra encode, this speed feature reduces instruction count by 1.10%
+  // for speed 9 with coding performance change less than 0.04%.
+  // For AVIF image encode, this speed feature reduces encode time by 1.03% for
+  // speed 9 on a typical image dataset with coding performance change less than
+  // 0.08%.
+  bool prune_h_pred_using_best_mode_so_far;
 
   // If compound is enabled, and the current block size is \geq BLOCK_16X16,
   // limit the compound modes to GLOBAL_GLOBALMV. This does not apply to the
@@ -1594,6 +1628,34 @@ typedef struct REAL_TIME_SPEED_FEATURES {
 
   // Allow for disabling cdf update for non reference frames in svc mode.
   bool disable_cdf_update_non_reference_frame;
+
+  // Prune compound modes if the single modes variances do not perform well.
+  bool prune_compoundmode_with_singlemode_var;
+
+  // Skip searching all compound mode if the variance of single_mode residue is
+  // sufficiently low.
+  bool skip_compound_based_on_var;
+
+  // Sets force_zeromv_skip based on the source sad available. Aggressiveness
+  // increases with increase in the level set for speed feature.
+  // 0: No setting
+  // 1: If source sad is kZeroSad
+  // 2: If source sad <= kVeryLowSad
+  int set_zeromv_skip_based_on_source_sad;
+
+  // Downgrades the subpel search to av1_find_best_sub_pixel_tree_pruned_more
+  // when either the fullpel search performed well, or when zeromv has low sad.
+  bool use_adaptive_subpel_search;
+
+  // A flag used in RTC case to control frame_refs_short_signaling. Note that
+  // the final decision is made in check_frame_refs_short_signaling(). The flag
+  // can only be turned on when res < 360p and speed >= 9, in which case only
+  // LAST and GOLDEN ref frames are used now.
+  bool enable_ref_short_signaling;
+
+  // A flag that controls if we check or bypass GLOBALMV in rtc single ref frame
+  // case.
+  bool check_globalmv_on_single_ref;
 } REAL_TIME_SPEED_FEATURES;
 
 /*!\endcond */
@@ -1684,7 +1746,7 @@ struct AV1_COMP;
  * \param[in]    cpi     Top - level encoder instance structure
  * \param[in]    speed   Speed setting passed in from the command  line
  *
- * \return No return value but configures the various speed trade off flags
+ * \remark No return value but configures the various speed trade off flags
  *         based on the passed in speed setting. (Higher speed gives lower
  *         quality)
  */
@@ -1698,7 +1760,7 @@ void av1_set_speed_features_framesize_independent(struct AV1_COMP *cpi,
  * \param[in]    cpi     Top - level encoder instance structure
  * \param[in]    speed   Speed setting passed in from the command  line
  *
- * \return No return value but configures the various speed trade off flags
+ * \remark No return value but configures the various speed trade off flags
  *         based on the passed in speed setting and frame size. (Higher speed
  *         corresponds to lower quality)
  */
@@ -1711,7 +1773,7 @@ void av1_set_speed_features_framesize_dependent(struct AV1_COMP *cpi,
  * \param[in]    cpi     Top - level encoder instance structure
  * \param[in]    speed   Speed setting passed in from the command  line
  *
- * \return No return value but configures the various speed trade off flags
+ * \remark No return value but configures the various speed trade off flags
  *         based on the passed in speed setting and current frame's Q index.
  *         (Higher speed corresponds to lower quality)
  */

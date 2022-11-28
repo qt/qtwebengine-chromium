@@ -32,11 +32,11 @@
 
 #include "avcodec.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "error_resilience.h"
 #include "h263.h"
 #include "h263data.h"
 #include "h263dec.h"
-#include "internal.h"
 #include "mpeg_er.h"
 #include "mpegutils.h"
 #include "mpegvideo.h"
@@ -531,7 +531,7 @@ static int rv10_decode_packet(AVCodecContext *avctx, const uint8_t *buf,
     /* decode each macroblock */
     for (s->mb_num_left = mb_count; s->mb_num_left > 0; s->mb_num_left--) {
         int ret;
-        ff_update_block_index(s);
+        ff_update_block_index(s, 8, s->avctx->lowres, 1);
         ff_tlog(avctx, "**mb x=%d y=%d\n", s->mb_x, s->mb_y);
 
         s->mv_dir  = MV_DIR_FORWARD;
@@ -683,7 +683,7 @@ static int rv10_decode_frame(AVCodecContext *avctx, AVFrame *pict,
 
 const FFCodec ff_rv10_decoder = {
     .p.name         = "rv10",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("RealVideo 1.0"),
+    CODEC_LONG_NAME("RealVideo 1.0"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_RV10,
     .priv_data_size = sizeof(RVDecContext),
@@ -700,7 +700,7 @@ const FFCodec ff_rv10_decoder = {
 
 const FFCodec ff_rv20_decoder = {
     .p.name         = "rv20",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("RealVideo 2.0"),
+    CODEC_LONG_NAME("RealVideo 2.0"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_RV20,
     .priv_data_size = sizeof(RVDecContext),

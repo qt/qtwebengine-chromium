@@ -19,8 +19,9 @@
 
 namespace gl
 {
-enum class GLenumGroup;
-}
+enum class BigGLEnum;
+enum class GLESEnum;
+}  // namespace gl
 
 namespace angle
 {
@@ -38,7 +39,8 @@ struct ParamCapture : angle::NonCopyable
     std::string name;
     ParamType type;
     ParamValue value;
-    gl::GLenumGroup enumGroup;  // only used for param type GLenum, GLboolean and GLbitfield
+    gl::GLESEnum enumGroup;   // only used for param type GLenum, GLboolean and GLbitfield
+    gl::BigGLEnum bigGLEnum;  // only used for param type GLenum, GLboolean and GLbitfield
     ParamData data;
     int dataNElements           = 0;
     int arrayClientPointerIndex = -1;
@@ -60,7 +62,12 @@ class ParamBuffer final : angle::NonCopyable
     void setValueParamAtIndex(const char *paramName, ParamType paramType, T paramValue, int index);
     template <typename T>
     void addEnumParam(const char *paramName,
-                      gl::GLenumGroup enumGroup,
+                      gl::GLESEnum enumGroup,
+                      ParamType paramType,
+                      T paramValue);
+    template <typename T>
+    void addEnumParam(const char *paramName,
+                      gl::BigGLEnum enumGroup,
                       ParamType paramType,
                       T paramValue);
 
@@ -295,6 +302,9 @@ using DefaultUniformCallsPerLocationMap = std::map<gl::UniformLocation, std::vec
 using DefaultUniformCallsPerProgramMap =
     std::map<gl::ShaderProgramID, DefaultUniformCallsPerLocationMap>;
 
+using DefaultUniformBaseLocationMap =
+    std::map<std::pair<gl::ShaderProgramID, gl::UniformLocation>, gl::UniformLocation>;
+
 using ResourceSet   = std::set<GLuint>;
 using ResourceCalls = std::map<GLuint, std::vector<CallCapture>>;
 
@@ -385,10 +395,24 @@ class ResourceTracker final : angle::NonCopyable
         return mDefaultUniformResetCalls[id];
     }
     void setModifiedDefaultUniform(gl::ShaderProgramID programID, gl::UniformLocation location);
+    void setDefaultUniformBaseLocation(gl::ShaderProgramID programID,
+                                       gl::UniformLocation location,
+                                       gl::UniformLocation baseLocation);
+    gl::UniformLocation getDefaultUniformBaseLocation(gl::ShaderProgramID programID,
+                                                      gl::UniformLocation location)
+    {
+        ASSERT(mDefaultUniformBaseLocations.find({programID, location}) !=
+               mDefaultUniformBaseLocations.end());
+        return mDefaultUniformBaseLocations[{programID, location}];
+    }
 
     TrackedResource &getTrackedResource(gl::ContextID contextID, ResourceIDType type);
 
     void getContextIDs(std::set<gl::ContextID> &idsOut);
+
+    std::map<void *, egl::AttributeMap> &getImageToAttribTable() { return mMatchImageToAttribs; }
+
+    std::map<GLuint, void *> &getTextureIDToImageTable() { return mMatchTextureIDToImage; }
 
   private:
     // Buffer map calls will map a buffer with correct offset, length, and access flags
@@ -420,9 +444,15 @@ class ResourceTracker final : angle::NonCopyable
     // Calls per default uniform to return to original state
     DefaultUniformCallsPerProgramMap mDefaultUniformResetCalls;
 
+    // Base location of arrayed uniforms
+    DefaultUniformBaseLocationMap mDefaultUniformBaseLocations;
+
     // Tracked resources per context
     TrackedResourceArray mTrackedResourcesShared;
     std::map<gl::ContextID, TrackedResourceArray> mTrackedResourcesPerContext;
+
+    std::map<void *, egl::AttributeMap> mMatchImageToAttribs;
+    std::map<GLuint, void *> mMatchTextureIDToImage;
 };
 
 // Used by the CPP replay to filter out unnecessary code.
@@ -475,6 +505,8 @@ class StateResetHelper final : angle::NonCopyable
     CallResetMap &getResetCalls() { return mResetCalls; }
     const CallResetMap &getResetCalls() const { return mResetCalls; }
 
+    void setDefaultResetCalls(const gl::Context *context, angle::EntryPoint);
+
   private:
     // Dirty state per entry point
     std::set<angle::EntryPoint> mDirtyEntryPoints;
@@ -493,7 +525,6 @@ class FrameCapture final : angle::NonCopyable
     void clearSetupCalls() { mSetupCalls.clear(); }
 
     StateResetHelper &getStateResetHelper() { return mStateResetHelper; }
-    const StateResetHelper &getStateResetHelper() const { return mStateResetHelper; }
 
     void reset();
 
@@ -757,7 +788,7 @@ class FrameCaptureShared final : angle::NonCopyable
     void writeCppReplayIndexFiles(const gl::Context *context, bool writeResetContextCall);
     void writeMainContextCppReplay(const gl::Context *context,
                                    const std::vector<CallCapture> &setupCalls,
-                                   const StateResetHelper &StateResetHelper);
+                                   StateResetHelper &StateResetHelper);
 
     void captureClientArraySnapshot(const gl::Context *context,
                                     size_t vertexCount,
@@ -841,8 +872,6 @@ class FrameCaptureShared final : angle::NonCopyable
     bool mCaptureActive;
     std::vector<uint32_t> mActiveFrameIndices;
 
-    bool mMidExecutionCaptureActive;
-
     // Cache most recently compiled and linked sources.
     ShaderSourceMap mCachedShaderSource;
     ProgramSourceMap mCachedProgramSources;
@@ -892,13 +921,25 @@ void ParamBuffer::setValueParamAtIndex(const char *paramName,
 
 template <typename T>
 void ParamBuffer::addEnumParam(const char *paramName,
-                               gl::GLenumGroup enumGroup,
+                               gl::GLESEnum enumGroup,
                                ParamType paramType,
                                T paramValue)
 {
     ParamCapture capture(paramName, paramType);
     InitParamValue(paramType, paramValue, &capture.value);
     capture.enumGroup = enumGroup;
+    mParamCaptures.emplace_back(std::move(capture));
+}
+
+template <typename T>
+void ParamBuffer::addEnumParam(const char *paramName,
+                               gl::BigGLEnum enumGroup,
+                               ParamType paramType,
+                               T paramValue)
+{
+    ParamCapture capture(paramName, paramType);
+    InitParamValue(paramType, paramValue, &capture.value);
+    capture.bigGLEnum = enumGroup;
     mParamCaptures.emplace_back(std::move(capture));
 }
 

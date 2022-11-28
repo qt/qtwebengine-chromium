@@ -84,6 +84,11 @@ private:
                                   SkYUVAPixmaps* pixmaps) const;
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+    sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
+                                      RequiredImageProperties) const override;
+#endif
+
     class ScopedGenerator;
 
     // Note that this->imageInfo() is not necessarily the info from the generator. It may be
@@ -93,8 +98,8 @@ private:
 
     // Repeated calls to onMakeColorTypeAndColorSpace will result in a proliferation of unique IDs
     // and SkImage_Lazy instances. Cache the result of the last successful call.
-    mutable SkMutex             fOnMakeColorTypeAndSpaceMutex;
-    mutable sk_sp<SkImage>      fOnMakeColorTypeAndSpaceResult;
+    mutable SkMutex        fOnMakeColorTypeAndSpaceMutex;
+    mutable sk_sp<SkImage> fOnMakeColorTypeAndSpaceResult;
 
 #if SK_SUPPORT_GPU
     // When the SkImage_Lazy goes away, we will iterate over all the listeners to inform them

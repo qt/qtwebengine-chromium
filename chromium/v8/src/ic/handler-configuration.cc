@@ -295,7 +295,8 @@ MaybeObjectHandle StoreHandler::StoreTransition(Isolate* isolate,
   } else {
     // Ensure the transition map contains a valid prototype validity cell.
     if (!validity_cell.is_null()) {
-      transition_map->set_prototype_validity_cell(*validity_cell);
+      transition_map->set_prototype_validity_cell(*validity_cell,
+                                                  kRelaxedStore);
     }
     return MaybeObjectHandle::Weak(transition_map);
   }
@@ -392,13 +393,11 @@ void PrintSmiLoadHandler(int raw_handler, std::ostream& os) {
       }
       break;
     }
-    case LoadHandler::Kind::kConstantFromPrototype: {
-      os << "kConstantFromPrototype ";
+    case LoadHandler::Kind::kConstantFromPrototype:
+      os << "kConstantFromPrototype";
       break;
-    }
-    case LoadHandler::Kind::kAccessor:
-      os << "kAccessor, descriptor = "
-         << LoadHandler::DescriptorBits::decode(raw_handler);
+    case LoadHandler::Kind::kAccessorFromPrototype:
+      os << "kAccessorFromPrototype";
       break;
     case LoadHandler::Kind::kNativeDataProperty:
       os << "kNativeDataProperty, descriptor = "
@@ -427,7 +426,8 @@ void PrintSmiLoadHandler(int raw_handler, std::ostream& os) {
          << LoadHandler::ExportsIndexBits::decode(raw_handler);
       break;
     default:
-      UNREACHABLE();
+      os << "<invalid value " << static_cast<int>(kind) << ">";
+      break;
   }
 }
 
@@ -517,7 +517,9 @@ void LoadHandler::PrintHandler(Object handler, std::ostream& os) {
   } else if (handler.IsCodeT()) {
     os << "LoadHandler(Code)("
        << Builtins::name(CodeT::cast(handler).builtin_id()) << ")";
-  } else {
+  } else if (handler.IsSymbol()) {
+    os << "LoadHandler(Symbol)(" << Brief(Symbol::cast(handler)) << ")";
+  } else if (handler.IsLoadHandler()) {
     LoadHandler load_handler = LoadHandler::cast(handler);
     int raw_handler = load_handler.smi_handler().ToSmi().value();
     os << "LoadHandler(do access check on lookup start object = "
@@ -525,9 +527,10 @@ void LoadHandler::PrintHandler(Object handler, std::ostream& os) {
        << ", lookup on lookup start object = "
        << LookupOnLookupStartObjectBits::decode(raw_handler) << ", ";
     PrintSmiLoadHandler(raw_handler, os);
-    DCHECK_GE(load_handler.data_field_count(), 1);
-    os << ", data1 = ";
-    load_handler.data1().ShortPrint(os);
+    if (load_handler.data_field_count() >= 1) {
+      os << ", data1 = ";
+      load_handler.data1().ShortPrint(os);
+    }
     if (load_handler.data_field_count() >= 2) {
       os << ", data2 = ";
       load_handler.data2().ShortPrint(os);
@@ -539,6 +542,8 @@ void LoadHandler::PrintHandler(Object handler, std::ostream& os) {
     os << ", validity cell = ";
     load_handler.validity_cell().ShortPrint(os);
     os << ")";
+  } else {
+    os << "LoadHandler(<unexpected>)(" << Brief(handler) << ")";
   }
 }
 
@@ -549,11 +554,11 @@ void StoreHandler::PrintHandler(Object handler, std::ostream& os) {
     os << "StoreHandler(Smi)(";
     PrintSmiStoreHandler(raw_handler, os);
     os << ")" << std::endl;
-  } else {
+  } else if (handler.IsStoreHandler()) {
     os << "StoreHandler(";
     StoreHandler store_handler = StoreHandler::cast(handler);
-    if (store_handler.smi_handler().IsCode()) {
-      Code code = Code::cast(store_handler.smi_handler());
+    if (store_handler.smi_handler().IsCodeT()) {
+      CodeT code = CodeT::cast(store_handler.smi_handler());
       os << "builtin = ";
       code.ShortPrint(os);
     } else {
@@ -564,9 +569,10 @@ void StoreHandler::PrintHandler(Object handler, std::ostream& os) {
          << LookupOnLookupStartObjectBits::decode(raw_handler) << ", ";
       PrintSmiStoreHandler(raw_handler, os);
     }
-    DCHECK_GE(store_handler.data_field_count(), 1);
-    os << ", data1 = ";
-    store_handler.data1().ShortPrint(os);
+    if (store_handler.data_field_count() >= 1) {
+      os << ", data1 = ";
+      store_handler.data1().ShortPrint(os);
+    }
     if (store_handler.data_field_count() >= 2) {
       os << ", data2 = ";
       store_handler.data2().ShortPrint(os);
@@ -578,6 +584,8 @@ void StoreHandler::PrintHandler(Object handler, std::ostream& os) {
     os << ", validity cell = ";
     store_handler.validity_cell().ShortPrint(os);
     os << ")" << std::endl;
+  } else {
+    os << "StoreHandler(<unexpected>)(" << Brief(handler) << ")";
   }
 }
 

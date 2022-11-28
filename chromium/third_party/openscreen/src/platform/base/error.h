@@ -197,9 +197,15 @@ class Error {
     kRemotingNotSupported = 106,
     kNoStreamSelected = 107,
 
-    // A negotiation failure means that the current negotiation must be
-    // restarted by the sender.
-    kNegotiationFailure = 108,
+    // An Answer timeout means that the receiver failed to reply to our Offer
+    // within a reasonable amount of time.
+    kAnswerTimeout = 108,
+
+    // Received an ANSWER, but it was invalid.
+    kInvalidAnswer = 109,
+
+    // A generic message timeout occured.
+    kMessageTimeout = 110,
   };
 
   Error();

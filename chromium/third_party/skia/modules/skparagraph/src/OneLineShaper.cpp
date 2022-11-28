@@ -267,7 +267,8 @@ void OneLineShaper::addFullyResolved() {
 }
 
 void OneLineShaper::addUnresolvedWithRun(GlyphRange glyphRange) {
-    RunBlock unresolved(fCurrentRun, clusteredText(glyphRange), glyphRange, 0);
+    auto extendedText = this->clusteredText(glyphRange); // It also modifies glyphRange if needed
+    RunBlock unresolved(fCurrentRun, extendedText, glyphRange, 0);
     if (unresolved.fGlyphs.width() == fCurrentRun->size()) {
         SkASSERT(unresolved.fText.width() == fCurrentRun->fTextRange.width());
     } else if (fUnresolvedBlocks.size() > 0) {
@@ -290,7 +291,7 @@ void OneLineShaper::addUnresolvedWithRun(GlyphRange glyphRange) {
                 // Few pieces of the same unresolved text block can ignore the second one
                 lastUnresolved.fGlyphs.start = std::min(lastUnresolved.fGlyphs.start, glyphRange.start);
                 lastUnresolved.fGlyphs.end = std::max(lastUnresolved.fGlyphs.end, glyphRange.end);
-                lastUnresolved.fText = clusteredText(lastUnresolved.fGlyphs);
+                lastUnresolved.fText = this->clusteredText(lastUnresolved.fGlyphs);
                 return;
             }
         }
@@ -373,6 +374,12 @@ void OneLineShaper::iterateThroughFontStyles(TextRange textRange,
                 block.fRange.end
             };
             features.emplace_back(feature);
+        }
+        // Disable ligatures if letter spacing is enabled.
+        if (block.fStyle.getLetterSpacing() > 0) {
+            features.emplace_back(SkShaper::Feature{
+                SkSetFourByteTag('l', 'i', 'g', 'a'), 0, block.fRange.start, block.fRange.end
+            });
         }
     };
 
@@ -459,7 +466,8 @@ void OneLineShaper::matchResolvedFonts(const TextStyle& textStyle,
                             unicode, textStyle.getFontStyle(), textStyle.getLocale());
 
                     if (typeface == nullptr) {
-                        return;
+                        // There is no fallback font for this character, so move on to the next character.
+                        continue;
                     }
                     fFallbackFonts.set(fontKey, typeface);
                 }
@@ -517,11 +525,13 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
                 // Set up the iterators (the style iterator points to a bigger region that it could
                 TextRange textRange(start, end);
                 auto blockRange = fParagraph->findAllBlocks(textRange);
-                SkSpan<Block> styleSpan(fParagraph->blocks(blockRange));
+                if (!blockRange.empty()) {
+                    SkSpan<Block> styleSpan(fParagraph->blocks(blockRange));
 
-                // Shape the text between placeholders
-                if (!shape(textRange, styleSpan, advanceX, start, bidiRegion.level)) {
-                    return false;
+                    // Shape the text between placeholders
+                    if (!shape(textRange, styleSpan, advanceX, start, bidiRegion.level)) {
+                        return false;
+                    }
                 }
 
                 if (end == bidiRegion.end) {
@@ -545,9 +555,12 @@ bool OneLineShaper::iterateThroughShapingRegions(const ShapeVisitor& shape) {
         SkFont font(typeface, placeholder.fTextStyle.getFontSize());
 
         // "Shape" the placeholder
+        uint8_t bidiLevel = (bidiIndex < fParagraph->fBidiRegions.size())
+            ? fParagraph->fBidiRegions[bidiIndex].level
+            : 2;
         const SkShaper::RunHandler::RunInfo runInfo = {
             font,
-            (uint8_t)2,
+            bidiLevel,
             SkPoint::Make(placeholder.fStyle.fWidth, placeholder.fStyle.fHeight),
             1,
             SkShaper::RunHandler::Range(0, placeholder.fRange.width())

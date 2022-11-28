@@ -1085,7 +1085,7 @@ ANGLE_INLINE bool ValidateDrawElementsBase(const Context *context,
         }
 
         ASSERT(type == DrawElementsType::InvalidEnum);
-        context->validationError(entryPoint, GL_INVALID_ENUM, err::kEnumNotSupported);
+        context->validationErrorF(entryPoint, GL_INVALID_ENUM, err::kEnumInvalid);
         return false;
     }
 
@@ -1263,6 +1263,10 @@ ANGLE_INLINE bool ValidateVertexAttribIndex(const Context *context,
 
     return true;
 }
+
+bool ValidateLogicOpCommon(const Context *context,
+                           angle::EntryPoint entryPoint,
+                           LogicalOperation opcodePacked);
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ES_H_

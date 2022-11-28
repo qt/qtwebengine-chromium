@@ -54,15 +54,41 @@ SELECT CREATE_VIEW_FUNCTION(
   '
 );
 
+-- Given a launch id and GLOB for a slice name,
+-- summing the slice durations across the whole startup.
+SELECT CREATE_FUNCTION(
+  'DUR_SUM_FOR_LAUNCH_AND_SLICE(launch_id LONG, slice_name STRING)',
+  'INT',
+  '
+    SELECT SUM(slice_dur)
+    FROM thread_slices_for_all_launches
+    WHERE launch_id = $launch_id AND slice_name GLOB $slice_name
+  '
+);
+
 -- Given a launch id and GLOB for a slice name, returns the startup slice proto,
 -- summing the slice durations across the whole startup.
 SELECT CREATE_FUNCTION(
   'DUR_SUM_SLICE_PROTO_FOR_LAUNCH(launch_id LONG, slice_name STRING)',
   'PROTO',
   '
-    SELECT NULL_IF_EMPTY(STARTUP_SLICE_PROTO(SUM(slice_dur)))
+    SELECT NULL_IF_EMPTY(
+      STARTUP_SLICE_PROTO(
+        DUR_SUM_FOR_LAUNCH_AND_SLICE($launch_id, $slice_name)
+      )
+    )
+  '
+);
+
+-- Same as |DUR_SUM_FOR_LAUNCH_AND_LAUNCH| except only counting slices happening
+-- on the main thread.
+SELECT CREATE_FUNCTION(
+  'DUR_SUM_MAIN_THREAD_FOR_LAUNCH_AND_SLICE(launch_id LONG, slice_name STRING)',
+  'INT',
+  '
+    SELECT SUM(slice_dur)
     FROM thread_slices_for_all_launches
-    WHERE launch_id = $launch_id AND slice_name GLOB $slice_name
+    WHERE launch_id = $launch_id AND slice_name GLOB $slice_name AND is_main_thread
   '
 );
 
@@ -72,9 +98,11 @@ SELECT CREATE_FUNCTION(
   'DUR_SUM_MAIN_THREAD_SLICE_PROTO_FOR_LAUNCH(launch_id LONG, slice_name STRING)',
   'PROTO',
   '
-    SELECT NULL_IF_EMPTY(STARTUP_SLICE_PROTO(SUM(slice_dur)))
-    FROM thread_slices_for_all_launches
-    WHERE launch_id = $launch_id AND slice_name GLOB $slice_name AND is_main_thread
+    SELECT NULL_IF_EMPTY(
+      STARTUP_SLICE_PROTO(
+        DUR_SUM_MAIN_THREAD_FOR_LAUNCH_AND_SLICE($launch_id, $slice_name)
+      )
+    )
   '
 );
 
@@ -93,5 +121,47 @@ SELECT CREATE_FUNCTION(
       s.launch_id = $launch_id AND
       s.is_main_thread AND
       (t.end_ts IS NULL OR t.end_ts >= s.launch_ts_end)
+  '
+);
+
+-- Given a lauch id, returns the total time spent in GC
+SELECT CREATE_FUNCTION(
+  'TOTAL_GC_TIME_BY_LAUNCH(launch_id LONG)',
+  'INT',
+  '
+    SELECT SUM(slice_dur)
+        FROM thread_slices_for_all_launches slice
+        WHERE
+          slice.launch_id = $launch_id AND
+          (
+            slice_name GLOB "*semispace GC" OR
+            slice_name GLOB "*mark sweep GC" OR
+            slice_name GLOB "*concurrent copying GC"
+          )
+  '
+);
+
+-- Given a launch id and package name, returns if baseline or cloud profile is missing.
+SELECT CREATE_FUNCTION(
+  'MISSING_BASELINE_PROFILE_FOR_LAUNCH(launch_id LONG, pkg_name STRING)',
+  'BOOL',
+  '
+    SELECT (COUNT(slice_name) > 0)
+    FROM (
+      SELECT *
+      FROM SLICES_FOR_LAUNCH_AND_SLICE_NAME(
+        $launch_id,
+        "location=* status=* filter=* reason=*"
+      )
+      ORDER BY slice_name
+    )
+    WHERE
+      -- when location is the package odex file and the reason is "install" or "install-dm",
+      -- if the compilation filter is not "speed-profile", baseline/cloud profile is missing.
+      SUBSTR(STR_SPLIT(slice_name, " status=", 0), LENGTH("location=") + 1)
+        GLOB ("*" || $pkg_name || "*odex")
+      AND (STR_SPLIT(slice_name, " reason=", 1) = "install"
+        OR STR_SPLIT(slice_name, " reason=", 1) = "install-dm")
+      AND STR_SPLIT(STR_SPLIT(slice_name, " filter=", 1), " reason=", 0) != "speed-profile"
   '
 );

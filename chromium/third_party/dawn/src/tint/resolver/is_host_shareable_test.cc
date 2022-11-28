@@ -95,7 +95,7 @@ TEST_F(ResolverIsHostShareable, Matrix) {
 }
 
 TEST_F(ResolverIsHostShareable, Pointer) {
-    auto* ptr = create<sem::Pointer>(create<sem::I32>(), ast::StorageClass::kPrivate,
+    auto* ptr = create<sem::Pointer>(create<sem::I32>(), ast::AddressSpace::kPrivate,
                                      ast::Access::kReadWrite);
     EXPECT_FALSE(r()->IsHostShareable(ptr));
 }
@@ -106,12 +106,13 @@ TEST_F(ResolverIsHostShareable, Atomic) {
 }
 
 TEST_F(ResolverIsHostShareable, ArraySizedOfHostShareable) {
-    auto* arr = create<sem::Array>(create<sem::I32>(), 5u, 4u, 20u, 4u, 4u);
+    auto* arr =
+        create<sem::Array>(create<sem::I32>(), sem::ConstantArrayCount{5u}, 4u, 20u, 4u, 4u);
     EXPECT_TRUE(r()->IsHostShareable(arr));
 }
 
 TEST_F(ResolverIsHostShareable, ArrayUnsizedOfHostShareable) {
-    auto* arr = create<sem::Array>(create<sem::I32>(), 0u, 4u, 4u, 4u, 4u);
+    auto* arr = create<sem::Array>(create<sem::I32>(), sem::RuntimeArrayCount{}, 4u, 4u, 4u, 4u);
     EXPECT_TRUE(r()->IsHostShareable(arr));
 }
 

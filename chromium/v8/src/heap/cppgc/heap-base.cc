@@ -96,7 +96,7 @@ HeapBase::HeapBase(
     std::shared_ptr<cppgc::Platform> platform,
     const std::vector<std::unique_ptr<CustomSpaceBase>>& custom_spaces,
     StackSupport stack_support, MarkingType marking_support,
-    SweepingType sweeping_support)
+    SweepingType sweeping_support, GarbageCollector& garbage_collector)
     : raw_heap_(this, custom_spaces),
       platform_(std::move(platform)),
       oom_handler_(std::make_unique<FatalOutOfMemoryHandler>(this)),
@@ -111,7 +111,8 @@ HeapBase::HeapBase(
       prefinalizer_handler_(std::make_unique<PreFinalizerHandler>(*this)),
       compactor_(raw_heap_),
       object_allocator_(raw_heap_, *page_backend_, *stats_collector_,
-                        *prefinalizer_handler_),
+                        *prefinalizer_handler_, *oom_handler_,
+                        garbage_collector),
       sweeper_(*this),
       strong_persistent_region_(*oom_handler_.get()),
       weak_persistent_region_(*oom_handler_.get()),
@@ -249,18 +250,16 @@ void HeapBase::Terminate() {
 #endif  // defined(CPPGC_YOUNG_GENERATION)
 
     in_atomic_pause_ = true;
-    stats_collector()->NotifyMarkingStarted(
-        GarbageCollector::Config::CollectionType::kMajor,
-        GarbageCollector::Config::MarkingType::kAtomic,
-        GarbageCollector::Config::IsForcedGC::kForced);
+    stats_collector()->NotifyMarkingStarted(CollectionType::kMajor,
+                                            GCConfig::MarkingType::kAtomic,
+                                            GCConfig::IsForcedGC::kForced);
     object_allocator().ResetLinearAllocationBuffers();
     stats_collector()->NotifyMarkingCompleted(0);
     ExecutePreFinalizers();
     // TODO(chromium:1029379): Prefinalizers may black-allocate objects (under a
     // compile-time option). Run sweeping with forced finalization here.
-    sweeper().Start(
-        {Sweeper::SweepingConfig::SweepingType::kAtomic,
-         Sweeper::SweepingConfig::CompactableSpaceHandling::kSweep});
+    sweeper().Start({SweepingConfig::SweepingType::kAtomic,
+                     SweepingConfig::CompactableSpaceHandling::kSweep});
     in_atomic_pause_ = false;
 
     sweeper().NotifyDoneIfNeeded();
@@ -273,7 +272,7 @@ void HeapBase::Terminate() {
         }();
   } while (more_termination_gcs_needed);
 
-  object_allocator().Terminate();
+  object_allocator().ResetLinearAllocationBuffers();
   disallow_gc_scope_++;
 
   CHECK_EQ(0u, strong_persistent_region_.NodesInUse());

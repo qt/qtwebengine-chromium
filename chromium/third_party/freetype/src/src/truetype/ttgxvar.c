@@ -959,14 +959,15 @@
 
     /* OpenType 1.8.4+: No variation data for this item
      *  as indices have special value 0xFFFF. */
-    if (outerIndex == 0xFFFF && innerIndex == 0xFFFF)
+    if ( outerIndex == 0xFFFF && innerIndex == 0xFFFF )
       return 0;
 
     /* See pseudo code from `Font Variations Overview' */
     /* in the OpenType specification.                  */
 
     varData  = &itemStore->varData[outerIndex];
-    deltaSet = &varData->deltaSet[varData->regionIdxCount * innerIndex];
+    deltaSet = FT_OFFSET( varData->deltaSet,
+                          varData->regionIdxCount * innerIndex );
 
     if ( FT_QNEW_ARRAY( scalars, varData->regionIdxCount ) )
       return 0;
@@ -1353,7 +1354,7 @@
       return;
 
     value     = blend->mvar_table->values;
-    limit     = value + blend->mvar_table->valueCount;
+    limit     = FT_OFFSET( value, blend->mvar_table->valueCount );
     itemStore = &blend->mvar_table->itemStore;
 
     for ( ; value < limit; value++ )
@@ -1386,7 +1387,7 @@
     FT_TRACE2(( "loaded\n" ));
 
     value = blend->mvar_table->values;
-    limit = value + blend->mvar_table->valueCount;
+    limit = FT_OFFSET( value, blend->mvar_table->valueCount );
 
     /* save original values of the data MVAR is going to modify */
     for ( ; value < limit; value++ )
@@ -1451,7 +1452,7 @@
       return;
 
     value = blend->mvar_table->values;
-    limit = value + blend->mvar_table->valueCount;
+    limit = FT_OFFSET( value, blend->mvar_table->valueCount );
 
     for ( ; value < limit; value++ )
     {
@@ -2207,6 +2208,11 @@
       FT_FRAME_END
     };
 
+    /* `num_instances` holds the number of all named instances including  */
+    /* the default instance, which might be missing in the table of named */
+    /* instances (in 'fvar').  This value is validated in `sfobjs.c` and  */
+    /* may be reset to 0 if consistency checks fail.                      */
+    num_instances = (FT_UInt)face->root.style_flags >> 16;
 
     /* read the font data and set up the internal representation */
     /* if not already done                                       */
@@ -2216,20 +2222,6 @@
     if ( need_init )
     {
       FT_TRACE2(( "FVAR " ));
-
-      /* both `fvar' and `gvar' must be present */
-      if ( FT_SET_ERROR( face->goto_table( face, TTAG_gvar,
-                                           stream, &table_len ) ) )
-      {
-        /* CFF2 is an alternate to gvar here */
-        if ( FT_SET_ERROR( face->goto_table( face, TTAG_CFF2,
-                                             stream, &table_len ) ) )
-        {
-          FT_TRACE1(( "\n" ));
-          FT_TRACE1(( "TT_Get_MM_Var: `gvar' or `CFF2' table is missing\n" ));
-          goto Exit;
-        }
-      }
 
       if ( FT_SET_ERROR( face->goto_table( face, TTAG_fvar,
                                            stream, &table_len ) ) )
@@ -2244,6 +2236,17 @@
       /* in function `sfnt_init_face'                               */
       if ( FT_STREAM_READ_FIELDS( fvar_fields, &fvar_head ) )
         goto Exit;
+
+      /* If `num_instances` is larger, synthetization of the default  */
+      /* instance is required.  If `num_instances` is smaller,        */
+      /* however, the value has been reset to 0 in `sfnt_init_face`   */
+      /* (in `sfobjs.c`); in this case we have underallocated `mmvar` */
+      /* structs.                                                     */
+      if ( num_instances < fvar_head.instanceCount )
+      {
+        error = FT_THROW( Invalid_Table );
+        goto Exit;
+      }
 
       usePsName = FT_BOOL( fvar_head.instanceSize ==
                            6 + 4 * fvar_head.axisCount );
@@ -2262,11 +2265,6 @@
     }
     else
       num_axes = face->blend->num_axis;
-
-    /* `num_instances' holds the number of all named instances, */
-    /* including the default instance which might be missing    */
-    /* in fvar's table of named instances                       */
-    num_instances = (FT_UInt)face->root.style_flags >> 16;
 
     /* prepare storage area for MM data; this cannot overflow   */
     /* 32-bit arithmetic because of the size limits used in the */
@@ -2673,8 +2671,16 @@
     FT_TRACE5(( "\n" ));
 
     if ( !face->is_cff2 && !blend->glyphoffsets )
-      if ( FT_SET_ERROR( ft_var_load_gvar( face ) ) )
+    {
+      /* While a missing 'gvar' table is acceptable, for example for */
+      /* fonts that only vary metrics information or 'COLR' v1       */
+      /* `PaintVar*` tables, an incorrect SFNT table offset or size  */
+      /* for 'gvar', or an inconsistent 'gvar' table is not.         */
+      error = ft_var_load_gvar( face );
+      if ( error != FT_Err_Table_Missing && error != FT_Err_Ok )
         goto Exit;
+      error = FT_Err_Ok;
+    }
 
     if ( !blend->coords )
     {

@@ -22,7 +22,7 @@ import { kValue } from '../../../../../util/constants.js';
 import { i32, TypeF32, TypeI32, TypeU32, u32 } from '../../../../../util/conversion.js';
 import { maxInterval } from '../../../../../util/f32_interval.js';
 import { fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeBinaryF32IntervalCase, run } from '../../expression.js';
+import { allInputSources, Case, makeBinaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -64,7 +64,7 @@ g.test('u32')
     const test_values: Array<number> = [0, 1, 2, 0x70000000, 0x80000000, 0xffffffff];
     const cases = generateTestCases(test_values, makeCase);
 
-    run(t, builtin('max'), [TypeU32, TypeU32], TypeU32, t.params, cases);
+    await run(t, builtin('max'), [TypeU32, TypeU32], TypeU32, t.params, cases);
   });
 
 g.test('i32')
@@ -81,7 +81,7 @@ g.test('i32')
     const test_values: Array<number> = [-0x70000000, -2, -1, 0, 1, 2, 0x70000000];
     const cases = generateTestCases(test_values, makeCase);
 
-    run(t, builtin('max'), [TypeI32, TypeI32], TypeI32, t.params, cases);
+    await run(t, builtin('max'), [TypeI32, TypeI32], TypeI32, t.params, cases);
   });
 
 g.test('abstract_float')
@@ -100,7 +100,7 @@ g.test('f32')
   )
   .fn(async t => {
     const makeCase = (x: number, y: number): Case => {
-      return makeBinaryF32IntervalCase(x, y, maxInterval);
+      return makeBinaryToF32IntervalCase(x, y, maxInterval);
     };
 
     const cases: Array<Case> = [];
@@ -112,7 +112,7 @@ g.test('f32')
       });
     });
 
-    run(t, builtin('max'), [TypeF32, TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('max'), [TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

@@ -6,6 +6,7 @@
 
 #include <cassert>
 
+#include <xnnpack.h>
 #include <xnnpack/aarch32-assembler.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/igemm.h>
@@ -529,7 +530,7 @@ void Generator::generate(size_t max_mr, size_t nc_mod_nr, size_t kc, const void*
 }  // aarch32
 }  // xnnpack
 
-xnn_status xnn_generate_f32_igemm_ukernel_4x8__aarch32_neon_cortex_a53(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, size_t ks, const void* params) {
+xnn_status_t xnn_generate_f32_igemm_ukernel_4x8__aarch32_neon_cortex_a53(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, size_t ks, const void* params) {
   using namespace xnnpack::aarch32;
   Generator g(code);
   assert(params != nullptr);

@@ -40,10 +40,12 @@ utils::VectorRef<const Parameter*> SetOwner(utils::VectorRef<Parameter*> paramet
 
 Function::Function(const ast::Function* declaration,
                    Type* return_type,
+                   std::optional<uint32_t> return_location,
                    utils::VectorRef<Parameter*> parameters)
     : Base(return_type, SetOwner(std::move(parameters), this), EvaluationStage::kRuntime),
       declaration_(declaration),
-      workgroup_size_{WorkgroupDimension{1}, WorkgroupDimension{1}, WorkgroupDimension{1}} {}
+      workgroup_size_{1, 1, 1},
+      return_location_(return_location) {}
 
 Function::~Function() = default;
 
@@ -66,12 +68,12 @@ Function::VariableBindings Function::TransitivelyReferencedUniformVariables() co
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->StorageClass() != ast::StorageClass::kUniform) {
+        if (global->AddressSpace() != ast::AddressSpace::kUniform) {
             continue;
         }
 
-        if (auto binding_point = global->Declaration()->BindingPoint()) {
-            ret.push_back({global, binding_point});
+        if (global->Declaration()->HasBindingPoint()) {
+            ret.push_back({global, global->BindingPoint()});
         }
     }
     return ret;
@@ -81,12 +83,12 @@ Function::VariableBindings Function::TransitivelyReferencedStorageBufferVariable
     VariableBindings ret;
 
     for (auto* global : TransitivelyReferencedGlobals()) {
-        if (global->StorageClass() != ast::StorageClass::kStorage) {
+        if (global->AddressSpace() != ast::AddressSpace::kStorage) {
             continue;
         }
 
-        if (auto binding_point = global->Declaration()->BindingPoint()) {
-            ret.push_back({global, binding_point});
+        if (global->Declaration()->HasBindingPoint()) {
+            ret.push_back({global, global->BindingPoint()});
         }
     }
     return ret;
@@ -129,8 +131,8 @@ Function::VariableBindings Function::TransitivelyReferencedVariablesOfType(
     for (auto* global : TransitivelyReferencedGlobals()) {
         auto* unwrapped_type = global->Type()->UnwrapRef();
         if (unwrapped_type->TypeInfo().Is(type)) {
-            if (auto binding_point = global->Declaration()->BindingPoint()) {
-                ret.push_back({global, binding_point});
+            if (global->Declaration()->HasBindingPoint()) {
+                ret.push_back({global, global->BindingPoint()});
             }
         }
     }
@@ -157,8 +159,8 @@ Function::VariableBindings Function::TransitivelyReferencedSamplerVariablesImpl(
             continue;
         }
 
-        if (auto binding_point = global->Declaration()->BindingPoint()) {
-            ret.push_back({global, binding_point});
+        if (global->Declaration()->HasBindingPoint()) {
+            ret.push_back({global, global->BindingPoint()});
         }
     }
     return ret;
@@ -182,8 +184,8 @@ Function::VariableBindings Function::TransitivelyReferencedSampledTextureVariabl
             continue;
         }
 
-        if (auto binding_point = global->Declaration()->BindingPoint()) {
-            ret.push_back({global, binding_point});
+        if (global->Declaration()->HasBindingPoint()) {
+            ret.push_back({global, global->BindingPoint()});
         }
     }
 

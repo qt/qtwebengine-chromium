@@ -16,6 +16,7 @@ import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as Coordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as ChromeLink from '../../../ui/components/chrome_link/chrome_link.js';
 import * as ExpandableList from '../../../ui/components/expandable_list/expandable_list.js';
+import * as TreeOutline from '../../../ui/components/tree_outline/tree_outline.js';
 
 import {NotRestoredReasonDescription} from './BackForwardCacheStrings.js';
 import backForwardCacheViewStyles from './backForwardCacheView.css.js';
@@ -181,6 +182,8 @@ export class BackForwardCacheView extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #frame: SDK.ResourceTreeModel.ResourceTreeFrame|null = null;
   #screenStatus = ScreenStatusType.Result;
+  #nextNodeId = 0;
+  #historyIndex = 0;
 
   connectedCallback(): void {
     this.#shadow.adoptedStyleSheets = [backForwardCacheViewStyles];
@@ -214,51 +217,57 @@ export class BackForwardCacheView extends HTMLElement {
     void this.#render();
   }
 
-  async #goBackOneHistoryEntry(): Promise<void> {
+  async #onNavigatedAway(): Promise<void> {
     SDK.TargetManager.TargetManager.instance().removeModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated,
-        this.#goBackOneHistoryEntry, this);
-    this.#screenStatus = ScreenStatusType.Running;
-    void this.#render();
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated, this.#onNavigatedAway,
+        this);
+    await this.#waitAndGoBackInHistory(50);
+  }
+
+  async #waitAndGoBackInHistory(delay: number): Promise<void> {
     const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
-    if (!mainTarget) {
+    const resourceTreeModel = mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    const historyResults = await resourceTreeModel?.navigationHistory();
+    if (!resourceTreeModel || !historyResults) {
       return;
     }
-    const resourceTreeModel = mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
-    if (!resourceTreeModel) {
-      return;
+    // The navigation history can be delayed. If this is the case we wait and
+    // check again later. Otherwise it would be possible to press the 'Test
+    // BFCache' button again too soon, leading to the browser stepping back in
+    // history without returning to the correct page.
+    if (historyResults.currentIndex === this.#historyIndex) {
+      window.setTimeout(this.#waitAndGoBackInHistory.bind(this, delay * 2), delay);
+    } else {
+      SDK.TargetManager.TargetManager.instance().addModelListener(
+          SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated,
+          this.#renderBackForwardCacheTestResult, this);
+      resourceTreeModel.navigateToHistoryEntry(historyResults.entries[historyResults.currentIndex - 1]);
     }
-    const historyResults = await resourceTreeModel.navigationHistory();
-    if (!historyResults) {
-      return;
-    }
-    SDK.TargetManager.TargetManager.instance().addModelListener(
-        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated,
-        this.#renderBackForwardCacheTestResult, this);
-    resourceTreeModel.navigateToHistoryEntry(historyResults.entries[historyResults.currentIndex - 1]);
   }
 
   async #navigateAwayAndBack(): Promise<void> {
     // Checking BFCache Compatibility
 
     const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
-    if (!mainTarget) {
+    const resourceTreeModel = mainTarget?.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    const historyResults = await resourceTreeModel?.navigationHistory();
+    if (!resourceTreeModel || !historyResults) {
       return;
     }
-    const resourceTreeModel = mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    this.#historyIndex = historyResults.currentIndex;
+    this.#screenStatus = ScreenStatusType.Running;
+    void this.#render();
 
-    if (resourceTreeModel) {
-      // This event is removed by inside of goBackOneHistoryEntry().
-      SDK.TargetManager.TargetManager.instance().addModelListener(
-          SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated,
-          this.#goBackOneHistoryEntry, this);
+    // This event listener is removed inside of onNavigatedAway().
+    SDK.TargetManager.TargetManager.instance().addModelListener(
+        SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.FrameNavigated, this.#onNavigatedAway,
+        this);
 
-      // We can know whether the current page can use BFCache
-      // as the browser navigates to another unrelated page and goes back to the current page.
-      // We chose "chrome://terms" because it must be cross-site.
-      // Ideally, We want to have our own testing page like "chrome: //bfcache-test".
-      void resourceTreeModel.navigate('chrome://terms' as Platform.DevToolsPath.UrlString);
-    }
+    // We can know whether the current page can use BFCache
+    // as the browser navigates to another unrelated page and goes back to the current page.
+    // We chose "chrome://terms" because it must be cross-site.
+    // Ideally, We want to have our own testing page like "chrome: //bfcache-test".
+    void resourceTreeModel.navigate('chrome://terms' as Platform.DevToolsPath.UrlString);
   }
 
   #renderMainFrameInformation(): LitHtml.TemplateResult {
@@ -280,17 +289,18 @@ export class BackForwardCacheView extends HTMLElement {
     // clang-format off
     return LitHtml.html`
       ${this.#renderBackForwardCacheStatus(this.#frame.backForwardCacheDetails.restoredFromCache)}
-      <div class='report-line'>
-        <div class='report-key'>
+      <div class="report-line">
+        <div class="report-key">
           ${i18nString(UIStrings.url)}
         </div>
-        <div class='report-value'>
+        <div class="report-value">
           ${this.#frame.url}
         </div>
       </div>
       ${this.#maybeRenderFrameTree(this.#frame.backForwardCacheDetails.explanationsTree)}
       <${ReportView.ReportView.ReportSection.litTagName}>
         <${Buttons.Button.Button.litTagName}
+          aria-label=${i18nString(UIStrings.runTest)}
           .disabled=${isTestRunning || isTestingForbidden}
           .spinner=${isTestRunning}
           .variant=${Buttons.Button.Variant.PRIMARY}
@@ -320,73 +330,114 @@ export class BackForwardCacheView extends HTMLElement {
         !Root.Runtime.experiments.isEnabled('bfcacheDisplayTree')) {
       return LitHtml.nothing;
     }
-    const treeOutline = new UI.TreeOutline.TreeOutlineInShadow();
-    treeOutline.registerCSSFiles([backForwardCacheViewStyles]);
-    const urlTreeElement = new UI.TreeOutline.TreeElement();
-    treeOutline.appendChild(urlTreeElement);
-    const {frameCount, issueCount} = this.#maybeAddFrameSubTree(urlTreeElement, {blankCount: 1}, explanationTree);
+
+    function treeNodeRenderer(node: TreeOutline.TreeOutlineUtils.TreeNode<FrameTreeNodeData>): LitHtml.TemplateResult {
+      // clang-format off
+      return LitHtml.html`
+        <div class="text-ellipsis">
+          ${node.treeNodeData.iconName ? LitHtml.html`
+            <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
+              iconName: node.treeNodeData.iconName,
+              color: 'var(--color-text-secondary)',
+              width: '16px',
+              height: '16px',
+            } as IconButton.Icon.IconData}>
+            </${IconButton.Icon.Icon.litTagName}>
+          ` : LitHtml.nothing}
+          ${node.treeNodeData.text}
+        </div>
+      `;
+      // clang-format on
+    }
+
+    const frameTreeData = this.#buildFrameTreeDataRecursive(explanationTree, {blankCount: 1});
+    // Override the icon for the top frame.
+    frameTreeData.node.treeNodeData.iconName = 'frame-icon';
+    let title = '';
     // The translation pipeline does not support nested plurals. We avoid this
     // here by pulling out the logic for one of the plurals into code instead.
-    if (frameCount === 1) {
-      urlTreeElement.title = i18nString(UIStrings.issuesInSingleFrame, {n: issueCount});
+    if (frameTreeData.frameCount === 1) {
+      title = i18nString(UIStrings.issuesInSingleFrame, {n: frameTreeData.issueCount});
     } else {
-      urlTreeElement.title = i18nString(UIStrings.issuesInMultipleFrames, {n: issueCount, m: frameCount});
+      title = i18nString(UIStrings.issuesInMultipleFrames, {n: frameTreeData.issueCount, m: frameTreeData.frameCount});
     }
-    // The first element is always the root, so expand it by default (and override its icon).
-    const topFrameElement = urlTreeElement.childAt(0);
-    if (topFrameElement) {
-      topFrameElement.expand();
-      topFrameElement.setLeadingIcons([UI.Icon.Icon.create('mediumicon-frame')]);
-    }
+    const root: TreeOutline.TreeOutlineUtils.TreeNode<FrameTreeNodeData> = {
+      treeNodeData: {
+        text: title,
+      },
+      id: 'root',
+      children: () => Promise.resolve([frameTreeData.node]),
+    };
+
+    // clang-format off
     return LitHtml.html`
-    <div class='report-line'>
-    <div class='report-key'>
-      ${i18nString(UIStrings.framesTitle)}
-    </div>
-    <div class='report-value'>
-      ${treeOutline.element}
-    </div>
-  </div>`;
+      <div class="report-line">
+        <div class="report-key">
+          ${i18nString(UIStrings.framesTitle)}
+        </div>
+        <div class="report-value">
+          <${TreeOutline.TreeOutline.TreeOutline.litTagName} .data=${{
+            tree: [root],
+            defaultRenderer: treeNodeRenderer,
+            compact: true,
+          } as TreeOutline.TreeOutline.TreeOutlineData<FrameTreeNodeData>}>
+          </${TreeOutline.TreeOutline.TreeOutline.litTagName}>
+        </div>
+      </div>
+    `;
+    // clang-format on
   }
 
-  // Potentially adds a subtree of the frame tree, if there are any issues. Returns a tuple of how many frames were added,
-  // and how many issues there were in total over all those frames.
-  #maybeAddFrameSubTree(
-      root: UI.TreeOutline.TreeElement, nextBlankURLCount: {blankCount: number},
-      explanationTree: Protocol.Page.BackForwardCacheNotRestoredExplanationTree|
-      undefined): {frameCount: number, issueCount: number} {
-    if (!explanationTree || (explanationTree.explanations.length === 0 && explanationTree.children.length === 0)) {
-      return {frameCount: 0, issueCount: 0};
-    }
-    const icon = UI.Icon.Icon.create('mediumicon-frame-embedded');
-    let issuecount = explanationTree.explanations.length;
-    let framecount = 0;
-    let treeElementURL: string;
-    if (explanationTree.url.length > 0) {
-      treeElementURL = explanationTree.url;
+  // Builds a subtree of the frame tree, conaining only frames with BFCache issues and their ancestors.
+  // Returns the root node, the number of frames in the subtree, and the number of issues in the subtree.
+  #buildFrameTreeDataRecursive(
+      explanationTree: Protocol.Page.BackForwardCacheNotRestoredExplanationTree,
+      nextBlankURLCount: {blankCount: number}):
+      {node: TreeOutline.TreeOutlineUtils.TreeNode<FrameTreeNodeData>, frameCount: number, issueCount: number} {
+    let frameCount = 1;
+    let issueCount = 0;
+    const children: TreeOutline.TreeOutlineUtils.TreeNode<FrameTreeNodeData>[] = [];
+
+    let nodeUrlText = '';
+    if (explanationTree.url.length) {
+      nodeUrlText = explanationTree.url;
     } else {
-      treeElementURL = i18nString(UIStrings.blankURLTitle, {PH1: String(nextBlankURLCount.blankCount)});
+      nodeUrlText = i18nString(UIStrings.blankURLTitle, {PH1: nextBlankURLCount.blankCount});
       nextBlankURLCount.blankCount += 1;
     }
-    const urlTreeElement = new UI.TreeOutline.TreeElement();
-    root.appendChild(urlTreeElement);
-    urlTreeElement.setLeadingIcons([icon]);
-    explanationTree.explanations.forEach(explanation => {
-      urlTreeElement.appendChild(new UI.TreeOutline.TreeElement(explanation.reason));
-    });
-    explanationTree.children.forEach(child => {
-      const counts = this.#maybeAddFrameSubTree(urlTreeElement, nextBlankURLCount, child);
-      framecount += counts.frameCount;
-      issuecount += counts.issueCount;
-    });
-    if (issuecount > 0) {
-      urlTreeElement.title = '(' + String(issuecount) + ') ' + treeElementURL;
-      framecount += 1;
-    } else if (framecount === 0) {
-      root.removeChild(urlTreeElement);
+
+    for (const explanation of explanationTree.explanations) {
+      const child = {treeNodeData: {text: explanation.reason}, id: String(this.#nextNodeId++)};
+      issueCount += 1;
+      children.push(child);
+    }
+    for (const child of explanationTree.children) {
+      const frameTreeData = this.#buildFrameTreeDataRecursive(child, nextBlankURLCount);
+      if (frameTreeData.issueCount > 0) {
+        children.push(frameTreeData.node);
+        issueCount += frameTreeData.issueCount;
+        frameCount += frameTreeData.frameCount;
+      }
     }
 
-    return {frameCount: framecount, issueCount: issuecount};
+    let node: TreeOutline.TreeOutlineUtils.TreeNode<FrameTreeNodeData> = {
+      treeNodeData: {
+        text: `(${issueCount}) ${nodeUrlText}`,
+      },
+      id: String(this.#nextNodeId++),
+    };
+    if (children.length) {
+      node = {
+        ...node,
+        children: () => Promise.resolve(children),
+      };
+      node.treeNodeData.iconName = 'frame-embedded-icon';
+    } else if (!explanationTree.url.length) {
+      // If the current node increased the blank count, but it has no children and
+      // is therefore not shown, decrement the blank count again.
+      nextBlankURLCount.blankCount -= 1;
+    }
+    return {node, frameCount, issueCount};
   }
 
   #renderBackForwardCacheStatus(status: boolean|undefined): LitHtml.TemplateResult {
@@ -395,7 +446,7 @@ export class BackForwardCacheView extends HTMLElement {
         // clang-format off
         return LitHtml.html`
           <${ReportView.ReportView.ReportSection.litTagName}>
-            <div class='status'>
+            <div class="status">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
                 iconName: 'ic_checkmark_16x16',
                 color: 'green',
@@ -412,7 +463,7 @@ export class BackForwardCacheView extends HTMLElement {
         // clang-format off
         return LitHtml.html`
           <${ReportView.ReportView.ReportSection.litTagName}>
-            <div class='status'>
+            <div class="status">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
                   iconName: 'circled_backslash_icon',
                   color: 'var(--color-text-secondary)',
@@ -441,7 +492,7 @@ export class BackForwardCacheView extends HTMLElement {
       outputMap: Map<Protocol.Page.BackForwardCacheNotRestoredReason, string[]>): void {
     let url = explanationTree.url;
     if (url.length === 0) {
-      url = i18nString(UIStrings.blankURLTitle, {PH1: String(nextBlankURLCount.blankCount)});
+      url = i18nString(UIStrings.blankURLTitle, {PH1: nextBlankURLCount.blankCount});
       nextBlankURLCount.blankCount += 1;
     }
     explanationTree.explanations.forEach(explanation => {
@@ -496,7 +547,7 @@ export class BackForwardCacheView extends HTMLElement {
       ${explanations.length > 0 ? LitHtml.html`
         <${ReportView.ReportView.ReportSectionHeader.litTagName}>
           ${category}
-          <div class='help-outline-icon'>
+          <div class="help-outline-icon">
             <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
               iconName: 'help_outline',
               color: 'var(--color-text-secondary)',
@@ -530,9 +581,9 @@ export class BackForwardCacheView extends HTMLElement {
       return LitHtml.nothing;
     }
     const rows = [LitHtml.html`<div>${i18nString(UIStrings.framesPerIssue, {n: frames.length})}</div>`];
-    rows.push(...frames.map(url => LitHtml.html`<div class='text-ellipsis' title=${url}>${url}</div>`));
+    rows.push(...frames.map(url => LitHtml.html`<div class="text-ellipsis" title=${url}>${url}</div>`));
     return LitHtml.html`
-      <div class='explanation-frames'>
+      <div class="explanation-frames">
         <${ExpandableList.ExpandableList.ExpandableList.litTagName} .data=${
         {rows} as
         ExpandableList.ExpandableList.ExpandableListData}></${ExpandableList.ExpandableList.ExpandableList.litTagName}>
@@ -558,7 +609,7 @@ export class BackForwardCacheView extends HTMLElement {
       <${ReportView.ReportView.ReportSection.litTagName}>
         ${(explanation.reason in NotRestoredReasonDescription) ?
           LitHtml.html`
-            <div class='circled-exclamation-icon'>
+            <div class="circled-exclamation-icon">
               <${IconButton.Icon.Icon.litTagName} class="inline-icon" .data=${{
                 iconName: 'circled_exclamation_icon',
                 color: 'orange',
@@ -574,13 +625,18 @@ export class BackForwardCacheView extends HTMLElement {
            </div>` :
             LitHtml.nothing}
       </${ReportView.ReportView.ReportSection.litTagName}>
-      <div class='gray-text'>
+      <div class="gray-text">
         ${explanation.reason}
       </div>
       ${this.#renderFramesPerReason(frames)}
     `;
     // clang-format on
   }
+}
+
+interface FrameTreeNodeData {
+  text: string;
+  iconName?: string;
 }
 
 ComponentHelpers.CustomElements.defineComponent('devtools-resources-back-forward-cache-view', BackForwardCacheView);

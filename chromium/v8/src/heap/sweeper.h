@@ -8,9 +8,12 @@
 #include <map>
 #include <vector>
 
+#include "src/base/optional.h"
 #include "src/base/platform/condition-variable.h"
 #include "src/base/platform/semaphore.h"
 #include "src/common/globals.h"
+#include "src/flags/flags.h"
+#include "src/heap/pretenuring-handler.h"
 #include "src/heap/slot-set.h"
 #include "src/tasks/cancelable-task.h"
 
@@ -74,7 +77,7 @@ class Sweeper {
   enum AddPageMode { REGULAR, READD_TEMPORARY_REMOVED_PAGE };
   enum class SweepingMode { kEagerDuringGC, kLazyOrConcurrent };
 
-  Sweeper(Heap* heap, NonAtomicMarkingState* marking_state);
+  Sweeper(Heap* heap);
   ~Sweeper();
 
   bool sweeping_in_progress() const { return sweeping_in_progress_; }
@@ -82,44 +85,55 @@ class Sweeper {
   void TearDown();
 
   void AddPage(AllocationSpace space, Page* page, AddPageMode mode);
+  void AddNewSpacePage(Page* page);
 
   int ParallelSweepSpace(AllocationSpace identity, SweepingMode sweeping_mode,
                          int required_freed_bytes, int max_pages = 0);
-  int ParallelSweepPage(Page* page, AllocationSpace identity,
-                        SweepingMode sweeping_mode);
+  int ParallelSweepPage(
+      Page* page, AllocationSpace identity,
+      PretenturingHandler::PretenuringFeedbackMap* local_pretenuring_feedback,
+      SweepingMode sweeping_mode);
 
   void EnsurePageIsSwept(Page* page);
 
-  int RawSweep(Page* p, FreeSpaceTreatmentMode free_space_treatment_mode,
-               SweepingMode sweeping_mode, const base::MutexGuard& page_guard);
+  int RawSweep(
+      Page* p, FreeSpaceTreatmentMode free_space_treatment_mode,
+      SweepingMode sweeping_mode, const base::MutexGuard& page_guard,
+      PretenturingHandler::PretenuringFeedbackMap* local_pretenuring_feedback);
 
   // After calling this function sweeping is considered to be in progress
   // and the main thread can sweep lazily, but the background sweeper tasks
   // are not running yet.
-  void StartSweeping();
+  void StartSweeping(GarbageCollector collector);
   V8_EXPORT_PRIVATE void StartSweeperTasks();
-  void EnsureCompleted();
+  void EnsureCompleted(
+      SweepingMode sweeping_mode = SweepingMode::kLazyOrConcurrent);
   void DrainSweepingWorklistForSpace(AllocationSpace space);
   bool AreSweeperTasksRunning();
-
-  // Support concurrent sweepers from main thread
-  void SupportConcurrentSweeping();
 
   Page* GetSweptPageSafe(PagedSpaceBase* space);
 
  private:
+  NonAtomicMarkingState* marking_state() const { return marking_state_; }
+
+  void AddPageImpl(AllocationSpace space, Page* page, AddPageMode mode);
+
   class ConcurrentSweeper;
   class SweeperJob;
 
   static const int kNumberOfSweepingSpaces =
-      LAST_GROWABLE_PAGED_SPACE - FIRST_GROWABLE_PAGED_SPACE + 1;
+      LAST_SWEEPABLE_SPACE - FIRST_SWEEPABLE_SPACE + 1;
   static constexpr int kMaxSweeperTasks = 3;
 
   template <typename Callback>
   void ForAllSweepingSpaces(Callback callback) const {
+    if (v8_flags.minor_mc) {
+      callback(NEW_SPACE);
+    }
     callback(OLD_SPACE);
     callback(CODE_SPACE);
     callback(MAP_SPACE);
+    callback(SHARED_SPACE);
   }
 
   // Helper function for RawSweep. Depending on the FreeListRebuildingMode and
@@ -165,19 +179,18 @@ class Sweeper {
   void PrepareToBeSweptPage(AllocationSpace space, Page* page);
 
   static bool IsValidSweepingSpace(AllocationSpace space) {
-    return space >= FIRST_GROWABLE_PAGED_SPACE &&
-           space <= LAST_GROWABLE_PAGED_SPACE;
+    return space >= FIRST_SWEEPABLE_SPACE && space <= LAST_SWEEPABLE_SPACE;
   }
 
   static int GetSweepSpaceIndex(AllocationSpace space) {
     DCHECK(IsValidSweepingSpace(space));
-    return space - FIRST_GROWABLE_PAGED_SPACE;
+    return space - FIRST_SWEEPABLE_SPACE;
   }
 
   int NumberOfConcurrentSweepers() const;
 
   Heap* const heap_;
-  NonAtomicMarkingState* marking_state_;
+  NonAtomicMarkingState* const marking_state_;
   std::unique_ptr<JobHandle> job_handle_;
   base::Mutex mutex_;
   base::ConditionVariable cv_page_swept_;
@@ -188,6 +201,9 @@ class Sweeper {
   // path checks this flag to see whether it could support concurrent sweeping.
   std::atomic<bool> sweeping_in_progress_;
   bool should_reduce_memory_;
+  PretenturingHandler* const pretenuring_handler_;
+  PretenturingHandler::PretenuringFeedbackMap local_pretenuring_feedback_;
+  base::Optional<GarbageCollector> current_collector_;
 };
 
 }  // namespace internal

@@ -95,6 +95,19 @@ struct Coverage
     }
   }
 
+  unsigned get_population () const
+  {
+    switch (u.format) {
+    case 1: return u.format1.get_population ();
+    case 2: return u.format2.get_population ();
+#ifndef HB_NO_BORING_EXPANSION
+    case 3: return u.format3.get_population ();
+    case 4: return u.format4.get_population ();
+#endif
+    default:return NOT_COVERED;
+    }
+  }
+
   template <typename Iterator,
       hb_requires (hb_is_sorted_source_of (Iterator, hb_codepoint_t))>
   bool serialize (hb_serialize_context_t *c, Iterator glyphs)
@@ -191,15 +204,17 @@ struct Coverage
     }
   }
 
-  void intersected_coverage_glyphs (const hb_set_t *glyphs, hb_set_t *intersect_glyphs) const
+  template <typename IterableOut,
+	    hb_requires (hb_is_sink_of (IterableOut, hb_codepoint_t))>
+  void intersect_set (const hb_set_t &glyphs, IterableOut&& intersect_glyphs) const
   {
     switch (u.format)
     {
-    case 1: return u.format1.intersected_coverage_glyphs (glyphs, intersect_glyphs);
-    case 2: return u.format2.intersected_coverage_glyphs (glyphs, intersect_glyphs);
+    case 1: return u.format1.intersect_set (glyphs, intersect_glyphs);
+    case 2: return u.format2.intersect_set (glyphs, intersect_glyphs);
 #ifndef HB_NO_BORING_EXPANSION
-    case 3: return u.format3.intersected_coverage_glyphs (glyphs, intersect_glyphs);
-    case 4: return u.format4.intersected_coverage_glyphs (glyphs, intersect_glyphs);
+    case 3: return u.format3.intersect_set (glyphs, intersect_glyphs);
+    case 4: return u.format4.intersect_set (glyphs, intersect_glyphs);
 #endif
     default:return ;
     }
@@ -227,11 +242,11 @@ struct Coverage
     {
       switch (format)
       {
-      case 1: return u.format1.more ();
-      case 2: return u.format2.more ();
+      case 1: return u.format1.__more__ ();
+      case 2: return u.format2.__more__ ();
 #ifndef HB_NO_BORING_EXPANSION
-      case 3: return u.format3.more ();
-      case 4: return u.format4.more ();
+      case 3: return u.format3.__more__ ();
+      case 4: return u.format4.__more__ ();
 #endif
       default:return false;
       }
@@ -240,11 +255,11 @@ struct Coverage
     {
       switch (format)
       {
-      case 1: u.format1.next (); break;
-      case 2: u.format2.next (); break;
+      case 1: u.format1.__next__ (); break;
+      case 2: u.format2.__next__ (); break;
 #ifndef HB_NO_BORING_EXPANSION
-      case 3: u.format3.next (); break;
-      case 4: u.format4.next (); break;
+      case 3: u.format3.__next__ (); break;
+      case 4: u.format4.__next__ (); break;
 #endif
       default:                   break;
       }

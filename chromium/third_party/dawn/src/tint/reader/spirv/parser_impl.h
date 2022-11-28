@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "src/tint/utils/compiler_macros.h"
+#include "src/tint/utils/hashmap.h"
 
 #if TINT_BUILD_SPV_READER
 TINT_BEGIN_DISABLE_WARNING(NEWLINE_EOF);
@@ -50,7 +51,7 @@ TINT_END_DISABLE_WARNING(NEWLINE_EOF);
 ///
 /// A WGSL "handle" is an opaque object used for accessing a resource via
 /// special builtins.  In SPIR-V, a handle is stored a variable in the
-/// UniformConstant storage class.  The handles supported by SPIR-V are:
+/// UniformConstant address space.  The handles supported by SPIR-V are:
 ///   - images, both sampled texture and storage image
 ///   - samplers
 ///   - combined image+sampler
@@ -280,9 +281,7 @@ class ParserImpl : Reader {
     /// Assumes the list contains at most one Location decoration.
     /// @param decos the attribute list to modify
     /// @param replacement the location decoration to place into the list
-    /// @returns the location decoration that was replaced, if one was replaced,
-    /// or null otherwise.
-    const ast::Attribute* SetLocation(AttributeList* decos, const ast::Attribute* replacement);
+    void SetLocation(AttributeList* decos, const ast::Attribute* replacement);
 
     /// Converts a SPIR-V struct member decoration into a number of AST
     /// decorations. If the decoration is recognized but deliberately dropped,
@@ -426,14 +425,14 @@ class ParserImpl : Reader {
     /// Creates an AST 'var' node for a SPIR-V ID, including any attached decorations, unless it's
     /// an ignorable builtin variable.
     /// @param id the SPIR-V result ID
-    /// @param sc the storage class, which cannot be ast::StorageClass::kNone
+    /// @param address_space the address space, which cannot be ast::AddressSpace::kNone
     /// @param storage_type the storage type of the variable
     /// @param constructor the variable constructor
     /// @param decorations the variable decorations
     /// @returns a new Variable node, or null in the ignorable variable case and
     /// in the error case
     ast::Var* MakeVar(uint32_t id,
-                      ast::StorageClass sc,
+                      ast::AddressSpace address_space,
                       const Type* storage_type,
                       const ast::Expression* constructor,
                       AttributeList decorations);
@@ -585,7 +584,7 @@ class ParserImpl : Reader {
         /// The ID of the type of a pointer to the struct in the Output storage
         /// class class.
         uint32_t pointer_type_id = 0;
-        /// The SPIR-V storage class.
+        /// The SPIR-V address space.
         SpvStorageClass storage_class = SpvStorageClassOutput;
         /// The ID of the type of a pointer to the Position member.
         uint32_t position_member_pointer_type_id = 0;
@@ -642,8 +641,8 @@ class ParserImpl : Reader {
     Usage GetHandleUsage(uint32_t id) const;
 
     /// Returns the SPIR-V type for the sampler or image type for the given
-    /// variable in UniformConstant storage class, or function parameter pointing
-    /// into the UniformConstant storage class .  Returns null and emits an
+    /// variable in UniformConstant address space, or function parameter pointing
+    /// into the UniformConstant address space .  Returns null and emits an
     /// error on failure.
     /// @param var the OpVariable instruction or OpFunctionParameter
     /// @returns the Tint AST type for the sampler or texture, or null on error
@@ -651,12 +650,21 @@ class ParserImpl : Reader {
         const spvtools::opt::Instruction& var);
 
     /// Returns the AST type for the pointer-to-sampler or pointer-to-texture type
-    /// for the given variable in UniformConstant storage class.  Returns null and
+    /// for the given variable in UniformConstant address space.  Returns null and
     /// emits an error on failure.
     /// @param var the OpVariable instruction
     /// @returns the Tint AST type for the poiner-to-{sampler|texture} or null on
     /// error
     const Pointer* GetTypeForHandleVar(const spvtools::opt::Instruction& var);
+
+    /// Returns the AST variable for the SPIR-V ID of a module-scope variable,
+    /// or null if there isn't one.
+    /// @param id a SPIR-V ID
+    /// @returns the AST variable or null.
+    const ast::Var* GetModuleVariable(uint32_t id) {
+        auto* entry = module_variable_.Find(id);
+        return entry ? *entry : nullptr;
+    }
 
     /// Returns the channel component type corresponding to the given image
     /// format.
@@ -843,8 +851,8 @@ class ParserImpl : Reader {
     // - an array, runtime array containing one of these
     // - a pointer type to one of these
     // These are the types "enclosing" a buffer block with the old style
-    // representation: using Uniform storage class and BufferBlock decoration
-    // on the struct.  The new style is to use the StorageBuffer storage class
+    // representation: using Uniform address space and BufferBlock decoration
+    // on the struct.  The new style is to use the StorageBuffer address space
     // and Block decoration.
     std::unordered_set<uint32_t> remap_buffer_block_type_;
 
@@ -872,6 +880,9 @@ class ParserImpl : Reader {
     std::unordered_map<const spvtools::opt::Instruction*, Usage> handle_usage_;
     // The inferred pointer type for the given handle variable.
     std::unordered_map<const spvtools::opt::Instruction*, const Pointer*> handle_type_;
+
+    /// Maps the SPIR-V ID of a module-scope variable to its AST variable.
+    utils::Hashmap<uint32_t, ast::Var*, 16> module_variable_;
 
     // Set of symbols of declared type that have been added, used to avoid
     // adding duplicates.

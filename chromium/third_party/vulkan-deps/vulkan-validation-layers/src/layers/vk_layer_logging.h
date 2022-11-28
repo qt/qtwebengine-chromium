@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2021 The Khronos Group Inc.
- * Copyright (c) 2015-2021 Valve Corporation
- * Copyright (c) 2015-2021 LunarG, Inc.
+/* Copyright (c) 2015-2022 The Khronos Group Inc.
+ * Copyright (c) 2015-2022 Valve Corporation
+ * Copyright (c) 2015-2022 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,11 +39,15 @@
 #include <vector>
 #include <utility>
 #include <cstring>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <debugapi.h>
+#endif
 
 #include "vk_typemap_helper.h"
 #include "vk_layer_config.h"
 #include "vk_layer_data.h"
-#include "vk_loader_platform.h"
+#include "vulkan/vk_platform.h"
 #include "vulkan/vk_layer.h"
 #include "vk_object_types.h"
 #include "vk_enum_string_helper.h"
@@ -667,7 +671,7 @@ static inline bool LogMsgEnabled(const debug_report_data *debug_data, const std:
         return false;
     }
     // If message is in filter list, bail out very early
-    uint32_t message_id = XXH32(vuid_text.c_str(), strlen(vuid_text.c_str()), 8);
+    const uint32_t message_id = XXH32(vuid_text.data(), vuid_text.size(), 8);
     if (std::find(debug_data->filter_message_ids.begin(), debug_data->filter_message_ids.end(), message_id)
         != debug_data->filter_message_ids.end()) {
         return false;

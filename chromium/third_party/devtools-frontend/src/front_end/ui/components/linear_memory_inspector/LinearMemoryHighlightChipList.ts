@@ -12,13 +12,16 @@ import linearMemoryHighlightChipListStyles from './linearMemoryHighlightChipList
 
 const UIStrings = {
   /**
-  *@description Tooltip text that appears when hovering over a 'jump-to-highlight-button' button that is on the left side of a 'highlight-chip' chip.
+  *@description Tooltip text that appears when hovering over an inspected variable's button in the Linear Memory Highlight Chip List.
+  Clicking the button changes the displayed slice of computer memory in the Linear Memory Inspector to contain the inspected variable's bytes.
   */
-  jumpToAddress: 'Jump to highlighted memory',
+  jumpToAddress: 'Jump to this memory',
   /**
-   *@description Tooltip text that appears when hovering over a 'remove-highlight-button' button that is on the right end of a 'highlight-chip' chip.
+   *@description Tooltip text that appears when hovering over an inspected variable's delete button in the Linear Memory Highlight Chip List.
+   Clicking the delete button stops highlighting the variable's memory in the Linear Memory Inspector.
+   'Memory' is a slice of bytes in the computer memory.
    */
-  deleteHighlight: 'Delete memory highlight',
+  deleteHighlight: 'Stop highlighting this memory',
 };
 const str_ =
     i18n.i18n.registerUIStrings('ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts', UIStrings);
@@ -27,6 +30,7 @@ const {render, html} = LitHtml;
 
 export interface LinearMemoryHighlightChipListData {
   highlightInfos: Array<HighlightInfo>;
+  focusedMemoryHighlight?: HighlightInfo;
 }
 
 export class DeleteMemoryHighlightEvent extends Event {
@@ -54,6 +58,7 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
 
   readonly #shadow = this.attachShadow({mode: 'open'});
   #highlightedAreas: HighlightInfo[] = [];
+  #focusedMemoryHighlight?: HighlightInfo;
 
   connectedCallback(): void {
     this.#shadow.adoptedStyleSheets = [linearMemoryHighlightChipListStyles];
@@ -61,6 +66,7 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
 
   set data(data: LinearMemoryHighlightChipListData) {
     this.#highlightedAreas = data.highlightInfos;
+    this.#focusedMemoryHighlight = data.focusedMemoryHighlight;
     this.#render();
   }
 
@@ -83,11 +89,15 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
   #createChip(highlightInfo: HighlightInfo): LitHtml.TemplateResult {
     const expressionName = highlightInfo.name || '<anonymous>';
     const expressionType = highlightInfo.type;
-
+    const isFocused = highlightInfo === this.#focusedMemoryHighlight;
+    const classMap = {
+      focused: isFocused,
+      'highlight-chip': true,
+    };
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`
-      <div class="highlight-chip">
+      <div class=${LitHtml.Directives.classMap(classMap)}>
         <button class="jump-to-highlight-button" title=${
             i18nString(UIStrings.jumpToAddress)}
             @click=${():void => this.#onJumpToHighlightClick(highlightInfo.startAddress)}>

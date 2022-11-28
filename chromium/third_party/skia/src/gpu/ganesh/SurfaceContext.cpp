@@ -28,6 +28,7 @@
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/geometry/GrRect.h"
 
 #include <memory>
 
@@ -151,7 +152,8 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                                  alphaType,
                                  this->colorInfo().refColorSpace(),
                                  dst.dimensions());
-            auto sfc = dContext->priv().makeSFC(tempInfo, SkBackingFit::kApprox);
+            auto sfc = dContext->priv().makeSFC(
+                    tempInfo, "SurfaceContext_ReadPixels", SkBackingFit::kApprox);
             if (!sfc) {
                 return false;
             }
@@ -706,10 +708,15 @@ private:
 
         size_t rowBytes() const { return fRowBytes; }
 
+        using sk_is_trivially_relocatable = std::true_type;
+
     private:
         sk_sp<SkData> fData;
         sk_sp<GrGpuBuffer> fMappedBuffer;
         size_t fRowBytes;
+
+        static_assert(::sk_is_trivially_relocatable<decltype(fData)>::value);
+        static_assert(::sk_is_trivially_relocatable<decltype(fMappedBuffer)>::value);
     };
     SkSTArray<3, Plane> fPlanes;
     GrDirectContext::DirectContextID fIntendedRecipient;
@@ -771,7 +778,7 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
     auto finishCallback = [](GrGpuFinishedContext c) {
         const auto* context = reinterpret_cast<const FinishContext*>(c);
         auto manager = context->fMappedBufferManager;
-        auto result = std::make_unique<AsyncReadResult>(manager->owningDirectContext());
+        auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
         size_t rowBytes =
                 SkAlignTo(context->fSize.width() * SkColorTypeBytesPerPixel(context->fColorType),
                           context->fBufferAlignment);
@@ -1006,7 +1013,7 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
     auto finishCallback = [](GrGpuFinishedContext c) {
         const auto* context = reinterpret_cast<const FinishContext*>(c);
         auto manager = context->fMappedBufferManager;
-        auto result = std::make_unique<AsyncReadResult>(manager->owningDirectContext());
+        auto result = std::make_unique<AsyncReadResult>(manager->ownerID());
         size_t rowBytes = SkToSizeT(context->fSize.width());
         rowBytes = SkAlignTo(rowBytes, context->fBufferAlignment);
         if (!result->addTransferResult(context->fYTransfer, context->fSize, rowBytes, manager)) {
@@ -1055,14 +1062,21 @@ sk_sp<GrRenderTask> SurfaceContext::copy(sk_sp<GrSurfaceProxy> src,
         return nullptr;
     }
 
-    if (!caps->canCopySurface(this->asSurfaceProxy(), src.get(), srcRect, dstPoint)) {
+    if (!GrClipSrcRectAndDstPoint(this->dimensions(), &dstPoint,
+                                  src->dimensions(), &srcRect)) {
         return nullptr;
     }
 
-    return this->drawingManager()->newCopyRenderTask(std::move(src),
+    SkIRect dstRect = SkIRect::MakePtSize(dstPoint, srcRect.size());
+    if (!caps->canCopySurface(this->asSurfaceProxy(), dstRect, src.get(), srcRect)) {
+        return nullptr;
+    }
+
+    return this->drawingManager()->newCopyRenderTask(this->asSurfaceProxyRef(),
+                                                     dstRect,
+                                                     std::move(src),
                                                      srcRect,
-                                                     this->asSurfaceProxyRef(),
-                                                     dstPoint,
+                                                     GrSamplerState::Filter::kNearest,
                                                      this->origin());
 }
 
@@ -1276,7 +1290,10 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing
     // so causes a crash in a chromium test. See skbug.com/11297
     auto buffer = direct->priv().resourceProvider()->createBuffer(
-            size, GrGpuBufferType::kXferGpuToCpu, GrAccessPattern::kStream_GrAccessPattern);
+            size,
+            GrGpuBufferType::kXferGpuToCpu,
+            GrAccessPattern::kStream_GrAccessPattern,
+            GrResourceProvider::ZeroInit::kNo);
     if (!buffer) {
         return {};
     }

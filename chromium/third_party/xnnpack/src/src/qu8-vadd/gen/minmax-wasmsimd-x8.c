@@ -15,12 +15,18 @@
 
 
 void xnn_qu8_vadd_minmax_ukernel__wasmsimd_x8(
-    size_t n,
+    size_t batch,
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
     const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
+  assert(batch != 0);
+  assert(batch % sizeof(uint8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const v128_t vbias = wasm_v128_load64_splat(params->wasmsimd.bias);
   const v128_t va_multiplier = wasm_v128_load64_splat(params->wasmsimd.a_multiplier);
   const v128_t vb_multiplier = wasm_v128_load64_splat(params->wasmsimd.b_multiplier);
@@ -29,7 +35,7 @@ void xnn_qu8_vadd_minmax_ukernel__wasmsimd_x8(
   const v128_t voutput_min = wasm_v128_load64_splat(params->wasmsimd.output_min);
   const v128_t voutput_max = wasm_v128_load64_splat(params->wasmsimd.output_max);
 
-  for (; n >= 8 * sizeof(uint8_t); n -= 8 * sizeof(uint8_t)) {
+  for (; batch >= 8 * sizeof(uint8_t); batch -= 8 * sizeof(uint8_t)) {
     const v128_t va01234567 = wasm_u16x8_load8x8(input_a);
     const v128_t vb01234567 = wasm_u16x8_load8x8(input_b);
     input_a += 8;
@@ -52,10 +58,10 @@ void xnn_qu8_vadd_minmax_ukernel__wasmsimd_x8(
 
     vout0123456701234567 = wasm_u8x16_min(vout0123456701234567, voutput_max);
 
-    *((double*) output) = wasm_f64x2_extract_lane(vout0123456701234567, 0);
+    wasm_v128_store64_lane(output, vout0123456701234567, 0);
     output += 8;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     {
       const v128_t va01234567 = wasm_u16x8_load8x8(input_a);
       const v128_t vb01234567 = wasm_u16x8_load8x8(input_b);
@@ -75,19 +81,18 @@ void xnn_qu8_vadd_minmax_ukernel__wasmsimd_x8(
       vout0123456701234567 = wasm_u8x16_max(vout0123456701234567, voutput_min);
       vout0123456701234567 = wasm_u8x16_min(vout0123456701234567, voutput_max);
 
-      if (n & (4 * sizeof(uint8_t))) {
-        *((float*) output) = (float) wasm_f32x4_extract_lane(vout0123456701234567, 0);
+      if (batch & (4 * sizeof(uint8_t))) {
+        wasm_v128_store32_lane(output, vout0123456701234567, 0);
         vout0123456701234567 = wasm_u64x2_shr(vout0123456701234567, 32);
         output += 4;
       }
-      uint32_t vout0123 = wasm_i32x4_extract_lane(vout0123456701234567, 0);
-      if (n & (2 * sizeof(uint8_t))) {
-        *((uint16_t*) output) = (uint16_t) vout0123;
-        vout0123 >>= 16;
+      if (batch & (2 * sizeof(uint8_t))) {
+        wasm_v128_store16_lane(output, vout0123456701234567, 0);
+        vout0123456701234567 = wasm_u32x4_shr(vout0123456701234567, 16);
         output += 2;
       }
-      if (n & (1 * sizeof(uint8_t))) {
-        *output = (uint8_t) vout0123;
+      if (batch & (1 * sizeof(uint8_t))) {
+        wasm_v128_store8_lane(output, vout0123456701234567, 0);
       }
     }
   }

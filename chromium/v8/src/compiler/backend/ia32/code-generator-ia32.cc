@@ -89,9 +89,6 @@ class IA32OperandConverter : public InstructionOperandConverter {
         return Immediate(constant.ToHeapObject());
       case Constant::kCompressedHeapObject:
         break;
-      case Constant::kDelayedStringConstant:
-        return Immediate::EmbeddedStringConstant(
-            constant.ToDelayedStringConstant());
       case Constant::kInt64:
         break;
       case Constant::kRpoNumber:
@@ -770,7 +767,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kArchCallJSFunction: {
       Register func = i.InputRegister(0);
-      if (FLAG_debug_code) {
+      if (v8_flags.debug_code) {
         // Check the function's context matches the context argument.
         __ cmp(esi, FieldOperand(func, JSFunction::kContextOffset));
         __ Assert(equal, AbortReason::kWrongFunctionContext);
@@ -965,7 +962,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       Register scratch0 = i.TempRegister(0);
       Register scratch1 = i.TempRegister(1);
 
-      if (FLAG_debug_code) {
+      if (v8_flags.debug_code) {
         // Checking that |value| is not a cleared weakref: our write barrier
         // does not support that for now.
         __ cmp(value, Immediate(kClearedWeakHeapObjectLower32));
@@ -2085,6 +2082,17 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kIA32I16x8Q15MulRSatS: {
       __ I16x8Q15MulRSatS(i.OutputSimd128Register(), i.InputSimd128Register(0),
                           i.InputSimd128Register(1), kScratchDoubleReg);
+      break;
+    }
+    case kIA32I16x8RelaxedQ15MulRS: {
+      __ Pmulhrsw(i.OutputSimd128Register(), i.InputSimd128Register(0),
+                  i.InputSimd128Register(1));
+      break;
+    }
+    case kIA32I16x8DotI8x16I7x16S: {
+      __ I16x8DotI8x16I7x16S(i.OutputSimd128Register(),
+                             i.InputSimd128Register(0),
+                             i.InputSimd128Register(1));
       break;
     }
     case kIA32F32x4Splat: {
@@ -4058,7 +4066,7 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if (required_slots * kSystemPointerSize < FLAG_stack_size * KB) {
+      if (required_slots * kSystemPointerSize < v8_flags.stack_size * KB) {
         Register scratch = esi;
         __ push(scratch);
         __ mov(scratch,
@@ -4126,7 +4134,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   if (parameter_slots != 0) {
     if (additional_pop_count->IsImmediate()) {
       DCHECK_EQ(g.ToConstant(additional_pop_count).ToInt32(), 0);
-    } else if (FLAG_debug_code) {
+    } else if (v8_flags.debug_code) {
       __ cmp(g.ToRegister(additional_pop_count), Immediate(0));
       __ Assert(equal, AbortReason::kUnexpectedAdditionalPopValue);
     }

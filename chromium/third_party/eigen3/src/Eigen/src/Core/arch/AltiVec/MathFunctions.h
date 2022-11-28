@@ -42,16 +42,32 @@ Packet4f pcos<Packet4f>(const Packet4f& _x)
   return pcos_float(_x);
 }
 
+template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet4f pacos<Packet4f>(const Packet4f& _x)
+{
+  return pacos_float(_x);
+}
+
+template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet4f pasin<Packet4f>(const Packet4f& _x)
+{
+  return pasin_float(_x);
+}
+
+template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet4f patan<Packet4f>(const Packet4f& _x)
+{
+  return patan_float(_x);
+}
+
+#ifdef __VSX__
 #ifndef EIGEN_COMP_CLANG
 template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet4f prsqrt<Packet4f>(const Packet4f& x)
 {
   return  vec_rsqrt(x);
 }
-#endif
 
-#ifdef __VSX__
-#ifndef EIGEN_COMP_CLANG
 template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet2d prsqrt<Packet2d>(const Packet2d& x)
 {
@@ -75,6 +91,26 @@ template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet2d pexp<Packet2d>(const Packet2d& _x)
 {
   return pexp_double(_x);
+}
+
+template<> EIGEN_STRONG_INLINE Packet8bf psqrt<Packet8bf> (const Packet8bf& a){
+  BF16_TO_F32_UNARY_OP_WRAPPER(psqrt<Packet4f>, a);
+}
+
+#ifndef EIGEN_COMP_CLANG
+template<> EIGEN_STRONG_INLINE Packet8bf prsqrt<Packet8bf> (const Packet8bf& a){
+  BF16_TO_F32_UNARY_OP_WRAPPER(prsqrt<Packet4f>, a);
+}
+#endif
+#else
+template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet4f psqrt<Packet4f>(const Packet4f& x)
+{
+  Packet4f a;
+  for (Index i = 0; i < packet_traits<float>::size; i++) {
+    a[i] = numext::sqrt(x[i]);
+  }
+  return a;
 }
 #endif
 

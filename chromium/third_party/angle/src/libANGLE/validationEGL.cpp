@@ -424,7 +424,8 @@ bool ValidateColorspaceAttribute(const ValidationContext *val,
         case EGL_GL_COLORSPACE_LINEAR:
             break;
         case EGL_GL_COLORSPACE_DISPLAY_P3_LINEAR_EXT:
-            if (!displayExtensions.glColorspaceDisplayP3Linear)
+            if (!displayExtensions.glColorspaceDisplayP3Linear &&
+                !displayExtensions.eglColorspaceAttributePassthroughANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE,
                               "EXT_gl_colorspace_display_p3_linear is not available.");
@@ -432,14 +433,16 @@ bool ValidateColorspaceAttribute(const ValidationContext *val,
             }
             break;
         case EGL_GL_COLORSPACE_DISPLAY_P3_EXT:
-            if (!displayExtensions.glColorspaceDisplayP3)
+            if (!displayExtensions.glColorspaceDisplayP3 &&
+                !displayExtensions.eglColorspaceAttributePassthroughANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE, "EXT_gl_colorspace_display_p3 is not available.");
                 return false;
             }
             break;
         case EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT:
-            if (!displayExtensions.glColorspaceDisplayP3Passthrough)
+            if (!displayExtensions.glColorspaceDisplayP3Passthrough &&
+                !displayExtensions.eglColorspaceAttributePassthroughANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE,
                               "EGL_EXT_gl_colorspace_display_p3_passthrough is not available.");
@@ -447,14 +450,16 @@ bool ValidateColorspaceAttribute(const ValidationContext *val,
             }
             break;
         case EGL_GL_COLORSPACE_SCRGB_EXT:
-            if (!displayExtensions.glColorspaceScrgb)
+            if (!displayExtensions.glColorspaceScrgb &&
+                !displayExtensions.eglColorspaceAttributePassthroughANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE, "EXT_gl_colorspace_scrgb is not available.");
                 return false;
             }
             break;
         case EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT:
-            if (!displayExtensions.glColorspaceScrgbLinear)
+            if (!displayExtensions.glColorspaceScrgbLinear &&
+                !displayExtensions.eglColorspaceAttributePassthroughANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE,
                               "EXT_gl_colorspace_scrgb_linear is not available.");
@@ -1372,6 +1377,59 @@ bool ValidateCreateSyncBase(const ValidationContext *val,
             }
             break;
 
+        case EGL_SYNC_METAL_SHARED_EVENT_ANGLE:
+            if (!display->getExtensions().fenceSync)
+            {
+                val->setError(EGL_BAD_MATCH, "EGL_KHR_fence_sync extension is not available");
+                return false;
+            }
+
+            if (!display->getExtensions().mtlSyncSharedEventANGLE)
+            {
+                val->setError(EGL_BAD_DISPLAY,
+                              "EGL_ANGLE_metal_shared_event_sync is not available");
+                return false;
+            }
+
+            if (display != currentDisplay)
+            {
+                val->setError(EGL_BAD_MATCH,
+                              "CreateSync can only be called on the current display");
+                return false;
+            }
+
+            ANGLE_VALIDATION_TRY(ValidateContext(val, currentDisplay, currentContext));
+
+            // This should be implied by exposing EGL_KHR_fence_sync
+            ASSERT(currentContext->getExtensions().EGLSyncOES);
+
+            for (const auto &attributeIter : attribs)
+            {
+                EGLAttrib attribute = attributeIter.first;
+                EGLAttrib value     = attributeIter.second;
+
+                switch (attribute)
+                {
+                    case EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE:
+                        if (!value)
+                        {
+                            val->setError(EGL_BAD_ATTRIBUTE,
+                                          "EGL_SYNC_METAL_SHARED_EVENT_ANGLE can't be NULL");
+                            return false;
+                        }
+                        break;
+
+                    case EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE:
+                    case EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE:
+                        break;
+
+                    default:
+                        val->setError(EGL_BAD_ATTRIBUTE, "Invalid attribute");
+                        return false;
+                }
+            }
+            break;
+
         default:
             if (isExt)
             {
@@ -1402,6 +1460,7 @@ bool ValidateGetSyncAttribBase(const ValidationContext *val,
             {
                 case EGL_SYNC_FENCE_KHR:
                 case EGL_SYNC_NATIVE_FENCE_ANDROID:
+                case EGL_SYNC_METAL_SHARED_EVENT_ANGLE:
                     break;
 
                 default:
@@ -2446,7 +2505,15 @@ bool ValidateCreateContext(const ValidationContext *val,
             break;
 
         case EGL_OPENGL_API:
-            // TODO: validate desktop OpenGL versions and profile mask
+            // The requested configuration must use EGL_OPENGL_BIT if EGL_OPENGL_BIT is the
+            // currently bound API.
+            if ((configuration != EGL_NO_CONFIG_KHR) &&
+                !(configuration->renderableType & EGL_OPENGL_BIT))
+            {
+                val->setError(EGL_BAD_CONFIG);
+                return false;
+            }
+            // TODO(http://anglebug.com/7533): validate desktop OpenGL versions and profile mask
             break;
 
         default:
@@ -5358,7 +5425,8 @@ bool ValidateSurfaceAttrib(const ValidationContext *val,
             break;
 
         case EGL_TIMESTAMPS_ANDROID:
-            if (!display->getExtensions().getFrameTimestamps)
+            if (!display->getExtensions().getFrameTimestamps &&
+                !display->getExtensions().timestampSurfaceAttributeANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE,
                               "EGL_TIMESTAMPS_ANDROID cannot be used without "
@@ -5507,7 +5575,8 @@ bool ValidateQuerySurface(const ValidationContext *val,
             break;
 
         case EGL_TIMESTAMPS_ANDROID:
-            if (!display->getExtensions().getFrameTimestamps)
+            if (!display->getExtensions().getFrameTimestamps &&
+                !display->getExtensions().timestampSurfaceAttributeANGLE)
             {
                 val->setError(EGL_BAD_ATTRIBUTE,
                               "EGL_TIMESTAMPS_ANDROID cannot be used without "
@@ -6038,6 +6107,23 @@ bool ValidateCreateNativeClientBufferANDROID(const ValidationContext *val,
         val->setError(EGL_BAD_PARAMETER, "unsupported format");
         return false;
     }
+    return true;
+}
+
+bool ValidateCopyMetalSharedEventANGLE(const ValidationContext *val,
+                                       const Display *display,
+                                       const Sync *sync)
+{
+    ANGLE_VALIDATION_TRY(ValidateDisplay(val, display));
+
+    if (!display->getExtensions().mtlSyncSharedEventANGLE)
+    {
+        val->setError(EGL_BAD_DISPLAY, "EGL_ANGLE_metal_shared_event_sync is not available.");
+        return false;
+    }
+
+    ANGLE_VALIDATION_TRY(ValidateSync(val, display, sync));
+
     return true;
 }
 

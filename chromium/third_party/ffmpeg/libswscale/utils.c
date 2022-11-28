@@ -53,6 +53,7 @@
 #include "libavutil/ppc/cpu.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
+#include "libavutil/loongarch/cpu.h"
 
 #include "rgb2rgb.h"
 #include "swscale.h"
@@ -236,6 +237,8 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_AYUV64LE]    = { 1, 1},
     [AV_PIX_FMT_P010LE]      = { 1, 1 },
     [AV_PIX_FMT_P010BE]      = { 1, 1 },
+    [AV_PIX_FMT_P012LE]      = { 1, 1 },
+    [AV_PIX_FMT_P012BE]      = { 1, 1 },
     [AV_PIX_FMT_P016LE]      = { 1, 1 },
     [AV_PIX_FMT_P016BE]      = { 1, 1 },
     [AV_PIX_FMT_GRAYF32LE]   = { 1, 1 },
@@ -246,7 +249,8 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_YUVA444P12LE] = { 1, 1 },
     [AV_PIX_FMT_NV24]        = { 1, 1 },
     [AV_PIX_FMT_NV42]        = { 1, 1 },
-    [AV_PIX_FMT_Y210LE]      = { 1, 0 },
+    [AV_PIX_FMT_Y210LE]      = { 1, 1 },
+    [AV_PIX_FMT_Y212LE]      = { 1, 1 },
     [AV_PIX_FMT_X2RGB10LE]   = { 1, 1 },
     [AV_PIX_FMT_X2BGR10LE]   = { 1, 1 },
     [AV_PIX_FMT_P210BE]      = { 1, 1 },
@@ -258,6 +262,12 @@ static const FormatEntry format_entries[] = {
     [AV_PIX_FMT_P416BE]      = { 1, 1 },
     [AV_PIX_FMT_P416LE]      = { 1, 1 },
     [AV_PIX_FMT_NV16]        = { 1, 1 },
+    [AV_PIX_FMT_VUYA]        = { 1, 1 },
+    [AV_PIX_FMT_VUYX]        = { 1, 1 },
+    [AV_PIX_FMT_RGBAF16BE]   = { 1, 0 },
+    [AV_PIX_FMT_RGBAF16LE]   = { 1, 0 },
+    [AV_PIX_FMT_XV30LE]      = { 1, 1 },
+    [AV_PIX_FMT_XV36LE]      = { 1, 1 },
 };
 
 int ff_shuffle_filter_coefficients(SwsContext *c, int *filterPos,
@@ -267,8 +277,7 @@ int ff_shuffle_filter_coefficients(SwsContext *c, int *filterPos,
 #if ARCH_X86_64
     int i, j, k;
     int cpu_flags = av_get_cpu_flags();
-    // avx2 hscale filter processes 16 pixel blocks.
-    if (!filter || dstW % 16 != 0)
+    if (!filter)
         return 0;
     if (EXTERNAL_AVX2_FAST(cpu_flags) && !(cpu_flags & AV_CPU_FLAG_SLOW_GATHER)) {
         if ((c->srcBpc == 8) && (c->dstBpc <= 14)) {
@@ -280,9 +289,11 @@ int ff_shuffle_filter_coefficients(SwsContext *c, int *filterPos,
            }
            // Do not swap filterPos for pixels which won't be processed by
            // the main loop.
-           for (i = 0; i + 8 <= dstW; i += 8) {
+           for (i = 0; i + 16 <= dstW; i += 16) {
                FFSWAP(int, filterPos[i + 2], filterPos[i + 4]);
                FFSWAP(int, filterPos[i + 3], filterPos[i + 5]);
+               FFSWAP(int, filterPos[i + 10], filterPos[i + 12]);
+               FFSWAP(int, filterPos[i + 11], filterPos[i + 13]);
            }
            if (filterSize > 4) {
                // 16 pixels are processed at a time.
@@ -292,6 +303,18 @@ int ff_shuffle_filter_coefficients(SwsContext *c, int *filterPos,
                        for (j = 0; j < 16; ++j) {
                            int from = (i + j) * filterSize + k;
                            int to = i * filterSize + j * 4 + k * 16;
+                           memcpy(&filter[to], &filterCopy[from], 4 * sizeof(int16_t));
+                       }
+                   }
+               }
+               // 4 pixels are processed at a time in the tail.
+               for (; i < dstW; i += 4) {
+                   // 4 filter coeffs are processed at a time.
+                   int rem = dstW - i >= 4 ? 4 : dstW - i;
+                   for (k = 0; k + 4 <= filterSize; k += 4) {
+                       for (j = 0; j < rem; ++j) {
+                           int from = (i + j) * filterSize + k;
+                           int to = i * filterSize + j * 4 + k * 4;
                            memcpy(&filter[to], &filterCopy[from], 4 * sizeof(int16_t));
                        }
                    }
@@ -634,6 +657,15 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
     if (HAVE_MMX && cpu_flags & AV_CPU_FLAG_MMX) {
         // special case for unscaled vertical filtering
         if (minFilterSize == 1 && filterAlign == 2)
+            filterAlign = 1;
+    }
+
+    if (have_lasx(cpu_flags)) {
+        int reNum = minFilterSize & (0x07);
+
+        if (minFilterSize < 5)
+            filterAlign = 4;
+        if (reNum < 3)
             filterAlign = 1;
     }
 
@@ -1822,7 +1854,8 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         {
             const int filterAlign = X86_MMX(cpu_flags)     ? 4 :
                                     PPC_ALTIVEC(cpu_flags) ? 8 :
-                                    have_neon(cpu_flags)   ? 4 : 1;
+                                    have_neon(cpu_flags)   ? 4 :
+                                    have_lasx(cpu_flags)   ? 8 : 1;
 
             if ((ret = initFilter(&c->hLumFilter, &c->hLumFilterPos,
                            &c->hLumFilterSize, c->lumXInc,

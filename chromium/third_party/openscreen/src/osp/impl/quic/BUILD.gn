@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 
 source_set("quic") {
+  visibility = [ "../../impl/*" ]
+  public = [ "quic_connection.h" ]
   sources = [
     "quic_client.cc",
     "quic_client.h",
-    "quic_connection.h",
     "quic_connection_factory.h",
     "quic_server.cc",
     "quic_server.h",
@@ -20,10 +21,16 @@ source_set("quic") {
     "../../../util",
     "../../public",
   ]
+  friend = [
+    ":test_support",
+    "../..:unittests",
+  ]
 }
 
 source_set("test_support") {
+  visibility = [ "../..:unittests" ]
   testonly = true
+  public = []
   sources = [
     "testing/fake_quic_connection.cc",
     "testing/fake_quic_connection.h",
@@ -46,4 +53,5 @@ source_set("test_support") {
     "../../../util",
     "../../msgs",
   ]
+  friend = [ "../..:unittests" ]
 }

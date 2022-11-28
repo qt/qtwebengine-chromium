@@ -19,6 +19,7 @@
 #include "VkFence.hpp"
 #include "VkQueue.hpp"
 #include "VkSemaphore.hpp"
+#include "VkStringify.hpp"
 #include "VkTimelineSemaphore.hpp"
 #include "Debug/Context.hpp"
 #include "Debug/Server.hpp"
@@ -151,36 +152,16 @@ Device::Device(const VkDeviceCreateInfo *pCreateInfo, void *mem, PhysicalDevice 
 		UNSUPPORTED("enabledLayerCount");
 	}
 
-	// FIXME (b/119409619): use an allocator here so we can control all memory allocations
+	// TODO(b/119409619): use an allocator here so we can control all memory allocations
 	blitter.reset(new sw::Blitter());
 	samplingRoutineCache.reset(new SamplingRoutineCache());
 	samplerIndexer.reset(new SamplerIndexer());
 
-#ifdef ENABLE_VK_DEBUGGER
-	static auto port = getenv("VK_DEBUGGER_PORT");
-	if(port)
-	{
-		// Construct the debugger context and server - this may block for a
-		// debugger connection, allowing breakpoints to be set before they're
-		// executed.
-		debugger.context = vk::dbg::Context::create();
-		debugger.server = vk::dbg::Server::create(debugger.context, atoi(port));
-	}
-#endif  // ENABLE_VK_DEBUGGER
-
 #ifdef SWIFTSHADER_DEVICE_MEMORY_REPORT
-	const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
-	while(extensionCreateInfo)
+	const auto *deviceMemoryReportCreateInfo = GetExtendedStruct<VkDeviceDeviceMemoryReportCreateInfoEXT>(pCreateInfo->pNext, VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT);
+	if(deviceMemoryReportCreateInfo && deviceMemoryReportCreateInfo->pfnUserCallback != nullptr)
 	{
-		if(extensionCreateInfo->sType == VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT)
-		{
-			auto deviceMemoryReportCreateInfo = reinterpret_cast<const VkDeviceDeviceMemoryReportCreateInfoEXT *>(pCreateInfo->pNext);
-			if(deviceMemoryReportCreateInfo->pfnUserCallback != nullptr)
-			{
-				deviceMemoryReportCallbacks.emplace_back(deviceMemoryReportCreateInfo->pfnUserCallback, deviceMemoryReportCreateInfo->pUserData);
-			}
-		}
-		extensionCreateInfo = extensionCreateInfo->pNext;
+		deviceMemoryReportCallbacks.emplace_back(deviceMemoryReportCreateInfo->pfnUserCallback, deviceMemoryReportCreateInfo->pUserData);
 	}
 #endif  // SWIFTSHADER_DEVICE_MEMORY_REPORT
 }
@@ -362,6 +343,59 @@ void Device::getDescriptorSetLayoutSupport(const VkDescriptorSetLayoutCreateInfo
 
 	// We have no "strange" limitations to enforce beyond the device limits, so we can safely always claim support.
 	pSupport->supported = VK_TRUE;
+
+	if(pCreateInfo->bindingCount > 0)
+	{
+		bool hasVariableSizedDescriptor = false;
+
+		const VkBaseInStructure *layoutInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
+		while(layoutInfo && !hasVariableSizedDescriptor)
+		{
+			if(layoutInfo->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO)
+			{
+				const VkDescriptorSetLayoutBindingFlagsCreateInfo *bindingFlagsCreateInfo =
+				    reinterpret_cast<const VkDescriptorSetLayoutBindingFlagsCreateInfo *>(layoutInfo);
+
+				for(uint32_t i = 0; i < bindingFlagsCreateInfo->bindingCount; i++)
+				{
+					if(bindingFlagsCreateInfo->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)
+					{
+						hasVariableSizedDescriptor = true;
+						break;
+					}
+				}
+			}
+			else
+			{
+				UNSUPPORTED("layoutInfo->sType = %s", vk::Stringify(layoutInfo->sType).c_str());
+			}
+
+			layoutInfo = layoutInfo->pNext;
+		}
+
+		const auto &highestNumberedBinding = pCreateInfo->pBindings[pCreateInfo->bindingCount - 1];
+
+		VkBaseOutStructure *layoutSupport = reinterpret_cast<VkBaseOutStructure *>(pSupport->pNext);
+		while(layoutSupport)
+		{
+			if(layoutSupport->sType == VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT)
+			{
+				VkDescriptorSetVariableDescriptorCountLayoutSupport *variableDescriptorCountLayoutSupport =
+				    reinterpret_cast<VkDescriptorSetVariableDescriptorCountLayoutSupport *>(layoutSupport);
+
+				// If the VkDescriptorSetLayoutCreateInfo structure does not include a variable-sized descriptor,
+				// [...] then maxVariableDescriptorCount is set to zero.
+				variableDescriptorCountLayoutSupport->maxVariableDescriptorCount =
+				    hasVariableSizedDescriptor ? ((highestNumberedBinding.descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) ? vk::MAX_INLINE_UNIFORM_BLOCK_SIZE : vk::MAX_UPDATE_AFTER_BIND_DESCRIPTORS) : 0;
+			}
+			else
+			{
+				UNSUPPORTED("layoutSupport->sType = %s", vk::Stringify(layoutSupport->sType).c_str());
+			}
+
+			layoutSupport = layoutSupport->pNext;
+		}
+	}
 }
 
 void Device::updateDescriptorSets(uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites,

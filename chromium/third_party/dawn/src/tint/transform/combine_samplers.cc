@@ -39,6 +39,8 @@ bool IsGlobal(const tint::sem::VariablePair& pair) {
 
 namespace tint::transform {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 CombineSamplers::BindingInfo::BindingInfo(const BindingMap& map,
                                           const sem::BindingPoint& placeholder)
     : binding_map(map), placeholder_binding_point(placeholder) {}
@@ -79,7 +81,8 @@ struct CombineSamplers::State {
     /// Group 0 and binding 0 are used, with collisions disabled.
     /// @returns the newly-created attribute list
     auto Attributes() const {
-        utils::Vector<const ast::Attribute*, 3> attributes = ctx.dst->GroupAndBinding(0, 0);
+        utils::Vector<const ast::Attribute*, 3> attributes{ctx.dst->Group(0_a),
+                                                           ctx.dst->Binding(0_a)};
         attributes.Push(ctx.dst->Disable(ast::DisabledValidation::kBindingPointCollision));
         return attributes;
     }
@@ -149,12 +152,14 @@ struct CombineSamplers::State {
         // Remove all texture and sampler global variables. These will be replaced
         // by combined samplers.
         for (auto* global : ctx.src->AST().GlobalVariables()) {
+            auto* global_sem = sem.Get(global)->As<sem::GlobalVariable>();
             auto* type = sem.Get(global->type);
             if (tint::IsAnyOf<sem::Texture, sem::Sampler>(type) &&
                 !type->Is<sem::StorageTexture>()) {
                 ctx.Remove(ctx.src->AST().GlobalDeclarations(), global);
-            } else if (auto binding_point = global->BindingPoint()) {
-                if (binding_point.group->value == 0 && binding_point.binding->value == 0) {
+            } else if (global->HasBindingPoint()) {
+                auto binding_point = global_sem->BindingPoint();
+                if (binding_point.group == 0 && binding_point.binding == 0) {
                     auto* attribute =
                         ctx.dst->Disable(ast::DisabledValidation::kBindingPointCollision);
                     ctx.InsertFront(global->attributes, attribute);

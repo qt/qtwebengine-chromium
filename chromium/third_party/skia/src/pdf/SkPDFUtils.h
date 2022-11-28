@@ -115,9 +115,9 @@ inline void WriteUTF16beHex(SkWStream* wStream, SkUnichar utf32) {
 inline SkMatrix GetShaderLocalMatrix(const SkShader* shader) {
     SkMatrix localMatrix;
     if (sk_sp<SkShader> s = as_SB(shader)->makeAsALocalMatrixShader(&localMatrix)) {
-        return SkMatrix::Concat(as_SB(s)->getLocalMatrix(), localMatrix);
+        return localMatrix;
     }
-    return as_SB(shader)->getLocalMatrix();
+    return SkMatrix::I();
 }
 bool InverseTransformBBox(const SkMatrix& matrix, SkRect* bbox);
 void PopulateTilingPatternDict(SkPDFDict* pattern,

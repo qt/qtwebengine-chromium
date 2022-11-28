@@ -97,11 +97,21 @@ constexpr char kErrorAnswerMessage[] = R"({
 })";
 
 constexpr char kCapabilitiesResponse[] = R"({
-  "seqNum": 2,
+  "seqNum": 1,
   "result": "ok",
   "type": "CAPABILITIES_RESPONSE",
   "capabilities": {
     "mediaCaps": ["video", "vp8", "audio", "aac"]
+  }
+})";
+
+constexpr char kCapabilitiesErrorResponse[] = R"({
+  "seqNum": 2,
+  "type": "CAPABILITIES_RESPONSE",
+  "result": "error",
+  "error": {
+    "code": 123,
+    "description": "something bad happened"
   }
 })";
 
@@ -155,11 +165,15 @@ class FakeClient : public SenderSession::Client {
                capture_recommendations::Recommendations),
               (override));
   MOCK_METHOD(void,
-              OnRemotingNegotiated,
-              (const SenderSession*, SenderSession::RemotingNegotiation),
+              OnCapabilitiesDetermined,
+              (const SenderSession*, RemotingCapabilities),
               (override));
   MOCK_METHOD(void, OnError, (const SenderSession*, Error error), (override));
 };
+
+MATCHER_P(CodeEquals, code, "Checks error codes but not messages.") {
+  return arg.code() == code;
+}
 
 }  // namespace
 
@@ -416,7 +430,8 @@ TEST_F(SenderSessionTest, HandlesImproperlyFormattedAnswer) {
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
-  EXPECT_CALL(client_, OnError(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
   message_port_->ReceiveMessage(kValidJsonInvalidFormatAnswerMessage);
 }
 
@@ -425,7 +440,8 @@ TEST_F(SenderSessionTest, HandlesInvalidAnswer) {
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
-  EXPECT_CALL(client_, OnError(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
   message_port_->ReceiveMessage(kValidJsonInvalidAnswerMessage);
 }
 
@@ -437,6 +453,28 @@ TEST_F(SenderSessionTest, HandlesNullAnswer) {
   EXPECT_TRUE(error.ok());
   EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kMissingAnswerMessage);
+}
+
+TEST_F(SenderSessionTest, HandlesAnswerTimeout) {
+  const Error error = session_->Negotiate(
+      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
+      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+  EXPECT_TRUE(error.ok());
+
+  // No ANSWER received in time, should report an error.
+  EXPECT_CALL(client_,
+              OnError(session_.get(), CodeEquals(Error::Code::kAnswerTimeout)));
+  clock_.Advance(std::chrono::seconds(10));
+}
+
+TEST_F(SenderSessionTest, HandlesCapabilitiesTimeout) {
+  const Error error = session_->RequestCapabilities();
+  EXPECT_TRUE(error.ok());
+
+  // No ANSWER received in time, should report an error.
+  EXPECT_CALL(client_, OnError(session_.get(),
+                               CodeEquals(Error::Code::kMessageTimeout)));
+  clock_.Advance(std::chrono::seconds(10));
 }
 
 TEST_F(SenderSessionTest, HandlesInvalidSequenceNumber) {
@@ -465,8 +503,11 @@ TEST_F(SenderSessionTest, HandlesInvalidTypeMessageWithValidSeqNum) {
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
   // If a message is of unknown type but has an expected seqnum, it's
-  // probably a malformed response.
-  EXPECT_CALL(client_, OnError(session_.get(), _));
+  // probably a malformed response. The sender session will end up
+  // handling this message as an ANSWER to the OFFER with a sequence
+  // number of 1.
+  EXPECT_CALL(client_,
+              OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
   message_port_->ReceiveMessage(kInvalidTypeMessage);
 }
 
@@ -485,16 +526,25 @@ TEST_F(SenderSessionTest, HandlesErrorMessage) {
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
-  // We should report error answers.
-  EXPECT_CALL(client_, OnError(session_.get(), _));
+  // We should report error responses. NOTE: according to the spec,
+  // RPC messages should never be an error result.
+  EXPECT_CALL(client_,
+              OnError(session_.get(), CodeEquals(Error::Code::kInvalidAnswer)));
   message_port_->ReceiveMessage(kErrorAnswerMessage);
+
+  session_->RequestCapabilities();
+  EXPECT_CALL(client_, OnError(session_.get(),
+                               CodeEquals(Error::Code::kRemotingNotSupported)));
+  message_port_->ReceiveMessage(kCapabilitiesErrorResponse);
 }
 
-TEST_F(SenderSessionTest, DoesNotCrashOnMessagePortError) {
+TEST_F(SenderSessionTest, HandlesMessagePortError) {
   session_->Negotiate(
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
+  // We should report message port errors.
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveError(Error(Error::Code::kUnknownError));
 }
 
@@ -528,36 +578,43 @@ TEST_F(SenderSessionTest, HandlesValidAnswerRemoting) {
   NegotiateRemotingWithValidConfigs();
   std::string answer = ConstructAnswerFromOffer(CastMode::kRemoting);
 
-  EXPECT_CALL(client_, OnRemotingNegotiated(session_.get(), _));
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
   message_port_->ReceiveMessage(answer);
-  message_port_->ReceiveMessage(kCapabilitiesResponse);
 }
 
 TEST_F(SenderSessionTest, SuccessfulRemotingNegotiationYieldsValidObject) {
   NegotiateRemotingWithValidConfigs();
   std::string answer = ConstructAnswerFromOffer(CastMode::kRemoting);
 
-  SenderSession::RemotingNegotiation negotiation;
-  EXPECT_CALL(client_, OnRemotingNegotiated(session_.get(), _))
-      .WillOnce(testing::SaveArg<1>(&negotiation));
+  SenderSession::ConfiguredSenders senders;
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _))
+      .WillOnce([&senders](const SenderSession* session, SenderSession::ConfiguredSenders arg0,
+      capture_recommendations::Recommendations recommendations) { senders = std::move(arg0); });
+
   message_port_->ReceiveMessage(answer);
+
+  // The messenger is tested elsewhere, but we can sanity check that we got a
+  // valid one here.
+  const RpcMessenger::Handle handle =
+      session_->rpc_messenger().GetUniqueHandle();
+  EXPECT_NE(RpcMessenger::kInvalidHandle, handle);
+}
+
+TEST_F(SenderSessionTest, SuccessfulGetCapabilitiesRequest) {
+  session_->RequestCapabilities();
+
+  RemotingCapabilities capabilities;
+  EXPECT_CALL(client_, OnCapabilitiesDetermined(session_.get(), _))
+      .WillOnce(testing::SaveArg<1>(&capabilities));
   message_port_->ReceiveMessage(kCapabilitiesResponse);
 
   // The capabilities should match the values in |kCapabilitiesResponse|.
-  EXPECT_THAT(negotiation.capabilities.audio,
+  EXPECT_THAT(capabilities.audio,
               testing::ElementsAre(AudioCapability::kBaselineSet,
                                    AudioCapability::kAac));
 
   // The "video" capability is ignored since it means nothing.
-  EXPECT_THAT(negotiation.capabilities.video,
-              testing::ElementsAre(VideoCapability::kVp8));
-
-  // The messenger is tested elsewhere, but we can sanity check that we got a valid
-  // one here.
-  EXPECT_TRUE(session_->rpc_messenger());
-  const RpcMessenger::Handle handle =
-      session_->rpc_messenger()->GetUniqueHandle();
-  EXPECT_NE(RpcMessenger::kInvalidHandle, handle);
+  EXPECT_THAT(capabilities.video, testing::ElementsAre(VideoCapability::kVp8));
 }
 
 }  // namespace cast

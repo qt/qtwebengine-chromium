@@ -70,9 +70,23 @@ struct SinglePosFormat2
 
     if (likely (index >= valueCount)) return_trace (false);
 
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      c->buffer->message (c->font,
+			  "positioning glyph at %d",
+			  c->buffer->idx);
+    }
+
     valueFormat.apply_value (c, this,
                              &values[index * valueFormat.get_len ()],
                              buffer->cur_pos());
+
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      c->buffer->message (c->font,
+			  "positioned glyph at %d",
+			  c->buffer->idx);
+    }
 
     buffer->idx++;
     return_trace (true);
@@ -85,7 +99,7 @@ struct SinglePosFormat2
                   const SrcLookup *src,
                   Iterator it,
                   ValueFormat newFormat,
-                  const hb_map_t *layout_variation_idx_map)
+                  const hb_hashmap_t<unsigned, hb_pair_t<unsigned, int>> *layout_variation_idx_delta_map)
   {
     auto out = c->extend_min (this);
     if (unlikely (!out)) return;
@@ -95,7 +109,7 @@ struct SinglePosFormat2
     + it
     | hb_map (hb_second)
     | hb_apply ([&] (hb_array_t<const Value> _)
-    { src->get_value_format ().copy_values (c, newFormat, src, &_, layout_variation_idx_map); })
+    { src->get_value_format ().copy_values (c, newFormat, src, &_, layout_variation_idx_delta_map); })
     ;
 
     auto glyphs =
@@ -127,7 +141,7 @@ struct SinglePosFormat2
     ;
 
     bool ret = bool (it);
-    SinglePos_serialize (c->serializer, this, it, c->plan->layout_variation_idx_map);
+    SinglePos_serialize (c->serializer, this, it, c->plan->layout_variation_idx_delta_map, c->plan->all_axes_pinned);
     return_trace (ret);
   }
 };

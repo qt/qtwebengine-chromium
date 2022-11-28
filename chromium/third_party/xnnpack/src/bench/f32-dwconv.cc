@@ -13,17 +13,19 @@
 #include <benchmark/benchmark.h>
 #include "bench/dwconv.h"
 #include "bench/utils.h"
+
+#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
 #include <xnnpack/dwconv.h>
 #include <xnnpack/indirection.h>
+#include <xnnpack/microfnptr.h>
+#include <xnnpack/microparams-init.h>
 #include <xnnpack/operator.h>
 #include <xnnpack/pack.h>
-#include <xnnpack/microparams-init.h>
-#include <xnnpack/params.h>
 
 
-static void DWConvBenchmark(benchmark::State& state,
+static void f32_dwconv(benchmark::State& state,
   xnn_f32_dwconv_minmax_unipass_ukernel_function dwconv,
   xnn_init_f32_minmax_params_fn init_params,
   uint32_t channel_tile, uint32_t primary_tile,
@@ -83,7 +85,7 @@ static void DWConvBenchmark(benchmark::State& state,
 
   std::vector<float, AlignedAllocator<float, 64>> w(w_elements * num_buffers);
   std::fill(w.begin(), w.end(), 0.0f);
-  xnn_pack_f32_dwconv_ghw_w(kernel_height, kernel_width, channels, channel_tile,
+  xnn_pack_f32_dwconv_ghw_w(primary_tile, kernel_height, kernel_width, channels, channel_tile,
       k.data(), b.data(), w.data(), 0 /* extra bytes */, nullptr);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(w.cbegin(), w.cbegin() + w_elements, w.begin() + n * w_elements);
@@ -108,7 +110,7 @@ static void DWConvBenchmark(benchmark::State& state,
   convolution_op.padding_top        = padding_top;
   convolution_op.padding_left       = padding_left;
 
-  xnn_indirection_init_dwconv2d(&convolution_op, step_height, step_width, 2 /* log2(sizeof(float)) */);
+  xnn_indirection_init_dwconv2d(&convolution_op, step_height, step_width, primary_tile, 2 /* log2(sizeof(float)) */);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(i.cbegin(), i.cbegin() + i_elements, i.begin() + n * i_elements);
   }
@@ -153,13 +155,13 @@ static void DWConvBenchmark(benchmark::State& state,
 
 #if XNN_ARCH_ARM64 && XNN_ENABLE_ASSEMBLY
   static void f32_dwconv_4x9__aarch64_neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neon,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */);
   }
   static void f32_dwconv_4x9__aarch64_neonfma_cortex_a55(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neonfma,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */);
@@ -172,252 +174,252 @@ static void DWConvBenchmark(benchmark::State& state,
 
 #if XNN_ARCH_ARM || XNN_ARCH_ARM64
   static void f32_dwconv_4x4__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x4__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x4__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x4__neon,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x4__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x4__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_4x4__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x4__neonfma,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_4x9__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x9__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neon,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x9__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_4x9__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__neonfma,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_4x25__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x25__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x25__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x25__neon,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_4x25__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x25__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_4x25__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x25__neonfma,
       xnn_init_f32_minmax_scalar_params,
       4 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x4__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x4__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x4__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x4__neon,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x4__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x4__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x4__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x4__neonfma,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x9__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x9__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x9__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x9__neon,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x9__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x9__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x9__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x9__neonfma,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x25__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x25__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x25__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x25__neon,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_8x25__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x25__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_8x25__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up8x25__neonfma,
       xnn_init_f32_minmax_scalar_params,
       8 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x4__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x4__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x4__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x4__neon,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x4__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x4__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x4__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x4__neonfma,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 4 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x9__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x9__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x9__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x9__neon,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x9__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x9__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x9__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x9__neonfma,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 9 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x25__neon_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x25__neon_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x25__neon(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x25__neon,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEON);
   }
   static void f32_dwconv_16x25__neonfma_acc2(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x25__neonfma_acc2,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 25 /* primary tile */,
       benchmark::utils::CheckNEONFMA);
   }
   static void f32_dwconv_16x25__neonfma(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up16x25__neonfma,
       xnn_init_f32_minmax_scalar_params,
       16 /* channel tile */, 25 /* primary tile */,
@@ -469,19 +471,19 @@ static void DWConvBenchmark(benchmark::State& state,
 
 #if XNN_ARCH_X86 || XNN_ARCH_X86_64
   static void f32_dwconv_4x4__sse(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x4__sse,
       xnn_init_f32_minmax_sse_params,
       4 /* channel tile */, 4 /* primary tile */);
   }
   static void f32_dwconv_4x9__sse(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x9__sse,
       xnn_init_f32_minmax_sse_params,
       4 /* channel tile */, 9 /* primary tile */);
   }
   static void f32_dwconv_4x25__sse(benchmark::State& state, const char* net) {
-    DWConvBenchmark(state,
+    f32_dwconv(state,
       xnn_f32_dwconv_minmax_ukernel_up4x25__sse,
       xnn_init_f32_minmax_sse_params,
       4 /* channel tile */, 25 /* primary tile */);
@@ -494,73 +496,73 @@ static void DWConvBenchmark(benchmark::State& state,
 
 
 static void f32_dwconv_1x4__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x4__scalar,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 4 /* primary tile */);
 }
 static void f32_dwconv_1x4__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x4__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 4 /* primary tile */);
 }
 static void f32_dwconv_2x4__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up2x4__scalar,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 4 /* primary tile */);
 }
 static void f32_dwconv_2x4__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up2x4__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 4 /* primary tile */);
 }
 static void f32_dwconv_1x9__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x9__scalar,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 9 /* primary tile */);
 }
 static void f32_dwconv_1x9__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x9__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 9 /* primary tile */);
 }
 static void f32_dwconv_2x9__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up2x9__scalar,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 9 /* primary tile */);
 }
 static void f32_dwconv_2x9__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up2x9__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 9 /* primary tile */);
 }
 static void f32_dwconv_1x25__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x25__scalar,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 25 /* primary tile */);
 }
 static void f32_dwconv_1x25__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x25__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     1 /* channel tile */, 25 /* primary tile */);
 }
 static void f32_dwconv_2x25__scalar(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x25__scalar,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 25 /* primary tile */);
 }
 static void f32_dwconv_2x25__scalar_acc2(benchmark::State& state, const char* net) {
-  DWConvBenchmark(state,
+  f32_dwconv(state,
     xnn_f32_dwconv_minmax_ukernel_up1x25__scalar_acc2,
     xnn_init_f32_minmax_scalar_params,
     2 /* channel tile */, 25 /* primary tile */);

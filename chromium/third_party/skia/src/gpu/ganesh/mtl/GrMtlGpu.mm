@@ -229,7 +229,7 @@ bool GrMtlGpu::submitCommandBuffer(SyncQueue sync) {
     this->checkForFinishedCommandBuffers();
 
 #if GR_METAL_CAPTURE_COMMANDBUFFER
-    this->testingOnly_endCapture();
+    this->testingOnly_stopCapture();
 #endif
     return didCommit;
 }
@@ -820,20 +820,15 @@ static GrColorType mtl_format_to_backend_tex_clear_colortype(MTLPixelFormat form
     switch(format) {
         case MTLPixelFormatA8Unorm:         return GrColorType::kAlpha_8;
         case MTLPixelFormatR8Unorm:         return GrColorType::kR_8;
-
-#ifdef SK_BUILD_FOR_IOS
         case MTLPixelFormatB5G6R5Unorm:     return GrColorType::kBGR_565;
         case MTLPixelFormatABGR4Unorm:      return GrColorType::kABGR_4444;
-#endif
         case MTLPixelFormatRGBA8Unorm:      return GrColorType::kRGBA_8888;
         case MTLPixelFormatRGBA8Unorm_sRGB: return GrColorType::kRGBA_8888_SRGB;
 
         case MTLPixelFormatRG8Unorm:        return GrColorType::kRG_88;
         case MTLPixelFormatBGRA8Unorm:      return GrColorType::kBGRA_8888;
         case MTLPixelFormatRGB10A2Unorm:    return GrColorType::kRGBA_1010102;
-#ifdef SK_BUILD_FOR_MAC
         case MTLPixelFormatBGR10A2Unorm:    return GrColorType::kBGRA_1010102;
-#endif
         case MTLPixelFormatR16Float:        return GrColorType::kR_F16;
         case MTLPixelFormatRGBA16Float:     return GrColorType::kRGBA_F16;
         case MTLPixelFormatR16Unorm:        return GrColorType::kR_16;
@@ -913,7 +908,8 @@ GrBackendTexture GrMtlGpu::onCreateBackendTexture(SkISize dimensions,
                                                   const GrBackendFormat& format,
                                                   GrRenderable renderable,
                                                   GrMipmapped mipmapped,
-                                                  GrProtected isProtected) {
+                                                  GrProtected isProtected,
+                                                  std::string_view label) {
     const MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
 
     GrMtlTextureInfo info;
@@ -1246,9 +1242,14 @@ void GrMtlGpu::copySurfaceAsBlit(GrSurface* dst, GrSurface* src,
     cmdBuffer->addGrSurface(sk_ref_sp<const GrSurface>(src));
 }
 
-bool GrMtlGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                             const SkIPoint& dstPoint) {
+bool GrMtlGpu::onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                             GrSurface* src, const SkIRect& srcRect,
+                             GrSamplerState::Filter) {
     SkASSERT(!src->isProtected() && !dst->isProtected());
+
+    if (srcRect.size() != dstRect.size()) {
+        return false;
+    }
 
     GrMtlAttachment* dstAttachment;
     GrMtlAttachment* srcAttachment;
@@ -1294,6 +1295,7 @@ bool GrMtlGpu::onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcR
     int dstSampleCnt = dstAttachment->sampleCount();
     int srcSampleCnt = srcAttachment->sampleCount();
 
+    const SkIPoint dstPoint = dstRect.topLeft();
     if (this->mtlCaps().canCopyAsResolve(dstFormat, dstSampleCnt,
                                          srcFormat, srcSampleCnt,
                                          SkToBool(srcRT), src->dimensions(),
@@ -1358,8 +1360,10 @@ bool GrMtlGpu::onReadPixels(GrSurface* surface,
 
     GrResourceProvider* resourceProvider = this->getContext()->priv().resourceProvider();
     sk_sp<GrGpuBuffer> transferBuffer = resourceProvider->createBuffer(
-            transBufferImageBytes, GrGpuBufferType::kXferGpuToCpu,
-            kDynamic_GrAccessPattern);
+            transBufferImageBytes,
+            GrGpuBufferType::kXferGpuToCpu,
+            kDynamic_GrAccessPattern,
+            GrResourceProvider::ZeroInit::kNo);
 
     if (!transferBuffer) {
         return false;
@@ -1767,7 +1771,7 @@ void GrMtlGpu::testingOnly_startCapture() {
      }
 }
 
-void GrMtlGpu::testingOnly_endCapture() {
+void GrMtlGpu::testingOnly_stopCapture() {
     if (@available(macOS 10.13, iOS 11.0, *)) {
         MTLCaptureManager* captureManager = [MTLCaptureManager sharedCaptureManager];
         if (captureManager.isCapturing) {

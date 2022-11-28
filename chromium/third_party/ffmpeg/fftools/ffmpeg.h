@@ -49,6 +49,11 @@
 
 #include "libswresample/swresample.h"
 
+// deprecated features
+#define FFMPEG_OPT_PSNR 1
+#define FFMPEG_OPT_MAP_CHANNEL 1
+#define FFMPEG_OPT_MAP_SYNC 1
+
 enum VideoSyncMethod {
     VSYNC_AUTO = -1,
     VSYNC_PASSTHROUGH,
@@ -77,15 +82,15 @@ typedef struct StreamMap {
     int disabled;           /* 1 is this mapping is disabled by a negative map */
     int file_index;
     int stream_index;
-    int sync_file_index;
-    int sync_stream_index;
     char *linklabel;       /* name of an output link, for mapping lavfi outputs */
 } StreamMap;
 
+#if FFMPEG_OPT_MAP_CHANNEL
 typedef struct {
     int  file_idx,  stream_idx,  channel_idx; // input
     int ofile_idx, ostream_idx;               // output
 } AudioChannelMap;
+#endif
 
 typedef struct OptionsContext {
     OptionGroup *g;
@@ -138,8 +143,10 @@ typedef struct OptionsContext {
     /* output options */
     StreamMap *stream_maps;
     int     nb_stream_maps;
+#if FFMPEG_OPT_MAP_CHANNEL
     AudioChannelMap *audio_channel_maps; /* one info entry per -map_channel */
     int           nb_audio_channel_maps; /* number of (valid) -map_channel settings */
+#endif
     int metadata_global_manual;
     int metadata_streams_manual;
     int metadata_chapters_manual;
@@ -316,10 +323,18 @@ typedef struct InputStream {
 #define DECODING_FOR_FILTER 2
     int processing_needed;   /* non zero if the packets must be processed */
 
+    /**
+     * Codec parameters - to be used by the decoding/streamcopy code.
+     * st->codecpar should not be accessed, because it may be modified
+     * concurrently by the demuxing thread.
+     */
+    AVCodecParameters *par;
     AVCodecContext *dec_ctx;
     const AVCodec *dec;
     AVFrame *decoded_frame;
     AVPacket *pkt;
+
+    AVRational framerate_guessed;
 
     int64_t       prev_pkt_pts;
     int64_t       start;     /* time when read started */
@@ -332,6 +347,12 @@ typedef struct InputStream {
     int64_t       next_pts;  ///< synthetic pts for the next decode frame (in AV_TIME_BASE units)
     int64_t       pts;       ///< current pts of the decoded frame  (in AV_TIME_BASE units)
     int           wrap_correction_done;
+
+    // the value of AVCodecParserContext.repeat_pict from the AVStream parser
+    // for the last packet returned from ifile_get_packet()
+    // -1 if unknown
+    // FIXME: this is a hack, the avstream parser should not be used
+    int last_pkt_repeat_pict;
 
     int64_t filter_in_rescale_delta_last;
 
@@ -382,12 +403,8 @@ typedef struct InputStream {
     char  *hwaccel_device;
     enum AVPixelFormat hwaccel_output_format;
 
-    /* hwaccel context */
-    void  *hwaccel_ctx;
-    void (*hwaccel_uninit)(AVCodecContext *s);
     int  (*hwaccel_retrieve_data)(AVCodecContext *s, AVFrame *frame);
     enum AVPixelFormat hwaccel_pix_fmt;
-    enum AVPixelFormat hwaccel_retrieved_pix_fmt;
 
     /* stats */
     // combined size of all the packets read
@@ -404,7 +421,14 @@ typedef struct InputStream {
     int got_output;
 } InputStream;
 
+typedef struct LastFrameDuration {
+    int     stream_idx;
+    int64_t duration;
+} LastFrameDuration;
+
 typedef struct InputFile {
+    int index;
+
     AVFormatContext *ctx;
     int eof_reached;      /* true if eof reached */
     int eagain;           /* true if last read attempt returned EAGAIN */
@@ -417,6 +441,10 @@ typedef struct InputFile {
     int input_sync_ref;
 
     int64_t ts_offset;
+    /**
+     * Extra timestamp offset added by discontinuity handling.
+     */
+    int64_t ts_offset_discont;
     int64_t last_ts;
     int64_t start_time;   /* user-specified start time in AV_TIME_BASE or AV_NOPTS_VALUE */
     int64_t recording_time;
@@ -427,13 +455,15 @@ typedef struct InputFile {
     float readrate;
     int accurate_seek;
 
-    AVPacket *pkt;
-
     AVThreadMessageQueue *in_thread_queue;
     pthread_t thread;           /* thread reading from this file */
     int non_blocking;           /* reading packets from the thread should not block */
-    int joined;                 /* the thread has been joined */
     int thread_queue_size;      /* maximum number of queued packets */
+
+    /* when looping the input file, this queue is used by decoders to report
+     * the last frame duration back to the demuxer thread */
+    AVThreadMessageQueue *audio_duration_queue;
+    int                   audio_duration_queue_size;
 } InputFile;
 
 enum forced_keyframes_const {
@@ -460,12 +490,10 @@ typedef struct OutputStream {
     int index;               /* stream index in the output file */
     int source_index;        /* InputStream index */
     AVStream *st;            /* stream in the output file */
-    int encoding_needed;     /* true if encoding needed for this stream */
     /* number of frames emitted by the video-encoding sync code */
     int64_t vsync_frame_number;
     /* input pts and corresponding output pts
        for A/V sync */
-    struct InputStream *sync_ist; /* input stream to sync against */
     int64_t sync_opts;       /* output frame counter, could be changed to some true timestamp */ // FIXME look at frame_number
     /* pts of the first frame encoded for this stream, used for limiting
      * recording time */
@@ -474,6 +502,12 @@ typedef struct OutputStream {
     int64_t last_mux_dts;
     /* pts of the last frame received from the filters, in AV_TIME_BASE_Q */
     int64_t last_filter_pts;
+
+    // timestamp from which the streamcopied streams should start,
+    // in AV_TIME_BASE_Q;
+    // everything before it should be discarded
+    int64_t ts_copy_start;
+
     // the timebase of the packets sent to the muxer
     AVRational mux_timebase;
     AVRational enc_timebase;
@@ -481,8 +515,6 @@ typedef struct OutputStream {
     AVBSFContext            *bsf_ctx;
 
     AVCodecContext *enc_ctx;
-    AVCodecParameters *ref_par; /* associated input codec parameters with encoders options applied */
-    const AVCodec *enc;
     int64_t max_frames;
     AVFrame *filtered_frame;
     AVFrame *last_frame;
@@ -491,14 +523,11 @@ typedef struct OutputStream {
     int64_t last_dropped;
     int64_t last_nb0_frames[3];
 
-    void  *hwaccel_ctx;
-
     /* video only */
     AVRational frame_rate;
     AVRational max_frame_rate;
     enum VideoSyncMethod vsync_method;
     int is_cfr;
-    const char *fps_mode;
     int force_fps;
     int top_field_first;
     int rotate_overridden;
@@ -520,8 +549,10 @@ typedef struct OutputStream {
     int dropped_keyframe;
 
     /* audio only */
+#if FFMPEG_OPT_MAP_CHANNEL
     int *audio_channels_map;             /* list of the channels id to pick from the source stream */
     int audio_channels_mapped;           /* number of channels in audio_channels_map */
+#endif
 
     char *logfile_prefix;
     FILE *logfile;
@@ -537,7 +568,6 @@ typedef struct OutputStream {
     char *apad;
     OSTFinished finished;        /* no more packets should be written for this stream */
     int unavailable;                     /* true if the steram is unavailable (possibly temporarily) */
-    int stream_copy;
 
     // init_output_stream() has been called for this stream
     // The encoder and the bitstream filters have been initialized and the stream
@@ -555,8 +585,10 @@ typedef struct OutputStream {
     int keep_pix_fmt;
 
     /* stats */
-    // combined size of all the packets written
-    uint64_t data_size;
+    // combined size of all the packets sent to the muxer
+    uint64_t data_size_mux;
+    // combined size of all the packets received from the encoder
+    uint64_t data_size_enc;
     // number of packets send to the muxer
     atomic_uint_least64_t packets_written;
     // number of frames/samples sent to the encoder
@@ -624,7 +656,6 @@ extern float audio_drift_threshold;
 extern float dts_delta_threshold;
 extern float dts_error_threshold;
 
-extern int audio_volume;
 extern int audio_sync_method;
 extern enum VideoSyncMethod video_sync_method;
 extern float frame_drop_threshold;
@@ -672,8 +703,6 @@ void show_usage(void);
 void remove_avoptions(AVDictionary **a, AVDictionary *b);
 void assert_avoptions(AVDictionary *m);
 
-int guess_input_channel_layout(InputStream *ist);
-
 int configure_filtergraph(FilterGraph *fg);
 void check_filter_outputs(void);
 int filtergraph_is_simple(FilterGraph *fg);
@@ -711,5 +740,19 @@ int of_submit_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost);
 int64_t of_filesize(OutputFile *of);
 AVChapter * const *
 of_get_chapters(OutputFile *of, unsigned int *nb_chapters);
+
+/**
+ * Get next input packet from the demuxer.
+ *
+ * @param pkt the packet is written here when this function returns 0
+ * @return
+ * - 0 when a packet has been read successfully
+ * - 1 when stream end was reached, but the stream is looped;
+ *     caller should flush decoders and read from this demuxer again
+ * - a negative error code on failure
+ */
+int ifile_get_packet(InputFile *f, AVPacket **pkt);
+int init_input_threads(void);
+void free_input_threads(void);
 
 #endif /* FFTOOLS_FFMPEG_H */

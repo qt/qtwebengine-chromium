@@ -1444,6 +1444,18 @@ OPENSSL_EXPORT int i2d_PKCS8PrivateKeyInfo_fp(FILE *fp, EVP_PKEY *key);
 OPENSSL_EXPORT int i2d_PrivateKey_fp(FILE *fp, EVP_PKEY *pkey);
 OPENSSL_EXPORT int i2d_PUBKEY_fp(FILE *fp, EVP_PKEY *pkey);
 
+// X509_find_by_issuer_and_serial returns the first |X509| in |sk| whose issuer
+// and serial are |name| and |serial|, respectively. If no match is found, it
+// returns NULL.
+OPENSSL_EXPORT X509 *X509_find_by_issuer_and_serial(const STACK_OF(X509) *sk,
+                                                    X509_NAME *name,
+                                                    const ASN1_INTEGER *serial);
+
+// X509_find_by_subject returns the first |X509| in |sk| whose subject is
+// |name|. If no match is found, it returns NULL.
+OPENSSL_EXPORT X509 *X509_find_by_subject(const STACK_OF(X509) *sk,
+                                          X509_NAME *name);
+
 
 // ex_data functions.
 //
@@ -2043,8 +2055,6 @@ OPENSSL_EXPORT int X509_REQ_check_private_key(X509_REQ *x509, EVP_PKEY *pkey);
 
 OPENSSL_EXPORT int X509_check_private_key(X509 *x509, const EVP_PKEY *pkey);
 
-OPENSSL_EXPORT int X509_issuer_and_serial_cmp(const X509 *a, const X509 *b);
-
 OPENSSL_EXPORT int X509_issuer_name_cmp(const X509 *a, const X509 *b);
 OPENSSL_EXPORT unsigned long X509_issuer_name_hash(X509 *a);
 
@@ -2323,12 +2333,6 @@ OPENSSL_EXPORT ASN1_TYPE *X509_ATTRIBUTE_get0_type(X509_ATTRIBUTE *attr,
 
 OPENSSL_EXPORT int X509_verify_cert(X509_STORE_CTX *ctx);
 
-// lookup a cert from a X509 STACK
-OPENSSL_EXPORT X509 *X509_find_by_issuer_and_serial(STACK_OF(X509) *sk,
-                                                    X509_NAME *name,
-                                                    ASN1_INTEGER *serial);
-OPENSSL_EXPORT X509 *X509_find_by_subject(STACK_OF(X509) *sk, X509_NAME *name);
-
 // PKCS#8 utilities
 
 DECLARE_ASN1_FUNCTIONS_const(PKCS8_PRIV_KEY_INFO)
@@ -2582,6 +2586,10 @@ OPENSSL_EXPORT void X509_STORE_CTX_set_depth(X509_STORE_CTX *ctx, int depth);
 // will force the behaviour to match that of previous versions.
 #define X509_V_FLAG_NO_ALT_CHAINS 0x100000
 
+// X509_V_FLAG_NO_CHECK_TIME disables all time checks in certificate
+// verification.
+#define X509_V_FLAG_NO_CHECK_TIME 0x200000
+
 #define X509_VP_FLAG_DEFAULT 0x1
 #define X509_VP_FLAG_OVERWRITE 0x2
 #define X509_VP_FLAG_RESET_FLAGS 0x4
@@ -2680,8 +2688,21 @@ OPENSSL_EXPORT void X509_STORE_CTX_zero(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT void X509_STORE_CTX_free(X509_STORE_CTX *ctx);
 OPENSSL_EXPORT int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store,
                                        X509 *x509, STACK_OF(X509) *chain);
+
+// X509_STORE_CTX_set0_trusted_stack configures |ctx| to trust the certificates
+// in |sk|. |sk| must remain valid for the duration of |ctx|.
+//
+// WARNING: This function differs from most |set0| functions in that it does not
+// take ownership of its input. The caller is required to ensure the lifetimes
+// are consistent.
+OPENSSL_EXPORT void X509_STORE_CTX_set0_trusted_stack(X509_STORE_CTX *ctx,
+                                                      STACK_OF(X509) *sk);
+
+// X509_STORE_CTX_trusted_stack is a deprecated alias for
+// |X509_STORE_CTX_set0_trusted_stack|.
 OPENSSL_EXPORT void X509_STORE_CTX_trusted_stack(X509_STORE_CTX *ctx,
                                                  STACK_OF(X509) *sk);
+
 OPENSSL_EXPORT void X509_STORE_CTX_cleanup(X509_STORE_CTX *ctx);
 
 OPENSSL_EXPORT X509_STORE *X509_STORE_CTX_get0_store(X509_STORE_CTX *ctx);
@@ -2716,15 +2737,6 @@ OPENSSL_EXPORT void X509_LOOKUP_free(X509_LOOKUP *ctx);
 OPENSSL_EXPORT int X509_LOOKUP_init(X509_LOOKUP *ctx);
 OPENSSL_EXPORT int X509_LOOKUP_by_subject(X509_LOOKUP *ctx, int type,
                                           X509_NAME *name, X509_OBJECT *ret);
-OPENSSL_EXPORT int X509_LOOKUP_by_issuer_serial(X509_LOOKUP *ctx, int type,
-                                                X509_NAME *name,
-                                                ASN1_INTEGER *serial,
-                                                X509_OBJECT *ret);
-OPENSSL_EXPORT int X509_LOOKUP_by_fingerprint(X509_LOOKUP *ctx, int type,
-                                              unsigned char *bytes, int len,
-                                              X509_OBJECT *ret);
-OPENSSL_EXPORT int X509_LOOKUP_by_alias(X509_LOOKUP *ctx, int type, char *str,
-                                        int len, X509_OBJECT *ret);
 OPENSSL_EXPORT int X509_LOOKUP_shutdown(X509_LOOKUP *ctx);
 
 #ifndef OPENSSL_NO_STDIO

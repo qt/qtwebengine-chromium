@@ -6,7 +6,6 @@ licenses(["notice"])
 exports_files_legacy()
 
 GENERAL_DEFINES = [
-    "SK_HAS_ANDROID_CODEC",
     "SKIA_IMPLEMENTATION=1",
     "SK_GAMMA_APPLY_TO_A8",
 ] + select({
@@ -53,6 +52,9 @@ GENERAL_DEFINES = [
 }) + select({
     "//src/shaders:legacy_shader_context_true": [],  # This is the default in SkTypes.h
     "//src/shaders:legacy_shader_context_false": ["SK_DISABLE_LEGACY_SHADERCONTEXT"],
+}) + select({
+    "//src/lazy:enable_discardable_memory_true": ["SK_USE_DISCARDABLE_SCALEDIMAGECACHE"],
+    "//src/lazy:enable_discardable_memory_false": [],
 })
 
 GPU_DEFINES = select_multi({
@@ -93,8 +95,11 @@ GPU_DEFINES = select_multi({
     "//conditions:default": [],
 })
 
-CODEC_DEFINES = select_multi(
+CODEC_DEFINES = [
+    "SK_HAS_ANDROID_CODEC",
+] + select_multi(
     {
+        "//src/codec:avif_decode_codec": ["SK_CODEC_DECODES_AVIF"],
         "//src/codec:gif_decode_codec": ["SK_HAS_WUFFS_LIBRARY"],
         "//src/codec:jpeg_decode_codec": ["SK_CODEC_DECODES_JPEG"],
         "//src/images:jpeg_encode_codec": ["SK_ENCODE_JPEG"],

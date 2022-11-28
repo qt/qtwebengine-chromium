@@ -24,10 +24,11 @@
 namespace {
 
 struct CacheInfo {
-  CacheInfo(uint32_t t, const CPDF_Stream* stream) : time(t), pStream(stream) {}
+  CacheInfo(uint32_t t, RetainPtr<const CPDF_Stream> stream)
+      : time(t), pStream(std::move(stream)) {}
 
   uint32_t time;
-  const CPDF_Stream* pStream;
+  RetainPtr<const CPDF_Stream> pStream;
 
   bool operator<(const CacheInfo& other) const { return time < other.time; }
 };
@@ -81,7 +82,7 @@ bool CPDF_PageRenderCache::StartGetCachedBitmap(
     RetainPtr<CPDF_Image> pImage,
     const CPDF_RenderStatus* pRenderStatus,
     bool bStdCS) {
-  const CPDF_Stream* pStream = pImage->GetStream();
+  RetainPtr<const CPDF_Stream> pStream = pImage->GetStream();
   const auto it = m_ImageCache.find(pStream);
   m_bCurFindCache = it != m_ImageCache.end();
   if (m_bCurFindCache) {
@@ -91,7 +92,7 @@ bool CPDF_PageRenderCache::StartGetCachedBitmap(
         m_pPage->GetDocument(), std::move(pImage));
   }
   CPDF_DIB::LoadState ret = m_pCurImageCacheEntry->StartGetCachedBitmap(
-      m_pPage->GetPageResources(), pRenderStatus, bStdCS);
+      m_pPage->GetPageResources().Get(), pRenderStatus, bStdCS);
   if (ret == CPDF_DIB::LoadState::kContinue)
     return true;
 
@@ -121,7 +122,7 @@ bool CPDF_PageRenderCache::Continue(PauseIndicatorIface* pPause,
 }
 
 void CPDF_PageRenderCache::ResetBitmapForImage(RetainPtr<CPDF_Image> pImage) {
-  const CPDF_Stream* pStream = pImage->GetStream();
+  RetainPtr<const CPDF_Stream> pStream = pImage->GetStream();
   const auto it = m_ImageCache.find(pStream);
   if (it == m_ImageCache.end())
     return;

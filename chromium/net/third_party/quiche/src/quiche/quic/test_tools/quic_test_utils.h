@@ -37,6 +37,7 @@
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/mock_clock.h"
+#include "quiche/quic/test_tools/mock_connection_id_generator.h"
 #include "quiche/quic/test_tools/mock_quic_session_visitor.h"
 #include "quiche/quic/test_tools/mock_random.h"
 #include "quiche/quic/test_tools/quic_framer_peer.h"
@@ -501,6 +502,8 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD(void, BeforeConnectionCloseSent, (), (override));
   MOCK_METHOD(bool, ValidateToken, (absl::string_view), (override));
   MOCK_METHOD(bool, MaybeSendAddressToken, (), (override));
+  MOCK_METHOD(std::unique_ptr<QuicPathValidationContext>,
+              CreateContextForMultiPortPath, (), (override));
 
   bool IsKnownServerAddress(
       const QuicSocketAddress& /*address*/) const override {
@@ -524,7 +527,7 @@ class MockQuicConnectionHelper : public QuicConnectionHelperInterface {
 
  private:
   MockClock clock_;
-  MockRandom random_generator_;
+  testing::NiceMock<MockRandom> random_generator_;
   quiche::SimpleBufferAllocator buffer_allocator_;
 };
 
@@ -719,6 +722,19 @@ class MockQuicConnection : public QuicConnection {
                                        QuicStreamOffset offset) {
     return QuicConnection::SendCryptoData(level, write_length, offset);
   }
+
+  MockConnectionIdGenerator& connection_id_generator() {
+    return connection_id_generator_;
+  }
+
+ private:
+  // It would be more correct to pass the generator as an argument to the
+  // constructor, particularly in dispatcher tests that keep their own
+  // reference to a generator. But there are many, many instances of derived
+  // test classes that would have to declare a generator. As this object is
+  // public, it is straightforward for the caller to use it as an argument to
+  // EXPECT_CALL.
+  MockConnectionIdGenerator connection_id_generator_;
 };
 
 class PacketSavingConnection : public MockQuicConnection {
@@ -2082,6 +2098,46 @@ class SavingHttp3DatagramVisitor : public QuicSpdyStream::Http3DatagramVisitor {
 
  private:
   std::vector<SavedHttp3Datagram> received_h3_datagrams_;
+};
+
+// Implementation of ConnectIpVisitor which saves all received capsules.
+class SavingConnectIpVisitor : public QuicSpdyStream::ConnectIpVisitor {
+ public:
+  const std::vector<AddressAssignCapsule>& received_address_assign_capsules()
+      const {
+    return received_address_assign_capsules_;
+  }
+  const std::vector<AddressRequestCapsule>& received_address_request_capsules()
+      const {
+    return received_address_request_capsules_;
+  }
+  const std::vector<RouteAdvertisementCapsule>&
+  received_route_advertisement_capsules() const {
+    return received_route_advertisement_capsules_;
+  }
+  bool headers_written() const { return headers_written_; }
+
+  // From QuicSpdyStream::ConnectIpVisitor.
+  bool OnAddressAssignCapsule(const AddressAssignCapsule& capsule) override {
+    received_address_assign_capsules_.push_back(capsule);
+    return true;
+  }
+  bool OnAddressRequestCapsule(const AddressRequestCapsule& capsule) override {
+    received_address_request_capsules_.push_back(capsule);
+    return true;
+  }
+  bool OnRouteAdvertisementCapsule(
+      const RouteAdvertisementCapsule& capsule) override {
+    received_route_advertisement_capsules_.push_back(capsule);
+    return true;
+  }
+  void OnHeadersWritten() override { headers_written_ = true; }
+
+ private:
+  std::vector<AddressAssignCapsule> received_address_assign_capsules_;
+  std::vector<AddressRequestCapsule> received_address_request_capsules_;
+  std::vector<RouteAdvertisementCapsule> received_route_advertisement_capsules_;
+  bool headers_written_ = false;
 };
 
 inline std::string EscapeTestParamName(absl::string_view name) {

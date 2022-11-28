@@ -636,7 +636,6 @@ void av1_update_film_grain_parameters_seq(struct AV1_PRIMARY *ppi,
 void av1_update_film_grain_parameters(struct AV1_COMP *cpi,
                                       const AV1EncoderConfig *oxcf) {
   AV1_COMMON *const cm = &cpi->common;
-  cpi->oxcf = *oxcf;
   const TuneCfg *const tune_cfg = &oxcf->tune_cfg;
 
   if (cpi->film_grain_table) {
@@ -796,7 +795,10 @@ BLOCK_SIZE av1_select_sb_size(const AV1EncoderConfig *const oxcf, int width,
                ? BLOCK_128X128
                : BLOCK_64X64;
   } else if (oxcf->mode == REALTIME) {
-    return AOMMIN(width, height) > 720 ? BLOCK_128X128 : BLOCK_64X64;
+    if (oxcf->tune_cfg.content == AOM_CONTENT_SCREEN)
+      return AOMMIN(width, height) >= 720 ? BLOCK_128X128 : BLOCK_64X64;
+    else
+      return AOMMIN(width, height) > 720 ? BLOCK_128X128 : BLOCK_64X64;
   }
 
   // TODO(any): Possibly could improve this with a heuristic.

@@ -21,21 +21,11 @@
 
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
-#include "internal/platform/implementation/credential_storage.h"
+#include "internal/platform/implementation/credential_callbacks.h"
 #include "internal/proto/credential.pb.h"
 
 namespace nearby {
 namespace presence {
-
-struct GenerateCredentialsCallback {
-  std::function<void(std::vector<nearby::internal::PublicCredential>)>
-      credentials_generated_cb;
-};
-
-struct UpdateRemotePublicCredentialsCallback {
-  std::function<void(location::nearby::api::CredentialOperationStatus)>
-      credentials_updated_cb;
-};
 
 /*
  * The instance of CredentialManager is owned by {@code ServiceControllerImpl}.
@@ -54,50 +44,47 @@ class CredentialManager {
   // The user’s own public credentials won’t be saved on local credential
   // storage.
   virtual void GenerateCredentials(
-      nearby::internal::DeviceMetadata device_metadata,
-      std::string manager_app_id,
-      std::vector<nearby::internal::IdentityType> identity_types,
+      const nearby::internal::DeviceMetadata& device_metadata,
+      absl::string_view manager_app_id,
+      const std::vector<nearby::internal::IdentityType>& identity_types,
       int credential_life_cycle_days, int contiguous_copy_of_credentials,
       GenerateCredentialsCallback credentials_generated_cb) = 0;
 
   // Update remote public credentials.
   virtual void UpdateRemotePublicCredentials(
-      std::string manager_app_id, std::string account_name,
-      std::vector<nearby::internal::PublicCredential> remote_public_creds,
+      absl::string_view manager_app_id, absl::string_view account_name,
+      const std::vector<nearby::internal::PublicCredential>&
+          remote_public_creds,
       UpdateRemotePublicCredentialsCallback credentials_updated_cb) = 0;
 
   // Used to fetch private creds when broadcasting.
   virtual void GetPrivateCredentials(
-      location::nearby::api::CredentialSelector credential_selector,
-      location::nearby::api::GetPrivateCredentialsResultCallback callback) = 0;
+      const CredentialSelector& credential_selector,
+      GetPrivateCredentialsResultCallback callback) = 0;
 
   // Used to fetch remote public creds when scanning.
   virtual void GetPublicCredentials(
-      location::nearby::api::CredentialSelector credential_selector,
-      location::nearby::api::GetPublicCredentialsResultCallback callback) = 0;
+      const CredentialSelector& credential_selector,
+      PublicCredentialType public_credential_type,
+      GetPublicCredentialsResultCallback callback) = 0;
 
   // Decrypts the device metadata from a public credential.
   // Returns an empty string if decryption fails.
   virtual std::string DecryptDeviceMetadata(
-      std::string device_metadata_encryption_key, std::string authenticity_key,
-      std::string device_metadata_string) = 0;
+      absl::string_view device_metadata_encryption_key,
+      absl::string_view authenticity_key,
+      absl::string_view device_metadata_string) = 0;
 
   // Decrypts Data Elements from an NP advertisement.
-  // Returns an error if `metadata_key` is not associated with any known
+  // Returns an error if `data_elements` could not be deciphered with any known
   // credentials (identity).
   virtual absl::StatusOr<std::string> DecryptDataElements(
-      absl::string_view metadata_key, absl::string_view salt,
-      absl::string_view data_elements) = 0;
-
-  // Returns encrypted metadata key associated with `identity` for Base NP
-  // advertisement.
-  virtual absl::StatusOr<std::string> GetBaseEncryptedMetadataKey(
-      const nearby::internal::IdentityType& identity) = 0;
+      absl::string_view salt, absl::string_view data_elements) = 0;
 
   // Encrypts `data_elements` using certificate associated with `identity` and
   // `salt`.
   virtual absl::StatusOr<std::string> EncryptDataElements(
-      const nearby::internal::IdentityType& identity, absl::string_view salt,
+      nearby::internal::IdentityType identity, absl::string_view salt,
       absl::string_view data_elements) = 0;
 };
 

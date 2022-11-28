@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 
@@ -165,6 +166,13 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
 void BenchmarkStats::PrintMoreStats() const {
   if (Args()->print_more_stats) {
     jxl_stats.Print();
+    size_t total_bits = jxl_stats.aux_out.TotalBits();
+    size_t compressed_bits = total_compressed_size * kBitsPerByte;
+    if (total_bits != compressed_bits) {
+      printf("Total layer bits: %" PRIuS " vs total compressed bits: %" PRIuS
+             "  (%.2f%% accounted for)\n",
+             total_bits, compressed_bits, total_bits * 100.0 / compressed_bits);
+    }
   }
   if (Args()->print_distance_percentiles) {
     std::vector<float> sorted = distances;
@@ -253,12 +261,12 @@ static std::string PrintFormattedEntries(
     if (descriptors[i].type == TYPE_STRING) {
       value = values[i].s;
     } else if (descriptors[i].type == TYPE_SIZE) {
-      value = values[i].i ? StringPrintf("%zd", values[i].i) : "---";
+      value = values[i].i ? StringPrintf("%" PRIdS, values[i].i) : "---";
     } else if (descriptors[i].type == TYPE_POSITIVE_FLOAT) {
       value = FormatFloat(descriptors[i], values[i].f);
       value = FormatFloat(descriptors[i], values[i].f);
     } else if (descriptors[i].type == TYPE_COUNT) {
-      value = StringPrintf("%zd", values[i].i);
+      value = StringPrintf("%" PRIdS, values[i].i);
     }
 
     int numspaces = descriptors[i].width - value.size();

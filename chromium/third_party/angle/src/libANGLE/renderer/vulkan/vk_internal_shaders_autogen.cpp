@@ -63,6 +63,9 @@ namespace
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertVertex.comp.00000005.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertVertex.comp.00000006.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertVertex.comp.00000007.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/EtcToBc.comp.00000000.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/EtcToBc.comp.00000001.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/ExportStencil.frag.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/FullScreenTri.vert.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000001.inc"
@@ -217,6 +220,13 @@ constexpr CompressedShaderBlob kConvertVertex_comp_shaders[] = {
     {kConvertVertex_comp_00000005, sizeof(kConvertVertex_comp_00000005)},
     {kConvertVertex_comp_00000006, sizeof(kConvertVertex_comp_00000006)},
     {kConvertVertex_comp_00000007, sizeof(kConvertVertex_comp_00000007)},
+};
+constexpr CompressedShaderBlob kEtcToBc_comp_shaders[] = {
+    {kEtcToBc_comp_00000000, sizeof(kEtcToBc_comp_00000000)},
+    {kEtcToBc_comp_00000001, sizeof(kEtcToBc_comp_00000001)},
+};
+constexpr CompressedShaderBlob kExportStencil_frag_shaders[] = {
+    {kExportStencil_frag_00000000, sizeof(kExportStencil_frag_00000000)},
 };
 constexpr CompressedShaderBlob kFullScreenTri_vert_shaders[] = {
     {kFullScreenTri_vert_00000000, sizeof(kFullScreenTri_vert_00000000)},
@@ -404,6 +414,14 @@ void ShaderLibrary::destroy(VkDevice device)
     {
         shader.get().destroy(device);
     }
+    for (RefCounted<ShaderAndSerial> &shader : mEtcToBc_comp_shaders)
+    {
+        shader.get().destroy(device);
+    }
+    for (RefCounted<ShaderAndSerial> &shader : mExportStencil_frag_shaders)
+    {
+        shader.get().destroy(device);
+    }
     for (RefCounted<ShaderAndSerial> &shader : mFullScreenTri_vert_shaders)
     {
         shader.get().destroy(device);
@@ -482,6 +500,22 @@ angle::Result ShaderLibrary::getConvertVertex_comp(Context *context,
 {
     return GetShader(context, mConvertVertex_comp_shaders, kConvertVertex_comp_shaders,
                      ArraySize(kConvertVertex_comp_shaders), shaderFlags, shaderOut);
+}
+
+angle::Result ShaderLibrary::getEtcToBc_comp(Context *context,
+                                             uint32_t shaderFlags,
+                                             RefCounted<ShaderAndSerial> **shaderOut)
+{
+    return GetShader(context, mEtcToBc_comp_shaders, kEtcToBc_comp_shaders,
+                     ArraySize(kEtcToBc_comp_shaders), shaderFlags, shaderOut);
+}
+
+angle::Result ShaderLibrary::getExportStencil_frag(Context *context,
+                                                   uint32_t shaderFlags,
+                                                   RefCounted<ShaderAndSerial> **shaderOut)
+{
+    return GetShader(context, mExportStencil_frag_shaders, kExportStencil_frag_shaders,
+                     ArraySize(kExportStencil_frag_shaders), shaderFlags, shaderOut);
 }
 
 angle::Result ShaderLibrary::getFullScreenTri_vert(Context *context,

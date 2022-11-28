@@ -31,10 +31,10 @@ class GraphicsPipeline;
  * GlobalCache. After the resource is created, it is added to the GlobalCache, atomically returning
  * the winning Resource in the event of a race between Recorders for the same UniqueKey.
  */
-class GlobalCache : public SkRefCnt {
+class GlobalCache {
 public:
     GlobalCache();
-    ~GlobalCache() override;
+    ~GlobalCache();
 
     // Find a cached GraphicsPipeline that matches the associated key.
     sk_sp<GraphicsPipeline> findGraphicsPipeline(const UniqueKey&) SK_EXCLUDES(fSpinLock);
@@ -49,8 +49,6 @@ public:
     sk_sp<ComputePipeline> addComputePipeline(const UniqueKey&,
                                               sk_sp<ComputePipeline>) SK_EXCLUDES(fSpinLock);
 
-    SkShaderCodeDictionary* shaderCodeDictionary() const { return fShaderCodeDictionary.get(); }
-
 private:
     struct KeyHash {
         uint32_t operator()(const UniqueKey& key) const { return key.hash(); }
@@ -58,9 +56,6 @@ private:
 
     using GraphicsPipelineCache = SkLRUCache<UniqueKey, sk_sp<GraphicsPipeline>, KeyHash>;
     using ComputePipelineCache  = SkLRUCache<UniqueKey, sk_sp<ComputePipeline>,  KeyHash>;
-
-    // TODO: Have this owned through Context separately from GlobalCache
-    std::unique_ptr<SkShaderCodeDictionary> fShaderCodeDictionary;
 
     // TODO: can we do something better given this should have write-seldom/read-often behavior?
     mutable SkSpinlock fSpinLock;

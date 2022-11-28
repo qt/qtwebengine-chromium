@@ -758,6 +758,9 @@
   "core/sdk/sdk-meta.ts | enableNetworkRequestBlocking": {
     "message": "Activar bloqueo de solicitudes de rede"
   },
+  "core/sdk/sdk-meta.ts | enableUNCLoading": {
+    "message": "Permitir que DevTools cargue recursos, como mapas de fontes, de Windows Shares a través de rutas de UNC. Esta opción está desactivada de forma predeterminada por motivos de seguranza."
+  },
   "core/sdk/sdk-meta.ts | enableWebpFormat": {
     "message": "Activar formato WebP"
   },
@@ -1000,6 +1003,15 @@
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | rendering": {
     "message": "Renderización"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeCommand": {
+    "message": "Activar busca mentres se escribe"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeSetting": {
+    "message": "Buscar mentres se escribe"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchOnEnterCommand": {
+    "message": "Desactivar busca mentres se escribe (premer Introducir para buscar)"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | showAds": {
     "message": "Mostrar anuncios neste sitio, se está permitido"
@@ -1397,6 +1409,9 @@
   "models/issues_manager/DeprecationIssue.ts | eventPath": {
     "message": "O atributo Event.path quedou obsoleto e deixará de estar dispoñible. Mellor usa o atributo Event.composedPath()."
   },
+  "models/issues_manager/DeprecationIssue.ts | expectCTHeader": {
+    "message": "A cabeceira Expect-CT quedou obsoleta e deixará de estar dispoñible. Chrome require Certificate Transparency para todos os certificados de confianza emitidos publicamente despois do 30 de abril de 2018."
+  },
   "models/issues_manager/DeprecationIssue.ts | feature": {
     "message": "Para obter máis información, consulta a páxina de estado da función."
   },
@@ -1446,13 +1461,16 @@
     "message": "Your partner is negotiating an obsolete (D)TLS version. Please check with your partner to have this fixed."
   },
   "models/issues_manager/DeprecationIssue.ts | openWebDatabaseInsecureContext": {
-    "message": "A API WebSQL quedou obsoleta en contextos non seguros e quitarase en M107. Utiliza o almacenamento web ou unha base de datos indexada."
+    "message": "A especificación WebSQL quedou obsoleta en contextos non seguros, polo que se quitará en breve. Utiliza o almacenamento web ou unha base de datos indexada."
+  },
+  "models/issues_manager/DeprecationIssue.ts | persistentQuotaType": {
+    "message": "StorageType.persistent quedou obsoleto. Mellor usa a opción estandarizada navigator.storage."
   },
   "models/issues_manager/DeprecationIssue.ts | pictureSourceSrc": {
     "message": "O atributo <source src> cun <picture> principal non é válido, polo que se ignora. Mellor usa <source srcset>."
   },
   "models/issues_manager/DeprecationIssue.ts | prefixedStorageInfo": {
-    "message": "window.webkitStorageInfo quedou obsoleto. Mellor usa a API estandarizada navigator.storage."
+    "message": "window.webkitStorageInfo quedou obsoleto. Mellor usa a opción estandarizada navigator.storage."
   },
   "models/issues_manager/DeprecationIssue.ts | requestedSubresourceWithEmbeddedCredentials": {
     "message": "Subresource requests whose URLs contain embedded credentials (e.g. https://user:pass@host/) are blocked."
@@ -1703,6 +1721,9 @@
   "models/timeline_model/TimelineModel.ts | unknownWorkletS": {
     "message": "Worklet de poxa: {PH1}"
   },
+  "models/timeline_model/TimelineModel.ts | userInteractions": {
+    "message": "Interaccións do usuario"
+  },
   "models/timeline_model/TimelineModel.ts | workerS": {
     "message": "Worker: {PH1}"
   },
@@ -1929,7 +1950,7 @@
     "message": "En caso de que este elemento poida recibir novas en tempo real, se se lle debe mostrar ao usuario a zona completa en tempo real ou só os nós modificados."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifThisElementMayReceiveLiveUpdates": {
-    "message": "Se este elemento pode recibir actualizacións en directo, que tipo de actualización debería activar unha notificación."
+    "message": "Se este elemento pode recibir novas en tempo real, que tipo de novidades deberían activar unha notificación."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifThisElementMayReceiveLiveUpdatesThe": {
     "message": "Se este elemento recibe novas en tempo real, o seu valor é o elemento raíz da zona en tempo real que o contén."
@@ -2082,7 +2103,7 @@
     "message": "Se un usuario pode seleccionar máis dunha opción neste widget."
   },
   "panels/accessibility/AccessibilityStrings.ts | whetherAndWhatPriorityOfLive": {
-    "message": "Se se pode esperar prioridade nas actualizacións en directo deste elemento e, no seu caso, de que tipo de prioridade se trata."
+    "message": "Se se pode esperar prioridade nas novas en tempo real deste elemento e, no seu caso, de que tipo de prioridade se trata."
   },
   "panels/accessibility/AccessibilityStrings.ts | whetherAndWhatTypeOfAutocomplete": {
     "message": "Se as suxestións de completado automático proveñen ou non actualmente deste elemento e, no seu caso, de que tipo de suxestións se trata."
@@ -2434,6 +2455,9 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Aplicación"
+  },
+  "panels/application/ApplicationPanelSidebar.ts | applicationSidebarPanel": {
+    "message": "Barra lateral do panel da aplicación"
   },
   "panels/application/ApplicationPanelSidebar.ts | backgroundServices": {
     "message": "Servizos en segundo plano"
@@ -3740,6 +3764,9 @@
   "panels/application/components/Prerender2.ts | CrossOriginRedirect": {
     "message": "Tentouse levar a cabo a renderización previa dun URL que redirixía a outro cunha orixe cruzada. Nestes momentos, non está permitida a renderización previa de páxinas de orixe cruzada."
   },
+  "panels/application/components/Prerender2.ts | DataSaverEnabled": {
+    "message": "Activouse o aforro de datos"
+  },
   "panels/application/components/Prerender2.ts | Destroyed": {
     "message": "Abandonouse por motivos descoñecidos unha páxina renderizada previamente."
   },
@@ -3752,11 +3779,11 @@
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndCrossOriginRedirected": {
     "message": "A renderización previa accionada por Chrome de forma interna (por exemplo, a renderización previa de Omnibox) cancelouse porque a navegación se redirixe a outra páxina de orixe cruzada."
   },
-  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndDestroyed": {
-    "message": "A renderización previa accionada por Chrome de forma interna (por exemplo, a renderización previa de Omnibox) destruíuse no destrutor."
-  },
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndSameOriginRedirected": {
     "message": "A renderización previa accionada por Chrome de forma interna (por exemplo, a renderización previa de Omnibox) cancelouse porque a navegación se redirixe a outra páxina coa mesma orixe."
+  },
+  "panels/application/components/Prerender2.ts | FailToGetMemoryUsage": {
+    "message": "Non se puido obter o uso da memoria"
   },
   "panels/application/components/Prerender2.ts | InProgressNavigation": {
     "message": "InProgressNavigation."
@@ -3778,6 +3805,9 @@
   },
   "panels/application/components/Prerender2.ts | MaxNumOfRunningPrerendersExceeded": {
     "message": "Superouse o número máximo de renderizacións previas."
+  },
+  "panels/application/components/Prerender2.ts | MemoryLimitExceeded": {
+    "message": "Superouse o límite de memoria"
   },
   "panels/application/components/Prerender2.ts | MixedContent": {
     "message": "Un marco de contido mixto cancelou a renderización previa."
@@ -4733,20 +4763,23 @@
   "panels/elements/CSSRuleValidator.ts | deprecatedPropertyHintPrefix": {
     "message": "Propiedade obsoleta"
   },
-  "panels/elements/CSSRuleValidator.ts | ruleValidationHintPrefix": {
-    "message": "Norma inactiva"
+  "panels/elements/CSSRuleValidator.ts | inactivePropertyHintPrefix": {
+    "message": "Propiedade inactiva"
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
-    "message": "Para corrixir este problema, cambia os elementos principais {EXISTING_PARENT_ELEMENT_RULE} por {TARGET_PARENT_ELEMENT_RULE}."
+    "message": "Proba a cambiar a propiedade {EXISTING_PARENT_ELEMENT_RULE} do elemento principal por {TARGET_PARENT_ELEMENT_RULE}."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleReason": {
-    "message": "O elemento principal ten unha norma {REASON_RULE_CODE}, así que a norma {AFFECTED_RULE_CODE} deste elemento non ten efecto"
+    "message": "A propiedade {REASON_PROPERTY_DECLARATION_CODE} do elemento principal evita o efecto de {AFFECTED_PROPERTY_DECLARATION_CODE}."
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleChangeSuggestion": {
+    "message": "Proba a cambiar a propiedade {EXISTING_PROPERTY_DECLARATION} por {TARGET_PROPERTY_DECLARATION}."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleFix": {
-    "message": "Para que funcione esta propiedade, quita ou cambia o valor de {REASON_RULE_CODE}"
+    "message": "Proba a quitar {REASON_PROPERTY_DECLARATION_CODE} ou a cambiar o seu valor."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
-    "message": "Este elemento ten unha norma {REASON_RULE_CODE}, así que {AFFECTED_RULE_CODE} non ten efecto."
+    "message": "A propiedade {REASON_PROPERTY_DECLARATION_CODE} deste elemento evita o efecto de {AFFECTED_PROPERTY_DECLARATION_CODE}."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Engade unha clase nova"
@@ -5183,8 +5216,8 @@
   "panels/elements/StylesSidebarPane.ts | unknownPropertyName": {
     "message": "Nome de propiedade descoñecido"
   },
-  "panels/elements/TopLayerContainer.ts | topLayer": {
-    "message": "capa superior"
+  "panels/elements/TopLayerContainer.ts | reveal": {
+    "message": "mostrar"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ignorado"
@@ -5200,6 +5233,12 @@
   },
   "panels/elements/components/ElementsBreadcrumbs.ts | breadcrumbs": {
     "message": "Secuencia de navegación da árbore do DOM"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollLeft": {
+    "message": "Desprazarse á esquerda"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollRight": {
+    "message": "Desprazarse á dereita"
   },
   "panels/elements/components/ElementsBreadcrumbsUtils.ts | text": {
     "message": "(texto)"
@@ -5699,11 +5738,11 @@
   "panels/issues/AttributionReportingIssueDetailsView.ts | element": {
     "message": "Elemento"
   },
-  "panels/issues/AttributionReportingIssueDetailsView.ts | frame": {
-    "message": "Marco"
-  },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidHeaderValue": {
     "message": "Valor da cabeceira non válido"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | maximumConcurrentRegistrations": {
+    "message": "Rexistros simultáneos máximos"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n,plural, =1{# infracción}other{# infraccións}}"
@@ -7868,8 +7907,32 @@
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Ver certificado"
   },
-  "panels/network/components/RequestHeadersView.ts | chooseThisOptionIfTheResourceAnd": {
-    "message": "Escolle esta opción se o recurso e o documento proveñen do mesmo sitio."
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariation": {
+    "message": "client experiment variation IDs activos."
+  },
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariationIds": {
+    "message": "client experiment variation IDs activos que activan o comportamento do servidor."
+  },
+  "panels/network/components/HeaderSectionRow.ts | decoded": {
+    "message": "Descodificadas:"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMore": {
+    "message": "Máis información"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMoreInTheIssuesTab": {
+    "message": "Máis información na pestana de problemas"
+  },
+  "panels/network/components/RequestHeaderSection.ts | learnMore": {
+    "message": "Máis información"
+  },
+  "panels/network/components/RequestHeaderSection.ts | onlyProvisionalHeadersAre": {
+    "message": "Só están dispoñibles as cabeceiras provisionais porque esta solicitude non se enviou a través da rede, senón que se publicou desde unha memoria caché local, que non almacena as cabeceiras de solicitude orixinais. Desactiva a memoria caché para ver as cabeceiras de solicitude completas."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShown": {
+    "message": "Móstranse unhas cabeceiras provisionais."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShownDisableCache": {
+    "message": "Móstranse unhas cabeceiras provisionais. Para ver as cabeceiras completas, desactiva a memoria caché."
   },
   "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
     "message": "(da memoria caché do disco)"
@@ -7892,23 +7955,8 @@
   "panels/network/components/RequestHeadersView.ts | general": {
     "message": "Xeral"
   },
-  "panels/network/components/RequestHeadersView.ts | learnMore": {
-    "message": "Máis información"
-  },
-  "panels/network/components/RequestHeadersView.ts | learnMoreInTheIssuesTab": {
-    "message": "Máis información na pestana de problemas"
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyChooseThisOptionIfAn": {
-    "message": "Escolle esta opción unicamente se non hai ningún sitio web arbitrario (incluído este recurso) que supoña un risco para a seguranza."
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyProvisionalHeadersAre": {
-    "message": "Só están dispoñibles as cabeceiras provisionais porque esta solicitude non se enviou a través da rede, senón que se publicou desde unha memoria caché local, que non almacena as cabeceiras de solicitude orixinais. Desactiva a memoria caché para ver as cabeceiras de solicitude completas."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShown": {
-    "message": "Móstranse unhas cabeceiras provisionais."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShownDisableCache": {
-    "message": "Móstranse unhas cabeceiras provisionais. Para ver as cabeceiras completas, desactiva a memoria caché."
+  "panels/network/components/RequestHeadersView.ts | headerOverrides": {
+    "message": "Omisións de cabeceiras"
   },
   "panels/network/components/RequestHeadersView.ts | raw": {
     "message": "Sen analizar"
@@ -7936,21 +7984,6 @@
   },
   "panels/network/components/RequestHeadersView.ts | statusCode": {
     "message": "Código de estado"
-  },
-  "panels/network/components/RequestHeadersView.ts | thisDocumentWasBlockedFrom": {
-    "message": "A carga deste documento bloqueouse nun iframe cun atributo sandbox porque este documento especificou unha política de método de apertura de orixe cruzada."
-  },
-  "panels/network/components/RequestHeadersView.ts | toEmbedThisFrameInYourDocument": {
-    "message": "Para inserir este marco no documento, a resposta debe activar a política de insercións de orixes cruzadas especificando a seguinte cabeceira de resposta:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferent": {
-    "message": "Para usar este recurso desde unha orixe distinta, o servidor debe indicar nas cabeceiras de resposta unha política de recursos de orixe cruzada:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentOrigin": {
-    "message": "Para usar este recurso desde unha orixe distinta, o servidor pode relaxar a cabeceira de resposta da política de recursos de orixe cruzada:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentSite": {
-    "message": "Para usar este recurso desde un sitio distinto, o servidor pode relaxar a cabeceira de resposta da política de recursos de orixe cruzada:"
   },
   "panels/network/components/RequestTrustTokensView.ts | aClientprovidedArgumentWas": {
     "message": "Un argumento proporcionado polo cliente tiña un formato incorrecto ou non era válido."
@@ -8002,6 +8035,27 @@
   },
   "panels/network/components/RequestTrustTokensView.ts | type": {
     "message": "Tipo"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | chooseThisOptionIfTheResourceAnd": {
+    "message": "Escolle esta opción se o recurso e o documento proveñen do mesmo sitio."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | onlyChooseThisOptionIfAn": {
+    "message": "Escolle esta opción unicamente se non hai ningún sitio web arbitrario (incluído este recurso) que supoña un risco para a seguranza."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | thisDocumentWasBlockedFrom": {
+    "message": "A carga deste documento bloqueouse nun iframe cun atributo sandbox porque este documento especificou unha política de método de apertura de orixe cruzada."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toEmbedThisFrameInYourDocument": {
+    "message": "Para inserir este marco no documento, a resposta debe activar a política de insercións de orixes cruzadas especificando a seguinte cabeceira de resposta:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferent": {
+    "message": "Para usar este recurso desde unha orixe distinta, o servidor debe indicar nas cabeceiras de resposta unha política de recursos de orixe cruzada:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentOrigin": {
+    "message": "Para usar este recurso desde unha orixe distinta, o servidor pode relaxar a cabeceira de resposta da política de recursos de orixe cruzada:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentSite": {
+    "message": "Para usar este recurso desde un sitio distinto, o servidor pode relaxar a cabeceira de resposta da política de recursos de orixe cruzada:"
   },
   "panels/network/components/WebBundleInfoView.ts | bundledResource": {
     "message": "Recurso en Web Bundle"
@@ -8771,6 +8825,9 @@
   "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommand": {
     "message": "Envía un comando CDP sen procesar"
   },
+  "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommandExplanation": {
+    "message": "Formato: 'Domain.commandName' para un comando sen parámetros ou '{\"command\":\"Domain.commandName\", \"parameters\": {...}}' como obxecto JSON para un comando con parámetros. 'cmd'/'method' e 'args'/'params'/'arguments' tamén se admiten como claves alternativas do obxecto JSON."
+  },
   "panels/protocol_monitor/ProtocolMonitor.ts | session": {
     "message": "Sesión"
   },
@@ -9527,6 +9584,9 @@
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Restaurar valores predeterminados e volver cargar"
   },
+  "panels/settings/SettingsScreen.ts | sendFeedback": {
+    "message": "Enviar comentarios"
+  },
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Configuración"
   },
@@ -10136,9 +10196,6 @@
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘+Introducir"
   },
-  "panels/sources/SourcesNavigator.ts | authoredDescription": {
-    "message": "Agrupa ficheiros por Autoría/Implementación"
-  },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Borrar configuración"
   },
@@ -10216,6 +10273,9 @@
   },
   "panels/sources/SourcesPanel.ts | hideDebugger": {
     "message": "Ocultar depurador"
+  },
+  "panels/sources/SourcesPanel.ts | hideIgnoreListed": {
+    "message": "Ocultar fontes indicadas como ignoradas"
   },
   "panels/sources/SourcesPanel.ts | hideNavigator": {
     "message": "Ocultar navegador"
@@ -10306,6 +10366,18 @@
   },
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Actualizar todas as expresións supervisadas"
+  },
+  "panels/sources/components/BreakpointsView.ts | breakpointHit": {
+    "message": "Petición do punto de interrupción: {PH1}"
+  },
+  "panels/sources/components/BreakpointsView.ts | checked": {
+    "message": "marcado"
+  },
+  "panels/sources/components/BreakpointsView.ts | indeterminate": {
+    "message": "combinación"
+  },
+  "panels/sources/components/BreakpointsView.ts | unchecked": {
+    "message": "sen marcar"
   },
   "panels/sources/components/HeadersView.ts | addHeader": {
     "message": "Engadir cabeceira"
@@ -10741,6 +10813,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | timings": {
     "message": "Tempos"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | userInteractions": {
+    "message": "Interaccións"
   },
   "panels/timeline/TimelineFlameChartNetworkDataProvider.ts | network": {
     "message": "Rede"
@@ -11222,6 +11297,9 @@
   "panels/timeline/TimelineUIUtils.ts | event": {
     "message": "Evento"
   },
+  "panels/timeline/TimelineUIUtils.ts | eventTiming": {
+    "message": "Tempos dos eventos"
+  },
   "panels/timeline/TimelineUIUtils.ts | evolvedClsLink": {
     "message": "evolucionou"
   },
@@ -11320,6 +11398,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | installTimer": {
     "message": "Instalar temporizador"
+  },
+  "panels/timeline/TimelineUIUtils.ts | interactionEvent": {
+    "message": "Tipo de interacción: {PH1}. Código: {PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | invalidateLayout": {
     "message": "Invalidar deseño"
@@ -12095,6 +12176,12 @@
   "ui/components/issue_counter/IssueLinkIcon.ts | issueUnavailable": {
     "message": "O número non está dispoñible neste momento"
   },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | deleteHighlight": {
+    "message": "Deixar de destacar esta memoria"
+  },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | jumpToAddress": {
+    "message": "Saltar a esta memoria"
+  },
   "ui/components/linear_memory_inspector/LinearMemoryInspector.ts | addressHasToBeANumberBetweenSAnd": {
     "message": "O enderezo debe ser un número entre {PH1} e {PH2}"
   },
@@ -12159,7 +12246,7 @@
     "message": "Comentarios"
   },
   "ui/components/panel_feedback/PanelFeedback.ts | previewFeature": {
-    "message": "Vista previa da función"
+    "message": "Función de vista previa"
   },
   "ui/components/panel_feedback/PanelFeedback.ts | previewText": {
     "message": "O noso equipo está traballando de maneira activa nesta función e encantaríanos saber o que pensas."

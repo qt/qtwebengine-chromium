@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/k_anonymity_service_delegate.h"
 #include "content/public/browser/zoom_level_delegate.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -87,6 +88,7 @@ class FederatedIdentityActiveSessionPermissionContextDelegate;
 class FederatedIdentityApiPermissionContextDelegate;
 class FederatedIdentitySharingPermissionContextDelegate;
 class FileSystemAccessPermissionContext;
+class OriginTrialsControllerDelegate;
 class PermissionController;
 class PermissionControllerDelegate;
 class PlatformNotificationService;
@@ -442,6 +444,14 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // exists, or nullptr otherwise.
   virtual FederatedIdentitySharingPermissionContextDelegate*
   GetFederatedIdentitySharingPermissionContext();
+
+  // Gets the KAnonymityServiceDelegate if supported. Returns nullptr if
+  // unavailable.
+  virtual KAnonymityServiceDelegate* GetKAnonymityServiceDelegate();
+
+  // Returns the OriginTrialsControllerDelegate associated with the context if
+  // any, nullptr otherwise.
+  virtual OriginTrialsControllerDelegate* GetOriginTrialsControllerDelegate();
 
  private:
   // Please don't add more fields to BrowserContext.

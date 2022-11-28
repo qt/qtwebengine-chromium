@@ -7,17 +7,25 @@ exports_files_legacy()
 filegroup(
     name = "txts",
     srcs = [
-        "generated/sksl_compute.dehydrated.sksl",
-        "generated/sksl_frag.dehydrated.sksl",
-        "generated/sksl_gpu.dehydrated.sksl",
-        "generated/sksl_graphite_frag.dehydrated.sksl",
-        "generated/sksl_graphite_vert.dehydrated.sksl",
-        "generated/sksl_public.dehydrated.sksl",
-        "generated/sksl_rt_shader.dehydrated.sksl",
-        "generated/sksl_shared.dehydrated.sksl",
-        "generated/sksl_vert.dehydrated.sksl",
+        "generated/sksl_compute.minified.sksl",
+        "generated/sksl_compute.unoptimized.sksl",
+        "generated/sksl_frag.minified.sksl",
+        "generated/sksl_frag.unoptimized.sksl",
+        "generated/sksl_gpu.minified.sksl",
+        "generated/sksl_gpu.unoptimized.sksl",
+        "generated/sksl_graphite_frag.minified.sksl",
+        "generated/sksl_graphite_frag.unoptimized.sksl",
+        "generated/sksl_graphite_vert.minified.sksl",
+        "generated/sksl_graphite_vert.unoptimized.sksl",
+        "generated/sksl_public.minified.sksl",
+        "generated/sksl_public.unoptimized.sksl",
+        "generated/sksl_rt_shader.minified.sksl",
+        "generated/sksl_rt_shader.unoptimized.sksl",
+        "generated/sksl_shared.minified.sksl",
+        "generated/sksl_shared.unoptimized.sksl",
+        "generated/sksl_vert.minified.sksl",
+        "generated/sksl_vert.unoptimized.sksl",
     ],
-    visibility = ["//:__subpackages__"],
 )
 
 CORE_SRCS = [
@@ -33,15 +41,12 @@ CORE_SRCS = [
     "SkSLConstantFolder.h",
     "SkSLContext.cpp",
     "SkSLContext.h",
-    "SkSLDSLParser.cpp",
-    "SkSLDSLParser.h",
-    "SkSLDehydrator.cpp",
-    "SkSLDehydrator.h",
     "SkSLErrorReporter.cpp",
     "SkSLFileOutputStream.h",
     "SkSLGLSL.h",
     "SkSLInliner.cpp",
     "SkSLInliner.h",
+    "SkSLIntrinsicList.cpp",
     "SkSLIntrinsicList.h",
     "SkSLLexer.cpp",
     "SkSLLexer.h",
@@ -50,19 +55,18 @@ CORE_SRCS = [
     "SkSLMemoryLayout.h",
     "SkSLMemoryPool.h",
     "SkSLModifiersPool.h",
+    "SkSLModuleLoader.cpp",
+    "SkSLModuleLoader.h",
     "SkSLOperator.cpp",
     "SkSLOutputStream.cpp",
     "SkSLOutputStream.h",
-    "SkSLParsedModule.h",
+    "SkSLParser.cpp",
+    "SkSLParser.h",
     "SkSLPool.cpp",
     "SkSLPool.h",
     "SkSLPosition.cpp",
     "SkSLProgramSettings.h",
-    "SkSLRehydrator.cpp",
-    "SkSLRehydrator.h",
     "SkSLSampleUsage.cpp",
-    "SkSLSharedCompiler.cpp",
-    "SkSLSharedCompiler.h",
     "SkSLString.cpp",
     "SkSLStringStream.h",
     "SkSLThreadContext.cpp",
@@ -96,18 +100,18 @@ selects.config_setting_group(
 )
 
 bool_flag(
+    name = "enable_sksl",
     default = False,
-    flag_name = "enable_sksl",
 )
 
 bool_flag(
+    name = "enable_skslc",
     default = False,
-    flag_name = "enable_skslc",
 )
 
 bool_flag(
+    name = "enable_sksl_tracing",
     default = False,
-    flag_name = "enable_sksl_tracing",
 )
 
 filegroup(

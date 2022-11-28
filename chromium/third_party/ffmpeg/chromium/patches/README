@@ -887,14 +887,17 @@ Affects:
     libavutil/avsscanf.c
 
 ------------------------------------------------------------------
-commit 8d12faf8f791f7655b48641ba47ff1ce9cd0d3f3
+commit b71ecd02b47939e530e620d9d0d101463db0f688
 Author: Eugene Zemtsov <eugene@chromium.org>
-Date:   Tue Jul 26 20:00:50 2022 -0700
+Date:   Wed Jul 27 13:09:47 2022 -0700
 
-    Remove forward declaration for enum.
+    Roll for M106
 
-    ISO C forbids forward references to enum types. And this breaks
-    x86 windows build of Chromium.
+    Bug:1344646
+    Change-Id: Idd70cb61d6739d4f782f6cae43f8135e4abfd2eb
+    Reviewed-on: https://chromium-review.googlesource.com/c/chromium/third_party/ffmpeg/+/3786817
+    Reviewed-by: Will Cassella <cassew@chromium.org>
+    Reviewed-by: Dale Curtis <dalecurtis@chromium.org>
 
 Affects:
     libavutil/hwcontext_stub.c

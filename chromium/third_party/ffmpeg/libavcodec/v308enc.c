@@ -43,7 +43,7 @@ static int v308_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                              const AVFrame *pic, int *got_packet)
 {
     uint8_t *dst;
-    uint8_t *y, *u, *v;
+    const uint8_t *y, *u, *v;
     int i, j, ret;
 
     ret = ff_get_encode_buffer(avctx, pkt, avctx->width * avctx->height * 3, 0);
@@ -72,7 +72,7 @@ static int v308_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 const FFCodec ff_v308_encoder = {
     .p.name       = "v308",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("Uncompressed packed 4:4:4"),
+    CODEC_LONG_NAME("Uncompressed packed 4:4:4"),
     .p.type       = AVMEDIA_TYPE_VIDEO,
     .p.id         = AV_CODEC_ID_V308,
     .p.capabilities = AV_CODEC_CAP_DR1,

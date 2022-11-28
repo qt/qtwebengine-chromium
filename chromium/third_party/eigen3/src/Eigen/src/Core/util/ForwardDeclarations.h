@@ -90,6 +90,9 @@ template<typename DiagonalVectorType_> class DiagonalWrapper;
 template<typename Scalar_, int SizeAtCompileTime, int MaxSizeAtCompileTime=SizeAtCompileTime> class DiagonalMatrix;
 template<typename MatrixType, typename DiagonalType, int ProductOrder> class DiagonalProduct;
 template<typename MatrixType, int Index = 0> class Diagonal;
+template<typename Derived> class SkewSymmetricBase;
+template<typename VectorType_> class SkewSymmetricWrapper;
+template<typename Scalar_> class SkewSymmetricMatrix3;
 template<int SizeAtCompileTime, int MaxSizeAtCompileTime = SizeAtCompileTime, typename IndexType=int> class PermutationMatrix;
 template<int SizeAtCompileTime, int MaxSizeAtCompileTime = SizeAtCompileTime, typename IndexType=int> class Transpositions;
 template<typename Derived> class PermutationBase;
@@ -196,8 +199,12 @@ template<typename Scalar, typename NewType> struct scalar_cast_op;
 template<typename Scalar> struct scalar_random_op;
 template<typename Scalar> struct scalar_constant_op;
 template<typename Scalar> struct scalar_identity_op;
-template<typename Scalar,bool is_complex, bool is_integer> struct scalar_sign_op;
-template<typename Scalar,typename ScalarExponent> struct scalar_pow_op;
+template<typename Scalar> struct scalar_sign_op;
+template <typename Scalar, typename ScalarExponent>
+struct scalar_pow_op;
+template <typename Scalar, typename ScalarExponent, bool BaseIsInteger, bool ExponentIsInteger, bool BaseIsComplex,
+          bool ExponentIsComplex>
+struct scalar_unary_pow_op;
 template<typename LhsScalar,typename RhsScalar=LhsScalar> struct scalar_hypot_op;
 template<typename LhsScalar,typename RhsScalar=LhsScalar> struct scalar_product_op;
 template<typename LhsScalar,typename RhsScalar=LhsScalar> struct scalar_quotient_op;

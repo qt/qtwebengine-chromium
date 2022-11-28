@@ -42,39 +42,30 @@ struct SingleSubstFormat1_3
     hb_codepoint_t d = deltaGlyphID;
     hb_codepoint_t mask = get_mask ();
 
-    if (1)
-    {
-      /* Walk the coverage and set together, to bail out when the
-       * coverage iterator runs over the end of glyphset. Otherwise,
-       * the coverage may cover many glyphs and we spend a lot of
-       * time here.  Other subtables don't have this problem because
-       * they zip coverage iterator with some array... */
-      auto c_iter = hb_iter (this+coverage);
-      auto s_iter = hb_iter (c->parent_active_glyphs ());
-      while (c_iter && s_iter)
-      {
-	hb_codepoint_t cv = *c_iter;
-	hb_codepoint_t sv = *s_iter;
-	if (cv == sv)
-	{
-	  c->output->add ((cv + d) & mask);
-	  c_iter++;
-	  s_iter++;
-	}
-	else if (cv < sv)
-	  c_iter++;
-	else
-	  s_iter++;
-      }
-    }
-    else
-    {
-      + hb_iter (this+coverage)
-      | hb_filter (c->parent_active_glyphs ())
-      | hb_map ([d, mask] (hb_codepoint_t g) { return (g + d) & mask; })
-      | hb_sink (c->output)
-      ;
-    }
+    /* Help fuzzer avoid this function as much. */
+    unsigned pop = (this+coverage).get_population ();
+    if (pop >= mask)
+      return;
+
+    hb_set_t intersection;
+    (this+coverage).intersect_set (c->parent_active_glyphs (), intersection);
+
+    /* In degenerate fuzzer-found fonts, but not real fonts,
+     * this table can keep adding new glyphs in each round of closure.
+     * Refuse to close-over, if it maps glyph range to overlapping range. */
+    hb_codepoint_t min_before = intersection.get_min ();
+    hb_codepoint_t max_before = intersection.get_max ();
+    hb_codepoint_t min_after = (min_before + d) & mask;
+    hb_codepoint_t max_after = (max_before + d) & mask;
+    if (pop >= max_before - min_before &&
+	((min_before <= min_after && min_after <= max_before) ||
+	 (min_before <= max_after && max_after <= max_before)))
+      return;
+
+    + hb_iter (intersection)
+    | hb_map ([d, mask] (hb_codepoint_t g) { return (g + d) & mask; })
+    | hb_sink (c->output)
+    ;
   }
 
   void closure_lookups (hb_closure_lookups_context_t *c) const {}
@@ -108,7 +99,22 @@ struct SingleSubstFormat1_3
 
     glyph_id = (glyph_id + d) & mask;
 
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      c->buffer->sync_so_far ();
+      c->buffer->message (c->font,
+			  "replacing glyph at %d (single substitution)",
+			  c->buffer->idx);
+    }
+
     c->replace_glyph (glyph_id);
+
+    if (HB_BUFFER_MESSAGE_MORE && c->buffer->messaging ())
+    {
+      c->buffer->message (c->font,
+			  "replaced glyph at %d (single substitution)",
+			  c->buffer->idx - 1);
+    }
 
     return_trace (true);
   }
@@ -135,38 +141,8 @@ struct SingleSubstFormat1_3
     hb_codepoint_t d = deltaGlyphID;
     hb_codepoint_t mask = get_mask ();
 
-    hb_sorted_vector_t<hb_codepoint_t> intersection;
-    if (1)
-    {
-      /* Walk the coverage and set together, to bail out when the
-       * coverage iterator runs over the end of glyphset. Otherwise,
-       * the coverage may cover many glyphs and we spend a lot of
-       * time here.  Other subtables don't have this problem because
-       * they zip coverage iterator with some array... */
-      auto c_iter = hb_iter (this+coverage);
-      auto s_iter = hb_iter (glyphset);
-      while (c_iter && s_iter)
-      {
-	hb_codepoint_t cv = *c_iter;
-	hb_codepoint_t sv = *s_iter;
-	if (cv == sv)
-	{
-	  intersection.push (cv);
-	  c_iter++;
-	  s_iter++;
-	}
-	else if (cv < sv)
-	  c_iter++;
-	else
-	  s_iter++;
-      }
-    }
-    else
-    {
-      + hb_iter (this+coverage)
-      | hb_filter (glyphset)
-      | hb_sink (intersection);
-    }
+    hb_set_t intersection;
+    (this+coverage).intersect_set (glyphset, intersection);
 
     auto it =
     + hb_iter (intersection)

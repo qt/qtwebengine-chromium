@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -108,7 +108,7 @@ feedwire::UploadActionsResponse GetTestActionResponse() {
 void SetConsentLevelNeededForFeedPersonalization(
     base::test::ScopedFeatureList& feature_list,
     signin::ConsentLevel consent_level) {
-  std::vector<base::Feature> enable_features, disable_features;
+  std::vector<base::test::FeatureRef> enable_features, disable_features;
   switch (consent_level) {
     case signin::ConsentLevel::kSignin:
       enable_features.push_back(kPersonalizeFeedNonSyncUsers);

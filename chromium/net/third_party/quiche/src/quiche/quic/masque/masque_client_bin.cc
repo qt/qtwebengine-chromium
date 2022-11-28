@@ -13,10 +13,13 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "url/third_party/mozilla/url_parse.h"
+#include "quiche/quic/core/io/quic_default_event_loop.h"
+#include "quiche/quic/core/io/quic_event_loop.h"
+#include "quiche/quic/core/quic_default_clock.h"
 #include "quiche/quic/core/quic_server_id.h"
+#include "quiche/quic/masque/masque_client.h"
 #include "quiche/quic/masque/masque_client_tools.h"
-#include "quiche/quic/masque/masque_encapsulated_epoll_client.h"
-#include "quiche/quic/masque/masque_epoll_client.h"
+#include "quiche/quic/masque/masque_encapsulated_client.h"
 #include "quiche/quic/masque/masque_utils.h"
 #include "quiche/quic/platform/api/quic_default_proof_providers.h"
 #include "quiche/quic/platform/api/quic_flags.h"
@@ -38,7 +41,7 @@ namespace quic {
 namespace {
 
 int RunMasqueClient(int argc, char* argv[]) {
-  quiche::QuicheSystemEventLoop event_loop("masque_client");
+  quiche::QuicheSystemEventLoop system_event_loop("masque_client");
   const char* usage = "Usage: masque_client [options] <url>";
 
   // The first non-flag argument is the URI template of the MASQUE server.
@@ -55,7 +58,8 @@ int RunMasqueClient(int argc, char* argv[]) {
 
   const bool disable_certificate_verification =
       quiche::GetQuicheCommandLineFlag(FLAGS_disable_certificate_verification);
-  QuicEpollServer epoll_server;
+  std::unique_ptr<QuicEventLoop> event_loop =
+      GetDefaultEventLoop()->Create(QuicDefaultClock::Get());
 
   std::string uri_template = urls[0];
   if (!absl::StrContains(uri_template, '/')) {
@@ -89,8 +93,8 @@ int RunMasqueClient(int argc, char* argv[]) {
     std::cerr << "Invalid masque_mode \"" << mode_string << "\"" << std::endl;
     return 1;
   }
-  std::unique_ptr<MasqueEpollClient> masque_client = MasqueEpollClient::Create(
-      uri_template, masque_mode, &epoll_server, std::move(proof_verifier));
+  std::unique_ptr<MasqueClient> masque_client = MasqueClient::Create(
+      uri_template, masque_mode, event_loop.get(), std::move(proof_verifier));
   if (masque_client == nullptr) {
     return 1;
   }
@@ -100,7 +104,7 @@ int RunMasqueClient(int argc, char* argv[]) {
 
   for (size_t i = 1; i < urls.size(); ++i) {
     if (!tools::SendEncapsulatedMasqueRequest(
-            masque_client.get(), &epoll_server, urls[i],
+            masque_client.get(), event_loop.get(), urls[i],
             disable_certificate_verification)) {
       return 1;
     }

@@ -69,6 +69,27 @@ TEST(Hashmap, ReplaceRemove) {
     EXPECT_FALSE(map.Contains("world"));
 }
 
+TEST(Hashmap, Generation) {
+    Hashmap<int, std::string, 8> map;
+    EXPECT_EQ(map.Generation(), 0u);
+    map.Add(1, "one");
+    EXPECT_EQ(map.Generation(), 1u);
+    map.Add(1, "uno");
+    EXPECT_EQ(map.Generation(), 1u);
+    map.Replace(1, "une");
+    EXPECT_EQ(map.Generation(), 2u);
+    map.Add(2, "dos");
+    EXPECT_EQ(map.Generation(), 3u);
+    map.Remove(1);
+    EXPECT_EQ(map.Generation(), 4u);
+    map.Clear();
+    EXPECT_EQ(map.Generation(), 5u);
+    map.Find(2);
+    EXPECT_EQ(map.Generation(), 5u);
+    map.Get(2);
+    EXPECT_EQ(map.Generation(), 5u);
+}
+
 TEST(Hashmap, Iterator) {
     using Map = Hashmap<int, std::string, 8>;
     using KV = typename Map::KeyValue;
@@ -98,9 +119,16 @@ TEST(Hashmap, AddMany) {
 
 TEST(Hashmap, GetOrCreate) {
     Hashmap<int, std::string, 8> map;
-    EXPECT_EQ(map.GetOrCreate(0, [&] { return "zero"; }), "zero");
+    std::optional<std::string> value_of_key_0_at_create;
+    EXPECT_EQ(map.GetOrCreate(0,
+                              [&] {
+                                  value_of_key_0_at_create = map.Get(0);
+                                  return "zero";
+                              }),
+              "zero");
     EXPECT_EQ(map.Count(), 1u);
     EXPECT_EQ(map.Get(0), "zero");
+    EXPECT_EQ(value_of_key_0_at_create, "");
 
     bool create_called = false;
     EXPECT_EQ(map.GetOrCreate(0,
@@ -116,6 +144,67 @@ TEST(Hashmap, GetOrCreate) {
     EXPECT_EQ(map.GetOrCreate(1, [&] { return "one"; }), "one");
     EXPECT_EQ(map.Count(), 2u);
     EXPECT_EQ(map.Get(1), "one");
+}
+
+TEST(Hashmap, GetOrCreate_CreateModifiesMap) {
+    Hashmap<int, std::string, 8> map;
+    EXPECT_EQ(map.GetOrCreate(0,
+                              [&] {
+                                  map.Add(3, "three");
+                                  map.Add(1, "one");
+                                  map.Add(2, "two");
+                                  return "zero";
+                              }),
+              "zero");
+    EXPECT_EQ(map.Count(), 4u);
+    EXPECT_EQ(map.Get(0), "zero");
+    EXPECT_EQ(map.Get(1), "one");
+    EXPECT_EQ(map.Get(2), "two");
+    EXPECT_EQ(map.Get(3), "three");
+
+    bool create_called = false;
+    EXPECT_EQ(map.GetOrCreate(0,
+                              [&] {
+                                  create_called = true;
+                                  return "oh noes";
+                              }),
+              "zero");
+    EXPECT_FALSE(create_called);
+    EXPECT_EQ(map.Count(), 4u);
+    EXPECT_EQ(map.Get(0), "zero");
+    EXPECT_EQ(map.Get(1), "one");
+    EXPECT_EQ(map.Get(2), "two");
+    EXPECT_EQ(map.Get(3), "three");
+
+    EXPECT_EQ(map.GetOrCreate(4,
+                              [&] {
+                                  map.Add(6, "six");
+                                  map.Add(5, "five");
+                                  map.Add(7, "seven");
+                                  return "four";
+                              }),
+              "four");
+    EXPECT_EQ(map.Count(), 8u);
+    EXPECT_EQ(map.Get(0), "zero");
+    EXPECT_EQ(map.Get(1), "one");
+    EXPECT_EQ(map.Get(2), "two");
+    EXPECT_EQ(map.Get(3), "three");
+    EXPECT_EQ(map.Get(4), "four");
+    EXPECT_EQ(map.Get(5), "five");
+    EXPECT_EQ(map.Get(6), "six");
+    EXPECT_EQ(map.Get(7), "seven");
+}
+
+TEST(Hashmap, GetOrCreate_CreateAddsSameKeyedValue) {
+    Hashmap<int, std::string, 8> map;
+    EXPECT_EQ(map.GetOrCreate(42,
+                              [&] {
+                                  map.Add(42, "should-be-replaced");
+                                  return "expected-value";
+                              }),
+              "expected-value");
+    EXPECT_EQ(map.Count(), 1u);
+    EXPECT_EQ(map.Get(42), "expected-value");
 }
 
 TEST(Hashmap, Soak) {

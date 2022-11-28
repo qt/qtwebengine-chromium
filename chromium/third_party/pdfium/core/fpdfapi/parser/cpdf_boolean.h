@@ -21,9 +21,7 @@ class CPDF_Boolean final : public CPDF_Object {
   ByteString GetString() const override;
   int GetInteger() const override;
   void SetString(const ByteString& str) override;
-  bool IsBoolean() const override;
-  CPDF_Boolean* AsBoolean() override;
-  const CPDF_Boolean* AsBoolean() const override;
+  CPDF_Boolean* AsMutableBoolean() override;
   bool WriteTo(IFX_ArchiveStream* archive,
                const CPDF_Encryptor* encryptor) const override;
 
@@ -36,7 +34,7 @@ class CPDF_Boolean final : public CPDF_Object {
 };
 
 inline CPDF_Boolean* ToBoolean(CPDF_Object* obj) {
-  return obj ? obj->AsBoolean() : nullptr;
+  return obj ? obj->AsMutableBoolean() : nullptr;
 }
 
 inline const CPDF_Boolean* ToBoolean(const CPDF_Object* obj) {

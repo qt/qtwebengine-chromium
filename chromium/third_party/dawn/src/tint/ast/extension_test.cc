@@ -42,25 +42,25 @@ inline std::ostream& operator<<(std::ostream& out, Case c) {
 }
 
 static constexpr Case kValidCases[] = {
-    {"f16", Extension::kF16},
-    {"chromium_experimental_dp4a", Extension::kChromiumExperimentalDp4A},
     {"chromium_disable_uniformity_analysis", Extension::kChromiumDisableUniformityAnalysis},
+    {"chromium_experimental_dp4a", Extension::kChromiumExperimentalDp4A},
     {"chromium_experimental_push_constant", Extension::kChromiumExperimentalPushConstant},
+    {"f16", Extension::kF16},
 };
 
 static constexpr Case kInvalidCases[] = {
-    {"cc6", Extension::kInvalid},
-    {"s", Extension::kInvalid},
-    {"HH6", Extension::kInvalid},
-    {"chro1ium_experimental_dp4a", Extension::kInvalid},
-    {"chrJmium_experiqqetal_dp4a", Extension::kInvalid},
-    {"chromium_experimenll77l_dp4a", Extension::kInvalid},
-    {"chromiumppdisableqquniformity_aalysHHs", Extension::kInvalid},
-    {"chromiu_disable_unifovmitc_analyi", Extension::kInvalid},
-    {"chromium_diable_uGbformity_analysis", Extension::kInvalid},
-    {"chvomium_experimental_push_constiint", Extension::kInvalid},
-    {"chromiu8WWexperimental_push_constant", Extension::kInvalid},
-    {"chromium_experiMental_push_costanxx", Extension::kInvalid},
+    {"chromium_disableuniformiccy_analysis", Extension::kUndefined},
+    {"chromil3_disable_unifority_analss", Extension::kUndefined},
+    {"chromium_disable_Vniformity_analysis", Extension::kUndefined},
+    {"chro1ium_experimental_dp4a", Extension::kUndefined},
+    {"chrJmium_experiqqetal_dp4a", Extension::kUndefined},
+    {"chromium_experimenll77l_dp4a", Extension::kUndefined},
+    {"cppromium_experiHHenal_qqush_constant", Extension::kUndefined},
+    {"chromium_xpericental_sh_vonstant", Extension::kUndefined},
+    {"chromium_experimental_Gsh_cbnstant", Extension::kUndefined},
+    {"f1vi", Extension::kUndefined},
+    {"f8WW", Extension::kUndefined},
+    {"fxx", Extension::kUndefined},
 };
 
 using ExtensionParseTest = testing::TestWithParam<Case>;

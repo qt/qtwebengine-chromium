@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,6 +52,7 @@ const char kGetLoadableProfileEntriesFunction[] = "GetLoadableProfileEntries";
 const char kGetWiFiPassphraseFunction[] = "GetWiFiPassphrase";
 const char kGetEapPassphraseFunction[] = "GetEapPassphrase";
 const char kRemoveServiceFunction[] = "Remove";
+const char kRequestPortalDetectionFunction[] = "RequestPortalDetection";
 const char kRequestTrafficCountersFunction[] = "RequestTrafficCounters";
 const char kResetTrafficCountersFunction[] = "ResetTrafficCounters";
 const char kSetPropertiesFunction[] = "SetProperties";
@@ -643,6 +644,12 @@ const char kSecurityWpa2Enterprise[] = "wpa2-ent";
 const char kSecurityWpa2Wpa3Enterprise[] = "wpa2+wpa3-ent";
 const char kSecurityWpa3Enterprise[] = "wpa3-ent";
 
+// WiFi Band options.
+const char kBandAll[] = "all-bands";
+const char kBand2GHz[] = "2.4GHz";
+const char kBand5GHz[] = "5GHz";
+const char kBand6GHz[] = "6GHz";
+
 // Compress option values as expected by OpenVPN.
 const char kOpenVPNCompressFramingOnly[] = "";
 const char kOpenVPNCompressLz4[] = "lz4";
@@ -740,6 +747,8 @@ const char kErrorResultPinRequired[] =
     "org.chromium.flimflam.Error.PinRequired";
 const char kErrorResultTechnologyNotAvailable[] =
     "org.chromium.flimflam.Error.TechnologyNotAvailable";
+const char kErrorResultWepNotSupported[] =
+    "org.chromium.flimflam.Error.WepNotSupported";
 const char kErrorResultWrongState[] = "org.chromium.flimflam.Error.WrongState";
 
 const char kUnknownString[] = "UNKNOWN";
@@ -776,7 +785,7 @@ const char kLastReceiveSignalDbmProperty[] = "LastReceiveSignalDbm";
 const char kPacketReceiveDropProperty[] = "PacketReceiveDrops";
 const char kPacketReceiveSuccessesProperty[] = "PacketReceiveSuccesses";
 const char kPacketTransmitFailuresProperty[] = "PacketTransmitFailures";
-const char kPacketTransmitSuccessesProperty[] = "PacketTrasmitSuccesses";
+const char kPacketTransmitSuccessesProperty[] = "PacketTransmitSuccesses";
 const char kReceiveBitrateProperty[] = "ReceiveBitrate";
 const char kTransmitBitrateProperty[] = "TransmitBitrate";
 const char kTransmitRetriesProperty[] = "TransmitRetries";
@@ -894,13 +903,13 @@ const char kTrafficCounterSourceSystem[] = "system";
 // Manager kTetheringConfigProperty dictionary key names.
 const char kTetheringConfAutoDisableProperty[] = "auto_disable";
 const char kTetheringConfBandProperty[] = "band";
+const char kTetheringConfMARProperty[] = "randomize_mac_address";
 const char kTetheringConfPassphraseProperty[] = "passphrase";
 const char kTetheringConfSecurityProperty[] = "security";
 const char kTetheringConfSSIDProperty[] = "ssid";
-const char kTetheringConfUpstreamTech[] = "upstream_technology";
+const char kTetheringConfUpstreamTechProperty[] = "upstream_technology";
 
 // Manager kTetheringCapabilitiesProperty dictionary key names.
-const char kTetheringCapBandProperty[] = "wifi_bands";
 const char kTetheringCapDownstreamProperty[] = "downstream_technologies";
 const char kTetheringCapSecurityProperty[] = "wifi_security_modes";
 const char kTetheringCapUpstreamProperty[] = "upstream_technologies";

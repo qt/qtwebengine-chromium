@@ -120,7 +120,7 @@ TEST(ParserDecodeTest, GetDecoderArray) {
   {
     // Treat no filter as an empty filter array.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     ASSERT_TRUE(decoder_array.has_value());
     EXPECT_TRUE(decoder_array.value().empty());
   }
@@ -128,14 +128,14 @@ TEST(ParserDecodeTest, GetDecoderArray) {
     // Wrong filter type.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
     dict->SetNewFor<CPDF_String>("Filter", "RL", false);
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     EXPECT_FALSE(decoder_array.has_value());
   }
   {
     // Filter name.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
     dict->SetNewFor<CPDF_Name>("Filter", "RL");
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     ASSERT_TRUE(decoder_array.has_value());
     ASSERT_EQ(1u, decoder_array.value().size());
     EXPECT_EQ("RL", decoder_array.value()[0].first);
@@ -144,16 +144,16 @@ TEST(ParserDecodeTest, GetDecoderArray) {
     // Empty filter array.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
     dict->SetNewFor<CPDF_Array>("Filter");
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     ASSERT_TRUE(decoder_array.has_value());
     EXPECT_TRUE(decoder_array.value().empty());
   }
   {
     // Valid 1 element filter array.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
-    auto* filter_array = dict->SetNewFor<CPDF_Array>("Filter");
+    auto filter_array = dict->SetNewFor<CPDF_Array>("Filter");
     filter_array->AppendNew<CPDF_Name>("FooBar");
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     ASSERT_TRUE(decoder_array.has_value());
     ASSERT_EQ(1u, decoder_array.value().size());
     EXPECT_EQ("FooBar", decoder_array.value()[0].first);
@@ -161,10 +161,10 @@ TEST(ParserDecodeTest, GetDecoderArray) {
   {
     // Valid 2 element filter array.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
-    auto* filter_array = dict->SetNewFor<CPDF_Array>("Filter");
+    auto filter_array = dict->SetNewFor<CPDF_Array>("Filter");
     filter_array->AppendNew<CPDF_Name>("AHx");
     filter_array->AppendNew<CPDF_Name>("LZWDecode");
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     ASSERT_TRUE(decoder_array.has_value());
     ASSERT_EQ(2u, decoder_array.value().size());
     EXPECT_EQ("AHx", decoder_array.value()[0].first);
@@ -173,10 +173,10 @@ TEST(ParserDecodeTest, GetDecoderArray) {
   {
     // Invalid 2 element filter array.
     auto dict = pdfium::MakeRetain<CPDF_Dictionary>();
-    auto* invalid_filter_array = dict->SetNewFor<CPDF_Array>("Filter");
+    auto invalid_filter_array = dict->SetNewFor<CPDF_Array>("Filter");
     invalid_filter_array->AppendNew<CPDF_Name>("DCTDecode");
     invalid_filter_array->AppendNew<CPDF_Name>("CCITTFaxDecode");
-    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict.Get());
+    absl::optional<DecoderArray> decoder_array = GetDecoderArray(dict);
     EXPECT_FALSE(decoder_array.has_value());
   }
 }
@@ -276,14 +276,11 @@ TEST(ParserDecodeTest, FlateEncode) {
 
   for (size_t i = 0; i < std::size(flate_encode_cases); ++i) {
     const pdfium::StrFuncTestData& data = flate_encode_cases[i];
-    std::unique_ptr<uint8_t, FxFreeDeleter> buf;
-    uint32_t buf_size;
-    EXPECT_TRUE(FlateEncode({data.input, data.input_size}, &buf, &buf_size));
-    ASSERT_TRUE(buf);
-    EXPECT_EQ(data.expected_size, buf_size) << " for case " << i;
-    if (data.expected_size != buf_size)
+    DataVector<uint8_t> result = FlateEncode({data.input, data.input_size});
+    EXPECT_EQ(data.expected_size, result.size()) << " for case " << i;
+    if (data.expected_size != result.size())
       continue;
-    EXPECT_EQ(0, memcmp(data.expected, buf.get(), data.expected_size))
+    EXPECT_EQ(0, memcmp(data.expected, result.data(), data.expected_size))
         << " for case " << i;
   }
 }

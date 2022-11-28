@@ -945,6 +945,11 @@ bool PreCallValidateEnumeratePhysicalDeviceGroups(
     VkInstance                                  instance,
     uint32_t*                                   pPhysicalDeviceGroupCount,
     VkPhysicalDeviceGroupProperties*            pPhysicalDeviceGroupProperties) const override;
+void PostCallRecordEnumeratePhysicalDeviceGroups(
+    VkInstance                                  instance,
+    uint32_t*                                   pPhysicalDeviceGroupCount,
+    VkPhysicalDeviceGroupProperties*            pPhysicalDeviceGroupProperties,
+    VkResult                                    result) override;
 bool PreCallValidateGetImageMemoryRequirements2(
     VkDevice                                    device,
     const VkImageMemoryRequirementsInfo2*       pInfo,
@@ -1523,7 +1528,7 @@ bool PreCallValidateGetPhysicalDeviceWin32PresentationSupportKHR(
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 bool PreCallValidateGetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
-    const VkVideoProfileKHR*                    pVideoProfile,
+    const VkVideoProfileInfoKHR*                pVideoProfile,
     VkVideoCapabilitiesKHR*                     pCapabilities) const override;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
@@ -1564,16 +1569,16 @@ void PreCallRecordDestroyVideoSessionKHR(
 bool PreCallValidateGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements) const override;
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements) const override;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 bool PreCallValidateBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories) const override;
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos) const override;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -1629,7 +1634,7 @@ bool PreCallValidateCmdControlVideoCodingKHR(
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 bool PreCallValidateCmdDecodeVideoKHR(
     VkCommandBuffer                             commandBuffer,
-    const VkVideoDecodeInfoKHR*                 pFrameInfo) const override;
+    const VkVideoDecodeInfoKHR*                 pDecodeInfo) const override;
 #endif // VK_ENABLE_BETA_EXTENSIONS
 bool PreCallValidateCmdBeginRenderingKHR(
     VkCommandBuffer                             commandBuffer,
@@ -1687,6 +1692,11 @@ bool PreCallValidateEnumeratePhysicalDeviceGroupsKHR(
     VkInstance                                  instance,
     uint32_t*                                   pPhysicalDeviceGroupCount,
     VkPhysicalDeviceGroupProperties*            pPhysicalDeviceGroupProperties) const override;
+void PostCallRecordEnumeratePhysicalDeviceGroupsKHR(
+    VkInstance                                  instance,
+    uint32_t*                                   pPhysicalDeviceGroupCount,
+    VkPhysicalDeviceGroupProperties*            pPhysicalDeviceGroupProperties,
+    VkResult                                    result) override;
 bool PreCallValidateGetPhysicalDeviceExternalBufferPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
     const VkPhysicalDeviceExternalBufferInfo*   pExternalBufferInfo,
@@ -2931,6 +2941,10 @@ bool PreCallValidateGetImageSubresourceLayout2EXT(
     VkImage                                     image,
     const VkImageSubresource2EXT*               pSubresource,
     VkSubresourceLayout2EXT*                    pLayout) const override;
+bool PreCallValidateGetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo) const override;
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 bool PreCallValidateAcquireWinrtDisplayNV(
@@ -3123,6 +3137,79 @@ bool PreCallValidateCmdDrawMultiIndexedEXT(
     uint32_t                                    firstInstance,
     uint32_t                                    stride,
     const int32_t*                              pVertexOffset) const override;
+bool PreCallValidateCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap) const override;
+void PostCallRecordCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap,
+    VkResult                                    result) override;
+bool PreCallValidateDestroyMicromapEXT(
+    VkDevice                                    device,
+    VkMicromapEXT                               micromap,
+    const VkAllocationCallbacks*                pAllocator) const override;
+void PreCallRecordDestroyMicromapEXT(
+    VkDevice                                    device,
+    VkMicromapEXT                               micromap,
+    const VkAllocationCallbacks*                pAllocator) override;
+bool PreCallValidateCmdBuildMicromapsEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos) const override;
+bool PreCallValidateBuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos) const override;
+bool PreCallValidateCopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo) const override;
+bool PreCallValidateCopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo) const override;
+bool PreCallValidateCopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo) const override;
+bool PreCallValidateWriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride) const override;
+bool PreCallValidateCmdCopyMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapInfoEXT*                pInfo) const override;
+bool PreCallValidateCmdCopyMicromapToMemoryEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo) const override;
+bool PreCallValidateCmdCopyMemoryToMicromapEXT(
+    VkCommandBuffer                             commandBuffer,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo) const override;
+bool PreCallValidateCmdWriteMicromapsPropertiesEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    VkQueryPool                                 queryPool,
+    uint32_t                                    firstQuery) const override;
+bool PreCallValidateGetDeviceMicromapCompatibilityEXT(
+    VkDevice                                    device,
+    const VkMicromapVersionInfoEXT*             pVersionInfo,
+    VkAccelerationStructureCompatibilityKHR*    pCompatibility) const override;
+bool PreCallValidateGetMicromapBuildSizesEXT(
+    VkDevice                                    device,
+    VkAccelerationStructureBuildTypeKHR         buildType,
+    const VkMicromapBuildInfoEXT*               pBuildInfo,
+    VkMicromapBuildSizesInfoEXT*                pSizeInfo) const override;
 bool PreCallValidateSetDeviceMemoryPriorityEXT(
     VkDevice                                    device,
     VkDeviceMemory                              memory,
@@ -3135,6 +3222,111 @@ bool PreCallValidateGetDescriptorSetHostMappingVALVE(
     VkDevice                                    device,
     VkDescriptorSet                             descriptorSet,
     void**                                      ppData) const override;
+bool PreCallValidateCmdSetTessellationDomainOriginEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkTessellationDomainOrigin                  domainOrigin) const override;
+bool PreCallValidateCmdSetDepthClampEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClampEnable) const override;
+bool PreCallValidateCmdSetPolygonModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkPolygonMode                               polygonMode) const override;
+bool PreCallValidateCmdSetRasterizationSamplesEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       rasterizationSamples) const override;
+bool PreCallValidateCmdSetSampleMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkSampleCountFlagBits                       samples,
+    const VkSampleMask*                         pSampleMask) const override;
+bool PreCallValidateCmdSetAlphaToCoverageEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToCoverageEnable) const override;
+bool PreCallValidateCmdSetAlphaToOneEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    alphaToOneEnable) const override;
+bool PreCallValidateCmdSetLogicOpEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    logicOpEnable) const override;
+bool PreCallValidateCmdSetColorBlendEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkBool32*                             pColorBlendEnables) const override;
+bool PreCallValidateCmdSetColorBlendEquationEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendEquationEXT*              pColorBlendEquations) const override;
+bool PreCallValidateCmdSetColorWriteMaskEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorComponentFlags*                pColorWriteMasks) const override;
+bool PreCallValidateCmdSetRasterizationStreamEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    rasterizationStream) const override;
+bool PreCallValidateCmdSetConservativeRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkConservativeRasterizationModeEXT          conservativeRasterizationMode) const override;
+bool PreCallValidateCmdSetExtraPrimitiveOverestimationSizeEXT(
+    VkCommandBuffer                             commandBuffer,
+    float                                       extraPrimitiveOverestimationSize) const override;
+bool PreCallValidateCmdSetDepthClipEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    depthClipEnable) const override;
+bool PreCallValidateCmdSetSampleLocationsEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    sampleLocationsEnable) const override;
+bool PreCallValidateCmdSetColorBlendAdvancedEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstAttachment,
+    uint32_t                                    attachmentCount,
+    const VkColorBlendAdvancedEXT*              pColorBlendAdvanced) const override;
+bool PreCallValidateCmdSetProvokingVertexModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkProvokingVertexModeEXT                    provokingVertexMode) const override;
+bool PreCallValidateCmdSetLineRasterizationModeEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkLineRasterizationModeEXT                  lineRasterizationMode) const override;
+bool PreCallValidateCmdSetLineStippleEnableEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    stippledLineEnable) const override;
+bool PreCallValidateCmdSetDepthClipNegativeOneToOneEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    negativeOneToOne) const override;
+bool PreCallValidateCmdSetViewportWScalingEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    viewportWScalingEnable) const override;
+bool PreCallValidateCmdSetViewportSwizzleNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    firstViewport,
+    uint32_t                                    viewportCount,
+    const VkViewportSwizzleNV*                  pViewportSwizzles) const override;
+bool PreCallValidateCmdSetCoverageToColorEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageToColorEnable) const override;
+bool PreCallValidateCmdSetCoverageToColorLocationNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageToColorLocation) const override;
+bool PreCallValidateCmdSetCoverageModulationModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageModulationModeNV                  coverageModulationMode) const override;
+bool PreCallValidateCmdSetCoverageModulationTableEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    coverageModulationTableEnable) const override;
+bool PreCallValidateCmdSetCoverageModulationTableNV(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    coverageModulationTableCount,
+    const float*                                pCoverageModulationTable) const override;
+bool PreCallValidateCmdSetShadingRateImageEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    shadingRateImageEnable) const override;
+bool PreCallValidateCmdSetRepresentativeFragmentTestEnableNV(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    representativeFragmentTestEnable) const override;
+bool PreCallValidateCmdSetCoverageReductionModeNV(
+    VkCommandBuffer                             commandBuffer,
+    VkCoverageReductionModeNV                   coverageReductionMode) const override;
 bool PreCallValidateGetShaderModuleIdentifierEXT(
     VkDevice                                    device,
     VkShaderModule                              shaderModule,
@@ -3143,6 +3335,40 @@ bool PreCallValidateGetShaderModuleCreateInfoIdentifierEXT(
     VkDevice                                    device,
     const VkShaderModuleCreateInfo*             pCreateInfo,
     VkShaderModuleIdentifierEXT*                pIdentifier) const override;
+bool PreCallValidateGetPhysicalDeviceOpticalFlowImageFormatsNV(
+    VkPhysicalDevice                            physicalDevice,
+    const VkOpticalFlowImageFormatInfoNV*       pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkOpticalFlowImageFormatPropertiesNV*       pImageFormatProperties) const override;
+bool PreCallValidateCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession) const override;
+void PostCallRecordCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession,
+    VkResult                                    result) override;
+bool PreCallValidateDestroyOpticalFlowSessionNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    const VkAllocationCallbacks*                pAllocator) const override;
+void PreCallRecordDestroyOpticalFlowSessionNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    const VkAllocationCallbacks*                pAllocator) override;
+bool PreCallValidateBindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout) const override;
+bool PreCallValidateCmdOpticalFlowExecuteNV(
+    VkCommandBuffer                             commandBuffer,
+    VkOpticalFlowSessionNV                      session,
+    const VkOpticalFlowExecuteInfoNV*           pExecuteInfo) const override;
 bool PreCallValidateGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,
     VkFramebuffer                               framebuffer,
@@ -3286,6 +3512,25 @@ bool PreCallValidateGetRayTracingShaderGroupStackSizeKHR(
 bool PreCallValidateCmdSetRayTracingPipelineStackSizeKHR(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    pipelineStackSize) const override;
+bool PreCallValidateCmdDrawMeshTasksEXT(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    groupCountX,
+    uint32_t                                    groupCountY,
+    uint32_t                                    groupCountZ) const override;
+bool PreCallValidateCmdDrawMeshTasksIndirectEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    uint32_t                                    drawCount,
+    uint32_t                                    stride) const override;
+bool PreCallValidateCmdDrawMeshTasksIndirectCountEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBuffer                                    buffer,
+    VkDeviceSize                                offset,
+    VkBuffer                                    countBuffer,
+    VkDeviceSize                                countBufferOffset,
+    uint32_t                                    maxDrawCount,
+    uint32_t                                    stride) const override;
 
 
 void PostCallRecordDestroyInstance(VkInstance instance, const VkAllocationCallbacks *pAllocator) override;

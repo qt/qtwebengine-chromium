@@ -69,8 +69,8 @@ steps = {
                        "do_fn": robo_setup.InstallPrereqs },
   "ensure_toolchains": { "desc": "Download mac / win toolchains",
                          "do_fn": robo_setup.EnsureToolchains },
-  "ensure_asan_dir": { "desc": "Create ninja ASAN output directory if needed",
-                       "do_fn": robo_setup.EnsureASANDirWorks },
+  "ensure_new_asan_dir": { "desc": "Create ninja ASAN output directory",
+                           "do_fn": robo_setup.EnsureNewASANDirWorks },
   "ensure_nasm": { "desc": "Compile chromium's nasm if needed",
                    "do_fn": robo_setup.EnsureChromiumNasm },
   "ensure_remote": { "desc": "Set git remotes if needed",
@@ -79,7 +79,7 @@ steps = {
   # Convenience roll-up for --setup
   "setup": { "do_fn": lambda cfg : RunSteps(cfg, ["install_prereqs",
                                 "ensure_toolchains",
-                                "ensure_asan_dir",
+                                "ensure_new_asan_dir",
                                 "ensure_nasm",
                                 "ensure_remote"]) },
 

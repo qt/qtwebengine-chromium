@@ -8,9 +8,10 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <utility>
 
-#include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/fixed_zeroed_data_vector.h"
 #include "core/fxcrt/stl_util.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
@@ -549,18 +550,20 @@ CJS_Result CJS_App::response(CJS_Runtime* pRuntime,
   if (IsExpandedParamKnown(newParams[4]))
     swLabel = pRuntime->ToWideString(newParams[4]);
 
-  const int MAX_INPUT_BYTES = 2048;
-  DataVector<uint8_t> pBuff(MAX_INPUT_BYTES + 2);
-  int nLengthBytes = pRuntime->GetFormFillEnv()->JS_appResponse(
+  constexpr int kMaxWideChars = 1024;
+  constexpr int kMaxBytes = kMaxWideChars * sizeof(uint16_t);
+  FixedZeroedDataVector<uint16_t> buffer(kMaxWideChars);
+  pdfium::span<uint16_t> buffer_span = buffer.writable_span();
+  int byte_length = pRuntime->GetFormFillEnv()->JS_appResponse(
       swQuestion, swTitle, swDefault, swLabel, bPassword,
-      pdfium::make_span(pBuff).first(MAX_INPUT_BYTES));
-
-  if (nLengthBytes < 0 || nLengthBytes > MAX_INPUT_BYTES)
+      pdfium::as_writable_bytes(buffer_span));
+  if (byte_length < 0 || byte_length > kMaxBytes)
     return CJS_Result::Failure(JSMessage::kParamTooLongError);
 
+  buffer_span = buffer_span.first(
+      std::min<size_t>(kMaxWideChars, byte_length / sizeof(uint16_t)));
   return CJS_Result::Success(pRuntime->NewString(
-      WideString::FromUTF16LE(reinterpret_cast<uint16_t*>(pBuff.data()),
-                              nLengthBytes / sizeof(uint16_t))
+      WideString::FromUTF16LE(buffer_span.data(), buffer_span.size())
           .AsStringView()));
 }
 

@@ -27,7 +27,7 @@
 
 namespace sw {
 
-ComputeProgram::ComputeProgram(vk::Device *device, std::shared_ptr<SpirvShader> shader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets)
+ComputeProgram::ComputeProgram(vk::Device *device, std::shared_ptr<SpirvShader> shader, const vk::PipelineLayout *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets)
     : device(device)
     , shader(shader)
     , pipelineLayout(pipelineLayout)
@@ -189,10 +189,10 @@ void ComputeProgram::emit(SpirvRoutine *routine)
 }
 
 void ComputeProgram::run(
-    vk::DescriptorSet::Array const &descriptorSetObjects,
-    vk::DescriptorSet::Bindings const &descriptorSets,
-    vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
-    vk::Pipeline::PushConstantStorage const &pushConstants,
+    const vk::DescriptorSet::Array &descriptorSetObjects,
+    const vk::DescriptorSet::Bindings &descriptorSets,
+    const vk::DescriptorSet::DynamicOffsets &descriptorDynamicOffsets,
+    const vk::Pipeline::PushConstantStorage &pushConstants,
     uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
     uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ)
 {

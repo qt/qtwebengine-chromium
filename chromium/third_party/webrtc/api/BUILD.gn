@@ -94,6 +94,7 @@ rtc_library("rtp_packet_info") {
     ":rtp_headers",
     ":scoped_refptr",
     "../rtc_base/system:rtc_export",
+    "units:time_delta",
     "units:timestamp",
   ]
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
@@ -157,6 +158,7 @@ rtc_library("candidate") {
 rtc_source_set("turn_customizer") {
   visibility = [ "*" ]
   sources = [ "turn_customizer.h" ]
+  deps = [ "transport:stun_types" ]
 }
 
 rtc_source_set("ice_transport_interface") {
@@ -208,7 +210,6 @@ rtc_library("libjingle_peerconnection_api") {
     "peer_connection_interface.h",
     "rtp_receiver_interface.cc",
     "rtp_receiver_interface.h",
-    "rtp_sender_interface.cc",
     "rtp_sender_interface.h",
     "rtp_transceiver_interface.cc",
     "rtp_transceiver_interface.h",
@@ -292,6 +293,7 @@ rtc_library("libjingle_peerconnection_api") {
   ]
   absl_deps = [
     "//third_party/abseil-cpp/absl/algorithm:container",
+    "//third_party/abseil-cpp/absl/base:core_headers",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/types:optional",
@@ -398,6 +400,7 @@ rtc_source_set("video_quality_test_fixture_api") {
     "../call:rtp_interfaces",
     "../test:test_common",
     "../test:video_test_common",
+    "../video/config:encoder_config",
     "transport:bitrate_settings",
     "transport:network_control",
     "video_codecs:video_codecs_api",
@@ -454,6 +457,7 @@ rtc_library("rtp_parameters") {
     "../rtc_base:checks",
     "../rtc_base:stringutils",
     "../rtc_base/system:rtc_export",
+    "video:resolution",
     "video_codecs:scalability_mode",
   ]
   absl_deps = [
@@ -532,9 +536,11 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
     "../rtc_base:stringutils",
     "../rtc_base:threading",
     "../test:fileutils",
+    "../test/pc/e2e:video_dumping",
     "audio:audio_mixer_api",
     "rtc_event_log",
     "task_queue",
+    "test/video:video_frame_writer",
     "transport:network_control",
     "units:time_delta",
     "video:video_frame",
@@ -622,6 +628,7 @@ if (rtc_include_tests) {
         ":time_controller",
         ":video_quality_analyzer_api",
         "../test/pc/e2e:peerconnection_quality_test",
+        "test/metrics:global_metrics_logger_and_exporter",
       ]
     }
   }
@@ -699,6 +706,7 @@ rtc_source_set("rtc_stats_api") {
     "../rtc_base:checks",
     "../rtc_base:refcount",
     "../rtc_base/system:rtc_export",
+    "units:timestamp",
   ]
 }
 

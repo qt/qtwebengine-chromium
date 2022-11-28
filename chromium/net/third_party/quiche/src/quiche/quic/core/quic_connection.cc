@@ -177,9 +177,18 @@ class DiscardZeroRttDecryptionKeysAlarmDelegate
     QUICHE_DCHECK(connection_->connected());
     QUIC_DLOG(INFO) << "0-RTT discard alarm fired";
     connection_->RemoveDecrypter(ENCRYPTION_ZERO_RTT);
-    if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
-      connection_->RetireOriginalDestinationConnectionId();
-    }
+    connection_->RetireOriginalDestinationConnectionId();
+  }
+};
+
+class MultiPortProbingAlarmDelegate : public QuicConnectionAlarmDelegate {
+ public:
+  using QuicConnectionAlarmDelegate::QuicConnectionAlarmDelegate;
+
+  void OnAlarm() override {
+    QUICHE_DCHECK(connection_->connected());
+    QUIC_DLOG(INFO) << "Alternative path probing alarm fired";
+    connection_->ProbeMultiPortPath();
   }
 };
 
@@ -203,6 +212,20 @@ bool PacketCanReplaceServerConnectionId(const QuicPacketHeader& header,
          header.version.AllowsVariableLengthConnectionIds() &&
          (header.long_packet_type == INITIAL ||
           header.long_packet_type == RETRY);
+}
+
+// Due to a lost Initial packet, a Handshake packet might use a new connection
+// ID we haven't seen before. We shouldn't update the connection ID based on
+// this, but should buffer the packet in case it works out.
+bool NewServerConnectionIdMightBeValid(const QuicPacketHeader& header,
+                                       Perspective perspective,
+                                       bool connection_id_already_replaced) {
+  return perspective == Perspective::IS_CLIENT &&
+         header.form == IETF_QUIC_LONG_HEADER_PACKET &&
+         header.version.IsKnown() &&
+         header.version.AllowsVariableLengthConnectionIds() &&
+         header.long_packet_type == HANDSHAKE &&
+         !connection_id_already_replaced;
 }
 
 CongestionControlType GetDefaultCongestionControlType() {
@@ -242,7 +265,8 @@ QuicConnection::QuicConnection(
     QuicSocketAddress initial_peer_address,
     QuicConnectionHelperInterface* helper, QuicAlarmFactory* alarm_factory,
     QuicPacketWriter* writer, bool owns_writer, Perspective perspective,
-    const ParsedQuicVersionVector& supported_versions)
+    const ParsedQuicVersionVector& supported_versions,
+    ConnectionIdGeneratorInterface& generator)
     : framer_(supported_versions, helper->GetClock()->ApproximateNow(),
               perspective, server_connection_id.length()),
       current_packet_content_(NO_FRAMES_RECEIVED),
@@ -268,7 +292,7 @@ QuicConnection::QuicConnection(
       current_packet_data_(nullptr),
       should_last_packet_instigate_acks_(false),
       max_undecryptable_packets_(0),
-      max_tracked_packets_(GetQuicFlag(FLAGS_quic_max_tracked_packet_count)),
+      max_tracked_packets_(GetQuicFlag(quic_max_tracked_packet_count)),
       idle_timeout_connection_close_behavior_(
           ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET),
       num_rtos_for_blackhole_detection_(0),
@@ -298,6 +322,8 @@ QuicConnection::QuicConnection(
       discard_zero_rtt_decryption_keys_alarm_(alarm_factory_->CreateAlarm(
           arena_.New<DiscardZeroRttDecryptionKeysAlarmDelegate>(this),
           &arena_)),
+      multi_port_probing_alarm_(alarm_factory_->CreateAlarm(
+          arena_.New<MultiPortProbingAlarmDelegate>(this), &arena_)),
       visitor_(nullptr),
       debug_visitor_(nullptr),
       packet_creator_(server_connection_id, &framer_, random_generator_, this),
@@ -328,7 +354,9 @@ QuicConnection::QuicConnection(
                              alarm_factory_, &context_),
       path_validator_(alarm_factory_, &arena_, this, random_generator_, clock_,
                       &context_),
-      ping_manager_(perspective, this, &arena_, alarm_factory_, &context_) {
+      ping_manager_(perspective, this, &arena_, alarm_factory_, &context_),
+      multi_port_probing_interval_(kDefaultMultiPortProbingInterval),
+      connection_id_generator_(generator) {
   QUICHE_DCHECK(perspective_ == Perspective::IS_CLIENT ||
                 default_path_.self_address.IsInitialized());
 
@@ -564,24 +592,6 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
     if (config.HasClientSentConnectionOption(kNBHD, perspective_)) {
       blackhole_detection_disabled_ = true;
     }
-    if (!sent_packet_manager_.remove_blackhole_detection_experiments()) {
-      if (config.HasClientSentConnectionOption(k2RTO, perspective_)) {
-        QUIC_CODE_COUNT(quic_2rto_blackhole_detection);
-        num_rtos_for_blackhole_detection_ = 2;
-      }
-      if (config.HasClientSentConnectionOption(k3RTO, perspective_)) {
-        QUIC_CODE_COUNT(quic_3rto_blackhole_detection);
-        num_rtos_for_blackhole_detection_ = 3;
-      }
-      if (config.HasClientSentConnectionOption(k4RTO, perspective_)) {
-        QUIC_CODE_COUNT(quic_4rto_blackhole_detection);
-        num_rtos_for_blackhole_detection_ = 4;
-      }
-      if (config.HasClientSentConnectionOption(k6RTO, perspective_)) {
-        QUIC_CODE_COUNT(quic_6rto_blackhole_detection);
-        num_rtos_for_blackhole_detection_ = 6;
-      }
-    }
   }
 
   if (config.HasClientRequestedIndependentOption(kFIDT, perspective_)) {
@@ -678,6 +688,13 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
 
   if (supports_release_time_) {
     UpdateReleaseTimeIntoFuture();
+  }
+
+  multi_port_enabled_ =
+      connection_migration_use_new_cid_ &&
+      config.HasClientSentConnectionOption(kMPQC, perspective_);
+  if (multi_port_enabled_) {
+    multi_port_stats_ = std::make_unique<MultiPortStats>();
   }
 }
 
@@ -979,7 +996,6 @@ QuicConnectionId QuicConnection::GetOriginalDestinationConnectionId() const {
 void QuicConnection::RetireOriginalDestinationConnectionId() {
   if (original_destination_connection_id_.has_value()) {
     visitor_->OnServerConnectionIdRetired(*original_destination_connection_id_);
-    QUIC_RESTART_FLAG_COUNT_N(quic_map_original_connection_ids2, 3, 4);
     original_destination_connection_id_.reset();
   }
 }
@@ -1010,6 +1026,11 @@ bool QuicConnection::ValidateServerConnectionId(
       perspective_ == Perspective::IS_SERVER &&
       self_issued_cid_manager_ != nullptr &&
       self_issued_cid_manager_->IsConnectionIdInUse(server_connection_id)) {
+    return true;
+  }
+
+  if (NewServerConnectionIdMightBeValid(
+          header, perspective_, server_connection_id_replaced_by_initial_)) {
     return true;
   }
 
@@ -1047,14 +1068,7 @@ bool QuicConnection::OnUnauthenticatedPublicHeader(
     if (debug_visitor_ != nullptr) {
       debug_visitor_->OnIncorrectConnectionId(server_connection_id);
     }
-    // The only way for a connection to get a packet with an invalid connection
-    // ID is if quic_map_original_connection_ids2 is false and a packet
-    // arrives with a connection ID that is deterministically replaced with one
-    // that the connection owns, but is different from
-    // original_destination_connection_id_.
-    if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
-      QUICHE_DCHECK_NE(Perspective::IS_SERVER, perspective_);
-    }
+    QUICHE_DCHECK_NE(Perspective::IS_SERVER, perspective_);
     return false;
   }
 
@@ -1800,6 +1814,7 @@ bool QuicConnection::OnPathResponseFrame(const QuicPathResponseFrame& frame) {
       << "Processing PATH_RESPONSE frame when connection is closed. Received "
          "packet info: "
       << last_received_packet_info_;
+  ++stats_.num_path_response_received;
   if (!UpdatePacketContent(PATH_RESPONSE_FRAME)) {
     return false;
   }
@@ -2021,7 +2036,14 @@ bool QuicConnection::OnNewConnectionIdFrame(
   if (debug_visitor_ != nullptr) {
     debug_visitor_->OnNewConnectionIdFrame(frame);
   }
-  return OnNewConnectionIdFrameInner(frame);
+
+  if (!OnNewConnectionIdFrameInner(frame)) {
+    return false;
+  }
+  if (perspective_ == Perspective::IS_CLIENT && multi_port_enabled_) {
+    MaybeCreateMultiPortPath();
+  }
+  return true;
 }
 
 bool QuicConnection::OnRetireConnectionIdFrame(
@@ -2475,16 +2497,18 @@ QuicConsumedData QuicConnection::SendStreamData(QuicStreamId id,
       QuicUtils::IsCryptoStreamId(transport_version(), id)) {
     MaybeActivateLegacyVersionEncapsulation();
   }
-  if (perspective_ == Perspective::IS_SERVER &&
-      version().CanSendCoalescedPackets() && !IsHandshakeConfirmed()) {
+  if (version().CanSendCoalescedPackets() && !IsHandshakeConfirmed()) {
     if (in_on_retransmission_time_out_ &&
         coalesced_packet_.NumberOfPackets() == 0u) {
       // PTO fires while handshake is not confirmed. Do not preempt handshake
       // data with stream data.
       QUIC_CODE_COUNT(quic_try_to_send_half_rtt_data_when_pto_fires);
+      QUIC_DVLOG(1) << ENDPOINT
+                    << "Not PTOing stream data before handshake gets confirmed";
       return QuicConsumedData(0, false);
     }
-    if (coalesced_packet_.ContainsPacketOfEncryptionLevel(ENCRYPTION_INITIAL) &&
+    if (perspective_ == Perspective::IS_SERVER &&
+        coalesced_packet_.ContainsPacketOfEncryptionLevel(ENCRYPTION_INITIAL) &&
         coalesced_packet_.NumberOfPackets() == 1u) {
       // Handshake is not confirmed yet, if there is only an initial packet in
       // the coalescer, try to bundle an ENCRYPTION_HANDSHAKE packet before
@@ -3058,7 +3082,7 @@ bool QuicConnection::ProcessValidatedPacket(const QuicPacketHeader& header) {
   if (perspective_ == Perspective::IS_SERVER &&
       encryption_level_ == ENCRYPTION_INITIAL &&
       last_received_packet_info_.length > packet_creator_.max_packet_length()) {
-    if (GetQuicFlag(FLAGS_quic_use_lower_server_response_mtu_for_test)) {
+    if (GetQuicFlag(quic_use_lower_server_response_mtu_for_test)) {
       SetMaxPacketLength(
           std::min(last_received_packet_info_.length, QuicByteCount(1250)));
     } else {
@@ -3384,8 +3408,7 @@ bool QuicConnection::WritePacket(SerializedPacket* packet) {
   QuicSocketAddress send_to_address = packet->peer_address;
   // Self address is always the default self address on this code path.
   const bool send_on_current_path = send_to_address == peer_address();
-  if (!send_on_current_path && only_send_probing_frames_on_alternative_path_) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_not_bundle_ack_on_alternative_path, 2, 2);
+  if (!send_on_current_path) {
     QUIC_BUG_IF(quic_send_non_probing_frames_on_alternative_path,
                 ContainsNonProbingFrame(*packet))
         << "Packet " << packet->packet_number
@@ -3745,7 +3768,7 @@ bool QuicConnection::MaybeHandleAeadConfidentialityLimits(
         confidentiality_limit - kKeyUpdateConfidentialityLimitOffset;
   }
   const QuicPacketCount key_update_limit_override =
-      GetQuicFlag(FLAGS_quic_key_update_confidentiality_limit);
+      GetQuicFlag(quic_key_update_confidentiality_limit);
   if (key_update_limit_override) {
     key_update_limit = key_update_limit_override;
   }
@@ -4006,7 +4029,7 @@ QuicConnection::MakeSelfIssuedConnectionIdManager() {
       perspective_ == Perspective::IS_CLIENT
           ? default_path_.client_connection_id
           : default_path_.server_connection_id,
-      clock_, alarm_factory_, this, context());
+      clock_, alarm_factory_, this, context(), connection_id_generator_);
 }
 
 void QuicConnection::MaybeSendConnectionIdToClient() {
@@ -4058,6 +4081,20 @@ void QuicConnection::OnHandshakeComplete() {
   // Re-arm ack alarm.
   ack_alarm_->Update(uber_received_packet_manager_.GetEarliestAckTimeout(),
                      kAlarmGranularity);
+}
+
+void QuicConnection::MaybeCreateMultiPortPath() {
+  QUICHE_DCHECK_EQ(Perspective::IS_CLIENT, perspective_);
+  auto path_context = visitor_->CreateContextForMultiPortPath();
+  if (!path_context || path_validator_.HasPendingPathValidation()) {
+    return;
+  }
+  auto multi_port_validation_result_delegate =
+      std::make_unique<MultiPortPathValidationResultDelegate>(this);
+  multi_port_probing_alarm_->Cancel();
+  multi_port_path_context_ = nullptr;
+  ValidatePath(std::move(path_context),
+               std::move(multi_port_validation_result_delegate));
 }
 
 void QuicConnection::SendOrQueuePacket(SerializedPacket packet) {
@@ -4689,7 +4726,7 @@ void QuicConnection::SetPingAlarm() {
   if (initial_retransmittable_on_wire_timeout_.IsInfinite() ||
       sent_packet_manager_.HasInFlightPackets() ||
       retransmittable_on_wire_ping_count_ >
-          GetQuicFlag(FLAGS_quic_max_retransmittable_on_wire_ping_count)) {
+          GetQuicFlag(quic_max_retransmittable_on_wire_ping_count)) {
     if (perspective_ == Perspective::IS_CLIENT) {
       // Clients send 15s PINGs to avoid NATs from timing out.
       ping_alarm_->Update(clock_->ApproximateNow() + keep_alive_ping_timeout_,
@@ -4705,7 +4742,7 @@ void QuicConnection::SetPingAlarm() {
   QuicTime::Delta retransmittable_on_wire_timeout =
       initial_retransmittable_on_wire_timeout_;
   int max_aggressive_retransmittable_on_wire_ping_count =
-      GetQuicFlag(FLAGS_quic_max_aggressive_retransmittable_on_wire_ping_count);
+      GetQuicFlag(quic_max_aggressive_retransmittable_on_wire_ping_count);
   QUICHE_DCHECK_LE(0, max_aggressive_retransmittable_on_wire_ping_count);
   if (consecutive_retransmittable_on_wire_ping_count_ >
       max_aggressive_retransmittable_on_wire_ping_count) {
@@ -4857,14 +4894,11 @@ QuicConnection::ScopedPacketFlusher::~ScopedPacketFlusher() {
       connection_->FlushCoalescedPacket();
     }
     connection_->FlushPackets();
-    if (GetQuicReloadableFlag(
-            quic_packet_flusher_check_connected_after_flush_packets)) {
-      QUIC_RELOADABLE_FLAG_COUNT(
-          quic_packet_flusher_check_connected_after_flush_packets);
-      if (!connection_->connected()) {
-        return;
-      }
+
+    if (!connection_->connected()) {
+      return;
     }
+
     if (!handshake_packet_sent_ && connection_->handshake_packet_sent_) {
       // This would cause INITIAL key to be dropped. Drop keys here to avoid
       // missing the write keys in the middle of writing.
@@ -5714,11 +5748,10 @@ void QuicConnection::UpdateReleaseTimeIntoFuture() {
   const QuicTime::Delta prior_max_release_time = release_time_into_future_;
   release_time_into_future_ = std::max(
       QuicTime::Delta::FromMilliseconds(kMinReleaseTimeIntoFutureMs),
-      std::min(
-          QuicTime::Delta::FromMilliseconds(
-              GetQuicFlag(FLAGS_quic_max_pace_time_into_future_ms)),
-          sent_packet_manager_.GetRttStats()->SmoothedOrInitialRtt() *
-              GetQuicFlag(FLAGS_quic_pace_time_into_future_srtt_fraction)));
+      std::min(QuicTime::Delta::FromMilliseconds(
+                   GetQuicFlag(quic_max_pace_time_into_future_ms)),
+               sent_packet_manager_.GetRttStats()->SmoothedOrInitialRtt() *
+                   GetQuicFlag(quic_pace_time_into_future_srtt_fraction)));
   QUIC_DVLOG(3) << "Updated max release time delay from "
                 << prior_max_release_time << " to "
                 << release_time_into_future_;
@@ -5986,11 +6019,6 @@ bool QuicConnection::FlushCoalescedPacket() {
   }
   QUIC_DVLOG(1) << ENDPOINT << "Sending coalesced packet "
                 << coalesced_packet_.ToString(length);
-  if (GetQuicReloadableFlag(
-          quic_fix_bytes_accounting_for_buffered_coalesced_packets)) {
-    QUIC_RELOADABLE_FLAG_COUNT(
-        quic_fix_bytes_accounting_for_buffered_coalesced_packets);
-  }
   const size_t padding_size =
       length - std::min<size_t>(length, coalesced_packet_.length());
   // Buffer coalesced packet if padding + bytes_sent exceeds amplifcation limit.
@@ -6002,11 +6030,6 @@ bool QuicConnection::FlushCoalescedPacket() {
     buffered_packets_.emplace_back(
         buffer, static_cast<QuicPacketLength>(length),
         coalesced_packet_.self_address(), coalesced_packet_.peer_address());
-    if (!GetQuicReloadableFlag(
-            quic_fix_bytes_accounting_for_buffered_coalesced_packets) &&
-        !enforce_strict_amplification_factor_) {
-      return true;
-    }
   } else {
     WriteResult result = writer_->WritePacket(
         buffer, length, coalesced_packet_.self_address().host(),
@@ -6226,6 +6249,9 @@ void QuicConnection::set_client_connection_id(
 
 void QuicConnection::OnPathDegradingDetected() {
   is_path_degrading_ = true;
+  if (multi_port_stats_) {
+    multi_port_stats_->num_path_degrading++;
+  }
   visitor_->OnPathDegrading();
 }
 
@@ -6478,22 +6504,17 @@ QuicTime QuicConnection::GetNetworkBlackholeDeadline() const {
     return QuicTime::Zero();
   }
   QUICHE_DCHECK_LT(0u, num_rtos_for_blackhole_detection_);
-  if (sent_packet_manager_.remove_blackhole_detection_experiments()) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_remove_blackhole_detection_experiments);
-    const QuicTime::Delta blackhole_delay =
-        sent_packet_manager_.GetNetworkBlackholeDelay(
-            num_rtos_for_blackhole_detection_);
-    if (!ShouldDetectPathDegrading()) {
-      return clock_->ApproximateNow() + blackhole_delay;
-    }
-    return clock_->ApproximateNow() +
-           CalculateNetworkBlackholeDelay(
-               blackhole_delay, sent_packet_manager_.GetPathDegradingDelay(),
-               sent_packet_manager_.GetPtoDelay());
+
+  const QuicTime::Delta blackhole_delay =
+      sent_packet_manager_.GetNetworkBlackholeDelay(
+          num_rtos_for_blackhole_detection_);
+  if (!ShouldDetectPathDegrading()) {
+    return clock_->ApproximateNow() + blackhole_delay;
   }
   return clock_->ApproximateNow() +
-         sent_packet_manager_.GetNetworkBlackholeDelay(
-             num_rtos_for_blackhole_detection_);
+         CalculateNetworkBlackholeDelay(
+             blackhole_delay, sent_packet_manager_.GetPathDegradingDelay(),
+             sent_packet_manager_.GetPtoDelay());
 }
 
 // static
@@ -6547,34 +6568,6 @@ bool QuicConnection::SendPathChallenge(
     return connected_;
   }
   if (connection_migration_use_new_cid_) {
-    if (!only_send_probing_frames_on_alternative_path_) {
-      {
-        QuicConnectionId client_cid, server_cid;
-        FindOnPathConnectionIds(self_address, effective_peer_address,
-                                &client_cid, &server_cid);
-        QuicPacketCreator::ScopedPeerAddressContext context(
-            &packet_creator_, peer_address, client_cid, server_cid,
-            connection_migration_use_new_cid_);
-        if (writer == writer_) {
-          ScopedPacketFlusher flusher(this);
-          // It's on current path, add the PATH_CHALLENGE the same way as other
-          // frames. This may cause connection to be closed.
-          packet_creator_.AddPathChallengeFrame(data_buffer);
-        } else {
-          std::unique_ptr<SerializedPacket> probing_packet =
-              packet_creator_.SerializePathChallengeConnectivityProbingPacket(
-                  data_buffer);
-          QUICHE_DCHECK_EQ(IsRetransmittable(*probing_packet),
-                           NO_RETRANSMITTABLE_DATA);
-          QUICHE_DCHECK_EQ(self_address, alternative_path_.self_address);
-          WritePacketUsingWriter(std::move(probing_packet), writer,
-                                 self_address, peer_address,
-                                 /*measure_rtt=*/false);
-        }
-      }
-      return connected_;
-    }
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_not_bundle_ack_on_alternative_path, 1, 2);
     QuicConnectionId client_cid, server_cid;
     FindOnPathConnectionIds(self_address, effective_peer_address, &client_cid,
                             &server_cid);
@@ -6882,11 +6875,21 @@ bool QuicConnection::MigratePath(const QuicSocketAddress& self_address,
   return true;
 }
 
-void QuicConnection::OnPathValidationFailureAtClient() {
+void QuicConnection::OnPathValidationFailureAtClient(bool is_multi_port) {
   if (connection_migration_use_new_cid_) {
     QUICHE_DCHECK(perspective_ == Perspective::IS_CLIENT);
     alternative_path_.Clear();
   }
+
+  if (is_multi_port && multi_port_stats_ != nullptr) {
+    if (is_path_degrading_) {
+      multi_port_stats_->num_multi_port_probe_failures_when_path_degrading++;
+    } else {
+      multi_port_stats_
+          ->num_multi_port_probe_failures_when_path_not_degrading++;
+    }
+  }
+
   RetirePeerIssuedConnectionIdsOnPathValidationFailure();
 }
 
@@ -6921,26 +6924,15 @@ std::vector<QuicConnectionId> QuicConnection::GetActiveServerConnectionIds()
   if (!original_destination_connection_id_.has_value()) {
     return result;
   }
-  bool add_original_connection_id = false;
-  if (GetQuicRestartFlag(quic_map_original_connection_ids2)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_map_original_connection_ids2, 4, 4);
-    add_original_connection_id = true;
-  } else if (!IsHandshakeComplete()) {
-    QUIC_CODE_COUNT(quic_active_original_connection_id_pre_handshake);
-    add_original_connection_id = true;
-  }
-  if (add_original_connection_id) {
-    if (std::find(result.begin(), result.end(),
-                  original_destination_connection_id_.value()) !=
-        result.end()) {
-      QUIC_BUG(quic_unexpected_original_destination_connection_id)
-          << "original_destination_connection_id: "
-          << original_destination_connection_id_.value()
-          << " is unexpectedly in active "
-             "list";
-    } else {
-      result.insert(result.end(), original_destination_connection_id_.value());
-    }
+  // Add the original connection ID
+  if (std::find(result.begin(), result.end(),
+                original_destination_connection_id_.value()) != result.end()) {
+    QUIC_BUG(quic_unexpected_original_destination_connection_id)
+        << "original_destination_connection_id: "
+        << original_destination_connection_id_.value()
+        << " is unexpectedly in active list";
+  } else {
+    result.insert(result.end(), original_destination_connection_id_.value());
   }
   return result;
 }
@@ -7104,6 +7096,59 @@ bool QuicConnection::IsReceivedPeerAddressValidated() const {
                                          current_effective_peer_address.host());
 }
 
+void QuicConnection::OnMultiPortPathProbingSuccess(
+    std::unique_ptr<QuicPathValidationContext> context, QuicTime start_time) {
+  QUICHE_DCHECK_EQ(Perspective::IS_CLIENT, perspective());
+  alternative_path_.validated = true;
+  multi_port_path_context_ = std::move(context);
+  multi_port_probing_alarm_->Set(clock_->ApproximateNow() +
+                                 multi_port_probing_interval_);
+  if (multi_port_stats_ != nullptr) {
+    auto now = clock_->Now();
+    auto time_delta = now - start_time;
+    multi_port_stats_->rtt_stats.UpdateRtt(time_delta, QuicTime::Delta::Zero(),
+                                           now);
+    if (is_path_degrading_) {
+      multi_port_stats_->rtt_stats_when_default_path_degrading.UpdateRtt(
+          time_delta, QuicTime::Delta::Zero(), now);
+    }
+  }
+}
+
+void QuicConnection::ProbeMultiPortPath() {
+  if (!connected_ || path_validator_.HasPendingPathValidation() ||
+      !multi_port_path_context_ ||
+      alternative_path_.self_address !=
+          multi_port_path_context_->self_address() ||
+      alternative_path_.peer_address !=
+          multi_port_path_context_->peer_address()) {
+    return;
+  }
+  auto multi_port_validation_result_delegate =
+      std::make_unique<MultiPortPathValidationResultDelegate>(this);
+  path_validator_.StartPathValidation(
+      std::move(multi_port_path_context_),
+      std::move(multi_port_validation_result_delegate));
+}
+
+QuicConnection::MultiPortPathValidationResultDelegate::
+    MultiPortPathValidationResultDelegate(QuicConnection* connection)
+    : connection_(connection) {
+  QUICHE_DCHECK_EQ(Perspective::IS_CLIENT, connection->perspective());
+}
+
+void QuicConnection::MultiPortPathValidationResultDelegate::
+    OnPathValidationSuccess(std::unique_ptr<QuicPathValidationContext> context,
+                            QuicTime start_time) {
+  connection_->OnMultiPortPathProbingSuccess(std::move(context), start_time);
+}
+
+void QuicConnection::MultiPortPathValidationResultDelegate::
+    OnPathValidationFailure(
+        std::unique_ptr<QuicPathValidationContext> /*context*/) {
+  connection_->OnPathValidationFailureAtClient(/*is_multi_port=*/true);
+}
+
 QuicConnection::ReversePathValidationResultDelegate::
     ReversePathValidationResultDelegate(
         QuicConnection* connection,
@@ -7126,9 +7171,7 @@ void QuicConnection::ReversePathValidationResultDelegate::
                                  context->peer_address())) {
     QUIC_CODE_COUNT_N(quic_kick_off_client_address_validation, 3, 6);
     if (connection_->active_effective_peer_migration_type_ == NO_CHANGE) {
-      connection_->quic_bug_10511_43_timestamp_ =
-          connection_->clock_->WallNow();
-      connection_->quic_bug_10511_43_error_detail_ = absl::StrCat(
+      std::string error_detail = absl::StrCat(
           "Reverse path validation on default path from ",
           context->self_address().ToString(), " to ",
           context->peer_address().ToString(),
@@ -7147,8 +7190,7 @@ void QuicConnection::ReversePathValidationResultDelegate::
           connection_->last_received_packet_info_.header.packet_number
               .ToString(),
           " Connection is connected: ", connection_->connected_);
-      QUIC_BUG(quic_bug_10511_43)
-          << connection_->quic_bug_10511_43_error_detail_;
+      QUIC_BUG(quic_bug_10511_43) << error_detail;
     }
     connection_->OnEffectivePeerMigrationValidated();
   } else {

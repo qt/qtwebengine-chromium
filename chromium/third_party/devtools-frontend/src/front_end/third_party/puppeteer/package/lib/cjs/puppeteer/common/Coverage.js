@@ -28,7 +28,7 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
 var _Coverage_jsCoverage, _Coverage_cssCoverage, _JSCoverage_instances, _JSCoverage_client, _JSCoverage_enabled, _JSCoverage_scriptURLs, _JSCoverage_scriptSources, _JSCoverage_eventListeners, _JSCoverage_resetOnNavigation, _JSCoverage_reportAnonymousScripts, _JSCoverage_includeRawScriptCoverage, _JSCoverage_onExecutionContextsCleared, _JSCoverage_onScriptParsed, _CSSCoverage_instances, _CSSCoverage_client, _CSSCoverage_enabled, _CSSCoverage_stylesheetURLs, _CSSCoverage_stylesheetSources, _CSSCoverage_eventListeners, _CSSCoverage_resetOnNavigation, _CSSCoverage_onExecutionContextsCleared, _CSSCoverage_onStyleSheet;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CSSCoverage = exports.JSCoverage = exports.Coverage = void 0;
-const assert_js_1 = require("./assert.js");
+const assert_js_1 = require("../util/assert.js");
 const util_js_1 = require("./util.js");
 const ExecutionContext_js_1 = require("./ExecutionContext.js");
 const util_js_2 = require("./util.js");
@@ -43,11 +43,12 @@ const util_js_2 = require("./util.js");
  * @example
  * An example of using JavaScript and CSS coverage to get percentage of initially
  * executed code:
+ *
  * ```ts
  * // Enable both JavaScript and CSS coverage
  * await Promise.all([
  *   page.coverage.startJSCoverage(),
- *   page.coverage.startCSSCoverage()
+ *   page.coverage.startCSSCoverage(),
  * ]);
  * // Navigate to page
  * await page.goto('https://example.com');
@@ -61,11 +62,11 @@ const util_js_2 = require("./util.js");
  * const coverage = [...jsCoverage, ...cssCoverage];
  * for (const entry of coverage) {
  *   totalBytes += entry.text.length;
- *   for (const range of entry.ranges)
- *     usedBytes += range.end - range.start - 1;
+ *   for (const range of entry.ranges) usedBytes += range.end - range.start - 1;
  * }
- * console.log(`Bytes used: ${usedBytes / totalBytes * 100}%`);
+ * console.log(`Bytes used: ${(usedBytes / totalBytes) * 100}%`);
  * ```
+ *
  * @public
  */
 class Coverage {
@@ -84,7 +85,8 @@ class Coverage {
      * Anonymous scripts are ones that don't have an associated url. These are
      * scripts that are dynamically created on the page using `eval` or
      * `new Function`. If `reportAnonymousScripts` is set to `true`, anonymous
-     * scripts will have `pptr://__puppeteer_evaluation_script__` as their URL.
+     * scripts URL will start with `debugger://VM` (unless a magic //# sourceURL
+     * comment is present, in which case that will the be URL).
      */
     async startJSCoverage(options = {}) {
         return await __classPrivateFieldGet(this, _Coverage_jsCoverage, "f").start(options);
@@ -366,7 +368,7 @@ function convertToDisjointRanges(nestedRanges) {
     }
     // Filter out empty ranges.
     return results.filter(range => {
-        return range.end - range.start > 1;
+        return range.end - range.start > 0;
     });
 }
 //# sourceMappingURL=Coverage.js.map

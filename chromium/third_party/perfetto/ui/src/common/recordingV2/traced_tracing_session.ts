@@ -29,21 +29,29 @@ import {
   IMethodInfo,
   IPCFrame,
   ISlice,
+  QueryServiceStateRequest,
+  QueryServiceStateResponse,
   ReadBuffersRequest,
   ReadBuffersResponse,
   TraceConfig,
 } from '../protos';
 
-import {
-  BUFFER_USAGE_INCORRECT_FORMAT,
-  BUFFER_USAGE_NOT_ACCESSIBLE,
-} from './chrome_utils';
 import {RecordingError} from './recording_error_handling';
 import {
   ByteStream,
+  DataSource,
   TracingSession,
   TracingSessionListener,
 } from './recording_interfaces_v2';
+import {
+  BUFFER_USAGE_INCORRECT_FORMAT,
+  BUFFER_USAGE_NOT_ACCESSIBLE,
+  PARSING_UNABLE_TO_DECODE_METHOD,
+  PARSING_UNKNWON_REQUEST_ID,
+  PARSING_UNRECOGNIZED_MESSAGE,
+  PARSING_UNRECOGNIZED_PORT,
+  RECORDING_IN_PROGRESS,
+} from './recording_utils';
 
 // See wire_protocol.proto for more details.
 const WIRE_PROTOCOL_HEADER_SIZE = 4;
@@ -54,12 +62,6 @@ const PROTO_LEN_DELIMITED_WIRE_TYPE = 2;
 const TRACE_PACKET_PROTO_ID = 1;
 const TRACE_PACKET_PROTO_TAG =
     (TRACE_PACKET_PROTO_ID << 3) | PROTO_LEN_DELIMITED_WIRE_TYPE;
-
-export const RECORDING_IN_PROGRESS = 'Recording in progress';
-export const PARSING_UNKNWON_REQUEST_ID = 'Unknown request id';
-export const PARSING_UNABLE_TO_DECODE_METHOD = 'Unable to decode method';
-export const PARSING_UNRECOGNIZED_PORT = 'Unrecognized consumer port response';
-export const PARSING_UNRECOGNIZED_MESSAGE = 'Unrecognized frame message';
 
 function parseMessageSize(buffer: Uint8Array) {
   const dv = new DataView(buffer.buffer, buffer.byteOffset, buffer.length);
@@ -87,6 +89,15 @@ export class TracedTracingSession implements TracingSession {
   // Accumulates trace packets into a proto trace file..
   private traceProtoWriter = protobuf.Writer.create();
 
+  // Accumulates DataSource objects from QueryServiceStateResponse,
+  // which can have >1 replies for each query
+  // go/codesearch/android/external/perfetto/protos/
+  // perfetto/ipc/consumer_port.proto;l=243-246
+  private pendingDataSources: DataSource[] = [];
+
+  // For concurrent calls to 'QueryServiceState', we return the same value.
+  private pendingQssMessage?: Deferred<DataSource[]>;
+
   // Wire protocol request ID. After each request it is increased. It is needed
   // to keep track of the type of request, and parse the response correctly.
   private requestId = 1;
@@ -99,8 +110,22 @@ export class TracedTracingSession implements TracingSession {
   constructor(
       private byteStream: ByteStream,
       private tracingSessionListener: TracingSessionListener) {
-    this.byteStream.onStreamData = (data) => this.handleReceivedData(data);
-    this.byteStream.onStreamClose = () => this.clearState();
+    this.byteStream.addOnStreamDataCallback(
+        (data) => this.handleReceivedData(data));
+    this.byteStream.addOnStreamCloseCallback(() => this.clearState());
+  }
+
+  queryServiceState(): Promise<DataSource[]> {
+    if (this.pendingQssMessage) {
+      return this.pendingQssMessage;
+    }
+
+    const requestProto =
+        QueryServiceStateRequest.encode(new QueryServiceStateRequest())
+            .finish();
+    this.rpcInvoke('QueryServiceState', requestProto);
+
+    return this.pendingQssMessage = defer<DataSource[]>();
   }
 
   start(config: TraceConfig): void {
@@ -126,7 +151,9 @@ export class TracedTracingSession implements TracingSession {
   }
 
   async getTraceBufferUsage(): Promise<number> {
-    if (!this.byteStream.isOpen()) {
+    if (!this.byteStream.isConnected()) {
+      // TODO(octaviant): make this more in line with the other trace buffer
+      //  error cases.
       return 0;
     }
     const bufferStats = await this.getBufferStats();
@@ -149,7 +176,7 @@ export class TracedTracingSession implements TracingSession {
     return percentageUsed;
   }
 
-  async initConnection(): Promise<void> {
+  initConnection(): Promise<void> {
     // bind IPC methods
     const requestId = this.requestId++;
     const frame = new IPCFrame({
@@ -193,11 +220,12 @@ export class TracedTracingSession implements TracingSession {
       statsMessage.reject(new RecordingError(BUFFER_USAGE_NOT_ACCESSIBLE));
     }
     this.pendingStatsMessages = [];
+    this.pendingDataSources = [];
+    this.pendingQssMessage = undefined;
   }
 
-  private async rpcInvoke(methodName: string, argsProto: Uint8Array):
-      Promise<void> {
-    if (!this.byteStream.isOpen()) {
+  private rpcInvoke(methodName: string, argsProto: Uint8Array): void {
+    if (!this.byteStream.isConnected()) {
       return;
     }
     const method = this.availableMethods.find((m) => m.name === methodName);
@@ -351,6 +379,22 @@ export class TracedTracingSession implements TracingSession {
         // connection.
       } else if (method === 'DisableTracing') {
         // No action required. Same reasoning as for FreeBuffers.
+      } else if (method === 'QueryServiceState') {
+        const dataSources =
+            (data as QueryServiceStateResponse)?.serviceState?.dataSources ||
+            [];
+        for (const dataSource of dataSources) {
+          const name = dataSource?.dsDescriptor?.name;
+          if (name) {
+            this.pendingDataSources.push(
+                {name, descriptor: dataSource.dsDescriptor});
+          }
+        }
+        if (msgInvokeMethodReply.hasMore === false) {
+          assertExists(this.pendingQssMessage).resolve(this.pendingDataSources);
+          this.pendingDataSources = [];
+          this.pendingQssMessage = undefined;
+        }
       } else {
         this.raiseError(`${PARSING_UNRECOGNIZED_PORT}: ${method}`);
       }
@@ -365,9 +409,11 @@ export class TracedTracingSession implements TracingSession {
   }
 }
 
-const decoders = new Map<string, Function>()
-                     .set('EnableTracing', EnableTracingResponse.decode)
-                     .set('FreeBuffers', FreeBuffersResponse.decode)
-                     .set('ReadBuffers', ReadBuffersResponse.decode)
-                     .set('DisableTracing', DisableTracingResponse.decode)
-                     .set('GetTraceStats', GetTraceStatsResponse.decode);
+const decoders =
+    new Map<string, Function>()
+        .set('EnableTracing', EnableTracingResponse.decode)
+        .set('FreeBuffers', FreeBuffersResponse.decode)
+        .set('ReadBuffers', ReadBuffersResponse.decode)
+        .set('DisableTracing', DisableTracingResponse.decode)
+        .set('GetTraceStats', GetTraceStatsResponse.decode)
+        .set('QueryServiceState', QueryServiceStateResponse.decode);

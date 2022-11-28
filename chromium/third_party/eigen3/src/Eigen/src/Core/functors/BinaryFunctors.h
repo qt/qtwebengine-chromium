@@ -376,6 +376,24 @@ struct functor_traits<scalar_difference_op<LhsScalar,RhsScalar> > {
   };
 };
 
+template <typename Packet, bool IsInteger = NumTraits<typename unpacket_traits<Packet>::type>::IsInteger>
+struct maybe_raise_div_by_zero {
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(Packet x) {
+    EIGEN_UNUSED_VARIABLE(x);
+  }
+};
+
+#ifndef EIGEN_GPU_COMPILE_PHASE
+template <typename Packet>
+struct maybe_raise_div_by_zero<Packet, true> {
+  static EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void run(Packet x) {
+    if (EIGEN_PREDICT_FALSE(predux_any(pcmp_eq(x, pzero(x))))) {
+      std::raise(SIGFPE);
+    }
+  }
+};
+#endif
+
 /** \internal
   * \brief Template functor to compute the quotient of two scalars
   *
@@ -392,8 +410,10 @@ struct scalar_quotient_op  : binary_op_base<LhsScalar,RhsScalar>
 #endif
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const result_type operator() (const LhsScalar& a, const RhsScalar& b) const { return a / b; }
   template<typename Packet>
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Packet packetOp(const Packet& a, const Packet& b) const
-  { return internal::pdiv(a,b); }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const Packet packetOp(const Packet& a, const Packet& b) const {
+    maybe_raise_div_by_zero<Packet>::run(b);
+    return internal::pdiv(a,b);
+  }
 };
 template<typename LhsScalar,typename RhsScalar>
 struct functor_traits<scalar_quotient_op<LhsScalar,RhsScalar> > {

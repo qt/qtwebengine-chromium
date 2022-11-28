@@ -162,32 +162,98 @@ class ProgramBuilder {
     using DisableIfVectorLike = traits::EnableIf<
         !detail::IsVectorLike<traits::Decay<traits::NthTypeOf<0, TYPES..., void>>>::value>;
 
-    /// VarOptionals is a helper for accepting a number of optional, extra
-    /// arguments for Var() and GlobalVar().
-    struct VarOptionals {
+    /// VarOptions is a helper for accepting an arbitrary number of order independent options for
+    /// constructing an ast::Var.
+    struct VarOptions {
         template <typename... ARGS>
-        explicit VarOptionals(ARGS&&... args) {
-            Apply(std::forward<ARGS>(args)...);
+        explicit VarOptions(ARGS&&... args) {
+            (Set(std::forward<ARGS>(args)), ...);
         }
-        ~VarOptionals();
+        ~VarOptions();
 
-        ast::StorageClass storage = ast::StorageClass::kNone;
+        const ast::Type* type = nullptr;
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         ast::Access access = ast::Access::kUndefined;
         const ast::Expression* constructor = nullptr;
         utils::Vector<const ast::Attribute*, 4> attributes;
 
       private:
-        void Set(ast::StorageClass sc) { storage = sc; }
+        void Set(const ast::Type* t) { type = t; }
+        void Set(ast::AddressSpace addr_space) { address_space = addr_space; }
         void Set(ast::Access ac) { access = ac; }
         void Set(const ast::Expression* c) { constructor = c; }
         void Set(utils::VectorRef<const ast::Attribute*> l) { attributes = std::move(l); }
+        void Set(const ast::Attribute* a) { attributes.Push(a); }
+    };
 
-        template <typename FIRST, typename... ARGS>
-        void Apply(FIRST&& first, ARGS&&... args) {
-            Set(std::forward<FIRST>(first));
-            Apply(std::forward<ARGS>(args)...);
+    /// LetOptions is a helper for accepting an arbitrary number of order independent options for
+    /// constructing an ast::Let.
+    struct LetOptions {
+        template <typename... ARGS>
+        explicit LetOptions(ARGS&&... args) {
+            static constexpr bool has_init =
+                (traits::IsTypeOrDerived<std::remove_pointer_t<std::remove_reference_t<ARGS>>,
+                                         ast::Expression> ||
+                 ...);
+            static_assert(has_init, "Let() must be constructed with an initializer expression");
+            (Set(std::forward<ARGS>(args)), ...);
         }
-        void Apply() {}
+        ~LetOptions();
+
+        const ast::Type* type = nullptr;
+        const ast::Expression* constructor = nullptr;
+        utils::Vector<const ast::Attribute*, 4> attributes;
+
+      private:
+        void Set(const ast::Type* t) { type = t; }
+        void Set(const ast::Expression* c) { constructor = c; }
+        void Set(utils::VectorRef<const ast::Attribute*> l) { attributes = std::move(l); }
+        void Set(const ast::Attribute* a) { attributes.Push(a); }
+    };
+
+    /// ConstOptions is a helper for accepting an arbitrary number of order independent options for
+    /// constructing an ast::Const.
+    struct ConstOptions {
+        template <typename... ARGS>
+        explicit ConstOptions(ARGS&&... args) {
+            static constexpr bool has_init =
+                (traits::IsTypeOrDerived<std::remove_pointer_t<std::remove_reference_t<ARGS>>,
+                                         ast::Expression> ||
+                 ...);
+            static_assert(has_init, "Const() must be constructed with an initializer expression");
+            (Set(std::forward<ARGS>(args)), ...);
+        }
+        ~ConstOptions();
+
+        const ast::Type* type = nullptr;
+        const ast::Expression* constructor = nullptr;
+        utils::Vector<const ast::Attribute*, 4> attributes;
+
+      private:
+        void Set(const ast::Type* t) { type = t; }
+        void Set(const ast::Expression* c) { constructor = c; }
+        void Set(utils::VectorRef<const ast::Attribute*> l) { attributes = std::move(l); }
+        void Set(const ast::Attribute* a) { attributes.Push(a); }
+    };
+
+    /// OverrideOptions is a helper for accepting an arbitrary number of order independent options
+    /// for constructing an ast::Override.
+    struct OverrideOptions {
+        template <typename... ARGS>
+        explicit OverrideOptions(ARGS&&... args) {
+            (Set(std::forward<ARGS>(args)), ...);
+        }
+        ~OverrideOptions();
+
+        const ast::Type* type = nullptr;
+        const ast::Expression* constructor = nullptr;
+        utils::Vector<const ast::Attribute*, 4> attributes;
+
+      private:
+        void Set(const ast::Type* t) { type = t; }
+        void Set(const ast::Expression* c) { constructor = c; }
+        void Set(utils::VectorRef<const ast::Attribute*> l) { attributes = std::move(l); }
+        void Set(const ast::Attribute* a) { attributes.Push(a); }
     };
 
   public:
@@ -231,13 +297,13 @@ class ProgramBuilder {
     ProgramID ID() const { return id_; }
 
     /// @returns a reference to the program's types
-    sem::Manager& Types() {
+    sem::TypeManager& Types() {
         AssertNotMoved();
         return types_;
     }
 
     /// @returns a reference to the program's types
-    const sem::Manager& Types() const {
+    const sem::TypeManager& Types() const {
         AssertNotMoved();
         return types_;
     }
@@ -412,11 +478,6 @@ class ProgramBuilder {
     /// returned`Type` will also be destructed.
     /// Types are unique (de-aliased), and so calling create() for the same `T`
     /// and arguments will return the same pointer.
-    /// @warning Use this method to acquire a type only if all of its type
-    /// information is provided in the constructor arguments `args`.<br>
-    /// If the type requires additional configuration after construction that
-    /// affect its fundamental type, build the type with `std::make_unique`, make
-    /// any necessary alterations and then call unique_type() instead.
     /// @param args the arguments to pass to the type constructor
     /// @returns the de-aliased type pointer
     template <typename T, typename... ARGS>
@@ -836,45 +897,45 @@ class ProgramBuilder {
         }
 
         /// @param type the type of the pointer
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to `type` with the given ast::StorageClass
+        /// @return the pointer to `type` with the given ast::AddressSpace
         const ast::Pointer* pointer(const ast::Type* type,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return builder->create<ast::Pointer>(type, storage_class, access);
+            return builder->create<ast::Pointer>(type, address_space, access);
         }
 
         /// @param source the Source of the node
         /// @param type the type of the pointer
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to `type` with the given ast::StorageClass
+        /// @return the pointer to `type` with the given ast::AddressSpace
         const ast::Pointer* pointer(const Source& source,
                                     const ast::Type* type,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return builder->create<ast::Pointer>(source, type, storage_class, access);
+            return builder->create<ast::Pointer>(source, type, address_space, access);
         }
 
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to type `T` with the given ast::StorageClass.
+        /// @return the pointer to type `T` with the given ast::AddressSpace.
         template <typename T>
-        const ast::Pointer* pointer(ast::StorageClass storage_class,
+        const ast::Pointer* pointer(ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return pointer(Of<T>(), storage_class, access);
+            return pointer(Of<T>(), address_space, access);
         }
 
         /// @param source the Source of the node
-        /// @param storage_class the storage class of the pointer
+        /// @param address_space the address space of the pointer
         /// @param access the optional access control of the pointer
-        /// @return the pointer to type `T` with the given ast::StorageClass.
+        /// @return the pointer to type `T` with the given ast::AddressSpace.
         template <typename T>
         const ast::Pointer* pointer(const Source& source,
-                                    ast::StorageClass storage_class,
+                                    ast::AddressSpace address_space,
                                     ast::Access access = ast::Access::kUndefined) const {
-            return pointer(source, Of<T>(), storage_class, access);
+            return pointer(source, Of<T>(), address_space, access);
         }
 
         /// @param source the Source of the node
@@ -1582,102 +1643,102 @@ class ProgramBuilder {
     }
 
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param optional the optional variable settings.
+    /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
-    ///   * ast::AttributeList - specifies the variable's attributes
-    /// Note that repeated arguments of the same type will use the last argument's
-    /// value.
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
     /// @returns a `ast::Var` with the given name, type and additional
     /// options
-    template <typename NAME, typename... OPTIONAL>
-    const ast::Var* Var(NAME&& name, const ast::Type* type, OPTIONAL&&... optional) {
-        VarOptionals opts(std::forward<OPTIONAL>(optional)...);
-        return create<ast::Var>(Sym(std::forward<NAME>(name)), type, opts.storage, opts.access,
-                                opts.constructor, std::move(opts.attributes));
-    }
-
-    /// @param source the variable source
-    /// @param name the variable name
-    /// @param type the variable type
-    /// @param optional the optional variable settings.
-    /// Can be any of the following, in any order:
-    ///   * ast::StorageClass   - specifies the variable storage class
-    ///   * ast::Access         - specifies the variable's access control
-    ///   * ast::Expression*    - specifies the variable's initializer expression
-    ///   * ast::AttributeList - specifies the variable's attributes
-    /// Note that repeated arguments of the same type will use the last argument's
-    /// value.
-    /// @returns a `ast::Var` with the given name, storage and type
-    template <typename NAME, typename... OPTIONAL>
-    const ast::Var* Var(const Source& source,
-                        NAME&& name,
-                        const ast::Type* type,
-                        OPTIONAL&&... optional) {
-        VarOptionals opts(std::forward<OPTIONAL>(optional)...);
-        return create<ast::Var>(source, Sym(std::forward<NAME>(name)), type, opts.storage,
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Var* Var(NAME&& name, OPTIONS&&... options) {
+        VarOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Var>(Sym(std::forward<NAME>(name)), opts.type, opts.address_space,
                                 opts.access, opts.constructor, std::move(opts.attributes));
     }
 
+    /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Const` with the given name and type
-    template <typename NAME>
-    const ast::Const* Const(NAME&& name,
-                            const ast::Type* type,
-                            const ast::Expression* constructor,
-                            utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        return create<ast::Const>(Sym(std::forward<NAME>(name)), type, constructor, attributes);
+    /// @param options the extra options passed to the ast::Var constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::AddressSpace   - specifies the variable address space
+    ///   * ast::Access         - specifies the variable's access control
+    ///   * ast::Expression*    - specifies the variable's initializer expression
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns a `ast::Var` with the given name, address_space and type
+    template <typename NAME, typename... OPTIONS>
+    const ast::Var* Var(const Source& source, NAME&& name, OPTIONS&&... options) {
+        VarOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Var>(source, Sym(std::forward<NAME>(name)), opts.type,
+                                opts.address_space, opts.access, opts.constructor,
+                                std::move(opts.attributes));
+    }
+
+    /// @param name the variable name
+    /// @param options the extra options passed to the ast::Var constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Const` with the given name, type and additional options
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Const* Const(NAME&& name, OPTIONS&&... options) {
+        ConstOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Const>(Sym(std::forward<NAME>(name)), opts.type, opts.constructor,
+                                  std::move(opts.attributes));
     }
 
     /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Const` with the given name and type
-    template <typename NAME>
-    const ast::Const* Const(const Source& source,
-                            NAME&& name,
-                            const ast::Type* type,
-                            const ast::Expression* constructor,
-                            utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        return create<ast::Const>(source, Sym(std::forward<NAME>(name)), type, constructor,
-                                  attributes);
+    /// @param options the extra options passed to the ast::Var constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Const` with the given name, type and additional options
+    template <typename NAME, typename... OPTIONS>
+    const ast::Const* Const(const Source& source, NAME&& name, OPTIONS&&... options) {
+        ConstOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Const>(source, Sym(std::forward<NAME>(name)), opts.type,
+                                  opts.constructor, std::move(opts.attributes));
     }
 
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Let` with the given name and type
-    template <typename NAME>
-    const ast::Let* Let(NAME&& name,
-                        const ast::Type* type,
-                        const ast::Expression* constructor,
-                        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        return create<ast::Let>(Sym(std::forward<NAME>(name)), type, constructor, attributes);
+    /// @param options the extra options passed to the ast::Var constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Let` with the given name, type and additional options
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Let* Let(NAME&& name, OPTIONS&&... options) {
+        LetOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Let>(Sym(std::forward<NAME>(name)), opts.type, opts.constructor,
+                                std::move(opts.attributes));
     }
 
     /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Let` with the given name and type
-    template <typename NAME>
-    const ast::Let* Let(const Source& source,
-                        NAME&& name,
-                        const ast::Type* type,
-                        const ast::Expression* constructor,
-                        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        return create<ast::Let>(source, Sym(std::forward<NAME>(name)), type, constructor,
-                                attributes);
+    /// @param options the extra options passed to the ast::Var constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Let` with the given name, type and additional options
+    template <typename NAME, typename... OPTIONS>
+    const ast::Let* Let(const Source& source, NAME&& name, OPTIONS&&... options) {
+        LetOptions opts(std::forward<OPTIONS>(options)...);
+        return create<ast::Let>(source, Sym(std::forward<NAME>(name)), opts.type, opts.constructor,
+                                std::move(opts.attributes));
     }
 
     /// @param name the parameter name
@@ -1705,122 +1766,110 @@ class ProgramBuilder {
     }
 
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param optional the optional variable settings.
+    /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
-    ///   * ast::AttributeList - specifies the variable's attributes
-    /// Note that repeated arguments of the same type will use the last argument's
-    /// value.
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
     /// @returns a new `ast::Var`, which is automatically registered as a global variable with the
     /// ast::Module.
-    template <typename NAME, typename... OPTIONAL, typename = DisableIfSource<NAME>>
-    const ast::Var* GlobalVar(NAME&& name, const ast::Type* type, OPTIONAL&&... optional) {
-        auto* var = Var(std::forward<NAME>(name), type, std::forward<OPTIONAL>(optional)...);
-        AST().AddGlobalVariable(var);
-        return var;
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Var* GlobalVar(NAME&& name, OPTIONS&&... options) {
+        auto* variable = Var(std::forward<NAME>(name), std::forward<OPTIONS>(options)...);
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param optional the optional variable settings.
+    /// @param options the extra options passed to the ast::Var constructor
     /// Can be any of the following, in any order:
-    ///   * ast::StorageClass   - specifies the variable storage class
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::AddressSpace   - specifies the variable address space
     ///   * ast::Access         - specifies the variable's access control
     ///   * ast::Expression*    - specifies the variable's initializer expression
-    ///   * ast::AttributeList - specifies the variable's attributes
-    /// Note that repeated arguments of the same type will use the last argument's
-    /// value.
+    ///   * ast::Attribute*    - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
     /// @returns a new `ast::Var`, which is automatically registered as a global variable with the
     /// ast::Module.
-    template <typename NAME, typename... OPTIONAL>
-    const ast::Var* GlobalVar(const Source& source,
-                              NAME&& name,
-                              const ast::Type* type,
-                              OPTIONAL&&... optional) {
-        auto* var =
-            Var(source, std::forward<NAME>(name), type, std::forward<OPTIONAL>(optional)...);
-        AST().AddGlobalVariable(var);
-        return var;
+    template <typename NAME, typename... OPTIONS>
+    const ast::Var* GlobalVar(const Source& source, NAME&& name, OPTIONS&&... options) {
+        auto* variable = Var(source, std::forward<NAME>(name), std::forward<OPTIONS>(options)...);
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Const` constructed by calling Const() with the arguments of `args`, which
-    /// is automatically registered as a global variable with the ast::Module.
-    template <typename NAME>
-    const ast::Const* GlobalConst(
-        NAME&& name,
-        const ast::Type* type,
-        const ast::Expression* constructor,
-        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        auto* var = Const(std::forward<NAME>(name), type, constructor, std::move(attributes));
-        AST().AddGlobalVariable(var);
-        return var;
+    /// @param options the extra options passed to the ast::Const constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Const` with the given name, type and additional options, which is
+    /// automatically registered as a global variable with the ast::Module.
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Const* GlobalConst(NAME&& name, OPTIONS&&... options) {
+        auto* variable = Const(std::forward<NAME>(name), std::forward<OPTIONS>(options)...);
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns a const `ast::Const` constructed by calling Var() with the
-    /// arguments of `args`, which is automatically registered as a global
-    /// variable with the ast::Module.
-    template <typename NAME>
-    const ast::Const* GlobalConst(
-        const Source& source,
-        NAME&& name,
-        const ast::Type* type,
-        const ast::Expression* constructor,
-        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        auto* var =
-            Const(source, std::forward<NAME>(name), type, constructor, std::move(attributes));
-        AST().AddGlobalVariable(var);
-        return var;
+    /// @param options the extra options passed to the ast::Const constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Const` with the given name, type and additional options, which is
+    /// automatically registered as a global variable with the ast::Module.
+    template <typename NAME, typename... OPTIONS>
+    const ast::Const* GlobalConst(const Source& source, NAME&& name, OPTIONS&&... options) {
+        auto* variable = Const(source, std::forward<NAME>(name), std::forward<OPTIONS>(options)...);
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor optional constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Override` which is automatically registered as a global variable with the
-    /// ast::Module.
-    template <typename NAME>
-    const ast::Override* Override(
-        NAME&& name,
-        const ast::Type* type,
-        const ast::Expression* constructor,
-        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        auto* var = create<ast::Override>(source_, Sym(std::forward<NAME>(name)), type, constructor,
-                                          std::move(attributes));
-        AST().AddGlobalVariable(var);
-        return var;
+    /// @param options the extra options passed to the ast::Override constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Override` with the given name, type and additional options, which is
+    /// automatically registered as a global variable with the ast::Module.
+    template <typename NAME, typename... OPTIONS, typename = DisableIfSource<NAME>>
+    const ast::Override* Override(NAME&& name, OPTIONS&&... options) {
+        OverrideOptions opts(std::forward<OPTIONS>(options)...);
+        auto* variable = create<ast::Override>(Sym(std::forward<NAME>(name)), opts.type,
+                                               opts.constructor, std::move(opts.attributes));
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param source the variable source
     /// @param name the variable name
-    /// @param type the variable type
-    /// @param constructor constructor expression
-    /// @param attributes optional variable attributes
-    /// @returns an `ast::Override` constructed with the arguments of `args`, which is automatically
-    /// registered as a global variable with the ast::Module.
-    template <typename NAME>
-    const ast::Override* Override(
-        const Source& source,
-        NAME&& name,
-        const ast::Type* type,
-        const ast::Expression* constructor,
-        utils::VectorRef<const ast::Attribute*> attributes = utils::Empty) {
-        auto* var = create<ast::Override>(source, Sym(std::forward<NAME>(name)), type, constructor,
-                                          std::move(attributes));
-        AST().AddGlobalVariable(var);
-        return var;
+    /// @param options the extra options passed to the ast::Override constructor
+    /// Can be any of the following, in any order:
+    ///   * ast::Expression*    - specifies the variable's initializer expression (required)
+    ///   * ast::Type*          - specifies the variable type
+    ///   * ast::Attribute*     - specifies the variable's attributes (repeatable, or vector)
+    /// Note that non-repeatable arguments of the same type will use the last argument's value.
+    /// @returns an `ast::Override` with the given name, type and additional options, which is
+    /// automatically registered as a global variable with the ast::Module.
+    template <typename NAME, typename... OPTIONS>
+    const ast::Override* Override(const Source& source, NAME&& name, OPTIONS&&... options) {
+        OverrideOptions opts(std::forward<OPTIONS>(options)...);
+        auto* variable = create<ast::Override>(source, Sym(std::forward<NAME>(name)), opts.type,
+                                               opts.constructor, std::move(opts.attributes));
+        AST().AddGlobalVariable(variable);
+        return variable;
     }
 
     /// @param source the source information
@@ -2072,6 +2121,17 @@ class ProgramBuilder {
             ast::BinaryOp::kShiftLeft, Expr(std::forward<LHS>(lhs)), Expr(std::forward<RHS>(rhs)));
     }
 
+    /// @param source the source information
+    /// @param lhs the left hand argument to the bit shift left operation
+    /// @param rhs the right hand argument to the bit shift left operation
+    /// @returns a `ast::BinaryExpression` bit shifting left `lhs` by `rhs`
+    template <typename LHS, typename RHS>
+    const ast::BinaryExpression* Shl(const Source& source, LHS&& lhs, RHS&& rhs) {
+        return create<ast::BinaryExpression>(source, ast::BinaryOp::kShiftLeft,
+                                             Expr(std::forward<LHS>(lhs)),
+                                             Expr(std::forward<RHS>(rhs)));
+    }
+
     /// @param lhs the left hand argument to the xor operation
     /// @param rhs the right hand argument to the xor operation
     /// @returns a `ast::BinaryExpression` bitwise xor-ing `lhs` and `rhs`
@@ -2198,61 +2258,88 @@ class ProgramBuilder {
     }
 
     /// Creates a ast::StructMemberOffsetAttribute
-    /// @param val the offset value
+    /// @param val the offset expression
     /// @returns the offset attribute pointer
-    const ast::StructMemberOffsetAttribute* MemberOffset(uint32_t val) {
-        return create<ast::StructMemberOffsetAttribute>(source_, val);
+    template <typename EXPR>
+    const ast::StructMemberOffsetAttribute* MemberOffset(EXPR&& val) {
+        return create<ast::StructMemberOffsetAttribute>(source_, Expr(std::forward<EXPR>(val)));
+    }
+
+    /// Creates a ast::StructMemberOffsetAttribute
+    /// @param source the source information
+    /// @param val the offset expression
+    /// @returns the offset attribute pointer
+    template <typename EXPR>
+    const ast::StructMemberOffsetAttribute* MemberOffset(const Source& source, EXPR&& val) {
+        return create<ast::StructMemberOffsetAttribute>(source, Expr(std::forward<EXPR>(val)));
     }
 
     /// Creates a ast::StructMemberSizeAttribute
     /// @param source the source information
     /// @param val the size value
     /// @returns the size attribute pointer
-    const ast::StructMemberSizeAttribute* MemberSize(const Source& source, uint32_t val) {
-        return create<ast::StructMemberSizeAttribute>(source, val);
+    template <typename EXPR>
+    const ast::StructMemberSizeAttribute* MemberSize(const Source& source, EXPR&& val) {
+        return create<ast::StructMemberSizeAttribute>(source, Expr(std::forward<EXPR>(val)));
     }
 
     /// Creates a ast::StructMemberSizeAttribute
     /// @param val the size value
     /// @returns the size attribute pointer
-    const ast::StructMemberSizeAttribute* MemberSize(uint32_t val) {
-        return create<ast::StructMemberSizeAttribute>(source_, val);
+    template <typename EXPR>
+    const ast::StructMemberSizeAttribute* MemberSize(EXPR&& val) {
+        return create<ast::StructMemberSizeAttribute>(source_, Expr(std::forward<EXPR>(val)));
     }
 
     /// Creates a ast::StructMemberAlignAttribute
     /// @param source the source information
-    /// @param val the align value
+    /// @param val the align value expression
     /// @returns the align attribute pointer
-    const ast::StructMemberAlignAttribute* MemberAlign(const Source& source, uint32_t val) {
-        return create<ast::StructMemberAlignAttribute>(source, val);
+    template <typename EXPR>
+    const ast::StructMemberAlignAttribute* MemberAlign(const Source& source, EXPR&& val) {
+        return create<ast::StructMemberAlignAttribute>(source, Expr(std::forward<EXPR>(val)));
     }
 
     /// Creates a ast::StructMemberAlignAttribute
-    /// @param val the align value
+    /// @param val the align value expression
     /// @returns the align attribute pointer
-    const ast::StructMemberAlignAttribute* MemberAlign(uint32_t val) {
-        return create<ast::StructMemberAlignAttribute>(source_, val);
+    template <typename EXPR>
+    const ast::StructMemberAlignAttribute* MemberAlign(EXPR&& val) {
+        return create<ast::StructMemberAlignAttribute>(source_, Expr(std::forward<EXPR>(val)));
     }
 
     /// Creates the ast::GroupAttribute
-    /// @param value group attribute index
+    /// @param value group attribute index expresion
     /// @returns the group attribute pointer
-    const ast::GroupAttribute* Group(uint32_t value) { return create<ast::GroupAttribute>(value); }
-
-    /// Creates the ast::BindingAttribute
-    /// @param value the binding index
-    /// @returns the binding deocration pointer
-    const ast::BindingAttribute* Binding(uint32_t value) {
-        return create<ast::BindingAttribute>(value);
+    template <typename EXPR>
+    const ast::GroupAttribute* Group(EXPR&& value) {
+        return create<ast::GroupAttribute>(Expr(std::forward<EXPR>(value)));
     }
 
-    /// Convenience function to create both a ast::GroupAttribute and
-    /// ast::BindingAttribute
-    /// @param group the group index
-    /// @param binding the binding index
-    /// @returns a attribute list with both the group and binding attributes
-    utils::Vector<const ast::Attribute*, 2> GroupAndBinding(uint32_t group, uint32_t binding) {
-        return {Group(group), Binding(binding)};
+    /// Creates the ast::GroupAttribute
+    /// @param source the source
+    /// @param value group attribute index expression
+    /// @returns the group attribute pointer
+    template <typename EXPR>
+    const ast::GroupAttribute* Group(const Source& source, EXPR&& value) {
+        return create<ast::GroupAttribute>(source, Expr(std::forward<EXPR>(value)));
+    }
+
+    /// Creates the ast::BindingAttribute
+    /// @param value the binding index expression
+    /// @returns the binding deocration pointer
+    template <typename EXPR>
+    const ast::BindingAttribute* Binding(EXPR&& value) {
+        return create<ast::BindingAttribute>(Expr(std::forward<EXPR>(value)));
+    }
+
+    /// Creates the ast::BindingAttribute
+    /// @param source the source
+    /// @param value the binding index expression
+    /// @returns the binding deocration pointer
+    template <typename EXPR>
+    const ast::BindingAttribute* Binding(const Source& source, EXPR&& value) {
+        return create<ast::BindingAttribute>(source, Expr(std::forward<EXPR>(value)));
     }
 
     /// Creates an ast::Function and registers it with the ast::Module.
@@ -2457,7 +2544,7 @@ class ProgramBuilder {
     const ast::StructMember* Member(uint32_t offset, NAME&& name, const ast::Type* type) {
         return create<ast::StructMember>(source_, Sym(std::forward<NAME>(name)), type,
                                          utils::Vector<const ast::Attribute*, 1>{
-                                             create<ast::StructMemberOffsetAttribute>(offset),
+                                             MemberOffset(AInt(offset)),
                                          });
     }
 
@@ -2822,7 +2909,7 @@ class ProgramBuilder {
     const ast::InterpolateAttribute* Interpolate(
         const Source& source,
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined) {
         return create<ast::InterpolateAttribute>(source, type, sampling);
     }
 
@@ -2832,7 +2919,7 @@ class ProgramBuilder {
     /// @returns the interpolate attribute pointer
     const ast::InterpolateAttribute* Interpolate(
         ast::InterpolationType type,
-        ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone) {
+        ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined) {
         return create<ast::InterpolateAttribute>(source_, type, sampling);
     }
 
@@ -2860,17 +2947,19 @@ class ProgramBuilder {
 
     /// Creates an ast::LocationAttribute
     /// @param source the source information
-    /// @param location the location value
+    /// @param location the location value expression
     /// @returns the location attribute pointer
-    const ast::LocationAttribute* Location(const Source& source, uint32_t location) {
-        return create<ast::LocationAttribute>(source, location);
+    template <typename EXPR>
+    const ast::LocationAttribute* Location(const Source& source, EXPR&& location) {
+        return create<ast::LocationAttribute>(source, Expr(std::forward<EXPR>(location)));
     }
 
     /// Creates an ast::LocationAttribute
-    /// @param location the location value
+    /// @param location the location value expression
     /// @returns the location attribute pointer
-    const ast::LocationAttribute* Location(uint32_t location) {
-        return create<ast::LocationAttribute>(source_, location);
+    template <typename EXPR>
+    const ast::LocationAttribute* Location(EXPR&& location) {
+        return create<ast::LocationAttribute>(source_, Expr(std::forward<EXPR>(location)));
     }
 
     /// Creates an ast::IdAttribute
@@ -2878,26 +2967,32 @@ class ProgramBuilder {
     /// @param id the id value
     /// @returns the override attribute pointer
     const ast::IdAttribute* Id(const Source& source, OverrideId id) {
-        return create<ast::IdAttribute>(source, id.value);
+        return create<ast::IdAttribute>(source, Expr(AInt(id.value)));
     }
 
     /// Creates an ast::IdAttribute with an override identifier
     /// @param id the optional id value
     /// @returns the override attribute pointer
-    const ast::IdAttribute* Id(OverrideId id) { return Id(source_, id); }
+    const ast::IdAttribute* Id(OverrideId id) {
+        return create<ast::IdAttribute>(Expr(AInt(id.value)));
+    }
 
     /// Creates an ast::IdAttribute
     /// @param source the source information
-    /// @param id the id value
+    /// @param id the id value expression
     /// @returns the override attribute pointer
-    const ast::IdAttribute* Id(const Source& source, uint32_t id) {
-        return create<ast::IdAttribute>(source, id);
+    template <typename EXPR>
+    const ast::IdAttribute* Id(const Source& source, EXPR&& id) {
+        return create<ast::IdAttribute>(source, Expr(std::forward<EXPR>(id)));
     }
 
     /// Creates an ast::IdAttribute with an override identifier
-    /// @param id the optional id value
+    /// @param id the optional id value expression
     /// @returns the override attribute pointer
-    const ast::IdAttribute* Id(uint32_t id) { return Id(source_, id); }
+    template <typename EXPR>
+    const ast::IdAttribute* Id(EXPR&& id) {
+        return create<ast::IdAttribute>(Expr(std::forward<EXPR>(id)));
+    }
 
     /// Creates an ast::StageAttribute
     /// @param source the source information
@@ -2920,6 +3015,15 @@ class ProgramBuilder {
     template <typename EXPR_X>
     const ast::WorkgroupAttribute* WorkgroupSize(EXPR_X&& x) {
         return WorkgroupSize(std::forward<EXPR_X>(x), nullptr, nullptr);
+    }
+
+    /// Creates an ast::WorkgroupAttribute
+    /// @param source the source information
+    /// @param x the x dimension expression
+    /// @returns the workgroup attribute pointer
+    template <typename EXPR_X>
+    const ast::WorkgroupAttribute* WorkgroupSize(const Source& source, EXPR_X&& x) {
+        return WorkgroupSize(source, std::forward<EXPR_X>(x), nullptr, nullptr);
     }
 
     /// Creates an ast::WorkgroupAttribute
@@ -3027,21 +3131,17 @@ class ProgramBuilder {
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const ast::Type* type) {
-        return type ? type->FriendlyName(Symbols()) : "<null>";
-    }
+    std::string FriendlyName(const ast::Type* type) const;
 
     /// @param type a type
     /// @returns the name for `type` that closely resembles how it would be
     /// declared in WGSL.
-    std::string FriendlyName(const sem::Type* type) {
-        return type ? type->FriendlyName(Symbols()) : "<null>";
-    }
+    std::string FriendlyName(const sem::Type* type) const;
 
     /// Overload of FriendlyName, which removes an ambiguity when passing nullptr.
     /// Simplifies test code.
     /// @returns "<null>"
-    std::string FriendlyName(std::nullptr_t) { return "<null>"; }
+    std::string FriendlyName(std::nullptr_t) const;
 
     /// Wraps the ast::Expression in a statement. This is used by tests that
     /// construct a partial AST and require the Resolver to reach these
@@ -3086,7 +3186,7 @@ class ProgramBuilder {
   private:
     ProgramID id_;
     ast::NodeID last_ast_node_id_ = ast::NodeID{static_cast<decltype(ast::NodeID::value)>(0) - 1};
-    sem::Manager types_;
+    sem::TypeManager types_;
     ASTNodeAllocator ast_nodes_;
     SemNodeAllocator sem_nodes_;
     ConstantAllocator constant_nodes_;

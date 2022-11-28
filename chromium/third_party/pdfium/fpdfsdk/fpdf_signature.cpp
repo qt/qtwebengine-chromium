@@ -22,15 +22,15 @@ std::vector<RetainPtr<CPDF_Dictionary>> CollectSignatures(CPDF_Document* doc) {
   if (!root)
     return signatures;
 
-  const CPDF_Dictionary* acro_form = root->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> acro_form = root->GetDictFor("AcroForm");
   if (!acro_form)
     return signatures;
 
-  const CPDF_Array* fields = acro_form->GetArrayFor("Fields");
+  RetainPtr<const CPDF_Array> fields = acro_form->GetArrayFor("Fields");
   if (!fields)
     return signatures;
 
-  CPDF_ArrayLocker locker(fields);
+  CPDF_ArrayLocker locker(std::move(fields));
   for (auto& field : locker) {
     RetainPtr<CPDF_Dictionary> field_dict = field->GetMutableDict();
     if (field_dict && field_dict->GetNameFor("FT") == "Sig")
@@ -71,11 +71,11 @@ FPDFSignatureObj_GetContents(FPDF_SIGNATURE signature,
   if (!signature_dict)
     return 0;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict)
     return 0;
 
-  ByteString contents = value_dict->GetStringFor("Contents");
+  ByteString contents = value_dict->GetByteStringFor("Contents");
   const unsigned long contents_len =
       pdfium::base::checked_cast<unsigned long>(contents.GetLength());
   if (buffer && length >= contents_len)
@@ -93,11 +93,11 @@ FPDFSignatureObj_GetByteRange(FPDF_SIGNATURE signature,
   if (!signature_dict)
     return 0;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict)
     return 0;
 
-  const CPDF_Array* byte_range = value_dict->GetArrayFor("ByteRange");
+  RetainPtr<const CPDF_Array> byte_range = value_dict->GetArrayFor("ByteRange");
   if (!byte_range)
     return 0;
 
@@ -119,7 +119,7 @@ FPDFSignatureObj_GetSubFilter(FPDF_SIGNATURE signature,
   if (!signature_dict)
     return 0;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict || !value_dict->KeyExist("SubFilter"))
     return 0;
 
@@ -136,11 +136,11 @@ FPDFSignatureObj_GetReason(FPDF_SIGNATURE signature,
   if (!signature_dict)
     return 0;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict)
     return 0;
 
-  const CPDF_Object* obj = value_dict->GetObjectFor("Reason");
+  RetainPtr<const CPDF_Object> obj = value_dict->GetObjectFor("Reason");
   if (!obj || !obj->IsString())
     return 0;
 
@@ -157,11 +157,11 @@ FPDFSignatureObj_GetTime(FPDF_SIGNATURE signature,
   if (!signature_dict)
     return 0;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict)
     return 0;
 
-  const CPDF_Object* obj = value_dict->GetObjectFor("M");
+  RetainPtr<const CPDF_Object> obj = value_dict->GetObjectFor("M");
   if (!obj || !obj->IsString())
     return 0;
 
@@ -176,17 +176,17 @@ FPDFSignatureObj_GetDocMDPPermission(FPDF_SIGNATURE signature) {
   if (!signature_dict)
     return permission;
 
-  const CPDF_Dictionary* value_dict = signature_dict->GetDictFor("V");
+  RetainPtr<const CPDF_Dictionary> value_dict = signature_dict->GetDictFor("V");
   if (!value_dict)
     return permission;
 
-  const CPDF_Array* references = value_dict->GetArrayFor("Reference");
+  RetainPtr<const CPDF_Array> references = value_dict->GetArrayFor("Reference");
   if (!references)
     return permission;
 
-  CPDF_ArrayLocker locker(references);
+  CPDF_ArrayLocker locker(std::move(references));
   for (auto& reference : locker) {
-    const CPDF_Dictionary* reference_dict = reference->GetDict();
+    RetainPtr<const CPDF_Dictionary> reference_dict = reference->GetDict();
     if (!reference_dict)
       continue;
 
@@ -194,7 +194,7 @@ FPDFSignatureObj_GetDocMDPPermission(FPDF_SIGNATURE signature) {
     if (transform_method != "DocMDP")
       continue;
 
-    const CPDF_Dictionary* transform_params =
+    RetainPtr<const CPDF_Dictionary> transform_params =
         reference_dict->GetDictFor("TransformParams");
     if (!transform_params)
       continue;

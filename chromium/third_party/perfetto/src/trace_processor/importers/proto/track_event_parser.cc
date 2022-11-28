@@ -70,10 +70,12 @@ constexpr int64_t kPendingThreadInstructionDelta = -1;
 
 class TrackEventArgsParser : public util::ProtoToArgsParser::Delegate {
  public:
-  TrackEventArgsParser(BoundInserter& inserter,
+  TrackEventArgsParser(int64_t packet_timestamp,
+                       BoundInserter& inserter,
                        TraceStorage& storage,
                        PacketSequenceStateGeneration& sequence_state)
-      : inserter_(inserter),
+      : packet_timestamp_(packet_timestamp),
+        inserter_(inserter),
         storage_(storage),
         sequence_state_(sequence_state) {}
 
@@ -146,9 +148,12 @@ class TrackEventArgsParser : public util::ProtoToArgsParser::Delegate {
     return sequence_state_.GetInternedMessageView(field_id, iid);
   }
 
+  int64_t packet_timestamp() final { return packet_timestamp_; }
+
   PacketSequenceStateGeneration* seq_state() final { return &sequence_state_; }
 
  private:
+  int64_t packet_timestamp_;
   BoundInserter& inserter_;
   TraceStorage& storage_;
   PacketSequenceStateGeneration& sequence_state_;
@@ -229,7 +234,8 @@ class TrackEventParser::EventImporter {
   EventImporter(TrackEventParser* parser,
                 int64_t ts,
                 const TrackEventData* event_data,
-                ConstBytes blob)
+                ConstBytes blob,
+                uint32_t packet_sequence_id)
       : context_(parser->context_),
         track_event_tracker_(parser->track_event_tracker_),
         storage_(context_->storage.get()),
@@ -243,7 +249,8 @@ class TrackEventParser::EventImporter {
         legacy_event_(event_.legacy_event()),
         defaults_(event_data->sequence_state->GetTrackEventDefaults()),
         thread_timestamp_(event_data->thread_timestamp),
-        thread_instruction_count_(event_data->thread_instruction_count) {}
+        thread_instruction_count_(event_data->thread_instruction_count),
+        packet_sequence_id_(packet_sequence_id) {}
 
   util::Status Import() {
     // TODO(eseckler): This legacy event field will eventually be replaced by
@@ -409,13 +416,14 @@ class TrackEventParser::EventImporter {
     //   b) a default track.
     if (track_uuid_) {
       base::Optional<TrackId> opt_track_id =
-          track_event_tracker_->GetDescriptorTrack(track_uuid_, name_id_);
+          track_event_tracker_->GetDescriptorTrack(track_uuid_, name_id_,
+                                                   packet_sequence_id_);
       if (!opt_track_id) {
         track_event_tracker_->ReserveDescriptorChildTrack(track_uuid_,
                                                           /*parent_uuid=*/0,
                                                           name_id_);
-        opt_track_id =
-            track_event_tracker_->GetDescriptorTrack(track_uuid_, name_id_);
+        opt_track_id = track_event_tracker_->GetDescriptorTrack(
+            track_uuid_, name_id_, packet_sequence_id_);
       }
       track_id_ = *opt_track_id;
 
@@ -678,8 +686,8 @@ class TrackEventParser::EventImporter {
     PERFETTO_DCHECK(track_uuid_it);
     PERFETTO_DCHECK(index < TrackEventData::kMaxNumExtraCounters);
 
-    base::Optional<TrackId> track_id =
-        track_event_tracker_->GetDescriptorTrack(*track_uuid_it);
+    base::Optional<TrackId> track_id = track_event_tracker_->GetDescriptorTrack(
+        *track_uuid_it, kNullStringId, packet_sequence_id_);
     base::Optional<uint32_t> counter_row =
         storage_->counter_track_table().id().IndexOf(*track_id);
 
@@ -704,7 +712,7 @@ class TrackEventParser::EventImporter {
           "TrackEvent with phase B without thread association");
     }
 
-    auto* thread_slices = storage_->mutable_thread_slice_table();
+    auto* thread_slices = storage_->mutable_slice_table();
     auto opt_slice_id = context_->slice_tracker->BeginTyped(
         thread_slices, MakeThreadSliceRow(),
         [this](BoundInserter* inserter) { ParseTrackEventArgs(inserter); });
@@ -727,7 +735,7 @@ class TrackEventParser::EventImporter {
       return base::OkStatus();
 
     MaybeParseFlowEvents(*opt_slice_id);
-    auto* thread_slices = storage_->mutable_thread_slice_table();
+    auto* thread_slices = storage_->mutable_slice_table();
     auto opt_thread_slice_ref = thread_slices->FindById(*opt_slice_id);
     if (!opt_thread_slice_ref) {
       // This means that the end event did not match a corresponding track event
@@ -737,7 +745,7 @@ class TrackEventParser::EventImporter {
       return base::OkStatus();
     }
 
-    tables::ThreadSliceTable::RowReference slice_ref = *opt_thread_slice_ref;
+    tables::SliceTable::RowReference slice_ref = *opt_thread_slice_ref;
     base::Optional<int64_t> tts = slice_ref.thread_ts();
     if (tts) {
       PERFETTO_DCHECK(thread_timestamp_);
@@ -762,8 +770,8 @@ class TrackEventParser::EventImporter {
     if (duration_ns < 0)
       return util::ErrStatus("TrackEvent with phase X with negative duration");
 
-    auto* thread_slices = storage_->mutable_thread_slice_table();
-    tables::ThreadSliceTable::Row row = MakeThreadSliceRow();
+    auto* thread_slices = storage_->mutable_slice_table();
+    tables::SliceTable::Row row = MakeThreadSliceRow();
     row.dur = duration_ns;
     if (legacy_event_.has_thread_duration_us()) {
       row.thread_dur = legacy_event_.thread_duration_us() * 1000;
@@ -895,8 +903,8 @@ class TrackEventParser::EventImporter {
       }
     };
     if (utid_) {
-      auto* thread_slices = storage_->mutable_thread_slice_table();
-      tables::ThreadSliceTable::Row row = MakeThreadSliceRow();
+      auto* thread_slices = storage_->mutable_slice_table();
+      tables::SliceTable::Row row = MakeThreadSliceRow();
       row.dur = duration_ns;
       if (thread_timestamp_) {
         row.thread_dur = duration_ns;
@@ -1174,7 +1182,8 @@ class TrackEventParser::EventImporter {
           ParseHistogramName(event_.chrome_histogram_sample(), inserter));
     }
 
-    TrackEventArgsParser args_writer(*inserter, *storage_, *sequence_state_);
+    TrackEventArgsParser args_writer(ts_, *inserter, *storage_,
+                                     *sequence_state_);
     int unknown_extensions = 0;
     log_errors(parser_->args_parser_.ParseMessage(
         blob_, ".perfetto.protos.TrackEvent", &parser_->reflect_fields_,
@@ -1264,28 +1273,47 @@ class TrackEventParser::EventImporter {
 
     protos::pbzero::LogMessage::Decoder message(blob);
 
-    StringId log_message_id = kNullStringId;
-
-    auto* decoder = sequence_state_->LookupInternedMessage<
+    auto* body_decoder = sequence_state_->LookupInternedMessage<
         protos::pbzero::InternedData::kLogMessageBodyFieldNumber,
         protos::pbzero::LogMessageBody>(message.body_iid());
-    if (!decoder)
+    if (!body_decoder)
       return util::ErrStatus("LogMessage with invalid body_iid");
 
-    log_message_id = storage_->InternString(decoder->body());
+    const StringId log_message_id =
+        storage_->InternString(body_decoder->body());
+    inserter->AddArg(parser_->log_message_body_key_id_,
+                     Variadic::String(log_message_id));
 
-    // TODO(nicomazz): LogMessage also contains the source of the message (file
-    // and line number). Android logs doesn't support this so far.
+    StringId source_location_id = kNullStringId;
+    if (message.has_source_location_iid()) {
+      auto* source_location_decoder = sequence_state_->LookupInternedMessage<
+          protos::pbzero::InternedData::kSourceLocationsFieldNumber,
+          protos::pbzero::SourceLocation>(message.source_location_iid());
+      if (!source_location_decoder)
+        return util::ErrStatus("LogMessage with invalid source_location_iid");
+      const std::string source_location =
+          source_location_decoder->file_name().ToStdString() + ":" +
+          std::to_string(source_location_decoder->line_number());
+      source_location_id =
+          storage_->InternString(base::StringView(source_location));
+
+      inserter->AddArg(parser_->log_message_source_location_file_name_key_id_,
+                       Variadic::String(storage_->InternString(
+                           source_location_decoder->file_name())));
+      inserter->AddArg(
+          parser_->log_message_source_location_function_name_key_id_,
+          Variadic::String(storage_->InternString(
+              source_location_decoder->function_name())));
+      inserter->AddArg(
+          parser_->log_message_source_location_line_number_key_id_,
+          Variadic::Integer(source_location_decoder->line_number()));
+    }
+
     storage_->mutable_android_log_table()->Insert(
         {ts_, *utid_,
          /*priority*/ 0,
-         /*tag_id*/ kNullStringId,  // TODO(nicomazz): Abuse tag_id to display
-                                    // "file_name:line_number".
-         log_message_id});
+         /*tag_id*/ source_location_id, log_message_id});
 
-    inserter->AddArg(parser_->log_message_body_key_id_,
-                     Variadic::String(log_message_id));
-    // TODO(nicomazz): Add the source location as an argument.
     return util::OkStatus();
   }
 
@@ -1311,8 +1339,8 @@ class TrackEventParser::EventImporter {
     return util::OkStatus();
   }
 
-  tables::ThreadSliceTable::Row MakeThreadSliceRow() {
-    tables::ThreadSliceTable::Row row;
+  tables::SliceTable::Row MakeThreadSliceRow() {
+    tables::SliceTable::Row row;
     row.ts = ts_;
     row.track_id = track_id_;
     row.category = category_id_;
@@ -1351,6 +1379,8 @@ class TrackEventParser::EventImporter {
   // store it in the slice/track model. To pass the utid through to the json
   // export, we store it in an arg.
   base::Optional<UniqueTid> legacy_passthrough_utid_;
+
+  uint32_t packet_sequence_id_;
 };
 
 TrackEventParser::TrackEventParser(TraceProcessorContext* context,
@@ -1370,6 +1400,14 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context,
           context->storage->InternString("task.posted_from.line_number")),
       log_message_body_key_id_(
           context->storage->InternString("track_event.log_message")),
+      log_message_source_location_function_name_key_id_(
+          context->storage->InternString(
+              "track_event.log_message.function_name")),
+      log_message_source_location_file_name_key_id_(
+          context->storage->InternString("track_event.log_message.file_name")),
+      log_message_source_location_line_number_key_id_(
+          context->storage->InternString(
+              "track_event.log_message.line_number")),
       source_location_function_name_key_id_(
           context->storage->InternString("source.function_name")),
       source_location_file_name_key_id_(
@@ -1434,7 +1472,8 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context,
       chrome_string_lookup_(context->storage.get()),
       counter_unit_ids_{{kNullStringId, context_->storage->InternString("ns"),
                          context_->storage->InternString("count"),
-                         context_->storage->InternString("bytes")}} {
+                         context_->storage->InternString("bytes")}},
+      active_chrome_processes_tracker_(context) {
   args_parser_.AddParsingOverrideForField(
       "chrome_mojo_event_info.mojo_interface_method_iid",
       [](const protozero::Field& field,
@@ -1486,25 +1525,40 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context,
         return annotation_parser.Parse(data, delegate);
       });
 
+  args_parser_.AddParsingOverrideForField(
+      "active_processes.pid", [&](const protozero::Field& field,
+                                  util::ProtoToArgsParser::Delegate& delegate) {
+        UniquePid upid = context_->process_tracker->GetOrCreateProcess(
+            static_cast<uint32_t>(field.as_int32()));
+        active_chrome_processes_tracker_.AddActiveProcessMetadata(
+            delegate.packet_timestamp(), upid);
+        // Fallthrough so that the parser adds pid as a regular arg.
+        return base::nullopt;
+      });
+
   for (uint16_t index : kReflectFields) {
     reflect_fields_.push_back(index);
   }
 }
 
 void TrackEventParser::ParseTrackDescriptor(
-    protozero::ConstBytes track_descriptor) {
+    int64_t packet_timestamp,
+    protozero::ConstBytes track_descriptor,
+    uint32_t packet_sequence_id) {
   protos::pbzero::TrackDescriptor::Decoder decoder(track_descriptor);
 
   // Ensure that the track and its parents are resolved. This may start a new
   // process and/or thread (i.e. new upid/utid).
-  TrackId track_id = *track_event_tracker_->GetDescriptorTrack(decoder.uuid());
+  TrackId track_id = *track_event_tracker_->GetDescriptorTrack(
+      decoder.uuid(), kNullStringId, packet_sequence_id);
 
   if (decoder.has_thread()) {
     UniqueTid utid = ParseThreadDescriptor(decoder.thread());
     if (decoder.has_chrome_thread())
       ParseChromeThreadDescriptor(utid, decoder.chrome_thread());
   } else if (decoder.has_process()) {
-    UniquePid upid = ParseProcessDescriptor(decoder.process());
+    UniquePid upid =
+        ParseProcessDescriptor(packet_timestamp, decoder.process());
     if (decoder.has_chrome_process())
       ParseChromeProcessDescriptor(upid, decoder.chrome_process());
   } else if (decoder.has_counter()) {
@@ -1520,10 +1574,12 @@ void TrackEventParser::ParseTrackDescriptor(
 }
 
 UniquePid TrackEventParser::ParseProcessDescriptor(
+    int64_t packet_timestamp,
     protozero::ConstBytes process_descriptor) {
   protos::pbzero::ProcessDescriptor::Decoder decoder(process_descriptor);
   UniquePid upid = context_->process_tracker->GetOrCreateProcess(
       static_cast<uint32_t>(decoder.pid()));
+  active_chrome_processes_tracker_.AddProcessDescriptor(packet_timestamp, upid);
   if (decoder.has_process_name() && decoder.process_name().size) {
     // Don't override system-provided names.
     context_->process_tracker->SetProcessNameIfUnset(
@@ -1651,13 +1707,19 @@ void TrackEventParser::ParseCounterDescriptor(
 
 void TrackEventParser::ParseTrackEvent(int64_t ts,
                                        const TrackEventData* event_data,
-                                       ConstBytes blob) {
+                                       ConstBytes blob,
+                                       uint32_t packet_sequence_id) {
   util::Status status =
-      EventImporter(this, ts, event_data, std::move(blob)).Import();
+      EventImporter(this, ts, event_data, std::move(blob), packet_sequence_id)
+          .Import();
   if (!status.ok()) {
     context_->storage->IncrementStats(stats::track_event_parser_errors);
     PERFETTO_DLOG("ParseTrackEvent error: %s", status.c_message());
   }
+}
+
+void TrackEventParser::NotifyEndOfFile() {
+  active_chrome_processes_tracker_.NotifyEndOfFile();
 }
 
 }  // namespace trace_processor

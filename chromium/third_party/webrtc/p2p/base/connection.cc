@@ -472,7 +472,28 @@ void Connection::OnReadPacket(const char* data,
     // If this is a STUN response, then update the writable bit.
     // Log at LS_INFO if we receive a ping on an unwritable connection.
     rtc::LoggingSeverity sev = (!writable() ? rtc::LS_INFO : rtc::LS_VERBOSE);
-    msg->ValidateMessageIntegrity(remote_candidate().password());
+    switch (msg->integrity()) {
+      case StunMessage::IntegrityStatus::kNotSet:
+        // Late computation of integrity status, but not an error.
+        msg->ValidateMessageIntegrity(remote_candidate().password());
+        break;
+      case StunMessage::IntegrityStatus::kIntegrityOk:
+        if (remote_candidate().password() != msg->password()) {
+          // Password has changed. Recheck message.
+          // TODO(crbug.com/1177125): Redesign logic to check only once.
+          msg->RevalidateMessageIntegrity(remote_candidate().password());
+        }
+        break;
+      case StunMessage::IntegrityStatus::kIntegrityBad:
+        // Possibly we have a new password to try.
+        // TODO(crbug.com/1177125): Redesign logic to check only once.
+        msg->RevalidateMessageIntegrity(remote_candidate().password());
+        break;
+      default:
+        // This shouldn't happen.
+        RTC_DCHECK_NOTREACHED();
+        break;
+    }
     switch (msg->type()) {
       case STUN_BINDING_REQUEST:
         RTC_LOG_V(sev) << ToString() << ": Received "
@@ -1563,7 +1584,7 @@ void Connection::MaybeUpdateLocalCandidate(StunRequest* request,
   // Set the related address and foundation attributes before changing the
   // address.
   local_candidate_.set_related_address(local_candidate_.address());
-  local_candidate_.set_foundation(Port::ComputeFoundation(
+  local_candidate_.set_foundation(port()->ComputeFoundation(
       PRFLX_PORT_TYPE, local_candidate_.protocol(),
       local_candidate_.relay_protocol(), local_candidate_.address()));
   local_candidate_.set_priority(priority);

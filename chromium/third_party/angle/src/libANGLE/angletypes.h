@@ -33,7 +33,12 @@ class Texture;
 
 enum class Command
 {
+    // The Blit command carries the bitmask of which buffers are being blit.  The command passed to
+    // the backends is:
+    //
+    //     Blit + (Color?0x1) + (Depth?0x2) + (Stencil?0x4)
     Blit,
+    BlitAll = Blit + 0x7,
     Clear,
     CopyImage,
     Dispatch,
@@ -42,7 +47,14 @@ enum class Command
     Invalidate,
     ReadPixels,
     TexImage,
-    Other
+    Other,
+};
+
+enum CommandBlitBuffer
+{
+    CommandBlitBufferColor   = 0x1,
+    CommandBlitBufferDepth   = 0x2,
+    CommandBlitBufferStencil = 0x4,
 };
 
 enum class InitState
@@ -205,6 +217,8 @@ struct Box
     bool coversSameExtent(const Extents &size) const;
 
     bool contains(const Box &other) const;
+    size_t volume() const;
+    void extend(const Box &other);
 
     int x;
     int y;
@@ -219,6 +233,7 @@ struct RasterizerState final
     // This will zero-initialize the struct, including padding.
     RasterizerState();
     RasterizerState(const RasterizerState &other);
+    RasterizerState &operator=(const RasterizerState &other);
 
     bool cullFace;
     CullFaceMode cullMode;
@@ -268,6 +283,7 @@ struct DepthStencilState final
     // This will zero-initialize the struct, including padding.
     DepthStencilState();
     DepthStencilState(const DepthStencilState &other);
+    DepthStencilState &operator=(const DepthStencilState &other);
 
     bool isDepthMaskedOut() const;
     bool isStencilMaskedOut() const;

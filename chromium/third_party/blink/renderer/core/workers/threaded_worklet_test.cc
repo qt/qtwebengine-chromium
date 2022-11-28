@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
-#include "third_party/blink/renderer/core/inspector/thread_debugger.h"
+#include "third_party/blink/renderer/core/inspector/thread_debugger_common_impl.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/script/script.h"
 #include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
@@ -169,7 +169,8 @@ class ThreadedWorkletThreadForTest : public WorkerThread {
   WorkerOrWorkletGlobalScope* CreateWorkerGlobalScope(
       std::unique_ptr<GlobalScopeCreationParams> creation_params) final {
     auto* global_scope = MakeGarbageCollected<FakeWorkletGlobalScope>(
-        std::move(creation_params), GetWorkerReportingProxy(), this);
+        std::move(creation_params), GetWorkerReportingProxy(), this,
+        /*create_microtask_queue=*/true);
     EXPECT_FALSE(global_scope->IsMainThreadWorkletGlobalScope());
     EXPECT_TRUE(global_scope->IsThreadedWorkletGlobalScope());
     return global_scope;

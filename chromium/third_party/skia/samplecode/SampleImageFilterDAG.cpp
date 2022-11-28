@@ -15,6 +15,7 @@
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPathEffect.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
@@ -36,7 +37,7 @@ struct FilterNode {
     sk_sp<SkImageFilter> fFilter;
 
     // FilterNodes wrapping each of fFilter's inputs. Leaf node when fInputNodes is empty.
-    SkTArray<FilterNode> fInputNodes;
+    SkTArray<FilterNode, true> fInputNodes;
 
     // Distance from root filter
     int fDepth;

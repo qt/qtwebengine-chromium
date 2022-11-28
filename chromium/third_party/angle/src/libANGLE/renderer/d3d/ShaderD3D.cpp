@@ -15,6 +15,7 @@
 #include "libANGLE/Context.h"
 #include "libANGLE/Shader.h"
 #include "libANGLE/features.h"
+#include "libANGLE/renderer/ContextImpl.h"
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/trace.h"
@@ -238,7 +239,7 @@ std::shared_ptr<WaitableCompileEvent> ShaderD3D::compile(const gl::Context *cont
     const std::string &source = mState.getSource();
 
 #if !defined(ANGLE_ENABLE_WINDOWS_UWP)
-    if (gl::DebugAnnotationsActive())
+    if (gl::DebugAnnotationsActive(context))
     {
         sourcePath = angle::CreateTemporaryFile().value();
         writeFile(sourcePath.c_str(), source.c_str(), source.length());
@@ -285,6 +286,15 @@ std::shared_ptr<WaitableCompileEvent> ShaderD3D::compile(const gl::Context *cont
     if (extensions.multiviewOVR || extensions.multiview2OVR)
     {
         options->initializeBuiltinsForInstancedMultiview = true;
+    }
+    if (extensions.shaderPixelLocalStorageANGLE)
+    {
+        options->pls.type = mRenderer->getNativePixelLocalStorageType();
+        if (extensions.shaderPixelLocalStorageCoherentANGLE)
+        {
+            options->pls.fragmentSynchronizationType =
+                ShFragmentSynchronizationType::RasterizerOrderViews_D3D;
+        }
     }
 
     auto postTranslateFunctor = [this](gl::ShCompilerInstance *compiler, std::string *infoLog) {

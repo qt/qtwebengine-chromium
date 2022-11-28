@@ -20,6 +20,7 @@
 
 #ifdef SK_GRAPHITE_ENABLED
 #include "include/private/SkVx.h"
+#include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/UniformManager.h"
 #endif
@@ -51,41 +52,18 @@ private:
     SkSpan<const char> fData;
 };
 
-// We would like to store just a "const SkUniformDataBlock*" in the UniformDataCache but, until
-// the TextureDataCache is switched over to storing its data in an arena, whatever is held in
-// the cache must interoperate w/ std::unique_ptr (i.e., have a get() function).
-// TODO: remove this class
-class SkUniformDataBlockPassThrough {
-public:
-    SkUniformDataBlockPassThrough() = default;
-    SkUniformDataBlockPassThrough(SkUniformDataBlock* udb) : fUDB(udb) {}
-
-    SkUniformDataBlock* get() const { return fUDB; }
-
-private:
-    SkUniformDataBlock* fUDB = nullptr;
-};
-
 #ifdef SK_GRAPHITE_ENABLED
 class SkTextureDataBlock {
 public:
-    struct TextureInfo {
-        bool operator==(const TextureInfo&) const;
-        bool operator!=(const TextureInfo& other) const { return !(*this == other);  }
+    using SampledTexture = std::pair<sk_sp<skgpu::graphite::TextureProxy>,
+                                     skgpu::graphite::SamplerDesc>;
 
-        uint32_t samplerKey() const;
-
-        sk_sp<skgpu::graphite::TextureProxy> fProxy;
-        SkSamplingOptions                    fSamplingOptions;
-        SkTileMode                           fTileModes[2];
-    };
-
-    static std::unique_ptr<SkTextureDataBlock> Make(const SkTextureDataBlock&, SkArenaAlloc*);
+    static SkTextureDataBlock* Make(const SkTextureDataBlock&, SkArenaAlloc*);
     SkTextureDataBlock() = default;
 
     bool empty() const { return fTextureData.empty(); }
     int numTextures() const { return SkTo<int>(fTextureData.size()); }
-    const TextureInfo& texture(int index) const { return fTextureData[index]; }
+    const SampledTexture& texture(int index) const { return fTextureData[index]; }
 
     bool operator==(const SkTextureDataBlock&) const;
     bool operator!=(const SkTextureDataBlock& other) const { return !(*this == other);  }
@@ -94,7 +72,7 @@ public:
     void add(const SkSamplingOptions& sampling,
              const SkTileMode tileModes[2],
              sk_sp<skgpu::graphite::TextureProxy> proxy) {
-        fTextureData.push_back({std::move(proxy), sampling, {tileModes[0], tileModes[1]}});
+        fTextureData.push_back({std::move(proxy), {sampling, {tileModes[0], tileModes[1]}}});
     }
 
     void reset() {
@@ -102,7 +80,8 @@ public:
     }
 
 private:
-    std::vector<TextureInfo> fTextureData;
+    // TODO: Move this into a SkSpan that's managed by the gatherer or copied into the arena.
+    std::vector<SampledTexture> fTextureData;
 };
 #endif // SK_GRAPHITE_ENABLED
 
@@ -133,7 +112,7 @@ public:
     bool hasTextures() const { return !fTextureDataBlock.empty(); }
 #endif // SK_GRAPHITE_ENABLED
 
-    void addFlags(SnippetRequirementFlags flags);
+    void addFlags(SkEnumBitMask<SnippetRequirementFlags> flags);
     bool needsLocalCoords() const;
 
 #ifdef SK_GRAPHITE_ENABLED
@@ -153,7 +132,9 @@ public:
 
     bool hasUniforms() const { return fUniformManager.size(); }
 
-    SkUniformDataBlock peekUniformData() const { return fUniformManager.peekData(); }
+    // Returns the uniform data written so far. Will automatically pad the end of the data as needed
+    // to the overall required alignment, and so should only be called when all writing is done.
+    SkUniformDataBlock finishUniformDataBlock() { return fUniformManager.finishUniformDataBlock(); }
 
 private:
 #ifdef SK_DEBUG

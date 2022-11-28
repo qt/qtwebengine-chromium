@@ -206,12 +206,6 @@ extern "C" {
             'components' : []
         }
 
-        # TODO - The current XML has a bug, remove when new headers with fix are added
-        # Was setting theses as 8 instead of 16
-        # https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/4975
-        if formatName == 'VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK' or formatName == 'VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK':
-            self.allFormats[formatName]['blockSize'] = 16
-
         if elem.get('blockExtent'):
             self.allFormats[formatName]['blockExtent'] = elem.get('blockExtent')
 
@@ -320,7 +314,7 @@ struct FORMAT_INFO {
 namespace std {
 template <>
 struct hash<VkFormat> {
-    size_t operator()(VkFormat fmt) const NOEXCEPT {
+    size_t operator()(VkFormat fmt) const noexcept {
         return hash<uint32_t>()(static_cast<uint32_t>(fmt));
     }
 };
@@ -711,6 +705,12 @@ VK_LAYER_EXPORT FORMAT_COMPATIBILITY_CLASS FormatCompatibilityClass(VkFormat for
 VK_LAYER_EXPORT bool FormatElementIsTexel(VkFormat format);
 VK_LAYER_EXPORT uint32_t FormatElementSize(VkFormat format, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
 VK_LAYER_EXPORT double FormatTexelSize(VkFormat format, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
+
+// Components
+VK_LAYER_EXPORT bool FormatHasRed(VkFormat format);
+VK_LAYER_EXPORT bool FormatHasGreen(VkFormat format);
+VK_LAYER_EXPORT bool FormatHasBlue(VkFormat format);
+VK_LAYER_EXPORT bool FormatHasAlpha(VkFormat format);
 '''
         elif self.sourceFile:
             output += '''
@@ -779,7 +779,32 @@ double FormatTexelSize(VkFormat format, VkImageAspectFlags aspectMask) {
     }
     return texel_size;
 }
-'''
+
+static bool FormatHasComponent(VkFormat format, COMPONENT_TYPE component) {
+    auto item = kVkFormatTable.find(format);
+    if (item == kVkFormatTable.end()) {
+        return false;
+    }
+    const COMPONENT_INFO* begin = item->second.components;
+    const COMPONENT_INFO* end = item->second.components + FORMAT_MAX_COMPONENTS;
+    return std::find_if(begin, end, [component](const COMPONENT_INFO& info) { return info.type == component; }) != end;
+}
+
+bool FormatHasRed(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::R);
+}
+
+bool FormatHasGreen(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::G);
+}
+
+bool FormatHasBlue(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::B);
+}
+
+bool FormatHasAlpha(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::A);
+}'''
         return output;
 
     #

@@ -89,10 +89,6 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
                               ClearExceptionFlag flag,
                               IsCompiledScope* is_compiled_scope);
 
-  static bool CompileMaglev(Isolate* isolate, Handle<JSFunction> function,
-                            ConcurrencyMode mode,
-                            IsCompiledScope* is_compiled_scope);
-
   static void CompileOptimized(Isolate* isolate, Handle<JSFunction> function,
                                ConcurrencyMode mode, CodeKind code_kind);
 
@@ -101,11 +97,11 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
   // a future OSR request will pick up the resulting code object).
   V8_WARN_UNUSED_RESULT static MaybeHandle<CodeT> CompileOptimizedOSR(
       Isolate* isolate, Handle<JSFunction> function, BytecodeOffset osr_offset,
-      UnoptimizedFrame* frame, ConcurrencyMode mode);
+      ConcurrencyMode mode);
 
   V8_WARN_UNUSED_RESULT static MaybeHandle<SharedFunctionInfo>
   CompileForLiveEdit(ParseInfo* parse_info, Handle<Script> script,
-                     Isolate* isolate);
+                     MaybeHandle<ScopeInfo> outer_scope_info, Isolate* isolate);
 
   // Collect source positions for a function that has already been compiled to
   // bytecode, but for which source positions were not collected (e.g. because

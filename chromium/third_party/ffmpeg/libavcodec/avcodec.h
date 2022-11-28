@@ -232,6 +232,16 @@ typedef struct RcOverride{
  */
 #define AV_CODEC_FLAG_DROPCHANGED     (1 <<  5)
 /**
+ * Request the encoder to output reconstructed frames, i.e. frames that would be
+ * produced by decoding the encoded bistream. These frames may be retrieved by
+ * calling avcodec_receive_frame() immediately after a successful call to
+ * avcodec_receive_packet().
+ *
+ * Should only be used with encoders flagged with the
+ * AV_CODEC_CAP_ENCODER_RECON_FRAME capability.
+ */
+#define AV_CODEC_FLAG_RECON_FRAME     (1 <<  6)
+/**
  * Use internal 2pass ratecontrol in first pass mode.
  */
 #define AV_CODEC_FLAG_PASS1           (1 <<  9)
@@ -331,13 +341,12 @@ typedef struct RcOverride{
  * Do not reset ASS ReadOrder field on flush (subtitles decoding)
  */
 #define AV_CODEC_FLAG2_RO_FLUSH_NOOP  (1 << 30)
-
-/* Unsupported options :
- *              Syntax Arithmetic coding (SAC)
- *              Reference Picture Selection
- *              Independent Segment Decoding */
-/* /Fx */
-/* codec capabilities */
+/**
+ * Generate/parse ICC profiles on encode/decode, as appropriate for the type of
+ * file. No effect on codecs which cannot contain embedded ICC profiles, or
+ * when compiled without support for lcms2.
+ */
+#define AV_CODEC_FLAG2_ICC_PROFILES   (1U << 31)
 
 /* Exported side data.
    These flags can be passed in AVCodecContext.export_side_data before initialization.
@@ -1379,13 +1388,26 @@ typedef struct AVCodecContext {
     const struct AVHWAccel *hwaccel;
 
     /**
-     * Hardware accelerator context.
-     * For some hardware accelerators, a global context needs to be
-     * provided by the user. In that case, this holds display-dependent
-     * data FFmpeg cannot instantiate itself. Please refer to the
-     * FFmpeg HW accelerator documentation to know how to fill this.
-     * - encoding: unused
-     * - decoding: Set by user
+     * Legacy hardware accelerator context.
+     *
+     * For some hardware acceleration methods, the caller may use this field to
+     * signal hwaccel-specific data to the codec. The struct pointed to by this
+     * pointer is hwaccel-dependent and defined in the respective header. Please
+     * refer to the FFmpeg HW accelerator documentation to know how to fill
+     * this.
+     *
+     * In most cases this field is optional - the necessary information may also
+     * be provided to libavcodec through @ref hw_frames_ctx or @ref
+     * hw_device_ctx (see avcodec_get_hw_config()). However, in some cases it
+     * may be the only method of signalling some (optional) information.
+     *
+     * The struct and its contents are owned by the caller.
+     *
+     * - encoding: May be set by the caller before avcodec_open2(). Must remain
+     *             valid until avcodec_free_context().
+     * - decoding: May be set by the caller in the get_format() callback.
+     *             Must remain valid until the next get_format() call,
+     *             or avcodec_free_context() (whichever comes first).
      */
     void *hwaccel_context;
 
@@ -2595,21 +2617,23 @@ int avcodec_decode_subtitle2(AVCodecContext *avctx, AVSubtitle *sub,
 int avcodec_send_packet(AVCodecContext *avctx, const AVPacket *avpkt);
 
 /**
- * Return decoded output data from a decoder.
+ * Return decoded output data from a decoder or encoder (when the
+ * AV_CODEC_FLAG_RECON_FRAME flag is used).
  *
  * @param avctx codec context
  * @param frame This will be set to a reference-counted video or audio
  *              frame (depending on the decoder type) allocated by the
- *              decoder. Note that the function will always call
+ *              codec. Note that the function will always call
  *              av_frame_unref(frame) before doing anything else.
  *
  * @return
  *      0:                 success, a frame was returned
  *      AVERROR(EAGAIN):   output is not available in this state - user must try
  *                         to send new input
- *      AVERROR_EOF:       the decoder has been fully flushed, and there will be
+ *      AVERROR_EOF:       the codec has been fully flushed, and there will be
  *                         no more output frames
- *      AVERROR(EINVAL):   codec not opened, or it is an encoder
+ *      AVERROR(EINVAL):   codec not opened, or it is an encoder without
+ *                         the AV_CODEC_FLAG_RECON_FRAME flag enabled
  *      AVERROR_INPUT_CHANGED:   current decoded frame has changed parameters
  *                               with respect to first decoded frame. Applicable
  *                               when flag AV_CODEC_FLAG_DROPCHANGED is set.

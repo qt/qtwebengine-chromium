@@ -21,7 +21,7 @@ import { kBit } from '../../../../../util/constants.js';
 import { i32Bits, TypeF32, TypeI32, TypeU32, u32Bits } from '../../../../../util/conversion.js';
 import { absInterval } from '../../../../../util/f32_interval.js';
 import { fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeUnaryF32IntervalCase, run } from '../../expression.js';
+import { allInputSources, Case, makeUnaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -42,7 +42,7 @@ g.test('u32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    run(t, builtin('abs'), [TypeU32], TypeU32, t.params, [
+    await run(t, builtin('abs'), [TypeU32], TypeU32, t.params, [
       // Min and Max u32
       { input: u32Bits(kBit.u32.min), expected: u32Bits(kBit.u32.min) },
       { input: u32Bits(kBit.u32.max), expected: u32Bits(kBit.u32.max) },
@@ -89,7 +89,7 @@ g.test('i32')
     u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
-    run(t, builtin('abs'), [TypeI32], TypeI32, t.params, [
+    await run(t, builtin('abs'), [TypeI32], TypeI32, t.params, [
       // Min and max i32
       // If e evaluates to the largest negative value, then the result is e.
       { input: i32Bits(kBit.i32.negative.min), expected: i32Bits(kBit.i32.negative.min) },
@@ -148,7 +148,7 @@ g.test('f32')
   )
   .fn(async t => {
     const makeCase = (x: number): Case => {
-      return makeUnaryF32IntervalCase(x, absInterval);
+      return makeUnaryToF32IntervalCase(x, absInterval);
     };
 
     const cases: Array<Case> = [
@@ -157,7 +157,7 @@ g.test('f32')
       Number.POSITIVE_INFINITY,
     ].map(x => makeCase(x));
 
-    run(t, builtin('abs'), [TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('abs'), [TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

@@ -10,6 +10,7 @@ import {
   TypedArrayBufferView,
   TypedArrayBufferViewConstructor,
 } from '../../../../common/util/util.js';
+import { Float16Array } from '../../../../external/petamoriken/float16/float16.js';
 import { GPUConst } from '../../../constants.js';
 import { kResourceStates } from '../../../gpu_test.js';
 import { ValidationTest } from '../validation_test.js';
@@ -144,6 +145,10 @@ g.test('ranges')
     runTest(Uint8Array, true);
 
     for (const arrayType of kTypedArrayBufferViewConstructors) {
+      if (arrayType === Float16Array) {
+        // Skip Float16Array since it is supplied by an external module, so there isn't an overload for it.
+        continue;
+      }
       runTest(arrayType, false);
     }
   });
@@ -179,9 +184,9 @@ g.test('buffer,device_mismatch')
   })
   .fn(async t => {
     const { mismatched } = t.params;
-    const device = mismatched ? t.mismatchedDevice : t.device;
+    const sourceDevice = mismatched ? t.mismatchedDevice : t.device;
 
-    const buffer = device.createBuffer({
+    const buffer = sourceDevice.createBuffer({
       size: 16,
       usage: GPUBufferUsage.COPY_DST,
     });

@@ -26,24 +26,26 @@ class CPDF_IndirectObjectHolder {
   CPDF_IndirectObjectHolder();
   virtual ~CPDF_IndirectObjectHolder();
 
-  CPDF_Object* GetIndirectObject(uint32_t objnum) const;
-  virtual CPDF_Object* GetOrParseIndirectObject(uint32_t objnum);
+  RetainPtr<CPDF_Object> GetOrParseIndirectObject(uint32_t objnum);
+  RetainPtr<const CPDF_Object> GetIndirectObject(uint32_t objnum) const;
+  RetainPtr<CPDF_Object> GetMutableIndirectObject(uint32_t objnum);
   void DeleteIndirectObject(uint32_t objnum);
 
   // Creates and adds a new object owned by the indirect object holder,
-  // and returns an unowned pointer to it.  We have a special case to
+  // and returns a retained pointer to it.  We have a special case to
   // handle objects that can intern strings from our ByteStringPool.
   template <typename T, typename... Args>
-  typename std::enable_if<!CanInternStrings<T>::value, T*>::type NewIndirect(
-      Args&&... args) {
-    return static_cast<T*>(
-        AddIndirectObject(pdfium::MakeRetain<T>(std::forward<Args>(args)...)));
+  typename std::enable_if<!CanInternStrings<T>::value, RetainPtr<T>>::type
+  NewIndirect(Args&&... args) {
+    return pdfium::WrapRetain(static_cast<T*>(
+        AddIndirectObject(pdfium::MakeRetain<T>(std::forward<Args>(args)...))));
   }
   template <typename T, typename... Args>
-  typename std::enable_if<CanInternStrings<T>::value, T*>::type NewIndirect(
-      Args&&... args) {
-    return static_cast<T*>(AddIndirectObject(
-        pdfium::MakeRetain<T>(m_pByteStringPool, std::forward<Args>(args)...)));
+  typename std::enable_if<CanInternStrings<T>::value, RetainPtr<T>>::type
+  NewIndirect(Args&&... args) {
+    return pdfium::WrapRetain(
+        static_cast<T*>(AddIndirectObject(pdfium::MakeRetain<T>(
+            m_pByteStringPool, std::forward<Args>(args)...))));
   }
 
   // Creates and adds a new object not owned by the indirect object holder,
@@ -76,6 +78,11 @@ class CPDF_IndirectObjectHolder {
   virtual RetainPtr<CPDF_Object> ParseIndirectObject(uint32_t objnum);
 
  private:
+  friend class CPDF_Reference;
+
+  const CPDF_Object* GetIndirectObjectInternal(uint32_t objnum) const;
+  CPDF_Object* GetOrParseIndirectObjectInternal(uint32_t objnum);
+
   uint32_t m_LastObjNum = 0;
   std::map<uint32_t, RetainPtr<CPDF_Object>> m_IndirectObjs;
   WeakPtr<ByteStringPool> m_pByteStringPool;

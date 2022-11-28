@@ -117,7 +117,7 @@ void CPDFSDK_BAAnnot::SetAppStateOff() {
 }
 
 ByteString CPDFSDK_BAAnnot::GetAppState() const {
-  return GetAnnotDict()->GetStringFor(pdfium::annotation::kAS);
+  return GetAnnotDict()->GetByteStringFor(pdfium::annotation::kAS);
 }
 
 void CPDFSDK_BAAnnot::SetBorderWidth(int nWidth) {
@@ -132,12 +132,12 @@ void CPDFSDK_BAAnnot::SetBorderWidth(int nWidth) {
 }
 
 int CPDFSDK_BAAnnot::GetBorderWidth() const {
-  const CPDF_Array* pBorder =
+  RetainPtr<const CPDF_Array> pBorder =
       GetAnnotDict()->GetArrayFor(pdfium::annotation::kBorder);
   if (pBorder)
     return pBorder->GetIntegerAt(2);
 
-  const CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS");
+  RetainPtr<const CPDF_Dictionary> pBSDict = GetAnnotDict()->GetDictFor("BS");
   if (pBSDict)
     return pBSDict->GetIntegerFor("W", 1);
 
@@ -171,9 +171,9 @@ void CPDFSDK_BAAnnot::SetBorderStyle(BorderStyle nStyle) {
 }
 
 BorderStyle CPDFSDK_BAAnnot::GetBorderStyle() const {
-  const CPDF_Dictionary* pBSDict = GetAnnotDict()->GetDictFor("BS");
+  RetainPtr<const CPDF_Dictionary> pBSDict = GetAnnotDict()->GetDictFor("BS");
   if (pBSDict) {
-    ByteString sBorderStyle = pBSDict->GetStringFor("S", "S");
+    ByteString sBorderStyle = pBSDict->GetByteStringFor("S", "S");
     if (sBorderStyle == "S")
       return BorderStyle::kSolid;
     if (sBorderStyle == "D")
@@ -186,11 +186,11 @@ BorderStyle CPDFSDK_BAAnnot::GetBorderStyle() const {
       return BorderStyle::kUnderline;
   }
 
-  const CPDF_Array* pBorder =
+  RetainPtr<const CPDF_Array> pBorder =
       GetAnnotDict()->GetArrayFor(pdfium::annotation::kBorder);
   if (pBorder) {
     if (pBorder->size() >= 4) {
-      const CPDF_Array* pDP = pBorder->GetArrayAt(3);
+      RetainPtr<const CPDF_Array> pDP = pBorder->GetArrayAt(3);
       if (pDP && pDP->size() > 0)
         return BorderStyle::kDash;
     }
@@ -357,7 +357,7 @@ bool CPDFSDK_BAAnnot::OnKeyDown(FWL_VKEYCODE nKeyCode,
 
   CPDF_Action action = GetAAction(CPDF_AAction::kKeyStroke);
   CPDFSDK_FormFillEnvironment* env = GetPageView()->GetFormFillEnv();
-  if (action.GetDict()) {
+  if (action.HasDict()) {
     return env->DoActionLink(action, CPDF_AAction::kKeyStroke, nFlags);
   }
 

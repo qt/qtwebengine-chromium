@@ -54,45 +54,45 @@ protected:
         switch (fType) {
             case Type::kConvexCheck:
                 for (int i = 0; i < loops; i++) {
-                    (void)SkIsConvexPolygon(poly.begin(), poly.count());
+                    (void)SkIsConvexPolygon(poly.begin(), poly.size());
                 }
                 break;
             case Type::kSimpleCheck:
                 for (int i = 0; i < loops; i++) {
-                    (void)SkIsSimplePolygon(poly.begin(), poly.count());
+                    (void)SkIsSimplePolygon(poly.begin(), poly.size());
                 }
                 break;
             case Type::kInsetConvex:
-                if (SkIsConvexPolygon(poly.begin(), poly.count())) {
+                if (SkIsConvexPolygon(poly.begin(), poly.size())) {
                     SkTDArray<SkPoint> result;
                     for (int i = 0; i < loops; i++) {
-                        (void)SkInsetConvexPolygon(poly.begin(), poly.count(), 10, &result);
-                        (void)SkInsetConvexPolygon(poly.begin(), poly.count(), 40, &result);
+                        (void)SkInsetConvexPolygon(poly.begin(), poly.size(), 10, &result);
+                        (void)SkInsetConvexPolygon(poly.begin(), poly.size(), 40, &result);
                     }
                 }
                 break;
             case Type::kOffsetSimple:
-                if (SkIsSimplePolygon(poly.begin(), poly.count())) {
+                if (SkIsSimplePolygon(poly.begin(), poly.size())) {
                     SkTDArray<SkPoint> result;
                     SkRect bounds;
-                    bounds.setBounds(poly.begin(), poly.count());
+                    bounds.setBounds(poly.begin(), poly.size());
                     for (int i = 0; i < loops; i++) {
-                        (void)SkOffsetSimplePolygon(poly.begin(), poly.count(), bounds, 10,
+                        (void)SkOffsetSimplePolygon(poly.begin(), poly.size(), bounds, 10,
                                                     &result);
-                        (void)SkOffsetSimplePolygon(poly.begin(), poly.count(), bounds, -10,
+                        (void)SkOffsetSimplePolygon(poly.begin(), poly.size(), bounds, -10,
                                                     &result);
                     }
                 }
                 break;
             case Type::kTessellateSimple:
-                if (SkIsSimplePolygon(poly.begin(), poly.count())) {
-                    SkAutoSTMalloc<64, uint16_t> indexMap(poly.count());
-                    for (int i = 0; i < poly.count(); ++i) {
+                if (SkIsSimplePolygon(poly.begin(), poly.size())) {
+                    SkAutoSTMalloc<64, uint16_t> indexMap(poly.size());
+                    for (int i = 0; i < poly.size(); ++i) {
                         indexMap[i] = i;
                     }
                     SkTDArray<uint16_t> triangleIndices;
                     for (int i = 0; i < loops; i++) {
-                        SkTriangulateSimplePolygon(poly.begin(), indexMap, poly.count(),
+                        SkTriangulateSimplePolygon(poly.begin(), indexMap, poly.size(),
                                                    &triangleIndices);
                     }
                 }
@@ -123,9 +123,9 @@ public:
         SkScalar rad = 0;
         const SkScalar drad = SK_ScalarPI / n;
         for (int i = 0; i < n; i++) {
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r1, c + SkScalarSin(rad) * r1);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r1, c + SkScalarSin(rad) * r1);
             rad += drad;
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r2, c + SkScalarSin(rad) * r2);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r2, c + SkScalarSin(rad) * r2);
             rad += drad;
         }
     }
@@ -148,7 +148,7 @@ public:
         SkScalar rad = 0;
         const SkScalar drad = 2 * SK_ScalarPI / n;
         for (int i = 0; i < n; i++) {
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
             rad += drad;
         }
     }
@@ -171,10 +171,10 @@ public:
 
         SkScalar rad = -SK_ScalarPI / 2;
         const SkScalar drad = (n >> 1) * SK_ScalarPI * 2 / n;
-        *poly->push() = SkPoint::Make(c, c - r);
+        *poly->append() = SkPoint::Make(c, c - r);
         for (int i = 1; i < n; i++) {
             rad += drad;
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
         }
     }
 private:
@@ -197,11 +197,11 @@ public:
         SkScalar rad = 0;
         const SkScalar drad = 3 * SK_ScalarPI / (2*n);
         for (int i = 0; i < n; i++) {
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
             rad += drad;
         }
         // and the mouth
-        *poly->push() = SkPoint::Make(45, 45);
+        *poly->append() = SkPoint::Make(45, 45);
     }
 private:
     using INHERITED = PolyUtilsBench;
@@ -222,11 +222,11 @@ public:
         SkScalar rad = 0;
         const SkScalar drad = 3 * SK_ScalarPI / (2*n);
         for (int i = 0; i < n; i++) {
-            *poly->push() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
+            *poly->append() = SkPoint::Make(c + SkScalarCos(rad) * r, c + SkScalarSin(rad) * r);
             rad += drad;
         }
         // and the tip of the cone
-        *poly->push() = SkPoint::Make(90, 0);
+        *poly->append() = SkPoint::Make(90, 0);
     }
 private:
     using INHERITED = PolyUtilsBench;

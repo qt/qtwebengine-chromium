@@ -33,7 +33,9 @@ namespace internal {
 typedef __m256  Packet8f;
 typedef eigen_packet_wrapper<__m256i, 0> Packet8i;
 typedef __m256d Packet4d;
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 typedef eigen_packet_wrapper<__m128i, 2> Packet8h;
+#endif
 typedef eigen_packet_wrapper<__m128i, 3> Packet8bf;
 
 #ifdef EIGEN_VECTORIZE_AVX2
@@ -45,7 +47,9 @@ template<> struct is_arithmetic<__m256>  { enum { value = true }; };
 template<> struct is_arithmetic<__m256i> { enum { value = true }; };
 template<> struct is_arithmetic<__m256d> { enum { value = true }; };
 template<> struct is_arithmetic<Packet8i> { enum { value = true }; };
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> struct is_arithmetic<Packet8h> { enum { value = true }; };
+#endif
 template<> struct is_arithmetic<Packet8bf> { enum { value = true }; };
 #ifdef EIGEN_VECTORIZE_AVX2
 template<> struct is_arithmetic<Packet4l> { enum { value = true }; };
@@ -69,6 +73,9 @@ template<> struct packet_traits<float>  : default_packet_traits
     HasReciprocal = EIGEN_FAST_MATH,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasACos = 1,
+    HasASin = 1,
+    HasATan = 1,
     HasLog = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -204,6 +211,8 @@ template<> struct packet_traits<int> : default_packet_traits
   enum {
     Vectorizable = 1,
     AlignedOnScalar = 1,
+    HasCmp = 1,
+    HasDiv = 1,
     size=8
   };
 };
@@ -218,6 +227,7 @@ template<> struct packet_traits<int64_t> : default_packet_traits
   enum {
     Vectorizable = 1,
     AlignedOnScalar = 1,
+    HasCmp = 1,
     size=4,
 
     // requires AVX512
@@ -536,13 +546,19 @@ template<> EIGEN_STRONG_INLINE Packet8i pmul<Packet8i>(const Packet8i& a, const 
 
 template<> EIGEN_STRONG_INLINE Packet8f pdiv<Packet8f>(const Packet8f& a, const Packet8f& b) { return _mm256_div_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet4d pdiv<Packet4d>(const Packet4d& a, const Packet4d& b) { return _mm256_div_pd(a,b); }
-template<> EIGEN_STRONG_INLINE Packet8i pdiv<Packet8i>(const Packet8i& /*a*/, const Packet8i& /*b*/)
-{ eigen_assert(false && "packet integer division are not supported by AVX");
-  return pset1<Packet8i>(0);
+
+template<> EIGEN_STRONG_INLINE Packet8i pdiv<Packet8i>(const Packet8i& a, const Packet8i& b)
+{
+#ifdef EIGEN_VECTORIZE_AVX512
+  return _mm512_cvttpd_epi32(_mm512_div_pd(_mm512_cvtepi32_pd(a), _mm512_cvtepi32_pd(b)));
+#else  
+  Packet4i lo = pdiv<Packet4i>(_mm256_extractf128_si256(a, 0), _mm256_extractf128_si256(b, 0));
+  Packet4i hi = pdiv<Packet4i>(_mm256_extractf128_si256(a, 1), _mm256_extractf128_si256(b, 1));
+  return _mm256_insertf128_si256(_mm256_castsi128_si256(lo), hi, 1);
+#endif
 }
 
 #ifdef EIGEN_VECTORIZE_FMA
-
 template <>
 EIGEN_STRONG_INLINE Packet8f pmadd(const Packet8f& a, const Packet8f& b, const Packet8f& c) {
   return _mm256_fmadd_ps(a, b, c);
@@ -690,6 +706,12 @@ template<> EIGEN_STRONG_INLINE Packet8i pmax<Packet8i>(const Packet8i& a, const 
   return _mm256_insertf128_si256(_mm256_castsi128_si256(lo), (hi), 1);
 #endif
 }
+
+#ifdef EIGEN_VECTORIZE_AVX2
+template<> EIGEN_STRONG_INLINE Packet8i psign(const Packet8i& a) {
+  return _mm256_sign_epi32(_mm256_set1_epi32(1), a);
+}
+#endif
 
 // Add specializations for min/max with prescribed NaN progation.
 template<>
@@ -1211,7 +1233,12 @@ template<> EIGEN_STRONG_INLINE double predux_max<Packet4d>(const Packet4d& a)
 
 template<> EIGEN_STRONG_INLINE bool predux_any(const Packet8f& x)
 {
-  return _mm256_movemask_ps(x)!=0;
+  return _mm256_movemask_ps(x) != 0;
+}
+
+template<> EIGEN_STRONG_INLINE bool predux_any(const Packet8i& x)
+{
+  return _mm256_movemask_ps(_mm256_castsi256_ps(x)) != 0;
 }
 
 EIGEN_DEVICE_FUNC inline void
@@ -1334,21 +1361,37 @@ ptranspose(PacketBlock<Packet4d,4>& kernel) {
 }
 
 template<> EIGEN_STRONG_INLINE Packet8f pblend(const Selector<8>& ifPacket, const Packet8f& thenPacket, const Packet8f& elsePacket) {
+#ifdef EIGEN_VECTORIZE_AVX2  
+  const __m256i zero = _mm256_setzero_si256();
+  const __m256i select = _mm256_set_epi32(ifPacket.select[7], ifPacket.select[6], ifPacket.select[5], ifPacket.select[4], ifPacket.select[3], ifPacket.select[2], ifPacket.select[1], ifPacket.select[0]);
+  __m256i false_mask = _mm256_cmpeq_epi32(zero, select);
+  return _mm256_blendv_ps(thenPacket, elsePacket, _mm256_castsi256_ps(false_mask));
+#else
   const __m256 zero = _mm256_setzero_ps();
   const __m256 select = _mm256_set_ps(ifPacket.select[7], ifPacket.select[6], ifPacket.select[5], ifPacket.select[4], ifPacket.select[3], ifPacket.select[2], ifPacket.select[1], ifPacket.select[0]);
   __m256 false_mask = _mm256_cmp_ps(select, zero, _CMP_EQ_UQ);
   return _mm256_blendv_ps(thenPacket, elsePacket, false_mask);
+#endif
 }
+
 template<> EIGEN_STRONG_INLINE Packet4d pblend(const Selector<4>& ifPacket, const Packet4d& thenPacket, const Packet4d& elsePacket) {
+#ifdef EIGEN_VECTORIZE_AVX2  
+  const __m256i zero = _mm256_setzero_si256();
+  const __m256i select = _mm256_set_epi64x(ifPacket.select[3], ifPacket.select[2], ifPacket.select[1], ifPacket.select[0]);
+  __m256i false_mask = _mm256_cmpeq_epi64(select, zero);
+  return _mm256_blendv_pd(thenPacket, elsePacket, _mm256_castsi256_pd(false_mask));
+#else
   const __m256d zero = _mm256_setzero_pd();
   const __m256d select = _mm256_set_pd(ifPacket.select[3], ifPacket.select[2], ifPacket.select[1], ifPacket.select[0]);
   __m256d false_mask = _mm256_cmp_pd(select, zero, _CMP_EQ_UQ);
   return _mm256_blendv_pd(thenPacket, elsePacket, false_mask);
+#endif
 }
 
 // Packet math for Eigen::half
-
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> struct unpacket_traits<Packet8h> { typedef Eigen::half type; enum {size=8, alignment=Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false}; typedef Packet8h half; };
+#endif
 
 template<> EIGEN_STRONG_INLINE Packet8h pset1<Packet8h>(const Eigen::half& from) {
   return _mm_set1_epi16(numext::bit_cast<numext::uint16_t>(from));
@@ -1495,6 +1538,7 @@ template<> EIGEN_STRONG_INLINE Packet8h pnegate(const Packet8h& a) {
   return _mm_xor_si128(a, sign_mask);
 }
 
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> EIGEN_STRONG_INLINE Packet8h padd<Packet8h>(const Packet8h& a, const Packet8h& b) {
   Packet8f af = half2float(a);
   Packet8f bf = half2float(b);
@@ -1522,6 +1566,7 @@ template<> EIGEN_STRONG_INLINE Packet8h pdiv<Packet8h>(const Packet8h& a, const 
   Packet8f rf = pdiv(af, bf);
   return float2half(rf);
 }
+#endif
 
 template<> EIGEN_STRONG_INLINE Packet8h pgather<Eigen::half, Packet8h>(const Eigen::half* from, Index stride)
 {
@@ -1550,11 +1595,14 @@ template<> EIGEN_STRONG_INLINE void pscatter<Eigen::half, Packet8h>(Eigen::half*
   to[stride*7] = aux[7];
 }
 
+
+#ifndef EIGEN_VECTORIZE_AVX512FP16
 template<> EIGEN_STRONG_INLINE Eigen::half predux<Packet8h>(const Packet8h& a) {
   Packet8f af = half2float(a);
   float reduced = predux<Packet8f>(af);
   return Eigen::half(reduced);
 }
+#endif
 
 template<> EIGEN_STRONG_INLINE Eigen::half predux_max<Packet8h>(const Packet8h& a) {
   Packet8f af = half2float(a);

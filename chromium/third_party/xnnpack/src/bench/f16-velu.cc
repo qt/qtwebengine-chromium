@@ -13,11 +13,12 @@
 #include <fp16/fp16.h>
 #include "bench/utils.h"
 
+#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
-#include <xnnpack/vunary.h>
-#include <xnnpack/params.h>
+#include <xnnpack/microfnptr.h>
 #include <xnnpack/microparams-init.h>
+#include <xnnpack/vunary.h>
 
 
 static void f16_velu(
@@ -69,13 +70,13 @@ static void f16_velu(
 #if XNN_ENABLE_ARM_FP16 && (XNN_ARCH_ARM || XNN_ARCH_ARM64)
   BENCHMARK_CAPTURE(f16_velu, neonfp16arith_rr1_p3_x8,
                     xnn_f16_velu_ukernel__neonfp16arith_rr1_p3_x8,
-                    xnn_init_f16_elu_neonfp16arith_rr1_p3_params,
+                    xnn_init_f16_elu_fp16arith_rr1_p3_params,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<uint16_t, uint16_t>)
     ->UseRealTime();
   BENCHMARK_CAPTURE(f16_velu, neonfp16arith_rr1_p3_x16,
                     xnn_f16_velu_ukernel__neonfp16arith_rr1_p3_x16,
-                    xnn_init_f16_elu_neonfp16arith_rr1_p3_params,
+                    xnn_init_f16_elu_fp16arith_rr1_p3_params,
                     benchmark::utils::CheckNEONFP16ARITH)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<uint16_t, uint16_t>)
     ->UseRealTime();

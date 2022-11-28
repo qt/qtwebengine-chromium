@@ -26,6 +26,18 @@
 namespace perfetto {
 namespace trace_processor {
 
+enum TraceType {
+  kUnknownTraceType,
+  kProtoTraceType,
+  kJsonTraceType,
+  kFuchsiaTraceType,
+  kSystraceTraceType,
+  kGzipTraceType,
+  kCtraceTraceType,
+  kNinjaLogTraceType,
+  kAndroidBugreportTraceType,
+};
+
 class ArgsTracker;
 class ArgsTranslationTable;
 class AsyncTrackSetTracker;
@@ -42,6 +54,7 @@ class HeapProfileTracker;
 class PerfSampleTracker;
 class MetadataTracker;
 class ProtoImporterModule;
+class TrackEventModule;
 class ProcessTracker;
 class SliceTracker;
 class SliceTranslationTable;
@@ -98,6 +111,8 @@ class TraceProcessorContext {
   std::unique_ptr<Destructible> sched_tracker;           // SchedEventTracker
   std::unique_ptr<Destructible> syscall_tracker;         // SyscallTracker
   std::unique_ptr<Destructible> system_info_tracker;     // SystemInfoTracker
+  std::unique_ptr<Destructible> v4l2_tracker;            // V4l2Tracker
+  std::unique_ptr<Destructible> virtio_video_tracker;    // VirtioVideoTracker
   std::unique_ptr<Destructible> systrace_parser;         // SystraceParser
   std::unique_ptr<Destructible> thread_state_tracker;    // ThreadStateTracker
   std::unique_ptr<Destructible> i2c_tracker;             // I2CTracker
@@ -125,12 +140,18 @@ class TraceProcessorContext {
   // TracePacket.
   std::vector<std::vector<ProtoImporterModule*>> modules_by_field;
   std::vector<std::unique_ptr<ProtoImporterModule>> modules;
+  // Pointers to modules from the modules vector that need to be called for
+  // all fields.
+  std::vector<ProtoImporterModule*> modules_for_all_fields;
   FtraceModule* ftrace_module = nullptr;
+  TrackEventModule* track_module = nullptr;
 
   // Marks whether the uuid was read from the trace.
   // If the uuid was NOT read, the uuid will be made from the hash of the first
   // 4KB of the trace.
   bool uuid_found_in_trace = false;
+
+  TraceType trace_type = kUnknownTraceType;
 };
 
 }  // namespace trace_processor

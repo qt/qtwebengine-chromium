@@ -22,10 +22,12 @@
 namespace tint::resolver {
 namespace {
 
+using namespace tint::number_suffixes;  // NOLINT
+
 struct ResolverAtomicTest : public resolver::TestHelper, public testing::Test {};
 
 TEST_F(ResolverAtomicTest, GlobalWorkgroupI32) {
-    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.i32()), ast::StorageClass::kWorkgroup);
+    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.i32()), ast::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_TRUE(TypeOf(g)->Is<sem::Reference>());
@@ -35,7 +37,7 @@ TEST_F(ResolverAtomicTest, GlobalWorkgroupI32) {
 }
 
 TEST_F(ResolverAtomicTest, GlobalWorkgroupU32) {
-    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.u32()), ast::StorageClass::kWorkgroup);
+    auto* g = GlobalVar("a", ty.atomic(Source{{12, 34}}, ty.u32()), ast::AddressSpace::kWorkgroup);
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_TRUE(TypeOf(g)->Is<sem::Reference>());
@@ -46,11 +48,8 @@ TEST_F(ResolverAtomicTest, GlobalWorkgroupU32) {
 
 TEST_F(ResolverAtomicTest, GlobalStorageStruct) {
     auto* s = Structure("s", utils::Vector{Member("a", ty.atomic(Source{{12, 34}}, ty.i32()))});
-    auto* g = GlobalVar("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-                        utils::Vector{
-                            create<ast::BindingAttribute>(0u),
-                            create<ast::GroupAttribute>(0u),
-                        });
+    auto* g = GlobalVar("g", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kReadWrite,
+                        Binding(0_a), Group(0_a));
 
     EXPECT_TRUE(r()->Resolve()) << r()->error();
     ASSERT_TRUE(TypeOf(g)->Is<sem::Reference>());

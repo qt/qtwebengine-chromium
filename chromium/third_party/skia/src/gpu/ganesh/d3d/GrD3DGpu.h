@@ -69,7 +69,7 @@ public:
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_startCapture() override;
-    void testingOnly_endCapture() override;
+    void testingOnly_stopCapture() override;
 
     void resetShaderCacheForTesting() const override {
         fResourceProvider.resetShaderCacheForTesting();
@@ -203,8 +203,9 @@ private:
                               sk_sp<GrGpuBuffer>,
                               size_t offset) override;
 
-    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                       const SkIPoint& dstPoint) override;
+    bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                       GrSurface* src, const SkIRect& srcRect,
+                       GrSamplerState::Filter) override;
 
     bool onRegenerateMipMapLevels(GrTexture*) override;
 
@@ -227,7 +228,7 @@ private:
     void prepareSurfacesForBackendAccessAndStateUpdates(
             SkSpan<GrSurfaceProxy*> proxies,
             SkSurface::BackendSurfaceAccess access,
-            const GrBackendSurfaceMutableState* newState) override;
+            const skgpu::MutableTextureState* newState) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
 
@@ -235,7 +236,8 @@ private:
                                             const GrBackendFormat&,
                                             GrRenderable,
                                             GrMipmapped,
-                                            GrProtected) override;
+                                            GrProtected,
+                                            std::string_view label) override;
 
     bool onClearBackendTexture(const GrBackendTexture&,
                                sk_sp<skgpu::RefCntedCallback> finishedCallback,

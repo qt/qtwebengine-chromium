@@ -56,13 +56,10 @@ const gl::InternalFormat &GetReadAttachmentInfo(const gl::Context *context,
 }  // namespace
 
 // FramebufferMtl implementation
-FramebufferMtl::FramebufferMtl(const gl::FramebufferState &state,
-                               ContextMtl *context,
-                               bool flipY,
-                               WindowSurfaceMtl *backbuffer)
+FramebufferMtl::FramebufferMtl(const gl::FramebufferState &state, ContextMtl *context, bool flipY)
     : FramebufferImpl(state),
       mColorRenderTargets(context->getNativeCaps().maxColorAttachments, nullptr),
-      mBackbuffer(backbuffer),
+      mBackbuffer(nullptr),
       mFlipY(flipY)
 {
     reset();
@@ -1543,7 +1540,9 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
                                              const RenderTargetMtl *renderTarget,
                                              uint8_t *pixels) const
 {
-    ContextMtl *contextMtl = mtl::GetImpl(context);
+    ContextMtl *contextMtl             = mtl::GetImpl(context);
+    const angle::FeaturesMtl &features = contextMtl->getDisplay()->getFeatures();
+
     if (!renderTarget)
     {
         return angle::Result::Continue;
@@ -1576,7 +1575,18 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
     const mtl::Format &readFormat        = *renderTarget->getFormat();
     const angle::Format &readAngleFormat = readFormat.actualAngleFormat();
 
-    if (contextMtl->getDisplay()->getFeatures().copyTextureToBufferForReadOptimization.enabled)
+    if (features.copyIOSurfaceToNonIOSurfaceForReadOptimization.enabled &&
+        texture->hasIOSurface() && texture->mipmapLevels() == 1 &&
+        texture->textureType() == MTLTextureType2D)
+    {
+        // Reading a texture may be slow if it's an IOSurface because metal has to lock/unlock the
+        // surface, whereas copying the texture to non IOSurface texture and then reading from that
+        // may be fast depending on the GPU/driver.
+        ANGLE_TRY(contextMtl->copy2DTextureSlice0Level0ToWorkTexture(texture));
+        texture = contextMtl->getWorkTexture();
+    }
+
+    if (features.copyTextureToBufferForReadOptimization.enabled)
     {
         ANGLE_TRY(contextMtl->copyTextureSliceLevelToWorkBuffer(
             context, texture, renderTarget->getLevelIndex(), renderTarget->getLayerIndex()));
@@ -1601,20 +1611,6 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
 
         return result;
     }
-
-    if (contextMtl->getDisplay()
-            ->getFeatures()
-            .copyIOSurfaceToNonIOSurfaceForReadOptimization.enabled &&
-        texture->hasIOSurface() && texture->mipmapLevels() == 1 &&
-        texture->textureType() == MTLTextureType2D)
-    {
-        // Reading a texture may be slow if it's an IOSurface because metal has to lock/unlock the
-        // surface, whereas copying the texture to non IOSurface texture and then reading from that
-        // may be fast depending on the GPU/driver.
-        ANGLE_TRY(contextMtl->copy2DTextureSlice0Level0ToWorkTexture(texture));
-        texture = contextMtl->getWorkTexture();
-    }
-
     if (texture->isBeingUsedByGPU(contextMtl))
     {
         contextMtl->flushCommandBuffer(mtl::WaitUntilFinished);

@@ -17,7 +17,7 @@ import { Puppeteer, CommonPuppeteerSettings, ConnectOptions } from '../common/Pu
 import { BrowserFetcher, BrowserFetcherOptions } from './BrowserFetcher.js';
 import { LaunchOptions, BrowserLaunchArgumentOptions } from './LaunchOptions.js';
 import { BrowserConnectOptions } from '../common/BrowserConnector.js';
-import { Browser } from '../common/Browser.js';
+import { Browser } from '../api/Browser.js';
 import { ProductLauncher } from './ProductLauncher.js';
 import { Product } from '../common/Product.js';
 /**
@@ -43,6 +43,7 @@ export interface PuppeteerLaunchOptions extends LaunchOptions, BrowserLaunchArgu
  *
  * @example
  * The following is a typical example of using Puppeteer to drive automation:
+ *
  * ```ts
  * const puppeteer = require('puppeteer');
  *
@@ -63,6 +64,9 @@ export interface PuppeteerLaunchOptions extends LaunchOptions, BrowserLaunchArgu
  */
 export declare class PuppeteerNode extends Puppeteer {
     #private;
+    /**
+     * @internal
+     */
     _preferredRevision: string;
     /**
      * @internal
@@ -90,9 +94,10 @@ export declare class PuppeteerNode extends Puppeteer {
      *
      * @example
      * You can use `ignoreDefaultArgs` to filter out `--mute-audio` from default arguments:
+     *
      * ```ts
      * const browser = await puppeteer.launch({
-     *   ignoreDefaultArgs: ['--mute-audio']
+     *   ignoreDefaultArgs: ['--mute-audio'],
      * });
      * ```
      *

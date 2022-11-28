@@ -14,6 +14,7 @@
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 #include "src/gpu/graphite/text/AtlasManager.h"
 #include "src/text/gpu/SubRunContainer.h"
 
@@ -22,50 +23,50 @@ using AtlasSubRun = sktext::gpu::AtlasSubRun;
 namespace skgpu::graphite {
 
 namespace {
-static constexpr DepthStencilSettings kDirectShadingPass = {
-        /*frontStencil=*/{},
-        /*backStencil=*/ {},
-        /*refValue=*/    0,
-        /*stencilTest=*/ false,
-        /*depthCompare=*/CompareOp::kGEqual,
-        /*depthTest=*/   true,
-        /*depthWrite=*/  true
-};
 
 // We are expecting to sample from up to 4 textures
 constexpr int kNumTextAtlasTextures = 4;
+
 }  // namespace
 
-BitmapTextRenderStep::BitmapTextRenderStep(bool isA8)
+BitmapTextRenderStep::BitmapTextRenderStep()
         : RenderStep("BitmapTextRenderStep",
                      "",
                      Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage,
-                     /*uniforms=*/{{"atlasSizeInv", SkSLType::kFloat2}},
-                     PrimitiveType::kTriangles,
-                     kDirectShadingPass,
-                     /*vertexAttrs=*/
-                     {{"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
+                     /*uniforms=*/{{"deviceMatrix", SkSLType::kFloat4x4},
+                                   {"atlasSizeInv", SkSLType::kFloat2}},
+                     PrimitiveType::kTriangleStrip,
+                     kDirectDepthGEqualPass,
+                     /*vertexAttrs=*/ {},
+                     /*instanceAttrs=*/
+                     {{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
+                      {"uvPos", VertexAttribType::kUShort2, SkSLType::kUShort2},
+                      {"xyPos", VertexAttribType::kFloat2, SkSLType::kFloat2},
+                      {"indexAndFlags", VertexAttribType::kUShort2, SkSLType::kUShort2},
+                      {"strikeToSourceScale", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                      {"texCoords", VertexAttribType::kUShort2, SkSLType::kUShort2},
                       {"ssboIndex", VertexAttribType::kInt, SkSLType::kInt}},
-                     /*instanceAttrs=*/{},
                      /*varyings=*/
                      {{"textureCoords", SkSLType::kFloat2},
-                      {"texIndex", SkSLType::kFloat}})
-        , fIsA8(isA8) {}
+                      {"texIndex", SkSLType::kHalf},
+                      {"maskFormat", SkSLType::kHalf}}) {}
 
 BitmapTextRenderStep::~BitmapTextRenderStep() {}
 
 const char* BitmapTextRenderStep::vertexSkSL() const {
     return R"(
-        int2 coords = int2(texCoords.x, texCoords.y);
-        int texIdx = coords.x >> 13;
-        float2 unormTexCoords = float2(coords.x & 0x1FFF, coords.y);
+        float2 baseCoords = float2(float(sk_VertexID >> 1), float(sk_VertexID & 1));
+        baseCoords.xy *= float2(size);
 
+        stepLocalCoords = strikeToSourceScale*baseCoords + float2(xyPos);
+        float4 position = deviceMatrix*float4(stepLocalCoords, 0, 1);
+
+        float2 unormTexCoords = baseCoords + float2(uvPos);
         textureCoords = unormTexCoords * atlasSizeInv;
-        texIndex = float(texIdx);
+        texIndex = half(indexAndFlags.x);
+        maskFormat = half(indexAndFlags.y);
 
-        float4 devPosition = float4(position, depth, 1);
+        float4 devPosition = float4(position.xy, depth, position.w);
     )";
 }
 
@@ -82,50 +83,39 @@ std::string BitmapTextRenderStep::texturesAndSamplersSkSL(int binding) const {
 }
 
 const char* BitmapTextRenderStep::fragmentCoverageSkSL() const {
-    if (fIsA8) {
-        return R"(
-            half4 texColor;
-            if (texIndex == 0) {
-               texColor = sample(text_atlas_0, textureCoords).rrrr;
-            } else if (texIndex == 1) {
-               texColor = sample(text_atlas_1, textureCoords).rrrr;
-            } else if (texIndex == 2) {
-               texColor = sample(text_atlas_2, textureCoords).rrrr;
-            } else if (texIndex == 3) {
-               texColor = sample(text_atlas_3, textureCoords).rrrr;
-            } else {
-               texColor = sample(text_atlas_0, textureCoords).rrrr;
-            }
+    return R"(
+        half4 texColor;
+        if (texIndex == 0) {
+           texColor = sample(text_atlas_0, textureCoords);
+        } else if (texIndex == 1) {
+           texColor = sample(text_atlas_1, textureCoords);
+        } else if (texIndex == 2) {
+           texColor = sample(text_atlas_2, textureCoords);
+        } else if (texIndex == 3) {
+           texColor = sample(text_atlas_3, textureCoords);
+        } else {
+           texColor = sample(text_atlas_0, textureCoords);
+        }
+        // A8
+        if (maskFormat == 0) {
+            outputCoverage = texColor.rrrr;
+        // LCD
+        } else if (maskFormat == 1) {
+            outputCoverage = half4(texColor.rgb, max(max(texColor.r, texColor.g), texColor.b));
+        // RGBA
+        } else {
             outputCoverage = texColor;
-        )";
-    } else {
-        return R"(
-            half4 texColor;
-            if (texIndex == 0) {
-               texColor = sample(text_atlas_0, textureCoords);
-            } else if (texIndex == 1) {
-               texColor = sample(text_atlas_1, textureCoords);
-            } else if (texIndex == 2) {
-               texColor = sample(text_atlas_2, textureCoords);
-            } else if (texIndex == 3) {
-               texColor = sample(text_atlas_3, textureCoords);
-            } else {
-               texColor = sample(text_atlas_0, textureCoords);
-            }
-            outputCoverage = texColor;
-        )";
-    }
+        }
+    )";
 }
 
 void BitmapTextRenderStep::writeVertices(DrawWriter* dw,
                                          const DrawParams& params,
                                          int ssboIndex) const {
     const SubRunData& subRunData = params.geometry().subRunData();
-    // TODO: pass through the color from the SkPaint via the SubRunData
-    subRunData.subRun()->fillVertexData(dw, subRunData.startGlyphIndex(), subRunData.glyphCount(),
-                                        ssboIndex,
-                                        params.order().depthAsFloat(),
-                                        params.transform());
+
+    subRunData.subRun()->fillInstanceData(dw, subRunData.startGlyphIndex(), subRunData.glyphCount(),
+                                          ssboIndex, params.order().depthAsFloat());
 }
 
 void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
@@ -141,6 +131,7 @@ void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
     SkASSERT(proxies && numProxies > 0);
 
     // write uniforms
+    gatherer->write(params.transform());
     skvx::float2 atlasDimensionsInverse = {1.f/proxies[0]->dimensions().width(),
                                            1.f/proxies[0]->dimensions().height()};
     gatherer->write(atlasDimensionsInverse);

@@ -11,7 +11,6 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 
-enum class SkBackend : uint8_t;
 class SkPaintParamsKeyBuilder;
 class SkPipelineDataGatherer;
 class SkShader;
@@ -68,7 +67,9 @@ private:
     sk_sp<SkBlender>     fFinalBlender; // A nullptr here means SrcOver blending
     sk_sp<SkShader>      fShader;
     sk_sp<SkColorFilter> fColorFilter;
-    // A nullptr fPrimitiveBlender means there's no primitive color blending and it is skipped
+    // A nullptr fPrimitiveBlender means there's no primitive color blending and it is skipped.
+    // In the case where there is primitive blending, the primitive color is the source color and
+    // the dest is the paint's color (or the paint's shader's computed color).
     sk_sp<SkBlender>     fPrimitiveBlender;
     bool                 fSkipColorXform;
 

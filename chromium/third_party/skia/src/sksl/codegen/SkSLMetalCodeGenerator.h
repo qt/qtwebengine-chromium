@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <initializer_list>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,7 +50,6 @@ class PostfixExpression;
 class PrefixExpression;
 class ProgramElement;
 class ReturnStatement;
-class Setting;
 class Statement;
 class StructDefinition;
 class SwitchStatement;
@@ -79,7 +77,7 @@ public:
     bool generateCode() override;
 
 protected:
-    using Precedence = Operator::Precedence;
+    using Precedence = OperatorPrecedence;
 
     typedef int Requirements;
     inline static constexpr Requirements kNo_Requirements          = 0;
@@ -116,6 +114,8 @@ protected:
 
     void writeStructDefinitions();
 
+    void writeConstantVariables();
+
     void writeFields(const std::vector<Type::Field>& fields, Position pos,
                      const InterfaceBlock* parentIntf = nullptr);
 
@@ -135,15 +135,9 @@ protected:
 
     std::string typeName(const Type& type);
 
-    std::string textureTypeName(const Type& type, const Modifiers* modifiers);
-
     void writeStructDefinition(const StructDefinition& s);
 
     void writeType(const Type& type);
-
-    void writeTextureType(const Type& type, const Modifiers& modifiers);
-
-    void writeParameterType(const Type& type, const Modifiers& modifiers);
 
     void writeExtension(const Extension& ext);
 
@@ -259,8 +253,6 @@ protected:
 
     void writeLiteral(const Literal& f);
 
-    void writeSetting(const Setting& s);
-
     void writeStatement(const Statement& s);
 
     void writeStatements(const StatementArray& statements);
@@ -285,16 +277,11 @@ protected:
 
     Requirements requirements(const FunctionDeclaration& f);
 
-    Requirements requirements(const Expression* e);
-
     Requirements requirements(const Statement* s);
-
-    // Returns true if it wrote anything
-    bool writeComputeShaderMainParams();
 
     // For compute shader main functions, writes and initializes the _in and _out structs (the
     // instances, not the types themselves)
-    void writeComputeMainInputsAndOutputs();
+    void writeComputeMainInputs();
 
     int getUniformBinding(const Modifiers& m);
 
@@ -312,7 +299,6 @@ protected:
     int fVarCount = 0;
     int fIndentation = 0;
     bool fAtLineStart = false;
-    std::set<std::string> fWrittenIntrinsics;
     // true if we have run into usages of dFdx / dFdy
     bool fFoundDerivatives = false;
     SkTHashMap<const FunctionDeclaration*, Requirements> fRequirements;
@@ -324,6 +310,11 @@ protected:
     bool fIgnoreVariableReferenceModifiers = false;
     static constexpr char kTextureSuffix[] = "_Tex";
     static constexpr char kSamplerSuffix[] = "_Smplr";
+
+    // Workaround/polyfill flags
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenMatrixCompMult = false;
+    bool fWrittenOuterProduct = false;
 
     using INHERITED = CodeGenerator;
 };

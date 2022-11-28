@@ -14,6 +14,7 @@
 #include "absl/base/attributes.h"
 #include "absl/base/macros.h"
 #include "absl/base/optimization.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -30,6 +31,7 @@
 #include "quiche/quic/core/crypto/quic_encrypter.h"
 #include "quiche/quic/core/crypto/quic_random.h"
 #include "quiche/quic/core/frames/quic_ack_frequency_frame.h"
+#include "quiche/quic/core/quic_connection_context.h"
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_constants.h"
 #include "quiche/quic/core/quic_data_reader.h"
@@ -1295,8 +1297,17 @@ size_t QuicFramer::GetMinStatelessResetPacketLength() {
 
 // static
 std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildIetfStatelessResetPacket(
-    QuicConnectionId /*connection_id*/, size_t received_packet_length,
+    QuicConnectionId connection_id, size_t received_packet_length,
     StatelessResetToken stateless_reset_token) {
+  return BuildIetfStatelessResetPacket(connection_id, received_packet_length,
+                                       stateless_reset_token,
+                                       QuicRandom::GetInstance());
+}
+
+// static
+std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildIetfStatelessResetPacket(
+    QuicConnectionId /*connection_id*/, size_t received_packet_length,
+    StatelessResetToken stateless_reset_token, QuicRandom* random) {
   QUIC_DVLOG(1) << "Building IETF stateless reset packet.";
   if (received_packet_length <= GetMinStatelessResetPacketLength()) {
     QUICHE_DLOG(ERROR)
@@ -1316,10 +1327,10 @@ std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildIetfStatelessResetPacket(
   // from comparing the entire packet to a known value. Therefore it has no
   // cryptographic use, and does not need a secure cryptographic pseudo-random
   // number generator. It's therefore safe to use WriteInsecureRandomBytes.
-  if (!writer.WriteInsecureRandomBytes(QuicRandom::GetInstance(),
-                                       len - kStatelessResetTokenLength)) {
+  const size_t random_bytes_size = len - kStatelessResetTokenLength;
+  if (!writer.WriteInsecureRandomBytes(random, random_bytes_size)) {
     QUIC_BUG(362045737_2) << "Failed to append random bytes of length: "
-                          << len - kStatelessResetTokenLength;
+                          << random_bytes_size;
     return nullptr;
   }
   // Change first 2 fixed bits to 01.
@@ -1364,7 +1375,7 @@ std::unique_ptr<QuicEncryptedPacket> QuicFramer::BuildVersionNegotiationPacket(
     // depends on this randomness.
     size_t version_index = 0;
     const bool disable_randomness =
-        GetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness);
+        GetQuicFlag(quic_disable_version_negotiation_grease_randomness);
     if (!disable_randomness) {
       version_index =
           QuicRandom::GetInstance()->RandUint64() % (wire_versions.size() + 1);
@@ -1893,6 +1904,23 @@ bool QuicFramer::ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
     return RaiseError(QUIC_DECRYPTION_FAILURE);
   }
   QuicDataReader reader(decrypted_buffer, decrypted_length);
+
+  // Remember decrypted_payload in the current connection context until the end
+  // of this function.
+  auto* connection_context =
+      add_process_packet_context_ ? QuicConnectionContext::Current() : nullptr;
+  if (connection_context != nullptr) {
+    connection_context->process_packet_context.decrypted_payload =
+        reader.FullPayload();
+    connection_context->process_packet_context.current_frame_offset = 0;
+  }
+  auto clear_decrypted_payload = absl::MakeCleanup([&]() {
+    if (connection_context != nullptr) {
+      QUIC_RELOADABLE_FLAG_COUNT(quic_add_process_packet_context);
+      connection_context->process_packet_context.decrypted_payload =
+          absl::string_view();
+    }
+  });
 
   // Update the largest packet number after we have decrypted the packet
   // so we are confident is not attacker controlled.
@@ -3159,7 +3187,14 @@ bool QuicFramer::ProcessIetfFrameData(QuicDataReader* reader,
   }
 
   QUIC_DVLOG(2) << ENDPOINT << "Processing IETF packet with header " << header;
+  auto* connection_context =
+      add_process_packet_context_ ? QuicConnectionContext::Current() : nullptr;
   while (!reader->IsDoneReading()) {
+    if (connection_context != nullptr) {
+      connection_context->process_packet_context.current_frame_offset =
+          connection_context->process_packet_context.decrypted_payload.size() -
+          reader->BytesRemaining();
+    }
     uint64_t frame_type;
     // Will be the number of bytes into which frame_type was encoded.
     size_t encoded_bytes = reader->BytesRemaining();

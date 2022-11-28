@@ -270,7 +270,10 @@ static SkPDFIndirectReference make_fallback_shader(SkPDFDocument* doc,
     // the first shader, applying the xfer mode and drawing again with the
     // second shader, then applying the layer to the original drawing.
 
-    SkMatrix shaderTransform = as_SB(shader)->getLocalMatrix();
+    SkMatrix shaderTransform;
+    if (sk_sp<SkShader> innerShader = as_SB(shader)->makeAsALocalMatrixShader(&shaderTransform)) {
+        shader = innerShader.get();
+    }
 
     // surfaceBBox is in device space. While that's exactly what we
     // want for sizing our bitmap, we need to map it into
@@ -335,15 +338,13 @@ SkPDFIndirectReference SkPDFMakeShader(SkPDFDocument* doc,
                                        SkColor4f paintColor) {
     SkASSERT(shader);
     SkASSERT(doc);
-    if (SkShader::kNone_GradientType != shader->asAGradient(nullptr)) {
+    if (as_SB(shader)->asGradient() != SkShaderBase::GradientType::kNone) {
         return SkPDFGradientShader::Make(doc, shader, canvasTransform, surfaceBBox);
     }
     if (surfaceBBox.isEmpty()) {
         return SkPDFIndirectReference();
     }
     SkBitmap image;
-
-    SkASSERT(shader->asAGradient(nullptr) == SkShader::kNone_GradientType) ;
 
     paintColor = adjust_color(shader, paintColor);
     SkMatrix shaderTransform;

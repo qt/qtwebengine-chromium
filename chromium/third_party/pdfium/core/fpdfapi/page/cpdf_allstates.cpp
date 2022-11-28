@@ -71,11 +71,11 @@ void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
         if (!pDash)
           break;
 
-        const CPDF_Array* pArray = pDash->GetArrayAt(0);
+        RetainPtr<const CPDF_Array> pArray = pDash->GetArrayAt(0);
         if (!pArray)
           break;
 
-        SetLineDash(pArray, pDash->GetNumberAt(1), 1.0f);
+        SetLineDash(pArray.Get(), pDash->GetFloatAt(1), 1.0f);
         break;
       }
       case FXBSTR_ID('R', 'I', 0, 0):
@@ -86,8 +86,8 @@ void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
         if (!pFont)
           break;
 
-        m_TextState.SetFontSize(pFont->GetNumberAt(1));
-        m_TextState.SetFont(pParser->FindFont(pFont->GetStringAt(0)));
+        m_TextState.SetFontSize(pFont->GetFloatAt(1));
+        m_TextState.SetFont(pParser->FindFont(pFont->GetByteStringAt(0)));
         break;
       }
       case FXBSTR_ID('T', 'R', 0, 0):
@@ -96,11 +96,11 @@ void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('T', 'R', '2', 0):
-        m_GeneralState.SetTR(!pObject->IsName() ? pObject.Get() : nullptr);
+        m_GeneralState.SetTR(!pObject->IsName() ? std::move(pObject) : nullptr);
         break;
       case FXBSTR_ID('B', 'M', 0, 0): {
-        CPDF_Array* pArray = pObject->AsArray();
-        m_GeneralState.SetBlendMode(pArray ? pArray->GetStringAt(0)
+        const CPDF_Array* pArray = pObject->AsArray();
+        m_GeneralState.SetBlendMode(pArray ? pArray->GetByteStringAt(0)
                                            : pObject->GetString());
         if (m_GeneralState.GetBlendType() > BlendMode::kMultiply)
           pParser->GetPageObjectHolder()->SetBackgroundAlphaNeeded(true);
@@ -138,7 +138,7 @@ void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('B', 'G', '2', 0):
-        m_GeneralState.SetBG(pObject.Get());
+        m_GeneralState.SetBG(std::move(pObject));
         break;
       case FXBSTR_ID('U', 'C', 'R', 0):
         if (pGS->KeyExist("UCR2")) {
@@ -146,10 +146,10 @@ void CPDF_AllStates::ProcessExtGS(const CPDF_Dictionary* pGS,
         }
         [[fallthrough]];
       case FXBSTR_ID('U', 'C', 'R', '2'):
-        m_GeneralState.SetUCR(pObject.Get());
+        m_GeneralState.SetUCR(std::move(pObject));
         break;
       case FXBSTR_ID('H', 'T', 0, 0):
-        m_GeneralState.SetHT(pObject.Get());
+        m_GeneralState.SetHT(std::move(pObject));
         break;
       case FXBSTR_ID('F', 'L', 0, 0):
         m_GeneralState.SetFlatness(pObject->GetNumber());

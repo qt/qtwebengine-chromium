@@ -19,11 +19,11 @@
 #include "third_party/base/notreached.h"
 
 CPVT_FontMap::CPVT_FontMap(CPDF_Document* pDoc,
-                           CPDF_Dictionary* pResDict,
+                           RetainPtr<CPDF_Dictionary> pResDict,
                            RetainPtr<CPDF_Font> pDefFont,
                            const ByteString& sDefFontAlias)
     : m_pDocument(pDoc),
-      m_pResDict(pResDict),
+      m_pResDict(std::move(pResDict)),
       m_pDefFont(std::move(pDefFont)),
       m_sDefFontAlias(sDefFontAlias) {}
 
@@ -43,7 +43,7 @@ void CPVT_FontMap::SetupAnnotSysPDFFont() {
   if (ValidateFontResourceDict(pFontList.Get()) &&
       !pFontList->KeyExist(m_sSysFontAlias)) {
     pFontList->SetNewFor<CPDF_Reference>(m_sSysFontAlias, m_pDocument.Get(),
-                                         pPDFFont->GetFontDict()->GetObjNum());
+                                         pPDFFont->GetFontDictObjNum());
   }
   m_pSysFont = std::move(pPDFFont);
 }

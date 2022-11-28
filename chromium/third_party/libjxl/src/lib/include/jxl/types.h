@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file types.h
+/** @addtogroup libjxl_common
+ * @{
+ * @file types.h
  * @brief Data types for the JPEG XL API, for both encoding and decoding.
  */
 
@@ -13,6 +15,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "jxl/jxl_export.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -39,27 +43,25 @@ typedef enum {
    * for HDR and wide gamut images when color profile conversion is required. */
   JXL_TYPE_FLOAT = 0,
 
-  /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
-   * row.
-   * TODO(lode): support first in MSB, other padding.
-   */
-  JXL_TYPE_BOOLEAN,
-
   /** Use type uint8_t. May clip wide color gamut data.
    */
-  JXL_TYPE_UINT8,
+  JXL_TYPE_UINT8 = 2,
 
   /** Use type uint16_t. May clip wide color gamut data.
    */
-  JXL_TYPE_UINT16,
-
-  /** Use type uint32_t. May clip wide color gamut data.
-   */
-  JXL_TYPE_UINT32,
+  JXL_TYPE_UINT16 = 3,
 
   /** Use 16-bit IEEE 754 half-precision floating point values */
-  JXL_TYPE_FLOAT16,
+  JXL_TYPE_FLOAT16 = 5,
 } JxlDataType;
+
+/* DEPRECATED: bit-packed 1-bit data type. Use JXL_TYPE_UINT8 instead.
+ */
+JXL_DEPRECATED static const int JXL_TYPE_BOOLEAN = 1;
+
+/* DEPRECATED: uint32_t data type. Use JXL_TYPE_FLOAT instead.
+ */
+JXL_DEPRECATED static const int JXL_TYPE_UINT32 = 4;
 
 /** Ordering of multi-byte data.
  */
@@ -109,8 +111,41 @@ typedef struct {
   size_t align;
 } JxlPixelFormat;
 
+/** Data type holding the 4-character type name of an ISOBMFF box.
+ */
+typedef char JxlBoxType[4];
+
+/** Types of progressive detail.
+ * Setting a progressive detail with value N implies all progressive details
+ * with smaller or equal value. Currently only the following level of
+ * progressive detail is implemented:
+ *  - kDC (which implies kFrames)
+ *  - kLastPasses (which implies kDC and kFrames)
+ *  - kPasses (which implies kLastPasses, kDC and kFrames)
+ */
+typedef enum {
+  // after completed kRegularFrames
+  kFrames = 0,
+  // after completed DC (1:8)
+  kDC = 1,
+  // after completed AC passes that are the last pass for their resolution
+  // target.
+  kLastPasses = 2,
+  // after completed AC passes that are not the last pass for their resolution
+  // target.
+  kPasses = 3,
+  // during DC frame when lower resolution are completed (1:32, 1:16)
+  kDCProgressive = 4,
+  // after completed groups
+  kDCGroups = 5,
+  // after completed groups
+  kGroups = 6,
+} JxlProgressiveDetail;
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif /* JXL_TYPES_H_ */
+
+/** @}*/

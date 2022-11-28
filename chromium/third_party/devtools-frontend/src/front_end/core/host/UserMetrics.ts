@@ -613,7 +613,6 @@ export enum DevtoolsExperiments {
   'timelineInvalidationTracking' = 26,
   'timelineShowAllEvents' = 27,
   'timelineV8RuntimeCallStats' = 28,
-  'timelineWebGL' = 29,
   'timelineReplayEvent' = 30,
   'wasmDWARFDebugging' = 31,
   'dualScreenSupport' = 32,
@@ -625,9 +624,6 @@ export enum DevtoolsExperiments {
   'ignoreListJSFramesOnTimeline' = 43,
   'contrastIssues' = 44,
   'experimentalCookieFeatures' = 45,
-  'hideIssuesFeature' = 48,
-  'reportingApiDebugging' = 49,
-  'syncSettings' = 50,
   'groupAndHideIssuesByKind' = 51,
   'cssTypeComponentLength' = 52,
   'preciseChanges' = 53,
@@ -636,7 +632,6 @@ export enum DevtoolsExperiments {
   'headerOverrides' = 56,
   'lighthousePanelFR' = 57,
   'evaluateExpressionsWithSourceMaps' = 58,
-  'cssLayers' = 59,
   'eyedropperColorPicker' = 60,
   'instrumentationBreakpoints' = 61,
   'cssAuthoringHints' = 62,
@@ -959,7 +954,8 @@ export enum RecordingExported {
   ToJSON = 2,
   ToPuppeteerReplay = 3,
   ToExtension = 4,
-  MaxValue = 5,
+  ToLighthouse = 5,
+  MaxValue = 6,
 }
 
 /* eslint-disable @typescript-eslint/naming-convention */

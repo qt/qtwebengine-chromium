@@ -52,8 +52,9 @@ static const enum AVPixelFormat *get_compliance_normal_pix_fmts(const AVCodec *c
     }
 }
 
-static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx,
-                                    const AVCodec *codec, enum AVPixelFormat target)
+static enum AVPixelFormat
+choose_pixel_fmt(const AVCodec *codec, enum AVPixelFormat target,
+                 int strict_std_compliance)
 {
     if (codec && codec->pix_fmts) {
         const enum AVPixelFormat *p = codec->pix_fmts;
@@ -62,7 +63,7 @@ static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx
         int has_alpha = desc ? desc->nb_components % 2 == 0 : 0;
         enum AVPixelFormat best= AV_PIX_FMT_NONE;
 
-        if (enc_ctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
+        if (strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
             p = get_compliance_normal_pix_fmts(codec, p);
         }
         for (; *p != AV_PIX_FMT_NONE; p++) {
@@ -89,6 +90,7 @@ static enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx
 static const char *choose_pix_fmts(OutputFilter *ofilter, AVBPrint *bprint)
 {
     OutputStream *ost = ofilter->ost;
+    AVCodecContext *enc = ost->enc_ctx;
     const AVDictionaryEntry *strict_dict = av_dict_get(ost->encoder_opts, "strict", NULL, 0);
     if (strict_dict)
         // used by choose_pixel_fmt() and below
@@ -102,13 +104,14 @@ static const char *choose_pix_fmts(OutputFilter *ofilter, AVBPrint *bprint)
         return av_get_pix_fmt_name(ost->enc_ctx->pix_fmt);
     }
     if (ost->enc_ctx->pix_fmt != AV_PIX_FMT_NONE) {
-        return av_get_pix_fmt_name(choose_pixel_fmt(ost->st, ost->enc_ctx, ost->enc, ost->enc_ctx->pix_fmt));
-    } else if (ost->enc && ost->enc->pix_fmts) {
+        return av_get_pix_fmt_name(choose_pixel_fmt(enc->codec, enc->pix_fmt,
+                                                    ost->enc_ctx->strict_std_compliance));
+    } else if (enc->codec->pix_fmts) {
         const enum AVPixelFormat *p;
 
-        p = ost->enc->pix_fmts;
+        p = enc->codec->pix_fmts;
         if (ost->enc_ctx->strict_std_compliance > FF_COMPLIANCE_UNOFFICIAL) {
-            p = get_compliance_normal_pix_fmts(ost->enc, p);
+            p = get_compliance_normal_pix_fmts(enc->codec, p);
         }
 
         for (; *p != AV_PIX_FMT_NONE; p++) {
@@ -116,7 +119,7 @@ static const char *choose_pix_fmts(OutputFilter *ofilter, AVBPrint *bprint)
             av_bprintf(bprint, "%s%c", name, p[1] == AV_PIX_FMT_NONE ? '\0' : '|');
         }
         if (!av_bprint_is_complete(bprint))
-            exit_program(1);
+            report_and_exit(AVERROR(ENOMEM));
         return bprint->str;
     } else
         return NULL;
@@ -180,7 +183,7 @@ int init_simple_filtergraph(InputStream *ist, OutputStream *ost)
     InputFilter  *ifilter;
 
     if (!fg)
-        exit_program(1);
+        report_and_exit(AVERROR(ENOMEM));
     fg->index = nb_filtergraphs;
 
     ofilter = ALLOC_ARRAY_ELEM(fg->outputs, fg->nb_outputs);
@@ -197,7 +200,7 @@ int init_simple_filtergraph(InputStream *ist, OutputStream *ost)
 
     ifilter->frame_queue = av_fifo_alloc2(8, sizeof(AVFrame*), AV_FIFO_FLAG_AUTO_GROW);
     if (!ifilter->frame_queue)
-        exit_program(1);
+        report_and_exit(AVERROR(ENOMEM));
 
     GROW_ARRAY(ist->filters, ist->nb_filters);
     ist->filters[ist->nb_filters - 1] = ifilter;
@@ -221,7 +224,7 @@ static char *describe_filter_link(FilterGraph *fg, AVFilterInOut *inout, int in)
         res = av_asprintf("%s:%s", ctx->filter->name,
                           avfilter_pad_get_name(pads, inout->pad_idx));
     if (!res)
-        exit_program(1);
+        report_and_exit(AVERROR(ENOMEM));
     return res;
 }
 
@@ -306,7 +309,7 @@ static void init_input_filter(FilterGraph *fg, AVFilterInOut *in)
 
     ifilter->frame_queue = av_fifo_alloc2(8, sizeof(AVFrame*), AV_FIFO_FLAG_AUTO_GROW);
     if (!ifilter->frame_queue)
-        exit_program(1);
+        report_and_exit(AVERROR(ENOMEM));
 
     GROW_ARRAY(ist->filters, ist->nb_filters);
     ist->filters[ist->nb_filters - 1] = ifilter;
@@ -558,6 +561,7 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
     pad_idx = 0;                                                            \
 } while (0)
     av_bprint_init(&args, 0, AV_BPRINT_SIZE_UNLIMITED);
+#if FFMPEG_OPT_MAP_CHANNEL
     if (ost->audio_channels_mapped) {
         AVChannelLayout mapped_layout = { 0 };
         int i;
@@ -570,6 +574,7 @@ static int configure_output_audio_filter(FilterGraph *fg, OutputFilter *ofilter,
         AUTO_INSERT_FILTER("-map_channel", "pan", args.str);
         av_bprint_clear(&args);
     }
+#endif
 
     if (codec->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
         av_channel_layout_default(&codec->ch_layout, codec->ch_layout.nb_channels);
@@ -734,7 +739,7 @@ static int configure_input_video_filter(FilterGraph *fg, InputFilter *ifilter,
     }
 
     if (!fr.num)
-        fr = av_guess_frame_rate(input_files[ist->file_index]->ctx, ist->st, NULL);
+        fr = ist->framerate_guessed;
 
     if (ist->dec_ctx->codec_type == AVMEDIA_TYPE_SUBTITLE) {
         ret = sub2video_prepare(ist, ifilter);
@@ -896,29 +901,6 @@ static int configure_input_audio_filter(FilterGraph *fg, InputFilter *ifilter,
         if (!fg->reconfiguration)
             av_strlcatf(args, sizeof(args), ":first_pts=0");
         AUTO_INSERT_FILTER_INPUT("-async", "aresample", args);
-    }
-
-//     if (ost->audio_channels_mapped) {
-//         int i;
-//         AVBPrint pan_buf;
-//         av_bprint_init(&pan_buf, 256, 8192);
-//         av_bprintf(&pan_buf, "0x%"PRIx64,
-//                    av_get_default_channel_layout(ost->audio_channels_mapped));
-//         for (i = 0; i < ost->audio_channels_mapped; i++)
-//             if (ost->audio_channels_map[i] != -1)
-//                 av_bprintf(&pan_buf, ":c%d=c%d", i, ost->audio_channels_map[i]);
-//         AUTO_INSERT_FILTER_INPUT("-map_channel", "pan", pan_buf.str);
-//         av_bprint_finalize(&pan_buf, NULL);
-//     }
-
-    if (audio_volume != 256) {
-        char args[256];
-
-        av_log(NULL, AV_LOG_WARNING, "-vol has been deprecated. Use the volume "
-               "audio filter instead.\n");
-
-        snprintf(args, sizeof(args), "%f", audio_volume / 256.);
-        AUTO_INSERT_FILTER_INPUT("-vol", "volume", args);
     }
 
     snprintf(name, sizeof(name), "trim for input stream %d:%d",
@@ -1114,16 +1096,8 @@ int configure_filtergraph(FilterGraph *fg)
 
     for (i = 0; i < fg->nb_outputs; i++) {
         OutputStream *ost = fg->outputs[i]->ost;
-        if (!ost->enc) {
-            /* identical to the same check in ffmpeg.c, needed because
-               complex filter graphs are initialized earlier */
-            av_log(NULL, AV_LOG_ERROR, "Encoder (codec %s) not found for output stream #%d:%d\n",
-                     avcodec_get_name(ost->st->codecpar->codec_id), ost->file_index, ost->index);
-            ret = AVERROR(EINVAL);
-            goto fail;
-        }
-        if (ost->enc->type == AVMEDIA_TYPE_AUDIO &&
-            !(ost->enc->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
+        if (ost->enc_ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
+            !(ost->enc_ctx->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE))
             av_buffersink_set_frame_size(ost->filter->filter,
                                          ost->enc_ctx->frame_size);
     }

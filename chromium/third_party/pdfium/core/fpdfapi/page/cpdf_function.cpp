@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/page/cpdf_function.h"
 
+#include <utility>
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_expintfunc.h"
@@ -40,21 +41,22 @@ CPDF_Function::Type IntegerToFunctionType(int iType) {
 
 // static
 std::unique_ptr<CPDF_Function> CPDF_Function::Load(
-    const CPDF_Object* pFuncObj) {
-  std::set<const CPDF_Object*> visited;
-  return Load(pFuncObj, &visited);
+    RetainPtr<const CPDF_Object> pFuncObj) {
+  VisitedSet visited;
+  return Load(std::move(pFuncObj), &visited);
 }
 
 // static
 std::unique_ptr<CPDF_Function> CPDF_Function::Load(
-    const CPDF_Object* pFuncObj,
-    std::set<const CPDF_Object*>* pVisited) {
+    RetainPtr<const CPDF_Object> pFuncObj,
+    VisitedSet* pVisited) {
   if (!pFuncObj)
     return nullptr;
 
   if (pdfium::Contains(*pVisited, pFuncObj))
     return nullptr;
-  ScopedSetInsertion<const CPDF_Object*> insertion(pVisited, pFuncObj);
+
+  ScopedSetInsertion<VisitedSet::value_type> insertion(pVisited, pFuncObj);
 
   int iType = -1;
   if (const CPDF_Stream* pStream = pFuncObj->AsStream())
@@ -83,13 +85,12 @@ CPDF_Function::CPDF_Function(Type type) : m_Type(type) {}
 
 CPDF_Function::~CPDF_Function() = default;
 
-bool CPDF_Function::Init(const CPDF_Object* pObj,
-                         std::set<const CPDF_Object*>* pVisited) {
+bool CPDF_Function::Init(const CPDF_Object* pObj, VisitedSet* pVisited) {
   const CPDF_Stream* pStream = pObj->AsStream();
-  const CPDF_Dictionary* pDict =
-      pStream ? pStream->GetDict() : pObj->AsDictionary();
+  RetainPtr<const CPDF_Dictionary> pDict =
+      pStream ? pStream->GetDict() : pdfium::WrapRetain(pObj->AsDictionary());
 
-  const CPDF_Array* pDomains = pDict->GetArrayFor("Domain");
+  RetainPtr<const CPDF_Array> pDomains = pDict->GetArrayFor("Domain");
   if (!pDomains)
     return false;
 
@@ -98,9 +99,9 @@ bool CPDF_Function::Init(const CPDF_Object* pObj,
     return false;
 
   size_t nInputs = m_nInputs * 2;
-  m_Domains = ReadArrayElementsToVector(pDomains, nInputs);
+  m_Domains = ReadArrayElementsToVector(pDomains.Get(), nInputs);
 
-  const CPDF_Array* pRanges = pDict->GetArrayFor("Range");
+  RetainPtr<const CPDF_Array> pRanges = pDict->GetArrayFor("Range");
   m_nOutputs = pRanges ? fxcrt::CollectionSize<uint32_t>(*pRanges) / 2 : 0;
 
   // Ranges are required for type 0 and type 4 functions. A non-zero
@@ -112,7 +113,7 @@ bool CPDF_Function::Init(const CPDF_Object* pObj,
 
   if (m_nOutputs > 0) {
     size_t nOutputs = m_nOutputs * 2;
-    m_Ranges = ReadArrayElementsToVector(pRanges, nOutputs);
+    m_Ranges = ReadArrayElementsToVector(pRanges.Get(), nOutputs);
   }
 
   uint32_t old_outputs = m_nOutputs;

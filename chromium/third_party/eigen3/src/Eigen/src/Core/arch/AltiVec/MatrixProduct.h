@@ -1159,6 +1159,29 @@ EIGEN_ALWAYS_INLINE void bstore(PacketBlock<Packet,N>& acc, const DataMapper& re
   }
 }
 
+#ifdef USE_PARTIAL_PACKETS
+template<typename DataMapper, typename Packet, const Index accCols, bool Complex, Index N, bool full>
+EIGEN_ALWAYS_INLINE void bload_partial(PacketBlock<Packet,N*(Complex?2:1)>& acc, const DataMapper& res, Index row, Index elements)
+{
+  for (Index M = 0; M < N; M++) {
+    acc.packet[M] = res.template loadPacketPartial<Packet>(row, M, elements);
+  }
+  if (Complex && full) {
+    for (Index M = 0; M < N; M++) {
+      acc.packet[M+N] = res.template loadPacketPartial<Packet>(row + accCols, M, elements);
+    }
+  }
+}
+
+template<typename DataMapper, typename Packet, Index N>
+EIGEN_ALWAYS_INLINE void bstore_partial(PacketBlock<Packet,N>& acc, const DataMapper& res, Index row, Index elements)
+{
+  for (Index M = 0; M < N; M++) {
+    res.template storePacketPartial<Packet>(row, M, acc.packet[M], elements);
+  }
+}
+#endif
+
 #ifdef _ARCH_PWR10
 #define USE_P10_AND_PVIPR2_0 (EIGEN_COMP_LLVM || (__GNUC__ >= 11))
 #else
@@ -1199,6 +1222,14 @@ EIGEN_ALWAYS_INLINE Packet2d bmask<Packet2d>(const Index remaining_rows)
 #endif
 }
 
+template<typename Packet, int N>
+EIGEN_ALWAYS_INLINE void bscale(PacketBlock<Packet,N>& acc, PacketBlock<Packet,N>& accZ, const Packet& pAlpha)
+{
+  for (int M = 0; M < N; M++) {
+    acc.packet[M] = pmadd<Packet>(pAlpha, accZ.packet[M], acc.packet[M]);
+  }
+}
+
 // Scale the PacketBlock vectors by alpha.
 template<typename Packet, int N, bool mask>
 EIGEN_ALWAYS_INLINE void bscale(PacketBlock<Packet,N>& acc, PacketBlock<Packet,N>& accZ, const Packet& pAlpha, const Packet& pMask)
@@ -1209,9 +1240,7 @@ EIGEN_ALWAYS_INLINE void bscale(PacketBlock<Packet,N>& acc, PacketBlock<Packet,N
     EIGEN_UNUSED_VARIABLE(pMask);
   }
 
-  for (int M = 0; M < N; M++) {
-    acc.packet[M] = pmadd<Packet>(pAlpha, accZ.packet[M], acc.packet[M]);
-  }
+  bscale<Packet, N>(acc, accZ, pAlpha);
 }
 
 template<typename Packet, int N, bool real>
@@ -1461,6 +1490,13 @@ EIGEN_ALWAYS_INLINE void gemm_unrolled_row_iteration(
     MICRO_EXTRA_ROW<Scalar, Packet, accRows, remaining_rows>(lhs_ptr, rhs_ptr0, rhs_ptr1, rhs_ptr2, accZero0);
   }
 
+#ifdef USE_PARTIAL_PACKETS
+  EIGEN_UNUSED_VARIABLE(rows);
+  EIGEN_UNUSED_VARIABLE(pMask);
+  bload_partial<DataMapper, Packet, 0, false, accRows>(acc, res, row, remaining_rows);
+  bscale<Packet,accRows>(acc, accZero0, pAlpha);
+  bstore_partial<DataMapper, Packet, accRows>(acc, res, row, remaining_rows);
+#else
   bload<DataMapper, Packet, 0, ColMajor, false, accRows>(acc, res, row, 0);
   if ((accRows == 1) || (rows >= accCols))
   {
@@ -1474,6 +1510,7 @@ EIGEN_ALWAYS_INLINE void gemm_unrolled_row_iteration(
       }
     }
   }
+#endif
 }
 
 #define MICRO_EXTRA(MICRO_EXTRA_UNROLL, value, is_col) \
@@ -1565,16 +1602,35 @@ EIGEN_ALWAYS_INLINE void gemm_extra_row(
 
 #define MICRO_PREFETCH MICRO_UNROLL(MICRO_PREFETCH_ONE)
 
+#ifdef USE_PARTIAL_PACKETS
+#define MICRO_STORE_ONE(iter) \
+  if (unroll_factor > iter) { \
+    if (MICRO_NORMAL_PARTIAL(iter)) { \
+      bload<DataMapper, Packet, 0, ColMajor, false, accRows>(acc, res, row + iter*accCols, 0); \
+      bscale<Packet,accRows>(acc, accZero##iter, pAlpha); \
+      bstore<DataMapper, Packet, accRows>(acc, res, row + iter*accCols); \
+    } else { \
+      bload_partial<DataMapper, Packet, 0, false, accRows>(acc, res, row + iter*accCols, accCols2); \
+      bscale<Packet,accRows>(acc, accZero##iter, pAlpha); \
+      bstore_partial<DataMapper, Packet, accRows>(acc, res, row + iter*accCols, accCols2); \
+    } \
+  }
+#else
 #define MICRO_STORE_ONE(iter) \
   if (unroll_factor > iter) { \
     bload<DataMapper, Packet, 0, ColMajor, false, accRows>(acc, res, row + iter*accCols, 0); \
     bscale<Packet,accRows,!(MICRO_NORMAL(iter))>(acc, accZero##iter, pAlpha, pMask); \
     bstore<DataMapper, Packet, accRows>(acc, res, row + iter*accCols); \
   }
+#endif
 
 #define MICRO_STORE MICRO_UNROLL(MICRO_STORE_ONE)
 
+#ifdef USE_PARTIAL_PACKETS
+template<int unroll_factor, typename Scalar, typename Packet, typename DataMapper, const Index accRows, const Index accCols, bool full>
+#else
 template<int unroll_factor, typename Scalar, typename Packet, typename DataMapper, const Index accRows, const Index accCols, const Index accCols2>
+#endif
 EIGEN_ALWAYS_INLINE void gemm_unrolled_iteration(
   const DataMapper& res,
   const Scalar* lhs_base,
@@ -1585,7 +1641,12 @@ EIGEN_ALWAYS_INLINE void gemm_unrolled_iteration(
   Index strideB,
   Index& row,
   const Packet& pAlpha,
-  const Packet& pMask)
+#ifdef USE_PARTIAL_PACKETS
+  Index accCols2
+#else
+  const Packet& pMask
+#endif
+  )
 {
   const Scalar* rhs_ptr0 = rhs_base, * rhs_ptr1 = NULL, * rhs_ptr2 = NULL;
   const Scalar* lhs_ptr0 = NULL, * lhs_ptr1 = NULL, * lhs_ptr2 = NULL, * lhs_ptr3 = NULL, * lhs_ptr4 = NULL, * lhs_ptr5 = NULL, * lhs_ptr6 = NULL, * lhs_ptr7 = NULL;
@@ -1612,9 +1673,15 @@ EIGEN_ALWAYS_INLINE void gemm_unrolled_iteration(
   MICRO_UPDATE
 }
 
+#ifdef USE_PARTIAL_PACKETS
+#define MICRO_UNROLL_ITER2(N, M) \
+  gemm_unrolled_iteration<N + ((M) ? 1 : 0), Scalar, Packet, DataMapper, accRows, accCols, !M>(res3, lhs_base, rhs_base, depth, strideA, offsetA, strideB, row, pAlpha, M ? remaining_rows : accCols); \
+  if (M) return;
+#else
 #define MICRO_UNROLL_ITER2(N, M) \
   gemm_unrolled_iteration<N + ((M) ? 1 : 0), Scalar, Packet, DataMapper, accRows, accCols, M ? M : accCols>(res3, lhs_base, rhs_base, depth, strideA, offsetA, strideB, row, pAlpha, pMask); \
   if (M) return;
+#endif
 
 template<typename Scalar, typename Packet, typename DataMapper, const Index accRows, const Index accCols>
 EIGEN_ALWAYS_INLINE void gemm_cols(
@@ -2094,22 +2161,22 @@ EIGEN_ALWAYS_INLINE void gemm_complex_cols(
   switch( (rows-row)/accCols ) {
 #if MAX_COMPLEX_UNROLL > 4
     case 4:
-      MICRO_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 4)
+      MICRO_COMPLEX_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 4)
       break;
 #endif
 #if MAX_COMPLEX_UNROLL > 3
     case 3:
-      MICRO_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 3)
+      MICRO_COMPLEX_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 3)
       break;
 #endif
 #if MAX_COMPLEX_UNROLL > 2
     case 2:
-      MICRO_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 2)
+      MICRO_COMPLEX_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 2)
       break;
 #endif
 #if MAX_COMPLEX_UNROLL > 1
     case 1:
-      MICRO_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 1)
+      MICRO_COMPLEX_UNROLL_ITER(MICRO_COMPLEX_UNROLL_ITER2, 1)
       break;
 #endif
     default:

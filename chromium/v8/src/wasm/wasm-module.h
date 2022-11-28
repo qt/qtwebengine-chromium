@@ -20,19 +20,16 @@
 #include "src/handles/handles.h"
 #include "src/wasm/branch-hint-map.h"
 #include "src/wasm/constant-expression.h"
-#include "src/wasm/signature-map.h"
 #include "src/wasm/struct-types.h"
 #include "src/wasm/wasm-constants.h"
 #include "src/wasm/wasm-init-expr.h"
 #include "src/wasm/wasm-limits.h"
 
-namespace v8 {
-
-namespace internal {
-
+namespace v8::internal {
 class WasmModuleObject;
+}
 
-namespace wasm {
+namespace v8::internal::wasm {
 
 using WasmName = base::Vector<const char>;
 
@@ -66,10 +63,6 @@ struct WasmFunction {
   uint32_t func_index;     // index into the function table.
   uint32_t sig_index;      // index into the signature table.
   WireBytesRef code;       // code of this function.
-  // Required number of slots in a feedback vector. Marked {mutable} because
-  // this is computed late (by Liftoff compilation), when the rest of the
-  // {WasmFunction} is typically considered {const}.
-  mutable int feedback_slots;
   bool imported;
   bool exported;
   bool declared;
@@ -452,23 +445,35 @@ class CallSiteFeedback {
   bool is_polymorphic() const { return index_or_count_ <= -2; }
   bool is_invalid() const { return index_or_count_ == -1; }
   const PolymorphicCase* polymorphic_storage() const {
+    DCHECK(is_polymorphic());
     return reinterpret_cast<PolymorphicCase*>(frequency_or_ool_);
   }
 
   int index_or_count_;
   intptr_t frequency_or_ool_;
 };
+
 struct FunctionTypeFeedback {
+  // {feedback_vector} is computed from {call_targets} and the instance-specific
+  // feedback vector by {TransitiveTypeFeedbackProcessor}.
   std::vector<CallSiteFeedback> feedback_vector;
-  std::vector<uint32_t> call_targets;
+
+  // {call_targets} has one entry per "call" and "call_ref" in the function.
+  // For "call", it holds the index of the called function, for "call_ref" the
+  // value will be {kNonDirectCall}.
+  base::OwnedVector<uint32_t> call_targets;
+
+  // {tierup_priority} is updated and used when triggering tier-up.
+  // TODO(clemensb): This does not belong here; find a better place.
   int tierup_priority = 0;
 
   static constexpr uint32_t kNonDirectCall = 0xFFFFFFFF;
 };
+
 struct TypeFeedbackStorage {
-  std::map<uint32_t, FunctionTypeFeedback> feedback_for_function;
+  std::unordered_map<uint32_t, FunctionTypeFeedback> feedback_for_function;
   // Accesses to {feedback_for_function} are guarded by this mutex.
-  base::Mutex mutex;
+  mutable base::Mutex mutex;
 };
 
 struct WasmTable;
@@ -505,10 +510,6 @@ struct V8_EXPORT_PRIVATE WasmModule {
 
   void add_type(TypeDefinition type) {
     types.push_back(type);
-    uint32_t canonical_id = type.kind == TypeDefinition::kFunction
-                                ? signature_map.FindOrInsert(*type.function_sig)
-                                : 0;
-    per_module_canonical_type_ids.push_back(canonical_id);
     // Isorecursive canonical type will be computed later.
     isorecursive_canonical_type_ids.push_back(kNoSuperType);
   }
@@ -560,15 +561,17 @@ struct V8_EXPORT_PRIVATE WasmModule {
     return supertype(index) != kNoSuperType;
   }
 
+  // Linear search. Returns -1 if types are empty.
+  int MaxCanonicalTypeIndex() const {
+    if (isorecursive_canonical_type_ids.empty()) return -1;
+    return *std::max_element(isorecursive_canonical_type_ids.begin(),
+                             isorecursive_canonical_type_ids.end());
+  }
+
   std::vector<TypeDefinition> types;  // by type index
-  // TODO(7748): Unify the following two arrays.
-  // Maps each type index to a canonical index for purposes of call_indirect.
-  std::vector<uint32_t> per_module_canonical_type_ids;
   // Maps each type index to its global (cross-module) canonical index as per
   // isorecursive type canonicalization.
   std::vector<uint32_t> isorecursive_canonical_type_ids;
-  // Canonicalizing map for signature indexes.
-  SignatureMap signature_map;
   std::vector<WasmFunction> functions;
   std::vector<WasmGlobal> globals;
   std::vector<WasmDataSegment> data_segments;
@@ -601,21 +604,6 @@ struct V8_EXPORT_PRIVATE WasmModule {
 struct WasmTable {
   MOVE_ONLY_WITH_DEFAULT_CONSTRUCTORS(WasmTable);
 
-  // 'module' can be nullptr
-  // TODO(9495): Update this function as more table types are supported, or
-  // remove it completely when all reference types are allowed.
-  static bool IsValidTableType(ValueType type, const WasmModule* module) {
-    if (!type.is_object_reference()) return false;
-    HeapType heap_type = type.heap_type();
-    return heap_type == HeapType::kFunc || heap_type == HeapType::kExtern ||
-           heap_type == HeapType::kString ||
-           heap_type == HeapType::kStringViewWtf8 ||
-           heap_type == HeapType::kStringViewWtf16 ||
-           heap_type == HeapType::kStringViewIter ||
-           (module != nullptr && heap_type.is_index() &&
-            module->has_signature(heap_type.ref_index()));
-  }
-
   ValueType type = kWasmVoid;     // table type.
   uint32_t initial_size = 0;      // initial table size.
   uint32_t maximum_size = 0;      // maximum table size.
@@ -631,16 +619,9 @@ inline bool is_asmjs_module(const WasmModule* module) {
 
 size_t EstimateStoredSize(const WasmModule* module);
 
-// Returns the number of possible export wrappers for a given module.
-V8_EXPORT_PRIVATE int MaxNumExportWrappers(const WasmModule* module);
-
-// Returns the wrapper index for a function in {module} with signature {sig}
-// or {sig_index} and origin defined by {is_import}.
-// Prefer to use the {sig_index} consuming version, as it is much faster.
-int GetExportWrapperIndex(const WasmModule* module, const FunctionSig* sig,
-                          bool is_import);
-int GetExportWrapperIndex(const WasmModule* module, uint32_t sig_index,
-                          bool is_import);
+// Returns the wrapper index for a function with isorecursive canonical
+// signature index {canonical_sig_index}, and origin defined by {is_import}.
+int GetExportWrapperIndex(uint32_t canonical_sig_index, bool is_import);
 
 // Return the byte offset of the function identified by the given index.
 // The offset will be relative to the start of the module bytes.
@@ -797,8 +778,12 @@ class TruncatedUserString {
 size_t PrintSignature(base::Vector<char> buffer, const wasm::FunctionSig*,
                       char delimiter = ':');
 
-}  // namespace wasm
-}  // namespace internal
-}  // namespace v8
+V8_EXPORT_PRIVATE size_t
+GetWireBytesHash(base::Vector<const uint8_t> wire_bytes);
+
+// Get the required number of feedback slots for a function.
+int NumFeedbackSlots(const WasmModule* module, int func_index);
+
+}  // namespace v8::internal::wasm
 
 #endif  // V8_WASM_WASM_MODULE_H_

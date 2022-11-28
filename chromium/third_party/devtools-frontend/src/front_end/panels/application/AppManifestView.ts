@@ -91,6 +91,11 @@ const UIStrings = {
   */
   copyToClipboard: 'Copy to clipboard',
   /**
+  *@description Screen reader announcement string when the user clicks the copy to clipboard button.
+  *@example {/index.html} PH1
+  */
+  copiedToClipboard: 'Copied suggested ID {PH1} to clipboard',
+  /**
   *@description Text for the description of something
   */
   description: 'Description',
@@ -189,7 +194,7 @@ const UIStrings = {
   /**
   *@description Manifest installability error in the Application panel
   */
-  manifestStartUrlIsNotValid: 'Manifest start `URL` is not valid',
+  manifestStartUrlIsNotValid: 'Manifest \'`start_URL`\' is not valid',
   /**
   *@description Manifest installability error in the Application panel
   */
@@ -204,12 +209,12 @@ const UIStrings = {
   *@example {100} PH1
   */
   manifestDoesNotContainASuitable:
-      'Manifest does not contain a suitable icon - PNG, SVG or WebP format of at least {PH1}px is required, the `sizes` attribute must be set, and the `purpose` attribute, if set, must include `"any"`.',
+      'Manifest does not contain a suitable icon - PNG or SVG format of at least {PH1}px is required, the \'`sizes`\' attribute must be set, and the \'`purpose`\' attribute, if set, must include \'`any`\'.',
   /**
   *@description Manifest installability error in the Application panel
   */
   avoidPurposeAnyAndMaskable:
-      'Declaring an icon with `purpose: "any maskable"` is discouraged. It is likely to look incorrect on some platforms due to too much or too little padding.',
+      'Declaring an icon with \'`purpose: "any maskable"`\' is discouraged. It is likely to look incorrect on some platforms due to too much or too little padding.',
   /**
   *@description Manifest installability error in the Application panel
   */
@@ -220,7 +225,7 @@ const UIStrings = {
   *@example {100} PH1
   */
   noSuppliedIconIsAtLeastSpxSquare:
-      'No supplied icon is at least {PH1} pixels square in `PNG`, `SVG` or `WebP` format, with the purpose attribute unset or set to `"any"`.',
+      'No supplied icon is at least {PH1} pixels square in `PNG` or `SVG` format, with the purpose attribute unset or set to \'`any`\'.',
   /**
   *@description Manifest installability error in the Application panel
   */
@@ -264,12 +269,12 @@ const UIStrings = {
   /**
   *@description Manifest installability error in the Application panel
   */
-  manifestSpecifies: 'Manifest specifies `prefer_related_applications`: true',
+  manifestSpecifies: 'Manifest specifies \'`prefer_related_applications`: true\'',
   /**
   *@description Manifest installability error in the Application panel
   */
   preferrelatedapplicationsIsOnly:
-      '`prefer_related_applications` is only supported on `Chrome` Beta and Stable channels on `Android`.',
+      '\'`prefer_related_applications`\' is only supported on `Chrome` Beta and Stable channels on `Android`.',
   /**
   *@description Manifest installability error in the Application panel
   */
@@ -300,7 +305,7 @@ const UIStrings = {
   * be translated.
   * @example {ImageName} PH1
   */
-  sSrcIsNotSet: '{PH1} `src` is not set',
+  sSrcIsNotSet: '{PH1} \'`src`\' is not set',
   /**
   *@description Warning message for image resources from the manifest
   *@example {Screenshot} PH1
@@ -458,7 +463,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     this.presentationSection = this.reportView.appendSection(i18nString(UIStrings.presentation));
     this.protocolHandlersSection = this.reportView.appendSection(i18nString(UIStrings.protocolHandlers));
     this.protocolHandlersView = new ApplicationComponents.ProtocolHandlersView.ProtocolHandlersView();
-    this.protocolHandlersSection.contentElement.append(this.protocolHandlersView);
+    this.protocolHandlersSection.appendFieldWithCustomView(this.protocolHandlersView);
     this.iconsSection = this.reportView.appendSection(i18nString(UIStrings.icons), 'report-section-icons');
     this.shortcutSections = [];
     this.screenshotsSections = [];
@@ -468,6 +473,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     this.descriptionField = this.identitySection.appendFlexedField(i18nString(UIStrings.description));
 
     this.startURLField = this.presentationSection.appendField(i18nString(UIStrings.startUrl));
+    UI.ARIAUtils.setAccessibleName(this.startURLField, i18nString(UIStrings.startUrl));
 
     const themeColorField = this.presentationSection.appendField(i18nString(UIStrings.themeColor));
     this.themeColorSwatch = new InlineEditor.ColorSwatch.ColorSwatch();
@@ -644,6 +650,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
             iconColor: 'var(--color-text-primary)',
           }],
           clickHandler: (): void => {
+            UI.ARIAUtils.alert(i18nString(UIStrings.copiedToClipboard, {PH1: recommendedId}));
             Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(recommendedId);
           },
           compact: true,

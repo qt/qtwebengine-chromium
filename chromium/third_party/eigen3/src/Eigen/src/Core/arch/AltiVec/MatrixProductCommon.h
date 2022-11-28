@@ -5,6 +5,10 @@
 #define EIGEN_POWER_PREFETCH(p)
 #endif
 
+#ifdef _ARCH_PWR9
+#define USE_PARTIAL_PACKETS
+#endif
+
 #include "../../InternalHeaderCheck.h"
 
 namespace Eigen {
@@ -89,6 +93,17 @@ EIGEN_ALWAYS_INLINE void bload(PacketBlock<Packet,N*(Complex?2:1)>& acc, const D
 template<typename DataMapper, typename Packet, int N>
 EIGEN_ALWAYS_INLINE void bstore(PacketBlock<Packet,N>& acc, const DataMapper& res, Index row);
 
+#ifdef USE_PARTIAL_PACKETS
+template<typename DataMapper, typename Packet, const Index accCols, bool Complex, Index N, bool full = true>
+EIGEN_ALWAYS_INLINE void bload_partial(PacketBlock<Packet,N*(Complex?2:1)>& acc, const DataMapper& res, Index row, Index elements);
+
+template<typename DataMapper, typename Packet, Index N>
+EIGEN_ALWAYS_INLINE void bstore_partial(PacketBlock<Packet,N>& acc, const DataMapper& res, Index row, Index elements);
+#endif
+
+template<typename Packet, int N>
+EIGEN_ALWAYS_INLINE void bscale(PacketBlock<Packet,N>& acc, PacketBlock<Packet,N>& accZ, const Packet& pAlpha);
+
 template<typename Packet, int N, bool mask>
 EIGEN_ALWAYS_INLINE void bscale(PacketBlock<Packet,N>& acc, PacketBlock<Packet,N>& accZ, const Packet& pAlpha, const Packet& pMask);
 
@@ -101,7 +116,7 @@ EIGEN_ALWAYS_INLINE void bcouple(PacketBlock<Packet,N>& taccReal, PacketBlock<Pa
 #define MICRO_NORMAL(iter) \
   (accCols == accCols2) || (unroll_factor != (iter + 1))
 
-#define MICRO_UNROLL_ITER(func, N) \
+#define MICRO_UNROLL_ITER1(func, N) \
   switch (remaining_rows) { \
     default: \
       func(N, 0) \
@@ -120,6 +135,22 @@ EIGEN_ALWAYS_INLINE void bcouple(PacketBlock<Packet,N>& taccReal, PacketBlock<Pa
       } \
       break; \
   }
+
+#ifdef USE_PARTIAL_PACKETS
+#define MICRO_UNROLL_ITER(func, N) \
+  if (remaining_rows) { \
+    func(N, true); \
+  } else { \
+    func(N, false); \
+  }
+
+#define MICRO_NORMAL_PARTIAL(iter) \
+  full || (unroll_factor != (iter + 1))
+#else
+#define MICRO_UNROLL_ITER(func, N) MICRO_UNROLL_ITER1(func, N)
+#endif
+
+#define MICRO_COMPLEX_UNROLL_ITER(func, N) MICRO_UNROLL_ITER1(func, N)
 
 #define MICRO_NORMAL_COLS(iter, a, b) ((MICRO_NORMAL(iter)) ? a : b)
 
@@ -161,9 +192,15 @@ EIGEN_ALWAYS_INLINE void bcouple(PacketBlock<Packet,N>& taccReal, PacketBlock<Pa
 
 #define MICRO_COMPLEX_PREFETCH_ONE(iter) MICRO_PREFETCH1(lhs_ptr_real, iter)
 
+#ifdef USE_PARTIAL_PACKETS
+#define MICRO_UPDATE_MASK
+#else
+#define MICRO_UPDATE_MASK EIGEN_UNUSED_VARIABLE(pMask);
+#endif
+
 #define MICRO_UPDATE \
   if (accCols == accCols2) { \
-    EIGEN_UNUSED_VARIABLE(pMask); \
+    MICRO_UPDATE_MASK \
     EIGEN_UNUSED_VARIABLE(offsetA); \
     row += unroll_factor*accCols; \
   }

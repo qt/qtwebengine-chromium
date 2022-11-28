@@ -78,7 +78,7 @@ static int ljpeg_encode_bgr(AVCodecContext *avctx, PutBitContext *pb,
 
     for (y = 0; y < height; y++) {
         const int modified_predictor = y ? s->pred : 1;
-        uint8_t *ptr = frame->data[0] + (linesize * y);
+        const uint8_t *ptr = frame->data[0] + (linesize * y);
 
         if (put_bytes_left(pb, 0) < width * 4 * 4) {
             av_log(avctx, AV_LOG_ERROR, "encoded frame too large\n");
@@ -132,7 +132,7 @@ static inline void ljpeg_encode_yuv_mb(LJpegEncContext *s, PutBitContext *pb,
 
     if (mb_x == 0 || mb_y == 0) {
         for (i = 0; i < 3; i++) {
-            uint8_t *ptr;
+            const uint8_t *ptr;
             int x, y, h, v, linesize;
             h = s->hsample[i];
             v = s->vsample[i];
@@ -166,7 +166,7 @@ static inline void ljpeg_encode_yuv_mb(LJpegEncContext *s, PutBitContext *pb,
         }
     } else {
         for (i = 0; i < 3; i++) {
-            uint8_t *ptr;
+            const uint8_t *ptr;
             int x, y, h, v, linesize;
             h = s->hsample[i];
             v = s->vsample[i];
@@ -325,15 +325,15 @@ static const AVClass ljpeg_class = {
 
 const FFCodec ff_ljpeg_encoder = {
     .p.name         = "ljpeg",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Lossless JPEG"),
+    CODEC_LONG_NAME("Lossless JPEG"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_LJPEG,
+    .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_FRAME_THREADS,
     .priv_data_size = sizeof(LJpegEncContext),
     .p.priv_class   = &ljpeg_class,
     .init           = ljpeg_encode_init,
     FF_CODEC_ENCODE_CB(ljpeg_encode_frame),
     .close          = ljpeg_encode_close,
-    .p.capabilities = AV_CODEC_CAP_FRAME_THREADS,
     .p.pix_fmts     = (const enum AVPixelFormat[]){
         AV_PIX_FMT_BGR24   , AV_PIX_FMT_BGRA    , AV_PIX_FMT_BGR0,
         AV_PIX_FMT_YUVJ420P, AV_PIX_FMT_YUVJ444P, AV_PIX_FMT_YUVJ422P,

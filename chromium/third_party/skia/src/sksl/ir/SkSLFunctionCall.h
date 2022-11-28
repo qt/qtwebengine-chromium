@@ -12,6 +12,7 @@
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -21,6 +22,7 @@ namespace SkSL {
 class Context;
 class FunctionDeclaration;
 class Type;
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * A function invocation.
@@ -70,11 +72,9 @@ public:
         return fArguments;
     }
 
-    bool hasProperty(Property property) const override;
-
     std::unique_ptr<Expression> clone(Position pos) const override;
 
-    std::string description() const override;
+    std::string description(OperatorPrecedence) const override;
 
 private:
     const FunctionDeclaration& fFunction;

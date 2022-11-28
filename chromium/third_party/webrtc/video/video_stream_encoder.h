@@ -22,11 +22,10 @@
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/data_rate.h"
+#include "api/video/encoded_image.h"
 #include "api/video/video_bitrate_allocator.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_sink_interface.h"
-#include "api/video/video_stream_encoder_interface.h"
-#include "api/video/video_stream_encoder_observer.h"
 #include "api/video/video_stream_encoder_settings.h"
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
@@ -49,6 +48,8 @@
 #include "video/frame_cadence_adapter.h"
 #include "video/frame_encode_metadata_writer.h"
 #include "video/video_source_sink_controller.h"
+#include "video/video_stream_encoder_interface.h"
+#include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
 
@@ -254,6 +255,12 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
 
   void RequestEncoderSwitch() RTC_RUN_ON(&encoder_queue_);
 
+  // Augments an EncodedImage received from an encoder with parsable
+  // information.
+  EncodedImage AugmentEncodedImage(
+      const EncodedImage& encoded_image,
+      const CodecSpecificInfo* codec_specific_info);
+
   const FieldTrialsView& field_trials_;
   TaskQueueBase* const worker_queue_;
 
@@ -449,6 +456,20 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   bool switch_encoder_on_init_failures_;
 
   const absl::optional<int> vp9_low_tier_core_threshold_;
+
+  // These are copies of restrictions (glorified max_pixel_count) set by
+  // a) OnVideoSourceRestrictionsUpdated
+  // b) CheckForAnimatedContent
+  // They are used to scale down encoding resolution if needed when using
+  // requested_resolution.
+  //
+  // TODO(webrtc:14451) Split video_source_sink_controller_
+  // so that ownership on restrictions/wants is kept on &encoder_queue_, that
+  // these extra copies would not be needed.
+  absl::optional<VideoSourceRestrictions> latest_restrictions_
+      RTC_GUARDED_BY(&encoder_queue_);
+  absl::optional<VideoSourceRestrictions> animate_restrictions_
+      RTC_GUARDED_BY(&encoder_queue_);
 
   // Used to cancel any potentially pending tasks to the worker thread.
   // Refrenced by tasks running on `encoder_queue_` so need to be destroyed

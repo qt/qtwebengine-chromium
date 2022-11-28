@@ -527,7 +527,6 @@ struct hb_pair_t
   T1 first;
   T2 second;
 };
-#define hb_pair_t(T1,T2) hb_pair_t<T1, T2>
 template <typename T1, typename T2> static inline hb_pair_t<T1, T2>
 hb_pair (T1&& a, T2&& b) { return hb_pair_t<T1, T2> (a, b); }
 
@@ -553,14 +552,14 @@ struct
 {
   template <typename T, typename T2> constexpr auto
   operator () (T&& a, T2&& b) const HB_AUTO_RETURN
-  (a <= b ? std::forward<T> (a) : std::forward<T2> (b))
+  (a <= b ? a : b)
 }
 HB_FUNCOBJ (hb_min);
 struct
 {
   template <typename T, typename T2> constexpr auto
   operator () (T&& a, T2&& b) const HB_AUTO_RETURN
-  (a >= b ? std::forward<T> (a) : std::forward<T2> (b))
+  (a >= b ? a : b)
 }
 HB_FUNCOBJ (hb_max);
 struct

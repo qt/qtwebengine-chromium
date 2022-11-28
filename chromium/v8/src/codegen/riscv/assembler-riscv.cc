@@ -132,8 +132,10 @@ Register ToRegister(int num) {
 
 const int RelocInfo::kApplyMask =
     RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
+    RelocInfo::ModeMask(RelocInfo::NEAR_BUILTIN_ENTRY) |
     RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED) |
-    RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET);
+    RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET) |
+    RelocInfo::ModeMask(RelocInfo::CODE_TARGET);
 
 bool RelocInfo::IsCodedSpecially() {
   // The deserializer needs to know whether a pointer is specially coded.  Being
@@ -205,13 +207,13 @@ Assembler::Assembler(const AssemblerOptions& options,
   trampoline_pool_blocked_nesting_ = 0;
   // We leave space (16 * kTrampolineSlotsSize)
   // for BlockTrampolinePoolScope buffer.
-  next_buffer_check_ = FLAG_force_long_branches
+  next_buffer_check_ = v8_flags.force_long_branches
                            ? kMaxInt
                            : kMaxBranchOffset - kTrampolineSlotsSize * 16;
   internal_trampoline_exception_ = false;
   last_bound_pos_ = 0;
 
-  trampoline_emitted_ = FLAG_force_long_branches;
+  trampoline_emitted_ = v8_flags.force_long_branches;
   unbound_labels_count_ = 0;
   block_buffer_growth_ = false;
 }
@@ -483,7 +485,7 @@ bool Assembler::MustUseReg(RelocInfo::Mode rmode) {
 }
 
 void Assembler::disassembleInstr(Instr instr) {
-  if (!FLAG_riscv_debug) return;
+  if (!v8_flags.riscv_debug) return;
   disasm::NameConverter converter;
   disasm::Disassembler disasm(converter);
   base::EmbeddedVector<char, 128> disasm_buffer;
@@ -758,7 +760,7 @@ uintptr_t Assembler::jump_address(Label* L) {
     }
   }
   uintptr_t imm = reinterpret_cast<uintptr_t>(buffer_start_) + target_pos;
-  if (FLAG_riscv_c_extension)
+  if (v8_flags.riscv_c_extension)
     DCHECK_EQ(imm & 1, 0);
   else
     DCHECK_EQ(imm & 3, 0);
@@ -789,11 +791,12 @@ int32_t Assembler::branch_long_offset(Label* L) {
     }
   }
   intptr_t offset = target_pos - pc_offset();
-  if (FLAG_riscv_c_extension)
+  if (v8_flags.riscv_c_extension)
     DCHECK_EQ(offset & 1, 0);
   else
     DCHECK_EQ(offset & 3, 0);
   DCHECK(is_int32(offset));
+  VU.clear();
   return static_cast<int32_t>(offset);
 }
 
@@ -826,6 +829,7 @@ int32_t Assembler::branch_offset_helper(Label* L, OffsetSize bits) {
   DCHECK(is_intn(offset, bits));
   DCHECK_EQ(offset & 1, 0);
   DEBUG_PRINTF("\toffset = %d\n", offset);
+  VU.clear();
   return offset;
 }
 
@@ -863,14 +867,14 @@ void Assembler::label_at_put(Label* L, int at_offset) {
 // Definitions for using compressed vs non compressed
 
 void Assembler::NOP() {
-  if (FLAG_riscv_c_extension)
+  if (v8_flags.riscv_c_extension)
     c_nop();
   else
     nop();
 }
 
 void Assembler::EBREAK() {
-  if (FLAG_riscv_c_extension)
+  if (v8_flags.riscv_c_extension)
     c_ebreak();
   else
     ebreak();
@@ -1414,8 +1418,7 @@ void Assembler::db(uint8_t data) {
 
 void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
   if (!RelocInfo::IsNoInfo(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
-           RelocInfo::IsLiteralConstant(rmode));
+    DCHECK(RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   if (!is_buffer_growth_blocked()) CheckBuffer();
@@ -1425,8 +1428,7 @@ void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
 
 void Assembler::dq(uint64_t data, RelocInfo::Mode rmode) {
   if (!RelocInfo::IsNoInfo(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
-           RelocInfo::IsLiteralConstant(rmode));
+    DCHECK(RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   if (!is_buffer_growth_blocked()) CheckBuffer();

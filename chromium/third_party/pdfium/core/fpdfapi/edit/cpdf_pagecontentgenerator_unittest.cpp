@@ -39,8 +39,9 @@ class CPDF_PageContentGeneratorTest : public TestWithPageModule {
   const CPDF_Dictionary* TestGetResource(CPDF_PageContentGenerator* pGen,
                                          const ByteString& type,
                                          const ByteString& name) {
-    const CPDF_Dictionary* pResources = pGen->m_pObjHolder->GetResources();
-    return pResources->GetDictFor(type)->GetDictFor(name);
+    RetainPtr<const CPDF_Dictionary> pResources =
+        pGen->m_pObjHolder->GetResources();
+    return pResources->GetDictFor(type)->GetDictFor(name).Get();
   }
 
   void TestProcessText(CPDF_PageContentGenerator* pGen,
@@ -218,8 +219,8 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessGraphics) {
       TestGetResource(&generator, "ExtGState",
                       pathString.Substr(48, pathString.GetLength() - 91));
   ASSERT_TRUE(externalGS);
-  EXPECT_EQ(0.5f, externalGS->GetNumberFor("ca"));
-  EXPECT_EQ(0.8f, externalGS->GetNumberFor("CA"));
+  EXPECT_EQ(0.5f, externalGS->GetFloatFor("ca"));
+  EXPECT_EQ(0.8f, externalGS->GetFloatFor("CA"));
 
   // Same path, now with a stroke.
   pPathObj->m_GraphState.SetLineWidth(10.5f);
@@ -292,8 +293,8 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessStandardText) {
       &generator, "ExtGState",
       midString.First(midString.GetLength() - compareString2.GetLength()));
   ASSERT_TRUE(externalGS);
-  EXPECT_EQ(0.5f, externalGS->GetNumberFor("ca"));
-  EXPECT_EQ(0.8f, externalGS->GetNumberFor("CA"));
+  EXPECT_EQ(0.5f, externalGS->GetFloatFor("ca"));
+  EXPECT_EQ(0.8f, externalGS->GetFloatFor("CA"));
   const CPDF_Dictionary* fontDict = TestGetResource(
       &generator, "Font",
       lastString.First(lastString.GetLength() - compareString3.GetLength()));
@@ -316,14 +317,14 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
   {
     // Set the text object font and text
     auto pTextObj = std::make_unique<CPDF_TextObject>();
-    RetainPtr<CPDF_Dictionary> pDict(pDoc->NewIndirect<CPDF_Dictionary>());
+    auto pDict = pDoc->NewIndirect<CPDF_Dictionary>();
     pDict->SetNewFor<CPDF_Name>("Type", "Font");
     pDict->SetNewFor<CPDF_Name>("Subtype", "TrueType");
 
     RetainPtr<CPDF_Font> pFont = CPDF_Font::GetStockFont(pDoc.get(), "Arial");
     pDict->SetNewFor<CPDF_Name>("BaseFont", pFont->GetBaseFontName());
 
-    CPDF_Dictionary* pDesc = pDoc->NewIndirect<CPDF_Dictionary>();
+    auto pDesc = pDoc->NewIndirect<CPDF_Dictionary>();
     pDesc->SetNewFor<CPDF_Name>("Type", "FontDescriptor");
     pDesc->SetNewFor<CPDF_Name>("FontName", pFont->GetBaseFontName());
     pDict->SetNewFor<CPDF_Reference>("FontDescriptor", pDoc.get(),
@@ -373,7 +374,8 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
   EXPECT_EQ("Font", fontDict->GetNameFor("Type"));
   EXPECT_EQ("TrueType", fontDict->GetNameFor("Subtype"));
   EXPECT_EQ("Helvetica", fontDict->GetNameFor("BaseFont"));
-  const CPDF_Dictionary* fontDesc = fontDict->GetDictFor("FontDescriptor");
+  RetainPtr<const CPDF_Dictionary> fontDesc =
+      fontDict->GetDictFor("FontDescriptor");
   ASSERT_TRUE(fontDesc);
   EXPECT_TRUE(fontDesc->GetObjNum());
   EXPECT_EQ("FontDescriptor", fontDesc->GetNameFor("Type"));

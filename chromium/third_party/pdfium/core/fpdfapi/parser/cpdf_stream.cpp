@@ -54,7 +54,7 @@ CPDF_Stream::CPDF_Stream(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
                          size_t size,
                          RetainPtr<CPDF_Dictionary> pDict)
     : m_pDict(std::move(pDict)) {
-  TakeData(std::move(pData), size);
+  TakeDataInternal(std::move(pData), size);
 }
 
 CPDF_Stream::~CPDF_Stream() {
@@ -67,19 +67,11 @@ CPDF_Object::Type CPDF_Stream::GetType() const {
   return kStream;
 }
 
-const CPDF_Dictionary* CPDF_Stream::GetDict() const {
-  return m_pDict.Get();
+RetainPtr<const CPDF_Dictionary> CPDF_Stream::GetDict() const {
+  return m_pDict;
 }
 
-bool CPDF_Stream::IsStream() const {
-  return true;
-}
-
-CPDF_Stream* CPDF_Stream::AsStream() {
-  return this;
-}
-
-const CPDF_Stream* CPDF_Stream::AsStream() const {
+CPDF_Stream* CPDF_Stream::AsMutableStream() {
   return this;
 }
 
@@ -108,16 +100,15 @@ RetainPtr<CPDF_Object> CPDF_Stream::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   pVisited->insert(this);
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(this);
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(this));
   pAcc->LoadAllDataRaw();
 
   uint32_t streamSize = pAcc->GetSize();
-  const CPDF_Dictionary* pDict = GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = GetDict();
   RetainPtr<CPDF_Dictionary> pNewDict;
-  if (pDict && !pdfium::Contains(*pVisited, pDict)) {
-    pNewDict =
-        ToDictionary(static_cast<const CPDF_Object*>(pDict)->CloneNonCyclic(
-            bDirect, pVisited));
+  if (pDict && !pdfium::Contains(*pVisited, pDict.Get())) {
+    pNewDict = ToDictionary(static_cast<const CPDF_Object*>(pDict.Get())
+                                ->CloneNonCyclic(bDirect, pVisited));
   }
   return pdfium::MakeRetain<CPDF_Stream>(pAcc->DetachData(), streamSize,
                                          std::move(pNewDict));
@@ -148,11 +139,17 @@ void CPDF_Stream::SetData(pdfium::span<const uint8_t> pData) {
     auto copy_span = pdfium::make_span(data_copy.get(), pData.size());
     fxcrt::spancpy(copy_span, pData);
   }
-  TakeData(std::move(data_copy), pData.size());
+  TakeDataInternal(std::move(data_copy), pData.size());
 }
 
-void CPDF_Stream::TakeData(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
-                           size_t size) {
+void CPDF_Stream::TakeData(DataVector<uint8_t> data) {
+  // TODO(crbug.com/pdfium/1872): Avoid copying.
+  SetData(data);
+}
+
+void CPDF_Stream::TakeDataInternal(
+    std::unique_ptr<uint8_t, FxFreeDeleter> pData,
+    size_t size) {
   m_bMemoryBased = true;
   m_pFile = nullptr;
   m_pDataBuf = std::move(pData);
@@ -184,42 +181,37 @@ bool CPDF_Stream::HasFilter() const {
 }
 
 WideString CPDF_Stream::GetUnicodeText() const {
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(this);
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(this));
   pAcc->LoadAllDataFiltered();
   return PDF_DecodeText(pAcc->GetSpan());
 }
 
 bool CPDF_Stream::WriteTo(IFX_ArchiveStream* archive,
                           const CPDF_Encryptor* encryptor) const {
-  const bool is_metadata = IsMetaDataStreamDictionary(GetDict());
-  CPDF_FlateEncoder encoder(this, !is_metadata);
+  const bool is_metadata = IsMetaDataStreamDictionary(GetDict().Get());
+  CPDF_FlateEncoder encoder(pdfium::WrapRetain(this), !is_metadata);
 
   DataVector<uint8_t> encrypted_data;
   pdfium::span<const uint8_t> data = encoder.GetSpan();
-
   if (encryptor && !is_metadata) {
     encrypted_data = encryptor->Encrypt(data);
     data = encrypted_data;
   }
 
-  size_t size = data.size();
-  if (static_cast<size_t>(encoder.GetDict()->GetIntegerFor("Length")) != size) {
-    encoder.CloneDict();
-    encoder.GetClonedDict()->SetNewFor<CPDF_Number>("Length",
-                                                    static_cast<int>(size));
-  }
-
-  if (!encoder.GetDict()->WriteTo(archive, encryptor))
+  encoder.UpdateLength(data.size());
+  if (!encoder.WriteDictTo(archive, encryptor))
     return false;
 
   if (!archive->WriteString("stream\r\n"))
     return false;
 
-  if (size && !archive->WriteBlock(data.data(), size))
+  if (!archive->WriteSpan(data))
     return false;
 
-  if (!archive->WriteString("\r\nendstream"))
-    return false;
+  return archive->WriteString("\r\nendstream");
+}
 
-  return true;
+const uint8_t* CPDF_Stream::GetInMemoryRawData() const {
+  DCHECK(IsMemoryBased());
+  return m_pDataBuf.get();
 }

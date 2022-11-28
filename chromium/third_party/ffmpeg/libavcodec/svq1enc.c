@@ -248,7 +248,7 @@ static void init_block_index(MpegEncContext *s){
 }
 
 static int svq1_encode_plane(SVQ1EncContext *s, int plane,
-                             unsigned char *src_plane,
+                             const unsigned char *src_plane,
                              unsigned char *ref_plane,
                              unsigned char *decoded_plane,
                              int width, int height, int src_stride, int stride)
@@ -313,9 +313,9 @@ static int svq1_encode_plane(SVQ1EncContext *s, int plane,
         s->m.mb_type = s->mb_type;
 
         // dummies, to avoid segfaults
-        s->m.current_picture.mb_mean   = (uint8_t *)s->dummy;
-        s->m.current_picture.mb_var    = (uint16_t *)s->dummy;
-        s->m.current_picture.mc_mb_var = (uint16_t *)s->dummy;
+        s->m.mb_mean   = (uint8_t *)s->dummy;
+        s->m.mb_var    = (uint16_t *)s->dummy;
+        s->m.mc_mb_var = (uint16_t *)s->dummy;
         s->m.current_picture.mb_type = s->dummy;
 
         s->m.current_picture.motion_val[0]   = s->motion_val8[plane] + 2;
@@ -371,7 +371,7 @@ static int svq1_encode_plane(SVQ1EncContext *s, int plane,
             int count[2][6];
             int offset       = y * 16 * stride + x * 16;
             uint8_t *decoded = decoded_plane + offset;
-            uint8_t *ref     = ref_plane + offset;
+            const uint8_t *ref = ref_plane + offset;
             int score[4]     = { 0, 0, 0, 0 }, best;
             uint8_t *temp    = s->scratchbuf;
 
@@ -679,9 +679,10 @@ static const AVClass svq1enc_class = {
 
 const FFCodec ff_svq1_encoder = {
     .p.name         = "svq1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Sorenson Vector Quantizer 1 / Sorenson Video 1 / SVQ1"),
+    CODEC_LONG_NAME("Sorenson Vector Quantizer 1 / Sorenson Video 1 / SVQ1"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_SVQ1,
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(SVQ1EncContext),
     .p.priv_class   = &svq1enc_class,
     .init           = svq1_encode_init,

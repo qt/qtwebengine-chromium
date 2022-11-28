@@ -136,7 +136,7 @@ int SkWGLExtensions::selectFormat(const int formats[],
         0,
     };
     SkTDArray<PixelFormat> rankedFormats;
-    rankedFormats.setCount(formatCount);
+    rankedFormats.resize(formatCount);
     for (int i = 0; i < formatCount; ++i) {
         static const int kQueryAttr = SK_WGL_SAMPLES;
         int numSamples;
@@ -152,7 +152,7 @@ int SkWGLExtensions::selectFormat(const int formats[],
     }
     SkTQSort(rankedFormats.begin(), rankedFormats.end(), pf_less);
     int idx = SkTSearch<PixelFormat, pf_less>(rankedFormats.begin(),
-                                              rankedFormats.count(),
+                                              rankedFormats.size(),
                                               desiredFormat,
                                               sizeof(PixelFormat));
     if (idx < 0) {

@@ -46,7 +46,6 @@
 #include "src/base/cpu.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/ppc/assembler-ppc-inl.h"
-#include "src/codegen/string-constants.h"
 #include "src/deoptimizer/deoptimizer.h"
 
 namespace v8 {
@@ -168,7 +167,7 @@ bool RelocInfo::IsCodedSpecially() {
 }
 
 bool RelocInfo::IsInConstantPool() {
-  if (FLAG_enable_embedded_constant_pool && constant_pool_ != kNullAddress) {
+  if (V8_EMBEDDED_CONSTANT_POOL_BOOL && constant_pool_ != kNullAddress) {
     return Assembler::IsConstantPoolLoadStart(pc_);
   }
   return false;
@@ -194,15 +193,8 @@ Operand Operand::EmbeddedNumber(double value) {
   int32_t smi;
   if (DoubleToSmiInteger(value, &smi)) return Operand(Smi::FromInt(smi));
   Operand result(0, RelocInfo::FULL_EMBEDDED_OBJECT);
-  result.is_heap_object_request_ = true;
-  result.value_.heap_object_request = HeapObjectRequest(value);
-  return result;
-}
-
-Operand Operand::EmbeddedStringConstant(const StringConstantBase* str) {
-  Operand result(0, RelocInfo::FULL_EMBEDDED_OBJECT);
-  result.is_heap_object_request_ = true;
-  result.value_.heap_object_request = HeapObjectRequest(str);
+  result.is_heap_number_request_ = true;
+  result.value_.heap_number_request = HeapNumberRequest(value);
   return result;
 }
 
@@ -215,23 +207,12 @@ MemOperand::MemOperand(Register ra, Register rb)
 MemOperand::MemOperand(Register ra, Register rb, int64_t offset)
     : ra_(ra), offset_(offset), rb_(rb) {}
 
-void Assembler::AllocateAndInstallRequestedHeapObjects(Isolate* isolate) {
-  DCHECK_IMPLIES(isolate == nullptr, heap_object_requests_.empty());
-  for (auto& request : heap_object_requests_) {
-    Handle<HeapObject> object;
-    switch (request.kind()) {
-      case HeapObjectRequest::kHeapNumber: {
-        object = isolate->factory()->NewHeapNumber<AllocationType::kOld>(
+void Assembler::AllocateAndInstallRequestedHeapNumbers(Isolate* isolate) {
+  DCHECK_IMPLIES(isolate == nullptr, heap_number_requests_.empty());
+  for (auto& request : heap_number_requests_) {
+    Handle<HeapObject> object =
+        isolate->factory()->NewHeapNumber<AllocationType::kOld>(
             request.heap_number());
-        break;
-      }
-      case HeapObjectRequest::kStringConstant: {
-        const StringConstantBase* str = request.string();
-        CHECK_NOT_NULL(str);
-        object = str->AllocateStringConstant(isolate);
-        break;
-      }
-    }
     Address pc = reinterpret_cast<Address>(buffer_start_) + request.offset();
     Address constant_pool = kNullAddress;
     set_target_address_at(pc, constant_pool, object.address(),
@@ -256,7 +237,7 @@ Assembler::Assembler(const AssemblerOptions& options,
   internal_trampoline_exception_ = false;
   last_bound_pos_ = 0;
   optimizable_cmpi_pos_ = -1;
-  trampoline_emitted_ = FLAG_force_long_branches;
+  trampoline_emitted_ = v8_flags.force_long_branches;
   tracked_branch_count_ = 0;
   relocations_.reserve(128);
 }
@@ -280,7 +261,7 @@ void Assembler::GetCode(Isolate* isolate, CodeDesc* desc,
 
   int code_comments_size = WriteCodeComments();
 
-  AllocateAndInstallRequestedHeapObjects(isolate);
+  AllocateAndInstallRequestedHeapNumbers(isolate);
 
   // Set up code descriptor.
   // TODO(jgruber): Reconsider how these offsets and sizes are maintained up to
@@ -857,6 +838,16 @@ void Assembler::mulli(Register dst, Register src, const Operand& imm) {
   d_form(MULLI, dst, src, imm.immediate(), true);
 }
 
+// Multiply hi doubleword
+void Assembler::mulhd(Register dst, Register src1, Register src2, RCBit r) {
+  xo_form(EXT2 | MULHD, dst, src1, src2, LeaveOE, r);
+}
+
+// Multiply hi doubleword unsigned
+void Assembler::mulhdu(Register dst, Register src1, Register src2, RCBit r) {
+  xo_form(EXT2 | MULHDU, dst, src1, src2, LeaveOE, r);
+}
+
 // Multiply hi word
 void Assembler::mulhw(Register dst, Register src1, Register src2, RCBit r) {
   xo_form(EXT2 | MULHWX, dst, src1, src2, LeaveOE, r);
@@ -1328,7 +1319,7 @@ int Assembler::instructions_required_for_mov(Register dst,
 
 bool Assembler::use_constant_pool_for_mov(Register dst, const Operand& src,
                                           bool canOptimize) const {
-  if (!FLAG_enable_embedded_constant_pool || !is_constant_pool_available()) {
+  if (!V8_EMBEDDED_CONSTANT_POOL_BOOL || !is_constant_pool_available()) {
     // If there is no constant pool available, we must use a mov
     // immediate sequence.
     return false;
@@ -1378,8 +1369,8 @@ bool Operand::must_output_reloc_info(const Assembler* assembler) const {
 // and only use the generic version when we require a fixed sequence
 void Assembler::mov(Register dst, const Operand& src) {
   intptr_t value;
-  if (src.IsHeapObjectRequest()) {
-    RequestHeapObject(src.heap_object_request());
+  if (src.IsHeapNumberRequest()) {
+    RequestHeapNumber(src.heap_number_request());
     value = 0;
   } else {
     value = src.immediate();
@@ -1393,7 +1384,7 @@ void Assembler::mov(Register dst, const Operand& src) {
          (!is_int16(value) ||
           !(CpuFeatures::IsSupported(PPC_10_PLUS) && is_int34(value)))));
 
-  if (!src.IsHeapObjectRequest() &&
+  if (!src.IsHeapNumberRequest() &&
       use_constant_pool_for_mov(dst, src, canOptimize)) {
     DCHECK(is_constant_pool_available());
     if (relocatable) {
@@ -2172,8 +2163,7 @@ void Assembler::db(uint8_t data) {
 void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
   CheckBuffer();
   if (!RelocInfo::IsNoInfo(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
-           RelocInfo::IsLiteralConstant(rmode));
+    DCHECK(RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   *reinterpret_cast<uint32_t*>(pc_) = data;
@@ -2183,8 +2173,7 @@ void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
 void Assembler::dq(uint64_t value, RelocInfo::Mode rmode) {
   CheckBuffer();
   if (!RelocInfo::IsNoInfo(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
-           RelocInfo::IsLiteralConstant(rmode));
+    DCHECK(RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   *reinterpret_cast<uint64_t*>(pc_) = value;
@@ -2194,8 +2183,7 @@ void Assembler::dq(uint64_t value, RelocInfo::Mode rmode) {
 void Assembler::dp(uintptr_t data, RelocInfo::Mode rmode) {
   CheckBuffer();
   if (!RelocInfo::IsNoInfo(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
-           RelocInfo::IsLiteralConstant(rmode));
+    DCHECK(RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   *reinterpret_cast<uintptr_t*>(pc_) = data;

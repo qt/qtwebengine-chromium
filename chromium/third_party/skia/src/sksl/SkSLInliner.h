@@ -8,8 +8,11 @@
 #ifndef SKSL_INLINER
 #define SKSL_INLINER
 
+#ifndef SK_ENABLE_OPTIMIZE_SIZE
+
 #include "include/private/SkTHash.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLMangler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -40,8 +43,6 @@ struct InlineCandidateList;
 class Inliner {
 public:
     Inliner(const Context* context) : fContext(context) {}
-
-    void reset();
 
     /** Inlines any eligible functions that are found. Returns true if any changes are made. */
     bool analyze(const std::vector<std::unique_ptr<ProgramElement>>& elements,
@@ -115,9 +116,12 @@ private:
     bool isSafeToInline(const FunctionDefinition* functionDef, const ProgramUsage& usage);
 
     const Context* fContext = nullptr;
+    Mangler fMangler;
     int fInlinedStatementCounter = 0;
 };
 
 }  // namespace SkSL
+
+#endif  // SK_ENABLE_OPTIMIZE_SIZE
 
 #endif  // SKSL_INLINER

@@ -7,7 +7,6 @@
 #include "src/base/iterator.h"
 #include "src/base/logging.h"
 #include "src/base/overflowing-math.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/machine-type.h"
 #include "src/compiler/backend/instruction-codes.h"
@@ -26,6 +25,26 @@
 namespace v8 {
 namespace internal {
 namespace compiler {
+
+namespace {
+
+bool IsCompressed(Node* const node) {
+  if (node == nullptr) return false;
+  const IrOpcode::Value opcode = node->opcode();
+  if (opcode == IrOpcode::kLoad || opcode == IrOpcode::kProtectedLoad ||
+      opcode == IrOpcode::kUnalignedLoad ||
+      opcode == IrOpcode::kLoadImmutable) {
+    LoadRepresentation load_rep = LoadRepresentationOf(node->op());
+    return load_rep.IsCompressed();
+  } else if (node->opcode() == IrOpcode::kPhi) {
+    MachineRepresentation phi_rep = PhiRepresentationOf(node->op());
+    return phi_rep == MachineRepresentation::kCompressed ||
+           phi_rep == MachineRepresentation::kCompressedPointer;
+  }
+  return false;
+}
+
+}  // namespace
 
 // Adds X64-specific methods for generating operands.
 class X64OperandGenerator final : public OperandGenerator {
@@ -215,6 +234,21 @@ class X64OperandGenerator final : public OperandGenerator {
     }
     BaseWithIndexAndDisplacement64Matcher m(operand, AddressOption::kAllowAll);
     DCHECK(m.matches());
+    // Decompress pointer by complex addressing mode.
+    if (IsCompressed(m.base())) {
+      DCHECK(m.index() == nullptr);
+      DCHECK(m.displacement() == nullptr || CanBeImmediate(m.displacement()));
+      AddressingMode mode = kMode_MCR;
+      inputs[(*input_count)++] = UseRegister(m.base(), reg_kind);
+      if (m.displacement() != nullptr) {
+        inputs[(*input_count)++] =
+            m.displacement_mode() == kNegativeDisplacement
+                ? UseNegatedImmediate(m.displacement())
+                : UseImmediate(m.displacement());
+        mode = kMode_MCRI;
+      }
+      return mode;
+    }
     if (m.displacement() == nullptr || CanBeImmediate(m.displacement())) {
       return GenerateMemoryOperandInputs(
           m.index(), m.scale(), m.base(), m.displacement(),
@@ -305,7 +339,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
       break;
     case MachineRepresentation::kSimd256:  // Fall through.
     case MachineRepresentation::kNone:     // Fall through.
-    case MachineRepresentation::kMapWord:
+    case MachineRepresentation::kMapWord:  // Fall through.
       UNREACHABLE();
   }
   return opcode;
@@ -343,7 +377,7 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
       return kX64Movdqu;
     case MachineRepresentation::kSimd256:  // Fall through.
     case MachineRepresentation::kNone:     // Fall through.
-    case MachineRepresentation::kMapWord:
+    case MachineRepresentation::kMapWord:  // Fall through.
       UNREACHABLE();
   }
   UNREACHABLE();
@@ -563,7 +597,7 @@ void VisitStoreCommon(InstructionSelector* selector, Node* node,
   const bool is_seqcst =
       atomic_order && *atomic_order == AtomicMemoryOrder::kSeqCst;
 
-  if (FLAG_enable_unconditional_write_barriers &&
+  if (v8_flags.enable_unconditional_write_barriers &&
       CanBeTaggedOrCompressedPointer(store_rep.representation())) {
     write_barrier_kind = kFullWriteBarrier;
   }
@@ -572,7 +606,8 @@ void VisitStoreCommon(InstructionSelector* selector, Node* node,
     ? MemoryAccessMode::kMemoryAccessProtected
     : MemoryAccessMode::kMemoryAccessDirect;
 
-  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
+  if (write_barrier_kind != kNoWriteBarrier &&
+      !v8_flags.disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(store_rep.representation()));
     AddressingMode addressing_mode;
     InstructionOperand inputs[] = {
@@ -962,6 +997,12 @@ void VisitWord64Shift(InstructionSelector* selector, Node* node,
   Node* right = m.right().node();
 
   if (g.CanBeImmediate(right)) {
+    if (opcode == kX64Shr && m.left().IsChangeUint32ToUint64() &&
+        m.right().HasResolvedValue() && m.right().ResolvedValue() < 32 &&
+        m.right().ResolvedValue() >= 0) {
+      opcode = kX64Shr32;
+      left = left->InputAt(0);
+    }
     selector->Emit(opcode, g.DefineSameAsFirst(node), g.UseRegister(left),
                    g.UseImmediate(right));
   } else {
@@ -1096,6 +1137,8 @@ inline AddressingMode AddDisplacementToAddressingMode(AddressingMode mode) {
     case kMode_M4I:
     case kMode_M8I:
     case kMode_Root:
+    case kMode_MCR:
+    case kMode_MCRI:
       UNREACHABLE();
   }
   UNREACHABLE();
@@ -1427,8 +1470,21 @@ void InstructionSelector::VisitInt64Mul(Node* node) {
   VisitMul(this, node, kX64Imul);
 }
 
+void InstructionSelector::VisitInt64MulWithOverflow(Node* node) {
+  if (Node* ovf = NodeProperties::FindProjection(node, 1)) {
+    FlagsContinuation cont = FlagsContinuation::ForSet(kOverflow, ovf);
+    return VisitBinop(this, node, kX64Imul, &cont);
+  }
+  FlagsContinuation cont;
+  VisitBinop(this, node, kX64Imul, &cont);
+}
+
 void InstructionSelector::VisitInt32MulHigh(Node* node) {
   VisitMulHigh(this, node, kX64ImulHigh32);
+}
+
+void InstructionSelector::VisitInt64MulHigh(Node* node) {
+  VisitMulHigh(this, node, kX64ImulHigh64);
 }
 
 void InstructionSelector::VisitInt32Div(Node* node) {
@@ -1465,6 +1521,10 @@ void InstructionSelector::VisitUint64Mod(Node* node) {
 
 void InstructionSelector::VisitUint32MulHigh(Node* node) {
   VisitMulHigh(this, node, kX64UmulHigh32);
+}
+
+void InstructionSelector::VisitUint64MulHigh(Node* node) {
+  VisitMulHigh(this, node, kX64UmulHigh64);
 }
 
 // TryTruncateFloat32ToInt64 and TryTruncateFloat64ToInt64 operations attempt
@@ -1615,6 +1675,8 @@ void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
         opcode = load_rep.IsSigned() ? kX64Movsxwq : kX64Movzxwq;
         break;
       case MachineRepresentation::kWord32:
+      case MachineRepresentation::kTaggedSigned:
+      case MachineRepresentation::kTagged:
         // ChangeInt32ToInt64 must interpret its input as a _signed_ 32-bit
         // integer, so here we must sign-extend the loaded value in any case.
         opcode = kX64Movsxlq;
@@ -2784,6 +2846,9 @@ void InstructionSelector::VisitWordCompareZero(Node* user, Node* value,
               case IrOpcode::kInt64SubWithOverflow:
                 cont->OverwriteAndNegateIfEqual(kOverflow);
                 return VisitBinop(this, node, kX64Sub, cont);
+              case IrOpcode::kInt64MulWithOverflow:
+                cont->OverwriteAndNegateIfEqual(kOverflow);
+                return VisitBinop(this, node, kX64Imul, cont);
               default:
                 break;
             }
@@ -3018,8 +3083,15 @@ void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
 }
 
 void InstructionSelector::VisitMemoryBarrier(Node* node) {
-  X64OperandGenerator g(this);
-  Emit(kX64MFence, g.NoOutput());
+  // x64 is no weaker than release-acquire and only needs to emit an instruction
+  // for SeqCst memory barriers.
+  AtomicMemoryOrder order = OpParameter<AtomicMemoryOrder>(node->op());
+  if (order == AtomicMemoryOrder::kSeqCst) {
+    X64OperandGenerator g(this);
+    Emit(kX64MFence, g.NoOutput());
+    return;
+  }
+  DCHECK_EQ(AtomicMemoryOrder::kAcqRel, order);
 }
 
 void InstructionSelector::VisitWord32AtomicLoad(Node* node) {
@@ -3265,6 +3337,7 @@ VISIT_ATOMIC_BINOP(Xor)
   V(I16x8ExtMulLowI8x16U)          \
   V(I16x8ExtMulHighI8x16U)         \
   V(I16x8Q15MulRSatS)              \
+  V(I16x8RelaxedQ15MulRS)          \
   V(I8x16SConvertI16x8)            \
   V(I8x16UConvertI16x8)            \
   V(I8x16Add)                      \
@@ -4266,6 +4339,12 @@ void InstructionSelector::VisitF64x2PromoteLowF32x4(Node* node) {
   }
 
   VisitRR(this, node, code);
+}
+
+void InstructionSelector::VisitI16x8DotI8x16I7x16S(Node* node) {
+  X64OperandGenerator g(this);
+  Emit(kX64I16x8DotI8x16I7x16S, g.DefineAsRegister(node),
+       g.UseUniqueRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1)));
 }
 
 void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,

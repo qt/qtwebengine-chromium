@@ -89,10 +89,10 @@ struct SimulatedFrame : public EncodedFrame {
   SimulatedFrame(Clock::time_point first_frame_reference_time, int which) {
     frame_id = FrameId::first() + which;
     if (which == 0) {
-      dependency = EncodedFrame::KEY_FRAME;
+      dependency = EncodedFrame::Dependency::kKeyFrame;
       referenced_frame_id = frame_id;
     } else {
-      dependency = EncodedFrame::DEPENDS_ON_ANOTHER;
+      dependency = EncodedFrame::Dependency::kDependent;
       referenced_frame_id = frame_id - 1;
     }
     rtp_timestamp =
@@ -640,7 +640,7 @@ TEST_F(ReceiverTest, RequestsKeyFrameToRectifyPictureLoss) {
       .Times(1);
   EXPECT_CALL(*sender(), OnReceiverIndicatesPictureLoss()).Times(0);
   SimulatedFrame key_frame(start_time, 4);
-  key_frame.dependency = EncodedFrame::KEY_FRAME;
+  key_frame.dependency = EncodedFrame::Dependency::kKeyFrame;
   key_frame.referenced_frame_id = key_frame.frame_id;
   sender()->SetFrameBeingSent(key_frame);
   sender()->SendRtpPackets(sender()->GetAllPacketIds(0));
@@ -765,7 +765,7 @@ TEST_F(ReceiverTest, DropsLateFrames) {
   SimulatedFrame frames[8] = {{start_time, 0}, {start_time, 1}, {start_time, 2},
                               {start_time, 3}, {start_time, 4}, {start_time, 5},
                               {start_time, 6}, {start_time, 7}};
-  frames[6].dependency = EncodedFrame::KEY_FRAME;
+  frames[6].dependency = EncodedFrame::Dependency::kKeyFrame;
   frames[6].referenced_frame_id = frames[6].frame_id;
 
   // Send just packet 1 (NOT packet 0) of all the frames. The Receiver should

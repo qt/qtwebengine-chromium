@@ -393,8 +393,8 @@ class SenderTest : public testing::Test {
                                         int num_payload_bytes,
                                         EncodedFrameWithBuffer* frame) {
     frame->dependency = (frame_id == FrameId::first())
-                            ? EncodedFrame::KEY_FRAME
-                            : EncodedFrame::DEPENDS_ON_ANOTHER;
+                            ? EncodedFrame::Dependency::kKeyFrame
+                            : EncodedFrame::Dependency::kDependent;
     frame->frame_id = frame_id;
     frame->referenced_frame_id = frame->frame_id;
     if (frame_id != FrameId::first()) {
@@ -789,7 +789,7 @@ TEST_F(SenderTest, ManagesReceiverPictureLossWorkflow) {
   PopulateFrameWithDefaults(FrameId::first() + 4,
                             FakeClock::now() - kCaptureDelay, 0, 24 /* bytes */,
                             &recovery_frame);
-  recovery_frame.dependency = EncodedFrame::KEY_FRAME;
+  recovery_frame.dependency = EncodedFrame::Dependency::kKeyFrame;
   recovery_frame.referenced_frame_id = recovery_frame.frame_id;
   ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(recovery_frame));
   SimulateExecution(kFrameDuration);
@@ -828,7 +828,7 @@ TEST_F(SenderTest, ManagesReceiverPictureLossWorkflow) {
   PopulateFrameWithDefaults(FrameId::first() + 5,
                             FakeClock::now() - kCaptureDelay, 0, 24 /* bytes */,
                             &another_recovery_frame);
-  another_recovery_frame.dependency = EncodedFrame::KEY_FRAME;
+  another_recovery_frame.dependency = EncodedFrame::Dependency::kKeyFrame;
   another_recovery_frame.referenced_frame_id = another_recovery_frame.frame_id;
   ASSERT_EQ(Sender::OK, sender()->EnqueueFrame(another_recovery_frame));
   SimulateExecution(kFrameDuration);

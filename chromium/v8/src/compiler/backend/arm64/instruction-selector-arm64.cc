@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include "src/base/bits.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/machine-type.h"
 #include "src/common/globals.h"
@@ -873,13 +872,14 @@ void InstructionSelector::VisitStore(Node* node) {
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
   MachineRepresentation rep = store_rep.representation();
 
-  if (FLAG_enable_unconditional_write_barriers &&
+  if (v8_flags.enable_unconditional_write_barriers &&
       CanBeTaggedOrCompressedPointer(rep)) {
     write_barrier_kind = kFullWriteBarrier;
   }
 
   // TODO(arm64): I guess this could be done in a better way.
-  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
+  if (write_barrier_kind != kNoWriteBarrier &&
+      !v8_flags.disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(rep));
     AddressingMode addressing_mode;
     InstructionOperand inputs[3];
@@ -1669,12 +1669,40 @@ void EmitInt32MulWithOverflow(InstructionSelector* selector, Node* node,
   Int32BinopMatcher m(node);
   InstructionOperand result = g.DefineAsRegister(node);
   InstructionOperand left = g.UseRegister(m.left().node());
-  InstructionOperand right = g.UseRegister(m.right().node());
-  selector->Emit(kArm64Smull, result, left, right);
+
+  if (m.right().HasResolvedValue() &&
+      base::bits::IsPowerOfTwo(m.right().ResolvedValue())) {
+    // Sign extend the bottom 32 bits and shift left.
+    int32_t shift = base::bits::WhichPowerOfTwo(m.right().ResolvedValue());
+    selector->Emit(kArm64Sbfiz, result, left, g.TempImmediate(shift),
+                   g.TempImmediate(32));
+  } else {
+    InstructionOperand right = g.UseRegister(m.right().node());
+    selector->Emit(kArm64Smull, result, left, right);
+  }
 
   InstructionCode opcode =
       kArm64Cmp | AddressingModeField::encode(kMode_Operand2_R_SXTW);
   selector->EmitWithContinuation(opcode, result, result, cont);
+}
+
+void EmitInt64MulWithOverflow(InstructionSelector* selector, Node* node,
+                              FlagsContinuation* cont) {
+  Arm64OperandGenerator g(selector);
+  Int64BinopMatcher m(node);
+  InstructionOperand result = g.DefineAsRegister(node);
+  InstructionOperand left = g.UseRegister(m.left().node());
+  InstructionOperand high = g.TempRegister();
+
+  InstructionOperand right = g.UseRegister(m.right().node());
+  selector->Emit(kArm64Mul, result, left, right);
+  selector->Emit(kArm64Smulh, high, left, right);
+
+  // Test whether {high} is a sign-extension of {result}.
+  InstructionCode opcode =
+      kArm64Cmp | AddressingModeField::encode(kMode_Operand2_R_ASR_I);
+  selector->EmitWithContinuation(opcode, high, result, g.TempImmediate(63),
+                                 cont);
 }
 
 }  // namespace
@@ -1850,12 +1878,20 @@ void InstructionSelector::VisitInt32MulHigh(Node* node) {
   Emit(kArm64Asr, g.DefineAsRegister(node), smull_operand, g.TempImmediate(32));
 }
 
+void InstructionSelector::VisitInt64MulHigh(Node* node) {
+  return VisitRRR(this, kArm64Smulh, node);
+}
+
 void InstructionSelector::VisitUint32MulHigh(Node* node) {
   Arm64OperandGenerator g(this);
   InstructionOperand const smull_operand = g.TempRegister();
   Emit(kArm64Umull, smull_operand, g.UseRegister(node->InputAt(0)),
        g.UseRegister(node->InputAt(1)));
   Emit(kArm64Lsr, g.DefineAsRegister(node), smull_operand, g.TempImmediate(32));
+}
+
+void InstructionSelector::VisitUint64MulHigh(Node* node) {
+  return VisitRRR(this, kArm64Umulh, node);
 }
 
 void InstructionSelector::VisitTruncateFloat32ToInt32(Node* node) {
@@ -2013,6 +2049,8 @@ void InstructionSelector::VisitChangeInt32ToInt64(Node* node) {
         immediate_mode = kLoadStoreImm16;
         break;
       case MachineRepresentation::kWord32:
+      case MachineRepresentation::kTaggedSigned:
+      case MachineRepresentation::kTagged:
         opcode = kArm64Ldrsw;
         immediate_mode = kLoadStoreImm32;
         break;
@@ -2765,7 +2803,7 @@ void VisitAtomicStore(InstructionSelector* selector, Node* node,
   WriteBarrierKind write_barrier_kind = store_params.write_barrier_kind();
   MachineRepresentation rep = store_params.representation();
 
-  if (FLAG_enable_unconditional_write_barriers &&
+  if (v8_flags.enable_unconditional_write_barriers &&
       CanBeTaggedOrCompressedPointer(rep)) {
     write_barrier_kind = kFullWriteBarrier;
   }
@@ -2775,7 +2813,8 @@ void VisitAtomicStore(InstructionSelector* selector, Node* node,
   InstructionOperand temps[] = {g.TempRegister()};
   InstructionCode code;
 
-  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
+  if (write_barrier_kind != kNoWriteBarrier &&
+      !v8_flags.disable_write_barriers) {
     DCHECK(CanBeTaggedOrCompressedPointer(rep));
     DCHECK_EQ(AtomicWidthSize(width), kTaggedSize);
 
@@ -3008,6 +3047,14 @@ void InstructionSelector::VisitWordCompareZero(Node* user, Node* value,
                 cont->OverwriteAndNegateIfEqual(kOverflow);
                 return VisitBinop<Int64BinopMatcher>(this, node, kArm64Sub,
                                                      kArithmeticImm, cont);
+              case IrOpcode::kInt64MulWithOverflow:
+                // ARM64 doesn't set the overflow flag for multiplication, so we
+                // need to test on kNotEqual. Here is the code sequence used:
+                //   mul result, left, right
+                //   smulh high, left, right
+                //   cmp high, result, asr 63
+                cont->OverwriteAndNegateIfEqual(kNotEqual);
+                return EmitInt64MulWithOverflow(this, node, cont);
               default:
                 break;
             }
@@ -3204,6 +3251,20 @@ void InstructionSelector::VisitInt64SubWithOverflow(Node* node) {
   VisitBinop<Int64BinopMatcher>(this, node, kArm64Sub, kArithmeticImm, &cont);
 }
 
+void InstructionSelector::VisitInt64MulWithOverflow(Node* node) {
+  if (Node* ovf = NodeProperties::FindProjection(node, 1)) {
+    // ARM64 doesn't set the overflow flag for multiplication, so we need to
+    // test on kNotEqual. Here is the code sequence used:
+    //   mul result, left, right
+    //   smulh high, left, right
+    //   cmp high, result, asr 63
+    FlagsContinuation cont = FlagsContinuation::ForSet(kNotEqual, ovf);
+    return EmitInt64MulWithOverflow(this, node, &cont);
+  }
+  FlagsContinuation cont;
+  EmitInt64MulWithOverflow(this, node, &cont);
+}
+
 void InstructionSelector::VisitInt64LessThan(Node* node) {
   FlagsContinuation cont = FlagsContinuation::ForSet(kSignedLessThan, node);
   VisitWordCompare(this, node, kArm64Cmp, &cont, kArithmeticImm);
@@ -3380,6 +3441,7 @@ void InstructionSelector::VisitFloat64Mul(Node* node) {
 }
 
 void InstructionSelector::VisitMemoryBarrier(Node* node) {
+  // Use DMB ISH for both acquire-release and sequentially consistent barriers.
   Arm64OperandGenerator g(this);
   Emit(kArm64DmbIsh, g.NoOutput());
 }

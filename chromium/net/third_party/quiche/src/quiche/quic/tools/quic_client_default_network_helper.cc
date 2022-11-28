@@ -4,6 +4,7 @@
 
 #include "quiche/quic/tools/quic_client_default_network_helper.h"
 
+#include "absl/cleanup/cleanup.h"
 #include "quiche/quic/core/io/quic_event_loop.h"
 #include "quiche/quic/core/quic_default_packet_writer.h"
 #include "quiche/quic/core/quic_packets.h"
@@ -71,6 +72,7 @@ bool QuicClientDefaultNetworkHelper::CreateUDPSocketAndBind(
   if (fd < 0) {
     return false;
   }
+  auto closer = absl::MakeCleanup([fd] { close(fd); });
 
   QuicSocketAddress client_address;
   if (bind_to_address.IsInitialized()) {
@@ -113,10 +115,13 @@ bool QuicClientDefaultNetworkHelper::CreateUDPSocketAndBind(
                     << strerror(errno);
   }
 
-  fd_address_map_[fd] = client_address;
-  bool success = event_loop_->RegisterSocket(
-      fd, kSocketEventReadable | kSocketEventWritable, this);
-  return success;
+  if (event_loop_->RegisterSocket(
+          fd, kSocketEventReadable | kSocketEventWritable, this)) {
+    fd_address_map_[fd] = client_address;
+    std::move(closer).Cancel();
+    return true;
+  }
+  return false;
 }
 
 void QuicClientDefaultNetworkHelper::CleanUpUDPSocket(int fd) {
@@ -134,7 +139,7 @@ void QuicClientDefaultNetworkHelper::CleanUpAllUDPSockets() {
 void QuicClientDefaultNetworkHelper::CleanUpUDPSocketImpl(int fd) {
   if (fd > -1) {
     bool success = event_loop_->UnregisterSocket(fd);
-    QUICHE_DCHECK(success);
+    QUICHE_DCHECK(success || fds_unregistered_externally_);
     int rc = close(fd);
     QUICHE_DCHECK_EQ(0, rc);
   }
@@ -228,6 +233,17 @@ int QuicClientDefaultNetworkHelper::CreateUDPSocket(
 
   *overflow_supported = api.EnableDroppedPacketCount(fd);
   api.EnableReceiveTimestamp(fd);
+
+  std::string interface_name = client_->interface_name();
+  if (!interface_name.empty()) {
+    if (!api.BindInterface(fd, interface_name)) {
+      QUIC_DLOG(WARNING) << "Failed to bind socket (" << fd
+                         << ") to interface (" << interface_name << ").";
+      CleanUpUDPSocket(fd);
+      return kQuicInvalidSocketFd;
+    }
+  }
+
   return fd;
 }
 

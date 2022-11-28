@@ -57,6 +57,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "credential_callbacks.h",
         "credential_storage.h",
         "server_sync.h",
         "wifi.h",
@@ -69,7 +70,7 @@ cc_library(
         "//internal/platform:__pkg__",
         "//internal/platform/implementation:__subpackages__",
         "//presence:__pkg__",
-        "//presence/implementation:__pkg__",
+        "//presence/implementation:__subpackages__",
     ],
     deps = [
         "//connections/implementation/proto:offline_wire_formats_cc_proto",

@@ -1,4 +1,4 @@
-import { _connectToBrowser } from './BrowserConnector.js';
+import { _connectToCDPBrowser, } from './BrowserConnector.js';
 import { devices } from './DeviceDescriptors.js';
 import { errors } from './Errors.js';
 import { networkConditions } from './NetworkConditions.js';
@@ -17,6 +17,9 @@ export class Puppeteer {
      * @internal
      */
     constructor(settings) {
+        /**
+         * @internal
+         */
         this._changedProduct = false;
         this._isPuppeteerCore = settings.isPuppeteerCore;
         this.connect = this.connect.bind(this);
@@ -30,13 +33,14 @@ export class Puppeteer {
      * @returns Promise which resolves to browser instance.
      */
     connect(options) {
-        return _connectToBrowser(options);
+        return _connectToCDPBrowser(options);
     }
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { devices } from 'puppeteer';
+     * import {devices} from 'puppeteer';
      * ```
      */
     get devices() {
@@ -45,8 +49,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { errors } from 'puppeteer';
+     * import {errors} from 'puppeteer';
      * ```
      */
     get errors() {
@@ -55,8 +60,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { networkConditions } from 'puppeteer';
+     * import {networkConditions} from 'puppeteer';
      * ```
      */
     get networkConditions() {
@@ -65,8 +71,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { registerCustomQueryHandler } from 'puppeteer';
+     * import {registerCustomQueryHandler} from 'puppeteer';
      * ```
      */
     registerCustomQueryHandler(name, queryHandler) {
@@ -75,8 +82,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { unregisterCustomQueryHandler } from 'puppeteer';
+     * import {unregisterCustomQueryHandler} from 'puppeteer';
      * ```
      */
     unregisterCustomQueryHandler(name) {
@@ -85,8 +93,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { customQueryHandlerNames } from 'puppeteer';
+     * import {customQueryHandlerNames} from 'puppeteer';
      * ```
      */
     customQueryHandlerNames() {
@@ -95,8 +104,9 @@ export class Puppeteer {
     /**
      * @deprecated Import directly puppeteer.
      * @example
+     *
      * ```ts
-     * import { clearCustomQueryHandlers } from 'puppeteer';
+     * import {clearCustomQueryHandlers} from 'puppeteer';
      * ```
      */
     clearCustomQueryHandlers() {

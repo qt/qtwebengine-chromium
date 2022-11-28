@@ -17,7 +17,7 @@
 namespace skgpu::graphite {
 struct ContextOptions;
 
-class MtlCaps final : public skgpu::graphite::Caps {
+class MtlCaps final : public Caps {
 public:
     MtlCaps(const id<MTLDevice>, const ContextOptions&);
     ~MtlCaps() override {}
@@ -27,7 +27,8 @@ public:
                                              Protected,
                                              Renderable) const override;
 
-    TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo) const override;
+    TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
+                                          Discardable discardable) const override;
 
     TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
                                                   uint32_t sampleCount,
@@ -36,6 +37,10 @@ public:
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
+
+    // Get a sufficiently unique bit representation for the RenderPassDesc to be embedded in other
+    // UniqueKeys (e.g. makeGraphicsPipelineKey).
+    uint64_t getRenderPassDescKey(const RenderPassDesc&) const;
 
     bool isMac() const { return fGPUFamily == GPUFamily::kMac; }
     bool isApple()const  { return fGPUFamily == GPUFamily::kApple; }
@@ -78,6 +83,18 @@ private:
     uint32_t maxRenderTargetSampleCount(MTLPixelFormat) const;
 
     size_t getTransferBufferAlignment(size_t bytesPerPixel) const override;
+
+    bool supportsWritePixels(const TextureInfo&) const override;
+    bool supportsReadPixels(const TextureInfo&) const override;
+
+    SkColorType supportedWritePixelsColorType(SkColorType dstColorType,
+                                              const TextureInfo& dstTextureInfo,
+                                              SkColorType srcColorType) const override;
+    SkColorType supportedReadPixelsColorType(SkColorType srcColorType,
+                                             const TextureInfo& srcTextureInfo,
+                                             SkColorType dstColorType) const override;
+
+    MTLStorageMode getDefaultMSAAStorageMode(Discardable discardable) const;
 
     struct FormatInfo {
         uint32_t colorTypeFlags(SkColorType colorType) const {

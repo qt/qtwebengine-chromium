@@ -16,7 +16,8 @@
 #include "core/fpdfapi/parser/cpdf_read_validator.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
-#include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/bytestring.h"
+#include "core/fxcrt/cfx_read_only_string_stream.h"
 #include "core/fxcrt/fx_stream.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -47,9 +48,9 @@ class TestLinearizedHeader final : public CPDF_LinearizedHeader {
       : CPDF_LinearizedHeader(pDict, szLastXRefOffset) {}
 
   static std::unique_ptr<CPDF_LinearizedHeader> MakeHeader(
-      const std::string& inline_data) {
-    CPDF_SyntaxParser parser(pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(
-        pdfium::as_bytes(pdfium::make_span(inline_data))));
+      ByteString inline_data) {
+    CPDF_SyntaxParser parser(
+        pdfium::MakeRetain<CFX_ReadOnlyStringStream>(std::move(inline_data)));
     RetainPtr<CPDF_Dictionary> dict =
         ToDictionary(parser.GetObjectBody(nullptr));
     DCHECK(dict);
@@ -66,9 +67,9 @@ TEST_F(HintTablesTest, Load) {
   auto data_avail = MakeDataAvailFromFile("feature_linearized_loading.pdf");
   ASSERT_EQ(CPDF_DataAvail::kDataAvailable, data_avail->IsDocAvail(nullptr));
 
-  ASSERT_TRUE(data_avail->GetHintTables());
+  ASSERT_TRUE(data_avail->GetHintTablesForTest());
 
-  const CPDF_HintTables* hint_tables = data_avail->GetHintTables();
+  const CPDF_HintTables* hint_tables = data_avail->GetHintTablesForTest();
   FX_FILESIZE page_start = 0;
   FX_FILESIZE page_length = 0;
   uint32_t page_obj_num = 0;
@@ -93,7 +94,7 @@ TEST_F(HintTablesTest, PageAndGroupInfos) {
   auto data_avail = MakeDataAvailFromFile("feature_linearized_loading.pdf");
   ASSERT_EQ(CPDF_DataAvail::kDataAvailable, data_avail->IsDocAvail(nullptr));
 
-  const CPDF_HintTables* hint_tables = data_avail->GetHintTables();
+  const CPDF_HintTables* hint_tables = data_avail->GetHintTablesForTest();
   ASSERT_TRUE(hint_tables);
   ASSERT_EQ(2u, hint_tables->PageInfos().size());
 

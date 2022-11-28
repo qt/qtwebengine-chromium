@@ -184,6 +184,21 @@ template<typename MatrixType_> class HouseholderQR
       return *this;
     }
 
+    /** \returns the determinant of the matrix of which
+      * *this is the QR decomposition. It has only linear complexity
+      * (that is, O(n) where n is the dimension of the square matrix)
+      * as the QR decomposition has already been computed.
+      *
+      * \note This is only for square matrices.
+      *
+      * \warning a determinant can be very big or small, so for matrices
+      * of large enough dimension, there is a risk of overflow/underflow.
+      * One way to work around that is to use logAbsDeterminant() instead.
+      *
+      * \sa absDeterminant(), logAbsDeterminant(), MatrixBase::determinant()
+      */
+    typename MatrixType::Scalar determinant() const;
+
     /** \returns the absolute value of the determinant of the matrix of which
       * *this is the QR decomposition. It has only linear complexity
       * (that is, O(n) where n is the dimension of the square matrix)
@@ -195,7 +210,7 @@ template<typename MatrixType_> class HouseholderQR
       * of large enough dimension, there is a risk of overflow/underflow.
       * One way to work around that is to use logAbsDeterminant() instead.
       *
-      * \sa logAbsDeterminant(), MatrixBase::determinant()
+      * \sa determinant(), logAbsDeterminant(), MatrixBase::determinant()
       */
     typename MatrixType::RealScalar absDeterminant() const;
 
@@ -209,7 +224,7 @@ template<typename MatrixType_> class HouseholderQR
       * \note This method is useful to work around the risk of overflow/underflow that's inherent
       * to determinant computation.
       *
-      * \sa absDeterminant(), MatrixBase::determinant()
+      * \sa determinant(), absDeterminant(), MatrixBase::determinant()
       */
     typename MatrixType::RealScalar logAbsDeterminant() const;
 
@@ -241,6 +256,57 @@ template<typename MatrixType_> class HouseholderQR
     RowVectorType m_temp;
     bool m_isInitialized;
 };
+
+namespace internal {
+
+/** \internal */
+template<typename HCoeffs, typename Scalar, bool IsComplex>
+struct householder_determinant
+{
+  static void run(const HCoeffs& hCoeffs, Scalar& out_det)
+  {
+    out_det = Scalar(1);
+    Index size = hCoeffs.rows();
+    for (Index i = 0; i < size; i ++)
+    {
+      // For each valid reflection Q_n,
+      // det(Q_n) = - conj(h_n) / h_n
+      // where h_n is the Householder coefficient.
+      if (hCoeffs(i) != Scalar(0))
+        out_det *= - numext::conj(hCoeffs(i)) / hCoeffs(i);
+    }
+  }
+};
+
+/** \internal */
+template<typename HCoeffs, typename Scalar>
+struct householder_determinant<HCoeffs, Scalar, false>
+{
+  static void run(const HCoeffs& hCoeffs, Scalar& out_det)
+  {
+    bool negated = false;
+    Index size = hCoeffs.rows();
+    for (Index i = 0; i < size; i ++)
+    {
+      // Each valid reflection negates the determinant.
+      if (hCoeffs(i) != Scalar(0))
+        negated ^= true;
+    }
+    out_det = negated ? Scalar(-1) : Scalar(1);
+  }
+};
+
+} // end namespace internal
+
+template<typename MatrixType>
+typename MatrixType::Scalar HouseholderQR<MatrixType>::determinant() const
+{
+  eigen_assert(m_isInitialized && "HouseholderQR is not initialized.");
+  eigen_assert(m_qr.rows() == m_qr.cols() && "You can't take the determinant of a non-square matrix!");
+  Scalar detQ;
+  internal::householder_determinant<HCoeffsType, Scalar, NumTraits<Scalar>::IsComplex>::run(m_hCoeffs, detQ);
+  return m_qr.diagonal().prod() * detQ;
+}
 
 template<typename MatrixType>
 typename MatrixType::RealScalar HouseholderQR<MatrixType>::absDeterminant() const

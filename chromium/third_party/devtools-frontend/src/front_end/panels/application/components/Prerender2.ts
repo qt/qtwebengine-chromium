@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import * as i18n from '../../../core/i18n/i18n.js';
+import type * as Platform from '../../../core/platform/platform.js';
 
 const UIStrings = {
   /**
@@ -152,12 +153,32 @@ const UIStrings = {
     *@description  Description text for Prerender2 cancellation status DataSaverEnabled.
     */
   DataSaverEnabled: 'Data saver enabled',
+  /**
+    *@description  Description text for Prerender2 cancellation status HasEffectiveUrl.
+    */
+  HasEffectiveUrl: 'Has effective URL',
+  /**
+    *@description  Description text for Prerender2 cancellation status ActivatedBeforeStarted.
+    */
+  ActivatedBeforeStarted: 'Activated before started',
+  /**
+    *@description  Description text for Prerender2 cancellation status InactivePageRestriction.
+    */
+  InactivePageRestriction: 'Inactive page restriction',
+  /**
+    *@description  Description text for Prerender2 cancellation status StartFailed.
+    */
+  StartFailed: 'Start failed',
+  /**
+    *@description  Detail section description text for Prerender2 cancellation status MojoBinderPolicy.
+  */
+  DisallowedApiMethod: 'Disallowed API method',
 };
 
 const str_ = i18n.i18n.registerUIStrings('panels/application/components/Prerender2.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
 
-export const Prerender2ReasonDescription = {
+export const Prerender2ReasonDescription: {[key: string]: {name: () => Platform.UIString.LocalizedString}} = {
   'Activated': {name: i18nLazyString(UIStrings.Activated)},
   'Destroyed': {name: i18nLazyString(UIStrings.Destroyed)},
   'LowEndDevice': {name: i18nLazyString(UIStrings.LowEndDevice)},
@@ -195,4 +216,9 @@ export const Prerender2ReasonDescription = {
   'MemoryLimitExceeded': {name: i18nLazyString(UIStrings.MemoryLimitExceeded)},
   'FailToGetMemoryUsage': {name: i18nLazyString(UIStrings.FailToGetMemoryUsage)},
   'DataSaverEnabled': {name: i18nLazyString(UIStrings.DataSaverEnabled)},
+  'HasEffectiveUrl': {name: i18nLazyString(UIStrings.HasEffectiveUrl)},
+  'ActivatedBeforeStarted': {name: i18nLazyString(UIStrings.ActivatedBeforeStarted)},
+  'InactivePageRestriction': {name: i18nLazyString(UIStrings.InactivePageRestriction)},
+  'StartFailed': {name: i18nLazyString(UIStrings.StartFailed)},
+  'DisallowedApiMethod': {name: i18nLazyString(UIStrings.DisallowedApiMethod)},
 };

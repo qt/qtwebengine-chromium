@@ -8,8 +8,11 @@
 
 #include <stdint.h>
 
-#include <random>
 #include <vector>
+
+#include "jxl/parallel_runner.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/random.h"
 
 namespace jxl {
 
@@ -39,7 +42,7 @@ class FakeParallelRunner {
       for (uint32_t i = start; i < end; i++) {
         order[i - start] = i;
       }
-      std::shuffle(order.begin(), order.end(), rng_);
+      rng_.Shuffle(order.data(), order.size());
       for (uint32_t i = start; i < end; i++) {
         func(jxl_opaque, order[i - start], i % num_threads_);
       }
@@ -54,7 +57,7 @@ class FakeParallelRunner {
 
   // The PRNG object, initialized with the order_seed_. Only used if the seed is
   // not 0.
-  std::mt19937 rng_;
+  Rng rng_;
 
   // Number of fake threads. All the tasks are run on the same thread, but using
   // different thread_id values based on this num_threads.
@@ -65,7 +68,7 @@ class FakeParallelRunner {
 
 extern "C" {
 // Function to pass as the parallel runner.
-JxlParallelRetCode JxlFakeParallelRunner(
+JXL_INLINE JxlParallelRetCode JxlFakeParallelRunner(
     void* runner_opaque, void* jpegxl_opaque, JxlParallelRunInit init,
     JxlParallelRunFunction func, uint32_t start_range, uint32_t end_range) {
   return static_cast<jxl::FakeParallelRunner*>(runner_opaque)

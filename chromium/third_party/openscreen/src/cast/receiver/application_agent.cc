@@ -107,9 +107,9 @@ void ApplicationAgent::OnMessage(VirtualConnectionRouter* router,
                                  CastSocket* socket,
                                  ::cast::channel::CastMessage message) {
   if (message_port_.GetSocketId() == ToCastSocketId(socket) &&
-      !message_port_.client_sender_id().empty() &&
-      message_port_.client_sender_id() == message.destination_id()) {
-    OSP_DCHECK(message_port_.client_sender_id() != kPlatformReceiverId);
+      !message_port_.source_id().empty() &&
+      message_port_.source_id() == message.destination_id()) {
+    OSP_DCHECK(message_port_.source_id() != kPlatformReceiverId);
     message_port_.OnMessage(router, socket, std::move(message));
     return;
   }
@@ -165,12 +165,12 @@ bool ApplicationAgent::IsConnectionAllowed(
   if (virtual_conn.local_id == kPlatformReceiverId) {
     return true;
   }
-  if (!launched_app_ || message_port_.client_sender_id().empty()) {
+  if (!launched_app_ || message_port_.source_id().empty()) {
     // No app currently launched. Or, there is a launched app, but it did not
     // call MessagePort::SetClient() to indicate it wants messages routed to it.
     return false;
   }
-  return virtual_conn.local_id == message_port_.client_sender_id();
+  return virtual_conn.local_id == message_port_.source_id();
 }
 
 void ApplicationAgent::OnClose(CastSocket* socket) {
@@ -354,8 +354,8 @@ void ApplicationAgent::PopulateReceiverStatus(Json::Value* out) {
     // first set up the virtual connection by issuing a CONNECT request.
     // Otherwise, messages will not get routed to the Application by the
     // VirtualConnectionRouter.
-    if (!message_port_.client_sender_id().empty()) {
-      details[kMessageKeyTransportId] = message_port_.client_sender_id();
+    if (!message_port_.source_id().empty()) {
+      details[kMessageKeyTransportId] = message_port_.source_id();
     }
     details[kMessageKeySessionId] = launched_app_->GetSessionId();
     details[kMessageKeyAppId] = launched_via_app_id_;

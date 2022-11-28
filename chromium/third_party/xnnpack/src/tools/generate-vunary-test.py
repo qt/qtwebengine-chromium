@@ -27,7 +27,7 @@ parser.set_defaults(defines=list())
 
 
 def split_ukernel_name(name):
-  match = re.fullmatch(r"xnn_(s8|u8|f16|f32)_v(abs|clamp|elu|hswish|lrelu|neg|relu|rndd|rndne|rndu|rndz|sigmoid|sqr|sqrt)_(fact_)?ukernel__(.+)_x(\d+)", name)
+  match = re.fullmatch(r"xnn_(s8|u8|f16|f32|u32|u64)(_(s8|u8|f16|f32|u32|u64))*_v(abs|clamp|elu|hswish|lrelu|neg|relu|rndd|rndne|rndu|rndz|sigmoid|sqr|sqrt|sqrtshift)_(fact_)?ukernel__(.+)_x(\d+)", name)
   if match is None:
     raise ValueError("Unexpected microkernel name: " + name)
   op_type = {
@@ -45,10 +45,11 @@ def split_ukernel_name(name):
     "sigmoid": "Sigmoid",
     "sqr": "Square",
     "sqrt": "SquareRoot",
-  }[match.group(2)]
-  batch_tile = int(match.group(5))
+    "sqrtshift": "SquareRootShift",
+  }[match.group(4)]
+  batch_tile = int(match.group(7))
 
-  arch, isa = xnncommon.parse_target_name(target_name=match.group(4))
+  arch, isa = xnncommon.parse_target_name(target_name=match.group(6))
   return op_type, batch_tile, arch, isa
 
 
@@ -92,16 +93,17 @@ TEST(${TEST_NAME}, batch_gt_${BATCH_TILE}) {
   }
 }
 
-TEST(${TEST_NAME}, inplace) {
-  $if ISA_CHECK:
-    ${ISA_CHECK};
-  for (size_t batch_size = 1; batch_size <= ${BATCH_TILE*5}; batch_size += ${max(1, BATCH_TILE-1)}) {
-    VUnaryMicrokernelTester()
-      .batch_size(batch_size)
-      .inplace(true)
-      .Test(${", ".join(TEST_ARGS)});
+$if OP_TYPE != "SquareRootShift":
+  TEST(${TEST_NAME}, inplace) {
+    $if ISA_CHECK:
+      ${ISA_CHECK};
+    for (size_t batch_size = 1; batch_size <= ${BATCH_TILE*5}; batch_size += ${max(1, BATCH_TILE-1)}) {
+      VUnaryMicrokernelTester()
+        .batch_size(batch_size)
+        .inplace(true)
+        .Test(${", ".join(TEST_ARGS)});
+    }
   }
-}
 
 $if OP_TYPE == "Clamp":
   TEST(${TEST_NAME}, qmin) {
@@ -183,6 +185,20 @@ $if OP_TYPE == "LeakyReLU":
       }
     }
   }
+
+$if OP_TYPE == "SquareRootShift":
+  TEST(${TEST_NAME}, shift) {
+    $if ISA_CHECK:
+      ${ISA_CHECK};
+    for (uint32_t shift = 0; shift < 32; shift++) {
+      for (size_t batch_size = 1; batch_size <= ${BATCH_TILE*5}; batch_size += ${max(1, BATCH_TILE-1)}) {
+        VUnaryMicrokernelTester()
+          .batch_size(batch_size)
+          .shift(shift)
+          .Test(${", ".join(TEST_ARGS)});
+      }
+    }
+  }
 """
 
 
@@ -209,10 +225,6 @@ def generate_test_cases(ukernel, op_type, init_fn, batch_tile, isa):
       test_args.append("VUnaryMicrokernelTester::OpType::" + op_type)
     if init_fn is not None:
       test_args.append(init_fn)
-  elif op_type not in ["Abs", "Negate", "Square", "SquareRoot"]:
-    test_args.append("VUnaryMicrokernelTester::OpType::" + op_type)
-    if not isa:
-      test_args.append("VUnaryMicrokernelTester::Variant::Scalar")
   return xngen.preprocess(BINOP_TEST_TEMPLATE, {
       "TEST_NAME": test_name.upper().replace("UKERNEL_", ""),
       "TEST_ARGS": test_args,

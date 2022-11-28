@@ -9,6 +9,7 @@
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/shaders/SkLocalMatrixShader.h"
 #include "src/shaders/gradients/SkGradientShaderBase.h"
 
 #include <utility>
@@ -54,10 +55,10 @@ public:
     };
 
     static sk_sp<SkShader> Create(const SkPoint& start, SkScalar startRadius,
-                                  const SkPoint& end, SkScalar endRadius,
-                                  const Descriptor&);
+                                  const SkPoint& end,   SkScalar endRadius,
+                                  const Descriptor&, const SkMatrix* localMatrix);
 
-    SkShader::GradientType asAGradient(GradientInfo* info) const  override;
+    GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
@@ -78,6 +79,10 @@ public:
     Type getType() const { return fType; }
     const FocalData& getFocalData() const { return fFocalData; }
 
+    SkTwoPointConicalGradient(const SkPoint& c0, SkScalar r0,
+                              const SkPoint& c1, SkScalar r1,
+                              const Descriptor&, Type, const SkMatrix&, const FocalData&);
+
 protected:
     void flatten(SkWriteBuffer& buffer) const override;
 
@@ -90,10 +95,6 @@ protected:
 private:
     friend void ::SkRegisterTwoPointConicalGradientShaderFlattenable();
     SK_FLATTENABLE_HOOKS(SkTwoPointConicalGradient)
-
-    SkTwoPointConicalGradient(const SkPoint& c0, SkScalar r0,
-                              const SkPoint& c1, SkScalar r1,
-                              const Descriptor&, Type, const SkMatrix&, const FocalData&);
 
     SkPoint  fCenter1;
     SkPoint  fCenter2;
@@ -139,7 +140,8 @@ bool SkTwoPointConicalGradient::FocalData::set(SkScalar r0, SkScalar r1, SkMatri
 
 sk_sp<SkShader> SkTwoPointConicalGradient::Create(const SkPoint& c0, SkScalar r0,
                                                   const SkPoint& c1, SkScalar r1,
-                                                  const Descriptor& desc) {
+                                                  const Descriptor& desc,
+                                                  const SkMatrix* localMatrix) {
     SkMatrix gradientMatrix;
     Type     gradientType;
 
@@ -174,8 +176,13 @@ sk_sp<SkShader> SkTwoPointConicalGradient::Create(const SkPoint& c0, SkScalar r0
             return nullptr;
         }
     }
-    return sk_sp<SkShader>(new SkTwoPointConicalGradient(c0, r0, c1, r1, desc,
-                                                         gradientType, gradientMatrix, focalData));
+    return SkLocalMatrixShader::MakeWrapped<SkTwoPointConicalGradient>(localMatrix,
+                                                                       c0, r0,
+                                                                       c1, r1,
+                                                                       desc,
+                                                                       gradientType,
+                                                                       gradientMatrix,
+                                                                       focalData);
 }
 
 SkTwoPointConicalGradient::SkTwoPointConicalGradient(
@@ -204,7 +211,8 @@ bool SkTwoPointConicalGradient::isOpaque() const {
 }
 
 // Returns the original non-sorted version of the gradient
-SkShader::GradientType SkTwoPointConicalGradient::asAGradient(GradientInfo* info) const {
+SkShaderBase::GradientType SkTwoPointConicalGradient::asGradient(GradientInfo* info,
+                                                                 SkMatrix* localMatrix) const {
     if (info) {
         commonAsAGradient(info);
         info->fPoint[0] = fCenter1;
@@ -212,12 +220,16 @@ SkShader::GradientType SkTwoPointConicalGradient::asAGradient(GradientInfo* info
         info->fRadius[0] = fRadius1;
         info->fRadius[1] = fRadius2;
     }
-    return kConical_GradientType;
+    if (localMatrix) {
+        *localMatrix = SkMatrix::I();
+    }
+    return GradientType::kConical;
 }
 
 sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer) {
     DescriptorScope desc;
-    if (!desc.unflatten(buffer)) {
+    SkMatrix legacyLocalMatrix;
+    if (!desc.unflatten(buffer, &legacyLocalMatrix)) {
         return nullptr;
     }
     SkPoint c1 = buffer.readPoint();
@@ -228,10 +240,15 @@ sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer)
     if (!buffer.isValid()) {
         return nullptr;
     }
-    return SkGradientShader::MakeTwoPointConical(c1, r1, c2, r2, desc.fColors,
-                                                 std::move(desc.fColorSpace), desc.fPos,
-                                                 desc.fCount, desc.fTileMode, desc.fGradFlags,
-                                                 desc.fLocalMatrix);
+    return SkGradientShader::MakeTwoPointConical(c1, r1,
+                                                 c2, r2,
+                                                 desc.fColors,
+                                                 std::move(desc.fColorSpace),
+                                                 desc.fPos,
+                                                 desc.fCount,
+                                                 desc.fTileMode,
+                                                 desc.fInterpolation,
+                                                 &legacyLocalMatrix);
 }
 
 void SkTwoPointConicalGradient::flatten(SkWriteBuffer& buffer) const {
@@ -368,19 +385,19 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
     switch (this->getType()) {
         case SkTwoPointConicalGradient::Type::kStrip: {
             static const SkRuntimeEffect* kEffect =
-                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
-                        uniform half r0_2;
-                        half4 main(float2 p) {
-                            half v = 1; // validation flag,set to negative to discard fragment later
-                            float t = r0_2 - p.y * p.y;
-                            if (t >= 0) {
-                                t = p.x + sqrt(t);
-                            } else {
-                                v = -1;
-                            }
-                            return half4(half(t), v, 0, 0);
-                        }
-                    )");
+                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+                        "uniform half r0_2;"
+                        "half4 main(float2 p) {"
+                            "half v = 1;" // validation flag,set to negative to discard fragment later
+                            "float t = r0_2 - p.y * p.y;"
+                            "if (t >= 0) {"
+                                "t = p.x + sqrt(t);"
+                            "} else {"
+                                "v = -1;"
+                            "}"
+                            "return half4(half(t), v, 0, 0);"
+                        "}"
+                    );
             float r0 = this->getStartRadius() / this->getCenterX1();
             fp = GrSkSLFP::Make(kEffect, "TwoPointConicalStripLayout", /*inputFP=*/nullptr,
                                 GrSkSLFP::OptFlags::kNone,
@@ -389,15 +406,15 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
 
         case SkTwoPointConicalGradient::Type::kRadial: {
             static const SkRuntimeEffect* kEffect =
-                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
-                        uniform half r0;
-                        uniform half lengthScale;
-                        half4 main(float2 p) {
-                            half v = 1; // validation flag,set to negative to discard fragment later
-                            float t = length(p) * lengthScale - r0;
-                            return half4(half(t), v, 0, 0);
-                        }
-                    )");
+                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+                        "uniform half r0;"
+                        "uniform half lengthScale;"
+                        "half4 main(float2 p) {"
+                            "half v = 1;" // validation flag,set to negative to discard fragment later
+                            "float t = length(p) * lengthScale - r0;"
+                            "return half4(half(t), v, 0, 0);"
+                        "}"
+                    );
             float dr = this->getDiffRadius();
             float r0 = this->getStartRadius() / dr;
             bool isRadiusIncreasing = dr >= 0;
@@ -418,28 +435,28 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
 
         case SkTwoPointConicalGradient::Type::kFocal: {
             static const SkRuntimeEffect* kEffect =
-                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+                SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
                         // Optimization flags, all specialized:
-                        uniform int isRadiusIncreasing;
-                        uniform int isFocalOnCircle;
-                        uniform int isWellBehaved;
-                        uniform int isSwapped;
-                        uniform int isNativelyFocal;
+                        "uniform int isRadiusIncreasing;"
+                        "uniform int isFocalOnCircle;"
+                        "uniform int isWellBehaved;"
+                        "uniform int isSwapped;"
+                        "uniform int isNativelyFocal;"
 
-                        uniform half invR1;  // 1/r1
-                        uniform half fx;     // focalX = r0/(r0-r1)
+                        "uniform half invR1;"  // 1/r1
+                        "uniform half fx;"     // focalX = r0/(r0-r1)
 
-                        half4 main(float2 p) {
-                            float t = -1;
-                            half v = 1; // validation flag,set to negative to discard fragment later
+                        "half4 main(float2 p) {"
+                            "float t = -1;"
+                            "half v = 1;" // validation flag,set to negative to discard fragment later
 
-                            float x_t = -1;
-                            if (bool(isFocalOnCircle)) {
-                                x_t = dot(p, p) / p.x;
-                            } else if (bool(isWellBehaved)) {
-                                x_t = length(p) - p.x * invR1;
-                            } else {
-                                float temp = p.x * p.x - p.y * p.y;
+                            "float x_t = -1;"
+                            "if (bool(isFocalOnCircle)) {"
+                                "x_t = dot(p, p) / p.x;"
+                            "} else if (bool(isWellBehaved)) {"
+                                "x_t = length(p) - p.x * invR1;"
+                            "} else {"
+                                "float temp = p.x * p.x - p.y * p.y;"
 
                                 // Only do sqrt if temp >= 0; this is significantly slower than
                                 // checking temp >= 0 in the if statement that checks r(t) >= 0.
@@ -449,46 +466,46 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
                                 // the performance is really critical, maybe we should just
                                 // compute the area where temp and x_t are always valid and drop
                                 // all these ifs.
-                                if (temp >= 0) {
-                                    if (bool(isSwapped) || !bool(isRadiusIncreasing)) {
-                                        x_t = -sqrt(temp) - p.x * invR1;
-                                    } else {
-                                        x_t = sqrt(temp) - p.x * invR1;
-                                    }
-                                }
-                            }
+                                "if (temp >= 0) {"
+                                    "if (bool(isSwapped) || !bool(isRadiusIncreasing)) {"
+                                        "x_t = -sqrt(temp) - p.x * invR1;"
+                                    "} else {"
+                                        "x_t = sqrt(temp) - p.x * invR1;"
+                                    "}"
+                                "}"
+                            "}"
 
                             // The final calculation of t from x_t has lots of static
                             // optimizations but only do them when x_t is positive (which
                             // can be assumed true if isWellBehaved is true)
-                            if (!bool(isWellBehaved)) {
+                            "if (!bool(isWellBehaved)) {"
                                 // This will still calculate t even though it will be ignored
                                 // later in the pipeline to avoid a branch
-                                if (x_t <= 0.0) {
-                                    v = -1;
-                                }
-                            }
-                            if (bool(isRadiusIncreasing)) {
-                                if (bool(isNativelyFocal)) {
-                                    t = x_t;
-                                } else {
-                                    t = x_t + fx;
-                                }
-                            } else {
-                                if (bool(isNativelyFocal)) {
-                                    t = -x_t;
-                                } else {
-                                    t = -x_t + fx;
-                                }
-                            }
+                                "if (x_t <= 0.0) {"
+                                    "v = -1;"
+                                "}"
+                            "}"
+                            "if (bool(isRadiusIncreasing)) {"
+                                "if (bool(isNativelyFocal)) {"
+                                    "t = x_t;"
+                                "} else {"
+                                    "t = x_t + fx;"
+                                "}"
+                            "} else {"
+                                "if (bool(isNativelyFocal)) {"
+                                    "t = -x_t;"
+                                "} else {"
+                                    "t = -x_t + fx;"
+                                "}"
+                            "}"
 
-                            if (bool(isSwapped)) {
-                                t = 1 - t;
-                            }
+                            "if (bool(isSwapped)) {"
+                                "t = 1 - t;"
+                            "}"
 
-                            return half4(half(t), v, 0, 0);
-                        }
-                    )");
+                            "return half4(half(t), v, 0, 0);"
+                        "}"
+                    );
 
             const SkTwoPointConicalGradient::FocalData& focalData = this->getFocalData();
             bool isRadiusIncreasing = (1 - focalData.fFocalX) > 0,
@@ -517,8 +534,7 @@ std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProces
 void SkTwoPointConicalGradient::addToKey(const SkKeyContext& keyContext,
                                          SkPaintParamsKeyBuilder* builder,
                                          SkPipelineDataGatherer* gatherer) const {
-    GradientShaderBlocks::GradientData data(kConical_GradientType,
-                                            SkM44(this->getLocalMatrix()),
+    GradientShaderBlocks::GradientData data(GradientType::kConical,
                                             fCenter1, fCenter2,
                                             fRadius1, fRadius2,
                                             0.0f, 0.0f,
@@ -553,7 +569,7 @@ sk_sp<SkShader> SkGradientShader::MakeTwoPointConical(const SkPoint& start,
                                                       const SkScalar pos[],
                                                       int colorCount,
                                                       SkTileMode mode,
-                                                      uint32_t flags,
+                                                      const Interpolation& interpolation,
                                                       const SkMatrix* localMatrix) {
     if (startRadius < 0 || endRadius < 0) {
         return nullptr;
@@ -578,7 +594,7 @@ sk_sp<SkShader> SkGradientShader::MakeTwoPointConical(const SkPoint& start,
                 static constexpr SkScalar circlePos[3] = {0, 1, 1};
                 SkColor4f reColors[3] = {colors[0], colors[0], colors[colorCount - 1]};
                 return MakeRadial(start, endRadius, reColors, std::move(colorSpace),
-                                  circlePos, 3, mode, flags, localMatrix);
+                                  circlePos, 3, mode, interpolation, localMatrix);
             } else {
                 // Otherwise use the default degenerate case
                 return SkGradientShaderBase::MakeDegenerateGradient(colors, pos, colorCount,
@@ -588,7 +604,7 @@ sk_sp<SkShader> SkGradientShader::MakeTwoPointConical(const SkPoint& start,
             // We can treat this gradient as radial, which is faster. If we got here, we know
             // that endRadius is not equal to 0, so this produces a meaningful gradient
             return MakeRadial(start, endRadius, colors, std::move(colorSpace), pos, colorCount,
-                              mode, flags, localMatrix);
+                              mode, interpolation, localMatrix);
         }
         // Else it's the 2pt conical radial variant with no degenerate radii, so fall through to the
         // regular 2pt constructor.
@@ -602,11 +618,26 @@ sk_sp<SkShader> SkGradientShader::MakeTwoPointConical(const SkPoint& start,
     SkGradientShaderBase::ColorStopOptimizer opt(colors, pos, colorCount, mode);
 
     SkGradientShaderBase::Descriptor desc(opt.fColors, std::move(colorSpace), opt.fPos,
-                                          opt.fCount, mode, flags, localMatrix);
-    return SkTwoPointConicalGradient::Create(start, startRadius, end, endRadius, desc);
+                                          opt.fCount, mode, interpolation);
+    return SkTwoPointConicalGradient::Create(start, startRadius, end, endRadius, desc, localMatrix);
 }
 
 #undef EXPAND_1_COLOR
+
+sk_sp<SkShader> SkGradientShader::MakeTwoPointConical(const SkPoint& start,
+                                                      SkScalar startRadius,
+                                                      const SkPoint& end,
+                                                      SkScalar endRadius,
+                                                      const SkColor colors[],
+                                                      const SkScalar pos[],
+                                                      int colorCount,
+                                                      SkTileMode mode,
+                                                      uint32_t flags,
+                                                      const SkMatrix* localMatrix) {
+    SkColorConverter converter(colors, colorCount);
+    return MakeTwoPointConical(start, startRadius, end, endRadius, converter.fColors4f.begin(),
+                               nullptr, pos, colorCount, mode, flags, localMatrix);
+}
 
 void SkRegisterTwoPointConicalGradientShaderFlattenable() {
     SK_REGISTER_FLATTENABLE(SkTwoPointConicalGradient);

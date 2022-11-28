@@ -71,9 +71,9 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(AsyncGeneratorReturnResolveSharedFun,                                      \
     async_generator_return_resolve_shared_fun,                                 \
     AsyncGeneratorReturnResolveSharedFun)                                      \
-  V(AsyncGeneratorYieldResolveSharedFun,                                       \
-    async_generator_yield_resolve_shared_fun,                                  \
-    AsyncGeneratorYieldResolveSharedFun)                                       \
+  V(AsyncGeneratorYieldWithAwaitResolveSharedFun,                              \
+    async_generator_yield_with_await_resolve_shared_fun,                       \
+    AsyncGeneratorYieldWithAwaitResolveSharedFun)                              \
   V(AsyncIteratorValueUnwrapSharedFun, async_iterator_value_unwrap_shared_fun, \
     AsyncIteratorValueUnwrapSharedFun)                                         \
   V(IsConcatSpreadableProtector, is_concat_spreadable_protector,               \
@@ -120,8 +120,6 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(ShadowRealmImportValueFulfilledSFI,                                        \
     shadow_realm_import_value_fulfilled_sfi,                                   \
     ShadowRealmImportValueFulfilledSFI)                                        \
-  V(SingleCharacterStringTable, single_character_string_table,                 \
-    SingleCharacterStringTable)                                                \
   V(StringIteratorProtector, string_iterator_protector,                        \
     StringIteratorProtector)                                                   \
   V(TypedArraySpeciesProtector, typed_array_species_protector,                 \
@@ -140,6 +138,7 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(array_to_string, array_to_string, ArrayToString)                         \
   V(BooleanMap, boolean_map, BooleanMap)                                     \
   V(boolean_to_string, boolean_to_string, BooleanToString)                   \
+  V(class_fields_symbol, class_fields_symbol, ClassFieldsSymbol)             \
   V(ConsOneByteStringMap, cons_one_byte_string_map, ConsOneByteStringMap)    \
   V(ConsStringMap, cons_string_map, ConsStringMap)                           \
   V(constructor_string, constructor_string, ConstructorString)               \
@@ -210,6 +209,8 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(resolve_string, resolve_string, ResolveString)                           \
   V(return_string, return_string, ReturnString)                              \
   V(search_symbol, search_symbol, SearchSymbol)                              \
+  V(SingleCharacterStringTable, single_character_string_table,               \
+    SingleCharacterStringTable)                                              \
   V(species_symbol, species_symbol, SpeciesSymbol)                           \
   V(StaleRegister, stale_register, StaleRegister)                            \
   V(StoreHandler0Map, store_handler0_map, StoreHandler0Map)                  \
@@ -309,9 +310,9 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   EXPAND(TYPED_VARIABLE_CONSTRUCTOR(__VA_ARGS__, this))
 
 #ifdef ENABLE_SLOW_DCHECKS
-#define CSA_SLOW_DCHECK(csa, ...) \
-  if (FLAG_enable_slow_asserts) { \
-    CSA_DCHECK(csa, __VA_ARGS__); \
+#define CSA_SLOW_DCHECK(csa, ...)     \
+  if (v8_flags.enable_slow_asserts) { \
+    CSA_DCHECK(csa, __VA_ARGS__);     \
   }
 #else
 #define CSA_SLOW_DCHECK(csa, ...) ((void)0)
@@ -627,6 +628,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                               Label* if_overflow);
   TNode<IntPtrT> TryIntPtrSub(TNode<IntPtrT> a, TNode<IntPtrT> b,
                               Label* if_overflow);
+  TNode<IntPtrT> TryIntPtrMul(TNode<IntPtrT> a, TNode<IntPtrT> b,
+                              Label* if_overflow);
   TNode<Int32T> TryInt32Mul(TNode<Int32T> a, TNode<Int32T> b,
                             Label* if_overflow);
   TNode<Smi> TrySmiAdd(TNode<Smi> a, TNode<Smi> b, Label* if_overflow);
@@ -771,10 +774,17 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void GotoIfNumber(TNode<Object> value, Label* is_number);
   TNode<Number> SmiToNumber(TNode<Smi> v) { return v; }
 
+  // BigInt operations.
+  void GotoIfLargeBigInt(TNode<BigInt> bigint, Label* true_label);
+
   TNode<Number> BitwiseOp(TNode<Word32T> left32, TNode<Word32T> right32,
                           Operation bitwise_op);
   TNode<Number> BitwiseSmiOp(TNode<Smi> left32, TNode<Smi> right32,
                              Operation bitwise_op);
+
+  // Align the value to kObjectAlignment8GbHeap if V8_COMPRESS_POINTERS_8GB is
+  // defined.
+  TNode<IntPtrT> AlignToAllocationAlignment(TNode<IntPtrT> value);
 
   // Allocate an object of the given size.
   TNode<HeapObject> AllocateInNewSpace(
@@ -1077,10 +1087,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void GotoIfForceSlowPath(Label* if_true);
 
   //
-  // Caged pointer related functionality.
+  // Sandboxed pointer related functionality.
   //
 
-  // Load a caged pointer value from an object.
+  // Load a sandboxed pointer value from an object.
   TNode<RawPtrT> LoadSandboxedPointerFromObject(TNode<HeapObject> object,
                                                 int offset) {
     return LoadSandboxedPointerFromObject(object, IntPtrConstant(offset));
@@ -1089,7 +1099,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<RawPtrT> LoadSandboxedPointerFromObject(TNode<HeapObject> object,
                                                 TNode<IntPtrT> offset);
 
-  // Stored a caged pointer value to an object.
+  // Stored a sandboxed pointer value to an object.
   void StoreSandboxedPointerToObject(TNode<HeapObject> object, int offset,
                                      TNode<RawPtrT> pointer) {
     StoreSandboxedPointerToObject(object, IntPtrConstant(offset), pointer);
@@ -1101,6 +1111,27 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<RawPtrT> EmptyBackingStoreBufferConstant();
 
+  //
+  // Bounded size related functionality.
+  //
+
+  // Load a bounded size value from an object.
+  TNode<UintPtrT> LoadBoundedSizeFromObject(TNode<HeapObject> object,
+                                            int offset) {
+    return LoadBoundedSizeFromObject(object, IntPtrConstant(offset));
+  }
+
+  TNode<UintPtrT> LoadBoundedSizeFromObject(TNode<HeapObject> object,
+                                            TNode<IntPtrT> offset);
+
+  // Stored a bounded size value to an object.
+  void StoreBoundedSizeToObject(TNode<HeapObject> object, int offset,
+                                TNode<UintPtrT> value) {
+    StoreBoundedSizeToObject(object, IntPtrConstant(offset), value);
+  }
+
+  void StoreBoundedSizeToObject(TNode<HeapObject> object, TNode<IntPtrT> offset,
+                                TNode<UintPtrT> value);
   //
   // ExternalPointerT-related functionality.
   //
@@ -1137,9 +1168,9 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<RawPtrT> LoadCallHandlerInfoJsCallbackPtr(
       TNode<CallHandlerInfo> object) {
-    return LoadExternalPointerFromObject(object,
-                                         CallHandlerInfo::kJsCallbackOffset,
-                                         kCallHandlerInfoJsCallbackTag);
+    return LoadExternalPointerFromObject(
+        object, CallHandlerInfo::kMaybeRedirectedCallbackOffset,
+        kCallHandlerInfoCallbackTag);
   }
 
   TNode<RawPtrT> LoadExternalStringResourcePtr(TNode<ExternalString> object) {
@@ -1450,6 +1481,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                               Label* if_hash_not_computed = nullptr);
   TNode<Uint32T> LoadNameHashAssumeComputed(TNode<Name> name);
 
+  // Load the Name::RawHash() value of a name as an uint32 value. Follows
+  // through the forwarding table.
+  TNode<Uint32T> LoadNameRawHash(TNode<Name> name);
+
   // Load length field of a String object as Smi value.
   TNode<Smi> LoadStringLengthAsSmi(TNode<String> string);
   // Load length field of a String object as intptr_t value.
@@ -1472,10 +1507,14 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                            TVariable<Object>* extracted);
   // See MaybeObject for semantics of these functions.
   TNode<BoolT> IsStrong(TNode<MaybeObject> value);
+  TNode<BoolT> IsStrong(TNode<HeapObjectReference> value);
   TNode<HeapObject> GetHeapObjectIfStrong(TNode<MaybeObject> value,
+                                          Label* if_not_strong);
+  TNode<HeapObject> GetHeapObjectIfStrong(TNode<HeapObjectReference> value,
                                           Label* if_not_strong);
 
   TNode<BoolT> IsWeakOrCleared(TNode<MaybeObject> value);
+  TNode<BoolT> IsWeakOrCleared(TNode<HeapObjectReference> value);
   TNode<BoolT> IsCleared(TNode<MaybeObject> value);
   TNode<BoolT> IsNotCleared(TNode<MaybeObject> value) {
     return Word32BinaryNot(IsCleared(value));
@@ -1628,6 +1667,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // ScopeInfo:
   TNode<ScopeInfo> LoadScopeInfo(TNode<Context> context);
   TNode<BoolT> LoadScopeInfoHasExtensionField(TNode<ScopeInfo> scope_info);
+  TNode<BoolT> LoadScopeInfoClassScopeHasPrivateBrand(
+      TNode<ScopeInfo> scope_info);
 
   // Context manipulation:
   void StoreContextElementNoWriteBarrier(TNode<Context> context, int slot_index,
@@ -1656,6 +1697,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                     TNode<NativeContext> native_context);
 
   TNode<BoolT> IsJSFunctionWithPrototypeSlot(TNode<HeapObject> object);
+  TNode<Uint32T> LoadFunctionKind(TNode<JSFunction> function);
   TNode<BoolT> IsGeneratorFunction(TNode<JSFunction> function);
   void BranchIfHasPrototypeProperty(TNode<JSFunction> function,
                                     TNode<Int32T> function_map_bit_field,
@@ -2038,6 +2080,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                         TNode<JSReceiver> receiver,
                                         Label* if_bailout);
   TNode<Object> GetConstructor(TNode<Map> map);
+
+  void FindNonDefaultConstructorOrConstruct(TNode<Context> context,
+                                            TNode<JSFunction> this_function,
+                                            TVariable<Object>& constructor,
+                                            Label* found_default_base_ctor,
+                                            Label* found_something_else);
 
   TNode<Map> GetInstanceTypeMap(InstanceType instance_type);
 
@@ -2704,6 +2752,12 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> HasSharedStringTableFlag() {
     return LoadRuntimeFlag(
         ExternalReference::address_of_shared_string_table_flag());
+  }
+
+  TNode<BoolT> HasHarmonySymbolAsWeakmapKeyFlag() {
+    return LoadRuntimeFlag(
+        ExternalReference::
+            address_of_FLAG_harmony_symbol_as_weakmap_key());
   }
 
   // True iff |object| is a Smi or a HeapNumber or a BigInt.
@@ -3724,6 +3778,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsSideEffectFreeDebuggingActive();
 
   // JSArrayBuffer helpers
+  TNode<UintPtrT> LoadJSArrayBufferByteLength(
+      TNode<JSArrayBuffer> array_buffer);
+  TNode<UintPtrT> LoadJSArrayBufferMaxByteLength(
+      TNode<JSArrayBuffer> array_buffer);
   TNode<RawPtrT> LoadJSArrayBufferBackingStorePtr(
       TNode<JSArrayBuffer> array_buffer);
   void ThrowIfArrayBufferIsDetached(TNode<Context> context,
@@ -3733,16 +3791,22 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // JSArrayBufferView helpers
   TNode<JSArrayBuffer> LoadJSArrayBufferViewBuffer(
       TNode<JSArrayBufferView> array_buffer_view);
-  TNode<UintPtrT> LoadJSArrayBufferViewRawByteLength(
+  TNode<UintPtrT> LoadJSArrayBufferViewByteLength(
       TNode<JSArrayBufferView> array_buffer_view);
-
+  void StoreJSArrayBufferViewByteLength(
+      TNode<JSArrayBufferView> array_buffer_view, TNode<UintPtrT> value);
   TNode<UintPtrT> LoadJSArrayBufferViewByteOffset(
       TNode<JSArrayBufferView> array_buffer_view);
+  void StoreJSArrayBufferViewByteOffset(
+      TNode<JSArrayBufferView> array_buffer_view, TNode<UintPtrT> value);
   void ThrowIfArrayBufferViewBufferIsDetached(
       TNode<Context> context, TNode<JSArrayBufferView> array_buffer_view,
       const char* method_name);
 
   // JSTypedArray helpers
+  TNode<UintPtrT> LoadJSTypedArrayLength(TNode<JSTypedArray> typed_array);
+  void StoreJSTypedArrayLength(TNode<JSTypedArray> typed_array,
+                               TNode<UintPtrT> value);
   TNode<UintPtrT> LoadJSTypedArrayLengthAndCheckDetached(
       TNode<JSTypedArray> typed_array, Label* detached);
   // Helper for length tracking JSTypedArrays and JSTypedArrays backed by

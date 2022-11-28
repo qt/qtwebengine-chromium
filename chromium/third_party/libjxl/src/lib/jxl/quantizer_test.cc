@@ -5,8 +5,6 @@
 
 #include "lib/jxl/quantizer.h"
 
-#include <random>
-
 #include "gtest/gtest.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/common.h"
@@ -44,7 +42,7 @@ TEST(QuantizerTest, BitStreamRoundtripSameQuant) {
   EXPECT_TRUE(quantizer1.Encode(&writer, 0, nullptr));
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
-  Quantizer quantizer2(&dequant, qxsize, qysize);
+  Quantizer quantizer2(&dequant);
   BitReader reader(writer.GetSpan());
   EXPECT_TRUE(quantizer2.Decode(&reader));
   EXPECT_TRUE(reader.JumpToByteBoundary());
@@ -60,17 +58,15 @@ TEST(QuantizerTest, BitStreamRoundtripRandomQuant) {
   Quantizer quantizer1(&dequant);
   ImageI raw_quant_field(qxsize, qysize);
   quantizer1.SetQuant(0.17f, 0.17f, &raw_quant_field);
-  std::mt19937_64 rng;
-  std::uniform_int_distribution<> uniform(1, 256);
   float quant_dc = 0.17f;
   ImageF qf(qxsize, qysize);
-  RandomFillImage(&qf, 1.0f);
+  RandomFillImage(&qf, 0.0f, 1.0f);
   quantizer1.SetQuantField(quant_dc, qf, &raw_quant_field);
   BitWriter writer;
   EXPECT_TRUE(quantizer1.Encode(&writer, 0, nullptr));
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
-  Quantizer quantizer2(&dequant, qxsize, qysize);
+  Quantizer quantizer2(&dequant);
   BitReader reader(writer.GetSpan());
   EXPECT_TRUE(quantizer2.Decode(&reader));
   EXPECT_TRUE(reader.JumpToByteBoundary());

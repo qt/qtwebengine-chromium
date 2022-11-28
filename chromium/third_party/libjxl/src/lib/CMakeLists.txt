@@ -4,8 +4,8 @@
 # license that can be found in the LICENSE file.
 
 set(JPEGXL_MAJOR_VERSION 0)
-set(JPEGXL_MINOR_VERSION 6)
-set(JPEGXL_PATCH_VERSION 1)
+set(JPEGXL_MINOR_VERSION 8)
+set(JPEGXL_PATCH_VERSION 0)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
 
@@ -15,7 +15,7 @@ set(JPEGXL_LIBRARY_VERSION
 # It is important to update this value when making incompatible API/ABI changes
 # so that programs that depend on libjxl can update their dependencies. Semantic
 # versioning allows 0.y.z to have incompatible changes in minor versions.
-set(JPEGXL_SO_MINOR_VERSION 6)
+set(JPEGXL_SO_MINOR_VERSION 8)
 if (JPEGXL_MAJOR_VERSION EQUAL 0)
 set(JPEGXL_LIBRARY_SOVERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_SO_MINOR_VERSION}")
@@ -52,7 +52,7 @@ set(JPEGXL_INTERNAL_FLAGS
 )
 
 # Warning flags supported by clang.
-if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   list(APPEND JPEGXL_INTERNAL_FLAGS
     -Wdeprecated-increment-bool
     # TODO(deymo): Add -Wextra-semi once we update third_party/highway.
@@ -81,22 +81,26 @@ endif()  # Clang
 
 if (WIN32)
   list(APPEND JPEGXL_INTERNAL_FLAGS
-    -Wno-c++98-compat-pedantic
     -Wno-cast-align
     -Wno-double-promotion
     -Wno-float-equal
     -Wno-format-nonliteral
-    -Wno-global-constructors
-    -Wno-language-extension-token
-    -Wno-missing-prototypes
     -Wno-shadow
-    -Wno-shadow-field-in-constructor
     -Wno-sign-conversion
-    -Wno-unused-member-function
-    -Wno-unused-template
-    -Wno-used-but-marked-unused
     -Wno-zero-as-null-pointer-constant
   )
+
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    list(APPEND JPEGXL_INTERNAL_FLAGS
+      -Wno-used-but-marked-unused
+      -Wno-unused-template
+      -Wno-unused-member-function
+      -Wno-shadow-field-in-constructor
+      -Wno-language-extension-token
+      -Wno-global-constructors
+      -Wno-c++98-compat-pedantic
+    )
+  endif()  # Clang
 else()  # WIN32
   list(APPEND JPEGXL_INTERNAL_FLAGS
     -fsized-deallocation
@@ -106,7 +110,7 @@ else()  # WIN32
     -fmath-errno
   )
 
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     list(APPEND JPEGXL_INTERNAL_FLAGS
       -fnew-alignment=8
       -fno-cxx-exceptions
@@ -122,7 +126,7 @@ endif()  # WIN32
 # Internal flags for coverage builds:
 if(JPEGXL_ENABLE_COVERAGE)
 set(JPEGXL_COVERAGE_FLAGS
-    -g -O0 -fprofile-arcs -ftest-coverage -DJXL_DISABLE_SLOW_TESTS
+    -g -O0 -fprofile-arcs -ftest-coverage
     -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
 )
 endif()  # JPEGXL_ENABLE_COVERAGE
@@ -132,7 +136,9 @@ endif()  #!MSVC
 include(jxl.cmake)
 
 # Other libraries outside the core jxl library.
-include(jxl_extras.cmake)
+if(JPEGXL_ENABLE_TOOLS)
+  include(jxl_extras.cmake)
+endif()
 include(jxl_threads.cmake)
 
 # Install all the library headers from the source and the generated ones. There

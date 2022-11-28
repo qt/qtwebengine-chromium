@@ -114,6 +114,7 @@ pdfium_unittest_source_set("unittests") {
   sources = [
     "cpdf_array_unittest.cpp",
     "cpdf_cross_ref_avail_unittest.cpp",
+    "cpdf_dictionary_unittest.cpp",
     "cpdf_document_unittest.cpp",
     "cpdf_hint_tables_unittest.cpp",
     "cpdf_indirect_object_holder_unittest.cpp",
@@ -151,6 +152,9 @@ pdfium_embeddertest_source_set("embeddertests") {
     "cpdf_security_handler_embeddertest.cpp",
     "fpdf_parser_decode_embeddertest.cpp",
   ]
-  deps = [ ":parser" ]
+  deps = [
+    ":parser",
+    "../../fxge",
+  ]
   pdfium_root_dir = "../../../"
 }

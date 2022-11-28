@@ -174,13 +174,13 @@ void SkPictureRecord::willRestore() {
 #endif
 
     // check for underflow
-    if (fRestoreOffsetStack.count() == 0) {
+    if (fRestoreOffsetStack.empty()) {
         return;
     }
 
     this->recordRestore();
 
-    fRestoreOffsetStack.pop();
+    fRestoreOffsetStack.pop_back();
 
     this->INHERITED::willRestore();
 }
@@ -255,7 +255,7 @@ void SkPictureRecord::recordConcat(const SkMatrix& matrix) {
 }
 
 void SkPictureRecord::fillRestoreOffsetPlaceholdersForCurrentStackLevel(uint32_t restoreOffset) {
-    int32_t offset = fRestoreOffsetStack.top();
+    int32_t offset = fRestoreOffsetStack.back();
     while (offset > 0) {
         uint32_t peek = fWriter.readTAt<uint32_t>(offset);
         fWriter.overwriteTAt(offset, restoreOffset);
@@ -286,7 +286,7 @@ void SkPictureRecord::endRecording() {
 }
 
 size_t SkPictureRecord::recordRestoreOffsetPlaceholder() {
-    if (fRestoreOffsetStack.isEmpty()) {
+    if (fRestoreOffsetStack.empty()) {
         return -1;
     }
 
@@ -295,11 +295,11 @@ size_t SkPictureRecord::recordRestoreOffsetPlaceholder() {
     // in the current stack level, thus forming a linked list so that
     // the restore offsets can be filled in when the corresponding
     // restore command is recorded.
-    int32_t prevOffset = fRestoreOffsetStack.top();
+    int32_t prevOffset = fRestoreOffsetStack.back();
 
     size_t offset = fWriter.bytesWritten();
     this->addInt(prevOffset);
-    fRestoreOffsetStack.top() = SkToU32(offset);
+    fRestoreOffsetStack.back() = SkToU32(offset);
     return offset;
 }
 
@@ -312,7 +312,7 @@ size_t SkPictureRecord::recordClipRect(const SkRect& rect, SkClipOp op, bool doA
     // id + rect + clip params
     size_t size = 1 * kUInt32Size + sizeof(rect) + 1 * kUInt32Size;
     // recordRestoreOffsetPlaceholder doesn't always write an offset
-    if (!fRestoreOffsetStack.isEmpty()) {
+    if (!fRestoreOffsetStack.empty()) {
         // + restore offset
         size += kUInt32Size;
     }
@@ -334,7 +334,7 @@ size_t SkPictureRecord::recordClipRRect(const SkRRect& rrect, SkClipOp op, bool 
     // op + rrect + clip params
     size_t size = 1 * kUInt32Size + SkRRect::kSizeInMemory + 1 * kUInt32Size;
     // recordRestoreOffsetPlaceholder doesn't always write an offset
-    if (!fRestoreOffsetStack.isEmpty()) {
+    if (!fRestoreOffsetStack.empty()) {
         // + restore offset
         size += kUInt32Size;
     }
@@ -356,7 +356,7 @@ size_t SkPictureRecord::recordClipPath(int pathID, SkClipOp op, bool doAA) {
     // op + path index + clip params
     size_t size = 3 * kUInt32Size;
     // recordRestoreOffsetPlaceholder doesn't always write an offset
-    if (!fRestoreOffsetStack.isEmpty()) {
+    if (!fRestoreOffsetStack.empty()) {
         // + restore offset
         size += kUInt32Size;
     }
@@ -393,7 +393,7 @@ size_t SkPictureRecord::recordClipRegion(const SkRegion& region, SkClipOp op) {
     // op + clip params + region
     size_t size = 2 * kUInt32Size + region.writeToMemory(nullptr);
     // recordRestoreOffsetPlaceholder doesn't always write an offset
-    if (!fRestoreOffsetStack.isEmpty()) {
+    if (!fRestoreOffsetStack.empty()) {
         // + restore offset
         size += kUInt32Size;
     }
@@ -407,7 +407,7 @@ size_t SkPictureRecord::recordClipRegion(const SkRegion& region, SkClipOp op) {
 }
 
 void SkPictureRecord::onResetClip() {
-    if (!fRestoreOffsetStack.isEmpty()) {
+    if (!fRestoreOffsetStack.empty()) {
         // Run back through any previous clip ops, and mark their offset to
         // be 0, disabling their ability to trigger a jump-to-restore, otherwise
         // they could hide this expansion of the clip.

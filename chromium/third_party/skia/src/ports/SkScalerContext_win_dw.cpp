@@ -954,6 +954,16 @@ void SkScalerContext_DW::BilevelToBW(const uint8_t* SK_RESTRICT src, const SkGly
         src += bitCount;
         dst += dstRB;
     }
+
+    if constexpr (kSkShowTextBlitCoverage) {
+        dst = static_cast<uint8_t*>(glyph.fImage);
+        for (unsigned y = 0; y < (unsigned)glyph.height(); y += 2) {
+            for (unsigned x = (y & 0x2); x < (unsigned)glyph.width(); x+=4) {
+                uint8_t& b = dst[(dstRB * y) + (x >> 3)];
+                b = b ^ (1 << (0x7 - (x & 0x7)));
+            }
+        }
+    }
 }
 
 template<bool APPLY_PREBLEND>
@@ -968,6 +978,9 @@ void SkScalerContext_DW::GrayscaleToA8(const uint8_t* SK_RESTRICT src,
         for (int i = 0; i < width; i++) {
             U8CPU a = *(src++);
             dst[i] = sk_apply_lut_if<APPLY_PREBLEND>(a, table8);
+            if constexpr (kSkShowTextBlitCoverage) {
+                dst[i] = std::max<U8CPU>(0x30, dst[i]);
+            }
         }
         dst = SkTAddOffset<uint8_t>(dst, dstRB);
     }
@@ -987,6 +1000,9 @@ void SkScalerContext_DW::RGBToA8(const uint8_t* SK_RESTRICT src,
             U8CPU g = *(src++);
             U8CPU b = *(src++);
             dst[i] = sk_apply_lut_if<APPLY_PREBLEND>((r + g + b) / 3, table8);
+            if constexpr (kSkShowTextBlitCoverage) {
+                dst[i] = std::max<U8CPU>(0x30, dst[i]);
+            }
         }
         dst = SkTAddOffset<uint8_t>(dst, dstRB);
     }
@@ -1012,6 +1028,11 @@ void SkScalerContext_DW::RGBToLcd16(const uint8_t* SK_RESTRICT src, const SkGlyp
                 g = sk_apply_lut_if<APPLY_PREBLEND>(*(src++), tableG);
                 r = sk_apply_lut_if<APPLY_PREBLEND>(*(src++), tableR);
             }
+            if constexpr (kSkShowTextBlitCoverage) {
+                r = std::max<U8CPU>(0x30, r);
+                g = std::max<U8CPU>(0x30, g);
+                b = std::max<U8CPU>(0x30, b);
+            }
             dst[i] = SkPack888ToRGB16(r, g, b);
         }
         dst = SkTAddOffset<uint16_t>(dst, dstRB);
@@ -1028,8 +1049,8 @@ const void* SkScalerContext_DW::drawDWMask(const SkGlyph& glyph,
     if (DWRITE_TEXTURE_CLEARTYPE_3x1 == textureType) {
         sizeNeeded *= 3;
     }
-    if (sizeNeeded > fBits.count()) {
-        fBits.setCount(sizeNeeded);
+    if (sizeNeeded > fBits.size()) {
+        fBits.resize(sizeNeeded);
     }
 
     // erase

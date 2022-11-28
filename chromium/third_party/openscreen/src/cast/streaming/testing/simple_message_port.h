@@ -23,10 +23,7 @@ class SimpleMessagePort : public MessagePort {
       : destination_id_(destination_id) {}
 
   ~SimpleMessagePort() override = default;
-  void SetClient(MessagePort::Client* client,
-                 std::string client_sender_id) override {
-    client_ = client;
-  }
+  void SetClient(MessagePort::Client& client) override { client_ = &client; }
 
   void ResetClient() override { client_ = nullptr; }
 

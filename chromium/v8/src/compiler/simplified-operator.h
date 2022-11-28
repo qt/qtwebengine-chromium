@@ -13,6 +13,7 @@
 #include "src/common/globals.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/feedback-source.h"
+#include "src/compiler/globals.h"
 #include "src/compiler/node-properties.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/types.h"
@@ -78,14 +79,21 @@ struct FieldAccess {
   Type type;                      // type of the field.
   MachineType machine_type;       // machine type of the field.
   WriteBarrierKind write_barrier_kind;  // write barrier hint.
-  ConstFieldInfo const_field_info;      // the constness of this access, and the
-                                    // field owner map, if the access is const
-  bool is_store_in_literal;  // originates from a kStoreInLiteral access
+  const char* creator_mnemonic;   // store the name of factory/creator method
+  ConstFieldInfo const_field_info;// the constness of this access, and the
+                                  // field owner map, if the access is const
+  bool is_store_in_literal;       // originates from a kStoreInLiteral access
   ExternalPointerTag external_pointer_tag = kExternalPointerNullTag;
   bool maybe_initializing_or_transitioning_store;  // store is potentially
                                                    // initializing a newly
                                                    // allocated object or part
                                                    // of a map transition.
+  bool is_bounded_size_access = false;  // Whether this field is stored as a
+                                        // bounded size field. In that case,
+                                        // the size is shifted to the left to
+                                        // guarantee that the value is at most
+                                        // kMaxSafeBufferSizeForSandbox after
+                                        // decoding.
 
   FieldAccess()
       : base_is_tagged(kTaggedBase),
@@ -93,6 +101,7 @@ struct FieldAccess {
         type(Type::None()),
         machine_type(MachineType::None()),
         write_barrier_kind(kFullWriteBarrier),
+        creator_mnemonic(nullptr),
         const_field_info(ConstFieldInfo::None()),
         is_store_in_literal(false),
         maybe_initializing_or_transitioning_store(false) {}
@@ -100,6 +109,7 @@ struct FieldAccess {
   FieldAccess(BaseTaggedness base_is_tagged, int offset, MaybeHandle<Name> name,
               MaybeHandle<Map> map, Type type, MachineType machine_type,
               WriteBarrierKind write_barrier_kind,
+              const char* creator_mnemonic = nullptr,
               ConstFieldInfo const_field_info = ConstFieldInfo::None(),
               bool is_store_in_literal = false,
               ExternalPointerTag external_pointer_tag = kExternalPointerNullTag,
@@ -124,6 +134,11 @@ struct FieldAccess {
                    (write_barrier_kind == kMapWriteBarrier ||
                     write_barrier_kind == kNoWriteBarrier ||
                     write_barrier_kind == kAssertNoWriteBarrier));
+    #if !defined(OFFICIAL_BUILD)
+      this->creator_mnemonic = creator_mnemonic;
+    #else
+      this->creator_mnemonic = nullptr;
+    #endif
   }
 
   int tag() const { return base_is_tagged == kTaggedBase ? kHeapObjectTag : 0; }
@@ -357,16 +372,6 @@ size_t hash_value(const CheckTaggedInputParameters& params);
 bool operator==(CheckTaggedInputParameters const&,
                 CheckTaggedInputParameters const&);
 
-enum class CheckForMinusZeroMode : uint8_t {
-  kCheckForMinusZero,
-  kDontCheckForMinusZero,
-};
-
-size_t hash_value(CheckForMinusZeroMode);
-
-V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&,
-                                           CheckForMinusZeroMode);
-
 CheckForMinusZeroMode CheckMinusZeroModeOf(const Operator*)
     V8_WARN_UNUSED_RESULT;
 
@@ -525,6 +530,7 @@ enum class NumberOperationHint : uint8_t {
 
 enum class BigIntOperationHint : uint8_t {
   kBigInt,
+  kBigInt64,
 };
 
 size_t hash_value(NumberOperationHint);
@@ -533,6 +539,8 @@ size_t hash_value(BigIntOperationHint);
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, NumberOperationHint);
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&, BigIntOperationHint);
 V8_EXPORT_PRIVATE NumberOperationHint NumberOperationHintOf(const Operator* op)
+    V8_WARN_UNUSED_RESULT;
+V8_EXPORT_PRIVATE BigIntOperationHint BigIntOperationHintOf(const Operator* op)
     V8_WARN_UNUSED_RESULT;
 
 class NumberOperationParameters {
@@ -779,6 +787,8 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* BigIntAdd();
   const Operator* BigIntSubtract();
   const Operator* BigIntMultiply();
+  const Operator* BigIntDivide();
+  const Operator* BigIntBitwiseAnd();
   const Operator* BigIntNegate();
 
   const Operator* SpeculativeSafeIntegerAdd(NumberOperationHint hint);
@@ -804,6 +814,8 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* SpeculativeBigIntAdd(BigIntOperationHint hint);
   const Operator* SpeculativeBigIntSubtract(BigIntOperationHint hint);
   const Operator* SpeculativeBigIntMultiply(BigIntOperationHint hint);
+  const Operator* SpeculativeBigIntDivide(BigIntOperationHint hint);
+  const Operator* SpeculativeBigIntBitwiseAnd(BigIntOperationHint hint);
   const Operator* SpeculativeBigIntNegate(BigIntOperationHint hint);
   const Operator* SpeculativeBigIntAsIntN(int bits,
                                           const FeedbackSource& feedback);
@@ -905,6 +917,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* CheckedInt32Mod();
   const Operator* CheckedInt32Mul(CheckForMinusZeroMode);
   const Operator* CheckedInt32Sub();
+  const Operator* CheckedBigInt64Add();
   const Operator* CheckedInt32ToTaggedSigned(const FeedbackSource& feedback);
   const Operator* CheckedInt64ToInt32(const FeedbackSource& feedback);
   const Operator* CheckedInt64ToTaggedSigned(const FeedbackSource& feedback);
@@ -919,6 +932,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* CheckedTaggedToTaggedPointer(const FeedbackSource& feedback);
   const Operator* CheckedTaggedToTaggedSigned(const FeedbackSource& feedback);
   const Operator* CheckBigInt(const FeedbackSource& feedback);
+  const Operator* CheckBigInt64(const FeedbackSource& feedback);
   const Operator* CheckedTruncateTaggedToWord32(CheckTaggedInputMode,
                                                 const FeedbackSource& feedback);
   const Operator* CheckedUint32Div();
@@ -926,6 +940,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* CheckedUint32ToInt32(const FeedbackSource& feedback);
   const Operator* CheckedUint32ToTaggedSigned(const FeedbackSource& feedback);
   const Operator* CheckedUint64ToInt32(const FeedbackSource& feedback);
+  const Operator* CheckedUint64ToInt64(const FeedbackSource& feedback);
   const Operator* CheckedUint64ToTaggedSigned(const FeedbackSource& feedback);
 
   const Operator* ConvertReceiver(ConvertReceiverMode);
@@ -1065,6 +1080,7 @@ class V8_EXPORT_PRIVATE SimplifiedOperatorBuilder final
   const Operator* WasmTypeCheck(WasmTypeCheckConfig config);
   const Operator* WasmTypeCast(WasmTypeCheckConfig config);
   const Operator* WasmExternInternalize();
+  const Operator* WasmExternExternalize();
 #endif
 
   const Operator* DateNow();

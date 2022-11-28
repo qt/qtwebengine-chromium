@@ -185,15 +185,20 @@ namespace internal {
       InterpreterPushArgsThenConstruct)                                        \
   ASM(InterpreterEnterAtBytecode, Void)                                        \
   ASM(InterpreterEnterAtNextBytecode, Void)                                    \
-  ASM(InterpreterOnStackReplacement, InterpreterOnStackReplacement)            \
+  ASM(InterpreterOnStackReplacement, OnStackReplacement)                       \
                                                                                \
   /* Baseline Compiler */                                                      \
   ASM(BaselineOutOfLinePrologue, BaselineOutOfLinePrologue)                    \
-  ASM(BaselineOnStackReplacement, BaselineOnStackReplacement)                  \
+  ASM(BaselineOutOfLinePrologueDeopt, Void)                                    \
+  ASM(BaselineOnStackReplacement, OnStackReplacement)                          \
   ASM(BaselineLeaveFrame, BaselineLeaveFrame)                                  \
   ASM(BaselineOrInterpreterEnterAtBytecode, Void)                              \
   ASM(BaselineOrInterpreterEnterAtNextBytecode, Void)                          \
   ASM(InterpreterOnStackReplacement_ToBaseline, Void)                          \
+                                                                               \
+  /* Maglev Compiler */                                                        \
+  ASM(MaglevOnStackReplacement, OnStackReplacement)                            \
+  ASM(MaglevOutOfLinePrologue, NoContext)                                      \
                                                                                \
   /* Code life-cycle */                                                        \
   TFC(CompileLazy, JSTrampoline)                                               \
@@ -615,6 +620,8 @@ namespace internal {
   /* JSON */                                                                   \
   CPP(JsonParse)                                                               \
   CPP(JsonStringify)                                                           \
+  CPP(JsonRawJson)                                                             \
+  CPP(JsonIsRawJson)                                                           \
                                                                                \
   /* Web snapshots */                                                          \
   CPP(WebSnapshotSerialize)                                                    \
@@ -651,7 +658,9 @@ namespace internal {
   TFH(DefineKeyedOwnICBaseline, StoreBaseline)                                 \
   TFH(StoreInArrayLiteralIC, StoreWithVector)                                  \
   TFH(StoreInArrayLiteralICBaseline, StoreBaseline)                            \
+  TFH(LookupContextTrampoline, LookupTrampoline)                               \
   TFH(LookupContextBaseline, LookupBaseline)                                   \
+  TFH(LookupContextInsideTypeofTrampoline, LookupTrampoline)                   \
   TFH(LookupContextInsideTypeofBaseline, LookupBaseline)                       \
   TFH(LoadGlobalIC, LoadGlobalWithVector)                                      \
   TFH(LoadGlobalICInsideTypeof, LoadGlobalWithVector)                          \
@@ -659,7 +668,9 @@ namespace internal {
   TFH(LoadGlobalICBaseline, LoadGlobalBaseline)                                \
   TFH(LoadGlobalICInsideTypeofTrampoline, LoadGlobal)                          \
   TFH(LoadGlobalICInsideTypeofBaseline, LoadGlobalBaseline)                    \
+  TFH(LookupGlobalICTrampoline, LookupTrampoline)                              \
   TFH(LookupGlobalICBaseline, LookupBaseline)                                  \
+  TFH(LookupGlobalICInsideTypeofTrampoline, LookupTrampoline)                  \
   TFH(LookupGlobalICInsideTypeofBaseline, LookupBaseline)                      \
   TFH(CloneObjectIC, CloneObjectWithVector)                                    \
   TFH(CloneObjectICBaseline, CloneObjectBaseline)                              \
@@ -1013,7 +1024,7 @@ namespace internal {
                                                                                \
   TFS(AsyncGeneratorResolve, kGenerator, kValue, kDone)                        \
   TFS(AsyncGeneratorReject, kGenerator, kValue)                                \
-  TFS(AsyncGeneratorYield, kGenerator, kValue, kIsCaught)                      \
+  TFS(AsyncGeneratorYieldWithAwait, kGenerator, kValue, kIsCaught)             \
   TFS(AsyncGeneratorReturn, kGenerator, kValue, kIsCaught)                     \
   TFS(AsyncGeneratorResumeNext, kGenerator)                                    \
                                                                                \
@@ -1038,8 +1049,8 @@ namespace internal {
       kValue)                                                                  \
   TFJ(AsyncGeneratorAwaitRejectClosure, kJSArgcReceiverSlots + 1, kReceiver,   \
       kValue)                                                                  \
-  TFJ(AsyncGeneratorYieldResolveClosure, kJSArgcReceiverSlots + 1, kReceiver,  \
-      kValue)                                                                  \
+  TFJ(AsyncGeneratorYieldWithAwaitResolveClosure, kJSArgcReceiverSlots + 1,    \
+      kReceiver, kValue)                                                       \
   TFJ(AsyncGeneratorReturnClosedResolveClosure, kJSArgcReceiverSlots + 1,      \
       kReceiver, kValue)                                                       \
   TFJ(AsyncGeneratorReturnClosedRejectClosure, kJSArgcReceiverSlots + 1,       \
@@ -1086,6 +1097,8 @@ namespace internal {
   TFS(CreateDataProperty, kReceiver, kKey, kValue)                             \
   ASM(MemCopyUint8Uint8, CCall)                                                \
   ASM(MemMove, CCall)                                                          \
+  TFC(FindNonDefaultConstructorOrConstruct,                                    \
+      FindNonDefaultConstructorOrConstruct)                                    \
                                                                                \
   /* Trace */                                                                  \
   CPP(IsTraceCategoryEnabled)                                                  \
@@ -1741,6 +1754,16 @@ namespace internal {
   CPP(DisplayNamesPrototypeResolvedOptions)                            \
   /* ecma402 #sec-Intl.DisplayNames.supportedLocalesOf */              \
   CPP(DisplayNamesSupportedLocalesOf)                                  \
+  /* ecma402 #sec-intl-durationformat-constructor */                   \
+  CPP(DurationFormatConstructor)                                       \
+  /* ecma402 #sec-Intl.DurationFormat.prototype.format */              \
+  CPP(DurationFormatPrototypeFormat)                                   \
+  /* ecma402 #sec-Intl.DurationFormat.prototype.formatToParts */       \
+  CPP(DurationFormatPrototypeFormatToParts)                            \
+  /* ecma402 #sec-Intl.DurationFormat.prototype.resolvedOptions */     \
+  CPP(DurationFormatPrototypeResolvedOptions)                          \
+  /* ecma402 #sec-Intl.DurationFormat.supportedLocalesOf */            \
+  CPP(DurationFormatSupportedLocalesOf)                                \
   /* ecma402 #sec-intl.getcanonicallocales */                          \
   CPP(IntlGetCanonicalLocales)                                         \
   /* ecma402 #sec-intl.supportedvaluesof */                            \

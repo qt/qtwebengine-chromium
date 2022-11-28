@@ -159,8 +159,8 @@ void ExternalPointerSlot::init(Isolate* isolate, Address value,
 #ifdef V8_ENABLE_SANDBOX
   if (IsSandboxedExternalPointerType(tag)) {
     ExternalPointerTable& table = GetExternalPointerTableForTag(isolate, tag);
-    ExternalPointerHandle handle = table.AllocateEntry();
-    table.Set(handle, value, tag);
+    ExternalPointerHandle handle =
+        table.AllocateAndInitializeEntry(isolate, value, tag);
     // Use a Release_Store to ensure that the store of the pointer into the
     // table is not reordered after the store of the handle. Otherwise, other
     // threads may access an uninitialized table entry and crash.
@@ -218,6 +218,29 @@ void ExternalPointerSlot::store(Isolate* isolate, Address value,
   WriteMaybeUnalignedValue<Address>(address(), value);
 }
 
+ExternalPointerSlot::RawContent
+ExternalPointerSlot::GetAndClearContentForSerialization(
+    const DisallowGarbageCollection& no_gc) {
+#ifdef V8_ENABLE_SANDBOX
+  ExternalPointerHandle content = Relaxed_LoadHandle();
+  Relaxed_StoreHandle(kNullExternalPointerHandle);
+#else
+  Address content = ReadMaybeUnalignedValue<Address>(address());
+  WriteMaybeUnalignedValue<Address>(address(), kNullAddress);
+#endif
+  return content;
+}
+
+void ExternalPointerSlot::RestoreContentAfterSerialization(
+    ExternalPointerSlot::RawContent content,
+    const DisallowGarbageCollection& no_gc) {
+#ifdef V8_ENABLE_SANDBOX
+  return Relaxed_StoreHandle(content);
+#else
+  return WriteMaybeUnalignedValue<Address>(address(), content);
+#endif
+}
+
 #ifdef V8_ENABLE_SANDBOX
 const ExternalPointerTable& ExternalPointerSlot::GetExternalPointerTableForTag(
     const Isolate* isolate, ExternalPointerTag tag) {
@@ -249,7 +272,7 @@ inline void CopyTagged(Address dst, const Address src, size_t num_tagged) {
 // Sets |counter| number of kTaggedSize-sized values starting at |start| slot.
 inline void MemsetTagged(Tagged_t* start, Object value, size_t counter) {
 #ifdef V8_COMPRESS_POINTERS
-  Tagged_t raw_value = CompressTagged(value.ptr());
+  Tagged_t raw_value = V8HeapCompressionScheme::CompressTagged(value.ptr());
   MemsetUint32(start, raw_value, counter);
 #else
   Address raw_value = value.ptr();

@@ -233,16 +233,16 @@ struct xnn_operator {
     };
     // Quantized Add parameters are sensitive to order of inputs, so we initialize an extra copy with the reversed order.
     struct {
-      union xnn_qs8_add_minmax_params qs8_addsub;
-      union xnn_qs8_add_minmax_params qs8_raddsub;
+      union xnn_qs8_add_minmax_params qs8_add;
+      union xnn_qs8_add_minmax_params qs8_radd;
     };
     struct {
       union xnn_qs8_mul_minmax_params qs8_mul;
       union xnn_qs8_mul_minmax_params qs8_rmul;
     };
     struct {
-      union xnn_qu8_add_minmax_params qu8_addsub;
-      union xnn_qu8_add_minmax_params qu8_raddsub;
+      union xnn_qu8_add_minmax_params qu8_add;
+      union xnn_qu8_add_minmax_params qu8_radd;
     };
     struct {
       union xnn_qu8_mul_minmax_params qu8_mul;
@@ -260,6 +260,8 @@ struct xnn_operator {
     union xnn_s8_minmax_params s8_minmax;
     union xnn_u8_minmax_params u8_minmax;
   } params;
+  size_t num_post_operation_params;
+  void* post_operation_params;
   enum xnn_operator_type type;
   struct xnn_ukernel ukernel;
 
@@ -272,8 +274,6 @@ struct xnn_operator {
     struct conv2d_context conv2d;
     struct dwconv2d_context dwconv2d;
     struct dwconv_context dwconv;
-    struct depthtospace2d_chw2hwc_context depthtospace2d_chw;
-    struct depthtospace2d_hwc_context depthtospace2d_hwc;
     struct elementwise_binary_context elementwise_binary;
     struct gemm_context gemm;
     struct global_average_pooling_nwc_context global_average_pooling_nwc;

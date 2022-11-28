@@ -89,7 +89,7 @@ using MslGeneratorImplTest = TestHelper;
 
 TEST_F(MslGeneratorImplTest, EmitType_Array) {
     auto* arr = ty.array<bool, 4>();
-    GlobalVar("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -101,7 +101,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Array) {
 TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArray) {
     auto* a = ty.array<bool, 4>();
     auto* b = ty.array(a, 5_u);
-    GlobalVar("G", b, ast::StorageClass::kPrivate);
+    GlobalVar("G", b, ast::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -114,7 +114,7 @@ TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArrayOfArray) {
     auto* a = ty.array<bool, 4>();
     auto* b = ty.array(a, 5_u);
     auto* c = ty.array(b, 6_u);
-    GlobalVar("G", c, ast::StorageClass::kPrivate);
+    GlobalVar("G", c, ast::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -125,7 +125,7 @@ TEST_F(MslGeneratorImplTest, EmitType_ArrayOfArrayOfArray) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Array_WithoutName) {
     auto* arr = ty.array<bool, 4>();
-    GlobalVar("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -136,7 +136,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Array_WithoutName) {
 
 TEST_F(MslGeneratorImplTest, EmitType_RuntimeArray) {
     auto* arr = ty.array<bool, 1>();
-    GlobalVar("G", arr, ast::StorageClass::kPrivate);
+    GlobalVar("G", arr, ast::AddressSpace::kPrivate);
 
     GeneratorImpl& gen = Build();
 
@@ -211,7 +211,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Matrix_F16) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Pointer) {
     auto* f32 = create<sem::F32>();
-    auto* p = create<sem::Pointer>(f32, ast::StorageClass::kWorkgroup, ast::Access::kReadWrite);
+    auto* p = create<sem::Pointer>(f32, ast::AddressSpace::kWorkgroup, ast::Access::kReadWrite);
 
     GeneratorImpl& gen = Build();
 
@@ -252,41 +252,38 @@ TEST_F(MslGeneratorImplTest, EmitType_StructDecl) {
 }
 
 TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_NonComposites) {
-    auto* s =
-        Structure("S", utils::Vector{
-                           Member("a", ty.i32(), utils::Vector{MemberSize(32)}),
-                           Member("b", ty.f32(), utils::Vector{MemberAlign(128), MemberSize(128)}),
-                           Member("c", ty.vec2<f32>()),
-                           Member("d", ty.u32()),
-                           Member("e", ty.vec3<f32>()),
-                           Member("f", ty.u32()),
-                           Member("g", ty.vec4<f32>()),
-                           Member("h", ty.u32()),
-                           Member("i", ty.mat2x2<f32>()),
-                           Member("j", ty.u32()),
-                           Member("k", ty.mat2x3<f32>()),
-                           Member("l", ty.u32()),
-                           Member("m", ty.mat2x4<f32>()),
-                           Member("n", ty.u32()),
-                           Member("o", ty.mat3x2<f32>()),
-                           Member("p", ty.u32()),
-                           Member("q", ty.mat3x3<f32>()),
-                           Member("r", ty.u32()),
-                           Member("s", ty.mat3x4<f32>()),
-                           Member("t", ty.u32()),
-                           Member("u", ty.mat4x2<f32>()),
-                           Member("v", ty.u32()),
-                           Member("w", ty.mat4x3<f32>()),
-                           Member("x", ty.u32()),
-                           Member("y", ty.mat4x4<f32>()),
-                           Member("z", ty.f32()),
-                       });
+    auto* s = Structure(
+        "S", utils::Vector{
+                 Member("a", ty.i32(), utils::Vector{MemberSize(32_a)}),
+                 Member("b", ty.f32(), utils::Vector{MemberAlign(128_i), MemberSize(128_a)}),
+                 Member("c", ty.vec2<f32>()),
+                 Member("d", ty.u32()),
+                 Member("e", ty.vec3<f32>()),
+                 Member("f", ty.u32()),
+                 Member("g", ty.vec4<f32>()),
+                 Member("h", ty.u32()),
+                 Member("i", ty.mat2x2<f32>()),
+                 Member("j", ty.u32()),
+                 Member("k", ty.mat2x3<f32>()),
+                 Member("l", ty.u32()),
+                 Member("m", ty.mat2x4<f32>()),
+                 Member("n", ty.u32()),
+                 Member("o", ty.mat3x2<f32>()),
+                 Member("p", ty.u32()),
+                 Member("q", ty.mat3x3<f32>()),
+                 Member("r", ty.u32()),
+                 Member("s", ty.mat3x4<f32>()),
+                 Member("t", ty.u32()),
+                 Member("u", ty.mat4x2<f32>()),
+                 Member("v", ty.u32()),
+                 Member("w", ty.mat4x3<f32>()),
+                 Member("x", ty.u32()),
+                 Member("y", ty.mat4x4<f32>()),
+                 Member("z", ty.f32()),
+             });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -372,16 +369,18 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_NonComposites) {
 
 TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_Structures) {
     // inner_x: size(1024), align(512)
-    auto* inner_x = Structure("inner_x", utils::Vector{
-                                             Member("a", ty.i32()),
-                                             Member("b", ty.f32(), utils::Vector{MemberAlign(512)}),
-                                         });
+    auto* inner_x =
+        Structure("inner_x", utils::Vector{
+                                 Member("a", ty.i32()),
+                                 Member("b", ty.f32(), utils::Vector{MemberAlign(512_i)}),
+                             });
 
     // inner_y: size(516), align(4)
-    auto* inner_y = Structure("inner_y", utils::Vector{
-                                             Member("a", ty.i32(), utils::Vector{MemberSize(512)}),
-                                             Member("b", ty.f32()),
-                                         });
+    auto* inner_y =
+        Structure("inner_y", utils::Vector{
+                                 Member("a", ty.i32(), utils::Vector{MemberSize(512_a)}),
+                                 Member("b", ty.f32()),
+                             });
 
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.i32()),
@@ -391,11 +390,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_Structures) {
                                  Member("e", ty.f32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -464,7 +460,7 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
     // inner: size(1024), align(512)
     auto* inner = Structure("inner", utils::Vector{
                                          Member("a", ty.i32()),
-                                         Member("b", ty.f32(), utils::Vector{MemberAlign(512)}),
+                                         Member("b", ty.f32(), utils::Vector{MemberAlign(512_i)}),
                                      });
 
     // array_x: size(28), align(4)
@@ -485,11 +481,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayDefaultStride) {
                                  Member("f", array_z),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -571,11 +564,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
                                  Member("c", ty.i32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -604,42 +594,39 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_Layout_ArrayVec3DefaultStride) {
 }
 
 TEST_F(MslGeneratorImplTest, AttemptTintPadSymbolCollision) {
-    auto* s = Structure(
-        "S", utils::Vector{
-                 // uses symbols tint_pad_[0..9] and tint_pad_[20..35]
-                 Member("tint_pad_2", ty.i32(), utils::Vector{MemberSize(32)}),
-                 Member("tint_pad_20", ty.f32(), utils::Vector{MemberAlign(128), MemberSize(128)}),
-                 Member("tint_pad_33", ty.vec2<f32>()),
-                 Member("tint_pad_1", ty.u32()),
-                 Member("tint_pad_3", ty.vec3<f32>()),
-                 Member("tint_pad_7", ty.u32()),
-                 Member("tint_pad_25", ty.vec4<f32>()),
-                 Member("tint_pad_5", ty.u32()),
-                 Member("tint_pad_27", ty.mat2x2<f32>()),
-                 Member("tint_pad_24", ty.u32()),
-                 Member("tint_pad_23", ty.mat2x3<f32>()),
-                 Member("tint_pad", ty.u32()),
-                 Member("tint_pad_8", ty.mat2x4<f32>()),
-                 Member("tint_pad_26", ty.u32()),
-                 Member("tint_pad_29", ty.mat3x2<f32>()),
-                 Member("tint_pad_6", ty.u32()),
-                 Member("tint_pad_22", ty.mat3x3<f32>()),
-                 Member("tint_pad_32", ty.u32()),
-                 Member("tint_pad_34", ty.mat3x4<f32>()),
-                 Member("tint_pad_35", ty.u32()),
-                 Member("tint_pad_30", ty.mat4x2<f32>()),
-                 Member("tint_pad_9", ty.u32()),
-                 Member("tint_pad_31", ty.mat4x3<f32>()),
-                 Member("tint_pad_28", ty.u32()),
-                 Member("tint_pad_4", ty.mat4x4<f32>()),
-                 Member("tint_pad_21", ty.f32()),
-             });
+    auto* s = Structure("S", utils::Vector{
+                                 // uses symbols tint_pad_[0..9] and tint_pad_[20..35]
+                                 Member("tint_pad_2", ty.i32(), utils::Vector{MemberSize(32_a)}),
+                                 Member("tint_pad_20", ty.f32(),
+                                        utils::Vector{MemberAlign(128_i), MemberSize(128_u)}),
+                                 Member("tint_pad_33", ty.vec2<f32>()),
+                                 Member("tint_pad_1", ty.u32()),
+                                 Member("tint_pad_3", ty.vec3<f32>()),
+                                 Member("tint_pad_7", ty.u32()),
+                                 Member("tint_pad_25", ty.vec4<f32>()),
+                                 Member("tint_pad_5", ty.u32()),
+                                 Member("tint_pad_27", ty.mat2x2<f32>()),
+                                 Member("tint_pad_24", ty.u32()),
+                                 Member("tint_pad_23", ty.mat2x3<f32>()),
+                                 Member("tint_pad", ty.u32()),
+                                 Member("tint_pad_8", ty.mat2x4<f32>()),
+                                 Member("tint_pad_26", ty.u32()),
+                                 Member("tint_pad_29", ty.mat3x2<f32>()),
+                                 Member("tint_pad_6", ty.u32()),
+                                 Member("tint_pad_22", ty.mat3x3<f32>()),
+                                 Member("tint_pad_32", ty.u32()),
+                                 Member("tint_pad_34", ty.mat3x4<f32>()),
+                                 Member("tint_pad_35", ty.u32()),
+                                 Member("tint_pad_30", ty.mat4x2<f32>()),
+                                 Member("tint_pad_9", ty.u32()),
+                                 Member("tint_pad_31", ty.mat4x3<f32>()),
+                                 Member("tint_pad_28", ty.u32()),
+                                 Member("tint_pad_4", ty.mat4x4<f32>()),
+                                 Member("tint_pad_21", ty.f32()),
+                             });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -696,11 +683,8 @@ TEST_F(MslGeneratorImplTest, EmitType_Struct_WithAttribute) {
                                  Member("b", ty.f32()),
                              });
 
-    GlobalVar("G", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("G", ty.Of(s), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     GeneratorImpl& gen = Build();
 
@@ -863,11 +847,7 @@ TEST_P(MslStorageTexturesTest, Emit) {
     auto params = GetParam();
 
     auto* s = ty.storage_texture(params.dim, ast::TexelFormat::kR32Float, ast::Access::kWrite);
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     GeneratorImpl& gen = Build();
 

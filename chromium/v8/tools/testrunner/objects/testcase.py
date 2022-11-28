@@ -373,8 +373,6 @@ class TestCase(object):
 
   def _get_timeout(self, params):
     timeout = self._test_config.timeout
-    if "--stress-opt" in params:
-      timeout *= 4
     if "--jitless" in params:
       timeout *= 2
     if "--no-turbofan" in params:
@@ -449,8 +447,12 @@ class TestCase(object):
         (other.suite.name, other.name, other.variant)
     )
 
-  def __str__(self):
+  @property
+  def full_name(self):
     return self.suite.name + '/' + self.name
+
+  def __str__(self):
+    return self.full_name
 
 
 class D8TestCase(TestCase):

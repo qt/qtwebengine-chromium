@@ -39,7 +39,7 @@ typedef struct {
 // Licensed in the public domain
 
 // note, len denotes how many compressed bytes there are (uncompressed bytes / 8).
-static void au_compress(DFPWMState *state, int len, uint8_t *outbuf, uint8_t *inbuf)
+static void au_compress(DFPWMState *state, int len, uint8_t *outbuf, const uint8_t *inbuf)
 {
     unsigned d = 0;
     for (int i = 0; i < len; i++) {
@@ -109,7 +109,7 @@ static int dfpwm_enc_frame(struct AVCodecContext *ctx, struct AVPacket *packet,
 
 const FFCodec ff_dfpwm_encoder = {
     .p.name          = "dfpwm",
-    .p.long_name     = NULL_IF_CONFIG_SMALL("DFPWM1a audio"),
+    CODEC_LONG_NAME("DFPWM1a audio"),
     .p.type          = AVMEDIA_TYPE_AUDIO,
     .p.id            = AV_CODEC_ID_DFPWM,
     .priv_data_size  = sizeof(DFPWMState),

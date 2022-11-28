@@ -95,6 +95,7 @@ class FakeApplication : public ApplicationAgent::Application,
                const std::string& message),
               (override));
   MOCK_METHOD(void, OnError, (Error error), (override));
+  const std::string& source_id() override { return GetStringifiedSessionId(); }
 
   const std::vector<std::string>& GetAppIds() const override {
     return app_ids_;
@@ -112,13 +113,17 @@ class FakeApplication : public ApplicationAgent::Application,
     return true;
   }
 
-  std::string GetSessionId() override {
-    std::ostringstream oss;
+  std::string GetSessionId() override { return GetStringifiedSessionId(); }
+
+  const std::string& GetStringifiedSessionId() {
+    // In these tests, the session ID can change at any time.
     if (is_launched_) {
+      std::ostringstream oss;
       oss << GetAppIds().front() << "-9ABC-DEF0-1234-";
       oss << std::setfill('0') << std::hex << std::setw(12) << session_id_;
+      stringified_session_id_ = oss.str();
     }
-    return oss.str();
+    return stringified_session_id_;
   }
 
   std::string GetDisplayName() override { return display_name_; }
@@ -143,6 +148,7 @@ class FakeApplication : public ApplicationAgent::Application,
   std::vector<std::string> namespaces_;
 
   int session_id_ = 0;
+  std::string stringified_session_id_;
   bool is_launched_ = false;
 };
 
@@ -444,7 +450,7 @@ TEST_F(ApplicationAgentTest, LaunchesApp_PassesMessages_ThenStopsApp) {
       .WillOnce(Invoke([&](Json::Value params, MessagePort* port) {
         EXPECT_EQ(json::Parse(R"({"a":1,"b":2})").value(), params);
         port_for_app = port;
-        port->SetClient(&some_app, some_app.GetSessionId());
+        port->SetClient(some_app);
       }));
   const std::string kRunningAppReceiverStatus = R"({
       "requestId":0,  // Note: 0 for broadcast (no requestor).
@@ -594,7 +600,7 @@ TEST_F(ApplicationAgentTest, AllowsVirtualConnectionsToApp) {
   EXPECT_CALL(*idle_app(), DidStop());
   EXPECT_CALL(some_app, DidLaunch(_, NotNull()))
       .WillOnce(Invoke([&](Json::Value params, MessagePort* port) {
-        port->SetClient(&some_app, some_app.GetSessionId());
+        port->SetClient(some_app);
       }));
   std::string transport_id;
   EXPECT_CALL(*sender_inbound(), OnMessage(_, _))

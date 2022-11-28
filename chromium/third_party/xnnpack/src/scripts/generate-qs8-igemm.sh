@@ -50,6 +50,16 @@ tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D 
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=2 -D REQUANTIZATION=FP32 -D VARIANT=LRINTF -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/3x2-minmax-fp32-scalar-lrintf.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=2 -D REQUANTIZATION=FP32 -D VARIANT=LRINTF -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/4x2-minmax-fp32-scalar-lrintf.c &
 
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/1x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/2x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/3x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/4x2-minmax-rndnu-scalar.c &
+
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/1x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/2x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/3x2-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=2 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/4x2-minmax-rndnu-scalar.c &
+
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=4 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=0 -o src/qc8-igemm/gen/1x4-minmax-fp32-scalar-fmagic.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=4 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=0 -o src/qc8-igemm/gen/2x4-minmax-fp32-scalar-fmagic.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=4 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=0 -o src/qc8-igemm/gen/3x4-minmax-fp32-scalar-fmagic.c &
@@ -95,7 +105,17 @@ tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=4 -D REQUANTIZATION=FP32 -D 
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=4 -D REQUANTIZATION=FP32 -D VARIANT=LRINTF -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/3x4-minmax-fp32-scalar-lrintf.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=4 -D REQUANTIZATION=FP32 -D VARIANT=LRINTF -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/4x4-minmax-fp32-scalar-lrintf.c &
 
-#################################### Scalar ###################################
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/1x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/2x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/3x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QS8 -D WASM=0 -o src/qs8-igemm/gen/4x4-minmax-rndnu-scalar.c &
+
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/1x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/2x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/3x4-minmax-rndnu-scalar.c &
+tools/xngen src/qs8-igemm/scalar.c.in -D MR=4 -D NR=4 -D REQUANTIZATION=RNDNU -D VARIANT=      -D DATATYPE=QU8 -D WASM=0 -o src/qu8-igemm/gen/4x4-minmax-rndnu-scalar.c &
+
+##################################### WAsm ####################################
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=1 -o src/qc8-igemm/gen/1x2-minmax-fp32-wasm-fmagic.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=1 -o src/qc8-igemm/gen/2x2-minmax-fp32-wasm-fmagic.c &
 tools/xngen src/qs8-igemm/scalar.c.in -D MR=3 -D NR=2 -D REQUANTIZATION=FP32 -D VARIANT=FMAGIC -D DATATYPE=QC8 -D WASM=1 -o src/qc8-igemm/gen/3x2-minmax-fp32-wasm-fmagic.c &
@@ -220,20 +240,20 @@ tools/xngen src/qs8-igemm/MRx4c8-wasmsimd-dot16x2.c.in -D MR=3 -D VARIANT=LD128 
 tools/xngen src/qs8-igemm/MRx4c8-wasmsimd-dot16x2.c.in -D MR=4 -D VARIANT=LD128 -D REQUANTIZATION=FP32     -D DATATYPE=QU8 -o src/qu8-igemm/gen/4x4c8-minmax-fp32-wasmsimd-dot16x2-ld128.c &
 
 ################################## ARMv6 SIMD #################################
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/1x2c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QC8 -o src/qc8-igemm/gen/2x2c4-minmax-fp32-armsimd32.c &
 
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/1x2c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QS8 -o src/qs8-igemm/gen/2x2c4-minmax-fp32-armsimd32.c &
 
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x2c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x1c4-minmax-fp32-armv6simd.c &
-tools/xngen src/qs8-igemm/c4-armv6simd.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x2c4-minmax-fp32-armv6simd.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=1 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/1x2c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=1 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x1c4-minmax-fp32-armsimd32.c &
+tools/xngen src/qs8-igemm/c4-armsimd32.c.in -D MR=2 -D NR=2 -D REQUANTIZATION=FP32 -D DATATYPE=QU8 -o src/qu8-igemm/gen/2x2c4-minmax-fp32-armsimd32.c &
 
 ################################### ARM NEON ##################################
 tools/xngen src/qs8-igemm/neon-mlal-lane.c.in -D MR=1 -D NR=8  -D PREFETCH=0 -D REQUANTIZATION=RNDNU    -D DATATYPE=QS8 -D ARMV8=0 -o src/qs8-igemm/gen/1x8-minmax-rndnu-neon-mlal-lane.c &

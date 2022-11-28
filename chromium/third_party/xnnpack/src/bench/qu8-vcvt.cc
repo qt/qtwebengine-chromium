@@ -13,9 +13,10 @@
 #include <fp16/fp16.h>
 #include "bench/utils.h"
 
+#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
-#include <xnnpack/params.h>
+#include <xnnpack/microfnptr.h>
 #include <xnnpack/microparams-init.h>
 #include <xnnpack/vcvt.h>
 
@@ -85,15 +86,15 @@ static void qu8_vcvt(
 #endif  // XNN_ARCH_ARM || XNN_ARCH_ARM64
 
 #if XNN_ARCH_ARM
-  BENCHMARK_CAPTURE(qu8_vcvt, armv6simd_x4,
-                    xnn_qu8_vcvt_ukernel__armv6simd_x4,
-                    xnn_init_qu8_cvt_armv6simd_params,
+  BENCHMARK_CAPTURE(qu8_vcvt, armsimd32_x4,
+                    xnn_qu8_vcvt_ukernel__armsimd32_x4,
+                    xnn_init_qu8_cvt_armsimd32_params,
                     benchmark::utils::CheckARMV6)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
     ->UseRealTime();
-  BENCHMARK_CAPTURE(qu8_vcvt, armv6simd_x8,
-                    xnn_qu8_vcvt_ukernel__armv6simd_x8,
-                    xnn_init_qu8_cvt_armv6simd_params,
+  BENCHMARK_CAPTURE(qu8_vcvt, armsimd32_x8,
+                    xnn_qu8_vcvt_ukernel__armsimd32_x8,
+                    xnn_init_qu8_cvt_armsimd32_params,
                     benchmark::utils::CheckARMV6)
     ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
     ->UseRealTime();
@@ -181,6 +182,24 @@ static void qu8_vcvt(
     ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
     ->UseRealTime();
 #endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_WASMRELAXEDSIMD
+  BENCHMARK_CAPTURE(qu8_vcvt, wasmrelaxedsimd_x8,
+                    xnn_qu8_vcvt_ukernel__wasmrelaxedsimd_x8,
+                    xnn_init_qu8_cvt_wasmsimd_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(qu8_vcvt, wasmrelaxedsimd_x16,
+                    xnn_qu8_vcvt_ukernel__wasmrelaxedsimd_x16,
+                    xnn_init_qu8_cvt_wasmsimd_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
+    ->UseRealTime();
+  BENCHMARK_CAPTURE(qu8_vcvt, wasmrelaxedsimd_x32,
+                    xnn_qu8_vcvt_ukernel__wasmrelaxedsimd_x32,
+                    xnn_init_qu8_cvt_wasmsimd_params)
+    ->Apply(benchmark::utils::UnaryElementwiseParameters<uint8_t, uint8_t>)
+    ->UseRealTime();
+#endif  // XNN_ARCH_WASMRELAXEDSIMD
 
 #if XNN_ARCH_WASMSIMD || XNN_ARCH_WASMRELAXEDSIMD
   BENCHMARK_CAPTURE(qu8_vcvt, wasmsimd_x8,

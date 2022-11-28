@@ -170,19 +170,18 @@ ResultOrError<Ref<PipelineLayoutBase>> ValidateLayoutAndGetRenderPipelineDescrip
 
 // DeviceBase
 
-DeviceBase::DeviceBase(AdapterBase* adapter, const DeviceDescriptor* descriptor)
-    : mInstance(adapter->GetInstance()), mAdapter(adapter), mNextPipelineCompatibilityToken(1) {
-    mInstance->IncrementDeviceCountForTesting();
+DeviceBase::DeviceBase(AdapterBase* adapter,
+                       const DeviceDescriptor* descriptor,
+                       const TripleStateTogglesSet& userProvidedToggles)
+    : mAdapter(adapter),
+      mEnabledToggles(userProvidedToggles.providedTogglesEnabled),
+      mOverridenToggles(userProvidedToggles.togglesIsProvided),
+      mNextPipelineCompatibilityToken(1) {
+    mAdapter->GetInstance()->IncrementDeviceCountForTesting();
     ASSERT(descriptor != nullptr);
 
     AdapterProperties adapterProperties;
     adapter->APIGetProperties(&adapterProperties);
-
-    const DawnTogglesDeviceDescriptor* togglesDesc = nullptr;
-    FindInChain(descriptor->nextInChain, &togglesDesc);
-    if (togglesDesc != nullptr) {
-        ApplyToggleOverrides(togglesDesc);
-    }
 
     SetDefaultToggles();
     ApplyFeatures(descriptor);
@@ -221,9 +220,9 @@ DeviceBase::~DeviceBase() {
     // We need to explicitly release the Queue before we complete the destructor so that the
     // Queue does not get destroyed after the Device.
     mQueue = nullptr;
-    // mInstance is not set for mock test devices.
-    if (mInstance != nullptr) {
-        mInstance->DecrementDeviceCountForTesting();
+    // mAdapter is not set for mock test devices.
+    if (mAdapter != nullptr) {
+        mAdapter->GetInstance()->DecrementDeviceCountForTesting();
     }
 }
 
@@ -339,7 +338,7 @@ void DeviceBase::DestroyObjects() {
     // can destroy the frontend cache.
 
     // clang-format off
-        static constexpr std::array<ObjectType, 19> kObjectTypeDependencyOrder = {
+        static constexpr std::array<ObjectType, 18> kObjectTypeDependencyOrder = {
             ObjectType::ComputePassEncoder,
             ObjectType::RenderPassEncoder,
             ObjectType::RenderBundleEncoder,
@@ -354,26 +353,15 @@ void DeviceBase::DestroyObjects() {
             ObjectType::BindGroupLayout,
             ObjectType::ShaderModule,
             ObjectType::ExternalTexture,
-            ObjectType::TextureView,
-            ObjectType::Texture,
+            ObjectType::Texture,  // Note that Textures own the TextureViews.
             ObjectType::QuerySet,
             ObjectType::Sampler,
             ObjectType::Buffer,
         };
     // clang-format on
 
-    // We first move all objects out from the tracking list into a separate list so that we can
-    // avoid locking the same mutex twice. We can then iterate across the separate list to call
-    // the actual destroy function.
-    LinkedList<ApiObjectBase> objects;
     for (ObjectType type : kObjectTypeDependencyOrder) {
-        ApiObjectList& objList = mObjectLists[type];
-        const std::lock_guard<std::mutex> lock(objList.mutex);
-        objList.objects.MoveInto(&objects);
-    }
-    while (!objects.empty()) {
-        // The destroy call should also remove the object from the list.
-        objects.head()->value()->Destroy();
+        mObjectLists[type].Destroy();
     }
 }
 
@@ -479,7 +467,9 @@ void DeviceBase::APIDestroy() {
     Destroy();
 }
 
-void DeviceBase::HandleError(InternalErrorType type, const char* message) {
+void DeviceBase::HandleError(InternalErrorType type,
+                             const char* message,
+                             WGPUDeviceLostReason lost_reason) {
     if (type == InternalErrorType::DeviceLost) {
         mState = State::Disconnected;
 
@@ -519,7 +509,7 @@ void DeviceBase::HandleError(InternalErrorType type, const char* message) {
     if (type == InternalErrorType::DeviceLost) {
         // The device was lost, call the application callback.
         if (mDeviceLostCallback != nullptr) {
-            mDeviceLostCallback(WGPUDeviceLostReason_Undefined, message, mDeviceLostUserdata);
+            mDeviceLostCallback(lost_reason, message, mDeviceLostUserdata);
             mDeviceLostCallback = nullptr;
         }
 
@@ -628,7 +618,7 @@ BlobCache* DeviceBase::GetBlobCache() {
     // generate cache keys. We can lift the dependency once we also cache frontend parsing,
     // transformations, and reflection.
     if (IsToggleEnabled(Toggle::EnableBlobCache)) {
-        return mInstance->GetBlobCache();
+        return mAdapter->GetInstance()->GetBlobCache();
     }
 #endif
     return nullptr;
@@ -668,12 +658,11 @@ MaybeError DeviceBase::ValidateIsAlive() const {
     return {};
 }
 
-void DeviceBase::APILoseForTesting() {
+void DeviceBase::APIForceLoss(wgpu::DeviceLostReason reason, const char* message) {
     if (mState != State::Alive) {
         return;
     }
-
-    HandleError(InternalErrorType::Internal, "Device lost for testing");
+    HandleError(InternalErrorType::Internal, message, ToAPI(reason));
 }
 
 DeviceBase::State DeviceBase::GetState() const {
@@ -685,18 +674,12 @@ bool DeviceBase::IsLost() const {
     return mState != State::Alive;
 }
 
-void DeviceBase::TrackObject(ApiObjectBase* object) {
-    ApiObjectList& objectList = mObjectLists[object->GetType()];
-    std::lock_guard<std::mutex> lock(objectList.mutex);
-    object->InsertBefore(objectList.objects.head());
-}
-
-std::mutex* DeviceBase::GetObjectListMutex(ObjectType type) {
-    return &mObjectLists[type].mutex;
+ApiObjectList* DeviceBase::GetObjectTrackingList(ObjectType type) {
+    return &mObjectLists[type];
 }
 
 AdapterBase* DeviceBase::GetAdapter() const {
-    return mAdapter;
+    return mAdapter.Get();
 }
 
 dawn::platform::Platform* DeviceBase::GetPlatform() const {
@@ -732,6 +715,9 @@ void DeviceBase::AssumeCommandsComplete() {
 
 bool DeviceBase::IsDeviceIdle() {
     if (mAsyncTaskManager->HasPendingTasks()) {
+        return false;
+    }
+    if (!mCallbackTaskManager->IsEmpty()) {
         return false;
     }
 
@@ -1284,6 +1270,11 @@ MaybeError DeviceBase::Tick() {
     return {};
 }
 
+AdapterBase* DeviceBase::APIGetAdapter() {
+    mAdapter->Reference();
+    return mAdapter.Get();
+}
+
 QueueBase* DeviceBase::APIGetQueue() {
     // Backends gave the primary queue during initialization.
     ASSERT(mQueue != nullptr);
@@ -1314,16 +1305,21 @@ void DeviceBase::ApplyFeatures(const DeviceDescriptor* deviceDescriptor) {
     }
 }
 
-bool DeviceBase::IsFeatureEnabled(Feature feature) const {
+bool DeviceBase::HasFeature(Feature feature) const {
     return mEnabledFeatures.IsEnabled(feature);
 }
 
 void DeviceBase::SetWGSLExtensionAllowList() {
     // Set the WGSL extensions allow list based on device's enabled features and other
-    // propority. For example:
-    //     mWGSLExtensionAllowList.insert("InternalExtensionForTesting");
-    if (IsFeatureEnabled(Feature::ChromiumExperimentalDp4a)) {
+    // properties.
+    if (mEnabledFeatures.IsEnabled(Feature::ChromiumExperimentalDp4a)) {
         mWGSLExtensionAllowList.insert("chromium_experimental_dp4a");
+    }
+    if (mEnabledFeatures.IsEnabled(Feature::ShaderF16)) {
+        mWGSLExtensionAllowList.insert("f16");
+    }
+    if (!IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+        mWGSLExtensionAllowList.insert("chromium_disable_uniformity_analysis");
     }
 }
 
@@ -1436,6 +1432,14 @@ ResultOrError<Ref<BufferBase>> DeviceBase::CreateBuffer(const BufferDescriptor* 
     DAWN_TRY(ValidateIsAlive());
     if (IsValidationEnabled()) {
         DAWN_TRY_CONTEXT(ValidateBufferDescriptor(this, descriptor), "validating %s", descriptor);
+
+        // TODO(dawn:1525): Change to validation error after the deprecation period.
+        if (descriptor->size > mLimits.v1.maxBufferSize) {
+            std::string warning =
+                absl::StrFormat("Buffer size (%u) exceeds the max buffer size limit (%u).",
+                                descriptor->size, mLimits.v1.maxBufferSize);
+            EmitDeprecationWarning(warning.c_str());
+        }
     }
 
     Ref<BufferBase> buffer;
@@ -1789,27 +1793,6 @@ void DeviceBase::ForceSetToggle(Toggle toggle, bool isEnabled) {
 void DeviceBase::SetDefaultToggles() {
     SetToggle(Toggle::LazyClearResourceOnFirstUse, true);
     SetToggle(Toggle::DisallowUnsafeAPIs, true);
-}
-
-void DeviceBase::ApplyToggleOverrides(const DawnTogglesDeviceDescriptor* togglesDescriptor) {
-    ASSERT(togglesDescriptor != nullptr);
-
-    for (uint32_t i = 0; i < togglesDescriptor->forceEnabledTogglesCount; ++i) {
-        Toggle toggle = GetAdapter()->GetInstance()->ToggleNameToEnum(
-            togglesDescriptor->forceEnabledToggles[i]);
-        if (toggle != Toggle::InvalidEnum) {
-            mEnabledToggles.Set(toggle, true);
-            mOverridenToggles.Set(toggle, true);
-        }
-    }
-    for (uint32_t i = 0; i < togglesDescriptor->forceDisabledTogglesCount; ++i) {
-        Toggle toggle = GetAdapter()->GetInstance()->ToggleNameToEnum(
-            togglesDescriptor->forceDisabledToggles[i]);
-        if (toggle != Toggle::InvalidEnum) {
-            mEnabledToggles.Set(toggle, false);
-            mOverridenToggles.Set(toggle, true);
-        }
-    }
 }
 
 void DeviceBase::FlushCallbackTaskQueue() {

@@ -108,7 +108,7 @@ int Receiver::AdvanceToNextFrame() {
       if (f == immediate_next_frame) {  // Typical case.
         return FrameCrypto::GetPlaintextSize(encrypted_frame);
       }
-      if (encrypted_frame.dependency != EncodedFrame::DEPENDS_ON_ANOTHER) {
+      if (encrypted_frame.dependency != EncodedFrame::Dependency::kDependent) {
         // Found a frame after skipping past some frames. Drop the ones being
         // skipped, advancing |last_frame_consumed_| before returning.
         DropAllFramesBefore(f);
@@ -271,7 +271,7 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
 
   // Whenever a key frame has been received, the decoder has what it needs to
   // recover. In this case, clear the PLI condition.
-  if (encrypted_frame.dependency == EncryptedFrame::KEY_FRAME) {
+  if (encrypted_frame.dependency == EncryptedFrame::Dependency::kKeyFrame) {
     rtcp_builder_.SetPictureLossIndicator(false);
     last_key_frame_received_ = part->frame_id;
   }

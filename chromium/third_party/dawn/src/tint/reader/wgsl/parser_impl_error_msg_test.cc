@@ -765,7 +765,8 @@ type T = i32;
 }
 
 TEST_F(ParserImplErrorTest, GlobalDeclStaticAssertMissingLParen) {
-    EXPECT("static_assert true);", R"(test.wgsl:1:19 error: expected ';' for static assertion declaration
+    EXPECT("static_assert true);",
+           R"(test.wgsl:1:19 error: expected ';' for static assertion declaration
 static_assert true);
                   ^
 )");
@@ -804,7 +805,8 @@ var x : texture_storage_2d<r32uint, read;
 
 TEST_F(ParserImplErrorTest, GlobalDeclStorageTextureMissingSubtype) {
     EXPECT("var x : texture_storage_2d<>;",
-           R"(test.wgsl:1:28 error: invalid format for storage texture type
+           R"(test.wgsl:1:28 error: expected texel format for storage texture type
+Possible values: 'r32float', 'r32sint', 'r32uint', 'rg32float', 'rg32sint', 'rg32uint', 'rgba16float', 'rgba16sint', 'rgba16uint', 'rgba32float', 'rgba32sint', 'rgba32uint', 'rgba8sint', 'rgba8snorm', 'rgba8uint', 'rgba8unorm'
 var x : texture_storage_2d<>;
                            ^
 )");
@@ -812,7 +814,8 @@ var x : texture_storage_2d<>;
 
 TEST_F(ParserImplErrorTest, GlobalDeclStorageTextureMissingInvalidSubtype) {
     EXPECT("var x : texture_storage_2d<1>;",
-           R"(test.wgsl:1:28 error: invalid format for storage texture type
+           R"(test.wgsl:1:28 error: expected texel format for storage texture type
+Possible values: 'r32float', 'r32sint', 'r32uint', 'rg32float', 'rg32sint', 'rg32uint', 'rgba16float', 'rgba16sint', 'rgba16uint', 'rgba32float', 'rgba32sint', 'rgba32uint', 'rgba8sint', 'rgba8snorm', 'rgba8uint', 'rgba8unorm'
 var x : texture_storage_2d<1>;
                            ^
 )");
@@ -851,17 +854,9 @@ struct S { 1 : i32, };
 }
 
 TEST_F(ParserImplErrorTest, GlobalDeclStructMemberAlignInvaldValue) {
-    EXPECT("struct S { @align(x) i : i32, };",
-           R"(test.wgsl:1:19 error: expected signed integer literal for align attribute
-struct S { @align(x) i : i32, };
-                  ^
-)");
-}
-
-TEST_F(ParserImplErrorTest, GlobalDeclStructMemberAlignNegativeValue) {
-    EXPECT("struct S { @align(-2) i : i32, };",
-           R"(test.wgsl:1:19 error: align attribute must be positive
-struct S { @align(-2) i : i32, };
+    EXPECT("struct S { @align(fn) i : i32, };",
+           R"(test.wgsl:1:19 error: expected align expression
+struct S { @align(fn) i : i32, };
                   ^^
 )");
 }
@@ -937,9 +932,9 @@ var i : array<u32, >;
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarArrayInvalidSize) {
     EXPECT("var i : array<u32, !>;",
-           R"(test.wgsl:1:20 error: expected array size expression
+           R"(test.wgsl:1:21 error: unable to parse right side of ! expression
 var i : array<u32, !>;
-                   ^
+                    ^
 )");
 }
 
@@ -997,17 +992,19 @@ TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBuiltinMissingRParen) {
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBuiltinInvalidIdentifer) {
     EXPECT("@builtin(1) var i : i32;",
-           R"(test.wgsl:1:10 error: expected identifier for builtin
+           R"(test.wgsl:1:10 error: expected builtin
+Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance_index', 'local_invocation_id', 'local_invocation_index', 'num_workgroups', 'position', 'sample_index', 'sample_mask', 'vertex_index', 'workgroup_id'
 @builtin(1) var i : i32;
          ^
 )");
 }
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarAttrBuiltinInvalidValue) {
-    EXPECT("@builtin(x) var i : i32;",
-           R"(test.wgsl:1:10 error: invalid value for builtin attribute
-@builtin(x) var i : i32;
-         ^
+    EXPECT("@builtin(frag_d3pth) var i : i32;",
+           R"(test.wgsl:1:10 error: expected builtin. Did you mean 'frag_depth'?
+Possible values: 'frag_depth', 'front_facing', 'global_invocation_id', 'instance_index', 'local_invocation_id', 'local_invocation_index', 'num_workgroups', 'position', 'sample_index', 'sample_mask', 'vertex_index', 'workgroup_id'
+@builtin(frag_d3pth) var i : i32;
+         ^^^^^^^^^^
 )");
 }
 
@@ -1113,9 +1110,10 @@ var i : ptr<private u32>;
 )");
 }
 
-TEST_F(ParserImplErrorTest, GlobalDeclVarPtrMissingStorageClass) {
+TEST_F(ParserImplErrorTest, GlobalDeclVarPtrMissingAddressSpace) {
     EXPECT("var i : ptr<meow, u32>;",
-           R"(test.wgsl:1:13 error: invalid storage class for ptr declaration
+           R"(test.wgsl:1:13 error: expected address space for ptr declaration
+Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup'
 var i : ptr<meow, u32>;
             ^^^^
 )");
@@ -1147,7 +1145,8 @@ var i : atomic<u32 x;
 
 TEST_F(ParserImplErrorTest, GlobalDeclVarStorageDeclInvalidClass) {
     EXPECT("var<fish> i : i32",
-           R"(test.wgsl:1:5 error: invalid storage class for variable declaration
+           R"(test.wgsl:1:5 error: expected address space for variable declaration
+Possible values: 'function', 'private', 'push_constant', 'storage', 'uniform', 'workgroup'
 var<fish> i : i32
     ^^^^
 )");

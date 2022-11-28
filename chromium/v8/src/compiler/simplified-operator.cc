@@ -77,7 +77,11 @@ size_t hash_value(FieldAccess const& access) {
 }
 
 std::ostream& operator<<(std::ostream& os, FieldAccess const& access) {
-  os << "[" << access.base_is_tagged << ", " << access.offset << ", ";
+  os << "[";
+  if (access.creator_mnemonic != nullptr) {
+    os << access.creator_mnemonic << ", ";
+  }
+  os << access.base_is_tagged << ", " << access.offset << ", ";
 #ifdef OBJECT_PRINT
   Handle<Name> name;
   if (access.name.ToHandle(&name)) {
@@ -229,20 +233,6 @@ CheckForMinusZeroMode CheckMinusZeroModeOf(const Operator* op) {
   DCHECK(op->opcode() == IrOpcode::kChangeFloat64ToTagged ||
          op->opcode() == IrOpcode::kCheckedInt32Mul);
   return OpParameter<CheckForMinusZeroMode>(op);
-}
-
-size_t hash_value(CheckForMinusZeroMode mode) {
-  return static_cast<size_t>(mode);
-}
-
-std::ostream& operator<<(std::ostream& os, CheckForMinusZeroMode mode) {
-  switch (mode) {
-    case CheckForMinusZeroMode::kCheckForMinusZero:
-      return os << "check-for-minus-zero";
-    case CheckForMinusZeroMode::kDontCheckForMinusZero:
-      return os << "dont-check-for-minus-zero";
-  }
-  UNREACHABLE();
 }
 
 std::ostream& operator<<(std::ostream& os, CheckMapsFlags flags) {
@@ -501,6 +491,8 @@ std::ostream& operator<<(std::ostream& os, BigIntOperationHint hint) {
   switch (hint) {
     case BigIntOperationHint::kBigInt:
       return os << "BigInt";
+    case BigIntOperationHint::kBigInt64:
+      return os << "BigInt64";
   }
   UNREACHABLE();
 }
@@ -548,6 +540,12 @@ NumberOperationHint NumberOperationHintOf(const Operator* op) {
          op->opcode() == IrOpcode::kSpeculativeSafeIntegerAdd ||
          op->opcode() == IrOpcode::kSpeculativeSafeIntegerSubtract);
   return OpParameter<NumberOperationHint>(op);
+}
+
+BigIntOperationHint BigIntOperationHintOf(const Operator* op) {
+  // TODO(panq): Expand the DCHECK when more BigInt operations are supported.
+  DCHECK(op->opcode() == IrOpcode::kSpeculativeBigIntAdd);
+  return OpParameter<BigIntOperationHint>(op);
 }
 
 bool operator==(NumberOperationParameters const& lhs,
@@ -805,6 +803,8 @@ bool operator==(CheckMinusZeroParameters const& lhs,
   V(BigIntAdd, Operator::kNoProperties, 2, 1)             \
   V(BigIntSubtract, Operator::kNoProperties, 2, 1)        \
   V(BigIntMultiply, Operator::kNoProperties, 2, 1)        \
+  V(BigIntDivide, Operator::kNoProperties, 2, 1)          \
+  V(BigIntBitwiseAnd, Operator::kNoProperties, 2, 1)      \
   V(StringCharCodeAt, Operator::kNoProperties, 2, 1)      \
   V(StringCodePointAt, Operator::kNoProperties, 2, 1)     \
   V(StringFromCodePointAt, Operator::kNoProperties, 2, 1) \
@@ -831,23 +831,26 @@ bool operator==(CheckMinusZeroParameters const& lhs,
   V(CheckedInt32Mod, 2, 1)                \
   V(CheckedInt32Sub, 2, 1)                \
   V(CheckedUint32Div, 2, 1)               \
-  V(CheckedUint32Mod, 2, 1)
+  V(CheckedUint32Mod, 2, 1)               \
+  V(CheckedBigInt64Add, 2, 1)
 
-#define CHECKED_WITH_FEEDBACK_OP_LIST(V)    \
-  V(CheckNumber, 1, 1)                      \
-  V(CheckSmi, 1, 1)                         \
-  V(CheckString, 1, 1)                      \
-  V(CheckBigInt, 1, 1)                      \
-  V(CheckedInt32ToTaggedSigned, 1, 1)       \
-  V(CheckedInt64ToInt32, 1, 1)              \
-  V(CheckedInt64ToTaggedSigned, 1, 1)       \
-  V(CheckedTaggedToArrayIndex, 1, 1)        \
-  V(CheckedTaggedSignedToInt32, 1, 1)       \
-  V(CheckedTaggedToTaggedPointer, 1, 1)     \
-  V(CheckedTaggedToTaggedSigned, 1, 1)      \
-  V(CheckedUint32ToInt32, 1, 1)             \
-  V(CheckedUint32ToTaggedSigned, 1, 1)      \
-  V(CheckedUint64ToInt32, 1, 1)             \
+#define CHECKED_WITH_FEEDBACK_OP_LIST(V) \
+  V(CheckNumber, 1, 1)                   \
+  V(CheckSmi, 1, 1)                      \
+  V(CheckString, 1, 1)                   \
+  V(CheckBigInt, 1, 1)                   \
+  V(CheckBigInt64, 1, 1)                 \
+  V(CheckedInt32ToTaggedSigned, 1, 1)    \
+  V(CheckedInt64ToInt32, 1, 1)           \
+  V(CheckedInt64ToTaggedSigned, 1, 1)    \
+  V(CheckedTaggedToArrayIndex, 1, 1)     \
+  V(CheckedTaggedSignedToInt32, 1, 1)    \
+  V(CheckedTaggedToTaggedPointer, 1, 1)  \
+  V(CheckedTaggedToTaggedSigned, 1, 1)   \
+  V(CheckedUint32ToInt32, 1, 1)          \
+  V(CheckedUint32ToTaggedSigned, 1, 1)   \
+  V(CheckedUint64ToInt32, 1, 1)          \
+  V(CheckedUint64ToInt64, 1, 1)          \
   V(CheckedUint64ToTaggedSigned, 1, 1)
 
 #define CHECKED_BOUNDS_OP_LIST(V) \
@@ -1395,6 +1398,12 @@ const Operator* SimplifiedOperatorBuilder::WasmExternInternalize() {
                                Operator::kEliminatable, "WasmExternInternalize",
                                1, 1, 1, 1, 1, 1);
 }
+
+const Operator* SimplifiedOperatorBuilder::WasmExternExternalize() {
+  return zone()->New<Operator>(IrOpcode::kWasmExternExternalize,
+                               Operator::kEliminatable, "WasmExternExternalize",
+                               1, 1, 1, 1, 1, 1);
+}
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 const Operator* SimplifiedOperatorBuilder::CheckIf(
@@ -1619,6 +1628,22 @@ const Operator* SimplifiedOperatorBuilder::SpeculativeBigIntMultiply(
       IrOpcode::kSpeculativeBigIntMultiply,
       Operator::kFoldable | Operator::kNoThrow, "SpeculativeBigIntMultiply", 2,
       1, 1, 1, 1, 0, hint);
+}
+
+const Operator* SimplifiedOperatorBuilder::SpeculativeBigIntDivide(
+    BigIntOperationHint hint) {
+  return zone()->New<Operator1<BigIntOperationHint>>(
+      IrOpcode::kSpeculativeBigIntDivide,
+      Operator::kFoldable | Operator::kNoThrow, "SpeculativeBigIntDivide", 2, 1,
+      1, 1, 1, 0, hint);
+}
+
+const Operator* SimplifiedOperatorBuilder::SpeculativeBigIntBitwiseAnd(
+    BigIntOperationHint hint) {
+  return zone()->New<Operator1<BigIntOperationHint>>(
+      IrOpcode::kSpeculativeBigIntBitwiseAnd,
+      Operator::kFoldable | Operator::kNoThrow, "SpeculativeBigIntBitwiseAnd",
+      2, 1, 1, 1, 1, 0, hint);
 }
 
 const Operator* SimplifiedOperatorBuilder::SpeculativeBigIntNegate(

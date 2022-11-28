@@ -28,7 +28,7 @@ const char* const LogFile::kLogToConsole = "-";
 // static
 FILE* LogFile::CreateOutputHandle(std::string file_name) {
   // If we're logging anything, we need to open the log file.
-  if (!FLAG_log) {
+  if (!v8_flags.log) {
     return nullptr;
   } else if (LogFile::IsLoggingToConsole(file_name)) {
     return stdout;
@@ -171,19 +171,19 @@ void LogFile::MessageBuilder::AppendTwoByteCharacter(char c1, char c2) {
   }
 }
 void LogFile::MessageBuilder::AppendCharacter(char c) {
-  if (c >= 32 && c <= 126) {
+  if (std::isprint(c)) {
     if (c == ',') {
       // Escape commas to avoid adding column separators.
-      AppendRawFormatString("\\x2C");
+      AppendRawString("\\x2C");
     } else if (c == '\\') {
-      AppendRawFormatString("\\\\");
+      AppendRawString("\\\\");
     } else {
       // Safe, printable ascii character.
       AppendRawCharacter(c);
     }
   } else if (c == '\n') {
     // Escape newlines to avoid adding row separators.
-    AppendRawFormatString("\\n");
+    AppendRawString("\\n");
   } else {
     // Escape non-printable characters.
     AppendRawFormatString("\\x%02x", c & 0xFF);
@@ -240,6 +240,10 @@ void LogFile::MessageBuilder::AppendRawFormatString(const char* format, ...) {
     DCHECK_NE(log_->format_buffer_[i], '\0');
     AppendRawCharacter(log_->format_buffer_[i]);
   }
+}
+
+void LogFile::MessageBuilder::AppendRawString(const char* str) {
+  log_->os_ << str;
 }
 
 void LogFile::MessageBuilder::AppendRawCharacter(char c) { log_->os_ << c; }

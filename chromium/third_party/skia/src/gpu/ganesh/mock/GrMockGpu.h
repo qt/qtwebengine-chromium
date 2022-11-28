@@ -137,8 +137,9 @@ private:
         return true;
     }
 
-    bool onCopySurface(GrSurface* dst, GrSurface* src, const SkIRect& srcRect,
-                       const SkIPoint& dstPoint) override {
+    bool onCopySurface(GrSurface* dst, const SkIRect& dstRect,
+                       GrSurface* src, const SkIRect& srcRect,
+                       GrSamplerState::Filter)override {
         return true;
     }
 
@@ -186,7 +187,8 @@ private:
                                             const GrBackendFormat&,
                                             GrRenderable,
                                             GrMipmapped,
-                                            GrProtected) override;
+                                            GrProtected,
+                                            std::string_view label) override;
 
     bool onClearBackendTexture(const GrBackendTexture&,
                                sk_sp<skgpu::RefCntedCallback> finishedCallback,

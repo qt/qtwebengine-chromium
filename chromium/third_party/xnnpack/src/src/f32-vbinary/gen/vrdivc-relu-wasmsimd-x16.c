@@ -16,69 +16,70 @@
 
 
 void xnn_f32_vrdivc_relu_ukernel__wasmsimd_x16(
-    size_t n,
-    const float* a,
-    const float* b,
-    float* y,
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
     const union xnn_f32_relu_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
-  assert(a != NULL);
-  assert(b != NULL);
-  assert(y != NULL);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
 
   const v128_t vzero = wasm_i32x4_const_splat(0);
-  const v128_t vb = wasm_v128_load32_splat(b);
-  for (; n >= 16 * sizeof(float); n -= 16 * sizeof(float)) {
-    const v128_t va0123 = wasm_v128_load(a);
-    const v128_t va4567 = wasm_v128_load(a + 4);
-    const v128_t va89AB = wasm_v128_load(a + 8);
-    const v128_t vaCDEF = wasm_v128_load(a + 12);
-    a += 16;
+  const v128_t vb = wasm_v128_load32_splat(input_b);
 
-    v128_t vy0123 = wasm_f32x4_div(vb, va0123);
-    v128_t vy4567 = wasm_f32x4_div(vb, va4567);
-    v128_t vy89AB = wasm_f32x4_div(vb, va89AB);
-    v128_t vyCDEF = wasm_f32x4_div(vb, vaCDEF);
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const v128_t va0 = wasm_v128_load(input_a);
+    const v128_t va1 = wasm_v128_load(input_a + 4);
+    const v128_t va2 = wasm_v128_load(input_a + 8);
+    const v128_t va3 = wasm_v128_load(input_a + 12);
+    input_a += 16;
+
+    v128_t vy0 = wasm_f32x4_div(vb, va0);
+    v128_t vy1 = wasm_f32x4_div(vb, va1);
+    v128_t vy2 = wasm_f32x4_div(vb, va2);
+    v128_t vy3 = wasm_f32x4_div(vb, va3);
 
 
-    vy0123 = wasm_i32x4_max(vy0123, vzero);
-    vy4567 = wasm_i32x4_max(vy4567, vzero);
-    vy89AB = wasm_i32x4_max(vy89AB, vzero);
-    vyCDEF = wasm_i32x4_max(vyCDEF, vzero);
+    vy0 = wasm_i32x4_max(vy0, vzero);
+    vy1 = wasm_i32x4_max(vy1, vzero);
+    vy2 = wasm_i32x4_max(vy2, vzero);
+    vy3 = wasm_i32x4_max(vy3, vzero);
 
-    wasm_v128_store(y, vy0123);
-    wasm_v128_store(y + 4, vy4567);
-    wasm_v128_store(y + 8, vy89AB);
-    wasm_v128_store(y + 12, vyCDEF);
-    y += 16;
+    wasm_v128_store(output, vy0);
+    wasm_v128_store(output + 4, vy1);
+    wasm_v128_store(output + 8, vy2);
+    wasm_v128_store(output + 12, vy3);
+    output += 16;
   }
-  for (; n >= 4 * sizeof(float); n -= 4 * sizeof(float)) {
-    const v128_t va = wasm_v128_load(a);
-    a += 4;
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const v128_t va = wasm_v128_load(input_a);
+    input_a += 4;
 
     v128_t vy = wasm_f32x4_div(vb, va);
 
     vy = wasm_i32x4_max(vy, vzero);
 
-    wasm_v128_store(y, vy);
-    y += 4;
+    wasm_v128_store(output, vy);
+    output += 4;
   }
-  if XNN_UNLIKELY(n != 0) {
-    const v128_t va = wasm_v128_load(a);
+  if XNN_UNLIKELY(batch != 0) {
+    const v128_t va = wasm_v128_load(input_a);
 
     v128_t vy = wasm_f32x4_div(vb, va);
 
     vy = wasm_i32x4_max(vy, vzero);
 
-    if (n & (2 * sizeof(float))) {
-      *((double*) y) = wasm_f64x2_extract_lane(vy, 0);
-      vy = wasm_v32x4_shuffle(vy, vy, 2, 3, 2, 3);
-      y += 2;
+    if (batch & (2 * sizeof(float))) {
+      wasm_v128_store64_lane(output, vy, 0);
+      vy = wasm_v64x2_shuffle(vy, vy, 1, 1);
+      output += 2;
     }
-    if (n & (1 * sizeof(float))) {
-      *y = wasm_f32x4_extract_lane(vy, 0);
+    if (batch & (1 * sizeof(float))) {
+      wasm_v128_store32_lane(output, vy, 0);
     }
   }
 }

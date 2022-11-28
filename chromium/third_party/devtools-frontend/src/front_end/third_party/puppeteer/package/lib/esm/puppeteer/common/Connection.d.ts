@@ -60,6 +60,10 @@ export declare class Connection extends EventEmitter {
      */
     isAutoAttached(targetId: string): boolean;
     /**
+     * @internal
+     */
+    _createSession(targetInfo: Protocol.Target.TargetInfo, isAutoAttachEmulated?: boolean): Promise<CDPSession>;
+    /**
      * @param targetInfo - The target info
      * @returns The CDP session that is created
      */
@@ -99,20 +103,43 @@ export declare const CDPSessionEmittedEvents: {
  * and {@link https://github.com/aslushnikov/getting-started-with-cdp/blob/HEAD/README.md | Getting Started with DevTools Protocol}.
  *
  * @example
+ *
  * ```ts
  * const client = await page.target().createCDPSession();
  * await client.send('Animation.enable');
- * client.on('Animation.animationCreated', () => console.log('Animation created!'));
+ * client.on('Animation.animationCreated', () =>
+ *   console.log('Animation created!')
+ * );
  * const response = await client.send('Animation.getPlaybackRate');
  * console.log('playback rate is ' + response.playbackRate);
  * await client.send('Animation.setPlaybackRate', {
- *   playbackRate: response.playbackRate / 2
+ *   playbackRate: response.playbackRate / 2,
  * });
  * ```
  *
  * @public
  */
 export declare class CDPSession extends EventEmitter {
+    /**
+     * @internal
+     */
+    constructor();
+    connection(): Connection | undefined;
+    send<T extends keyof ProtocolMapping.Commands>(method: T, ...paramArgs: ProtocolMapping.Commands[T]['paramsType']): Promise<ProtocolMapping.Commands[T]['returnType']>;
+    /**
+     * Detaches the cdpSession from the target. Once detached, the cdpSession object
+     * won't emit any events and can't be used to send messages.
+     */
+    detach(): Promise<void>;
+    /**
+     * Returns the session's id.
+     */
+    id(): string;
+}
+/**
+ * @internal
+ */
+export declare class CDPSessionImpl extends CDPSession {
     #private;
     /**
      * @internal
@@ -138,4 +165,8 @@ export declare class CDPSession extends EventEmitter {
      */
     id(): string;
 }
+/**
+ * @internal
+ */
+export declare function isTargetClosedError(err: Error): boolean;
 //# sourceMappingURL=Connection.d.ts.map

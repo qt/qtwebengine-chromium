@@ -254,8 +254,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   bool OnCapsule(const Capsule& capsule) override;
   void OnCapsuleParseFailure(const std::string& error_message) override;
 
-  // Sends an HTTP/3 datagram. The stream ID is not part of |payload|.
-  MessageStatus SendHttp3Datagram(absl::string_view payload);
+  // Sends an HTTP/3 datagram. The stream ID is not part of |payload|. Virtual
+  // to allow mocking in tests.
+  virtual MessageStatus SendHttp3Datagram(absl::string_view payload);
 
   class QUIC_EXPORT_PRIVATE Http3DatagramVisitor {
    public:
@@ -278,6 +279,31 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
   // Replaces the current HTTP/3 datagram visitor with a different visitor.
   // Mainly meant to be used by the visitors' move operators.
   void ReplaceHttp3DatagramVisitor(Http3DatagramVisitor* visitor);
+
+  class QUIC_EXPORT_PRIVATE ConnectIpVisitor {
+   public:
+    virtual ~ConnectIpVisitor() {}
+
+    virtual bool OnAddressAssignCapsule(
+        const AddressAssignCapsule& capsule) = 0;
+    virtual bool OnAddressRequestCapsule(
+        const AddressRequestCapsule& capsule) = 0;
+    virtual bool OnRouteAdvertisementCapsule(
+        const RouteAdvertisementCapsule& capsule) = 0;
+    virtual void OnHeadersWritten() = 0;
+  };
+
+  // Registers |visitor| to receive CONNECT-IP capsules. |visitor| must be
+  // valid until a corresponding call to UnregisterConnectIpVisitor.
+  void RegisterConnectIpVisitor(ConnectIpVisitor* visitor);
+
+  // Unregisters a CONNECT-IP visitor. Must only be called after a call to
+  // RegisterConnectIpVisitor.
+  void UnregisterConnectIpVisitor();
+
+  // Replaces the current CONNECT-IP visitor with a different visitor.
+  // Mainly meant to be used by the visitors' move operators.
+  void ReplaceConnectIpVisitor(ConnectIpVisitor* visitor);
 
   // Sets max datagram time in queue.
   void SetMaxDatagramTimeInQueue(QuicTime::Delta max_time_in_queue);
@@ -449,6 +475,8 @@ class QUIC_EXPORT_PRIVATE QuicSpdyStream
 
   // HTTP/3 Datagram support.
   Http3DatagramVisitor* datagram_visitor_ = nullptr;
+  // CONNECT-IP support.
+  ConnectIpVisitor* connect_ip_visitor_ = nullptr;
 };
 
 }  // namespace quic

@@ -37,6 +37,7 @@ class DebugInfo;
 class IsCompiledScope;
 template <typename>
 class Signature;
+class WasmFunctionData;
 class WasmCapiFunctionData;
 class WasmExportedFunctionData;
 class WasmJSFunctionData;
@@ -252,9 +253,8 @@ class SharedFunctionInfo
   // Start position of this function in the script source.
   V8_EXPORT_PRIVATE int StartPosition() const;
 
-  // Set the start and end position of this function in the script source.
-  // Updates the scope info if available.
-  V8_EXPORT_PRIVATE void SetPosition(int start_position, int end_position);
+  V8_EXPORT_PRIVATE void UpdateFromFunctionLiteralForLiveEdit(
+      FunctionLiteral* lit);
 
   // [outer scope info | feedback metadata] Shared storage for outer scope info
   // (on uncompiled functions) and feedback metadata (on compiled functions).
@@ -344,6 +344,7 @@ class SharedFunctionInfo
 
 #if V8_ENABLE_WEBASSEMBLY
   inline bool HasAsmWasmData() const;
+  inline bool HasWasmFunctionData() const;
   inline bool HasWasmExportedFunctionData() const;
   inline bool HasWasmJSFunctionData() const;
   inline bool HasWasmCapiFunctionData() const;
@@ -353,6 +354,7 @@ class SharedFunctionInfo
 
   V8_EXPORT_PRIVATE WasmExportedFunctionData
   wasm_exported_function_data() const;
+  WasmFunctionData wasm_function_data() const;
   WasmJSFunctionData wasm_js_function_data() const;
   WasmCapiFunctionData wasm_capi_function_data() const;
   WasmResumeData wasm_resume_data() const;
@@ -385,7 +387,7 @@ class SharedFunctionInfo
   // code written in OO style, where almost all functions are anonymous but are
   // assigned to object properties.
   inline bool HasInferredName();
-  inline String inferred_name();
+  inline String inferred_name() const;
 
   // Break infos are contained in DebugInfo, this is a convenience method
   // to simplify access.
@@ -398,7 +400,7 @@ class SharedFunctionInfo
   CoverageInfo GetCoverageInfo() const;
 
   // The function's name if it is non-empty, otherwise the inferred name.
-  std::unique_ptr<char[]> DebugNameCStr();
+  std::unique_ptr<char[]> DebugNameCStr() const;
   static Handle<String> DebugName(Handle<SharedFunctionInfo>);
 
   // Used for flags such as --turbo-filter.

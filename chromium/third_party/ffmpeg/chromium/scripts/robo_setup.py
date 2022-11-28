@@ -43,8 +43,10 @@ def InstallPrereqs(robo_configuration):
                     robo_configuration.host_operating_system())
 
 
-def EnsureASANDirWorks(robo_configuration):
+def EnsureNewASANDirWorks(robo_configuration):
   """Create the asan out dir and config for ninja builds.
+     Fails if the asan out dir already existed, to prevent potential reuse
+     of stale Chromium build artifacts.
 
     Args:
       robo_configuration: current RoboConfiguration.
@@ -54,7 +56,9 @@ def EnsureASANDirWorks(robo_configuration):
 
   directory_name = robo_configuration.absolute_asan_directory()
   if os.path.exists(directory_name):
-    return
+    raise Exception(f"asan dir {directory_name} already exists and may contain "
+                    f"stale files, please remove it to ensure rebuild uses "
+                    f"current data.");
 
   # Dir doesn't exist, so make it and generate the gn files.  Note that we
   # have no idea what state the ffmpeg config is, but that's okay.  gn will
@@ -210,7 +214,7 @@ def EnsureChromiumNasm(robo_configuration):
 
   # Copy it
   shell.log("Copying Chromium's nasm to llvm bin directory")
-  if shutil.copy(chromium_nasm_path, llvm_nasm_path):
+  if llvm_nasm_path != shutil.copy(chromium_nasm_path, llvm_nasm_path):
     raise Exception(
         "Could not copy %s into %s" % (chromium_nasm_path, llvm_nasm_path))
 

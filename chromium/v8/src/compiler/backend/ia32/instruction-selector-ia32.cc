@@ -14,7 +14,6 @@
 #include "src/base/iterator.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/ia32/assembler-ia32.h"
 #include "src/codegen/ia32/register-ia32.h"
@@ -696,11 +695,12 @@ void VisitStoreCommon(InstructionSelector* selector, Node* node,
   const bool is_seqcst =
       atomic_order && *atomic_order == AtomicMemoryOrder::kSeqCst;
 
-  if (FLAG_enable_unconditional_write_barriers && CanBeTaggedPointer(rep)) {
+  if (v8_flags.enable_unconditional_write_barriers && CanBeTaggedPointer(rep)) {
     write_barrier_kind = kFullWriteBarrier;
   }
 
-  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
+  if (write_barrier_kind != kNoWriteBarrier &&
+      !v8_flags.disable_write_barriers) {
     DCHECK(CanBeTaggedPointer(rep));
     AddressingMode addressing_mode;
     InstructionOperand inputs[] = {
@@ -2018,8 +2018,15 @@ void InstructionSelector::VisitFloat64SilenceNaN(Node* node) {
 }
 
 void InstructionSelector::VisitMemoryBarrier(Node* node) {
-  IA32OperandGenerator g(this);
-  Emit(kIA32MFence, g.NoOutput());
+  // ia32 is no weaker than release-acquire and only needs to emit an
+  // instruction for SeqCst memory barriers.
+  AtomicMemoryOrder order = OpParameter<AtomicMemoryOrder>(node->op());
+  if (order == AtomicMemoryOrder::kSeqCst) {
+    IA32OperandGenerator g(this);
+    Emit(kIA32MFence, g.NoOutput());
+    return;
+  }
+  DCHECK_EQ(AtomicMemoryOrder::kAcqRel, order);
 }
 
 void InstructionSelector::VisitWord32AtomicLoad(Node* node) {
@@ -2366,7 +2373,8 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   V(I16x8ExtMulHighI8x16S) \
   V(I16x8ExtMulLowI8x16U)  \
   V(I16x8ExtMulHighI8x16U) \
-  V(I16x8Q15MulRSatS)
+  V(I16x8Q15MulRSatS)      \
+  V(I16x8RelaxedQ15MulRS)
 
 #define SIMD_UNOP_LIST(V)   \
   V(F64x2ConvertLowI32x4S)  \
@@ -3301,6 +3309,12 @@ void InstructionSelector::VisitF32x4Qfma(Node* node) {
 
 void InstructionSelector::VisitF32x4Qfms(Node* node) {
   VisitRRRR(this, node, kIA32F32x4Qfms);
+}
+
+void InstructionSelector::VisitI16x8DotI8x16I7x16S(Node* node) {
+  IA32OperandGenerator g(this);
+  Emit(kIA32I16x8DotI8x16I7x16S, g.DefineAsRegister(node),
+       g.UseUniqueRegister(node->InputAt(0)), g.UseRegister(node->InputAt(1)));
 }
 
 void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,

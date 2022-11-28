@@ -63,10 +63,25 @@ public:
     }
 
     /**
+     * Default implementation calls onAsyncRescaleAndReadPixels with default rescale params
+     */
+    virtual void onAsyncReadPixels(const SkImageInfo& info,
+                                   SkIRect srcRect,
+                                   ReadPixelsCallback callback,
+                                   ReadPixelsContext context) const {
+        this->onAsyncRescaleAndReadPixels(info,
+                                          srcRect,
+                                          RescaleGamma::kSrc,
+                                          RescaleMode::kNearest,
+                                          callback,
+                                          context);
+    }
+
+    /**
      * Default implementation does a rescale/read and then calls the callback.
      */
     virtual void onAsyncRescaleAndReadPixels(const SkImageInfo&,
-                                             const SkIRect& srcRect,
+                                             SkIRect srcRect,
                                              RescaleGamma,
                                              RescaleMode,
                                              ReadPixelsCallback,
@@ -76,8 +91,8 @@ public:
      */
     virtual void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
                                                    sk_sp<SkColorSpace> dstColorSpace,
-                                                   const SkIRect& srcRect,
-                                                   const SkISize& dstSize,
+                                                   SkIRect srcRect,
+                                                   SkISize dstSize,
                                                    RescaleGamma,
                                                    RescaleMode,
                                                    ReadPixelsCallback,
@@ -133,7 +148,7 @@ public:
     // the data in a texture.
     std::tuple<skgpu::graphite::TextureProxyView, SkColorType> asView(
             skgpu::graphite::Recorder*,
-            skgpu::graphite::Mipmapped mipmapped) const;
+            skgpu::graphite::Mipmapped) const;
 #endif
 
     virtual bool onPinAsTexture(GrRecordingContext*) const { return false; }
@@ -180,6 +195,11 @@ public:
     virtual sk_sp<SkImage> onMakeWithMipmaps(sk_sp<SkMipmap>) const {
         return nullptr;
     }
+
+#ifdef SK_GRAPHITE_ENABLED
+    virtual sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
+                                              RequiredImageProperties) const = 0;
+#endif
 
 protected:
     SkImage_Base(const SkImageInfo& info, uint32_t uniqueID);
@@ -228,13 +248,7 @@ private:
             const SkRect* subset,
             const SkRect* domain) const = 0;
 #endif
-#ifdef SK_GRAPHITE_ENABLED
-    virtual std::tuple<skgpu::graphite::TextureProxyView, SkColorType> onAsView(
-            skgpu::graphite::Recorder*,
-            skgpu::graphite::Mipmapped mipmapped) const {
-        return {}; // TODO: once incompatible derived classes are removed make this pure virtual
-    }
-#endif
+
     // Set true by caches when they cache content that's derived from the current pixels.
     mutable std::atomic<bool> fAddedToRasterCache;
 

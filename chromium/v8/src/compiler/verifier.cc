@@ -48,7 +48,7 @@ class Verifier::Visitor {
  private:
   void CheckNotTyped(Node* node) {
     // Verification of simplified lowering sets types of many additional nodes.
-    if (FLAG_verify_simplified_lowering) return;
+    if (v8_flags.verify_simplified_lowering) return;
 
     if (NodeProperties::IsTyped(node)) {
       std::ostringstream str;
@@ -790,7 +790,10 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckValueInputIs(node, 0, Type::Any());
       CheckTypeIs(node, Type::NonInternal());
       break;
-
+    case IrOpcode::kJSFindNonDefaultConstructorOrConstruct:
+      CheckValueInputIs(node, 0, Type::Any());
+      CheckValueInputIs(node, 1, Type::Any());
+      break;
     case IrOpcode::kJSHasContextExtension:
       CheckTypeIs(node, Type::Boolean());
       break;
@@ -968,6 +971,8 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kSpeculativeBigIntAdd:
     case IrOpcode::kSpeculativeBigIntSubtract:
     case IrOpcode::kSpeculativeBigIntMultiply:
+    case IrOpcode::kSpeculativeBigIntDivide:
+    case IrOpcode::kSpeculativeBigIntBitwiseAnd:
       CheckTypeIs(node, Type::BigInt());
       break;
     case IrOpcode::kSpeculativeBigIntNegate:
@@ -981,6 +986,8 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kBigIntAdd:
     case IrOpcode::kBigIntSubtract:
     case IrOpcode::kBigIntMultiply:
+    case IrOpcode::kBigIntDivide:
+    case IrOpcode::kBigIntBitwiseAnd:
       CheckValueInputIs(node, 0, Type::BigInt());
       CheckValueInputIs(node, 1, Type::BigInt());
       CheckTypeIs(node, Type::BigInt());
@@ -1276,9 +1283,6 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckValueInputIs(node, 2, Type::String());
       CheckTypeIs(node, Type::String());
       break;
-    case IrOpcode::kDelayedStringConstant:
-      CheckTypeIs(node, Type::String());
-      break;
     case IrOpcode::kAllocate:
       CheckValueInputIs(node, 0, Type::PlainNumber());
       break;
@@ -1512,6 +1516,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kCheckedUint32ToTaggedSigned:
     case IrOpcode::kCheckedUint64Bounds:
     case IrOpcode::kCheckedUint64ToInt32:
+    case IrOpcode::kCheckedUint64ToInt64:
     case IrOpcode::kCheckedUint64ToTaggedSigned:
     case IrOpcode::kCheckedFloat64ToInt32:
     case IrOpcode::kCheckedFloat64ToInt64:
@@ -1523,6 +1528,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kCheckedTaggedToTaggedSigned:
     case IrOpcode::kCheckedTaggedToTaggedPointer:
     case IrOpcode::kCheckedTruncateTaggedToWord32:
+    case IrOpcode::kCheckedBigInt64Add:
     case IrOpcode::kAssertType:
     case IrOpcode::kVerifyType:
       break;
@@ -1641,6 +1647,10 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckValueInputIs(node, 0, Type::Any());
       CheckTypeIs(node, Type::BigInt());
       break;
+    case IrOpcode::kCheckBigInt64:
+      CheckValueInputIs(node, 0, Type::Any());
+      CheckTypeIs(node, Type::SignedBigInt64());
+      break;
     case IrOpcode::kFastApiCall:
       CHECK_GE(value_count, 1);
       CheckValueInputIs(node, 0, Type::Any());  // receiver
@@ -1663,6 +1673,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kIsNotNull:
     case IrOpcode::kAssertNotNull:
     case IrOpcode::kWasmExternInternalize:
+    case IrOpcode::kWasmExternExternalize:
       // TODO(manoskouk): What are the constraints here?
       break;
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -1731,12 +1742,15 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
     case IrOpcode::kInt64Sub:
     case IrOpcode::kInt64SubWithOverflow:
     case IrOpcode::kInt64Mul:
+    case IrOpcode::kInt64MulHigh:
+    case IrOpcode::kInt64MulWithOverflow:
     case IrOpcode::kInt64Div:
     case IrOpcode::kInt64Mod:
     case IrOpcode::kInt64LessThan:
     case IrOpcode::kInt64LessThanOrEqual:
     case IrOpcode::kUint64Div:
     case IrOpcode::kUint64Mod:
+    case IrOpcode::kUint64MulHigh:
     case IrOpcode::kUint64LessThan:
     case IrOpcode::kUint64LessThanOrEqual:
     case IrOpcode::kFloat32Add:

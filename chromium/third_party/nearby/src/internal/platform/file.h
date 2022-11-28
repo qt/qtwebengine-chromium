@@ -30,10 +30,6 @@
 namespace location {
 namespace nearby {
 
-// TODO(b/227677097) This will cause the dll to fail. Currently this class
-//                 must be exported. There are future plans to wrap this
-//                 and export it from connections/clients/windows
-// class DLL_API InputFile final {
 class InputFile final {
  public:
   using Platform = api::ImplementationPlatform;
@@ -73,10 +69,6 @@ class InputFile final {
   std::unique_ptr<api::InputFile> impl_;
 };
 
-// TODO(b/227677097) This will cause the dll to fail. Currently this class
-//                 must be exported. There are future plans to wrap this
-//                 and export it from connections/clients/windows
-// class DLL_API OutputFile final {
 class OutputFile final {
  public:
   using Platform = api::ImplementationPlatform;

@@ -21,6 +21,7 @@
 #include "shader_validation.h"
 #include "cmd_buffer_state.h"
 #include "state_tracker.h"
+#define VMA_VULKAN_VERSION 1001000
 #include "vk_mem_alloc.h"
 #include "queue_state.h"
 
@@ -57,7 +58,7 @@ class UtilDescriptorSetManager {
 namespace gpu_utils_state {
 class Queue : public QUEUE_STATE {
   public:
-    Queue(GpuAssistedBase &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags);
+    Queue(GpuAssistedBase &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags, const VkQueueFamilyProperties &queueFamilyProperties);
     virtual ~Queue();
     void SubmitBarrier();
 
@@ -79,7 +80,7 @@ class CommandBuffer : public CMD_BUFFER_STATE {
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkQueue, gpu_utils_state::Queue, QUEUE_STATE);
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, gpu_utils_state::CommandBuffer, CMD_BUFFER_STATE);
 
-VkResult UtilInitializeVma(VkPhysicalDevice physical_device, VkDevice device, VmaAllocator *pAllocator);
+VkResult UtilInitializeVma(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device, VmaAllocator *pAllocator);
 
 void UtilGenerateStageMessage(const uint32_t *debug_record, std::string &msg);
 void UtilGenerateCommonMessage(const debug_report_data *report_data, const VkCommandBuffer commandBuffer,
@@ -194,8 +195,8 @@ class GpuAssistedBase : public ValidationStateTracker {
         }
     }
 
-    std::shared_ptr<QUEUE_STATE> CreateQueue(VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags) override {
-        return std::static_pointer_cast<QUEUE_STATE>(std::make_shared<gpu_utils_state::Queue>(*this, q, index, flags));
+    std::shared_ptr<QUEUE_STATE> CreateQueue(VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags, const VkQueueFamilyProperties &queueFamilyProperties) override {
+        return std::static_pointer_cast<QUEUE_STATE>(std::make_shared<gpu_utils_state::Queue>(*this, q, index, flags, queueFamilyProperties));
     }
 
     template <typename CreateInfo, typename SafeCreateInfo>

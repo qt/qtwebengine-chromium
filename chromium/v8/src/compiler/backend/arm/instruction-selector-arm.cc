@@ -5,7 +5,6 @@
 #include "src/base/bits.h"
 #include "src/base/enum-set.h"
 #include "src/base/iterator.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/machine-type.h"
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/node-matchers.h"
@@ -701,11 +700,12 @@ void VisitStoreCommon(InstructionSelector* selector, Node* node,
   WriteBarrierKind write_barrier_kind = store_rep.write_barrier_kind();
   MachineRepresentation rep = store_rep.representation();
 
-  if (FLAG_enable_unconditional_write_barriers && CanBeTaggedPointer(rep)) {
+  if (v8_flags.enable_unconditional_write_barriers && CanBeTaggedPointer(rep)) {
     write_barrier_kind = kFullWriteBarrier;
   }
 
-  if (write_barrier_kind != kNoWriteBarrier && !FLAG_disable_write_barriers) {
+  if (write_barrier_kind != kNoWriteBarrier &&
+      !v8_flags.disable_write_barriers) {
     DCHECK(CanBeTaggedPointer(rep));
     AddressingMode addressing_mode;
     InstructionOperand inputs[3];
@@ -2274,6 +2274,7 @@ void InstructionSelector::VisitFloat64InsertHighWord32(Node* node) {
 }
 
 void InstructionSelector::VisitMemoryBarrier(Node* node) {
+  // Use DMB ISH for both acquire-release and sequentially consistent barriers.
   ArmOperandGenerator g(this);
   Emit(kArmDmbIsh, g.NoOutput());
 }

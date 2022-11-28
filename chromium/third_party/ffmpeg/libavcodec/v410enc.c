@@ -44,7 +44,7 @@ static int v410_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                              const AVFrame *pic, int *got_packet)
 {
     uint8_t *dst;
-    uint16_t *y, *u, *v;
+    const uint16_t *y, *u, *v;
     uint32_t val;
     int i, j, ret;
 
@@ -76,7 +76,7 @@ static int v410_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 const FFCodec ff_v410_encoder = {
     .p.name       = "v410",
-    .p.long_name  = NULL_IF_CONFIG_SMALL("Uncompressed 4:4:4 10-bit"),
+    CODEC_LONG_NAME("Uncompressed 4:4:4 10-bit"),
     .p.type       = AVMEDIA_TYPE_VIDEO,
     .p.id         = AV_CODEC_ID_V410,
     .p.capabilities = AV_CODEC_CAP_DR1,

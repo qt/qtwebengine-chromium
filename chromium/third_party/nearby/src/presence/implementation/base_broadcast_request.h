@@ -19,22 +19,33 @@
 
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/variant.h"
 #include "internal/proto/credential.pb.h"
+#include "presence/broadcast_request.h"
+#include "presence/power_mode.h"
 
 namespace nearby {
 namespace presence {
 
 constexpr int8_t kUnspecifiedTxPower = -128;
+constexpr size_t kSaltSize = 2;
+// The identity metadata size in the base advertisement
+constexpr size_t kBaseMetadataSize = 14;
 
 /** Defines the action (intended actions) of base NP advertisement */
 struct Action {
-  uint16_t action;
+  uint32_t action;
 };
 
 /** Defines a Nearby Presence broadcast request */
 struct BaseBroadcastRequest {
+  // Creates `BaseBroadcastRequest` from the public API request in
+  // `BroadcastRequest`.
+  static absl::StatusOr<BaseBroadcastRequest> Create(
+      const BroadcastRequest& request);
+
   struct BasePresence {
     nearby::internal::IdentityType identity;
     Action action;
@@ -56,6 +67,7 @@ struct BaseBroadcastRequest {
   std::string salt;
   int8_t tx_power;
   unsigned int interval_ms;
+  PowerMode power_mode;
 };
 
 /** Builds a brodacast request variant with NP identity for BLE 4.2 */
@@ -67,6 +79,7 @@ class BasePresenceRequestBuilder {
   BasePresenceRequestBuilder& SetSalt(absl::string_view salt);
   BasePresenceRequestBuilder& SetTxPower(int8_t tx_power);
   BasePresenceRequestBuilder& SetAction(const Action& action);
+  BasePresenceRequestBuilder& SetPowerMode(PowerMode power_mode);
 
   explicit operator BaseBroadcastRequest() const;
 
@@ -75,6 +88,7 @@ class BasePresenceRequestBuilder {
   std::string salt_;
   int8_t tx_power_ = kUnspecifiedTxPower;
   Action action_;
+  PowerMode power_mode_ = PowerMode::kNoPower;
 };
 
 }  // namespace presence

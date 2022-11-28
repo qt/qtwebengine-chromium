@@ -7,6 +7,13 @@ version <next>:
 - ffmpeg -shortest_buf_duration option
 - ffmpeg now requires threading to be built
 - ffmpeg now runs every muxer in a separate thread
+- Add new mode to cropdetect filter to detect crop-area based on motion vectors and edges
+- VAAPI decoding and encoding for 10/12bit 422, 10/12bit 444 HEVC and VP9
+- WBMP (Wireless Application Protocol Bitmap) image format
+- a3dscope filter
+- bonk decoder and demuxer
+- Micronas SC-4 audio decoder
+- LAF demuxer
 
 
 version 5.1:
@@ -33,6 +40,7 @@ version 5.1:
 - PHM image format support
 - remap_opencl filter
 - added chromakey_cuda filter
+- added bilateral_cuda filter
 
 
 version 5.0:

@@ -44,7 +44,7 @@ class TestHolder final : public CPDF_IndirectObjectHolder {
   ~TestHolder() override = default;
 
   // CPDF_IndirectObjectHolder overrides:
-  CPDF_Object* GetOrParseIndirectObject(uint32_t objnum) override {
+  RetainPtr<CPDF_Object> ParseIndirectObject(uint32_t objnum) override {
     auto it = objects_data_.find(objnum);
     if (it == objects_data_.end())
       return nullptr;
@@ -54,7 +54,7 @@ class TestHolder final : public CPDF_IndirectObjectHolder {
       validator_->SimulateReadError();
       return nullptr;
     }
-    return obj_data.object.Get();
+    return obj_data.object;
   }
 
   RetainPtr<CPDF_ReadValidator> GetValidator() { return validator_; }
@@ -121,7 +121,7 @@ class CPDF_ObjectAvailExcludeTypeKey final : public CPDF_ObjectAvail {
     // In this case CPDF_ObjectAvail should wait availability of this item and
     // call ExcludeObject again.
     return object->IsDictionary() &&
-           object->GetDict()->GetStringFor("Type") == "Exclude me";
+           object->GetDict()->GetByteStringFor("Type") == "Exclude me";
   }
 };
 
@@ -241,7 +241,8 @@ TEST(ObjectAvailTest, Exclude) {
       "ArrayRef", &holder, 2);
   holder.AddObject(2, pdfium::MakeRetain<CPDF_Array>(),
                    TestHolder::ObjectState::Available);
-  holder.GetTestObject(2)->AsArray()->AppendNew<CPDF_Reference>(&holder, 2);
+  holder.GetTestObject(2)->AsMutableArray()->AppendNew<CPDF_Reference>(&holder,
+                                                                       2);
 
   // Add string, which is refered by array item. It is should not be checked.
   holder.AddObject(
@@ -320,20 +321,17 @@ TEST(ObjectAvailTest, SelfReferedInlinedObject) {
 
   holder.GetTestObject(1)->GetMutableDict()->SetNewFor<CPDF_Reference>(
       "Data", &holder, 2);
-  auto* root =
+  auto root =
       holder.GetTestObject(1)->GetMutableDict()->SetNewFor<CPDF_Dictionary>(
           "Dict");
 
   root->SetNewFor<CPDF_Reference>("Self", &holder, 1);
-
   holder.AddObject(2, pdfium::MakeRetain<CPDF_String>(nullptr, "Data", false),
                    TestHolder::ObjectState::Unavailable);
 
   CPDF_ObjectAvail avail(holder.GetValidator(), &holder, root);
-
   EXPECT_EQ(CPDF_DataAvail::kDataNotAvailable, avail.CheckAvail());
 
   holder.SetObjectState(2, TestHolder::ObjectState::Available);
-
   EXPECT_EQ(CPDF_DataAvail::kDataAvailable, avail.CheckAvail());
 }

@@ -24,13 +24,10 @@
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
-#include <cfloat>
-#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 namespace SkSL {
@@ -233,11 +230,8 @@ static std::unique_ptr<Expression> simplify_componentwise(const Context& context
     const Type& componentType = type.componentType();
     SkASSERT(componentType.isNumber());
 
-    double minimumValue = -INFINITY, maximumValue = INFINITY;
-    if (componentType.isInteger()) {
-        minimumValue = componentType.minimumValue();
-        maximumValue = componentType.maximumValue();
-    }
+    double minimumValue = componentType.minimumValue();
+    double maximumValue = componentType.maximumValue();
 
     ExpressionArray args;
     int numSlots = type.slotCount();
@@ -421,7 +415,7 @@ const Expression* ConstantFolder::GetConstantValueForVariable(const Expression& 
             // Function parameters can be const but won't have an initial value.
             break;
         }
-        if (expr->isCompileTimeConstant()) {
+        if (Analysis::IsCompileTimeConstant(*expr)) {
             return expr;
         }
     }
@@ -481,10 +475,10 @@ static std::unique_ptr<Expression> simplify_no_op_arithmetic(const Context& cont
                     return expr;
                 }
             }
-            if (is_constant_value(right, 0.0) && !left.hasSideEffects()) {  // x * 0
+            if (is_constant_value(right, 0.0) && !Analysis::HasSideEffects(left)) {  // x * 0
                 return zero_expression(context, pos, resultType);
             }
-            if (is_constant_value(left, 0.0) && !right.hasSideEffects()) {  // 0 * x
+            if (is_constant_value(left, 0.0) && !Analysis::HasSideEffects(right)) {  // 0 * x
                 return zero_expression(context, pos, resultType);
             }
             if (is_constant_value(right, -1.0)) {  // x * -1 (to `-x`)
@@ -563,29 +557,14 @@ static std::unique_ptr<Expression> simplify_no_op_arithmetic(const Context& cont
     return nullptr;
 }
 
-template <typename T>
-static std::unique_ptr<Expression> fold_float_expression(Position pos,
-                                                         T result,
-                                                         const Type* resultType) {
-    if constexpr (!std::is_same<T, bool>::value) {
-        if (result >= -FLT_MAX && result <= FLT_MAX) {
-            // This result will fit inside a float Literal.
+static std::unique_ptr<Expression> fold_expression(Position pos,
+                                                   double result,
+                                                   const Type* resultType) {
+    if (resultType->isNumber()) {
+        if (result >= resultType->minimumValue() && result <= resultType->maximumValue()) {
+            // This result will fit inside its type.
         } else {
-            // The value is outside the float range or is NaN (all if-checks fail); do not optimize.
-            return nullptr;
-        }
-    }
-
-    return Literal::Make(pos, result, resultType);
-}
-
-template <typename T>
-static std::unique_ptr<Expression> fold_int_expression(Position pos,
-                                                       T result,
-                                                       const Type* resultType) {
-    // If constant-folding this expression would overflow the result type, leave it as-is.
-    if constexpr (!std::is_same<T, bool>::value) {
-        if (result < resultType->minimumValue() || result > resultType->maximumValue()) {
+            // The value is outside the range or is NaN (all if-checks fail); do not optimize.
             return nullptr;
         }
     }
@@ -634,7 +613,7 @@ std::unique_ptr<Expression> ConstantFolder::Simplify(const Context& context,
     // If the right side is a Boolean literal...
     if (right->isBoolLiteral()) {
         // ... and the left side has no side effects...
-        if (!left->hasSideEffects()) {
+        if (!Analysis::HasSideEffects(*left)) {
             // We can reverse the expressions and short-circuit optimizations are still valid.
             return short_circuit_boolean(pos, *right, op, *left);
         }
@@ -670,19 +649,19 @@ std::unique_ptr<Expression> ConstantFolder::Simplify(const Context& context,
     }
 
     // Other than the cases above, constant folding requires both sides to be constant.
-    if (!left->isCompileTimeConstant() || !right->isCompileTimeConstant()) {
+    if (!Analysis::IsCompileTimeConstant(*left) || !Analysis::IsCompileTimeConstant(*right)) {
         return nullptr;
     }
 
-    // Note that fold_int_expression returns null if the result would overflow its type.
+    // Note that fold_expression returns null if the result would overflow its type.
     using SKSL_UINT = uint64_t;
     if (left->isIntLiteral() && right->isIntLiteral()) {
         SKSL_INT leftVal  = left->as<Literal>().intValue();
         SKSL_INT rightVal = right->as<Literal>().intValue();
 
-        #define RESULT(Op)   fold_int_expression(pos, \
+        #define RESULT(Op)   fold_expression(pos, \
                                         (SKSL_INT)(leftVal) Op (SKSL_INT)(rightVal), &resultType)
-        #define URESULT(Op)  fold_int_expression(pos, \
+        #define URESULT(Op)  fold_expression(pos, \
                              (SKSL_INT)((SKSL_UINT)(leftVal) Op (SKSL_UINT)(rightVal)), &resultType)
         switch (op.kind()) {
             case Operator::Kind::PLUS:       return URESULT(+);
@@ -736,7 +715,7 @@ std::unique_ptr<Expression> ConstantFolder::Simplify(const Context& context,
         SKSL_FLOAT leftVal  = left->as<Literal>().floatValue();
         SKSL_FLOAT rightVal = right->as<Literal>().floatValue();
 
-        #define RESULT(Op) fold_float_expression(pos, leftVal Op rightVal, &resultType)
+        #define RESULT(Op) fold_expression(pos, leftVal Op rightVal, &resultType)
         switch (op.kind()) {
             case Operator::Kind::PLUS:  return RESULT(+);
             case Operator::Kind::MINUS: return RESULT(-);

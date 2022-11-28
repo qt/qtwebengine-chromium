@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/page/cpdf_meshstream.h"
 
+#include <utility>
+
 #include "core/fpdfapi/page/cpdf_colorspace.h"
 #include "core/fpdfapi/page/cpdf_function.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -98,20 +100,21 @@ CPDF_MeshVertex::~CPDF_MeshVertex() = default;
 CPDF_MeshStream::CPDF_MeshStream(
     ShadingType type,
     const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
-    const CPDF_Stream* pShadingStream,
-    const RetainPtr<CPDF_ColorSpace>& pCS)
+    RetainPtr<const CPDF_Stream> pShadingStream,
+    RetainPtr<CPDF_ColorSpace> pCS)
     : m_type(type),
       m_funcs(funcs),
-      m_pShadingStream(pShadingStream),
-      m_pCS(pCS),
-      m_pStream(pdfium::MakeRetain<CPDF_StreamAcc>(pShadingStream)) {}
+      m_pShadingStream(std::move(pShadingStream)),
+      m_pCS(std::move(pCS)),
+      m_pStream(pdfium::MakeRetain<CPDF_StreamAcc>(m_pShadingStream)) {}
 
 CPDF_MeshStream::~CPDF_MeshStream() = default;
 
 bool CPDF_MeshStream::Load() {
   m_pStream->LoadAllDataFiltered();
   m_BitStream = std::make_unique<CFX_BitStream>(m_pStream->GetSpan());
-  const CPDF_Dictionary* pDict = m_pShadingStream->GetDict();
+
+  RetainPtr<const CPDF_Dictionary> pDict = m_pShadingStream->GetDict();
   m_nCoordBits = pDict->GetIntegerFor("BitsPerCoordinate");
   m_nComponentBits = pDict->GetIntegerFor("BitsPerComponent");
   if (ShouldCheckBPC(m_type)) {
@@ -130,17 +133,17 @@ bool CPDF_MeshStream::Load() {
     return false;
 
   m_nComponents = m_funcs.empty() ? nComponents : 1;
-  const CPDF_Array* pDecode = pDict->GetArrayFor("Decode");
+  RetainPtr<const CPDF_Array> pDecode = pDict->GetArrayFor("Decode");
   if (!pDecode || pDecode->size() != 4 + m_nComponents * 2)
     return false;
 
-  m_xmin = pDecode->GetNumberAt(0);
-  m_xmax = pDecode->GetNumberAt(1);
-  m_ymin = pDecode->GetNumberAt(2);
-  m_ymax = pDecode->GetNumberAt(3);
+  m_xmin = pDecode->GetFloatAt(0);
+  m_xmax = pDecode->GetFloatAt(1);
+  m_ymin = pDecode->GetFloatAt(2);
+  m_ymax = pDecode->GetFloatAt(3);
   for (uint32_t i = 0; i < m_nComponents; ++i) {
-    m_ColorMin[i] = pDecode->GetNumberAt(i * 2 + 4);
-    m_ColorMax[i] = pDecode->GetNumberAt(i * 2 + 5);
+    m_ColorMin[i] = pDecode->GetFloatAt(i * 2 + 4);
+    m_ColorMax[i] = pDecode->GetFloatAt(i * 2 + 5);
   }
 
   if (ShouldCheckBPC(m_type)) {

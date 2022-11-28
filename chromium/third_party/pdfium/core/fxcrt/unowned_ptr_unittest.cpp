@@ -4,13 +4,23 @@
 
 #include "core/fxcrt/unowned_ptr.h"
 
+#include <functional>
 #include <memory>
+#include <set>
 #include <utility>
 
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/base/containers/contains.h"
 
 namespace fxcrt {
 namespace {
+
+template <typename T, typename C = std::less<T>>
+class NoLinearSearchSet : public std::set<T, C> {
+ public:
+  typename std::set<T, C>::iterator begin() noexcept = delete;
+  typename std::set<T, C>::const_iterator cbegin() const noexcept = delete;
+};
 
 class Clink {
  public:
@@ -53,6 +63,104 @@ void ReleaseDangling() {
 }
 
 }  // namespace
+
+TEST(UnownedPtr, DefaultCtor) {
+  UnownedPtr<Clink> ptr;
+  EXPECT_FALSE(ptr.Get());
+}
+
+TEST(UnownedPtr, NullptrCtor) {
+  UnownedPtr<Clink> ptr(nullptr);
+  EXPECT_FALSE(ptr.Get());
+}
+
+TEST(UnownedPtr, RawCtor) {
+  auto obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr(obj.get());
+  EXPECT_EQ(obj.get(), ptr.Get());
+}
+
+TEST(UnownedPtr, CopyCtor) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<Clink> ptr2(ptr1);
+  EXPECT_EQ(obj.get(), ptr2);
+  EXPECT_EQ(obj.get(), ptr1);
+}
+
+TEST(UnownedPtr, MoveCtor) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<Clink> ptr2(std::move(ptr1));
+  EXPECT_EQ(obj.get(), ptr2);
+  EXPECT_FALSE(ptr1);
+}
+
+TEST(UnownedPtr, CopyConversionCtor) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<const Clink> ptr2(ptr1);
+  EXPECT_EQ(obj.get(), ptr2);
+  EXPECT_EQ(obj.get(), ptr1);
+}
+
+TEST(UnownedPtr, MoveConversionCtor) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<const Clink> ptr2(std::move(ptr1));
+  EXPECT_EQ(obj.get(), ptr2);
+  EXPECT_FALSE(ptr1);
+}
+
+TEST(UnownedPtr, NullptrAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr(obj.get());
+  ptr = nullptr;
+  EXPECT_FALSE(ptr);
+}
+
+TEST(UnownedPtr, RawAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr;
+  ptr = obj.get();
+  EXPECT_EQ(obj.get(), ptr.Get());
+}
+
+TEST(UnownedPtr, CopyAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<Clink> ptr2;
+  ptr2 = ptr1;
+  EXPECT_EQ(obj.get(), ptr1.Get());
+  EXPECT_EQ(obj.get(), ptr2.Get());
+}
+
+TEST(UnownedPtr, MoveAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<Clink> ptr2;
+  ptr2 = std::move(ptr1);
+  EXPECT_FALSE(ptr1);
+  EXPECT_EQ(obj.get(), ptr2.Get());
+}
+
+TEST(UnownedPtr, CopyConversionAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<const Clink> ptr2;
+  ptr2 = ptr1;
+  EXPECT_EQ(obj.get(), ptr1.Get());
+  EXPECT_EQ(obj.get(), ptr2.Get());
+}
+
+TEST(UnownedPtr, MoveConversionAssign) {
+  std::unique_ptr<Clink> obj = std::make_unique<Clink>();
+  UnownedPtr<Clink> ptr1(obj.get());
+  UnownedPtr<const Clink> ptr2;
+  ptr2 = std::move(ptr1);
+  EXPECT_FALSE(ptr1);
+  EXPECT_EQ(obj.get(), ptr2.Get());
+}
 
 TEST(UnownedPtr, PtrOk) {
   auto ptr1 = std::make_unique<Clink>();
@@ -113,27 +221,6 @@ TEST(UnownedPtr, ReleaseOk) {
   }
 }
 
-TEST(UnownedPtr, MoveCtorOk) {
-  UnownedPtr<Clink> outer;
-  {
-    auto owned = std::make_unique<Clink>();
-    outer = owned.get();
-    UnownedPtr<Clink> inner(std::move(outer));
-    EXPECT_FALSE(outer.Get());
-  }
-}
-
-TEST(UnownedPtr, MoveAssignOk) {
-  UnownedPtr<Clink> outer;
-  {
-    auto owned = std::make_unique<Clink>();
-    outer = owned.get();
-    UnownedPtr<Clink> inner;
-    inner = std::move(outer);
-    EXPECT_FALSE(outer.Get());
-  }
-}
-
 TEST(UnownedPtr, ReleaseNotOk) {
 #if defined(ADDRESS_SANITIZER)
   EXPECT_DEATH(ReleaseDangling(), "");
@@ -184,6 +271,18 @@ TEST(UnownedPtr, OperatorLT) {
   EXPECT_FALSE(ptr1 < ptr1);
   EXPECT_TRUE(ptr1 < ptr2);
   EXPECT_FALSE(ptr2 < ptr1);
+}
+
+TEST(UnownedPtr, TransparentCompare) {
+  int foos[2];
+  UnownedPtr<int> ptr1(&foos[0]);
+  UnownedPtr<int> ptr2(&foos[1]);
+  NoLinearSearchSet<UnownedPtr<int>, std::less<>> holder;
+  holder.insert(ptr1);
+  EXPECT_NE(holder.end(), holder.find(&foos[0]));
+  EXPECT_EQ(holder.end(), holder.find(&foos[1]));
+  EXPECT_TRUE(pdfium::Contains(holder, &foos[0]));
+  EXPECT_FALSE(pdfium::Contains(holder, &foos[1]));
 }
 
 }  // namespace fxcrt

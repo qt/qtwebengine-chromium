@@ -462,7 +462,7 @@ IGNITION_HANDLER(LdaLookupGlobalSlotInsideTypeof,
 IGNITION_HANDLER(StaLookupSlot, InterpreterAssembler) {
   TNode<Object> value = GetAccumulator();
   TNode<Name> name = CAST(LoadConstantPoolEntryAtOperandIndex(0));
-  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag(1);
+  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag8(1);
   TNode<Context> context = GetContext();
   TVARIABLE(Object, var_result);
 
@@ -732,7 +732,7 @@ IGNITION_HANDLER(DefineKeyedOwnPropertyInLiteral, InterpreterAssembler) {
   TNode<Object> name = LoadRegisterAtOperandIndex(1);
   TNode<Object> value = GetAccumulator();
   TNode<Smi> flags =
-      SmiFromInt32(UncheckedCast<Int32T>(BytecodeOperandFlag(2)));
+      SmiFromInt32(UncheckedCast<Int32T>(BytecodeOperandFlag8(2)));
   TNode<TaggedIndex> slot = BytecodeOperandIdxTaggedIndex(3);
 
   TNode<HeapObject> feedback_vector = LoadFeedbackVector();
@@ -740,18 +740,6 @@ IGNITION_HANDLER(DefineKeyedOwnPropertyInLiteral, InterpreterAssembler) {
 
   CallRuntime(Runtime::kDefineKeyedOwnPropertyInLiteral, context, object, name,
               value, flags, feedback_vector, slot);
-  Dispatch();
-}
-
-IGNITION_HANDLER(CollectTypeProfile, InterpreterAssembler) {
-  TNode<Smi> position = BytecodeOperandImmSmi(0);
-  TNode<Object> value = GetAccumulator();
-
-  TNode<HeapObject> feedback_vector = LoadFeedbackVector();
-  TNode<Context> context = GetContext();
-
-  CallRuntime(Runtime::kCollectTypeProfile, context, position, value,
-              feedback_vector);
   Dispatch();
 }
 
@@ -1775,7 +1763,7 @@ IGNITION_HANDLER(TestUndefined, InterpreterAssembler) {
 // by |literal_flag|.
 IGNITION_HANDLER(TestTypeOf, InterpreterAssembler) {
   TNode<Object> object = GetAccumulator();
-  TNode<Uint32T> literal_flag = BytecodeOperandFlag(0);
+  TNode<Uint32T> literal_flag = BytecodeOperandFlag8(0);
 
 #define MAKE_LABEL(name, lower_case) Label if_##lower_case(this);
   TYPEOF_LITERAL_LIST(MAKE_LABEL)
@@ -2260,7 +2248,7 @@ IGNITION_HANDLER(CreateRegExpLiteral, InterpreterAssembler) {
   TNode<HeapObject> feedback_vector = LoadFeedbackVector();
   TNode<TaggedIndex> slot = BytecodeOperandIdxTaggedIndex(1);
   TNode<Smi> flags =
-      SmiFromInt32(UncheckedCast<Int32T>(BytecodeOperandFlag(2)));
+      SmiFromInt32(UncheckedCast<Int32T>(BytecodeOperandFlag16(2)));
   TNode<Context> context = GetContext();
 
   TVARIABLE(JSRegExp, result);
@@ -2280,7 +2268,7 @@ IGNITION_HANDLER(CreateArrayLiteral, InterpreterAssembler) {
   TNode<HeapObject> feedback_vector = LoadFeedbackVector();
   TNode<TaggedIndex> slot = BytecodeOperandIdxTaggedIndex(1);
   TNode<Context> context = GetContext();
-  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag(2);
+  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag8(2);
 
   Label fast_shallow_clone(this), call_runtime(this, Label::kDeferred);
   // No feedback, so handle it as a slow case.
@@ -2368,7 +2356,7 @@ IGNITION_HANDLER(CreateArrayFromIterable, InterpreterAssembler) {
 IGNITION_HANDLER(CreateObjectLiteral, InterpreterAssembler) {
   TNode<HeapObject> feedback_vector = LoadFeedbackVector();
   TNode<TaggedIndex> slot = BytecodeOperandIdxTaggedIndex(1);
-  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag(2);
+  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag8(2);
 
   Label if_fast_clone(this), if_not_fast_clone(this, Label::kDeferred);
   // No feedback, so handle it as a slow case.
@@ -2428,7 +2416,7 @@ IGNITION_HANDLER(CreateEmptyObjectLiteral, InterpreterAssembler) {
 // {source}, converting getters into data properties.
 IGNITION_HANDLER(CloneObject, InterpreterAssembler) {
   TNode<Object> source = LoadRegisterAtOperandIndex(0);
-  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag(1);
+  TNode<Uint32T> bytecode_flags = BytecodeOperandFlag8(1);
   TNode<UintPtrT> raw_flags =
       DecodeWordFromWord32<CreateObjectLiteralFlags::FlagsBits>(bytecode_flags);
   TNode<Smi> smi_flags = SmiTag(Signed(raw_flags));
@@ -2468,7 +2456,7 @@ IGNITION_HANDLER(GetTemplateObject, InterpreterAssembler) {
 // constant pool and with pretenuring controlled by |flags|.
 IGNITION_HANDLER(CreateClosure, InterpreterAssembler) {
   TNode<Object> shared = LoadConstantPoolEntryAtOperandIndex(0);
-  TNode<Uint32T> flags = BytecodeOperandFlag(2);
+  TNode<Uint32T> flags = BytecodeOperandFlag8(2);
   TNode<Context> context = GetContext();
   TNode<UintPtrT> slot = BytecodeOperandIdx(1);
 
@@ -2778,6 +2766,44 @@ IGNITION_HANDLER(ThrowIfNotSuperConstructor, InterpreterAssembler) {
     // We shouldn't ever return from a throw.
     Abort(AbortReason::kUnexpectedReturnFromThrow);
     Unreachable();
+  }
+}
+
+// FindNonDefaultConstructorOrConstruct <this_function> <new_target> <output>
+//
+// Walks the prototype chain from <this_function>'s super ctor until we see a
+// non-default ctor. If the walk ends at a default base ctor, creates an
+// instance and stores it in <output[1]> and stores true into output[0].
+// Otherwise, stores the first non-default ctor into <output[1]> and false into
+// <output[0]>.
+IGNITION_HANDLER(FindNonDefaultConstructorOrConstruct, InterpreterAssembler) {
+  TNode<Context> context = GetContext();
+  TVARIABLE(Object, constructor);
+  Label found_default_base_ctor(this, &constructor),
+      found_something_else(this, &constructor);
+
+  TNode<JSFunction> this_function = CAST(LoadRegisterAtOperandIndex(0));
+
+  FindNonDefaultConstructorOrConstruct(context, this_function, constructor,
+                                       &found_default_base_ctor,
+                                       &found_something_else);
+
+  BIND(&found_default_base_ctor);
+  {
+    // Create an object directly, without calling the default base ctor.
+    TNode<Object> new_target = LoadRegisterAtOperandIndex(1);
+    TNode<Object> instance = CallBuiltin(Builtin::kFastNewObject, context,
+                                         constructor.value(), new_target);
+
+    StoreRegisterPairAtOperandIndex(TrueConstant(), instance, 2);
+    Dispatch();
+  }
+
+  BIND(&found_something_else);
+  {
+    // Not a base ctor (or bailed out).
+    StoreRegisterPairAtOperandIndex(FalseConstant(), constructor.value(), 2);
+    Dispatch();
   }
 }
 
@@ -3139,7 +3165,7 @@ Handle<Code> GenerateBytecodeHandler(Isolate* isolate, const char* debug_name,
       &state, options, ProfileDataFromFile::TryRead(debug_name));
 
 #ifdef ENABLE_DISASSEMBLER
-  if (FLAG_trace_ignition_codegen) {
+  if (v8_flags.trace_ignition_codegen) {
     StdoutStream os;
     code->Disassemble(Bytecodes::ToString(bytecode), os, isolate);
     os << std::flush;

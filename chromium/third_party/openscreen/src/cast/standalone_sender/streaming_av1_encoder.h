@@ -58,7 +58,7 @@ class StreamingAv1Encoder : public StreamingVideoEncoder {
  public:
   StreamingAv1Encoder(const Parameters& params,
                       TaskRunner* task_runner,
-                      Sender* sender);
+                      std::unique_ptr<Sender> sender);
 
   ~StreamingAv1Encoder();
 

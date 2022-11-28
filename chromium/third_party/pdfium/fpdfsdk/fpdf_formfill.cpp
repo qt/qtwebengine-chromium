@@ -194,7 +194,8 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
 
   auto pDevice = std::make_unique<CFX_DefaultRenderDevice>();
 #if defined(_SKIA_SUPPORT_)
-  pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
+  if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+    pDevice->AttachRecorder(static_cast<SkPictureRecorder*>(recorder));
 #endif
 
   RetainPtr<CFX_DIBitmap> holder(CFXDIBitmapFromFPDFBitmap(bitmap));
@@ -219,8 +220,10 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
   }
 
 #if defined(_SKIA_SUPPORT_PATHS_)
-  pDevice->Flush(true);
-  holder->UnPreMultiply();
+  if (CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer()) {
+    pDevice->Flush(true);
+    holder->UnPreMultiply();
+  }
 #endif
 }
 
@@ -797,8 +800,7 @@ FPDF_EXPORT void FPDF_CALLCONV FORM_DoPageAAction(FPDF_PAGE page,
   if (!pFormFillEnv->GetPageView(pPage))
     return;
 
-  const CPDF_Dictionary* pPageDict = pPDFPage->GetDict();
-  CPDF_AAction aa(pPageDict->GetDictFor(pdfium::form_fields::kAA));
+  CPDF_AAction aa(pPDFPage->GetDict()->GetDictFor(pdfium::form_fields::kAA));
   CPDF_AAction::AActionType type = aaType == FPDFPAGE_AACTION_OPEN
                                        ? CPDF_AAction::kOpenPage
                                        : CPDF_AAction::kClosePage;

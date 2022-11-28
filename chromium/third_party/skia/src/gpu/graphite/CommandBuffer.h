@@ -22,6 +22,12 @@ namespace skgpu {
 class RefCntedCallback;
 }
 
+#ifdef SK_ENABLE_PIET_GPU
+namespace skgpu::piet {
+class Scene;
+}
+#endif
+
 namespace skgpu::graphite {
 
 class Buffer;
@@ -34,9 +40,9 @@ class Sampler;
 class Texture;
 class TextureProxy;
 
-class CommandBuffer : public SkRefCnt {
+class CommandBuffer {
 public:
-    ~CommandBuffer() override;
+    virtual ~CommandBuffer();
 
 #ifdef SK_DEBUG
     bool hasWork() { return fHasWork; }
@@ -44,7 +50,10 @@ public:
 
     void trackResource(sk_sp<Resource> resource);
     // Release all tracked Resources
-    void releaseResources();
+    void resetCommandBuffer();
+
+    // If any work is needed to create new resources for a fresh command buffer do that here.
+    virtual bool setNewCommandBufferResources() = 0;
 
     void addFinishedProc(sk_sp<RefCntedCallback> finishedProc);
     void callFinishedProcs(bool success);
@@ -71,11 +80,25 @@ public:
                              sk_sp<Texture>,
                              const BufferTextureCopyData*,
                              int count);
+    bool copyTextureToTexture(sk_sp<Texture> src,
+                              SkIRect srcRect,
+                              sk_sp<Texture> dst,
+                              SkIPoint dstPoint);
+    bool synchronizeBufferToCpu(sk_sp<Buffer>);
+
+#ifdef SK_ENABLE_PIET_GPU
+    void renderPietScene(const skgpu::piet::Scene& scene, sk_sp<Texture> target);
+#endif
 
 protected:
     CommandBuffer();
 
 private:
+    // Release all tracked Resources
+    void releaseResources();
+
+    virtual void onResetCommandBuffer() = 0;
+
     virtual bool onAddRenderPass(const RenderPassDesc&,
                                  const Texture* colorTexture,
                                  const Texture* resolveTexture,
@@ -95,6 +118,15 @@ private:
                                        const Texture*,
                                        const BufferTextureCopyData*,
                                        int count) = 0;
+    virtual bool onCopyTextureToTexture(const Texture* src,
+                                        SkIRect srcRect,
+                                        const Texture* dst,
+                                        SkIPoint dstPoint) = 0;
+    virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
+
+#ifdef SK_ENABLE_PIET_GPU
+    virtual void onRenderPietScene(const skgpu::piet::Scene& scene, const Texture* target) = 0;
+#endif
 
 #ifdef SK_DEBUG
     bool fHasWork = false;

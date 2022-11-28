@@ -20,6 +20,7 @@
 #include <hwy/base.h>  // kMaxVectorSize
 #include <limits>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {
@@ -46,9 +47,10 @@ constexpr size_t CacheAligned::kAlignment;
 constexpr size_t CacheAligned::kAlias;
 
 void CacheAligned::PrintStats() {
-  fprintf(stderr, "Allocations: %zu (max bytes in use: %E)\n",
-          size_t(num_allocations.load(std::memory_order_relaxed)),
-          double(max_bytes_in_use.load(std::memory_order_relaxed)));
+  fprintf(
+      stderr, "Allocations: %" PRIuS " (max bytes in use: %E)\n",
+      static_cast<size_t>(num_allocations.load(std::memory_order_relaxed)),
+      static_cast<double>(max_bytes_in_use.load(std::memory_order_relaxed)));
 }
 
 size_t CacheAligned::NextOffset() {
@@ -69,8 +71,9 @@ void* CacheAligned::Allocate(const size_t payload_size, size_t offset) {
   // To avoid wasting space, the header resides at the end of `unused`,
   // which therefore cannot be empty (offset == 0).
   if (offset == 0) {
-    offset = kAlignment;  // = round_up(sizeof(AllocationHeader), kAlignment)
-    static_assert(sizeof(AllocationHeader) <= kAlignment, "Else: round up");
+    // SVE/RVV vectors can be large, so we cannot rely on them (including the
+    // padding at the end of AllocationHeader) to fit in kAlignment.
+    offset = hwy::RoundUpTo(sizeof(AllocationHeader), kAlignment);
   }
 
 #if JXL_USE_MMAP

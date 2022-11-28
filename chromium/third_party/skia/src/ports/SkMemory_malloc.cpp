@@ -17,8 +17,11 @@
 #endif
 #endif
 
-#define SK_DEBUGFAILF(fmt, ...) \
-    SkASSERT((SkDebugf(fmt"\n", __VA_ARGS__), false))
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    #define SK_DEBUGFAILF(fmt, ...) SK_ABORT(fmt"\n", __VA_ARGS__)
+#else
+    #define SK_DEBUGFAILF(fmt, ...) SkASSERT((SkDebugf(fmt"\n", __VA_ARGS__), false))
+#endif
 
 static inline void sk_out_of_memory(size_t size) {
     SK_DEBUGFAILF("sk_out_of_memory (asked for %zu bytes)",
@@ -66,7 +69,9 @@ void* sk_realloc_throw(void* addr, size_t size) {
 }
 
 void sk_free(void* p) {
-    if (p) {
+    // The guard here produces a performance improvement across many tests, and many platforms.
+    // Removing the check was tried in skia cl 588037.
+    if (p != nullptr) {
         free(p);
     }
 }

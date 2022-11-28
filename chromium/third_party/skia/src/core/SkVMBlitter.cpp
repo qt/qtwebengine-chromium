@@ -48,7 +48,7 @@ namespace {
         };
     }
 
-    struct NoopColorFilter : public SkColorFilterBase {
+    struct NoopColorFilter final : public SkColorFilterBase {
         skvm::Color onProgram(skvm::Builder*, skvm::Color c,
                               const SkColorInfo&, skvm::Uniforms*, SkArenaAlloc*) const override {
             return c;
@@ -237,6 +237,7 @@ SkVMBlitter::Params SkVMBlitter::EffectiveParams(const SkPixmap& device,
         shader = sk_make_sp<SkColorFilterShader>(std::move(shader),
                                                  paint.getAlphaf(),
                                                  sk_make_sp<NoopColorFilter>());
+        paint.setAlphaf(1.0f);
     }
 
     // Add dither to the end of the shader pipeline if requested and needed.

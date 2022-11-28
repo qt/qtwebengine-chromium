@@ -6,15 +6,18 @@
 
 #include "core/fpdfdoc/cpdf_icon.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 
-CPDF_Icon::CPDF_Icon(const CPDF_Stream* pStream) : m_pStream(pStream) {}
+CPDF_Icon::CPDF_Icon(RetainPtr<const CPDF_Stream> pStream)
+    : m_pStream(std::move(pStream)) {}
 
 CPDF_Icon::~CPDF_Icon() = default;
 
 CFX_SizeF CPDF_Icon::GetImageSize() const {
-  const CPDF_Dictionary* pDict = m_pStream->GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = m_pStream->GetDict();
   if (!pDict)
     return CFX_SizeF();
 
@@ -23,7 +26,7 @@ CFX_SizeF CPDF_Icon::GetImageSize() const {
 }
 
 CFX_Matrix CPDF_Icon::GetImageMatrix() const {
-  const CPDF_Dictionary* pDict = m_pStream->GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = m_pStream->GetDict();
   if (!pDict)
     return CFX_Matrix();
 
@@ -31,9 +34,9 @@ CFX_Matrix CPDF_Icon::GetImageMatrix() const {
 }
 
 ByteString CPDF_Icon::GetImageAlias() const {
-  const CPDF_Dictionary* pDict = m_pStream->GetDict();
+  RetainPtr<const CPDF_Dictionary> pDict = m_pStream->GetDict();
   if (!pDict)
     return ByteString();
 
-  return pDict->GetStringFor("Name");
+  return pDict->GetByteStringFor("Name");
 }

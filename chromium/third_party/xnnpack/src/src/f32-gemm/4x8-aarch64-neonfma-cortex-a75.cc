@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <limits>
 
+#include <xnnpack.h>
 #include <xnnpack/aarch64-assembler.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/gemm.h>
@@ -514,7 +515,7 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
 }  // aarch64
 }  // xnnpack
 
-xnn_status xnn_generate_f32_gemm_ukernel_4x8__aarch64_neonfma_cortex_a75(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, const void* params) {
+xnn_status_t xnn_generate_f32_gemm_ukernel_4x8__aarch64_neonfma_cortex_a75(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, const void* params) {
   using namespace xnnpack::aarch64;
   Generator g(code);
   assert(params != nullptr);
@@ -527,7 +528,7 @@ xnn_status xnn_generate_f32_gemm_ukernel_4x8__aarch64_neonfma_cortex_a75(xnn_cod
   return xnn_status_success;
 }
 
-xnn_status xnn_generate_f32_gemm_ukernel_4x8__aarch64_neonfma_prfm_cortex_a75(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, const void* params) {
+xnn_status_t xnn_generate_f32_gemm_ukernel_4x8__aarch64_neonfma_prfm_cortex_a75(xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, const void* params) {
   using namespace xnnpack::aarch64;
   Generator g(code);
   assert(params != nullptr);

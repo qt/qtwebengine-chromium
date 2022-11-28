@@ -68,11 +68,11 @@ class Environment : public UdpSocket::Client {
 
   // Construct with the given clock source and TaskRunner. Creates and
   // internally-owns a UdpSocket, and immediately binds it to the given
-  // |local_endpoint|. If embedders do not care what interface/address the UDP
-  // socket is bound on, they may omit that argument.
+  // |local_endpoint|. Default behavior if |local_endpoint| is omitted is to
+  // bind to all available interfaces using IPv4.
   Environment(ClockNowFunctionPtr now_function,
               TaskRunner* task_runner,
-              const IPEndpoint& local_endpoint = IPEndpoint::kAnyV6());
+              const IPEndpoint& local_endpoint = IPEndpoint::kAnyV4());
 
   ~Environment() override;
 

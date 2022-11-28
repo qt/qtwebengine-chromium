@@ -5,21 +5,27 @@
 
 #include "lib/extras/codec.h"
 
-#include "lib/jxl/base/file_io.h"
+#include "jxl/decode.h"
+#include "jxl/types.h"
+#include "lib/extras/packed_image.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/status.h"
+
 #if JPEGXL_ENABLE_APNG
-#include "lib/extras/codec_apng.h"
+#include "lib/extras/enc/apng.h"
+#endif
+#if JPEGXL_ENABLE_JPEG
+#include "lib/extras/enc/jpg.h"
 #endif
 #if JPEGXL_ENABLE_EXR
-#include "lib/extras/codec_exr.h"
+#include "lib/extras/enc/exr.h"
 #endif
-#if JPEGXL_ENABLE_GIF
-#include "lib/extras/codec_gif.h"
-#endif
-#include "lib/extras/codec_jpg.h"
-#include "lib/extras/codec_pgx.h"
-#include "lib/extras/codec_png.h"
-#include "lib/extras/codec_pnm.h"
-#include "lib/extras/codec_psd.h"
+
+#include "lib/extras/dec/decode.h"
+#include "lib/extras/enc/pgx.h"
+#include "lib/extras/enc/pnm.h"
+#include "lib/extras/packed_image_convert.h"
+#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
@@ -30,184 +36,127 @@ constexpr size_t kMinBytes = 9;
 
 }  // namespace
 
-std::string ExtensionFromCodec(Codec codec, const bool is_gray,
-                               const size_t bits_per_sample) {
-  switch (codec) {
-    case Codec::kJPG:
-      return ".jpg";
-    case Codec::kPGX:
-      return ".pgx";
-    case Codec::kPNG:
-      return ".png";
-    case Codec::kPNM:
-      if (is_gray) return ".pgm";
-      return (bits_per_sample == 32) ? ".pfm" : ".ppm";
-    case Codec::kGIF:
-      return ".gif";
-    case Codec::kEXR:
-      return ".exr";
-    case Codec::kPSD:
-      return ".psd";
-    case Codec::kUnknown:
-      return std::string();
-  }
-  JXL_UNREACHABLE;
-  return std::string();
-}
-
-Codec CodecFromExtension(const std::string& extension,
-                         size_t* JXL_RESTRICT bits_per_sample) {
-  if (extension == ".png") return Codec::kPNG;
-
-  if (extension == ".jpg") return Codec::kJPG;
-  if (extension == ".jpeg") return Codec::kJPG;
-
-  if (extension == ".pgx") return Codec::kPGX;
-
-  if (extension == ".pbm") {
-    *bits_per_sample = 1;
-    return Codec::kPNM;
-  }
-  if (extension == ".pgm") return Codec::kPNM;
-  if (extension == ".ppm") return Codec::kPNM;
-  if (extension == ".pfm") {
-    *bits_per_sample = 32;
-    return Codec::kPNM;
-  }
-
-  if (extension == ".gif") return Codec::kGIF;
-
-  if (extension == ".exr") return Codec::kEXR;
-
-  if (extension == ".psd") return Codec::kPSD;
-
-  return Codec::kUnknown;
-}
-
 Status SetFromBytes(const Span<const uint8_t> bytes,
-                    const ColorHints& color_hints, CodecInOut* io,
-                    ThreadPool* pool, Codec* orig_codec) {
+                    const extras::ColorHints& color_hints, CodecInOut* io,
+                    ThreadPool* pool, extras::Codec* orig_codec) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
-  io->metadata.m.bit_depth.bits_per_sample = 0;  // (For is-set check below)
-
-  Codec codec;
-  if (extras::DecodeImagePNG(bytes, color_hints, pool, io)) {
-    codec = Codec::kPNG;
+  extras::PackedPixelFile ppf;
+  if (extras::DecodeBytes(bytes, color_hints, io->constraints, &ppf,
+                          orig_codec)) {
+    return ConvertPackedPixelFileToCodecInOut(ppf, pool, io);
   }
-#if JPEGXL_ENABLE_APNG
-  else if (extras::DecodeImageAPNG(bytes, color_hints, pool, io)) {
-    codec = Codec::kPNG;
-  }
-#endif
-  else if (extras::DecodeImagePGX(bytes, color_hints, pool, io)) {
-    codec = Codec::kPGX;
-  } else if (extras::DecodeImagePNM(bytes, color_hints, pool, io)) {
-    codec = Codec::kPNM;
-  }
-#if JPEGXL_ENABLE_GIF
-  else if (extras::DecodeImageGIF(bytes, color_hints, pool, io)) {
-    codec = Codec::kGIF;
-  }
-#endif
-  else if (io->dec_target == DecodeTarget::kQuantizedCoeffs &&
-           extras::DecodeImageJPGCoefficients(bytes, io)) {
-    // TODO(deymo): In this case the tools should use a different API to
-    // transcode the input JPEG to JXL.
-    codec = Codec::kJPG;
-  } else if (io->dec_target == DecodeTarget::kPixels &&
-             extras::DecodeImageJPG(bytes, color_hints, pool, io)) {
-    codec = Codec::kJPG;
-  } else if (extras::DecodeImagePSD(bytes, color_hints, pool, io)) {
-    codec = Codec::kPSD;
-  }
-#if JPEGXL_ENABLE_EXR
-  else if (extras::DecodeImageEXR(bytes, color_hints, pool, io)) {
-    codec = Codec::kEXR;
-  }
-#endif
-  else {
-    return JXL_FAILURE("Codecs failed to decode");
-  }
-  if (orig_codec) *orig_codec = codec;
-
-  io->CheckMetadata();
-  return true;
+  return JXL_FAILURE("Codecs failed to decode");
 }
 
-Status SetFromFile(const std::string& pathname, const ColorHints& color_hints,
-                   CodecInOut* io, ThreadPool* pool, Codec* orig_codec) {
-  PaddedBytes encoded;
+Status SetFromFile(const std::string& pathname,
+                   const extras::ColorHints& color_hints, CodecInOut* io,
+                   ThreadPool* pool, extras::Codec* orig_codec) {
+  std::vector<uint8_t> encoded;
   JXL_RETURN_IF_ERROR(ReadFile(pathname, &encoded));
   JXL_RETURN_IF_ERROR(SetFromBytes(Span<const uint8_t>(encoded), color_hints,
                                    io, pool, orig_codec));
   return true;
 }
 
-Status Encode(const CodecInOut& io, const Codec codec,
+Status Encode(const CodecInOut& io, const extras::Codec codec,
               const ColorEncoding& c_desired, size_t bits_per_sample,
-              PaddedBytes* bytes, ThreadPool* pool) {
+              std::vector<uint8_t>* bytes, ThreadPool* pool) {
   JXL_CHECK(!io.Main().c_current().ICC().empty());
   JXL_CHECK(!c_desired.ICC().empty());
   io.CheckMetadata();
-  if (io.Main().IsJPEG() && codec != Codec::kJPG) {
-    return JXL_FAILURE(
-        "Output format has to be JPEG for losslessly recompressed JPEG "
-        "reconstruction");
+  if (io.Main().IsJPEG()) {
+    JXL_WARNING("Writing JPEG data as pixels");
   }
-
+  JxlPixelFormat format = {
+      0,  // num_channels is ignored by the converter
+      bits_per_sample <= 8 ? JXL_TYPE_UINT8 : JXL_TYPE_UINT16, JXL_BIG_ENDIAN,
+      0};
+  const bool floating_point = bits_per_sample > 16;
+  std::unique_ptr<extras::Encoder> encoder;
+  std::ostringstream os;
   switch (codec) {
-    case Codec::kPNG:
-      return extras::EncodeImagePNG(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
-    case Codec::kJPG:
-      if (io.Main().IsJPEG()) {
-        return extras::EncodeImageJPGCoefficients(&io, bytes);
-      } else {
-#if JPEGXL_ENABLE_JPEG
-        return EncodeImageJPG(&io,
-                              io.use_sjpeg ? extras::JpegEncoder::kSJpeg
-                                           : extras::JpegEncoder::kLibJpeg,
-                              io.jpeg_quality, YCbCrChromaSubsampling(), pool,
-                              bytes);
+    case extras::Codec::kPNG:
+#if JPEGXL_ENABLE_APNG
+      encoder = extras::GetAPNGEncoder();
+      break;
 #else
-        return JXL_FAILURE("JPEG XL was built without JPEG support");
+      return JXL_FAILURE("JPEG XL was built without (A)PNG support");
 #endif
+    case extras::Codec::kJPG:
+#if JPEGXL_ENABLE_JPEG
+      format.data_type = JXL_TYPE_UINT8;
+      encoder = extras::GetJPEGEncoder();
+      os << io.jpeg_quality;
+      encoder->SetOption("q", os.str());
+      break;
+#else
+      return JXL_FAILURE("JPEG XL was built without JPEG support");
+#endif
+    case extras::Codec::kPNM:
+      if (io.Main().HasAlpha()) {
+        encoder = extras::GetPAMEncoder();
+      } else if (io.Main().IsGray()) {
+        encoder = extras::GetPGMEncoder();
+      } else if (!floating_point) {
+        encoder = extras::GetPPMEncoder();
+      } else {
+        format.data_type = JXL_TYPE_FLOAT;
+        format.endianness = JXL_NATIVE_ENDIAN;
+        encoder = extras::GetPFMEncoder();
       }
-    case Codec::kPNM:
-      return extras::EncodeImagePNM(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
-    case Codec::kPGX:
-      return extras::EncodeImagePGX(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
-    case Codec::kGIF:
+      if (!c_desired.IsSRGB()) {
+        JXL_WARNING(
+            "PNM encoder cannot store custom ICC profile; decoder "
+            "will need hint key=color_space to get the same values");
+      }
+      break;
+    case extras::Codec::kPGX:
+      encoder = extras::GetPGXEncoder();
+      break;
+    case extras::Codec::kGIF:
       return JXL_FAILURE("Encoding to GIF is not implemented");
-    case Codec::kPSD:
-      return extras::EncodeImagePSD(&io, c_desired, bits_per_sample, pool,
-                                    bytes);
-    case Codec::kEXR:
+    case extras::Codec::kEXR:
 #if JPEGXL_ENABLE_EXR
-      return extras::EncodeImageEXR(&io, c_desired, pool, bytes);
+      format.data_type = JXL_TYPE_FLOAT;
+      encoder = extras::GetEXREncoder();
+      break;
 #else
       return JXL_FAILURE("JPEG XL was built without OpenEXR support");
 #endif
-    case Codec::kUnknown:
+    case extras::Codec::kUnknown:
       return JXL_FAILURE("Cannot encode using Codec::kUnknown");
   }
 
-  return JXL_FAILURE("Invalid codec");
+  if (!encoder) {
+    return JXL_FAILURE("Invalid codec.");
+  }
+
+  extras::PackedPixelFile ppf;
+  JXL_RETURN_IF_ERROR(
+      ConvertCodecInOutToPackedPixelFile(io, format, c_desired, pool, &ppf));
+  extras::EncodedImage encoded_image;
+  JXL_RETURN_IF_ERROR(encoder->Encode(ppf, &encoded_image, pool));
+  JXL_ASSERT(encoded_image.bitstreams.size() == 1);
+  *bytes = encoded_image.bitstreams[0];
+
+  return true;
 }
 
 Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
                     size_t bits_per_sample, const std::string& pathname,
                     ThreadPool* pool) {
   const std::string extension = Extension(pathname);
-  const Codec codec = CodecFromExtension(extension, &bits_per_sample);
+  const extras::Codec codec =
+      extras::CodecFromExtension(extension, &bits_per_sample);
 
-  // Warn about incorrect usage of PBM/PGM/PGX/PPM - only the latter supports
+  // Warn about incorrect usage of PGM/PGX/PPM - only the latter supports
   // color, but CodecFromExtension lumps them all together.
-  if (codec == Codec::kPNM && extension != ".pfm") {
-    if (!io.Main().IsGray() && extension != ".ppm") {
+  if (codec == extras::Codec::kPNM && extension != ".pfm") {
+    if (io.Main().HasAlpha() && extension != ".pam") {
+      JXL_WARNING(
+          "For images with alpha, the filename should end with .pam.\n");
+    } else if (!io.Main().IsGray() && extension == ".pgm") {
       JXL_WARNING("For color images, the filename should end with .ppm.\n");
     } else if (io.Main().IsGray() && extension == ".ppm") {
       JXL_WARNING(
@@ -217,15 +166,15 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
       JXL_WARNING("PPM only supports up to 16 bits per sample");
       bits_per_sample = 16;
     }
-  } else if (codec == Codec::kPGX && !io.Main().IsGray()) {
+  } else if (codec == extras::Codec::kPGX && !io.Main().IsGray()) {
     JXL_WARNING("Storing color image to PGX - use .ppm extension instead.\n");
   }
-  if (bits_per_sample > 16 && codec == Codec::kPNG) {
+  if (bits_per_sample > 16 && codec == extras::Codec::kPNG) {
     JXL_WARNING("PNG only supports up to 16 bits per sample");
     bits_per_sample = 16;
   }
 
-  PaddedBytes encoded;
+  std::vector<uint8_t> encoded;
   return Encode(io, codec, c_desired, bits_per_sample, &encoded, pool) &&
          WriteFile(encoded, pathname);
 }

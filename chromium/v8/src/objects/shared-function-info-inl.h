@@ -215,7 +215,7 @@ int SharedFunctionInfo::function_token_position() const {
 
 template <typename IsolateT>
 bool SharedFunctionInfo::AreSourcePositionsAvailable(IsolateT* isolate) const {
-  if (FLAG_enable_lazy_source_positions) {
+  if (v8_flags.enable_lazy_source_positions) {
     return !HasBytecodeArray() ||
            GetBytecodeArray(isolate).HasSourcePositionTable();
   }
@@ -243,7 +243,7 @@ SharedFunctionInfo::Inlineability SharedFunctionInfo::GetInlineability(
   // inline.
   if (!HasBytecodeArray()) return kHasNoBytecode;
 
-  if (GetBytecodeArray(isolate).length() > FLAG_max_inlined_bytecode_size) {
+  if (GetBytecodeArray(isolate).length() > v8_flags.max_inlined_bytecode_size) {
     return kExceedsBytecodeLimit;
   }
 
@@ -539,7 +539,7 @@ bool SharedFunctionInfo::has_simple_parameters() {
 }
 
 bool SharedFunctionInfo::CanCollectSourcePosition(Isolate* isolate) {
-  return FLAG_enable_lazy_source_positions && HasBytecodeArray() &&
+  return v8_flags.enable_lazy_source_positions && HasBytecodeArray() &&
          !GetBytecodeArray(isolate).HasSourcePositionTable();
 }
 
@@ -672,7 +672,7 @@ DEF_GETTER(SharedFunctionInfo, interpreter_data, InterpreterData) {
 
 void SharedFunctionInfo::set_interpreter_data(
     InterpreterData interpreter_data) {
-  DCHECK(FLAG_interpreted_frames_native_stack);
+  DCHECK(v8_flags.interpreted_frames_native_stack);
   DCHECK(!HasBaselineCode());
   set_function_data(interpreter_data, kReleaseStore);
 }
@@ -707,6 +707,10 @@ void SharedFunctionInfo::FlushBaselineCode() {
 #if V8_ENABLE_WEBASSEMBLY
 bool SharedFunctionInfo::HasAsmWasmData() const {
   return function_data(kAcquireLoad).IsAsmWasmData();
+}
+
+bool SharedFunctionInfo::HasWasmFunctionData() const {
+  return function_data(kAcquireLoad).IsWasmFunctionData();
 }
 
 bool SharedFunctionInfo::HasWasmExportedFunctionData() const {
@@ -904,7 +908,7 @@ bool SharedFunctionInfo::HasInferredName() {
   return HasUncompiledData();
 }
 
-String SharedFunctionInfo::inferred_name() {
+String SharedFunctionInfo::inferred_name() const {
   Object maybe_scope_info = name_or_scope_info(kAcquireLoad);
   if (maybe_scope_info.IsScopeInfo()) {
     ScopeInfo scope_info = ScopeInfo::cast(maybe_scope_info);
@@ -958,7 +962,6 @@ bool SharedFunctionInfo::are_properties_final() const {
 }  // namespace internal
 }  // namespace v8
 
-#include "src/base/platform/wrappers.h"
 #include "src/objects/object-macros-undef.h"
 
 #endif  // V8_OBJECTS_SHARED_FUNCTION_INFO_INL_H_

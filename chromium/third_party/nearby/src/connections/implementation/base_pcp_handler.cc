@@ -463,7 +463,7 @@ ConnectionInfo BasePcpHandler::FillConnectionInfo(
   ConnectionInfo connection_info;
   connection_info.local_endpoint_id = client->GetLocalEndpointId();
   connection_info.local_endpoint_info = info.endpoint_info;
-  connection_info.nonce = prng_.NextInt32();
+  connection_info.nonce = Prng().NextInt32();
   if (mediums_->GetWifi().IsAvailable()) {
     connection_info.supports_5_ghz =
         mediums_->GetWifi().GetCapability().supports_5_ghz;
@@ -905,7 +905,8 @@ Status BasePcpHandler::RejectConnection(ClientProxy* client,
 void BasePcpHandler::OnIncomingFrame(OfflineFrame& frame,
                                      const std::string& endpoint_id,
                                      ClientProxy* client,
-                                     proto::connections::Medium medium) {
+                                     proto::connections::Medium medium,
+                                     PacketMetaData& packet_meta_data) {
   CountDownLatch latch(1);
   RunOnPcpHandlerThread(
       "incoming-frame",

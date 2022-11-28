@@ -31,7 +31,8 @@ enum class SkBuiltInCodeSnippetID : int32_t {
 
     kLocalMatrixShader,
     kImageShader,
-    kBlendShader,     // aka ComposeShader
+    kPorterDuffBlendShader,     // ComposeShader (lightweight, only supports Porter-Duff blends)
+    kBlendShader,               // ComposeShader (more code, but supports every SkBlendMode)
     kRuntimeShader,
 
     // SkColorFilter code snippets
@@ -41,7 +42,10 @@ enum class SkBuiltInCodeSnippetID : int32_t {
     kTableColorFilter,
     kGaussianColorFilter,
 
-    // BlendMode code snippets
+    // SkBlender code snippets (evaluating a blend as part of the shader graph)
+    kPassthroughBlender,
+
+    // BlendMode code snippets (applying a blend to the destination)
     kFixedFunctionBlender,
     kShaderBasedBlender,
 

@@ -66,7 +66,6 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
-#include "include/gpu/graphite/SkStuff.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
 #endif
@@ -361,7 +360,7 @@ struct GraphiteTarget : public Target {
             return false;
         }
 
-        this->surface = MakeGraphite(this->recorder.get(), info);
+        this->surface = SkSurface::MakeGraphite(this->recorder.get(), info);
         if (!this->surface) {
             return false;
         }
@@ -690,7 +689,7 @@ void create_configs(SkTArray<Config>* configs) {
     }
 
     // If no just default configs were requested, then we're okay.
-    if (array.count() == 0 || FLAGS_config.count() == 0 ||
+    if (array.count() == 0 || FLAGS_config.size() == 0 ||
         // Otherwise, make sure that all specified configs have been created.
         array.count() == configs->count()) {
         return;
@@ -770,7 +769,7 @@ static void cleanup_run(Target* target) {
 static void collect_files(const CommandLineFlags::StringArray& paths,
                           const char*                          ext,
                           SkTArray<SkString>*                  list) {
-    for (int i = 0; i < paths.count(); ++i) {
+    for (int i = 0; i < paths.size(); ++i) {
         if (SkStrEndsWith(paths[i], ext)) {
             list->push_back(SkString(paths[i]));
         } else {
@@ -798,7 +797,7 @@ public:
             exit(1);
         }
 
-        for (int i = 0; i < FLAGS_scales.count(); i++) {
+        for (int i = 0; i < FLAGS_scales.size(); i++) {
             if (1 != sscanf(FLAGS_scales[i], "%f", &fScales.push_back())) {
                 SkDebugf("Can't parse %s from --scales as an SkScalar.\n", FLAGS_scales[i]);
                 exit(1);
@@ -1371,21 +1370,21 @@ int main(int argc, char** argv) {
     NanoJSONResultsWriter log(logStream.get(), SkJSONWriter::Mode::kPretty);
     log.beginObject(); // root
 
-    if (1 == FLAGS_properties.count() % 2) {
+    if (1 == FLAGS_properties.size() % 2) {
         SkDebugf("ERROR: --properties must be passed with an even number of arguments.\n");
         return 1;
     }
-    for (int i = 1; i < FLAGS_properties.count(); i += 2) {
+    for (int i = 1; i < FLAGS_properties.size(); i += 2) {
         log.appendCString(FLAGS_properties[i-1], FLAGS_properties[i]);
     }
 
-    if (1 == FLAGS_key.count() % 2) {
+    if (1 == FLAGS_key.size() % 2) {
         SkDebugf("ERROR: --key must be passed with an even number of arguments.\n");
         return 1;
     }
-    if (FLAGS_key.count()) {
+    if (FLAGS_key.size()) {
         log.beginObject("key");
-        for (int i = 1; i < FLAGS_key.count(); i += 2) {
+        for (int i = 1; i < FLAGS_key.size(); i += 2) {
             log.appendCString(FLAGS_key[i - 1], FLAGS_key[i]);
         }
         log.endObject(); // key
@@ -1429,9 +1428,15 @@ int main(int argc, char** argv) {
     gSkVMAllowJIT = FLAGS_jit;
     gSkVMJITViaDylib = FLAGS_dylib;
 
+    // The SkSL memory benchmark must run before any GPU painting occurs. SkSL allocates memory for
+    // its modules the first time they are accessed, and this test is trying to measure the size of
+    // those allocations. If a paint has already occurred, some modules will have already been
+    // loaded, so we won't be able to capture a delta for them.
+    log.beginObject("results");
+    RunSkSLModuleBenchmarks(&log);
+
     int runs = 0;
     BenchmarkStream benchStream;
-    log.beginObject("results");
     AutoreleasePool pool;
     while (Benchmark* b = benchStream.next()) {
         std::unique_ptr<Benchmark> bench(b);
@@ -1657,8 +1662,6 @@ int main(int argc, char** argv) {
     log.appendS32("max_rss_mb", sk_tools::getMaxResidentSetSizeMB());
     log.endObject(); // config
     log.endBench();
-
-    RunSkSLMemoryBenchmarks(&log);
 
     log.endObject(); // results
     log.endObject(); // root

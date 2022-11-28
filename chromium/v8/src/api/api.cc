@@ -30,6 +30,7 @@
 #include "src/api/api-natives.h"
 #include "src/base/functional.h"
 #include "src/base/logging.h"
+#include "src/base/platform/memory.h"
 #include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/safe_conversions.h"
@@ -61,6 +62,7 @@
 #include "src/execution/vm-state-inl.h"
 #include "src/handles/global-handles.h"
 #include "src/handles/persistent-handles.h"
+#include "src/handles/shared-object-conveyor-handles.h"
 #include "src/heap/embedder-tracing.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap-write-barrier.h"
@@ -282,7 +284,7 @@ void i::V8::FatalProcessOutOfMemory(i::Isolate* i_isolate, const char* location,
     // BUG(1718): Don't use the take_snapshot since we don't support
     // HeapObjectIterator here without doing a special GC.
     i_isolate->heap()->RecordStats(&heap_stats, false);
-    if (!FLAG_correctness_fuzzer_suppressions) {
+    if (!v8_flags.correctness_fuzzer_suppressions) {
       char* first_newline = strchr(last_few_messages, '\n');
       if (first_newline == nullptr || first_newline[1] == '\0')
         first_newline = last_few_messages;
@@ -354,7 +356,7 @@ void V8::SetSnapshotDataBlob(StartupData* snapshot_blob) {
 
 namespace {
 
-#ifdef V8_SANDBOXED_POINTERS
+#ifdef V8_ENABLE_SANDBOX
 // ArrayBufferAllocator to use when sandboxed pointers are used in which case
 // all ArrayBuffer backing stores need to be allocated inside the sandbox.
 // Note, the current implementation is extremely inefficient as it uses the
@@ -387,38 +389,16 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
 class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
  public:
-  void* Allocate(size_t length) override {
-#if V8_OS_AIX && _LINUX_SOURCE_COMPAT
-    // Work around for GCC bug on AIX
-    // See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79839
-    void* data = __linux_calloc(length, 1);
-#else
-    void* data = base::Calloc(length, 1);
-#endif
-    return data;
-  }
+  void* Allocate(size_t length) override { return base::Calloc(length, 1); }
 
   void* AllocateUninitialized(size_t length) override {
-#if V8_OS_AIX && _LINUX_SOURCE_COMPAT
-    // Work around for GCC bug on AIX
-    // See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79839
-    void* data = __linux_malloc(length);
-#else
-    void* data = base::Malloc(length);
-#endif
-    return data;
+    return base::Malloc(length);
   }
 
   void Free(void* data, size_t) override { base::Free(data); }
 
   void* Reallocate(void* data, size_t old_length, size_t new_length) override {
-#if V8_OS_AIX && _LINUX_SOURCE_COMPAT
-    // Work around for GCC bug on AIX
-    // See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79839
-    void* new_data = __linux_realloc(data, new_length);
-#else
     void* new_data = base::Realloc(data, new_length);
-#endif
     if (new_length > old_length) {
       memset(reinterpret_cast<uint8_t*>(new_data) + old_length, 0,
              new_length - old_length);
@@ -426,7 +406,7 @@ class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
     return new_data;
   }
 };
-#endif  // V8_SANDBOXED_POINTERS
+#endif  // V8_ENABLE_SANDBOX
 
 struct SnapshotCreatorData {
   explicit SnapshotCreatorData(Isolate* v8_isolate) : isolate_(v8_isolate) {}
@@ -815,7 +795,7 @@ i::Address* GlobalizeTracedReference(i::Isolate* i_isolate, i::Address* obj,
   i::Handle<i::Object> result =
       i_isolate->global_handles()->CreateTraced(*obj, slot, store_mode);
 #ifdef VERIFY_HEAP
-  if (i::FLAG_verify_heap) {
+  if (i::v8_flags.verify_heap) {
     i::Object(*obj).ObjectVerify(i_isolate);
   }
 #endif  // VERIFY_HEAP
@@ -843,7 +823,7 @@ i::Address* GlobalizeReference(i::Isolate* i_isolate, i::Address* obj) {
   API_RCS_SCOPE(i_isolate, Persistent, New);
   i::Handle<i::Object> result = i_isolate->global_handles()->Create(*obj);
 #ifdef VERIFY_HEAP
-  if (i::FLAG_verify_heap) {
+  if (i::v8_flags.verify_heap) {
     i::Object(*obj).ObjectVerify(i_isolate);
   }
 #endif  // VERIFY_HEAP
@@ -1208,6 +1188,15 @@ void Template::SetAccessorProperty(v8::Local<v8::Name> name,
                                    v8::Local<FunctionTemplate> setter,
                                    v8::PropertyAttribute attribute,
                                    v8::AccessControl access_control) {
+  Utils::ApiCheck(
+      getter.IsEmpty() ||
+          !Utils::OpenHandle(*getter)->call_code(kAcquireLoad).IsUndefined(),
+      "v8::Template::SetAccessorProperty", "Getter must have a call handler");
+  Utils::ApiCheck(
+      setter.IsEmpty() ||
+          !Utils::OpenHandle(*setter)->call_code(kAcquireLoad).IsUndefined(),
+      "v8::Template::SetAccessorProperty", "Setter must have a call handler");
+
   // TODO(verwaest): Remove |access_control|.
   DCHECK_EQ(v8::DEFAULT, access_control);
   auto templ = Utils::OpenHandle(this);
@@ -1444,7 +1433,6 @@ void FunctionTemplate::SetCallHandler(
   i::Handle<i::CallHandlerInfo> obj = i_isolate->factory()->NewCallHandlerInfo(
       side_effect_type == SideEffectType::kHasNoSideEffect);
   obj->set_callback(i_isolate, reinterpret_cast<i::Address>(callback));
-  obj->set_js_callback(i_isolate, obj->redirected_callback());
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
   }
@@ -1490,10 +1478,6 @@ i::Handle<i::AccessorInfo> MakeAccessorInfo(
     setter = reinterpret_cast<Setter>(&i::Accessors::ReconfigureToDataProperty);
   }
   obj->set_setter(i_isolate, reinterpret_cast<i::Address>(setter));
-  i::Address redirected = obj->redirected_getter();
-  if (redirected != i::kNullAddress) {
-    obj->set_js_getter(i_isolate, redirected);
-  }
 
   i::Handle<i::Name> accessor_name = Utils::OpenHandle(*name);
   if (!accessor_name->IsUniqueName()) {
@@ -1692,7 +1676,7 @@ void ObjectTemplate::SetAccessor(v8::Local<String> name,
                                  SideEffectType getter_side_effect_type,
                                  SideEffectType setter_side_effect_type) {
   TemplateSetAccessor(this, name, getter, setter, data, settings, attribute,
-                      i::FLAG_disable_old_api_accessors, false,
+                      i::v8_flags.disable_old_api_accessors, false,
                       getter_side_effect_type, setter_side_effect_type);
 }
 
@@ -1704,7 +1688,7 @@ void ObjectTemplate::SetAccessor(v8::Local<Name> name,
                                  SideEffectType getter_side_effect_type,
                                  SideEffectType setter_side_effect_type) {
   TemplateSetAccessor(this, name, getter, setter, data, settings, attribute,
-                      i::FLAG_disable_old_api_accessors, false,
+                      i::v8_flags.disable_old_api_accessors, false,
                       getter_side_effect_type, setter_side_effect_type);
 }
 
@@ -1900,7 +1884,6 @@ void ObjectTemplate::SetCallAsFunctionHandler(FunctionCallback callback,
   i::Handle<i::CallHandlerInfo> obj =
       i_isolate->factory()->NewCallHandlerInfo();
   obj->set_callback(i_isolate, reinterpret_cast<i::Address>(callback));
-  obj->set_js_callback(i_isolate, obj->redirected_callback());
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
   }
@@ -1953,8 +1936,32 @@ void ObjectTemplate::SetCodeLike() {
 
 // --- S c r i p t s ---
 
-// Internally, UnboundScript is a SharedFunctionInfo, and Script is a
-// JSFunction.
+// Internally, UnboundScript and UnboundModuleScript are SharedFunctionInfos,
+// and Script is a JSFunction.
+
+namespace {
+inline Local<Value> GetSharedFunctionInfoSourceMappingURL(
+    i::Isolate* isolate, i::Handle<i::SharedFunctionInfo> obj) {
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
+  if (obj->script().IsScript()) {
+    i::Object url = i::Script::cast(obj->script()).source_mapping_url();
+    return Utils::ToLocal(i::Handle<i::Object>(url, isolate));
+  } else {
+    return Local<String>();
+  }
+}
+
+inline Local<Value> GetSharedFunctionInfoSourceURL(
+    i::Isolate* isolate, i::Handle<i::SharedFunctionInfo> obj) {
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
+  if (obj->script().IsScript()) {
+    i::Object url = i::Script::cast(obj->script()).source_url();
+    return Utils::ToLocal(i::Handle<i::Object>(url, isolate));
+  } else {
+    return Local<String>();
+  }
+}
+}  // namespace
 
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
                                        BufferPolicy buffer_policy_)
@@ -2039,14 +2046,8 @@ Local<Value> UnboundScript::GetSourceURL() {
   i::Handle<i::SharedFunctionInfo> obj =
       i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
   i::Isolate* i_isolate = obj->GetIsolate();
-  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   API_RCS_SCOPE(i_isolate, UnboundScript, GetSourceURL);
-  if (obj->script().IsScript()) {
-    i::Object url = i::Script::cast(obj->script()).source_url();
-    return Utils::ToLocal(i::Handle<i::Object>(url, i_isolate));
-  } else {
-    return Local<String>();
-  }
+  return GetSharedFunctionInfoSourceURL(i_isolate, obj);
 }
 
 Local<Value> UnboundScript::GetSourceMappingURL() {
@@ -2054,13 +2055,23 @@ Local<Value> UnboundScript::GetSourceMappingURL() {
       i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
   i::Isolate* i_isolate = obj->GetIsolate();
   API_RCS_SCOPE(i_isolate, UnboundScript, GetSourceMappingURL);
-  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  if (obj->script().IsScript()) {
-    i::Object url = i::Script::cast(obj->script()).source_mapping_url();
-    return Utils::ToLocal(i::Handle<i::Object>(url, i_isolate));
-  } else {
-    return Local<String>();
-  }
+  return GetSharedFunctionInfoSourceMappingURL(i_isolate, obj);
+}
+
+Local<Value> UnboundModuleScript::GetSourceURL() {
+  i::Handle<i::SharedFunctionInfo> obj =
+      i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
+  i::Isolate* i_isolate = obj->GetIsolate();
+  API_RCS_SCOPE(i_isolate, UnboundModuleScript, GetSourceURL);
+  return GetSharedFunctionInfoSourceURL(i_isolate, obj);
+}
+
+Local<Value> UnboundModuleScript::GetSourceMappingURL() {
+  i::Handle<i::SharedFunctionInfo> obj =
+      i::Handle<i::SharedFunctionInfo>::cast(Utils::OpenHandle(this));
+  i::Isolate* i_isolate = obj->GetIsolate();
+  API_RCS_SCOPE(i_isolate, UnboundModuleScript, GetSourceMappingURL);
+  return GetSharedFunctionInfoSourceMappingURL(i_isolate, obj);
 }
 
 MaybeLocal<Value> Script::Run(Local<Context> context) {
@@ -2089,7 +2100,7 @@ MaybeLocal<Value> Script::Run(Local<Context> context,
   //
   // To avoid this, on running scripts check first if JIT code log is
   // pending and generate immediately.
-  if (i::FLAG_enable_etw_stack_walking) {
+  if (i::v8_flags.enable_etw_stack_walking) {
     i::ETWJITInterface::MaybeSetHandlerNow(i_isolate);
   }
 #endif
@@ -2098,14 +2109,15 @@ MaybeLocal<Value> Script::Run(Local<Context> context,
   // TODO(crbug.com/1193459): remove once ablation study is completed
   base::ElapsedTimer timer;
   base::TimeDelta delta;
-  if (i::FLAG_script_delay > 0) {
-    delta = v8::base::TimeDelta::FromMillisecondsD(i::FLAG_script_delay);
+  if (i::v8_flags.script_delay > 0) {
+    delta = v8::base::TimeDelta::FromMillisecondsD(i::v8_flags.script_delay);
   }
-  if (i::FLAG_script_delay_once > 0 && !i_isolate->did_run_script_delay()) {
-    delta = v8::base::TimeDelta::FromMillisecondsD(i::FLAG_script_delay_once);
+  if (i::v8_flags.script_delay_once > 0 && !i_isolate->did_run_script_delay()) {
+    delta =
+        v8::base::TimeDelta::FromMillisecondsD(i::v8_flags.script_delay_once);
     i_isolate->set_did_run_script_delay(true);
   }
-  if (i::FLAG_script_delay_fraction > 0.0) {
+  if (i::v8_flags.script_delay_fraction > 0.0) {
     timer.Start();
   } else if (delta.InMicroseconds() > 0) {
     timer.Start();
@@ -2114,7 +2126,7 @@ MaybeLocal<Value> Script::Run(Local<Context> context,
     }
   }
 
-  if (V8_UNLIKELY(i::FLAG_experimental_web_snapshots)) {
+  if (V8_UNLIKELY(i::v8_flags.experimental_web_snapshots)) {
     i::Handle<i::HeapObject> maybe_script =
         handle(fun->shared().script(), i_isolate);
     if (maybe_script->IsScript() &&
@@ -2138,9 +2150,9 @@ MaybeLocal<Value> Script::Run(Local<Context> context,
   has_pending_exception = !ToLocal<Value>(
       i::Execution::CallScript(i_isolate, fun, receiver, options), &result);
 
-  if (i::FLAG_script_delay_fraction > 0.0) {
+  if (i::v8_flags.script_delay_fraction > 0.0) {
     delta = v8::base::TimeDelta::FromMillisecondsD(
-        timer.Elapsed().InMillisecondsF() * i::FLAG_script_delay_fraction);
+        timer.Elapsed().InMillisecondsF() * i::v8_flags.script_delay_fraction);
     timer.Restart();
     while (timer.Elapsed() < delta) {
       // Busy wait.
@@ -2731,7 +2743,7 @@ ScriptCompiler::ScriptStreamingTask* ScriptCompiler::StartStreaming(
   Utils::ApiCheck(options == kNoCompileOptions || options == kEagerCompile,
                   "v8::ScriptCompiler::StartStreaming",
                   "Invalid CompileOptions");
-  if (!i::FLAG_script_streaming) return nullptr;
+  if (!i::v8_flags.script_streaming) return nullptr;
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   i::ScriptStreamingData* data = source->impl();
   std::unique_ptr<i::BackgroundCompileTask> task =
@@ -2764,20 +2776,22 @@ void ScriptCompiler::ConsumeCodeCacheTask::SourceTextAvailable(
 
 bool ScriptCompiler::ConsumeCodeCacheTask::ShouldMergeWithExistingScript()
     const {
-  if (!i::FLAG_merge_background_deserialized_script_with_compilation_cache) {
+  if (!i::v8_flags
+           .merge_background_deserialized_script_with_compilation_cache) {
     return false;
   }
   return impl_->ShouldMergeWithExistingScript();
 }
 
 void ScriptCompiler::ConsumeCodeCacheTask::MergeWithExistingScript() {
-  DCHECK(i::FLAG_merge_background_deserialized_script_with_compilation_cache);
+  DCHECK(
+      i::v8_flags.merge_background_deserialized_script_with_compilation_cache);
   impl_->MergeWithExistingScript();
 }
 
 ScriptCompiler::ConsumeCodeCacheTask* ScriptCompiler::StartConsumingCodeCache(
     Isolate* v8_isolate, std::unique_ptr<CachedData> cached_data) {
-  if (!i::FLAG_concurrent_cache_deserialization) return nullptr;
+  if (!i::v8_flags.concurrent_cache_deserialization) return nullptr;
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   DCHECK_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   return new ScriptCompiler::ConsumeCodeCacheTask(
@@ -3357,6 +3371,21 @@ MaybeLocal<String> JSON::Stringify(Local<Context> context,
 
 // --- V a l u e   S e r i a l i z a t i o n ---
 
+SharedValueConveyor::SharedValueConveyor(SharedValueConveyor&& other) noexcept
+    : private_(std::move(other.private_)) {}
+
+SharedValueConveyor::~SharedValueConveyor() = default;
+
+SharedValueConveyor& SharedValueConveyor::operator=(
+    SharedValueConveyor&& other) noexcept {
+  private_ = std::move(other.private_);
+  return *this;
+}
+
+SharedValueConveyor::SharedValueConveyor(Isolate* v8_isolate)
+    : private_(std::make_unique<i::SharedObjectConveyorHandles>(
+          reinterpret_cast<i::Isolate*>(v8_isolate))) {}
+
 Maybe<bool> ValueSerializer::Delegate::WriteHostObject(Isolate* v8_isolate,
                                                        Local<Object> object) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
@@ -3380,15 +3409,13 @@ Maybe<uint32_t> ValueSerializer::Delegate::GetWasmModuleTransferId(
   return Nothing<uint32_t>();
 }
 
-bool ValueSerializer::Delegate::SupportsSharedValues() const { return false; }
-
-Maybe<uint32_t> ValueSerializer::Delegate::GetSharedValueId(
-    Isolate* v8_isolate, Local<Value> shared_value) {
+bool ValueSerializer::Delegate::AdoptSharedValueConveyor(
+    Isolate* v8_isolate, SharedValueConveyor&& conveyor) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   i_isolate->ScheduleThrow(*i_isolate->factory()->NewError(
       i_isolate->error_function(), i::MessageTemplate::kDataCloneError,
-      Utils::OpenHandle(*shared_value)));
-  return Nothing<uint32_t>();
+      i_isolate->factory()->NewStringFromAsciiChecked("shared value")));
+  return false;
 }
 
 void* ValueSerializer::Delegate::ReallocateBufferMemory(void* old_buffer,
@@ -3480,17 +3507,6 @@ MaybeLocal<WasmModuleObject> ValueDeserializer::Delegate::GetWasmModuleFromId(
   return MaybeLocal<WasmModuleObject>();
 }
 
-bool ValueDeserializer::Delegate::SupportsSharedValues() const { return false; }
-
-MaybeLocal<Value> ValueDeserializer::Delegate::GetSharedValueFromId(
-    Isolate* v8_isolate, uint32_t shared_value_id) {
-  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  i_isolate->ScheduleThrow(*i_isolate->factory()->NewError(
-      i_isolate->error_function(),
-      i::MessageTemplate::kDataCloneDeserializationError));
-  return MaybeLocal<Value>();
-}
-
 MaybeLocal<SharedArrayBuffer>
 ValueDeserializer::Delegate::GetSharedArrayBufferFromId(Isolate* v8_isolate,
                                                         uint32_t id) {
@@ -3499,6 +3515,15 @@ ValueDeserializer::Delegate::GetSharedArrayBufferFromId(Isolate* v8_isolate,
       i_isolate->error_function(),
       i::MessageTemplate::kDataCloneDeserializationError));
   return MaybeLocal<SharedArrayBuffer>();
+}
+
+const SharedValueConveyor* ValueDeserializer::Delegate::GetSharedValueConveyor(
+    Isolate* v8_isolate) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
+  i_isolate->ScheduleThrow(*i_isolate->factory()->NewError(
+      i_isolate->error_function(),
+      i::MessageTemplate::kDataCloneDeserializationError));
+  return nullptr;
 }
 
 struct ValueDeserializer::PrivateData {
@@ -4742,11 +4767,16 @@ MaybeLocal<String> v8::Object::ObjectProtoToString(Local<Context> context) {
 }
 
 Local<String> v8::Object::GetConstructorName() {
+  // TODO(v8:12547): Consider adding GetConstructorName(Local<Context>).
   auto self = Utils::OpenHandle(this);
-  // TODO(v8:12547): Support shared objects.
-  DCHECK(!self->InSharedHeap());
+  i::Isolate* i_isolate;
+  if (self->InSharedWritableHeap()) {
+    i_isolate = i::Isolate::Current();
+  } else {
+    i_isolate = self->GetIsolate();
+  }
   i::Handle<i::String> name =
-      i::JSReceiver::GetConstructorName(self->GetIsolate(), self);
+      i::JSReceiver::GetConstructorName(i_isolate, self);
   return Utils::ToLocal(name);
 }
 
@@ -4896,7 +4926,7 @@ Maybe<bool> Object::SetAccessor(Local<Context> context, Local<Name> name,
                                 SideEffectType setter_side_effect_type) {
   return ObjectSetAccessor(context, this, name, getter, setter,
                            data.FromMaybe(Local<Value>()), settings, attribute,
-                           i::FLAG_disable_old_api_accessors, false,
+                           i::v8_flags.disable_old_api_accessors, false,
                            getter_side_effect_type, setter_side_effect_type);
 }
 
@@ -5786,19 +5816,53 @@ int String::Write(Isolate* v8_isolate, uint16_t* buffer, int start, int length,
                      start, length, options);
 }
 
+namespace {
+
+bool HasExternalStringResource(i::String string) {
+  return i::StringShape(string).IsExternal() ||
+         string.HasExternalForwardingIndex(kAcquireLoad);
+}
+
+v8::String::ExternalStringResourceBase* GetExternalResourceFromForwardingTable(
+    i::String string, uint32_t raw_hash, bool* is_one_byte) {
+  DCHECK(i::String::IsExternalForwardingIndex(raw_hash));
+  const int index = i::String::ForwardingIndexValueBits::decode(raw_hash);
+  i::Isolate* isolate = i::GetIsolateFromWritableObject(string);
+  auto resource = isolate->string_forwarding_table()->GetExternalResource(
+      index, is_one_byte);
+  DCHECK_NOT_NULL(resource);
+  return resource;
+}
+
+}  // namespace
+
 bool v8::String::IsExternal() const {
   i::Handle<i::String> str = Utils::OpenHandle(this);
-  return i::StringShape(*str).IsExternal();
+  return HasExternalStringResource(*str);
 }
 
 bool v8::String::IsExternalTwoByte() const {
   i::Handle<i::String> str = Utils::OpenHandle(this);
-  return i::StringShape(*str).IsExternalTwoByte();
+  if (i::StringShape(*str).IsExternalTwoByte()) return true;
+  uint32_t raw_hash_field = str->raw_hash_field(kAcquireLoad);
+  if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+    bool is_one_byte;
+    GetExternalResourceFromForwardingTable(*str, raw_hash_field, &is_one_byte);
+    return !is_one_byte;
+  }
+  return false;
 }
 
 bool v8::String::IsExternalOneByte() const {
   i::Handle<i::String> str = Utils::OpenHandle(this);
-  return i::StringShape(*str).IsExternalOneByte();
+  if (i::StringShape(*str).IsExternalOneByte()) return true;
+  uint32_t raw_hash_field = str->raw_hash_field(kAcquireLoad);
+  if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+    bool is_one_byte;
+    GetExternalResourceFromForwardingTable(*str, raw_hash_field, &is_one_byte);
+    return is_one_byte;
+  }
+  return false;
 }
 
 void v8::String::VerifyExternalStringResource(
@@ -5815,7 +5879,17 @@ void v8::String::VerifyExternalStringResource(
     const void* resource = i::ExternalTwoByteString::cast(str).resource();
     expected = reinterpret_cast<const ExternalStringResource*>(resource);
   } else {
-    expected = nullptr;
+    uint32_t raw_hash_field = str.raw_hash_field(kAcquireLoad);
+    if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+      bool is_one_byte;
+      auto resource = GetExternalResourceFromForwardingTable(
+          str, raw_hash_field, &is_one_byte);
+      if (!is_one_byte) {
+        expected = reinterpret_cast<const ExternalStringResource*>(resource);
+      }
+    } else {
+      expected = nullptr;
+    }
   }
   CHECK_EQ(expected, value);
 }
@@ -5840,9 +5914,17 @@ void v8::String::VerifyExternalStringResourceBase(
     expected = reinterpret_cast<const ExternalStringResourceBase*>(resource);
     expectedEncoding = TWO_BYTE_ENCODING;
   } else {
-    expected = nullptr;
-    expectedEncoding =
-        str.IsOneByteRepresentation() ? ONE_BYTE_ENCODING : TWO_BYTE_ENCODING;
+    uint32_t raw_hash_field = str.raw_hash_field(kAcquireLoad);
+    if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+      bool is_one_byte;
+      expected = GetExternalResourceFromForwardingTable(str, raw_hash_field,
+                                                        &is_one_byte);
+      expectedEncoding = is_one_byte ? ONE_BYTE_ENCODING : TWO_BYTE_ENCODING;
+    } else {
+      expected = nullptr;
+      expectedEncoding =
+          str.IsOneByteRepresentation() ? ONE_BYTE_ENCODING : TWO_BYTE_ENCODING;
+    }
   }
   CHECK_EQ(expected, value);
   CHECK_EQ(expectedEncoding, encoding);
@@ -5862,6 +5944,16 @@ String::ExternalStringResource* String::GetExternalStringResourceSlow() const {
         i::Internals::ReadExternalPointerField<i::kExternalStringResourceTag>(
             isolate, str.ptr(), i::Internals::kStringResourceOffset);
     return reinterpret_cast<String::ExternalStringResource*>(value);
+  } else {
+    uint32_t raw_hash_field = str.raw_hash_field(kAcquireLoad);
+    if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+      bool is_one_byte;
+      auto resource = GetExternalResourceFromForwardingTable(
+          str, raw_hash_field, &is_one_byte);
+      if (!is_one_byte) {
+        return reinterpret_cast<ExternalStringResource*>(resource);
+      }
+    }
   }
   return nullptr;
 }
@@ -5906,6 +5998,15 @@ String::ExternalStringResourceBase* String::GetExternalStringResourceBaseSlow(
         i::Internals::ReadExternalPointerField<i::kExternalStringResourceTag>(
             isolate, string, i::Internals::kStringResourceOffset);
     resource = reinterpret_cast<ExternalStringResourceBase*>(value);
+  } else {
+    uint32_t raw_hash_field = str.raw_hash_field();
+    if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+      bool is_one_byte;
+      resource = GetExternalResourceFromForwardingTable(str, raw_hash_field,
+                                                        &is_one_byte);
+      *encoding_out = is_one_byte ? Encoding::ONE_BYTE_ENCODING
+                                  : Encoding::TWO_BYTE_ENCODING;
+    }
   }
   return resource;
 }
@@ -5920,6 +6021,15 @@ v8::String::GetExternalOneByteStringResource() const {
     str = i::ThinString::cast(str).actual();
     if (i::StringShape(str).IsExternalOneByte()) {
       return i::ExternalOneByteString::cast(str).resource();
+    }
+  }
+  uint32_t raw_hash_field = str.raw_hash_field(kAcquireLoad);
+  if (i::String::IsExternalForwardingIndex(raw_hash_field)) {
+    bool is_one_byte;
+    auto resource = GetExternalResourceFromForwardingTable(str, raw_hash_field,
+                                                           &is_one_byte);
+    if (is_one_byte) {
+      return reinterpret_cast<ExternalOneByteStringResource*>(resource);
     }
   }
   return nullptr;
@@ -6062,12 +6172,6 @@ void v8::V8::InitializePlatform(Platform* platform) {
   i::V8::InitializePlatform(platform);
 }
 
-#ifdef V8_ENABLE_SANDBOX
-// Sandbox initialization now happens during V8::Initialize.
-// TODO(saelo) remove this function once Embedders no longer use it.
-bool v8::V8::InitializeSandbox() { return true; }
-#endif  // V8_ENABLE_SANDBOX
-
 void v8::V8::DisposePlatform() { i::V8::DisposePlatform(); }
 
 bool v8::V8::Initialize(const int build_config) {
@@ -6087,17 +6191,6 @@ bool v8::V8::Initialize(const int build_config) {
         "Embedder-vs-V8 build configuration mismatch. On embedder side "
         "Smi value size is %d while on V8 side it's %d.",
         kEmbedderSmiValueSize, internal::kSmiValueSize);
-  }
-
-  const bool kEmbedderSandboxedExternalPointers =
-      (build_config & kSandboxedExternalPointers) != 0;
-  if (kEmbedderSandboxedExternalPointers !=
-      V8_SANDBOXED_EXTERNAL_POINTERS_BOOL) {
-    FATAL(
-        "Embedder-vs-V8 build configuration mismatch. On embedder side "
-        "sandboxed external pointers is %s while on V8 side it's %s.",
-        kEmbedderSandboxedExternalPointers ? "ENABLED" : "DISABLED",
-        V8_SANDBOXED_EXTERNAL_POINTERS_BOOL ? "ENABLED" : "DISABLED");
   }
 
   const bool kEmbedderSandbox = (build_config & kSandbox) != 0;
@@ -6240,11 +6333,10 @@ VirtualAddressSpace* v8::V8::GetSandboxAddressSpace() {
 }
 
 size_t v8::V8::GetSandboxSizeInBytes() {
-  if (!i::GetProcessWideSandbox()->is_initialized()) {
-    return 0;
-  } else {
-    return i::GetProcessWideSandbox()->size();
-  }
+  Utils::ApiCheck(i::GetProcessWideSandbox()->is_initialized(),
+                  "v8::V8::GetSandboxSizeInBytes",
+                  "The sandbox must be initialized first.");
+  return i::GetProcessWideSandbox()->size();
 }
 
 size_t v8::V8::GetSandboxReservationSizeInBytes() {
@@ -6651,6 +6743,14 @@ void v8::Context::SetPromiseHooks(Local<Function> init_hook,
 #endif  // V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
 }
 
+bool Context::HasTemplateLiteralObject(Local<Value> object) {
+  i::DisallowGarbageCollection no_gc;
+  i::Object i_object = *Utils::OpenHandle(*object);
+  if (!i_object.IsJSArray()) return false;
+  return Utils::OpenHandle(this)->native_context().HasTemplateLiteralObject(
+      i::JSArray::cast(i_object));
+}
+
 MaybeLocal<Context> metrics::Recorder::GetContext(
     Isolate* v8_isolate, metrics::Recorder::ContextId id) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
@@ -6994,16 +7094,22 @@ bool v8::String::MakeExternal(v8::String::ExternalStringResource* resource) {
     return false;
   }
 
-  // It is safe to call GetIsolateFromWritableHeapObject because
-  // SupportsExternalization already checked that the object is writable.
-  i::Isolate* i_isolate = i::GetIsolateFromWritableObject(obj);
+  // TODO(v8:12007): Consider adding
+  // MakeExternal(Isolate*, ExternalStringResource*).
+  i::Isolate* i_isolate;
+  if (obj.IsShared()) {
+    i_isolate = i::Isolate::Current();
+  } else {
+    // It is safe to call GetIsolateFromWritableHeapObject because
+    // SupportsExternalization already checked that the object is writable.
+    i_isolate = i::GetIsolateFromWritableObject(obj);
+  }
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
 
   CHECK(resource && resource->data());
 
   bool result = obj.MakeExternal(resource);
-  DCHECK(result);
-  DCHECK(obj.IsExternalString());
+  DCHECK_IMPLIES(result, HasExternalStringResource(obj));
   return result;
 }
 
@@ -7021,15 +7127,22 @@ bool v8::String::MakeExternal(
     return false;
   }
 
-  // It is safe to call GetIsolateFromWritableHeapObject because
-  // SupportsExternalization already checked that the object is writable.
-  i::Isolate* i_isolate = i::GetIsolateFromWritableObject(obj);
+  // TODO(v8:12007): Consider adding
+  // MakeExternal(Isolate*, ExternalOneByteStringResource*).
+  i::Isolate* i_isolate;
+  if (obj.IsShared()) {
+    i_isolate = i::Isolate::Current();
+  } else {
+    // It is safe to call GetIsolateFromWritableHeapObject because
+    // SupportsExternalization already checked that the object is writable.
+    i_isolate = i::GetIsolateFromWritableObject(obj);
+  }
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
 
   CHECK(resource && resource->data());
 
   bool result = obj.MakeExternal(resource);
-  DCHECK_IMPLIES(result, obj.IsExternalString());
+  DCHECK_IMPLIES(result, HasExternalStringResource(obj));
   return result;
 }
 
@@ -7362,6 +7475,7 @@ REGEXP_FLAG_ASSERT_EQ(kSticky);
 REGEXP_FLAG_ASSERT_EQ(kUnicode);
 REGEXP_FLAG_ASSERT_EQ(kHasIndices);
 REGEXP_FLAG_ASSERT_EQ(kLinear);
+REGEXP_FLAG_ASSERT_EQ(kUnicodeSets);
 #undef REGEXP_FLAG_ASSERT_EQ
 
 v8::RegExp::Flags v8::RegExp::GetFlags() const {
@@ -8042,12 +8156,12 @@ std::unique_ptr<v8::BackingStore> v8::ArrayBuffer::NewBackingStore(
     void* deleter_data) {
   CHECK_LE(byte_length, i::JSArrayBuffer::kMaxByteLength);
 #ifdef V8_ENABLE_SANDBOX
-  Utils::ApiCheck(
-      !data || i::GetProcessWideSandbox()->Contains(data),
-      "v8_ArrayBuffer_NewBackingStore",
-      "When the V8 Sandbox is enabled, ArrayBuffer backing stores must be "
-      "allocated inside the sandbox address space. Please use an appropriate "
-      "ArrayBuffer::Allocator to allocate these buffers.");
+  Utils::ApiCheck(!data || i::GetProcessWideSandbox()->Contains(data),
+                  "v8_ArrayBuffer_NewBackingStore",
+                  "When the V8 Sandbox is enabled, ArrayBuffer backing stores "
+                  "must be allocated inside the sandbox address space. Please "
+                  "use an appropriate ArrayBuffer::Allocator to allocate these "
+                  "buffers, or disable the sandbox.");
 #endif  // V8_ENABLE_SANDBOX
 
   std::unique_ptr<i::BackingStoreBase> backing_store =
@@ -8139,7 +8253,7 @@ static_assert(
   Local<Type##Array> Type##Array::New(                                      \
       Local<SharedArrayBuffer> shared_array_buffer, size_t byte_offset,     \
       size_t length) {                                                      \
-    CHECK(i::FLAG_harmony_sharedarraybuffer);                               \
+    CHECK(i::v8_flags.harmony_sharedarraybuffer);                           \
     i::Isolate* i_isolate =                                                 \
         Utils::OpenHandle(*shared_array_buffer)->GetIsolate();              \
     API_RCS_SCOPE(i_isolate, Type##Array, New);                             \
@@ -8174,7 +8288,7 @@ Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer,
 
 Local<DataView> DataView::New(Local<SharedArrayBuffer> shared_array_buffer,
                               size_t byte_offset, size_t byte_length) {
-  CHECK(i::FLAG_harmony_sharedarraybuffer);
+  CHECK(i::v8_flags.harmony_sharedarraybuffer);
   i::Handle<i::JSArrayBuffer> buffer = Utils::OpenHandle(*shared_array_buffer);
   i::Isolate* i_isolate = buffer->GetIsolate();
   API_RCS_SCOPE(i_isolate, DataView, New);
@@ -8191,7 +8305,7 @@ size_t v8::SharedArrayBuffer::ByteLength() const {
 
 Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(Isolate* v8_isolate,
                                                     size_t byte_length) {
-  CHECK(i::FLAG_harmony_sharedarraybuffer);
+  CHECK(i::v8_flags.harmony_sharedarraybuffer);
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   API_RCS_SCOPE(i_isolate, SharedArrayBuffer, New);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
@@ -8213,7 +8327,7 @@ Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(Isolate* v8_isolate,
 
 Local<SharedArrayBuffer> v8::SharedArrayBuffer::New(
     Isolate* v8_isolate, std::shared_ptr<BackingStore> backing_store) {
-  CHECK(i::FLAG_harmony_sharedarraybuffer);
+  CHECK(i::v8_flags.harmony_sharedarraybuffer);
   CHECK_IMPLIES(backing_store->ByteLength() != 0,
                 backing_store->Data() != nullptr);
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
@@ -8531,6 +8645,8 @@ void Isolate::RemoveGCEpilogueCallback(GCCallback callback) {
   RemoveGCEpilogueCallback(CallGCCallbackWithoutData, data);
 }
 
+START_ALLOW_USE_DEPRECATED()
+
 void Isolate::SetEmbedderHeapTracer(EmbedderHeapTracer* tracer) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
   CHECK_NULL(i_isolate->heap()->cpp_heap());
@@ -8541,6 +8657,8 @@ EmbedderHeapTracer* Isolate::GetEmbedderHeapTracer() {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
   return i_isolate->heap()->GetEmbedderHeapTracer();
 }
+
+END_ALLOW_USE_DEPRECATED()
 
 void Isolate::SetEmbedderRootsHandler(EmbedderRootsHandler* handler) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
@@ -8600,7 +8718,7 @@ bool Isolate::HasPendingBackgroundTasks() {
 }
 
 void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
-  Utils::ApiCheck(i::FLAG_expose_gc,
+  Utils::ApiCheck(i::v8_flags.expose_gc,
                   "v8::Isolate::RequestGarbageCollectionForTesting",
                   "Must use --expose-gc");
   if (type == kMinorGarbageCollection) {
@@ -8615,9 +8733,8 @@ void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type) {
   }
 }
 
-void Isolate::RequestGarbageCollectionForTesting(
-    GarbageCollectionType type,
-    EmbedderHeapTracer::EmbedderStackState stack_state) {
+void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type,
+                                                 StackState stack_state) {
   base::Optional<i::EmbedderStackStateScope> stack_scope;
   if (type == kFullGarbageCollection) {
     stack_scope.emplace(reinterpret_cast<i::Isolate*>(this)->heap(),
@@ -8709,11 +8826,6 @@ void Isolate::Initialize(Isolate* v8_isolate,
     i_isolate->stack_guard()->SetStackLimit(limit);
   }
 
-  if (params.experimental_attach_to_shared_isolate != nullptr) {
-    i_isolate->set_shared_isolate(reinterpret_cast<i::Isolate*>(
-        params.experimental_attach_to_shared_isolate));
-  }
-
   // TODO(v8:2487): Once we got rid of Isolate::Current(), we can remove this.
   Isolate::Scope isolate_scope(v8_isolate);
   if (i_isolate->snapshot_blob() == nullptr) {
@@ -8746,9 +8858,9 @@ void Isolate::Initialize(Isolate* v8_isolate,
   i_isolate->set_embedder_wrapper_object_index(
       params.embedder_wrapper_object_index);
 
-  if (!i::V8::GetCurrentPlatform()
-           ->GetForegroundTaskRunner(v8_isolate)
-           ->NonNestableTasksEnabled()) {
+  if (!i_isolate->is_shared() && !i::V8::GetCurrentPlatform()
+                                      ->GetForegroundTaskRunner(v8_isolate)
+                                      ->NonNestableTasksEnabled()) {
     FATAL(
         "The current platform's foreground task runner does not have "
         "non-nestable tasks enabled. The embedder must provide one.");
@@ -9122,7 +9234,7 @@ int64_t Isolate::AdjustAmountOfExternalAllocatedMemory(
 
 void Isolate::SetEventLogger(LogEventCallback that) {
   // Do not overwrite the event logger if we want to log explicitly.
-  if (i::FLAG_log_internal_timer_events) return;
+  if (i::v8_flags.log_internal_timer_events) return;
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
   i_isolate->set_event_logger(that);
 }
@@ -9255,7 +9367,7 @@ bool Isolate::IdleNotificationDeadline(double deadline_in_seconds) {
   // Returning true tells the caller that it need not
   // continue to call IdleNotification.
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(this);
-  if (!i::FLAG_use_idle_notification) return true;
+  if (!i::v8_flags.use_idle_notification) return true;
   return i_isolate->heap()->IdleNotification(deadline_in_seconds);
 }
 
@@ -9458,7 +9570,7 @@ void Isolate::InstallConditionalFeatures(Local<Context> context) {
   if (i_isolate->is_execution_terminating()) return;
   i_isolate->InstallConditionalFeatures(Utils::OpenHandle(*context));
 #if V8_ENABLE_WEBASSEMBLY
-  if (i::FLAG_expose_wasm && !i_isolate->has_pending_exception()) {
+  if (i::v8_flags.expose_wasm && !i_isolate->has_pending_exception()) {
     i::WasmJs::InstallConditionalFeatures(i_isolate,
                                           Utils::OpenHandle(*context));
   }
@@ -10496,8 +10608,6 @@ void WasmStreaming::Abort(MaybeLocal<Value> exception) { UNREACHABLE(); }
 bool WasmStreaming::SetCompiledModuleBytes(const uint8_t* bytes, size_t size) {
   UNREACHABLE();
 }
-
-void WasmStreaming::SetClient(std::shared_ptr<Client> client) { UNREACHABLE(); }
 
 void WasmStreaming::SetMoreFunctionsCanBeSerializedCallback(
     std::function<void(CompiledWasmModule)>) {

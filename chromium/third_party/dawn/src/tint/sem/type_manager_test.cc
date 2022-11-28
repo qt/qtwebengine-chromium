@@ -34,14 +34,14 @@ size_t count(const T& range_loopable) {
 using TypeManagerTest = testing::Test;
 
 TEST_F(TypeManagerTest, GetUnregistered) {
-    Manager tm;
+    TypeManager tm;
     auto* t = tm.Get<I32>();
     ASSERT_NE(t, nullptr);
     EXPECT_TRUE(t->Is<I32>());
 }
 
 TEST_F(TypeManagerTest, GetSameTypeReturnsSamePtr) {
-    Manager tm;
+    TypeManager tm;
     auto* t = tm.Get<I32>();
     ASSERT_NE(t, nullptr);
     EXPECT_TRUE(t->Is<I32>());
@@ -51,7 +51,7 @@ TEST_F(TypeManagerTest, GetSameTypeReturnsSamePtr) {
 }
 
 TEST_F(TypeManagerTest, GetDifferentTypeReturnsDifferentPtr) {
-    Manager tm;
+    TypeManager tm;
     Type* t = tm.Get<I32>();
     ASSERT_NE(t, nullptr);
     EXPECT_TRUE(t->Is<I32>());
@@ -62,9 +62,17 @@ TEST_F(TypeManagerTest, GetDifferentTypeReturnsDifferentPtr) {
     EXPECT_TRUE(t2->Is<U32>());
 }
 
+TEST_F(TypeManagerTest, Find) {
+    TypeManager tm;
+    auto* created = tm.Get<I32>();
+
+    EXPECT_EQ(tm.Find<U32>(), nullptr);
+    EXPECT_EQ(tm.Find<I32>(), created);
+}
+
 TEST_F(TypeManagerTest, WrapDoesntAffectInner) {
-    Manager inner;
-    Manager outer = Manager::Wrap(inner);
+    TypeManager inner;
+    TypeManager outer = TypeManager::Wrap(inner);
 
     inner.Get<I32>();
 

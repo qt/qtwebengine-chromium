@@ -21,12 +21,12 @@ class CPDF_ContentMarkItem final : public Retainable {
 
   const ByteString& GetName() const { return m_MarkName; }
   ParamType GetParamType() const { return m_ParamType; }
-  const CPDF_Dictionary* GetParam() const;
-  CPDF_Dictionary* GetParam();
+  RetainPtr<const CPDF_Dictionary> GetParam() const;
+  RetainPtr<CPDF_Dictionary> GetParam();
   const ByteString& GetPropertyName() const { return m_PropertyName; }
 
   void SetDirectDict(RetainPtr<CPDF_Dictionary> pDict);
-  void SetPropertiesHolder(CPDF_Dictionary* pHolder,
+  void SetPropertiesHolder(RetainPtr<CPDF_Dictionary> pHolder,
                            const ByteString& property_name);
 
  private:

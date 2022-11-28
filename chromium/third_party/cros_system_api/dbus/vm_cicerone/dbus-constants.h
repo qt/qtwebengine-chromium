@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium OS Authors. All rights reserved.
+// Copyright 2018 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,7 @@ const char kAttachUsbToContainerMethod[] = "AttachUsbToContainer";
 const char kDetachUsbFromContainerMethod[] = "DetachUsbFromContainer";
 const char kListRunningContainersMethod[] = "ListRunningContainers";
 const char kGetGarconSessionInfoMethod[] = "GetGarconSessionInfo";
+const char kUpdateContainerDevicesMethod[] = "UpdateContainerDevices";
 
 // Methods to be called from chunneld.
 const char kConnectChunnelMethod[] = "ConnectChunnel";
@@ -77,6 +78,8 @@ const char kUpgradeContainerProgressSignal[] = "UpgradeContainerProgress";
 const char kStartLxdProgressSignal[] = "StartLxdProgress";
 const char kFileWatchTriggeredSignal[] = "FileWatchTriggered";
 const char kLowDiskSpaceTriggeredSignal[] = "LowDiskSpaceTriggered";
+const char kInhibitScreensaverSignal[] = "InhibitScreensaver";
+const char kUninhibitScreensaverSignal[] = "UninhibitScreensaver";
 
 }  // namespace cicerone
 }  // namespace vm_tools

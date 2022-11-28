@@ -6,6 +6,8 @@
 
 #include "core/fpdfdoc/cpdf_bookmarktree.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 
@@ -24,7 +26,7 @@ CPDF_Bookmark CPDF_BookmarkTree::GetFirstChild(
   if (!root)
     return CPDF_Bookmark();
 
-  const CPDF_Dictionary* outlines = root->GetDictFor("Outlines");
+  RetainPtr<const CPDF_Dictionary> outlines = root->GetDictFor("Outlines");
   return outlines ? CPDF_Bookmark(outlines->GetDictFor("First"))
                   : CPDF_Bookmark();
 }
@@ -35,6 +37,6 @@ CPDF_Bookmark CPDF_BookmarkTree::GetNextSibling(
   if (!dict)
     return CPDF_Bookmark();
 
-  const CPDF_Dictionary* next = dict->GetDictFor("Next");
-  return next != dict ? CPDF_Bookmark(next) : CPDF_Bookmark();
+  RetainPtr<const CPDF_Dictionary> next = dict->GetDictFor("Next");
+  return next != dict ? CPDF_Bookmark(std::move(next)) : CPDF_Bookmark();
 }

@@ -3,11 +3,6 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <xnnpack/aligned-allocator.h>
-#include <xnnpack/common.h>
-#include <xnnpack/params.h>
-#include <xnnpack/vlshift.h>
-
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -16,6 +11,13 @@
 
 #include "bench/utils.h"
 #include <benchmark/benchmark.h>
+
+#include <xnnpack.h>
+#include <xnnpack/aligned-allocator.h>
+#include <xnnpack/common.h>
+#include <xnnpack/microfnptr.h>
+#include <xnnpack/vlshift.h>
+
 
 void vlshift(
     benchmark::State& state,
@@ -34,7 +36,7 @@ void vlshift(
   std::iota(output.begin(), output.end(), 1);
 
   for (auto _ : state) {
-    vlshift(batch, input.data(), uint32_t(4), output.data());
+    vlshift(batch, input.data(), output.data(), 4 /* shift */);
   }
 
   const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();

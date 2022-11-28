@@ -21,7 +21,6 @@
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 
 #include <memory>
@@ -53,7 +52,7 @@ static const SkSL::Type* verify_type(const Context& context,
 static const SkSL::Type* find_type(const Context& context,
                                    Position pos,
                                    std::string_view name) {
-    const Symbol* symbol = (*ThreadContext::SymbolTable())[name];
+    const Symbol* symbol = ThreadContext::SymbolTable()->find(name);
     if (!symbol) {
         context.fErrors->error(pos, String::printf("no symbol named '%.*s'",
                                                    (int)name.length(), name.data()));
@@ -74,8 +73,8 @@ static const SkSL::Type* find_type(const Context& context,
                                    Position modifiersPos,
                                    Modifiers* modifiers) {
     const Type* type = find_type(context, overallPos, name);
-    return type->applyPrecisionQualifiers(context, modifiers, ThreadContext::SymbolTable().get(),
-                                          modifiersPos);
+    return type->applyQualifiers(context, modifiers, ThreadContext::SymbolTable().get(),
+                                 modifiersPos);
 }
 
 static const SkSL::Type* get_type_from_type_constant(TypeConstant tc) {
@@ -275,6 +274,9 @@ DSLType Array(const DSLType& base, int count, Position pos) {
 }
 
 DSLType UnsizedArray(const DSLType& base, Position pos) {
+    if (!base.skslType().checkIfUsableInArray(ThreadContext::Context(), pos)) {
+        return DSLType(kPoison_Type);
+    }
     return ThreadContext::SymbolTable()->addArrayDimension(&base.skslType(),
             SkSL::Type::kUnsizedArray);
 }

@@ -202,7 +202,7 @@
                 "some GPUs are faster to read an IOSurface texture by first copying the texture to a ",
                 "non-IOSurface texture"
             ],
-            "issue": "http://anglebug.com/7117"
+            "issue": "http://anglebug.com/7117 http://anglebug.com/7573"
         },
         {
             "name": "copy_texture_to_buffer_for_read_optimization",
@@ -227,6 +227,22 @@
                 "Metal iOS has a limit on the number of color target bits per pixel."
             ],
             "issue": "http://anglebug.com/7280"
+        },
+        {
+            "name": "preemptively_start_provoking_vertex_command_buffer",
+            "category": "Features",
+            "description": [
+                "AMD Metal Drivers appear to have a bug this works around"
+            ],
+            "issue": "http://anglebug.com/7635"
+        },
+        {
+            "name": "upload_data_to_iosurfaces_with_staging_buffers",
+            "category": "Workarounds",
+            "description": [
+                "When uploading data to IOSurface-backed textures, use a staging buffer."
+            ],
+            "issue": "http://anglebug.com/7573"
         }
     ]
 }

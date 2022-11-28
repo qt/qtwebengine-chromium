@@ -228,7 +228,7 @@ TEST(FieldsTest, TestRoundtripSize) {
 // Ensure all values can be reached by the encoding.
 TEST(FieldsTest, TestCropRect) {
   CodecMetadata metadata;
-  for (int32_t i = -1000; i < 19000; ++i) {
+  for (int32_t i = -999; i < 19000; ++i) {
     FrameHeader f(&metadata);
     f.custom_size_or_origin = true;
     f.frame_origin.x0 = i;
@@ -289,7 +289,7 @@ TEST(FieldsTest, TestOutOfRange) {
 
 struct OldBundle : public Fields {
   OldBundle() { Bundle::Init(this); }
-  const char* Name() const override { return "OldBundle"; }
+  JXL_FIELDS_NAME(OldBundle)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(
@@ -310,7 +310,7 @@ struct OldBundle : public Fields {
 
 struct NewBundle : public Fields {
   NewBundle() { Bundle::Init(this); }
-  const char* Name() const override { return "NewBundle"; }
+  JXL_FIELDS_NAME(NewBundle)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(

@@ -223,7 +223,8 @@ ShaderInfo::ShaderInfo() {}
 
 ShaderInfo::~ShaderInfo() = default;
 
-angle::Result ShaderInfo::initShaders(const gl::ShaderBitSet &linkedShaderStages,
+angle::Result ShaderInfo::initShaders(ContextVk *contextVk,
+                                      const gl::ShaderBitSet &linkedShaderStages,
                                       const gl::ShaderMap<const angle::spirv::Blob *> &spirvBlobs,
                                       const ShaderInterfaceVariableInfoMap &variableInfoMap)
 {
@@ -238,7 +239,12 @@ angle::Result ShaderInfo::initShaders(const gl::ShaderBitSet &linkedShaderStages
     }
 
     // Assert that SPIR-V transformation is correct, even if the test never issues a draw call.
-    ASSERT(ValidateTransformedSpirV(linkedShaderStages, variableInfoMap, mSpirvBlobs));
+    // Don't validate GLES1 programs because they are always created right before a draw, so they
+    // will naturally be validated.  This improves GLES1 test run times.
+    if (!contextVk->getState().isGLES1())
+    {
+        ASSERT(ValidateTransformedSpirV(linkedShaderStages, variableInfoMap, mSpirvBlobs));
+    }
 
     mIsInitialized = true;
     return angle::Result::Continue;
@@ -318,6 +324,13 @@ angle::Result ProgramInfo::initProgram(ContextVk *contextVk,
     options.negativeViewportSupported   = contextVk->getFeatures().supportsNegativeViewport.enabled;
     options.isMultisampledFramebufferFetch =
         optionBits.multiSampleFramebufferFetch && shaderType == gl::ShaderType::Fragment;
+
+    // Don't validate SPIR-V generated for GLES1 shaders when validation layers are enabled.  The
+    // layers already validate SPIR-V, and since GLES1 shaders are controlled by ANGLE, they don't
+    // typically require debugging at the SPIR-V level.  This improves GLES1 conformance test run
+    // time.
+    options.validate =
+        !(contextVk->getState().isGLES1() && contextVk->getRenderer()->getEnableValidationLayers());
 
     ANGLE_TRY(GlslangWrapperVk::TransformSpirV(options, variableInfoMap, originalSpirvBlob,
                                                &transformedSpirvBlob));
@@ -476,7 +489,6 @@ std::unique_ptr<rx::LinkEvent> ProgramExecutableVk::load(ContextVk *contextVk,
                 {
                     LoadShaderInterfaceVariableXfbInfo(stream, &xfb);
                 }
-                info.useRelaxedPrecision     = stream->readBool();
                 info.builtinIsInput          = stream->readBool();
                 info.builtinIsOutput         = stream->readBool();
                 info.attributeComponentCount = stream->readInt<uint8_t>();
@@ -593,7 +605,6 @@ void ProgramExecutableVk::save(ContextVk *contextVk,
                 {
                     SaveShaderInterfaceVariableXfbInfo(xfb, stream);
                 }
-                stream->writeBool(info.useRelaxedPrecision);
                 stream->writeBool(info.builtinIsInput);
                 stream->writeBool(info.builtinIsOutput);
                 stream->writeInt(info.attributeComponentCount);
@@ -1099,7 +1110,8 @@ angle::Result ProgramExecutableVk::getComputePipeline(ContextVk *contextVk,
 
     vk::ShaderProgramHelper *shaderProgram = mComputeProgramInfo.getShaderProgram();
     ASSERT(shaderProgram);
-    return shaderProgram->getComputePipeline(contextVk, pipelineCache, getPipelineLayout(), source,
+    return shaderProgram->getComputePipeline(contextVk, pipelineCache, getPipelineLayout(),
+                                             contextVk->getComputePipelineFlags(), source,
                                              pipelineOut);
 }
 

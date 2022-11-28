@@ -90,11 +90,12 @@ export interface CSSCoverageOptions {
  * @example
  * An example of using JavaScript and CSS coverage to get percentage of initially
  * executed code:
+ *
  * ```ts
  * // Enable both JavaScript and CSS coverage
  * await Promise.all([
  *   page.coverage.startJSCoverage(),
- *   page.coverage.startCSSCoverage()
+ *   page.coverage.startCSSCoverage(),
  * ]);
  * // Navigate to page
  * await page.goto('https://example.com');
@@ -108,11 +109,11 @@ export interface CSSCoverageOptions {
  * const coverage = [...jsCoverage, ...cssCoverage];
  * for (const entry of coverage) {
  *   totalBytes += entry.text.length;
- *   for (const range of entry.ranges)
- *     usedBytes += range.end - range.start - 1;
+ *   for (const range of entry.ranges) usedBytes += range.end - range.start - 1;
  * }
- * console.log(`Bytes used: ${usedBytes / totalBytes * 100}%`);
+ * console.log(`Bytes used: ${(usedBytes / totalBytes) * 100}%`);
  * ```
+ *
  * @public
  */
 export declare class Coverage {
@@ -127,7 +128,8 @@ export declare class Coverage {
      * Anonymous scripts are ones that don't have an associated url. These are
      * scripts that are dynamically created on the page using `eval` or
      * `new Function`. If `reportAnonymousScripts` is set to `true`, anonymous
-     * scripts will have `pptr://__puppeteer_evaluation_script__` as their URL.
+     * scripts URL will start with `debugger://VM` (unless a magic //# sourceURL
+     * comment is present, in which case that will the be URL).
      */
     startJSCoverage(options?: JSCoverageOptions): Promise<void>;
     /**

@@ -134,6 +134,7 @@ else()
 endif()
 
 option(EIGEN_BUILD_BTL "Build benchmark suite" OFF)
+option(EIGEN_BUILD_SPBENCH "Build sparse benchmark suite" OFF)
 
 # Disable pkgconfig only for native Windows builds
 if(NOT WIN32 OR NOT CMAKE_HOST_SYSTEM_NAME MATCHES Windows)
@@ -257,6 +258,12 @@ if(NOT MSVC)
   if(EIGEN_TEST_AVX512DQ)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512dq -mfma")
     message(STATUS "Enabling AVX512DQ in tests/examples")
+  endif()
+  
+  option(EIGEN_TEST_AVX512FP16 "Enable/Disable AVX512-FP16 in tests/examples" OFF)
+  if(EIGEN_TEST_AVX512FP16)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mfma -mavx512vl -mavx512fp16")
+	message(STATUS "Enabling AVX512-FP16 in tests/examples")
   endif()
 
   option(EIGEN_TEST_F16C "Enable/Disable F16C in tests/examples" OFF)
@@ -555,7 +562,7 @@ foreach(DIR ${FORMAT_SUBDIRS})
     DEPENDS ${FORMAT_SOURCES})
 endif()
 
-if(NOT WIN32)
+if(NOT WIN32 AND EIGEN_BUILD_SPBENCH)
   add_subdirectory(bench/spbench EXCLUDE_FROM_ALL)
 endif()
 

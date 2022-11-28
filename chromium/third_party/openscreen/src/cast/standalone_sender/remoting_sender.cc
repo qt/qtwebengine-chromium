@@ -45,7 +45,7 @@ AudioDecoderConfig::Codec ToProtoCodec(AudioCodec value) {
 
 RemotingSender::Client::~Client() = default;
 
-RemotingSender::RemotingSender(RpcMessenger* messenger,
+RemotingSender::RemotingSender(RpcMessenger& messenger,
                                AudioCodec audio_codec,
                                VideoCodec video_codec,
                                Client* client)
@@ -54,7 +54,7 @@ RemotingSender::RemotingSender(RpcMessenger* messenger,
       video_codec_(video_codec),
       client_(client) {
   OSP_DCHECK(client_);
-  messenger_->RegisterMessageReceiverCallback(
+  messenger_.RegisterMessageReceiverCallback(
       RpcMessenger::kAcquireRendererHandle,
       [this](std::unique_ptr<RpcMessage> message) {
         OSP_DCHECK(message);
@@ -63,7 +63,7 @@ RemotingSender::RemotingSender(RpcMessenger* messenger,
 }
 
 RemotingSender::~RemotingSender() {
-  messenger_->UnregisterMessageReceiverCallback(
+  messenger_.UnregisterMessageReceiverCallback(
       RpcMessenger::kAcquireRendererHandle);
 }
 
@@ -100,7 +100,7 @@ void RemotingSender::OnInitializeMessage(const RpcMessage& message) {
   OSP_DLOG_INFO << "Initializing receiver handle " << receiver_handle_
                 << " with audio codec " << CodecToString(audio_codec_)
                 << " and video codec " << CodecToString(video_codec_);
-  messenger_->SendMessageToRemote(callback_message);
+  messenger_.SendMessageToRemote(callback_message);
 
   client_->OnReady();
 }

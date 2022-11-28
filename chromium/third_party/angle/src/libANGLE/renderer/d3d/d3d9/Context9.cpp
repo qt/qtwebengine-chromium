@@ -381,7 +381,7 @@ gl::GraphicsResetStatus Context9::getResetStatus()
 
 angle::Result Context9::insertEventMarker(GLsizei length, const char *marker)
 {
-    mRenderer->getAnnotator()->setMarker(marker);
+    mRenderer->getAnnotator()->setMarker(/*context=*/nullptr, marker);
     return angle::Result::Continue;
 }
 
@@ -464,6 +464,11 @@ const gl::Extensions &Context9::getNativeExtensions() const
 const gl::Limitations &Context9::getNativeLimitations() const
 {
     return mRenderer->getNativeLimitations();
+}
+
+ShPixelLocalStorageType Context9::getNativePixelLocalStorageType() const
+{
+    return mRenderer->getNativePixelLocalStorageType();
 }
 
 angle::Result Context9::dispatchCompute(const gl::Context *context,

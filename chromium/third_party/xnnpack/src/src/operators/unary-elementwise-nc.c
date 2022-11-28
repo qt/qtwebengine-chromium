@@ -28,7 +28,7 @@ static enum xnn_status create_unary_elementwise_nc(
     size_t params_size,
     uint32_t datatype_init_flags,
     enum xnn_operator_type operator_type,
-    xnn_univector_ukernel_function ukernel,
+    xnn_vunary_ukernel_function ukernel,
     xnn_operator_t* unary_elementwise_op_out)
 {
   xnn_operator_t unary_elementwise_op = NULL;
@@ -93,6 +93,17 @@ static enum xnn_status create_unary_elementwise_nc(
   return xnn_status_success;
 }
 
+static bool is_copy_operator(enum xnn_operator_type operator_type) {
+  switch (operator_type) {
+    case xnn_operator_type_copy_nc_x8:
+    case xnn_operator_type_copy_nc_x16:
+    case xnn_operator_type_copy_nc_x32:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static enum xnn_status setup_unary_elementwise_nc(
     xnn_operator_t unary_elementwise_op,
     enum xnn_operator_type expected_operator_type,
@@ -119,7 +130,7 @@ static enum xnn_status setup_unary_elementwise_nc(
     return xnn_status_uninitialized;
   }
 
-  if (batch_size == 0) {
+  if (batch_size == 0 || (input == output && is_copy_operator(expected_operator_type))) {
     unary_elementwise_op->state = xnn_run_state_skip;
     return xnn_status_success;
   }
@@ -128,7 +139,7 @@ static enum xnn_status setup_unary_elementwise_nc(
   const size_t input_stride = unary_elementwise_op->input_pixel_stride;
   const size_t output_stride = unary_elementwise_op->output_pixel_stride;
 
-  xnn_univector_ukernel_function ukernel = unary_elementwise_op->ukernel.vunary.function;
+  xnn_vunary_ukernel_function ukernel = unary_elementwise_op->ukernel.vunary.function;
 
   if ((((input_stride ^ channels) | (output_stride ^ channels)) == 0) || batch_size == 1) {
     const size_t block_size = 4096;
@@ -259,7 +270,7 @@ enum xnn_status xnn_create_clamp_nc_f32(
   }
 
   const bool relu_activation = (output_max == INFINITY) && (output_min == 0.0f);
-  xnn_univector_ukernel_function clamp_ukernel = xnn_params.f32.clamp.ukernel;
+  xnn_vunary_ukernel_function clamp_ukernel = xnn_params.f32.clamp.ukernel;
   if (relu_activation && xnn_params.f32.relu.ukernel != NULL) {
     clamp_ukernel = xnn_params.f32.relu.ukernel;
   }

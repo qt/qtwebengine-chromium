@@ -5,6 +5,7 @@
 #include "cast/streaming/session_messenger.h"
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/message_fields.h"
 #include "util/json/json_helpers.h"
@@ -16,21 +17,32 @@ namespace cast {
 
 namespace {
 
+// Default timeout to receive a reply message in response to a request message
+// sent by us.
+constexpr std::chrono::milliseconds kReplyTimeout{4000};
+
+// Special character indicating message was sent to all receivers or senders.
 constexpr char kAnyDestination[] = "*";
 
 void ReplyIfTimedOut(
     int sequence_number,
-    ReceiverMessage::Type reply_type,
     std::vector<std::pair<int, SenderSessionMessenger::ReplyCallback>>*
         replies) {
   for (auto it = replies->begin(); it != replies->end(); ++it) {
     if (it->first == sequence_number) {
-      OSP_VLOG
-          << "Replying with empty message due to timeout for sequence number: "
-          << sequence_number;
-      it->second(ReceiverMessage{reply_type, sequence_number});
+      OSP_VLOG << "Reply was an error with due to timeout for sequence number: "
+               << sequence_number;
+
+      // We erase before handling the callback, since it may invalidate the
+      // replies vector.
+      SenderSessionMessenger::ReplyCallback callback = std::move(it->second);
       replies->erase(it);
-      break;
+      callback(
+          Error(Error::Code::kMessageTimeout,
+                absl::StrCat("message timed out (max delay of",
+                             std::chrono::milliseconds(kReplyTimeout).count(),
+                             "ms).")));
+      return;
     }
   }
 }
@@ -40,10 +52,12 @@ void ReplyIfTimedOut(
 SessionMessenger::SessionMessenger(MessagePort* message_port,
                                    std::string source_id,
                                    ErrorCallback cb)
-    : message_port_(message_port), error_callback_(std::move(cb)) {
+    : message_port_(message_port),
+      source_id_(source_id),
+      error_callback_(std::move(cb)) {
   OSP_DCHECK(message_port_);
-  OSP_DCHECK(!source_id.empty());
-  message_port_->SetClient(this, source_id);
+  OSP_DCHECK(!source_id_.empty());
+  message_port_->SetClient(*this);
 }
 
 SessionMessenger::~SessionMessenger() {
@@ -86,6 +100,11 @@ void SenderSessionMessenger::SetHandler(ReceiverMessage::Type type,
   rpc_callback_ = std::move(cb);
 }
 
+void SenderSessionMessenger::ResetHandler(ReceiverMessage::Type type) {
+  OSP_DCHECK(type == ReceiverMessage::Type::kRpc);
+  rpc_callback_ = {};
+}
+
 Error SenderSessionMessenger::SendOutboundMessage(SenderMessage message) {
   const auto namespace_ = (message.type == SenderMessage::Type::kRpc)
                               ? kCastRemotingNamespace
@@ -97,13 +116,24 @@ Error SenderSessionMessenger::SendOutboundMessage(SenderMessage message) {
                                        jsonified.value());
 }
 
+Error SenderSessionMessenger::SendRpcMessage(
+    const std::vector<uint8_t>& message) {
+  return SendOutboundMessage(
+      SenderMessage{openscreen::cast::SenderMessage::Type::kRpc,
+                    -1 /* sequence_number, unused by RPC messages */,
+                    true /* valid */, message});
+}
+
 Error SenderSessionMessenger::SendRequest(SenderMessage message,
                                           ReceiverMessage::Type reply_type,
                                           ReplyCallback cb) {
-  static constexpr std::chrono::milliseconds kReplyTimeout{4000};
   // RPC messages are not meant to be request/reply.
   OSP_DCHECK(reply_type != ReceiverMessage::Type::kRpc);
 
+  if (!cb) {
+    return Error(Error::Code::kParameterInvalid,
+                 "Must provide a reply callback");
+  }
   const Error error = SendOutboundMessage(message);
   if (!error.ok()) {
     return error;
@@ -113,10 +143,9 @@ Error SenderSessionMessenger::SendRequest(SenderMessage message,
              awaiting_replies_.end());
   awaiting_replies_.emplace_back(message.sequence_number, std::move(cb));
   task_runner_->PostTaskWithDelay(
-      [self = weak_factory_.GetWeakPtr(), reply_type,
-       seq_num = message.sequence_number] {
+      [self = weak_factory_.GetWeakPtr(), seq_num = message.sequence_number] {
         if (self) {
-          ReplyIfTimedOut(seq_num, reply_type, &self->awaiting_replies_);
+          ReplyIfTimedOut(seq_num, &self->awaiting_replies_);
         }
       },
       kReplyTimeout);
@@ -162,7 +191,7 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
 
   if (receiver_message.value().type == ReceiverMessage::Type::kRpc) {
     if (rpc_callback_) {
-      rpc_callback_(receiver_message.value({}));
+      rpc_callback_(receiver_message.value());
     } else {
       OSP_DLOG_INFO << "Received RTP message but no callback, dropping";
     }
@@ -181,7 +210,7 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
       return;
     }
 
-    it->second(std::move(receiver_message.value({})));
+    it->second(std::move(receiver_message.value()));
 
     // Calling the function callback may result in the checksum of the pointed
     // to object to change, so calling erase() on the iterator after executing
@@ -192,6 +221,7 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
 
 void SenderSessionMessenger::OnError(Error error) {
   OSP_DLOG_WARN << "Received an error in the session messenger: " << error;
+  ReportError(error);
 }
 
 ReceiverSessionMessenger::ReceiverSessionMessenger(MessagePort* message_port,
@@ -205,11 +235,15 @@ void ReceiverSessionMessenger::SetHandler(SenderMessage::Type type,
   callbacks_.emplace_back(type, std::move(cb));
 }
 
-Error ReceiverSessionMessenger::SendMessage(const std::string& sender_id,
+void ReceiverSessionMessenger::ResetHandler(SenderMessage::Type type) {
+  callbacks_.erase_key(type);
+}
+
+Error ReceiverSessionMessenger::SendMessage(const std::string& source_id,
                                             ReceiverMessage message) {
-  if (sender_id.empty()) {
+  if (source_id.empty()) {
     return Error(Error::Code::kInitializationFailure,
-                 "Cannot send a message without a current sender ID.");
+                 "Cannot send a message without a current source ID.");
   }
 
   const auto namespace_ = (message.type == ReceiverMessage::Type::kRpc)
@@ -218,7 +252,7 @@ Error ReceiverSessionMessenger::SendMessage(const std::string& sender_id,
 
   ErrorOr<Json::Value> message_json = message.ToJson();
   OSP_CHECK(message_json.is_value()) << "Tried to send an invalid message";
-  return SessionMessenger::SendMessage(sender_id, namespace_,
+  return SessionMessenger::SendMessage(source_id, namespace_,
                                        message_json.value());
 }
 
@@ -269,6 +303,7 @@ void ReceiverSessionMessenger::OnMessage(const std::string& source_id,
 
 void ReceiverSessionMessenger::OnError(Error error) {
   OSP_DLOG_WARN << "Received an error in the session messenger: " << error;
+  ReportError(error);
 }
 
 }  // namespace cast

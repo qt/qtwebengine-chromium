@@ -149,6 +149,7 @@ MemoryChunk* OldGenerationMemoryChunkIterator::next() {
 
 AllocationResult LocalAllocationBuffer::AllocateRawAligned(
     int size_in_bytes, AllocationAlignment alignment) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   Address current_top = allocation_info_.top();
   int filler_size = Heap::GetFillToAlign(current_top, alignment);
   int aligned_size = filler_size + size_in_bytes;
@@ -164,6 +165,7 @@ AllocationResult LocalAllocationBuffer::AllocateRawAligned(
 
 AllocationResult LocalAllocationBuffer::AllocateRawUnaligned(
     int size_in_bytes) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   return allocation_info_.CanIncrementTop(size_in_bytes)
              ? AllocationResult::FromObject(HeapObject::FromAddress(
                    allocation_info_.IncrementTop(size_in_bytes)))
@@ -214,6 +216,7 @@ MemoryChunk* MemoryChunkIterator::Next() {
 
 AllocationResult SpaceWithLinearArea::AllocateFastUnaligned(
     int size_in_bytes, AllocationOrigin origin) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   if (!allocation_info_.CanIncrementTop(size_in_bytes)) {
     return AllocationResult::Failure();
   }
@@ -252,12 +255,12 @@ AllocationResult SpaceWithLinearArea::AllocateFastAligned(
 AllocationResult SpaceWithLinearArea::AllocateRaw(int size_in_bytes,
                                                   AllocationAlignment alignment,
                                                   AllocationOrigin origin) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  DCHECK(!v8_flags.enable_third_party_heap);
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
 
   AllocationResult result;
 
-  if (V8_COMPRESS_POINTERS_8GB_BOOL ||
-      (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned)) {
+  if (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned) {
     result = AllocateFastAligned(size_in_bytes, nullptr, alignment, origin);
   } else {
     result = AllocateFastUnaligned(size_in_bytes, origin);
@@ -269,7 +272,7 @@ AllocationResult SpaceWithLinearArea::AllocateRaw(int size_in_bytes,
 
 AllocationResult SpaceWithLinearArea::AllocateRawUnaligned(
     int size_in_bytes, AllocationOrigin origin) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  DCHECK(!v8_flags.enable_third_party_heap);
   int max_aligned_size;
   if (!EnsureAllocation(size_in_bytes, kTaggedAligned, origin,
                         &max_aligned_size)) {
@@ -282,7 +285,7 @@ AllocationResult SpaceWithLinearArea::AllocateRawUnaligned(
   AllocationResult result = AllocateFastUnaligned(size_in_bytes, origin);
   DCHECK(!result.IsFailure());
 
-  if (FLAG_trace_allocations_origins) {
+  if (v8_flags.trace_allocations_origins) {
     UpdateAllocationOrigins(origin);
   }
 
@@ -294,7 +297,7 @@ AllocationResult SpaceWithLinearArea::AllocateRawUnaligned(
 
 AllocationResult SpaceWithLinearArea::AllocateRawAligned(
     int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  DCHECK(!v8_flags.enable_third_party_heap);
   int max_aligned_size;
   if (!EnsureAllocation(size_in_bytes, alignment, origin, &max_aligned_size)) {
     return AllocationResult::Failure();
@@ -310,7 +313,7 @@ AllocationResult SpaceWithLinearArea::AllocateRawAligned(
   DCHECK_GE(max_aligned_size, aligned_size_in_bytes);
   DCHECK(!result.IsFailure());
 
-  if (FLAG_trace_allocations_origins) {
+  if (v8_flags.trace_allocations_origins) {
     UpdateAllocationOrigins(origin);
   }
 
@@ -323,8 +326,7 @@ AllocationResult SpaceWithLinearArea::AllocateRawAligned(
 AllocationResult SpaceWithLinearArea::AllocateRawSlow(
     int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
   AllocationResult result =
-      V8_COMPRESS_POINTERS_8GB_BOOL ||
-              (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned)
+      USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned
           ? AllocateRawAligned(size_in_bytes, alignment, origin)
           : AllocateRawUnaligned(size_in_bytes, origin);
   return result;

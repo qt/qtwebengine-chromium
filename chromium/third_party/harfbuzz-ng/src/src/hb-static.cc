@@ -58,7 +58,7 @@ const hb_codepoint_t minus_1 = -1;
 
 /* hb_face_t */
 
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
 static inline unsigned
 load_num_glyphs_from_loca (const hb_face_t *face)
 {
@@ -88,13 +88,13 @@ hb_face_t::load_num_glyphs () const
 {
   unsigned ret = 0;
 
-#ifndef HB_NO_BORING_EXPANSION
+#ifndef HB_NO_BEYOND_64K
   ret = hb_max (ret, load_num_glyphs_from_loca (this));
 #endif
 
   ret = hb_max (ret, load_num_glyphs_from_maxp (this));
 
-  num_glyphs.set_relaxed (ret);
+  num_glyphs = ret;
   return ret;
 }
 
@@ -102,7 +102,7 @@ unsigned int
 hb_face_t::load_upem () const
 {
   unsigned int ret = table.head->get_upem ();
-  upem.set_relaxed (ret);
+  upem = ret;
   return ret;
 }
 

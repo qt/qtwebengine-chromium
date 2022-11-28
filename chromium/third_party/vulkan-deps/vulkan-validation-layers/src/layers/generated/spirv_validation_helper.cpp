@@ -202,6 +202,7 @@ static const std::unordered_multimap<uint32_t, RequiredSpirvInfo> spirvCapabilit
     {spv::CapabilityIntegerFunctions2INTEL, {0, &VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL::shaderIntegerFunctions2, nullptr, ""}},
     {spv::CapabilityInterpolationFunction, {0, &VkPhysicalDeviceFeatures::sampleRateShading, nullptr, ""}},
     {spv::CapabilityMatrix, {VK_API_VERSION_1_0, nullptr, nullptr, ""}},
+    {spv::CapabilityMeshShadingEXT, {0, nullptr, &DeviceExtensions::vk_ext_mesh_shader, ""}},
     {spv::CapabilityMeshShadingNV, {0, nullptr, &DeviceExtensions::vk_nv_mesh_shader, ""}},
     {spv::CapabilityMinLod, {0, &VkPhysicalDeviceFeatures::shaderResourceMinLod, nullptr, ""}},
     {spv::CapabilityMultiView, {0, &VkPhysicalDeviceVulkan11Features::multiview, nullptr, ""}},
@@ -214,6 +215,8 @@ static const std::unordered_multimap<uint32_t, RequiredSpirvInfo> spirvCapabilit
     {spv::CapabilityRayTracingKHR, {0, &VkPhysicalDeviceRayTracingPipelineFeaturesKHR::rayTracingPipeline, nullptr, ""}},
     {spv::CapabilityRayTracingMotionBlurNV, {0, &VkPhysicalDeviceRayTracingMotionBlurFeaturesNV::rayTracingMotionBlur, nullptr, ""}},
     {spv::CapabilityRayTracingNV, {0, nullptr, &DeviceExtensions::vk_nv_ray_tracing, ""}},
+    // Not found in current SPIR-V Headers
+    //    {spv::CapabilityRayTracingOpacityMicromapEXT, {0, nullptr, &DeviceExtensions::vk_ext_opacity_micromap, ""}},
     {spv::CapabilityRayTraversalPrimitiveCullingKHR, {0, &VkPhysicalDeviceRayTracingPipelineFeaturesKHR::rayTraversalPrimitiveCulling, nullptr, ""}},
     {spv::CapabilityRayTraversalPrimitiveCullingKHR, {0, &VkPhysicalDeviceRayQueryFeaturesKHR::rayQuery, nullptr, ""}},
     {spv::CapabilityRoundingModeRTE, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTEFloat16 & VK_TRUE) != 0"}},
@@ -310,6 +313,7 @@ static const std::unordered_multimap<std::string, RequiredSpirvInfo> spirvExtens
     {"SPV_EXT_descriptor_indexing", {0, nullptr, &DeviceExtensions::vk_ext_descriptor_indexing, ""}},
     {"SPV_EXT_fragment_invocation_density", {0, nullptr, &DeviceExtensions::vk_ext_fragment_density_map, ""}},
     {"SPV_EXT_fragment_shader_interlock", {0, nullptr, &DeviceExtensions::vk_ext_fragment_shader_interlock, ""}},
+    {"SPV_EXT_mesh_shader", {0, nullptr, &DeviceExtensions::vk_ext_mesh_shader, ""}},
     {"SPV_EXT_physical_storage_buffer", {0, nullptr, &DeviceExtensions::vk_ext_buffer_device_address, ""}},
     {"SPV_EXT_shader_atomic_float16_add", {0, nullptr, &DeviceExtensions::vk_ext_shader_atomic_float2, ""}},
     {"SPV_EXT_shader_atomic_float_add", {0, nullptr, &DeviceExtensions::vk_ext_shader_atomic_float, ""}},
@@ -505,6 +509,8 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "InterpolationFunction";
          case spv::CapabilityMatrix:
             return "Matrix";
+         case spv::CapabilityMeshShadingEXT:
+            return "MeshShadingEXT";
          case spv::CapabilityMeshShadingNV:
             return "MeshShadingNV";
          case spv::CapabilityMinLod:
@@ -801,4 +807,97 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(spirv_inst_iter& insn) 
         }
     } //spv::OpExtension
     return skip;
+}
+
+// Will return the Vulkan format for a given SPIR-V image format value
+// Note: will return VK_FORMAT_UNDEFINED if non valid input
+// This was in vk_format_utils but the SPIR-V Header dependency was an issue
+//   see https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/4647
+VkFormat CoreChecks::CompatibleSpirvImageFormat(uint32_t spirv_image_format) const {
+    switch (spirv_image_format) {
+        case spv::ImageFormatRgb10a2ui:
+            return VK_FORMAT_A2B10G10R10_UINT_PACK32;
+        case spv::ImageFormatRgb10A2:
+            return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+        case spv::ImageFormatR11fG11fB10f:
+            return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+        case spv::ImageFormatRgba16f:
+            return VK_FORMAT_R16G16B16A16_SFLOAT;
+        case spv::ImageFormatRgba16i:
+            return VK_FORMAT_R16G16B16A16_SINT;
+        case spv::ImageFormatRgba16Snorm:
+            return VK_FORMAT_R16G16B16A16_SNORM;
+        case spv::ImageFormatRgba16ui:
+            return VK_FORMAT_R16G16B16A16_UINT;
+        case spv::ImageFormatRgba16:
+            return VK_FORMAT_R16G16B16A16_UNORM;
+        case spv::ImageFormatRg16f:
+            return VK_FORMAT_R16G16_SFLOAT;
+        case spv::ImageFormatRg16i:
+            return VK_FORMAT_R16G16_SINT;
+        case spv::ImageFormatRg16Snorm:
+            return VK_FORMAT_R16G16_SNORM;
+        case spv::ImageFormatRg16ui:
+            return VK_FORMAT_R16G16_UINT;
+        case spv::ImageFormatRg16:
+            return VK_FORMAT_R16G16_UNORM;
+        case spv::ImageFormatR16f:
+            return VK_FORMAT_R16_SFLOAT;
+        case spv::ImageFormatR16i:
+            return VK_FORMAT_R16_SINT;
+        case spv::ImageFormatR16Snorm:
+            return VK_FORMAT_R16_SNORM;
+        case spv::ImageFormatR16ui:
+            return VK_FORMAT_R16_UINT;
+        case spv::ImageFormatR16:
+            return VK_FORMAT_R16_UNORM;
+        case spv::ImageFormatRgba32f:
+            return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case spv::ImageFormatRgba32i:
+            return VK_FORMAT_R32G32B32A32_SINT;
+        case spv::ImageFormatRgba32ui:
+            return VK_FORMAT_R32G32B32A32_UINT;
+        case spv::ImageFormatRg32f:
+            return VK_FORMAT_R32G32_SFLOAT;
+        case spv::ImageFormatRg32i:
+            return VK_FORMAT_R32G32_SINT;
+        case spv::ImageFormatRg32ui:
+            return VK_FORMAT_R32G32_UINT;
+        case spv::ImageFormatR32f:
+            return VK_FORMAT_R32_SFLOAT;
+        case spv::ImageFormatR32i:
+            return VK_FORMAT_R32_SINT;
+        case spv::ImageFormatR32ui:
+            return VK_FORMAT_R32_UINT;
+        case spv::ImageFormatR64i:
+            return VK_FORMAT_R64_SINT;
+        case spv::ImageFormatR64ui:
+            return VK_FORMAT_R64_UINT;
+        case spv::ImageFormatRgba8i:
+            return VK_FORMAT_R8G8B8A8_SINT;
+        case spv::ImageFormatRgba8Snorm:
+            return VK_FORMAT_R8G8B8A8_SNORM;
+        case spv::ImageFormatRgba8ui:
+            return VK_FORMAT_R8G8B8A8_UINT;
+        case spv::ImageFormatRgba8:
+            return VK_FORMAT_R8G8B8A8_UNORM;
+        case spv::ImageFormatRg8i:
+            return VK_FORMAT_R8G8_SINT;
+        case spv::ImageFormatRg8Snorm:
+            return VK_FORMAT_R8G8_SNORM;
+        case spv::ImageFormatRg8ui:
+            return VK_FORMAT_R8G8_UINT;
+        case spv::ImageFormatRg8:
+            return VK_FORMAT_R8G8_UNORM;
+        case spv::ImageFormatR8i:
+            return VK_FORMAT_R8_SINT;
+        case spv::ImageFormatR8Snorm:
+            return VK_FORMAT_R8_SNORM;
+        case spv::ImageFormatR8ui:
+            return VK_FORMAT_R8_UINT;
+        case spv::ImageFormatR8:
+            return VK_FORMAT_R8_UNORM;
+        default:
+            return VK_FORMAT_UNDEFINED;
+     }
 }

@@ -56,7 +56,7 @@ CPDF_Image::CPDF_Image(CPDF_Document* pDoc, RetainPtr<CPDF_Stream> pStream)
 
 CPDF_Image::CPDF_Image(CPDF_Document* pDoc, uint32_t dwStreamObjNum)
     : m_pDocument(pDoc),
-      m_pStream(ToStream(pDoc->GetIndirectObject(dwStreamObjNum))) {
+      m_pStream(ToStream(pDoc->GetMutableIndirectObject(dwStreamObjNum))) {
   DCHECK(m_pDocument);
   FinishInitialization();
 }
@@ -80,8 +80,16 @@ void CPDF_Image::ConvertStreamToIndirectObject() {
   m_pDocument->AddIndirectObject(m_pStream);
 }
 
-const CPDF_Dictionary* CPDF_Image::GetDict() const {
+RetainPtr<const CPDF_Dictionary> CPDF_Image::GetDict() const {
   return m_pStream ? m_pStream->GetDict() : nullptr;
+}
+
+RetainPtr<const CPDF_Stream> CPDF_Image::GetStream() const {
+  return m_pStream;
+}
+
+RetainPtr<const CPDF_Dictionary> CPDF_Image::GetOC() const {
+  return m_pOC;
 }
 
 RetainPtr<CPDF_Dictionary> CPDF_Image::InitJPEG(
@@ -106,7 +114,7 @@ RetainPtr<CPDF_Dictionary> CPDF_Image::InitJPEG(
     csname = "DeviceRGB";
   } else if (info.num_components == 4) {
     csname = "DeviceCMYK";
-    CPDF_Array* pDecode = pDict->SetNewFor<CPDF_Array>("Decode");
+    auto pDecode = pDict->SetNewFor<CPDF_Array>("Decode");
     for (int n = 0; n < 4; n++) {
       pDecode->AppendNew<CPDF_Number>(1);
       pDecode->AppendNew<CPDF_Number>(0);
@@ -116,7 +124,7 @@ RetainPtr<CPDF_Dictionary> CPDF_Image::InitJPEG(
   pDict->SetNewFor<CPDF_Number>("BitsPerComponent", info.bits_per_components);
   pDict->SetNewFor<CPDF_Name>("Filter", "DCTDecode");
   if (!info.color_transform) {
-    CPDF_Dictionary* pParms =
+    auto pParms =
         pDict->SetNewFor<CPDF_Dictionary>(pdfium::stream::kDecodeParms);
     pParms->SetNewFor<CPDF_Number>("ColorTransform", 0);
   }
@@ -196,12 +204,12 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
     if (set_a == 0 || reset_a == 0) {
       pDict->SetNewFor<CPDF_Boolean>("ImageMask", true);
       if (reset_a == 0) {
-        CPDF_Array* pArray = pDict->SetNewFor<CPDF_Array>("Decode");
+        auto pArray = pDict->SetNewFor<CPDF_Array>("Decode");
         pArray->AppendNew<CPDF_Number>(1);
         pArray->AppendNew<CPDF_Number>(0);
       }
     } else {
-      CPDF_Array* pCS = pDict->SetNewFor<CPDF_Array>("ColorSpace");
+      auto pCS = pDict->SetNewFor<CPDF_Array>("ColorSpace");
       pCS->AppendNew<CPDF_Name>("Indexed");
       pCS->AppendNew<CPDF_Name>("DeviceRGB");
       pCS->AppendNew<CPDF_Number>(1);
@@ -225,7 +233,7 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
     size_t palette_size = pBitmap->GetRequiredPaletteSize();
     if (palette_size > 0) {
       DCHECK(palette_size <= 256);
-      CPDF_Array* pCS = m_pDocument->NewIndirect<CPDF_Array>();
+      auto pCS = m_pDocument->NewIndirect<CPDF_Array>();
       pCS->AppendNew<CPDF_Name>("Indexed");
       pCS->AppendNew<CPDF_Name>("DeviceRGB");
       pCS->AppendNew<CPDF_Number>(static_cast<int>(palette_size - 1));
@@ -240,7 +248,7 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
         ptr += 3;
       }
       auto pNewDict = m_pDocument->New<CPDF_Dictionary>();
-      CPDF_Stream* pCTS = m_pDocument->NewIndirect<CPDF_Stream>(
+      auto pCTS = m_pDocument->NewIndirect<CPDF_Stream>(
           std::move(pColorTable), palette_size * 3, std::move(pNewDict));
       pCS->AppendNew<CPDF_Reference>(m_pDocument.Get(), pCTS->GetObjNum());
       pDict->SetNewFor<CPDF_Reference>("ColorSpace", m_pDocument.Get(),
@@ -279,7 +287,7 @@ void CPDF_Image::SetImage(const RetainPtr<CFX_DIBitmap>& pBitmap) {
       }
     }
     pMaskDict->SetNewFor<CPDF_Number>("Length", mask_size);
-    CPDF_Stream* pNewStream = m_pDocument->NewIndirect<CPDF_Stream>(
+    auto pNewStream = m_pDocument->NewIndirect<CPDF_Stream>(
         std::move(mask_buf), mask_size, std::move(pMaskDict));
     pDict->SetNewFor<CPDF_Reference>("SMask", m_pDocument.Get(),
                                      pNewStream->GetObjNum());

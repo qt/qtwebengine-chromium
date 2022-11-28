@@ -24,6 +24,7 @@
 #include "dawn/native/MetalBackend.h"
 #include "dawn/native/metal/BufferMTL.h"
 #include "dawn/native/metal/DeviceMTL.h"
+#include "dawn/native/metal/UtilsMetal.h"
 
 #if DAWN_PLATFORM_IS(MACOS)
 #import <IOKit/IOKitLib.h>
@@ -170,18 +171,6 @@ MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
 #error "Unsupported Apple platform."
 #endif
 
-DAWN_NOINLINE bool IsCounterSamplingBoundarySupport(id<MTLDevice> device)
-    API_AVAILABLE(macos(11.0), ios(14.0)) {
-    bool isBlitBoundarySupported =
-        [device supportsCounterSampling:MTLCounterSamplingPointAtBlitBoundary];
-    bool isDispatchBoundarySupported =
-        [device supportsCounterSampling:MTLCounterSamplingPointAtDispatchBoundary];
-    bool isDrawBoundarySupported =
-        [device supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary];
-
-    return isBlitBoundarySupported && isDispatchBoundarySupported && isDrawBoundarySupported;
-}
-
 // This method has seen hard-to-debug crashes. See crbug.com/dawn/1102.
 // For now, it is written defensively, with many potentially unnecessary guards until
 // we narrow down the cause of the problem.
@@ -246,11 +235,13 @@ DAWN_NOINLINE bool IsGPUCounterSupported(id<MTLDevice> device,
     }
 
     if (@available(macOS 11.0, iOS 14.0, *)) {
-        // Check whether it can read GPU counters at the specified command boundary. Apple
-        // family GPUs do not support sampling between different Metal commands, because
-        // they defer fragment processing until after the GPU processes all the primitives
-        // in the render pass.
-        if (!IsCounterSamplingBoundarySupport(device)) {
+        // Check whether it can read GPU counters at the specified command boundary or stage
+        // boundary. Apple family GPUs do not support sampling between different Metal commands,
+        // because they defer fragment processing until after the GPU processes all the primitives
+        // in the render pass. GPU counters are only available if sampling at least one of the
+        // command or stage boundaries is supported.
+        if (!SupportCounterSamplingAtCommandBoundary(device) &&
+            !SupportCounterSamplingAtStageBoundary(device)) {
             return false;
         }
     }
@@ -299,8 +290,10 @@ class Adapter : public AdapterBase {
     }
 
   private:
-    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(const DeviceDescriptor* descriptor) override {
-        return Device::Create(this, mDevice, descriptor);
+    ResultOrError<Ref<DeviceBase>> CreateDeviceImpl(
+        const DeviceDescriptor* descriptor,
+        const TripleStateTogglesSet& userProvidedToggles) override {
+        return Device::Create(this, mDevice, descriptor, userProvidedToggles);
     }
 
     MaybeError InitializeImpl() override { return {}; }
@@ -377,6 +370,8 @@ class Adapter : public AdapterBase {
         }
 
         mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
+        mSupportedFeatures.EnableFeature(Feature::ShaderF16);
+        mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
 
         return {};
     }
@@ -406,7 +401,7 @@ class Adapter : public AdapterBase {
         if (mDeviceId != 0) {
             mArchitectureName = gpu_info::GetArchitectureName(mVendorId, mDeviceId);
         }
-    };
+    }
 
     enum class MTLGPUFamily {
         Apple1,
@@ -603,6 +598,7 @@ class Adapter : public AdapterBase {
         limits->v1.minStorageBufferOffsetAlignment = mtlLimits.minBufferOffsetAlignment;
 
         uint64_t maxBufferSize = Buffer::QueryMaxBufferLength(*mDevice);
+        limits->v1.maxBufferSize = maxBufferSize;
 
         // Metal has no documented limit on the size of a binding. Use the maximum
         // buffer size.
@@ -617,6 +613,12 @@ class Adapter : public AdapterBase {
         // TODO(crbug.com/dawn/1448):
         // - maxInterStageShaderVariables
 
+        return {};
+    }
+
+    MaybeError ValidateFeatureSupportedWithTogglesImpl(
+        wgpu::FeatureName feature,
+        const TripleStateTogglesSet& userProvidedToggles) override {
         return {};
     }
 
@@ -661,8 +663,7 @@ ResultOrError<std::vector<Ref<AdapterBase>>> Backend::DiscoverAdapters(
 
     // iOS only has a single device so MTLCopyAllDevices doesn't exist there.
 #if defined(DAWN_PLATFORM_IOS)
-    Ref<Adapter> adapter =
-        AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
+    Ref<Adapter> adapter = AcquireRef(new Adapter(GetInstance(), MTLCreateSystemDefaultDevice()));
     if (!GetInstance()->ConsumedError(adapter->Initialize())) {
         adapters.push_back(std::move(adapter));
     }

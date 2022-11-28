@@ -47,8 +47,8 @@ constexpr int kLowestEncodingSpeed = 6;
 
 StreamingVpxEncoder::StreamingVpxEncoder(const Parameters& params,
                                          TaskRunner* task_runner,
-                                         Sender* sender)
-    : StreamingVideoEncoder(params, task_runner, sender) {
+                                         std::unique_ptr<Sender> sender)
+    : StreamingVideoEncoder(params, task_runner, std::move(sender)) {
   ideal_speed_setting_ = kHighestEncodingSpeed;
   encode_thread_ = std::thread([this] { ProcessWorkUnitsUntilTimeToQuit(); });
 
@@ -396,10 +396,10 @@ void StreamingVpxEncoder::SendEncodedFrame(WorkUnitWithResults results) {
   EncodedFrame frame;
   frame.frame_id = sender_->GetNextFrameId();
   if (results.is_key_frame) {
-    frame.dependency = EncodedFrame::KEY_FRAME;
+    frame.dependency = EncodedFrame::Dependency::kKeyFrame;
     frame.referenced_frame_id = frame.frame_id;
   } else {
-    frame.dependency = EncodedFrame::DEPENDS_ON_ANOTHER;
+    frame.dependency = EncodedFrame::Dependency::kDependent;
     frame.referenced_frame_id = frame.frame_id - 1;
   }
   frame.rtp_timestamp = results.rtp_timestamp;

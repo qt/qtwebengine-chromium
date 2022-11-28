@@ -176,7 +176,7 @@ class WasmGraphBuildingInterface {
     }
     LoadContextIntoSsa(ssa_env, decoder);
 
-    if (FLAG_trace_wasm && inlined_status_ == kRegularFunction) {
+    if (v8_flags.trace_wasm && inlined_status_ == kRegularFunction) {
       builder_->TraceFunctionEntry(decoder->position());
     }
   }
@@ -197,6 +197,9 @@ class WasmGraphBuildingInterface {
   void StartFunctionBody(FullDecoder* decoder, Control* block) {}
 
   void FinishFunction(FullDecoder*) {
+    if (v8_flags.wasm_speculative_inlining) {
+      DCHECK_EQ(feedback_instruction_index_, type_feedback_.size());
+    }
     if (inlined_status_ == kRegularFunction) {
       builder_->PatchInStackCheckIfNeeded();
     }
@@ -420,7 +423,7 @@ class WasmGraphBuildingInterface {
 
   void RefAsNonNull(FullDecoder* decoder, const Value& arg, Value* result) {
     TFNode* cast_node =
-        FLAG_experimental_wasm_skip_null_checks
+        v8_flags.experimental_wasm_skip_null_checks
             ? builder_->TypeGuard(arg.node, result->type)
             : builder_->RefAsNonNull(arg.node, decoder->position());
     SetAndTypeNode(result, cast_node);
@@ -511,7 +514,7 @@ class WasmGraphBuildingInterface {
                               : decoder->stack_value(ret_count + drop_values);
       GetNodes(values.begin(), stack_base, ret_count);
     }
-    if (FLAG_trace_wasm && inlined_status_ == kRegularFunction) {
+    if (v8_flags.trace_wasm && inlined_status_ == kRegularFunction) {
       builder_->TraceFunctionExit(base::VectorOf(values), decoder->position());
     }
     builder_->Return(base::VectorOf(values));
@@ -656,7 +659,7 @@ class WasmGraphBuildingInterface {
                   const CallFunctionImmediate<validate>& imm,
                   const Value args[], Value returns[]) {
     int maybe_call_count = -1;
-    if (FLAG_wasm_speculative_inlining && type_feedback_.size() > 0) {
+    if (v8_flags.wasm_speculative_inlining && type_feedback_.size() > 0) {
       const CallSiteFeedback& feedback = next_call_feedback();
       DCHECK_EQ(feedback.num_cases(), 1);
       maybe_call_count = feedback.call_count(0);
@@ -669,7 +672,7 @@ class WasmGraphBuildingInterface {
                   const CallFunctionImmediate<validate>& imm,
                   const Value args[]) {
     int maybe_call_count = -1;
-    if (FLAG_wasm_speculative_inlining && type_feedback_.size() > 0) {
+    if (v8_flags.wasm_speculative_inlining && type_feedback_.size() > 0) {
       const CallSiteFeedback& feedback = next_call_feedback();
       DCHECK_EQ(feedback.num_cases(), 1);
       maybe_call_count = feedback.call_count(0);
@@ -700,7 +703,7 @@ class WasmGraphBuildingInterface {
                const FunctionSig* sig, uint32_t sig_index, const Value args[],
                Value returns[]) {
     const CallSiteFeedback* feedback = nullptr;
-    if (FLAG_wasm_speculative_inlining && type_feedback_.size() > 0) {
+    if (v8_flags.wasm_speculative_inlining && type_feedback_.size() > 0) {
       feedback = &next_call_feedback();
     }
     if (feedback == nullptr || feedback->num_cases() == 0) {
@@ -721,7 +724,7 @@ class WasmGraphBuildingInterface {
     for (int i = 0; i < num_cases; i++) {
       const uint32_t expected_function_index = feedback->function_index(i);
 
-      if (FLAG_trace_wasm_speculative_inlining) {
+      if (v8_flags.trace_wasm_speculative_inlining) {
         PrintF("[Function #%d call #%d: graph support for inlining #%d]\n",
                func_index_, feedback_instruction_index_ - 1,
                expected_function_index);
@@ -771,6 +774,15 @@ class WasmGraphBuildingInterface {
     ssa_env_->effect = effect;
     builder_->SetEffectControl(effect, control);
 
+    // Each of the {DoCall} helpers above has created a reload of the instance
+    // cache nodes. Rather than merging all of them into a Phi here, just
+    // let them get DCE'ed and perform a single reload after the merge.
+    if (decoder->module_->initial_pages != decoder->module_->maximum_pages) {
+      // The invoked function could have used grow_memory, so we need to
+      // reload mem_size and mem_start.
+      LoadContextIntoSsa(ssa_env_, decoder);
+    }
+
     for (uint32_t i = 0; i < sig->return_count(); i++) {
       std::vector<TFNode*> phi_args;
       for (int j = 0; j < num_cases; j++) {
@@ -788,7 +800,7 @@ class WasmGraphBuildingInterface {
                      const FunctionSig* sig, uint32_t sig_index,
                      const Value args[]) {
     const CallSiteFeedback* feedback = nullptr;
-    if (FLAG_wasm_speculative_inlining && type_feedback_.size() > 0) {
+    if (v8_flags.wasm_speculative_inlining && type_feedback_.size() > 0) {
       feedback = &next_call_feedback();
     }
     if (feedback == nullptr || feedback->num_cases() == 0) {
@@ -804,7 +816,7 @@ class WasmGraphBuildingInterface {
     for (int i = 0; i < num_cases; i++) {
       const uint32_t expected_function_index = feedback->function_index(i);
 
-      if (FLAG_trace_wasm_speculative_inlining) {
+      if (v8_flags.trace_wasm_speculative_inlining) {
         PrintF("[Function #%d call #%d: graph support for inlining #%d]\n",
                func_index_, feedback_instruction_index_ - 1,
                expected_function_index);
@@ -1222,10 +1234,12 @@ class WasmGraphBuildingInterface {
 
   WasmTypeCheckConfig ComputeWasmTypeCheckConfig(ValueType object_type,
                                                  ValueType rtt_type,
-                                                 const WasmModule* module) {
+                                                 const WasmModule* module,
+                                                 bool null_succeeds) {
     WasmTypeCheckConfig result;
     result.object_can_be_null = object_type.is_nullable();
     DCHECK(object_type.is_object_reference());  // Checked by validation.
+    result.null_succeeds = null_succeeds;
     // In the bottom case, the result is irrelevant.
     result.rtt_depth = rtt_type.is_bottom()
                            ? 0 /* unused */
@@ -1235,17 +1249,25 @@ class WasmGraphBuildingInterface {
   }
 
   void RefTest(FullDecoder* decoder, const Value& object, const Value& rtt,
-               Value* result) {
-    WasmTypeCheckConfig config =
-        ComputeWasmTypeCheckConfig(object.type, rtt.type, decoder->module_);
+               Value* result, bool null_succeeds) {
+    WasmTypeCheckConfig config = ComputeWasmTypeCheckConfig(
+        object.type, rtt.type, decoder->module_, null_succeeds);
     SetAndTypeNode(result, builder_->RefTest(object.node, rtt.node, config));
+  }
+
+  void RefTestAbstract(FullDecoder* decoder, const Value& object,
+                       wasm::HeapType type, Value* result, bool null_succeeds) {
+    SetAndTypeNode(result,
+                   builder_->RefTestAbstract(object.node, type, null_succeeds));
   }
 
   void RefCast(FullDecoder* decoder, const Value& object, const Value& rtt,
                Value* result) {
-    WasmTypeCheckConfig config =
-        ComputeWasmTypeCheckConfig(object.type, rtt.type, decoder->module_);
-    TFNode* cast_node = FLAG_experimental_wasm_assume_ref_cast_succeeds
+    // TODO(mliedtke): Should be a parameter for generic ref.cast instructions.
+    const bool null_succeeds = false;
+    WasmTypeCheckConfig config = ComputeWasmTypeCheckConfig(
+        object.type, rtt.type, decoder->module_, null_succeeds);
+    TFNode* cast_node = v8_flags.experimental_wasm_assume_ref_cast_succeeds
                             ? builder_->TypeGuard(object.node, result->type)
                             : builder_->RefCast(object.node, rtt.node, config,
                                                 decoder->position());
@@ -1258,8 +1280,11 @@ class WasmGraphBuildingInterface {
   void BrOnCastAbs(FullDecoder* decoder, const Value& object, const Value& rtt,
                    Value* forwarding_value, uint32_t br_depth,
                    bool branch_on_match) {
-    WasmTypeCheckConfig config =
-        ComputeWasmTypeCheckConfig(object.type, rtt.type, decoder->module_);
+    // TODO(mliedtke): Should be a parameter for generic br_on_cast
+    // instructions.
+    const bool null_succeeds = false;
+    WasmTypeCheckConfig config = ComputeWasmTypeCheckConfig(
+        object.type, rtt.type, decoder->module_, null_succeeds);
     SsaEnv* branch_env = Split(decoder->zone(), ssa_env_);
     SsaEnv* no_branch_env = Steal(decoder->zone(), ssa_env_);
     no_branch_env->SetNotMerged();
@@ -1290,9 +1315,18 @@ class WasmGraphBuildingInterface {
         decoder, object, rtt, value_on_fallthrough, br_depth, false);
   }
 
-  void RefIsData(FullDecoder* decoder, const Value& object, Value* result) {
+  void RefIsEq(FullDecoder* decoder, const Value& object, Value* result) {
+    bool null_succeeds = false;
     SetAndTypeNode(result,
-                   builder_->RefIsData(object.node, object.type.is_nullable()));
+                   builder_->RefIsEq(object.node, object.type.is_nullable(),
+                                     null_succeeds));
+  }
+
+  void RefIsData(FullDecoder* decoder, const Value& object, Value* result) {
+    bool null_succeeds = false;
+    SetAndTypeNode(result,
+                   builder_->RefIsData(object.node, object.type.is_nullable(),
+                                       null_succeeds));
   }
 
   void RefAsData(FullDecoder* decoder, const Value& object, Value* result) {
@@ -1317,8 +1351,10 @@ class WasmGraphBuildingInterface {
   }
 
   void RefIsArray(FullDecoder* decoder, const Value& object, Value* result) {
-    SetAndTypeNode(
-        result, builder_->RefIsArray(object.node, object.type.is_nullable()));
+    bool null_succeeds = false;
+    SetAndTypeNode(result,
+                   builder_->RefIsArray(object.node, object.type.is_nullable(),
+                                        null_succeeds));
   }
 
   void RefAsArray(FullDecoder* decoder, const Value& object, Value* result) {
@@ -1343,7 +1379,8 @@ class WasmGraphBuildingInterface {
   }
 
   void RefIsI31(FullDecoder* decoder, const Value& object, Value* result) {
-    SetAndTypeNode(result, builder_->RefIsI31(object.node));
+    bool null_succeeds = false;
+    SetAndTypeNode(result, builder_->RefIsI31(object.node, null_succeeds));
   }
 
   void RefAsI31(FullDecoder* decoder, const Value& object, Value* result) {
@@ -1367,18 +1404,18 @@ class WasmGraphBuildingInterface {
   }
 
   void StringNewWtf8(FullDecoder* decoder,
-                     const EncodeWtf8Immediate<validate>& imm,
-                     const Value& offset, const Value& size, Value* result) {
-    SetAndTypeNode(result,
-                   builder_->StringNewWtf8(imm.memory.index, imm.policy.value,
-                                           offset.node, size.node));
+                     const MemoryIndexImmediate<validate>& memory,
+                     const unibrow::Utf8Variant variant, const Value& offset,
+                     const Value& size, Value* result) {
+    SetAndTypeNode(result, builder_->StringNewWtf8(memory.index, variant,
+                                                   offset.node, size.node));
   }
 
   void StringNewWtf8Array(FullDecoder* decoder,
-                          const Wtf8PolicyImmediate<validate>& imm,
+                          const unibrow::Utf8Variant variant,
                           const Value& array, const Value& start,
                           const Value& end, Value* result) {
-    SetAndTypeNode(result, builder_->StringNewWtf8Array(imm.value, array.node,
+    SetAndTypeNode(result, builder_->StringNewWtf8Array(variant, array.node,
                                                         start.node, end.node));
   }
 
@@ -1402,15 +1439,15 @@ class WasmGraphBuildingInterface {
   }
 
   void StringMeasureWtf8(FullDecoder* decoder,
-                         const Wtf8PolicyImmediate<validate>& imm,
-                         const Value& str, Value* result) {
-    switch (imm.value) {
-      case kWtf8PolicyReject:
+                         const unibrow::Utf8Variant variant, const Value& str,
+                         Value* result) {
+    switch (variant) {
+      case unibrow::Utf8Variant::kUtf8:
         result->node = builder_->StringMeasureUtf8(
             str.node, NullCheckFor(str.type), decoder->position());
         break;
-      case kWtf8PolicyAccept:
-      case kWtf8PolicyReplace:
+      case unibrow::Utf8Variant::kLossyUtf8:
+      case unibrow::Utf8Variant::kWtf8:
         result->node = builder_->StringMeasureWtf8(
             str.node, NullCheckFor(str.type), decoder->position());
         break;
@@ -1424,19 +1461,20 @@ class WasmGraphBuildingInterface {
   }
 
   void StringEncodeWtf8(FullDecoder* decoder,
-                        const EncodeWtf8Immediate<validate>& imm,
-                        const Value& str, const Value& offset, Value* result) {
-    result->node = builder_->StringEncodeWtf8(
-        imm.memory.index, imm.policy.value, str.node, NullCheckFor(str.type),
-        offset.node, decoder->position());
+                        const MemoryIndexImmediate<validate>& memory,
+                        const unibrow::Utf8Variant variant, const Value& str,
+                        const Value& offset, Value* result) {
+    result->node = builder_->StringEncodeWtf8(memory.index, variant, str.node,
+                                              NullCheckFor(str.type),
+                                              offset.node, decoder->position());
   }
 
   void StringEncodeWtf8Array(FullDecoder* decoder,
-                             const Wtf8PolicyImmediate<validate>& imm,
+                             const unibrow::Utf8Variant variant,
                              const Value& str, const Value& array,
                              const Value& start, Value* result) {
     result->node = builder_->StringEncodeWtf8Array(
-        imm.value, str.node, NullCheckFor(str.type), array.node,
+        variant, str.node, NullCheckFor(str.type), array.node,
         NullCheckFor(array.type), start.node, decoder->position());
   }
 
@@ -1491,14 +1529,15 @@ class WasmGraphBuildingInterface {
   }
 
   void StringViewWtf8Encode(FullDecoder* decoder,
-                            const EncodeWtf8Immediate<validate>& imm,
+                            const MemoryIndexImmediate<validate>& memory,
+                            const unibrow::Utf8Variant variant,
                             const Value& view, const Value& addr,
                             const Value& pos, const Value& bytes,
                             Value* next_pos, Value* bytes_written) {
-    builder_->StringViewWtf8Encode(
-        imm.memory.index, imm.policy.value, view.node, NullCheckFor(view.type),
-        addr.node, pos.node, bytes.node, &next_pos->node, &bytes_written->node,
-        decoder->position());
+    builder_->StringViewWtf8Encode(memory.index, variant, view.node,
+                                   NullCheckFor(view.type), addr.node, pos.node,
+                                   bytes.node, &next_pos->node,
+                                   &bytes_written->node, decoder->position());
   }
 
   void StringViewWtf8Slice(FullDecoder* decoder, const Value& view,
@@ -1507,6 +1546,15 @@ class WasmGraphBuildingInterface {
     SetAndTypeNode(result, builder_->StringViewWtf8Slice(
                                view.node, NullCheckFor(view.type), start.node,
                                end.node, decoder->position()));
+  }
+
+  void StringAsWtf16(FullDecoder* decoder, const Value& str, Value* result) {
+    // Since we implement stringview_wtf16 as string, that's the type we'll
+    // use for the Node. (The decoder's Value type must be stringview_wtf16
+    // because static type validation relies on it.)
+    result->node =
+        builder_->SetType(builder_->RefAsNonNull(str.node, decoder->position()),
+                          ValueType::Ref(HeapType::kString));
   }
 
   void StringViewWtf16GetCodeUnit(FullDecoder* decoder, const Value& view,
@@ -1611,7 +1659,7 @@ class WasmGraphBuildingInterface {
   // - After IfFailure nodes.
   // - When exiting a loop through Delegate.
   bool emit_loop_exits() {
-    return FLAG_wasm_loop_unrolling || FLAG_wasm_loop_peeling;
+    return v8_flags.wasm_loop_unrolling || v8_flags.wasm_loop_peeling;
   }
 
   void GetNodes(TFNode** nodes, Value* values, size_t count) {
@@ -1625,7 +1673,7 @@ class WasmGraphBuildingInterface {
   }
 
   void SetEnv(SsaEnv* env) {
-    if (FLAG_trace_wasm_decoder) {
+    if (v8_flags.trace_wasm_decoder) {
       char state = 'X';
       if (env) {
         switch (env->state) {
@@ -1670,7 +1718,6 @@ class WasmGraphBuildingInterface {
 
     TFNode* if_success = nullptr;
     TFNode* if_exception = nullptr;
-    // TODO(manoskouk): Can we assign a wasm type to the exception value?
     if (!builder_->ThrowsException(node, &if_success, &if_exception)) {
       return node;
     }
@@ -2058,7 +2105,6 @@ class WasmGraphBuildingInterface {
         }
       }
       if (exception_value != nullptr) {
-        // TODO(manoskouk): Can we assign a wasm type to the exception value?
         *exception_value = builder_->LoopExitValue(
             *exception_value, MachineRepresentation::kWord32);
       }
@@ -2070,7 +2116,7 @@ class WasmGraphBuildingInterface {
 
   CheckForNull NullCheckFor(ValueType type) {
     DCHECK(type.is_object_reference());
-    return (!FLAG_experimental_wasm_skip_null_checks && type.is_nullable())
+    return (!v8_flags.experimental_wasm_skip_null_checks && type.is_nullable())
                ? CheckForNull::kWithNullCheck
                : CheckForNull::kWithoutNullCheck;
   }

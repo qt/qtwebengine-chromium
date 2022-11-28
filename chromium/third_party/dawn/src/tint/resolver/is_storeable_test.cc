@@ -78,7 +78,7 @@ TEST_F(ResolverIsStorableTest, Matrix) {
 }
 
 TEST_F(ResolverIsStorableTest, Pointer) {
-    auto* ptr = create<sem::Pointer>(create<sem::I32>(), ast::StorageClass::kPrivate,
+    auto* ptr = create<sem::Pointer>(create<sem::I32>(), ast::AddressSpace::kPrivate,
                                      ast::Access::kReadWrite);
     EXPECT_FALSE(r()->IsStorable(ptr));
 }
@@ -89,12 +89,13 @@ TEST_F(ResolverIsStorableTest, Atomic) {
 }
 
 TEST_F(ResolverIsStorableTest, ArraySizedOfStorable) {
-    auto* arr = create<sem::Array>(create<sem::I32>(), 5u, 4u, 20u, 4u, 4u);
+    auto* arr =
+        create<sem::Array>(create<sem::I32>(), sem::ConstantArrayCount{5u}, 4u, 20u, 4u, 4u);
     EXPECT_TRUE(r()->IsStorable(arr));
 }
 
 TEST_F(ResolverIsStorableTest, ArrayUnsizedOfStorable) {
-    auto* arr = create<sem::Array>(create<sem::I32>(), 0u, 4u, 4u, 4u, 4u);
+    auto* arr = create<sem::Array>(create<sem::I32>(), sem::RuntimeArrayCount{}, 4u, 4u, 4u, 4u);
     EXPECT_TRUE(r()->IsStorable(arr));
 }
 
@@ -110,7 +111,7 @@ TEST_F(ResolverIsStorableTest, Struct_AllMembersStorable) {
 TEST_F(ResolverIsStorableTest, Struct_SomeMembersNonStorable) {
     Structure("S", utils::Vector{
                        Member("a", ty.i32()),
-                       Member("b", ty.pointer<i32>(ast::StorageClass::kPrivate)),
+                       Member("b", ty.pointer<i32>(ast::AddressSpace::kPrivate)),
                    });
 
     EXPECT_FALSE(r()->Resolve());
@@ -136,7 +137,7 @@ TEST_F(ResolverIsStorableTest, Struct_NestedNonStorable) {
     auto* non_storable =
         Structure("nonstorable", utils::Vector{
                                      Member("a", ty.i32()),
-                                     Member("b", ty.pointer<i32>(ast::StorageClass::kPrivate)),
+                                     Member("b", ty.pointer<i32>(ast::AddressSpace::kPrivate)),
                                  });
     Structure("S", utils::Vector{
                        Member("a", ty.i32()),

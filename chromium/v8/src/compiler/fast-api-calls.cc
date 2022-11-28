@@ -175,7 +175,7 @@ Node* FastApiCallBuilder::WrapFastCall(const CallDescriptor* call_descriptor,
       ExternalReference::javascript_execution_assert(isolate()));
   static_assert(sizeof(bool) == 1, "Wrong assumption about boolean size.");
 
-  if (FLAG_debug_code) {
+  if (v8_flags.debug_code) {
     auto do_store = __ MakeLabel();
     Node* old_scope_value =
         __ Load(MachineType::Int8(), javascript_execution_assert, 0);
@@ -309,11 +309,18 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
         stack_slot,
         static_cast<int>(offsetof(v8::FastApiCallbackOptions, fallback)),
         __ Int32Constant(0));
+
+    Node* data_stack_slot = __ StackSlot(sizeof(uintptr_t), alignof(uintptr_t));
+    __ Store(
+        StoreRepresentation(MachineType::PointerRepresentation(),
+                            kNoWriteBarrier),
+        data_stack_slot, 0, data_argument);
+
     __ Store(StoreRepresentation(MachineType::PointerRepresentation(),
                                  kNoWriteBarrier),
              stack_slot,
              static_cast<int>(offsetof(v8::FastApiCallbackOptions, data)),
-             data_argument);
+             data_stack_slot);
 
     initialize_options_(stack_slot);
 

@@ -23,8 +23,6 @@
 
 namespace jxl {
 
-constexpr size_t kMaxPatchSize = 32;
-
 enum class PatchBlendMode : uint8_t {
   // The new values are the old ones. Useful to skip some channels.
   kNone = 0,
@@ -77,69 +75,15 @@ struct PatchBlending {
   bool clamp;
 };
 
-struct QuantizedPatch {
-  size_t xsize;
-  size_t ysize;
-  QuantizedPatch() {
-    for (size_t i = 0; i < 3; i++) {
-      pixels[i].resize(kMaxPatchSize * kMaxPatchSize);
-      fpixels[i].resize(kMaxPatchSize * kMaxPatchSize);
-    }
-  }
-  std::vector<int8_t> pixels[3] = {};
-  // Not compared. Used only to retrieve original pixels to construct the
-  // reference image.
-  std::vector<float> fpixels[3] = {};
-  bool operator==(const QuantizedPatch& other) const {
-    if (xsize != other.xsize) return false;
-    if (ysize != other.ysize) return false;
-    for (size_t c = 0; c < 3; c++) {
-      if (memcmp(pixels[c].data(), other.pixels[c].data(),
-                 sizeof(int8_t) * xsize * ysize) != 0)
-        return false;
-    }
-    return true;
-  }
-
-  bool operator<(const QuantizedPatch& other) const {
-    if (xsize != other.xsize) return xsize < other.xsize;
-    if (ysize != other.ysize) return ysize < other.ysize;
-    for (size_t c = 0; c < 3; c++) {
-      int cmp = memcmp(pixels[c].data(), other.pixels[c].data(),
-                       sizeof(int8_t) * xsize * ysize);
-      if (cmp > 0) return false;
-      if (cmp < 0) return true;
-    }
-    return false;
-  }
-};
-
-// Pair (patch, vector of occurrences).
-using PatchInfo =
-    std::pair<QuantizedPatch, std::vector<std::pair<uint32_t, uint32_t>>>;
-
 // Position and size of the patch in the reference frame.
 struct PatchReferencePosition {
   size_t ref, x0, y0, xsize, ysize;
-  bool operator<(const PatchReferencePosition& oth) const {
-    return std::make_tuple(ref, x0, y0, xsize, ysize) <
-           std::make_tuple(oth.ref, oth.x0, oth.y0, oth.xsize, oth.ysize);
-  }
-  bool operator==(const PatchReferencePosition& oth) const {
-    return !(*this < oth) && !(oth < *this);
-  }
 };
 
 struct PatchPosition {
   // Position of top-left corner of the patch in the image.
   size_t x, y;
-  // Different blend mode for color and extra channels.
-  std::vector<PatchBlending> blending;
-  PatchReferencePosition ref_pos;
-  bool operator<(const PatchPosition& oth) const {
-    return std::make_tuple(ref_pos, x, y) <
-           std::make_tuple(oth.ref_pos, oth.x, oth.y);
-  }
+  size_t ref_pos_idx;
 };
 
 struct PassesSharedState;
@@ -162,37 +106,44 @@ class PatchDictionary {
 
   void Clear() {
     positions_.clear();
-    ComputePatchCache();
+    ComputePatchTree();
   }
 
-  // Only adds patches that belong to the `image_rect` area of the decoded
-  // image, writing them to the `opsin_rect` area of `opsin`.
-  Status AddTo(Image3F* opsin, const Rect& opsin_rect,
-               float* const* extra_channels, const Rect& image_rect) const;
+  // Adds patches to a segment of `xsize` pixels, starting at `inout`, assumed
+  // to be located at position (x0, y) in the frame.
+  void AddOneRow(float* const* inout, size_t y, size_t x0, size_t xsize) const;
 
   // Returns dependencies of this patch dictionary on reference frame ids as a
   // bit mask: bits 0-3 indicate reference frame 0-3.
   int GetReferences() const;
+
+  std::vector<size_t> GetPatchesForRow(size_t y) const;
 
  private:
   friend class PatchDictionaryEncoder;
 
   const PassesSharedState* shared_;
   std::vector<PatchPosition> positions_;
+  std::vector<PatchReferencePosition> ref_positions_;
+  std::vector<PatchBlending> blendings_;
 
-  // Patch occurrences sorted by y.
-  std::vector<size_t> sorted_patches_;
-  // Index of the first patch for each y value.
-  std::vector<size_t> patch_starts_;
+  // Interval tree on the y coordinates of the patches.
+  struct PatchTreeNode {
+    ssize_t left_child;
+    ssize_t right_child;
+    size_t y_center;
+    // Range of patches in sorted_patches_y0_ and sorted_patches_y1_ that
+    // contain the row y_center.
+    size_t start;
+    size_t num;
+  };
+  std::vector<PatchTreeNode> patch_tree_;
+  // Number of patches for each row.
+  std::vector<size_t> num_patches_;
+  std::vector<std::pair<size_t, size_t>> sorted_patches_y0_;
+  std::vector<std::pair<size_t, size_t>> sorted_patches_y1_;
 
-  // Patch IDs in position [patch_starts_[y], patch_start_[y+1]) of
-  // sorted_patches_ are all the patches that intersect the horizontal line at
-  // y.
-  // The relative order of patches that affect the same pixels is the same -
-  // important when applying patches is noncommutative.
-
-  // Compute patches_by_y_ after updating positions_.
-  void ComputePatchCache();
+  void ComputePatchTree();
 };
 
 }  // namespace jxl

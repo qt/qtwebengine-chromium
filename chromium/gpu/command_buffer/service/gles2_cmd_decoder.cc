@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <list>
@@ -34,6 +33,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -98,8 +98,6 @@
 #include "ui/gfx/overlay_plane_data.h"
 #include "ui/gfx/overlay_priority_hint.h"
 #include "ui/gfx/video_types.h"
-#include "ui/gl/ca_renderer_layer_params.h"
-#include "ui/gl/dc_renderer_layer_params.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_enums.h"
@@ -274,8 +272,7 @@ static bool CharacterIsValidForGLES(unsigned char c) {
 
 static bool StringIsValidForGLES(const std::string& str) {
   return str.length() == 0 ||
-         std::find_if_not(str.begin(), str.end(), CharacterIsValidForGLES) ==
-             str.end();
+         base::ranges::all_of(str, CharacterIsValidForGLES);
 }
 
 DisallowedFeatures::DisallowedFeatures() = default;
@@ -1216,7 +1213,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
                                          const volatile GLbyte* key);
   void DoCreateAndTexStorage2DSharedImageINTERNAL(
       GLuint client_id,
-      GLenum internal_format,
       const volatile GLbyte* mailbox);
   void DoBeginSharedImageAccessDirectCHROMIUM(GLuint client_id, GLenum mode);
   void DoEndSharedImageAccessDirectCHROMIUM(GLuint client_id);
@@ -2672,7 +2668,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
   scoped_refptr<ShaderTranslatorInterface> fragment_translator_;
 
   // Cached from ContextGroup
-  raw_ptr<const Validators> validators_;
+  raw_ptr<const Validators, DanglingUntriaged> validators_;
   scoped_refptr<FeatureInfo> feature_info_;
 
   int frame_number_;
@@ -16695,10 +16691,11 @@ void GLES2DecoderImpl::DoSwapBuffers(uint64_t swap_id, GLbitfield flags) {
     surface_->SwapBuffersAsync(
         base::BindOnce(&GLES2DecoderImpl::FinishAsyncSwapBuffers,
                        weak_ptr_factory_.GetWeakPtr(), swap_id),
-        base::DoNothing());
+        base::DoNothing(), gl::FrameData());
   } else {
     client()->OnSwapBuffers(swap_id, flags);
-    FinishSwapBuffers(surface_->SwapBuffers(base::DoNothing()));
+    FinishSwapBuffers(
+        surface_->SwapBuffers(base::DoNothing(), gl::FrameData()));
   }
 
   // This may be a slow command.  Exit command processing to allow for
@@ -18472,7 +18469,6 @@ void GLES2DecoderImpl::DoCreateAndConsumeTextureINTERNAL(
 
 void GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
     GLuint client_id,
-    GLenum internal_format,
     const volatile GLbyte* mailbox_data) {
   TRACE_EVENT2("gpu",
                "GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageCHROMIUM",
@@ -18498,20 +18494,8 @@ void GLES2DecoderImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
     return;
   }
 
-  std::unique_ptr<GLTextureImageRepresentation> shared_image;
-  if (internal_format == GL_RGB) {
-    shared_image = group_->shared_image_representation_factory()
-                       ->ProduceRGBEmulationGLTexture(mailbox);
-  } else if (internal_format == GL_NONE) {
-    shared_image =
-        group_->shared_image_representation_factory()->ProduceGLTexture(
-            mailbox);
-  } else {
-    LOCAL_SET_GL_ERROR(GL_INVALID_ENUM,
-                       "DoCreateAndTexStorage2DSharedImageINTERNAL",
-                       "invalid internal format");
-    return;
-  }
+  std::unique_ptr<GLTextureImageRepresentation> shared_image =
+      group_->shared_image_representation_factory()->ProduceGLTexture(mailbox);
 
   if (!shared_image) {
     // Mailbox missing, generate a texture.

@@ -1,3 +1,6 @@
+EXPORTER_TOOL=bazel-bin/bazel/exporter_tool/exporter_tool_/exporter_tool
+EXPORTER_RULES=-rule='//src/...' -rule='//modules/...' -rule='//include/...'
+
 generate:
 	echo "You do not need to run this any more for C++ code, only if you modify go code"
 
@@ -6,7 +9,19 @@ generate_go:
 
 .PHONY: generate_cmake
 generate_cmake:
-	cd .. && bazel build //bazel/exporter_tool && bazel-bin/bazel/exporter_tool/exporter_tool_/exporter_tool -proj_name=Skia -rule='//:skia_public'
+	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
+		-output_format=cmake -proj_name=Skia -rule='//:skia_public'
+
+.PHONY: generate_gni
+generate_gni:
+	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
+		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} \
+		&& bin/gn format gn/*.gni modules/*/*.gni
+
+.PHONY: check_gni
+check_gni:
+	cd .. && bazelisk build //bazel/exporter_tool && ${EXPORTER_TOOL} \
+		-output_format=gni -proj_name=Skia ${EXPORTER_RULES} -check_current
 
 .PHONY: mocks
 mocks:
@@ -31,7 +46,7 @@ known_good_builds:
 	bazelisk build //tools/skslc
 	bazelisk build //modules/skottie:skottie_tool_cpu
 	bazelisk build //modules/skottie:skottie_tool_gpu
-	bazelisk build //modules/canvaskit:canvaskit_webgl --config=webgl2_release
+	bazelisk build //modules/canvaskit:canvaskit --config=ck_full_webgl2_release
 
 rbe_known_good_builds:
 	bazelisk build //:skia_public --config=for_linux_x64_with_rbe --remote_download_minimal
@@ -48,12 +63,21 @@ rbe_known_good_builds:
 	bazelisk build //modules/skottie:skottie_tool_gpu --config=for_linux_x64_with_rbe --remote_download_minimal
 	## TODO(kjlubick) CanvasKit in release mode (i.e. with Closure) requires
 	## https://github.com/emscripten-core/emscripten/pull/16640 to land
-	bazelisk build //modules/canvaskit:canvaskit_webgl --config=linux_rbe --config=webgl2_debug \
-		--remote_download_minimal
+	bazelisk build //modules/canvaskit:canvaskit --config=linux_rbe \
+		--config=ck_full_webgl2_debug --remote_download_minimal
 
 iwyu_rbe:
-	bazelisk build //:skia_public --config=for_linux_x64_with_rbe --config=enforce_iwyu \
-	 	--remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
+	bazelisk build //tests/... --config=for_linux_x64_with_rbe \
+		--config=enforce_iwyu --remote_download_minimal --nobuild_runfile_manifests
 
 iwyu:
-	bazelisk build //:skia_public --config=enforce_iwyu --nobuild_runfile_manifests
+	bazelisk build //:skia_public --config=enforce_iwyu \
+		--nobuild_runfile_manifests
+	bazelisk build //modules/skottie:skottie_tool_gpu --config=enforce_iwyu \
+		--nobuild_runfile_manifests
+	bazelisk build //tests/... --config=enforce_iwyu \
+		--nobuild_runfile_manifests

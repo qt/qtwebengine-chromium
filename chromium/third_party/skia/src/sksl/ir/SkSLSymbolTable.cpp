@@ -13,12 +13,8 @@
 
 namespace SkSL {
 
-const Symbol* SymbolTable::operator[](std::string_view name) const {
-    return this->lookup(MakeSymbolKey(name));
-}
-
 bool SymbolTable::isType(std::string_view name) const {
-    const Symbol* symbol = (*this)[name];
+    const Symbol* symbol = this->find(name);
     return symbol && symbol->is<Type>();
 }
 
@@ -29,14 +25,29 @@ bool SymbolTable::isBuiltinType(std::string_view name) const {
     return this->isType(name);
 }
 
-const Symbol* SymbolTable::lookup(const SymbolKey& key) const {
-    const Symbol** symbolPPtr = fSymbols.find(key);
+Symbol* SymbolTable::lookup(const SymbolKey& key) const {
+    Symbol** symbolPPtr = fSymbols.find(key);
     if (symbolPPtr) {
         return *symbolPPtr;
     }
 
     // The symbol wasn't found; recurse into the parent symbol table.
     return fParent ? fParent->lookup(key) : nullptr;
+}
+
+void SymbolTable::renameSymbol(Symbol* symbol, std::string_view newName) {
+    if (symbol->is<FunctionDeclaration>()) {
+        // This is a function declaration, so we need to rename the entire overload set.
+        for (FunctionDeclaration* fn = &symbol->as<FunctionDeclaration>(); fn != nullptr;
+             fn = fn->mutableNextOverload()) {
+            fn->setName(newName);
+        }
+    } else {
+        // Other types of symbols don't allow multiple symbols with the same name.
+        symbol->setName(newName);
+    }
+
+    this->addWithoutOwnership(symbol);
 }
 
 const std::string* SymbolTable::takeOwnershipOfString(std::string str) {
@@ -51,21 +62,17 @@ void SymbolTable::addWithoutOwnership(Symbol* symbol) {
     // If this is a function declaration, we need to keep the overload chain in sync.
     if (symbol->is<FunctionDeclaration>()) {
         // If we have a function with the same name...
-        const Symbol* existingSymbol = this->lookup(key);
+        Symbol* existingSymbol = this->lookup(key);
         if (existingSymbol && existingSymbol->is<FunctionDeclaration>()) {
             // ... add the existing function as the next overload in the chain.
-            const FunctionDeclaration* existingDecl = &existingSymbol->as<FunctionDeclaration>();
+            FunctionDeclaration* existingDecl = &existingSymbol->as<FunctionDeclaration>();
             symbol->as<FunctionDeclaration>().setNextOverload(existingDecl);
             fSymbols[key] = symbol;
             return;
         }
     }
 
-    return this->addWithoutOwnership(symbol, key);
-}
-
-void SymbolTable::addWithoutOwnership(const Symbol* symbol, const SymbolKey& key) {
-    const Symbol*& refInSymbolTable = fSymbols[key];
+    Symbol*& refInSymbolTable = fSymbols[key];
 
     if (refInSymbolTable == nullptr) {
         refInSymbolTable = symbol;
@@ -87,7 +94,7 @@ const Type* SymbolTable::addArrayDimension(const Type* type, int arraySize) {
     }
     // Reuse an existing array type with this name if one already exists in our symbol table.
     std::string arrayName = type->getArrayName(arraySize);
-    if (const Symbol* existingType = (*this)[arrayName]) {
+    if (const Symbol* existingType = this->find(arrayName)) {
         return &existingType->as<Type>();
     }
     // Add a new array type to the symbol table.

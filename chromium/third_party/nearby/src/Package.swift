@@ -399,6 +399,7 @@ let package = Package(
         "connections/implementation/BUILD",
         "connections/implementation/fuzzers",
         "connections/BUILD",
+        "internal/BUILD",
         "internal/crypto/BUILD",
         "internal/crypto/BUILD.gn",
         "internal/platform/implementation/shared/BUILD",
@@ -425,6 +426,7 @@ let package = Package(
         "connections/implementation/service_controller_router_test.cc",
         "connections/implementation/wifi_hotspot_test.cc",
         "connections/implementation/analytics/analytics_recorder_test.cc",
+        "connections/implementation/analytics/throughput_recorder_test.cc",
         "connections/implementation/mediums/ble_v2_test.cc",
         "connections/implementation/mediums/ble_v2/bloom_filter_test.cc",
         "connections/implementation/mediums/ble_v2/ble_packet_test.cc",
@@ -471,6 +473,7 @@ let package = Package(
         "internal/platform/crypto_test.cc",
         "internal/platform/byte_array_test.cc",
         "internal/platform/bluetooth_utils_test.cc",
+        "internal/platform/credential_storage_impl_test.cc",
         "internal/platform/single_thread_executor_test.cc",
         "internal/platform/scheduled_executor_test.cc",
         "internal/platform/count_down_latch_test.cc",
@@ -483,6 +486,7 @@ let package = Package(
         "internal/platform/condition_variable_test.cc",
         "internal/platform/thread_check_nocompile_test.py",
         "internal/platform/bluetooth_classic_test.cc",
+        "internal/platform/bluetooth_connection_info_test.cc",
         "internal/platform/mutex_test.cc",
         "internal/platform/atomic_reference_test.cc",
         "internal/platform/logging_test.cc",
@@ -503,6 +507,7 @@ let package = Package(
         "internal/platform/cancellation_flag_test.cc",
         "internal/platform/bluetooth_adapter_test.cc",
         "internal/platform/byte_utils_test.cc",
+        "internal/platform/direct_executor_test.cc",
         // simulation
         "connections/implementation/offline_simulation_user.cc",
         "connections/implementation/simulation_user.cc",
@@ -518,9 +523,6 @@ let package = Package(
         "connections/implementation/mediums/webrtc",
         // This breaks the build, but seems to work fine without it?
         "internal/platform/medium_environment.cc",
-        // This file breaks the build:
-        // TODO: compile the proto and upload it to github. Then remove this file from exclude list.
-        "internal/platform/credential_storage.cc",
       ],
       sources: [
         "compiled_proto",

@@ -1,4 +1,5 @@
 // Copyright 2019 Google LLC.
+
 #include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
@@ -132,12 +133,19 @@ TextLine::TextLine(ParagraphImpl* owner,
     // This is just chosen to catch the common/fast cases. Feel free to tweak.
     constexpr int kPreallocCount = 4;
     SkAutoSTArray<kPreallocCount, SkUnicode::BidiLevel> runLevels(numRuns);
+    std::vector<RunIndex> placeholdersInOriginalOrder;
     size_t runLevelsIndex = 0;
+    // Placeholders must be laid out using the original order in which they were added
+    // in the input. The API does not provide a way to indicate that a placeholder
+    // position was moved due to bidi reordering.
     for (auto runIndex = start.runIndex(); runIndex <= end.runIndex(); ++runIndex) {
         auto& run = fOwner->run(runIndex);
         runLevels[runLevelsIndex++] = run.fBidiLevel;
         fMaxRunMetrics.add(
             InternalLineMetrics(run.correctAscent(), run.correctDescent(), run.fFontMetrics.fLeading));
+        if (run.isPlaceholder()) {
+            placeholdersInOriginalOrder.push_back(runIndex);
+        }
     }
     SkASSERT(runLevelsIndex == numRuns);
 
@@ -146,8 +154,14 @@ TextLine::TextLine(ParagraphImpl* owner,
     // TODO: hide all these logic in SkUnicode?
     fOwner->getUnicode()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
     auto firstRunIndex = start.runIndex();
+    auto placeholderIter = placeholdersInOriginalOrder.begin();
     for (auto index : logicalOrder) {
-        fRunsInVisualOrder.push_back(firstRunIndex + index);
+        auto runIndex = firstRunIndex + index;
+        if (fOwner->run(runIndex).isPlaceholder()) {
+            fRunsInVisualOrder.push_back(*placeholderIter++);
+        } else {
+            fRunsInVisualOrder.push_back(runIndex);
+        }
     }
 
     // TODO: This is the fix for flutter. Must be removed...
@@ -444,7 +458,7 @@ void TextLine::paintDecorations(SkCanvas* canvas, SkScalar x, SkScalar y, TextRa
     SkAutoCanvasRestore acr(canvas, true);
     canvas->translate(x + this->offset().fX, y + this->offset().fY + style.getBaselineShift());
     Decorations decorations;
-    SkScalar correctedBaseline = SkScalarFloorToScalar(this->baseline() + style.getBaselineShift() + 0.5);
+    SkScalar correctedBaseline = SkScalarFloorToScalar(-this->sizes().rawAscent() + style.getBaselineShift() + 0.5);
     decorations.paint(canvas, style, context, correctedBaseline);
 }
 
@@ -547,9 +561,9 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
             }
             // Shape the ellipsis if the run has changed
             if (leftRun != cluster->runIndex()) {
-                ellipsisRun = shapeEllipsis(ellipsis, cluster->run());
+                ellipsisRun = shapeEllipsis(ellipsis, cluster);
                 if (ellipsisRun->advance().fX > maxWidth) {
-                    // Ellipsis is bigger than the entire line
+                    // Ellipsis is bigger than the entire line; no way we can add it at all
                     return false;
                 }
                 ellipsisRun->fClusterStart = cluster->textRange().start;
@@ -559,7 +573,7 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
             // See if it fits
             if (width + ellipsisRun->advance().fX > maxWidth) {
                 width -= cluster->width();
-                // Continue if it's not
+                // Continue if the ellipsis does not fit
                 return true;
             }
             fEllipsis = std::move(ellipsisRun);
@@ -581,7 +595,7 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
             // Shape the ellipsis if the run has changed
             if (rightRun != cluster->runIndex()) {
                 // Shape the ellipsis
-                ellipsisRun = shapeEllipsis(ellipsis, cluster->run());
+                ellipsisRun = shapeEllipsis(ellipsis, cluster);
                 if (ellipsisRun->advance().fX > maxWidth) {
                     // Ellipsis is bigger than the entire line
                     return false;
@@ -593,7 +607,7 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
             // See if it fits
             if (width + ellipsisRun->advance().fX > maxWidth) {
                 width -= cluster->width();
-                // Continue if it's not
+                // Continue if the ellipsis does not fit
                 return true;
             }
             fEllipsis = std::move(ellipsisRun);
@@ -617,14 +631,18 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
     fAdvance.fX = 0;
 }
 
-std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Run& run) {
+static inline SkUnichar nextUtf8Unit(const char** ptr, const char* end) {
+    SkUnichar val = SkUTF::NextUTF8(ptr, end);
+    return val < 0 ? 0xFFFD : val;
+}
+
+std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Cluster* cluster) {
 
     class ShapeHandler final : public SkShaper::RunHandler {
     public:
         ShapeHandler(SkScalar lineHeight, bool useHalfLeading, SkScalar baselineShift, const SkString& ellipsis)
             : fRun(nullptr), fLineHeight(lineHeight), fUseHalfLeading(useHalfLeading), fBaselineShift(baselineShift), fEllipsis(ellipsis) {}
-        Run* run() & { return fRun.get(); }
-        std::unique_ptr<Run> run() && { return std::move(fRun); }
+        std::unique_ptr<Run> run() & { return std::move(fRun); }
 
     private:
         void beginLine() override {}
@@ -655,14 +673,71 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Run
         SkString fEllipsis;
     };
 
-    ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), run.baselineShift(), ellipsis);
-    std::unique_ptr<SkShaper> shaper = SkShaper::MakeShapeDontWrapOrReorder();
-    SkASSERT_RELEASE(shaper != nullptr);
-    shaper->shape(ellipsis.c_str(), ellipsis.size(), run.font(), true,
-                  std::numeric_limits<SkScalar>::max(), &handler);
-    handler.run()->fTextRange = TextRange(0, ellipsis.size());
-    handler.run()->fOwner = fOwner;
-    return std::move(handler).run();
+    const Run& run = cluster->run();
+    TextStyle textStyle = fOwner->paragraphStyle().getTextStyle();
+    for (auto i = fBlockRange.start; i < fBlockRange.end; ++i) {
+        auto& block = fOwner->block(i);
+        if (run.leftToRight() && cluster->textRange().end <= block.fRange.end) {
+            textStyle = block.fStyle;
+            break;
+        } else if (!run.leftToRight() && cluster->textRange().start <= block.fRange.end) {
+            textStyle = block.fStyle;
+            break;
+        }
+    }
+
+    auto shaped = [&](sk_sp<SkTypeface> typeface, bool fallback) -> std::unique_ptr<Run> {
+        ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), run.baselineShift(), ellipsis);
+        SkFont font(typeface, textStyle.getFontSize());
+        font.setEdging(SkFont::Edging::kAntiAlias);
+        font.setHinting(SkFontHinting::kSlight);
+        font.setSubpixel(true);
+
+        std::unique_ptr<SkShaper> shaper = SkShaper::MakeShapeDontWrapOrReorder(
+                            fallback ? SkFontMgr::RefDefault() : SkFontMgr::RefEmpty());
+        shaper->shape(ellipsis.c_str(),
+                      ellipsis.size(),
+                      font,
+                      true,
+                      std::numeric_limits<SkScalar>::max(),
+                      &handler);
+        auto ellipisRun = handler.run();
+        ellipisRun->fTextRange = TextRange(0, ellipsis.size());
+        ellipisRun->fOwner = fOwner;
+        return ellipisRun;
+    };
+
+    // Check the current font
+    auto ellisisRun = shaped(run.fFont.refTypeface(), false);
+    if (ellisisRun->isResolved()) {
+        return ellisisRun;
+    }
+
+    // Check all allowed fonts
+    std::vector<sk_sp<SkTypeface>> typefaces = fOwner->fontCollection()->findTypefaces(
+            textStyle.getFontFamilies(), textStyle.getFontStyle(), textStyle.getFontArguments());
+    for (const auto& typeface : typefaces) {
+        ellisisRun = shaped(typeface, false);
+        if (ellisisRun->isResolved()) {
+            return ellisisRun;
+        }
+    }
+
+    // Try the fallback
+    if (fOwner->fontCollection()->fontFallbackEnabled()) {
+        const char* ch = ellipsis.c_str();
+        SkUnichar unicode = nextUtf8Unit(&ch, ellipsis.c_str() + ellipsis.size());
+
+       auto typeface = fOwner->fontCollection()->defaultFallback(
+                    unicode, textStyle.getFontStyle(), textStyle.getLocale());
+        if (typeface) {
+            ellisisRun = shaped(typeface, true);
+            if (ellisisRun->isResolved()) {
+                return ellisisRun;
+            }
+        }
+    }
+    return ellisisRun;
 }
 
 TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
@@ -834,10 +909,22 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(const Run* run,
                                                    StyleType styleType,
                                                    const RunStyleVisitor& visitor) const {
 
+    auto correctContext = [&](TextRange textRange, SkScalar textOffsetInRun) -> ClipContext {
+        auto result = this->measureTextInsideOneRun(
+                                        textRange, run, runOffset, textOffsetInRun, false, true);
+        if (styleType == StyleType::kDecorations) {
+            // Decorations are drawn based on the real font metrics (regardless of styles and strut)
+            result.clip.fTop = this->sizes().runTop(run, LineMetricStyle::CSS);
+            result.clip.fBottom =
+                    result.clip.fTop +
+                    run->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS);
+        }
+        return result;
+    };
+
     if (run->fEllipsis) {
         // Extra efforts to get the ellipsis text style
-        ClipContext clipContext = this->measureTextInsideOneRun(run->textRange(), run, runOffset,
-                                                                0, false, true);
+        ClipContext clipContext = correctContext(run->textRange(), 0.0f);
         TextRange testRange(run->fClusterStart, run->fClusterStart + run->textRange().width());
         for (BlockIndex index = fBlockRange.start; index < fBlockRange.end; ++index) {
            auto block = fOwner->styles().begin() + index;
@@ -851,8 +938,7 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(const Run* run,
     }
 
     if (styleType == StyleType::kNone) {
-        ClipContext clipContext = this->measureTextInsideOneRun(textRange, run, runOffset,
-                                                                0, false, true);
+        ClipContext clipContext = correctContext(textRange, 0.0f);
         if (clipContext.clip.height() > 0) {
             visitor(textRange, TextStyle(), clipContext);
             return clipContext.clip.width();
@@ -911,9 +997,7 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(const Run* run,
 
         // We have the style and the text
         auto runStyleTextRange = TextRange(start, start + size);
-        // Measure the text
-        ClipContext clipContext = this->measureTextInsideOneRun(runStyleTextRange, run, runOffset,
-                                                                textOffsetInRun, false, true);
+        ClipContext clipContext = correctContext(runStyleTextRange, textOffsetInRun);
         textOffsetInRun += clipContext.clip.width();
         if (clipContext.clip.height() == 0) {
             continue;
@@ -1031,11 +1115,11 @@ LineMetrics TextLine::getMetrics() const {
     return result;
 }
 
-bool TextLine::isFirstLine() {
+bool TextLine::isFirstLine() const {
     return this == &fOwner->lines().front();
 }
 
-bool TextLine::isLastLine() {
+bool TextLine::isLastLine() const {
     return this == &fOwner->lines().back();
 }
 

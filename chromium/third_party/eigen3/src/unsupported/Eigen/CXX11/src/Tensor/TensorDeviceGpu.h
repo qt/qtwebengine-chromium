@@ -130,7 +130,13 @@ class GpuStreamDevice : public StreamInterface {
  public:
   // Use the default stream on the current device
   GpuStreamDevice() : stream_(&default_stream), scratch_(NULL), semaphore_(NULL) {
-    gpuGetDevice(&device_);
+    gpuError_t status = gpuGetDevice(&device_);
+    if (status != gpuSuccess) {
+      std::cerr << "Failed to get the GPU devices "
+                << gpuGetErrorString(status)
+                << std::endl;
+      gpu_assert(status == gpuSuccess);
+    }
   }
   // Use the default stream on the specified device
   GpuStreamDevice(int device) : stream_(&default_stream), device_(device), scratch_(NULL), semaphore_(NULL) {}
@@ -141,7 +147,13 @@ class GpuStreamDevice : public StreamInterface {
   GpuStreamDevice(const gpuStream_t* stream, int device = -1)
       : stream_(stream), device_(device), scratch_(NULL), semaphore_(NULL) {
     if (device < 0) {
-      gpuGetDevice(&device_);
+      gpuError_t status = gpuGetDevice(&device_);
+      if (status != gpuSuccess) {
+        std::cerr << "Failed to get the GPU devices "
+                  << gpuGetErrorString(status)
+                  << std::endl;
+        gpu_assert(status == gpuSuccess);
+      }
     } else {
       int num_devices;
       gpuError_t err = gpuGetDeviceCount(&num_devices);

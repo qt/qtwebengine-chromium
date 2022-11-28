@@ -564,15 +564,15 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Calls Abort(msg) if the condition cond is not satisfied.
   // Use --debug_code to enable.
-  void Assert(Condition cond, AbortReason reason) NOOP_UNLESS_DEBUG_CODE;
+  void Assert(Condition cond, AbortReason reason) NOOP_UNLESS_DEBUG_CODE
 
   // Like Assert(), but without condition.
   // Use --debug_code to enable.
-  void AssertUnreachable(AbortReason reason) NOOP_UNLESS_DEBUG_CODE;
+  void AssertUnreachable(AbortReason reason) NOOP_UNLESS_DEBUG_CODE
 
   void AssertSmi(Register object,
                  AbortReason reason = AbortReason::kOperandIsNotASmi)
-      NOOP_UNLESS_DEBUG_CODE;
+      NOOP_UNLESS_DEBUG_CODE
 
   // Like Assert(), but always enabled.
   void Check(Condition cond, AbortReason reason);
@@ -695,7 +695,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                     const VRegister& fm, Condition cond);
 
   // Emits a runtime assert that the stack pointer is aligned.
-  void AssertSpAligned() NOOP_UNLESS_DEBUG_CODE;
+  void AssertSpAligned() NOOP_UNLESS_DEBUG_CODE
 
   // Copy slot_count stack slots from the stack offset specified by src to
   // the stack offset specified by dst. The offsets and count are expressed in
@@ -779,7 +779,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   // Abort execution if argument is not a positive or zero integer, enabled via
   // --debug-code.
-  void AssertPositiveOrZero(Register value) NOOP_UNLESS_DEBUG_CODE;
+  void AssertPositiveOrZero(Register value) NOOP_UNLESS_DEBUG_CODE
 
 #define DECLARE_FUNCTION(FN, REGTYPE, REG, OP) \
   inline void FN(const REGTYPE REG, const MemOperand& addr);
@@ -942,6 +942,15 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void LoadRootRegisterOffset(Register destination, intptr_t offset) final;
   void LoadRootRelative(Register destination, int32_t offset) final;
 
+  // Operand pointing to an external reference.
+  // May emit code to set up the scratch register. The operand is
+  // only guaranteed to be correct as long as the scratch register
+  // isn't changed.
+  // If the operand is used more than once, use a scratch register
+  // that is guaranteed not to be clobbered.
+  MemOperand ExternalReferenceAsOperand(ExternalReference reference,
+                                        Register scratch);
+
   void Jump(Register target, Condition cond = al);
   void Jump(Address target, RelocInfo::Mode rmode, Condition cond = al);
   void Jump(Handle<CodeT> code, RelocInfo::Mode rmode, Condition cond = al);
@@ -1047,12 +1056,16 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   inline void Lsl(const Register& rd, const Register& rn, unsigned shift);
   inline void Lsl(const Register& rd, const Register& rn, const Register& rm);
   inline void Umull(const Register& rd, const Register& rn, const Register& rm);
+  inline void Umulh(const Register& rd, const Register& rn, const Register& rm);
   inline void Smull(const Register& rd, const Register& rn, const Register& rm);
+  inline void Smulh(const Register& rd, const Register& rn, const Register& rm);
 
   inline void Sxtb(const Register& rd, const Register& rn);
   inline void Sxth(const Register& rd, const Register& rn);
   inline void Sxtw(const Register& rd, const Register& rn);
   inline void Ubfiz(const Register& rd, const Register& rn, unsigned lsb,
+                    unsigned width);
+  inline void Sbfiz(const Register& rd, const Register& rn, unsigned lsb,
                     unsigned width);
   inline void Ubfx(const Register& rd, const Register& rn, unsigned lsb,
                    unsigned width);
@@ -1142,7 +1155,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     ucvtf(vd, vn, fbits);
   }
 
-  void AssertFPCRState(Register fpcr = NoReg) NOOP_UNLESS_DEBUG_CODE;
+  void AssertFPCRState(Register fpcr = NoReg) NOOP_UNLESS_DEBUG_CODE
   void CanonicalizeNaN(const VRegister& dst, const VRegister& src);
   void CanonicalizeNaN(const VRegister& reg) { CanonicalizeNaN(reg, reg); }
 
@@ -1441,13 +1454,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // Transform a SandboxedPointer from/to its encoded form, which is used when
   // the pointer is stored on the heap and ensures that the pointer will always
   // point into the sandbox.
-  void EncodeSandboxedPointer(const Register& value);
   void DecodeSandboxedPointer(const Register& value);
-
-  // Load and decode a SandboxedPointer from the heap.
   void LoadSandboxedPointerField(const Register& destination,
                                  const MemOperand& field_operand);
-  // Encode and store a SandboxedPointer to the heap.
   void StoreSandboxedPointerField(const Register& value,
                                   const MemOperand& dst_field_operand);
 
@@ -1615,13 +1624,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
     mvni(vd, imm8, shift, shift_amount);
   }
   inline void Rev(const Register& rd, const Register& rn);
-  inline void Sbfiz(const Register& rd, const Register& rn, unsigned lsb,
-                    unsigned width);
   inline void Smaddl(const Register& rd, const Register& rn, const Register& rm,
                      const Register& ra);
   inline void Smsubl(const Register& rd, const Register& rn, const Register& rm,
                      const Register& ra);
-  inline void Smulh(const Register& rd, const Register& rn, const Register& rm);
   inline void Stnp(const CPURegister& rt, const CPURegister& rt2,
                    const MemOperand& dst);
   inline void Umaddl(const Register& rd, const Register& rn, const Register& rm,
@@ -1826,15 +1832,15 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   // Tiering support.
   void AssertFeedbackVector(Register object,
-                            Register scratch) NOOP_UNLESS_DEBUG_CODE;
+                            Register scratch) NOOP_UNLESS_DEBUG_CODE
   void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
                                            Register closure);
   void GenerateTailCallToReturnedCode(Runtime::FunctionId function_id);
-  void LoadTieringStateAndJumpIfNeedsProcessing(
-      Register optimization_state, Register feedback_vector,
-      Label* has_optimized_code_or_state);
-  void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(Register optimization_state,
-                                                    Register feedback_vector);
+  void LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
+      Register flags, Register feedback_vector, CodeKind current_code_kind,
+      Label* flags_need_processing);
+  void OptimizeCodeOrTailCallOptimizedCodeSlot(Register flags,
+                                               Register feedback_vector);
 
   // Helpers ------------------------------------------------------------------
 
@@ -1863,32 +1869,32 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // Abort execution if argument is a smi, enabled via --debug-code.
   void AssertNotSmi(Register object,
                     AbortReason reason = AbortReason::kOperandIsASmi)
-      NOOP_UNLESS_DEBUG_CODE;
+      NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a CodeT, enabled via --debug-code.
-  void AssertCodeT(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertCodeT(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
-  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
-  void AssertFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a callable JSFunction, enabled via
   // --debug-code.
-  void AssertCallableFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertCallableFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSGeneratorObject (or subclass),
   // enabled via --debug-code.
-  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
-  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
-  void AssertUndefinedOrAllocationSite(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertUndefinedOrAllocationSite(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // ---- Calling / Jumping helpers ----
 
@@ -2054,14 +2060,14 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   void IncrementCounter(StatsCounter* counter, int value, Register scratch1,
                         Register scratch2) {
-    if (!FLAG_native_code_counters) return;
+    if (!v8_flags.native_code_counters) return;
     EmitIncrementCounter(counter, value, scratch1, scratch2);
   }
   void EmitIncrementCounter(StatsCounter* counter, int value, Register scratch1,
                             Register scratch2);
   void DecrementCounter(StatsCounter* counter, int value, Register scratch1,
                         Register scratch2) {
-    if (!FLAG_native_code_counters) return;
+    if (!v8_flags.native_code_counters) return;
     EmitIncrementCounter(counter, -value, scratch1, scratch2);
   }
 

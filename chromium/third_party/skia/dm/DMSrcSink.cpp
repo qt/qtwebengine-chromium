@@ -10,7 +10,6 @@
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkData.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
 #include "include/core/SkDocument.h"
@@ -84,10 +83,10 @@
 #endif
 
 #ifdef SK_GRAPHITE_ENABLED
+#include "include/gpu/graphite/CombinationBuilder.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
-#include "include/gpu/graphite/SkStuff.h"
 // TODO: Remove this src include once we figure out public readPixels call for Graphite.
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
@@ -1122,11 +1121,6 @@ Result SKPSrc::draw(GrDirectContext* dContext, SkCanvas* canvas) const {
             if (context->fDirectContext) {
                 image = image->makeTextureImage(context->fDirectContext);
             }
-#ifdef SK_GRAPHITE_ENABLED
-            else if (context->fRecorder) {
-                image = image->makeTextureImage(context->fRecorder);
-            }
-#endif
         }
 
         return image;
@@ -2160,7 +2154,7 @@ Result GraphiteSink::draw(const Src& src,
     dst->allocPixels(ii);
 
     {
-        sk_sp<SkSurface> surface = MakeGraphite(recorder.get(), ii);
+        sk_sp<SkSurface> surface = SkSurface::MakeGraphite(recorder.get(), ii);
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }

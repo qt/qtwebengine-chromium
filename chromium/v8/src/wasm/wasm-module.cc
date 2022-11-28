@@ -16,6 +16,7 @@
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-init-expr.h"
 #include "src/wasm/wasm-js.h"
+#include "src/wasm/wasm-module-builder.h"  // For {ZoneBuffer}.
 #include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-result.h"
 #include "src/wasm/wasm-subtyping.h"
@@ -63,31 +64,8 @@ bool LazilyGeneratedNames::Has(uint32_t function_index) {
   return function_names_.Get(function_index) != nullptr;
 }
 
-// static
-int MaxNumExportWrappers(const WasmModule* module) {
-  // For each signature there may exist a wrapper, both for imported and
-  // internal functions.
-  return static_cast<int>(module->signature_map.size()) * 2;
-}
-
-int GetExportWrapperIndexInternal(const WasmModule* module,
-                                  int canonical_sig_index, bool is_import) {
-  if (is_import) canonical_sig_index += module->signature_map.size();
-  return canonical_sig_index;
-}
-
-int GetExportWrapperIndex(const WasmModule* module, const FunctionSig* sig,
-                          bool is_import) {
-  int canonical_sig_index = module->signature_map.Find(*sig);
-  CHECK_GE(canonical_sig_index, 0);
-  return GetExportWrapperIndexInternal(module, canonical_sig_index, is_import);
-}
-
-int GetExportWrapperIndex(const WasmModule* module, uint32_t sig_index,
-                          bool is_import) {
-  uint32_t canonical_sig_index =
-      module->per_module_canonical_type_ids[sig_index];
-  return GetExportWrapperIndexInternal(module, canonical_sig_index, is_import);
+int GetExportWrapperIndex(uint32_t canonical_sig_index, bool is_import) {
+  return 2 * canonical_sig_index + (is_import ? 1 : 0);
 }
 
 // static
@@ -649,7 +627,6 @@ size_t EstimateStoredSize(const WasmModule* module) {
          (module->signature_zone ? module->signature_zone->allocation_size()
                                  : 0) +
          VectorSize(module->types) +
-         VectorSize(module->per_module_canonical_type_ids) +
          VectorSize(module->isorecursive_canonical_type_ids) +
          VectorSize(module->functions) + VectorSize(module->data_segments) +
          VectorSize(module->tables) + VectorSize(module->import_table) +
@@ -680,6 +657,24 @@ size_t PrintSignature(base::Vector<char> buffer, const wasm::FunctionSig* sig,
 int JumpTableOffset(const WasmModule* module, int func_index) {
   return JumpTableAssembler::JumpSlotIndexToOffset(
       declared_function_index(module, func_index));
+}
+
+size_t GetWireBytesHash(base::Vector<const uint8_t> wire_bytes) {
+  return StringHasher::HashSequentialString(
+      reinterpret_cast<const char*>(wire_bytes.begin()), wire_bytes.length(),
+      kZeroHashSeed);
+}
+
+int NumFeedbackSlots(const WasmModule* module, int func_index) {
+  if (!v8_flags.wasm_speculative_inlining) return 0;
+  // TODO(clemensb): Avoid the mutex once this ships, or at least switch to a
+  // shared mutex.
+  base::MutexGuard type_feedback_guard{&module->type_feedback.mutex};
+  auto it = module->type_feedback.feedback_for_function.find(func_index);
+  if (it == module->type_feedback.feedback_for_function.end()) return 0;
+  // The number of call instructions is capped by max function size.
+  static_assert(kV8MaxWasmFunctionSize < std::numeric_limits<int>::max() / 2);
+  return static_cast<int>(2 * it->second.call_targets.size());
 }
 
 }  // namespace v8::internal::wasm

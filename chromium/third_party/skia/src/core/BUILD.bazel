@@ -4,6 +4,38 @@ licenses(["notice"])
 
 exports_files_legacy()
 
+# In separate file list because these files are exported to
+# core.gni:skia_core_sources as well as sksl.gni:skslc_deps.
+CORE_SKSLC_FILES = [
+    "SkArenaAlloc.cpp",
+    "SkArenaAlloc.h",
+    "SkBlockAllocator.cpp",
+    "SkBlockAllocator.h",
+    "SkCpu.cpp",
+    "SkCpu.h",
+    "SkData.cpp",
+    "SkHalf.cpp",
+    "SkMalloc.cpp",
+    "SkMath.cpp",
+    "SkMatrixInvert.cpp",
+    "SkMatrixInvert.h",
+    "SkSemaphore.cpp",
+    "SkStream.cpp",
+    "SkString.cpp",
+    "SkStringUtils.cpp",
+    "SkStringUtils.h",
+    "SkThreadID.cpp",
+    "SkUtils.cpp",
+    "SkUtils.h",
+    "SkVM.cpp",
+    "SkVM.h",
+]
+
+split_srcs_and_hdrs(
+    name = "core_skslc",
+    files = CORE_SKSLC_FILES,
+)
+
 CORE_FILES = [
     "Sk4px.h",
     "SkAAClip.cpp",
@@ -18,8 +50,6 @@ CORE_FILES = [
     "SkAnnotation.cpp",
     "SkAnnotationKeys.h",
     "SkAntiRun.h",
-    "SkArenaAlloc.cpp",
-    "SkArenaAlloc.h",
     "SkArenaAllocList.h",
     "SkAutoBlitterChoose.h",
     "SkAutoMalloc.h",
@@ -46,10 +76,7 @@ CORE_FILES = [
     "SkBlitter.h",
     "SkBlitter_A8.cpp",
     "SkBlitter_ARGB32.cpp",
-    "SkBlitter_RGB565.cpp",
     "SkBlitter_Sprite.cpp",
-    "SkBlockAllocator.cpp",
-    "SkBlockAllocator.h",
     "SkBlurMF.cpp",
     "SkBlurMask.cpp",
     "SkBlurMask.h",
@@ -82,13 +109,10 @@ CORE_FILES = [
     "SkConvertPixels.cpp",
     "SkConvertPixels.h",
     "SkCoreBlitters.h",
-    "SkCpu.cpp",
-    "SkCpu.h",
     "SkCubicClipper.cpp",
     "SkCubicClipper.h",
     "SkCubicMap.cpp",
     "SkCubicSolver.h",
-    "SkData.cpp",
     "SkDataTable.cpp",
     "SkDebug.cpp",
     "SkDebugUtils.h",
@@ -151,7 +175,6 @@ CORE_FILES = [
     "SkGpuBlurUtils.cpp",
     "SkGpuBlurUtils.h",
     "SkGraphics.cpp",
-    "SkHalf.cpp",
     "SkICC.cpp",
     "SkICCPriv.h",
     "SkIDChangeListener.cpp",
@@ -177,7 +200,6 @@ CORE_FILES = [
     "SkMD5.cpp",
     "SkMD5.h",
     "SkMSAN.h",
-    "SkMalloc.cpp",
     "SkMallocPixelRef.cpp",
     "SkMask.cpp",
     "SkMask.h",
@@ -189,13 +211,8 @@ CORE_FILES = [
     "SkMaskFilterBase.h",
     "SkMaskGamma.cpp",
     "SkMaskGamma.h",
-    "SkMath.cpp",
     "SkMathPriv.h",
     "SkMatrix.cpp",
-    "SkMatrixImageFilter.cpp",
-    "SkMatrixImageFilter.h",
-    "SkMatrixInvert.cpp",
-    "SkMatrixInvert.h",
     "SkMatrixPriv.h",
     "SkMatrixProvider.h",
     "SkMatrixUtils.h",
@@ -289,7 +306,6 @@ CORE_FILES = [
     "SkScan_Hairline.cpp",
     "SkScan_Path.cpp",
     "SkScopeExit.h",
-    "SkSemaphore.cpp",
     "SkSharedMutex.cpp",
     "SkSharedMutex.h",
     "SkSpecialImage.cpp",
@@ -299,16 +315,11 @@ CORE_FILES = [
     "SkSpinlock.cpp",
     "SkSpriteBlitter.h",
     "SkSpriteBlitter_ARGB32.cpp",
-    "SkSpriteBlitter_RGB565.cpp",
-    "SkStream.cpp",
     "SkStreamPriv.h",
     "SkStrikeCache.cpp",
     "SkStrikeCache.h",
     "SkStrikeSpec.cpp",
     "SkStrikeSpec.h",
-    "SkString.cpp",
-    "SkStringUtils.cpp",
-    "SkStringUtils.h",
     "SkStroke.cpp",
     "SkStroke.h",
     "SkStrokeRec.cpp",
@@ -318,6 +329,7 @@ CORE_FILES = [
     "SkSurfacePriv.h",
     "SkSwizzle.cpp",
     "SkTBlockList.h",
+    "SkTDArray.cpp",
     "SkTDPQueue.h",
     "SkTDynamicHash.h",
     "SkTInternalLList.h",
@@ -333,7 +345,6 @@ CORE_FILES = [
     "SkTextBlobTrace.cpp",
     "SkTextBlobTrace.h",
     "SkTextFormatParams.h",
-    "SkThreadID.cpp",
     "SkTime.cpp",
     "SkTraceEvent.h",
     "SkTraceEventCommon.h",
@@ -343,11 +354,7 @@ CORE_FILES = [
     "SkTypeface_remote.cpp",
     "SkTypeface_remote.h",
     "SkUnPreMultiply.cpp",
-    "SkUtils.cpp",
-    "SkUtils.h",
     "SkUtilsArm.cpp",
-    "SkVM.cpp",
-    "SkVM.h",
     "SkVMBlitter.cpp",
     "SkVMBlitter.h",
     "SkVM_fwd.h",
@@ -403,19 +410,6 @@ split_srcs_and_hdrs(
     files = SKSL_FILES,
 )
 
-# Mapped to skia_precompile_sources variable in //gn/core.gni.
-PRECOMPILE_FILES = [
-    "SkCombinationBuilder.cpp",
-    "SkFactoryFunctions.cpp",
-    "SkFactoryFunctions.h",
-    "SkPrecompile.h",
-]
-
-split_srcs_and_hdrs(
-    name = "precompile",
-    files = PRECOMPILE_FILES,
-)
-
 # SkPicture files are maintained as a separate filegroups for backward compatability
 # with GNI files. This allows the generation of skia_skpicture_sources GNI file list.
 SKPICTURE_FILES = [
@@ -445,7 +439,11 @@ split_srcs_and_hdrs(
 
 filegroup(
     name = "srcs",
-    srcs = [":core_srcs"] + [":skpicture_srcs"] + select({
+    srcs = [
+        ":core_skslc_srcs",
+        ":core_srcs",
+        ":skpicture_srcs",
+    ] + select({
         "//src/sksl:needs_sksl": [
             ":sksl_srcs",
         ],
@@ -456,7 +454,11 @@ filegroup(
 
 filegroup(
     name = "private_hdrs",
-    srcs = [":core_hdrs"] + [":skpicture_hdrs"] + select({
+    srcs = [
+        ":core_hdrs",
+        ":core_skslc_hdrs",
+        ":skpicture_hdrs",
+    ] + select({
         "//src/sksl:needs_sksl": [
             ":sksl_hdrs",
         ],

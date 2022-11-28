@@ -666,11 +666,18 @@ process_toolchain() {
           check_add_cxxflags -Wno-psabi
         fi
 
+        # Enforce C++11 compatibility.
+        check_add_cxxflags -Wc++14-extensions
+        check_add_cxxflags -Wc++17-extensions
+        check_add_cxxflags -Wc++20-extensions
+
         # disable some warnings specific to libyuv.
         check_cxxflags -Wno-missing-declarations \
           && LIBYUV_CXXFLAGS="${LIBYUV_CXXFLAGS} -Wno-missing-declarations"
         check_cxxflags -Wno-missing-prototypes \
           && LIBYUV_CXXFLAGS="${LIBYUV_CXXFLAGS} -Wno-missing-prototypes"
+        check_cxxflags -Wno-pass-failed \
+          && LIBYUV_CXXFLAGS="${LIBYUV_CXXFLAGS} -Wno-pass-failed"
         check_cxxflags -Wno-unused-parameter \
           && LIBYUV_CXXFLAGS="${LIBYUV_CXXFLAGS} -Wno-unused-parameter"
     fi

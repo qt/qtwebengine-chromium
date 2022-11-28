@@ -29,22 +29,25 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.cc
   jxl/base/data_parallel.h
-  jxl/base/descriptive_statistics.cc
-  jxl/base/descriptive_statistics.h
   jxl/base/file_io.h
   jxl/base/iaca.h
   jxl/base/os_macros.h
   jxl/base/override.h
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
+  jxl/base/printf_macros.h
   jxl/base/profiler.h
-  jxl/base/robust_statistics.h
+  jxl/base/random.cc
+  jxl/base/random.h
+  jxl/base/sanitizer_definitions.h
+  jxl/base/scope_guard.h
   jxl/base/span.h
-  jxl/base/status.cc
   jxl/base/status.h
   jxl/base/thread_pool_internal.h
   jxl/blending.cc
   jxl/blending.h
+  jxl/box_content_decoder.cc
+  jxl/box_content_decoder.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -59,8 +62,12 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/compressed_dc.cc
   jxl/compressed_dc.h
   jxl/convolve-inl.h
-  jxl/convolve.cc
   jxl/convolve.h
+  jxl/convolve_separable5.cc
+  jxl/convolve_separable7.cc
+  jxl/convolve_slow.cc
+  jxl/convolve_symmetric3.cc
+  jxl/convolve_symmetric5.cc
   jxl/dct-inl.h
   jxl/dct_block-inl.h
   jxl/dct_scales.cc
@@ -87,15 +94,10 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_modular.h
   jxl/dec_noise.cc
   jxl/dec_noise.h
-  jxl/dec_params.h
   jxl/dec_patch_dictionary.cc
   jxl/dec_patch_dictionary.h
-  jxl/dec_reconstruct.cc
-  jxl/dec_reconstruct.h
-  jxl/dec_render_pipeline.h
+  jxl/dec_tone_mapping-inl.h
   jxl/dec_transforms-inl.h
-  jxl/dec_upsample.cc
-  jxl/dec_upsample.h
   jxl/dec_xyb-inl.h
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
@@ -108,13 +110,20 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/entropy_coder.h
   jxl/epf.cc
   jxl/epf.h
+  jxl/exif.h
+  jxl/fast_dct-inl.h
+  jxl/fast_dct.cc
+  jxl/fast_dct.h
+  jxl/fast_dct128-inl.h
+  jxl/fast_dct16-inl.h
+  jxl/fast_dct256-inl.h
+  jxl/fast_dct32-inl.h
+  jxl/fast_dct64-inl.h
+  jxl/fast_dct8-inl.h
   jxl/fast_math-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
-  jxl/filters.cc
-  jxl/filters.h
-  jxl/filters_internal.h
   jxl/frame_header.cc
   jxl/frame_header.h
   jxl/gauss_blur.cc
@@ -161,13 +170,13 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/modular/modular_image.h
   jxl/modular/options.h
   jxl/modular/transform/palette.h
+  jxl/modular/transform/rct.cc
   jxl/modular/transform/rct.h
   jxl/modular/transform/squeeze.cc
   jxl/modular/transform/squeeze.h
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/noise.h
-  jxl/noise_distributions.h
   jxl/opsin_params.cc
   jxl/opsin_params.h
   jxl/passes_state.cc
@@ -179,7 +188,47 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/quantizer.cc
   jxl/quantizer.h
   jxl/rational_polynomial-inl.h
+  jxl/render_pipeline/low_memory_render_pipeline.cc
+  jxl/render_pipeline/low_memory_render_pipeline.h
+  jxl/render_pipeline/render_pipeline.cc
+  jxl/render_pipeline/render_pipeline.h
+  jxl/render_pipeline/render_pipeline_stage.h
+  jxl/render_pipeline/simple_render_pipeline.cc
+  jxl/render_pipeline/simple_render_pipeline.h
+  jxl/render_pipeline/stage_blending.cc
+  jxl/render_pipeline/stage_blending.h
+  jxl/render_pipeline/stage_chroma_upsampling.cc
+  jxl/render_pipeline/stage_chroma_upsampling.h
+  jxl/render_pipeline/stage_epf.cc
+  jxl/render_pipeline/stage_epf.h
+  jxl/render_pipeline/stage_from_linear.cc
+  jxl/render_pipeline/stage_from_linear.h
+  jxl/render_pipeline/stage_gaborish.cc
+  jxl/render_pipeline/stage_gaborish.h
+  jxl/render_pipeline/stage_noise.cc
+  jxl/render_pipeline/stage_noise.h
+  jxl/render_pipeline/stage_patches.cc
+  jxl/render_pipeline/stage_patches.h
+  jxl/render_pipeline/stage_splines.cc
+  jxl/render_pipeline/stage_splines.h
+  jxl/render_pipeline/stage_spot.cc
+  jxl/render_pipeline/stage_spot.h
+  jxl/render_pipeline/stage_to_linear.cc
+  jxl/render_pipeline/stage_to_linear.h
+  jxl/render_pipeline/stage_tone_mapping.cc
+  jxl/render_pipeline/stage_tone_mapping.h
+  jxl/render_pipeline/stage_upsampling.cc
+  jxl/render_pipeline/stage_upsampling.h
+  jxl/render_pipeline/stage_write.cc
+  jxl/render_pipeline/stage_write.h
+  jxl/render_pipeline/stage_xyb.cc
+  jxl/render_pipeline/stage_xyb.h
+  jxl/render_pipeline/stage_ycbcr.cc
+  jxl/render_pipeline/stage_ycbcr.h
+  jxl/render_pipeline/test_render_pipeline_stages.h
   jxl/sanitizers.h
+  jxl/simd_util-inl.h
+  jxl/size_constraints.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc
@@ -195,8 +244,6 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/butteraugli_wrapper.cc
-  jxl/dec_file.cc
-  jxl/dec_file.h
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
@@ -232,7 +279,6 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_entropy_coder.h
   jxl/enc_external_image.cc
   jxl/enc_external_image.h
-  jxl/enc_fast_heuristics.cc
   jxl/enc_file.cc
   jxl/enc_file.h
   jxl/enc_frame.cc
@@ -282,6 +328,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
   jxl/linalg.cc
+  jxl/modular/encoding/enc_debug_tree.cc
+  jxl/modular/encoding/enc_debug_tree.h
   jxl/modular/encoding/enc_encoding.cc
   jxl/modular/encoding/enc_encoding.h
   jxl/modular/encoding/enc_ma.cc
@@ -304,6 +352,8 @@ set(JPEGXL_DEC_INTERNAL_LIBS
   brotlidec-static
   brotlicommon-static
   hwy
+  Threads::Threads
+  ${ATOMICS_LIBRARIES}
 )
 
 if(JPEGXL_ENABLE_PROFILER)
@@ -313,7 +363,6 @@ endif()
 set(JPEGXL_INTERNAL_LIBS
   ${JPEGXL_DEC_INTERNAL_LIBS}
   brotlienc-static
-  Threads::Threads
 )
 
 # strips the -static suffix from all the elements in LIST
@@ -357,10 +406,10 @@ target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jxl_dec-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_dec-obj PUBLIC
-  ${PROJECT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>>"
+  "$<BUILD_INTERFACE:$<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 target_compile_definitions(jxl_dec-obj PUBLIC
   ${OBJ_COMPILE_DEFINITIONS}
@@ -425,11 +474,11 @@ add_library(jxl_dec-static STATIC
   $<TARGET_OBJECTS:jxl_dec-obj>
 )
 target_link_libraries(jxl_dec-static
-  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS} hwy)
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_DEC_INTERNAL_LIBS})
 target_include_directories(jxl_dec-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 
 # The list of objects in the static and shared libraries.
 set(JPEGXL_INTERNAL_OBJECTS
@@ -446,11 +495,11 @@ endif()
 # to do, remove $<TARGET_OBJECTS:jxl_dec-obj> here and depend on jxl_dec-static
 add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static
-  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS})
 target_include_directories(jxl-static PUBLIC
-  "${PROJECT_SOURCE_DIR}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 
 # JXL_EXPORT is defined to "__declspec(dllimport)" automatically by CMake
 # in Windows builds when including headers from the C API and compiling from
@@ -463,7 +512,7 @@ target_compile_definitions(jxl_dec-static INTERFACE -DJXL_EXPORT=)
 
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
-if(${JPEGXL_ENABLE_TCMALLOC})
+if(JPEGXL_ENABLE_TCMALLOC)
   pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET
       libtcmalloc_minimal)
   # tcmalloc 2.8 has concurrency issues that makes it sometimes return nullptr
@@ -483,15 +532,14 @@ endif()  # JPEGXL_ENABLE_TCMALLOC
 
 # Install the static library too, but as jxl.a file without the -static except
 # in Windows.
-if (NOT WIN32)
+if (NOT WIN32 OR MINGW)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
   set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
 install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(TARGETS jxl_dec-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
-     TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
+if (BUILD_SHARED_LIBS)
 
 # Public shared library.
 add_library(jxl SHARED ${JPEGXL_INTERNAL_OBJECTS})
@@ -500,8 +548,8 @@ target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})
 # Shared library include path contains only the "include/" paths.
 target_include_directories(jxl PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/include"
-  "${CMAKE_CURRENT_BINARY_DIR}/include")
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>")
 set_target_properties(jxl PROPERTIES
   VERSION ${JPEGXL_LIBRARY_VERSION}
   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
@@ -523,6 +571,13 @@ set_target_properties(jxl_dec PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+# Check whether the linker support excluding libs
+set(LINKER_EXCLUDE_LIBS_FLAG "-Wl,--exclude-libs=ALL")
+include(CheckCSourceCompiles)
+list(APPEND CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+check_c_source_compiles("int main(){return 0;}" LINKER_SUPPORT_EXCLUDE_LIBS)
+list(REMOVE_ITEM CMAKE_EXE_LINKER_FLAGS ${LINKER_EXCLUDE_LIBS_FLAG})
+
 # Add a jxl.version file as a version script to tag symbols with the
 # appropriate version number. This script is also used to limit what's exposed
 # in the shared library from the static dependencies bundled here.
@@ -541,19 +596,23 @@ foreach(target IN ITEMS jxl jxl_dec)
   # This hides the default visibility symbols from static libraries bundled into
   # the shared library. In particular this prevents exposing symbols from hwy
   # and skcms in the shared library.
-  set_property(TARGET ${target} APPEND_STRING PROPERTY
-      LINK_FLAGS " -Wl,--exclude-libs=ALL")
+  if(LINKER_SUPPORT_EXCLUDE_LIBS)
+    set_property(TARGET ${target} APPEND_STRING PROPERTY
+        LINK_FLAGS " ${LINKER_EXCLUDE_LIBS_FLAG}")
+  endif()
 endforeach()
 
 # Only install libjxl shared library. The libjxl_dec is not installed since it
 # contains symbols also in libjxl which would conflict if programs try to use
 # both.
 install(TARGETS jxl
-  DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 else()
 add_library(jxl ALIAS jxl-static)
 add_library(jxl_dec ALIAS jxl_dec-static)
-endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC
+endif()  # BUILD_SHARED_LIBS
 
 # Add a pkg-config file for libjxl.
 set(JPEGXL_LIBRARY_REQUIRES
@@ -561,6 +620,20 @@ set(JPEGXL_LIBRARY_REQUIRES
 if(NOT JPEGXL_ENABLE_SKCMS)
   set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms2")
 endif()
+
+# Allow adding prefix if CMAKE_INSTALL_INCLUDEDIR not absolute.
+if(IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+    set(PKGCONFIG_TARGET_INCLUDES "${CMAKE_INSTALL_INCLUDEDIR}")
+else()
+    set(PKGCONFIG_TARGET_INCLUDES "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+endif()
+# Allow adding prefix if CMAKE_INSTALL_LIBDIR not absolute.
+if(IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+    set(PKGCONFIG_TARGET_LIBS "${CMAKE_INSTALL_LIBDIR}")
+else()
+    set(PKGCONFIG_TARGET_LIBS "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
+endif()
+
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"

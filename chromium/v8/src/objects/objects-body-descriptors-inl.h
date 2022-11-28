@@ -742,6 +742,27 @@ class WasmApiFunctionRef::BodyDescriptor final : public BodyDescriptorBase {
   static inline int SizeOf(Map map, HeapObject object) { return kSize; }
 };
 
+class WasmExportedFunctionData::BodyDescriptor final
+    : public BodyDescriptorBase {
+ public:
+  static bool IsValidSlot(Map map, HeapObject obj, int offset) {
+    UNREACHABLE();
+  }
+
+  template <typename ObjectVisitor>
+  static inline void IterateBody(Map map, HeapObject obj, int object_size,
+                                 ObjectVisitor* v) {
+    WasmFunctionData::BodyDescriptor::IterateBody<ObjectVisitor>(
+        map, obj, object_size, v);
+    IteratePointers(obj, kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
+                    v);
+    v->VisitExternalPointer(obj, obj.RawExternalPointerField(kSigOffset),
+                            kWasmExportedFunctionDataSignatureTag);
+  }
+
+  static inline int SizeOf(Map map, HeapObject object) { return kSize; }
+};
+
 class WasmInternalFunction::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
@@ -751,10 +772,10 @@ class WasmInternalFunction::BodyDescriptor final : public BodyDescriptorBase {
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, int object_size,
                                  ObjectVisitor* v) {
-    v->VisitExternalPointer(obj, obj.RawExternalPointerField(kCallTargetOffset),
-                            kWasmInternalFunctionCallTargetTag);
     IteratePointers(obj, kStartOfStrongFieldsOffset, kEndOfStrongFieldsOffset,
                     v);
+    v->VisitExternalPointer(obj, obj.RawExternalPointerField(kCallTargetOffset),
+                            kWasmInternalFunctionCallTargetTag);
   }
 
   static inline int SizeOf(Map map, HeapObject object) { return kSize; }
@@ -932,12 +953,10 @@ class Code::BodyDescriptor final : public BodyDescriptorBase {
       RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET) |
       RelocInfo::ModeMask(RelocInfo::FULL_EMBEDDED_OBJECT) |
       RelocInfo::ModeMask(RelocInfo::COMPRESSED_EMBEDDED_OBJECT) |
-      RelocInfo::ModeMask(RelocInfo::DATA_EMBEDDED_OBJECT) |
       RelocInfo::ModeMask(RelocInfo::EXTERNAL_REFERENCE) |
       RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE) |
       RelocInfo::ModeMask(RelocInfo::INTERNAL_REFERENCE_ENCODED) |
-      RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET) |
-      RelocInfo::ModeMask(RelocInfo::RUNTIME_ENTRY);
+      RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET);
 
   template <typename ObjectVisitor>
   static inline void IterateBody(Map map, HeapObject obj, ObjectVisitor* v) {
@@ -1044,9 +1063,6 @@ class CodeDataContainer::BodyDescriptor final : public BodyDescriptorBase {
 
     if (V8_EXTERNAL_CODE_SPACE_BOOL) {
       v->VisitCodePointer(obj, obj.RawCodeField(kCodeOffset));
-      v->VisitExternalPointer(
-          obj, obj.RawExternalPointerField(kCodeEntryPointOffset),
-          kCodeEntryPointTag);
     }
   }
 
@@ -1264,11 +1280,13 @@ auto BodyDescriptorApply(InstanceType type, Args&&... args) {
   case TYPE##_TYPED_ARRAY_CONSTRUCTOR_TYPE:
       TYPED_ARRAYS(TYPED_ARRAY_CONSTRUCTORS_SWITCH)
 #undef TYPED_ARRAY_CONSTRUCTORS_SWITCH
+    case JS_RAW_JSON_TYPE:
 #ifdef V8_INTL_SUPPORT
     case JS_V8_BREAK_ITERATOR_TYPE:
     case JS_COLLATOR_TYPE:
     case JS_DATE_TIME_FORMAT_TYPE:
     case JS_DISPLAY_NAMES_TYPE:
+    case JS_DURATION_FORMAT_TYPE:
     case JS_LIST_FORMAT_TYPE:
     case JS_LOCALE_TYPE:
     case JS_NUMBER_FORMAT_TYPE:
@@ -1450,10 +1468,10 @@ class EphemeronHashTable::BodyDescriptor final : public BodyDescriptorBase {
 class AccessorInfo::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static_assert(AccessorInfo::kEndOfStrongFieldsOffset ==
+                AccessorInfo::kMaybeRedirectedGetterOffset);
+  static_assert(AccessorInfo::kMaybeRedirectedGetterOffset <
                 AccessorInfo::kSetterOffset);
-  static_assert(AccessorInfo::kSetterOffset < AccessorInfo::kGetterOffset);
-  static_assert(AccessorInfo::kGetterOffset < AccessorInfo::kJsGetterOffset);
-  static_assert(AccessorInfo::kJsGetterOffset < AccessorInfo::kFlagsOffset);
+  static_assert(AccessorInfo::kSetterOffset < AccessorInfo::kFlagsOffset);
   static_assert(AccessorInfo::kFlagsOffset < AccessorInfo::kSize);
 
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
@@ -1466,14 +1484,12 @@ class AccessorInfo::BodyDescriptor final : public BodyDescriptorBase {
     IteratePointers(obj, HeapObject::kHeaderSize,
                     AccessorInfo::kEndOfStrongFieldsOffset, v);
     v->VisitExternalPointer(
-        obj, obj.RawExternalPointerField(AccessorInfo::kSetterOffset),
-        kAccessorInfoSetterTag);
-    v->VisitExternalPointer(
-        obj, obj.RawExternalPointerField(AccessorInfo::kGetterOffset),
+        obj,
+        obj.RawExternalPointerField(AccessorInfo::kMaybeRedirectedGetterOffset),
         kAccessorInfoGetterTag);
     v->VisitExternalPointer(
-        obj, obj.RawExternalPointerField(AccessorInfo::kJsGetterOffset),
-        kAccessorInfoJsGetterTag);
+        obj, obj.RawExternalPointerField(AccessorInfo::kSetterOffset),
+        kAccessorInfoSetterTag);
   }
 
   static inline int SizeOf(Map map, HeapObject object) { return kSize; }
@@ -1482,9 +1498,7 @@ class AccessorInfo::BodyDescriptor final : public BodyDescriptorBase {
 class CallHandlerInfo::BodyDescriptor final : public BodyDescriptorBase {
  public:
   static_assert(CallHandlerInfo::kEndOfStrongFieldsOffset ==
-                CallHandlerInfo::kCallbackOffset);
-  static_assert(CallHandlerInfo::kCallbackOffset <
-                CallHandlerInfo::kJsCallbackOffset);
+                CallHandlerInfo::kMaybeRedirectedCallbackOffset);
 
   static bool IsValidSlot(Map map, HeapObject obj, int offset) {
     return offset < CallHandlerInfo::kEndOfStrongFieldsOffset;
@@ -1496,11 +1510,10 @@ class CallHandlerInfo::BodyDescriptor final : public BodyDescriptorBase {
     IteratePointers(obj, HeapObject::kHeaderSize,
                     CallHandlerInfo::kEndOfStrongFieldsOffset, v);
     v->VisitExternalPointer(
-        obj, obj.RawExternalPointerField(CallHandlerInfo::kCallbackOffset),
+        obj,
+        obj.RawExternalPointerField(
+            CallHandlerInfo::kMaybeRedirectedCallbackOffset),
         kCallHandlerInfoCallbackTag);
-    v->VisitExternalPointer(
-        obj, obj.RawExternalPointerField(CallHandlerInfo::kJsCallbackOffset),
-        kCallHandlerInfoJsCallbackTag);
   }
 
   static inline int SizeOf(Map map, HeapObject object) { return kSize; }

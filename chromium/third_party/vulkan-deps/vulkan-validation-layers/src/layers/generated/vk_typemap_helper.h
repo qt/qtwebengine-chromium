@@ -2121,46 +2121,46 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR> 
 
 #endif // VK_USE_PLATFORM_WIN32_KHR
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkQueueFamilyQueryResultStatusProperties2KHR to id VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_2_KHR
-template <> struct LvlTypeMap<VkQueueFamilyQueryResultStatusProperties2KHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_2_KHR;
+// Map type VkQueueFamilyQueryResultStatusPropertiesKHR to id VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR
+template <> struct LvlTypeMap<VkQueueFamilyQueryResultStatusPropertiesKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_2_KHR> {
-    typedef VkQueueFamilyQueryResultStatusProperties2KHR Type;
-};
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoQueueFamilyProperties2KHR to id VK_STRUCTURE_TYPE_VIDEO_QUEUE_FAMILY_PROPERTIES_2_KHR
-template <> struct LvlTypeMap<VkVideoQueueFamilyProperties2KHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_QUEUE_FAMILY_PROPERTIES_2_KHR;
-};
-
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_QUEUE_FAMILY_PROPERTIES_2_KHR> {
-    typedef VkVideoQueueFamilyProperties2KHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR> {
+    typedef VkQueueFamilyQueryResultStatusPropertiesKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoProfileKHR to id VK_STRUCTURE_TYPE_VIDEO_PROFILE_KHR
-template <> struct LvlTypeMap<VkVideoProfileKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_KHR;
+// Map type VkQueueFamilyVideoPropertiesKHR to id VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR
+template <> struct LvlTypeMap<VkQueueFamilyVideoPropertiesKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PROFILE_KHR> {
-    typedef VkVideoProfileKHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR> {
+    typedef VkQueueFamilyVideoPropertiesKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoProfilesKHR to id VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR
-template <> struct LvlTypeMap<VkVideoProfilesKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR;
+// Map type VkVideoProfileInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR
+template <> struct LvlTypeMap<VkVideoProfileInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR> {
-    typedef VkVideoProfilesKHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR> {
+    typedef VkVideoProfileInfoKHR Type;
+};
+
+#endif // VK_ENABLE_BETA_EXTENSIONS
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+// Map type VkVideoProfileListInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR
+template <> struct LvlTypeMap<VkVideoProfileListInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR> {
+    typedef VkVideoProfileListInfoKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -2198,46 +2198,46 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR> {
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoPictureResourceKHR to id VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR
-template <> struct LvlTypeMap<VkVideoPictureResourceKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
+// Map type VkVideoPictureResourceInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR
+template <> struct LvlTypeMap<VkVideoPictureResourceInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR> {
-    typedef VkVideoPictureResourceKHR Type;
-};
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoReferenceSlotKHR to id VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_KHR
-template <> struct LvlTypeMap<VkVideoReferenceSlotKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_KHR;
-};
-
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_KHR> {
-    typedef VkVideoReferenceSlotKHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR> {
+    typedef VkVideoPictureResourceInfoKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoGetMemoryPropertiesKHR to id VK_STRUCTURE_TYPE_VIDEO_GET_MEMORY_PROPERTIES_KHR
-template <> struct LvlTypeMap<VkVideoGetMemoryPropertiesKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_GET_MEMORY_PROPERTIES_KHR;
+// Map type VkVideoReferenceSlotInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR
+template <> struct LvlTypeMap<VkVideoReferenceSlotInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_GET_MEMORY_PROPERTIES_KHR> {
-    typedef VkVideoGetMemoryPropertiesKHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR> {
+    typedef VkVideoReferenceSlotInfoKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoBindMemoryKHR to id VK_STRUCTURE_TYPE_VIDEO_BIND_MEMORY_KHR
-template <> struct LvlTypeMap<VkVideoBindMemoryKHR> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_BIND_MEMORY_KHR;
+// Map type VkVideoSessionMemoryRequirementsKHR to id VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR
+template <> struct LvlTypeMap<VkVideoSessionMemoryRequirementsKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_BIND_MEMORY_KHR> {
-    typedef VkVideoBindMemoryKHR Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR> {
+    typedef VkVideoSessionMemoryRequirementsKHR Type;
+};
+
+#endif // VK_ENABLE_BETA_EXTENSIONS
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+// Map type VkBindVideoSessionMemoryInfoKHR to id VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR
+template <> struct LvlTypeMap<VkBindVideoSessionMemoryInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR> {
+    typedef VkBindVideoSessionMemoryInfoKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -2315,6 +2315,17 @@ template <> struct LvlTypeMap<VkVideoDecodeCapabilitiesKHR> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR> {
     typedef VkVideoDecodeCapabilitiesKHR Type;
+};
+
+#endif // VK_ENABLE_BETA_EXTENSIONS
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+// Map type VkVideoDecodeUsageInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR
+template <> struct LvlTypeMap<VkVideoDecodeUsageInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR> {
+    typedef VkVideoDecodeUsageInfoKHR Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -2947,6 +2958,17 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR> 
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
+// Map type VkVideoEncodeUsageInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR
+template <> struct LvlTypeMap<VkVideoEncodeUsageInfoKHR> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR> {
+    typedef VkVideoEncodeUsageInfoKHR Type;
+};
+
+#endif // VK_ENABLE_BETA_EXTENSIONS
+#ifdef VK_ENABLE_BETA_EXTENSIONS
 // Map type VkVideoEncodeRateControlLayerInfoKHR to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR
 template <> struct LvlTypeMap<VkVideoEncodeRateControlLayerInfoKHR> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR;
@@ -3220,24 +3242,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH264ReferenceListsEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH264ReferenceListsEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_EXT;
+// Map type VkVideoEncodeH264ReferenceListsInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH264ReferenceListsInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_EXT> {
-    typedef VkVideoEncodeH264ReferenceListsEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_INFO_EXT> {
+    typedef VkVideoEncodeH264ReferenceListsInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH264NaluSliceEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH264NaluSliceEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_EXT;
+// Map type VkVideoEncodeH264NaluSliceInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH264NaluSliceInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_EXT> {
-    typedef VkVideoEncodeH264NaluSliceEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT> {
+    typedef VkVideoEncodeH264NaluSliceInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -3253,24 +3275,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_VCL_FRAME_INF
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH264EmitPictureParametersEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH264EmitPictureParametersEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_EXT;
+// Map type VkVideoEncodeH264EmitPictureParametersInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH264EmitPictureParametersInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_EXT> {
-    typedef VkVideoEncodeH264EmitPictureParametersEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_INFO_EXT> {
+    typedef VkVideoEncodeH264EmitPictureParametersInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH264ProfileEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH264ProfileEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_EXT;
+// Map type VkVideoEncodeH264ProfileInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH264ProfileInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_EXT> {
-    typedef VkVideoEncodeH264ProfileEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_EXT> {
+    typedef VkVideoEncodeH264ProfileInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -3341,24 +3363,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH265ReferenceListsEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH265ReferenceListsEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_EXT;
+// Map type VkVideoEncodeH265ReferenceListsInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH265ReferenceListsInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_EXT> {
-    typedef VkVideoEncodeH265ReferenceListsEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_INFO_EXT> {
+    typedef VkVideoEncodeH265ReferenceListsInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH265NaluSliceSegmentEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH265NaluSliceSegmentEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_EXT;
+// Map type VkVideoEncodeH265NaluSliceSegmentInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH265NaluSliceSegmentInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_EXT> {
-    typedef VkVideoEncodeH265NaluSliceSegmentEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_EXT> {
+    typedef VkVideoEncodeH265NaluSliceSegmentInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -3374,24 +3396,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_VCL_FRAME_INF
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH265EmitPictureParametersEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH265EmitPictureParametersEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_EXT;
+// Map type VkVideoEncodeH265EmitPictureParametersInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH265EmitPictureParametersInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_EXT> {
-    typedef VkVideoEncodeH265EmitPictureParametersEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_INFO_EXT> {
+    typedef VkVideoEncodeH265EmitPictureParametersInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoEncodeH265ProfileEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_EXT
-template <> struct LvlTypeMap<VkVideoEncodeH265ProfileEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_EXT;
+// Map type VkVideoEncodeH265ProfileInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_EXT
+template <> struct LvlTypeMap<VkVideoEncodeH265ProfileInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_EXT> {
-    typedef VkVideoEncodeH265ProfileEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_EXT> {
+    typedef VkVideoEncodeH265ProfileInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -3418,13 +3440,13 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoDecodeH264ProfileEXT to id VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_EXT
-template <> struct LvlTypeMap<VkVideoDecodeH264ProfileEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_EXT;
+// Map type VkVideoDecodeH264ProfileInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_EXT
+template <> struct LvlTypeMap<VkVideoDecodeH264ProfileInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_EXT> {
-    typedef VkVideoDecodeH264ProfileEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_EXT> {
+    typedef VkVideoDecodeH264ProfileInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -3469,17 +3491,6 @@ template <> struct LvlTypeMap<VkVideoDecodeH264PictureInfoEXT> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_EXT> {
     typedef VkVideoDecodeH264PictureInfoEXT Type;
-};
-
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoDecodeH264MvcEXT to id VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_MVC_EXT
-template <> struct LvlTypeMap<VkVideoDecodeH264MvcEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_MVC_EXT;
-};
-
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_MVC_EXT> {
-    typedef VkVideoDecodeH264MvcEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -4360,13 +4371,13 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PRO
 };
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-// Map type VkVideoDecodeH265ProfileEXT to id VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_EXT
-template <> struct LvlTypeMap<VkVideoDecodeH265ProfileEXT> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_EXT;
+// Map type VkVideoDecodeH265ProfileInfoEXT to id VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_EXT
+template <> struct LvlTypeMap<VkVideoDecodeH265ProfileInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_EXT> {
-    typedef VkVideoDecodeH265ProfileEXT Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_EXT> {
+    typedef VkVideoDecodeH265ProfileInfoEXT Type;
 };
 
 #endif // VK_ENABLE_BETA_EXTENSIONS
@@ -5166,6 +5177,33 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_C
     typedef VkPhysicalDeviceCustomBorderColorFeaturesEXT Type;
 };
 
+// Map type VkPhysicalDevicePresentBarrierFeaturesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV
+template <> struct LvlTypeMap<VkPhysicalDevicePresentBarrierFeaturesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV> {
+    typedef VkPhysicalDevicePresentBarrierFeaturesNV Type;
+};
+
+// Map type VkSurfaceCapabilitiesPresentBarrierNV to id VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV
+template <> struct LvlTypeMap<VkSurfaceCapabilitiesPresentBarrierNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV> {
+    typedef VkSurfaceCapabilitiesPresentBarrierNV Type;
+};
+
+// Map type VkSwapchainPresentBarrierCreateInfoNV to id VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV
+template <> struct LvlTypeMap<VkSwapchainPresentBarrierCreateInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV> {
+    typedef VkSwapchainPresentBarrierCreateInfoNV Type;
+};
+
 // Map type VkPhysicalDeviceDiagnosticsConfigFeaturesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV
 template <> struct LvlTypeMap<VkPhysicalDeviceDiagnosticsConfigFeaturesNV> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV;
@@ -5505,13 +5543,40 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FE
     typedef VkPhysicalDevice4444FormatsFeaturesEXT Type;
 };
 
-// Map type VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesARM to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_ARM
-template <> struct LvlTypeMap<VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesARM> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_ARM;
+// Map type VkPhysicalDeviceFaultFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceFaultFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_ARM> {
-    typedef VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesARM Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT> {
+    typedef VkPhysicalDeviceFaultFeaturesEXT Type;
+};
+
+// Map type VkDeviceFaultCountsEXT to id VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT
+template <> struct LvlTypeMap<VkDeviceFaultCountsEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT> {
+    typedef VkDeviceFaultCountsEXT Type;
+};
+
+// Map type VkDeviceFaultInfoEXT to id VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT
+template <> struct LvlTypeMap<VkDeviceFaultInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT> {
+    typedef VkDeviceFaultInfoEXT Type;
+};
+
+// Map type VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT> {
+    typedef VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT Type;
 };
 
 // Map type VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT
@@ -5534,22 +5599,22 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EX
 };
 
 #endif // VK_USE_PLATFORM_DIRECTFB_EXT
-// Map type VkPhysicalDeviceMutableDescriptorTypeFeaturesVALVE to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_VALVE
-template <> struct LvlTypeMap<VkPhysicalDeviceMutableDescriptorTypeFeaturesVALVE> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_VALVE;
+// Map type VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_VALVE> {
-    typedef VkPhysicalDeviceMutableDescriptorTypeFeaturesVALVE Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT> {
+    typedef VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT Type;
 };
 
-// Map type VkMutableDescriptorTypeCreateInfoVALVE to id VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_VALVE
-template <> struct LvlTypeMap<VkMutableDescriptorTypeCreateInfoVALVE> {
-    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_VALVE;
+// Map type VkMutableDescriptorTypeCreateInfoEXT to id VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT
+template <> struct LvlTypeMap<VkMutableDescriptorTypeCreateInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT;
 };
 
-template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_VALVE> {
-    typedef VkMutableDescriptorTypeCreateInfoVALVE Type;
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT> {
+    typedef VkMutableDescriptorTypeCreateInfoEXT Type;
 };
 
 // Map type VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT
@@ -5586,6 +5651,24 @@ template <> struct LvlTypeMap<VkPhysicalDeviceDrmPropertiesEXT> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT> {
     typedef VkPhysicalDeviceDrmPropertiesEXT Type;
+};
+
+// Map type VkPhysicalDeviceAddressBindingReportFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceAddressBindingReportFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT> {
+    typedef VkPhysicalDeviceAddressBindingReportFeaturesEXT Type;
+};
+
+// Map type VkDeviceAddressBindingCallbackDataEXT to id VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT
+template <> struct LvlTypeMap<VkDeviceAddressBindingCallbackDataEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT> {
+    typedef VkDeviceAddressBindingCallbackDataEXT Type;
 };
 
 // Map type VkPhysicalDeviceDepthClipControlFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT
@@ -5971,6 +6054,96 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_2D_VIEW_O
     typedef VkPhysicalDeviceImage2DViewOf3DFeaturesEXT Type;
 };
 
+// Map type VkMicromapBuildInfoEXT to id VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT
+template <> struct LvlTypeMap<VkMicromapBuildInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT> {
+    typedef VkMicromapBuildInfoEXT Type;
+};
+
+// Map type VkMicromapCreateInfoEXT to id VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT
+template <> struct LvlTypeMap<VkMicromapCreateInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT> {
+    typedef VkMicromapCreateInfoEXT Type;
+};
+
+// Map type VkPhysicalDeviceOpacityMicromapFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceOpacityMicromapFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT> {
+    typedef VkPhysicalDeviceOpacityMicromapFeaturesEXT Type;
+};
+
+// Map type VkPhysicalDeviceOpacityMicromapPropertiesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceOpacityMicromapPropertiesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT> {
+    typedef VkPhysicalDeviceOpacityMicromapPropertiesEXT Type;
+};
+
+// Map type VkMicromapVersionInfoEXT to id VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT
+template <> struct LvlTypeMap<VkMicromapVersionInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT> {
+    typedef VkMicromapVersionInfoEXT Type;
+};
+
+// Map type VkCopyMicromapToMemoryInfoEXT to id VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT
+template <> struct LvlTypeMap<VkCopyMicromapToMemoryInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT> {
+    typedef VkCopyMicromapToMemoryInfoEXT Type;
+};
+
+// Map type VkCopyMemoryToMicromapInfoEXT to id VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT
+template <> struct LvlTypeMap<VkCopyMemoryToMicromapInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT> {
+    typedef VkCopyMemoryToMicromapInfoEXT Type;
+};
+
+// Map type VkCopyMicromapInfoEXT to id VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT
+template <> struct LvlTypeMap<VkCopyMicromapInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT> {
+    typedef VkCopyMicromapInfoEXT Type;
+};
+
+// Map type VkMicromapBuildSizesInfoEXT to id VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT
+template <> struct LvlTypeMap<VkMicromapBuildSizesInfoEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT> {
+    typedef VkMicromapBuildSizesInfoEXT Type;
+};
+
+// Map type VkAccelerationStructureTrianglesOpacityMicromapEXT to id VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT
+template <> struct LvlTypeMap<VkAccelerationStructureTrianglesOpacityMicromapEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT> {
+    typedef VkAccelerationStructureTrianglesOpacityMicromapEXT Type;
+};
+
 // Map type VkPhysicalDeviceBorderColorSwizzleFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT
 template <> struct LvlTypeMap<VkPhysicalDeviceBorderColorSwizzleFeaturesEXT> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT;
@@ -6023,6 +6196,15 @@ template <> struct LvlTypeMap<VkDescriptorSetLayoutHostMappingInfoVALVE> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_HOST_MAPPING_INFO_VALVE> {
     typedef VkDescriptorSetLayoutHostMappingInfoVALVE Type;
+};
+
+// Map type VkPhysicalDeviceDepthClampZeroOneFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceDepthClampZeroOneFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_EXT> {
+    typedef VkPhysicalDeviceDepthClampZeroOneFeaturesEXT Type;
 };
 
 // Map type VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NON_SEAMLESS_CUBE_MAP_FEATURES_EXT
@@ -6106,6 +6288,24 @@ template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSIN
     typedef VkPhysicalDeviceImageProcessingPropertiesQCOM Type;
 };
 
+// Map type VkPhysicalDeviceExtendedDynamicState3FeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceExtendedDynamicState3FeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT> {
+    typedef VkPhysicalDeviceExtendedDynamicState3FeaturesEXT Type;
+};
+
+// Map type VkPhysicalDeviceExtendedDynamicState3PropertiesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceExtendedDynamicState3PropertiesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT> {
+    typedef VkPhysicalDeviceExtendedDynamicState3PropertiesEXT Type;
+};
+
 // Map type VkPhysicalDeviceSubpassMergeFeedbackFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT
 template <> struct LvlTypeMap<VkPhysicalDeviceSubpassMergeFeedbackFeaturesEXT> {
     static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT;
@@ -6176,6 +6376,87 @@ template <> struct LvlTypeMap<VkShaderModuleIdentifierEXT> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_SHADER_MODULE_IDENTIFIER_EXT> {
     typedef VkShaderModuleIdentifierEXT Type;
+};
+
+// Map type VkPhysicalDeviceOpticalFlowFeaturesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV
+template <> struct LvlTypeMap<VkPhysicalDeviceOpticalFlowFeaturesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV> {
+    typedef VkPhysicalDeviceOpticalFlowFeaturesNV Type;
+};
+
+// Map type VkPhysicalDeviceOpticalFlowPropertiesNV to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV
+template <> struct LvlTypeMap<VkPhysicalDeviceOpticalFlowPropertiesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV> {
+    typedef VkPhysicalDeviceOpticalFlowPropertiesNV Type;
+};
+
+// Map type VkOpticalFlowImageFormatInfoNV to id VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV
+template <> struct LvlTypeMap<VkOpticalFlowImageFormatInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV> {
+    typedef VkOpticalFlowImageFormatInfoNV Type;
+};
+
+// Map type VkOpticalFlowImageFormatPropertiesNV to id VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV
+template <> struct LvlTypeMap<VkOpticalFlowImageFormatPropertiesNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV> {
+    typedef VkOpticalFlowImageFormatPropertiesNV Type;
+};
+
+// Map type VkOpticalFlowSessionCreateInfoNV to id VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV
+template <> struct LvlTypeMap<VkOpticalFlowSessionCreateInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV> {
+    typedef VkOpticalFlowSessionCreateInfoNV Type;
+};
+
+// Map type VkOpticalFlowSessionCreatePrivateDataInfoNV to id VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV
+template <> struct LvlTypeMap<VkOpticalFlowSessionCreatePrivateDataInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV> {
+    typedef VkOpticalFlowSessionCreatePrivateDataInfoNV Type;
+};
+
+// Map type VkOpticalFlowExecuteInfoNV to id VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV
+template <> struct LvlTypeMap<VkOpticalFlowExecuteInfoNV> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV> {
+    typedef VkOpticalFlowExecuteInfoNV Type;
+};
+
+// Map type VkPhysicalDeviceLegacyDitheringFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceLegacyDitheringFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT> {
+    typedef VkPhysicalDeviceLegacyDitheringFeaturesEXT Type;
+};
+
+// Map type VkPhysicalDevicePipelineProtectedAccessFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDevicePipelineProtectedAccessFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT> {
+    typedef VkPhysicalDevicePipelineProtectedAccessFeaturesEXT Type;
 };
 
 // Map type VkPhysicalDeviceTilePropertiesFeaturesQCOM to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_PROPERTIES_FEATURES_QCOM
@@ -6401,6 +6682,24 @@ template <> struct LvlTypeMap<VkPhysicalDeviceRayQueryFeaturesKHR> {
 
 template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR> {
     typedef VkPhysicalDeviceRayQueryFeaturesKHR Type;
+};
+
+// Map type VkPhysicalDeviceMeshShaderFeaturesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceMeshShaderFeaturesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT> {
+    typedef VkPhysicalDeviceMeshShaderFeaturesEXT Type;
+};
+
+// Map type VkPhysicalDeviceMeshShaderPropertiesEXT to id VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT
+template <> struct LvlTypeMap<VkPhysicalDeviceMeshShaderPropertiesEXT> {
+    static const VkStructureType kSType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
+};
+
+template <> struct LvlSTypeMap<VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT> {
+    typedef VkPhysicalDeviceMeshShaderPropertiesEXT Type;
 };
 
 // Find an entry of the given type in the const pNext chain

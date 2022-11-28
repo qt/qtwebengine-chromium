@@ -45,6 +45,7 @@ cc_library(
         "@com_google_glog//:glog",
         "@com_google_nisaba//nisaba/port:thread_pool",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
@@ -55,6 +56,7 @@ cc_library(
         "ble_v2.cc",
         "bluetooth_adapter.cc",
         "bluetooth_classic.cc",
+        "credential_storage_impl.cc",
         "wifi_hotspot.cc",
         "wifi_lan.cc",
     ],
@@ -63,6 +65,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "credential_storage_impl.h",
         "wifi_hotspot.h",
         "wifi_lan.h",
     ],
@@ -77,6 +80,7 @@ cc_library(
         "//internal/platform:uuid",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation/shared:count_down_latch",
+        "//internal/proto:credential_cc_proto",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

@@ -24,7 +24,7 @@ using SpvBuilderConstructorTest = TestHelper;
 
 TEST_F(SpvBuilderConstructorTest, Const) {
     auto* c = Expr(42.2_f);
-    auto* g = GlobalVar("g", ty.f32(), c, ast::StorageClass::kPrivate);
+    auto* g = GlobalVar("g", ty.f32(), c, ast::AddressSpace::kPrivate);
 
     spirv::Builder& b = Build();
 
@@ -122,7 +122,7 @@ TEST_F(SpvBuilderConstructorTest, Type_IdentifierExpression_Param) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Vector_Bitcast_Params) {
-    auto* var = Var("v", nullptr, vec3<f32>(1_f, 2_f, 3_f));
+    auto* var = Var("v", vec3<f32>(1_f, 2_f, 3_f));
     auto* cast = Bitcast(ty.vec3<u32>(), var);
     WrapInFunction(var, cast);
 
@@ -247,7 +247,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Vec2_With_Bool_Literal) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Vec2_With_Bool_Var) {
-    auto* var = Var("v", nullptr, Expr(true));
+    auto* var = Var("v", Expr(true));
     auto* cast = vec2<bool>(var);
     WrapInFunction(var, cast);
 
@@ -1892,7 +1892,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Vec4_F16_With_Vec4) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_F32_With_F32) {
     auto* ctor = Construct<f32>(2_f);
     GlobalConst("g", ty.f32(), ctor);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -1915,7 +1915,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_F16_With_F16) {
 
     auto* ctor = Construct<f16>(2_h);
     GlobalConst("g", ty.f16(), ctor);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -1935,7 +1935,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_F32_With_F32) {
     auto* ctor = Construct<f32>(2_f);
-    GlobalVar("g", ty.f32(), ast::StorageClass::kPrivate, ctor);
+    GlobalVar("g", ty.f32(), ast::AddressSpace::kPrivate, ctor);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -1954,7 +1954,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_F16_With_F16) {
     Enable(ast::Extension::kF16);
 
     auto* ctor = Construct<f16>(2_h);
-    GlobalVar("g", ty.f16(), ast::StorageClass::kPrivate, ctor);
+    GlobalVar("g", ty.f16(), ast::AddressSpace::kPrivate, ctor);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -1972,7 +1972,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_F16_With_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_U32_With_F32) {
     auto* ctor = Construct<u32>(1.5_f);
     GlobalConst("g", ty.u32(), ctor);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -1995,7 +1995,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_U32_With_F16) {
 
     auto* ctor = Construct<u32>(1.5_h);
     GlobalConst("g", ty.u32(), ctor);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2015,7 +2015,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_U32_With_F32) {
     auto* ctor = Construct<u32>(1.5_f);
-    GlobalVar("g", ty.u32(), ast::StorageClass::kPrivate, ctor);
+    GlobalVar("g", ty.u32(), ast::AddressSpace::kPrivate, ctor);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2034,7 +2034,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_U32_With_F16) {
     Enable(ast::Extension::kF16);
 
     auto* ctor = Construct<u32>(1.5_h);
-    GlobalVar("g", ty.u32(), ast::StorageClass::kPrivate, ctor);
+    GlobalVar("g", ty.u32(), ast::AddressSpace::kPrivate, ctor);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2052,7 +2052,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_U32_With_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec2_With_F32) {
     auto* cast = vec2<f32>(2_f);
     GlobalConst("g", ty.vec2<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2077,7 +2077,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec2_With_F16) {
 
     auto* cast = vec2<f16>(2_h);
     GlobalConst("g", ty.vec2<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2099,7 +2099,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_With_F32) {
     auto* cast = vec2<f32>(2_f);
-    auto* g = GlobalVar("g", ty.vec2<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec2<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2117,7 +2117,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_With_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec2<f16>(2_h);
-    auto* g = GlobalVar("g", ty.vec2<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec2<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2134,7 +2134,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_With_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec2_F32_With_Vec2) {
     auto* cast = vec2<f32>(vec2<f32>(2_f, 2_f));
     GlobalConst("g", ty.vec2<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2159,7 +2159,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec2_F16_With_Vec2) {
 
     auto* cast = vec2<f16>(vec2<f16>(2_h, 2_h));
     GlobalConst("g", ty.vec2<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2181,7 +2181,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_F32_With_Vec2) {
     auto* cast = vec2<f32>(vec2<f32>(2_f, 2_f));
-    GlobalVar("a", ty.vec2<f32>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec2<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2203,7 +2203,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_F16_With_Vec2) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec2<f16>(vec2<f16>(2_h, 2_h));
-    GlobalVar("a", ty.vec2<f16>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec2<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2224,7 +2224,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec2_F16_With_Vec2) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_F32_With_Vec3) {
     auto* cast = vec3<f32>(vec3<f32>(2_f, 2_f, 2_f));
     GlobalConst("g", ty.vec3<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2249,7 +2249,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_F16_With_Vec3) {
 
     auto* cast = vec3<f16>(vec3<f16>(2_h, 2_h, 2_h));
     GlobalConst("g", ty.vec3<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2271,7 +2271,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_F32_With_Vec3) {
     auto* cast = vec3<f32>(vec3<f32>(2_f, 2_f, 2_f));
-    GlobalVar("a", ty.vec3<f32>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec3<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2293,7 +2293,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_F16_With_Vec3) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec3<f16>(vec3<f16>(2_h, 2_h, 2_h));
-    GlobalVar("a", ty.vec3<f16>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec3<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2314,7 +2314,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_F16_With_Vec3) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_F32_With_Vec4) {
     auto* cast = vec4<f32>(vec4<f32>(2_f, 2_f, 2_f, 2_f));
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2339,7 +2339,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_F16_With_Vec4) {
 
     auto* cast = vec4<f16>(vec4<f16>(2_h, 2_h, 2_h, 2_h));
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2361,7 +2361,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F32_With_Vec4) {
     auto* cast = vec4<f32>(vec4<f32>(2_f, 2_f, 2_f, 2_f));
-    GlobalVar("a", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2383,7 +2383,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F16_With_Vec4) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(vec4<f16>(2_h, 2_h, 2_h, 2_h));
-    GlobalVar("a", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    GlobalVar("a", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2404,7 +2404,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F16_With_Vec4) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_F32) {
     auto* cast = vec3<f32>(2_f);
     GlobalConst("g", ty.vec3<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2429,7 +2429,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_F16) {
 
     auto* cast = vec3<f16>(2_h);
     GlobalConst("g", ty.vec3<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2451,7 +2451,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F32) {
     auto* cast = vec3<f32>(2_f);
-    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2469,7 +2469,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec3<f16>(2_h);
-    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2486,7 +2486,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_F32_Vec2) {
     auto* cast = vec3<f32>(2_f, vec2<f32>(2_f, 2_f));
     GlobalConst("g", ty.vec3<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2511,7 +2511,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_F16_Vec2) {
 
     auto* cast = vec3<f16>(2_h, vec2<f16>(2_h, 2_h));
     GlobalConst("g", ty.vec3<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2533,7 +2533,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F32_Vec2) {
     auto* cast = vec3<f32>(2_f, vec2<f32>(2_f, 2_f));
-    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2551,7 +2551,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F16_Vec2) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec3<f16>(2_h, vec2<f16>(2_h, 2_h));
-    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2568,7 +2568,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_F16_Vec2) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_Vec2_F32) {
     auto* cast = vec3<f32>(vec2<f32>(2_f, 2_f), 2_f);
     GlobalConst("g", ty.vec3<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2593,7 +2593,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec3_With_Vec2_F16) {
 
     auto* cast = vec3<f16>(vec2<f16>(2_h, 2_h), 2_h);
     GlobalConst("g", ty.vec3<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2615,7 +2615,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_Vec2_F32) {
     auto* cast = vec3<f32>(vec2<f32>(2_f, 2_f), 2_f);
-    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2633,7 +2633,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_Vec2_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec3<f16>(vec2<f16>(2_h, 2_h), 2_h);
-    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec3<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2650,7 +2650,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec3_With_Vec2_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F32) {
     auto* cast = vec4<f32>(2_f);
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2675,7 +2675,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F16) {
 
     auto* cast = vec4<f16>(2_h);
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2697,7 +2697,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F32) {
     auto* cast = vec4<f32>(2_f);
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2715,7 +2715,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(2_h);
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2732,7 +2732,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F32_F32_Vec2) {
     auto* cast = vec4<f32>(2_f, 2_f, vec2<f32>(2_f, 2_f));
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2757,7 +2757,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F16_F16_Vec2) {
 
     auto* cast = vec4<f16>(2_h, 2_h, vec2<f16>(2_h, 2_h));
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2779,7 +2779,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F32_F32_Vec2) {
     auto* cast = vec4<f32>(2_f, 2_f, vec2<f32>(2_f, 2_f));
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2797,7 +2797,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_F16_Vec2) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(2_h, 2_h, vec2<f16>(2_h, 2_h));
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2814,7 +2814,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_F16_Vec2) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F32_Vec2_F32) {
     auto* cast = vec4<f32>(2_f, vec2<f32>(2_f, 2_f), 2_f);
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2839,7 +2839,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F16_Vec2_F16) {
 
     auto* cast = vec4<f16>(2_h, vec2<f16>(2_h, 2_h), 2_h);
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2861,7 +2861,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F32_Vec2_F32) {
     auto* cast = vec4<f32>(2_f, vec2<f32>(2_f, 2_f), 2_f);
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2879,7 +2879,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_Vec2_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(2_h, vec2<f16>(2_h, 2_h), 2_h);
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2896,7 +2896,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_Vec2_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_Vec2_F32_F32) {
     auto* cast = vec4<f32>(vec2<f32>(2_f, 2_f), 2_f, 2_f);
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2921,7 +2921,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_Vec2_F16_F16) {
 
     auto* cast = vec4<f16>(vec2<f16>(2_h, 2_h), 2_h, 2_h);
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -2943,7 +2943,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_Vec2_F32_F32) {
     auto* cast = vec4<f32>(vec2<f32>(2_f, 2_f), 2_f, 2_f);
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2961,7 +2961,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_Vec2_F16_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(vec2<f16>(2_h, 2_h), 2_h, 2_h);
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -2978,7 +2978,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_Vec2_F16_F16) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_F32_With_Vec2_Vec2) {
     auto* cast = vec4<f32>(vec2<f32>(2_f, 2_f), vec2<f32>(2_f, 2_f));
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -3003,7 +3003,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_F16_With_Vec2_Vec2) {
 
     auto* cast = vec4<f16>(vec2<f16>(2_h, 2_h), vec2<f16>(2_h, 2_h));
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -3025,7 +3025,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F32_With_Vec2_Vec2) {
     auto* cast = vec4<f32>(vec2<f32>(2_f, 2_f), vec2<f32>(2_f, 2_f));
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3043,7 +3043,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F16_With_Vec2_Vec2) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(vec2<f16>(2_h, 2_h), vec2<f16>(2_h, 2_h));
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3060,7 +3060,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_F16_With_Vec2_Vec2) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_F32_Vec3) {
     auto* cast = vec4<f32>(2_f, vec3<f32>(2_f, 2_f, 2_f));
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -3082,7 +3082,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F32_Vec3) {
     auto* cast = vec4<f32>(2_f, vec3<f32>(2_f, 2_f, 2_f));
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3100,7 +3100,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_Vec3) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(2_h, vec3<f16>(2_h, 2_h, 2_h));
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3117,7 +3117,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_F16_Vec3) {
 TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_Vec3_F32) {
     auto* cast = vec4<f32>(vec3<f32>(2_f, 2_f, 2_f), 2_f);
     GlobalConst("g", ty.vec4<f32>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -3142,7 +3142,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalConst_Vec4_With_Vec3_F16) {
 
     auto* cast = vec4<f16>(vec3<f16>(2_h, 2_h, 2_h), 2_h);
     GlobalConst("g", ty.vec4<f16>(), cast);
-    WrapInFunction(Decl(Var("l", nullptr, Expr("g"))));
+    WrapInFunction(Decl(Var("l", Expr("g"))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -3164,7 +3164,7 @@ OpReturn
 
 TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_Vec3_F32) {
     auto* cast = vec4<f32>(vec3<f32>(2_f, 2_f, 2_f), 2_f);
-    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f32>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3182,7 +3182,7 @@ TEST_F(SpvBuilderConstructorTest, Type_GlobalVar_Vec4_With_Vec3_F16) {
     Enable(ast::Extension::kF16);
 
     auto* cast = vec4<f16>(vec3<f16>(2_h, 2_h, 2_h), 2_h);
-    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::StorageClass::kPrivate, cast);
+    auto* g = GlobalVar("g", ty.vec4<f16>(), ast::AddressSpace::kPrivate, cast);
 
     spirv::Builder& b = Build();
 
@@ -3927,30 +3927,6 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_U32_To_I32) {
 )");
 }
 
-TEST_F(SpvBuilderConstructorTest, Type_Convert_I32_To_U32) {
-    auto* var = Decl(Var("x", ty.i32(), Expr(2_i)));
-    auto* cast = Construct<u32>("x");
-    WrapInFunction(var, cast);
-
-    spirv::Builder& b = Build();
-
-    b.push_function(Function{});
-    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
-    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
-
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeInt 32 1
-%2 = OpConstant %1 2
-%4 = OpTypePointer Function %1
-%5 = OpConstantNull %1
-%7 = OpTypeInt 32 0
-)");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
-              R"(OpStore %3 %2
-%8 = OpLoad %1 %3
-%6 = OpBitcast %7 %8
-)");
-}
-
 TEST_F(SpvBuilderConstructorTest, Type_Convert_F32_To_I32) {
     auto* var = Decl(Var("x", ty.f32(), Expr(2.4_f)));
     auto* cast = Construct<i32>("x");
@@ -3998,6 +3974,30 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_F16_To_I32) {
               R"(OpStore %3 %2
 %8 = OpLoad %1 %3
 %6 = OpConvertFToS %7 %8
+)");
+}
+
+TEST_F(SpvBuilderConstructorTest, Type_Convert_I32_To_U32) {
+    auto* var = Decl(Var("x", ty.i32(), Expr(2_i)));
+    auto* cast = Construct<u32>("x");
+    WrapInFunction(var, cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeInt 32 1
+%2 = OpConstant %1 2
+%4 = OpTypePointer Function %1
+%5 = OpConstantNull %1
+%7 = OpTypeInt 32 0
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(OpStore %3 %2
+%8 = OpLoad %1 %3
+%6 = OpBitcast %7 %8
 )");
 }
 
@@ -4075,6 +4075,56 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_I32_To_F32) {
 )");
 }
 
+TEST_F(SpvBuilderConstructorTest, Type_Convert_U32_To_F32) {
+    auto* var = Decl(Var("x", ty.u32(), Expr(2_u)));
+    auto* cast = Construct<f32>("x");
+    WrapInFunction(var, cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeInt 32 0
+%2 = OpConstant %1 2
+%4 = OpTypePointer Function %1
+%5 = OpConstantNull %1
+%7 = OpTypeFloat 32
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(OpStore %3 %2
+%8 = OpLoad %1 %3
+%6 = OpConvertUToF %7 %8
+)");
+}
+
+TEST_F(SpvBuilderConstructorTest, Type_Convert_F16_To_F32) {
+    Enable(ast::Extension::kF16);
+
+    auto* var = Decl(Var("x", ty.f16(), Expr(2_h)));
+    auto* cast = Construct<f32>("x");
+    WrapInFunction(var, cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeFloat 16
+%2 = OpConstant %1 0x1p+1
+%4 = OpTypePointer Function %1
+%5 = OpConstantNull %1
+%7 = OpTypeFloat 32
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(OpStore %3 %2
+%8 = OpLoad %1 %3
+%6 = OpFConvert %7 %8
+)");
+}
+
 TEST_F(SpvBuilderConstructorTest, Type_Convert_I32_To_F16) {
     Enable(ast::Extension::kF16);
 
@@ -4098,30 +4148,6 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_I32_To_F16) {
               R"(OpStore %3 %2
 %8 = OpLoad %1 %3
 %6 = OpConvertSToF %7 %8
-)");
-}
-
-TEST_F(SpvBuilderConstructorTest, Type_Convert_U32_To_F32) {
-    auto* var = Decl(Var("x", ty.u32(), Expr(2_u)));
-    auto* cast = Construct<f32>("x");
-    WrapInFunction(var, cast);
-
-    spirv::Builder& b = Build();
-
-    b.push_function(Function{});
-    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
-    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
-
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeInt 32 0
-%2 = OpConstant %1 2
-%4 = OpTypePointer Function %1
-%5 = OpConstantNull %1
-%7 = OpTypeFloat 32
-)");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
-              R"(OpStore %3 %2
-%8 = OpLoad %1 %3
-%6 = OpConvertUToF %7 %8
 )");
 }
 
@@ -4151,8 +4177,34 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_U32_To_F16) {
 )");
 }
 
+TEST_F(SpvBuilderConstructorTest, Type_Convert_F32_To_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* var = Decl(Var("x", ty.f32(), Expr(2_f)));
+    auto* cast = Construct<f16>("x");
+    WrapInFunction(var, cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    EXPECT_TRUE(b.GenerateStatement(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%1 = OpTypeFloat 32
+%2 = OpConstant %1 2
+%4 = OpTypePointer Function %1
+%5 = OpConstantNull %1
+%7 = OpTypeFloat 16
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(OpStore %3 %2
+%8 = OpLoad %1 %3
+%6 = OpFConvert %7 %8
+)");
+}
+
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_I32) {
-    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<i32>("i");
     WrapInFunction(cast);
@@ -4178,7 +4230,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_I32) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F32_to_I32) {
-    auto* var = GlobalVar("i", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<i32>("i");
     WrapInFunction(cast);
@@ -4206,7 +4258,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F32_to_I32) {
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F16_to_I32) {
     Enable(ast::Extension::kF16);
 
-    auto* var = GlobalVar("i", ty.vec3<f16>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<f16>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<i32>("i");
     WrapInFunction(cast);
@@ -4232,7 +4284,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F16_to_I32) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_U32) {
-    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<u32>("i");
     WrapInFunction(cast);
@@ -4258,7 +4310,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_U32) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F32_to_U32) {
-    auto* var = GlobalVar("i", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<u32>("i");
     WrapInFunction(cast);
@@ -4286,7 +4338,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F32_to_U32) {
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F16_to_U32) {
     Enable(ast::Extension::kF16);
 
-    auto* var = GlobalVar("i", ty.vec3<f16>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<f16>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<u32>("i");
     WrapInFunction(cast);
@@ -4312,7 +4364,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F16_to_U32) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_F32) {
-    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<f32>("i");
     WrapInFunction(cast);
@@ -4329,34 +4381,6 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_F32) {
 %5 = OpConstantNull %3
 %1 = OpVariable %2 Private %5
 %8 = OpTypeFloat 32
-%7 = OpTypeVector %8 3
-)");
-    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
-              R"(%9 = OpLoad %3 %1
-%6 = OpConvertSToF %7 %9
-)");
-}
-
-TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_F16) {
-    Enable(ast::Extension::kF16);
-
-    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::StorageClass::kPrivate);
-
-    auto* cast = vec3<f16>("i");
-    WrapInFunction(cast);
-
-    spirv::Builder& b = Build();
-
-    b.push_function(Function{});
-    ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
-    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
-
-    EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
-%3 = OpTypeVector %4 3
-%2 = OpTypePointer Private %3
-%5 = OpConstantNull %3
-%1 = OpVariable %2 Private %5
-%8 = OpTypeFloat 16
 %7 = OpTypeVector %8 3
 )");
     EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
@@ -4366,7 +4390,7 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_F16) {
 }
 
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_F32) {
-    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<f32>("i");
     WrapInFunction(cast);
@@ -4391,10 +4415,66 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_F32) {
 )");
 }
 
+TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F16_to_F32) {
+    Enable(ast::Extension::kF16);
+
+    auto* var = GlobalVar("i", ty.vec3<f16>(), ast::AddressSpace::kPrivate);
+
+    auto* cast = vec3<f32>("i");
+    WrapInFunction(cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeFloat 16
+%3 = OpTypeVector %4 3
+%2 = OpTypePointer Private %3
+%5 = OpConstantNull %3
+%1 = OpVariable %2 Private %5
+%8 = OpTypeFloat 32
+%7 = OpTypeVector %8 3
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(%9 = OpLoad %3 %1
+%6 = OpFConvert %7 %9
+)");
+}
+
+TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_I32_to_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* var = GlobalVar("i", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
+
+    auto* cast = vec3<f16>("i");
+    WrapInFunction(cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
+%3 = OpTypeVector %4 3
+%2 = OpTypePointer Private %3
+%5 = OpConstantNull %3
+%1 = OpVariable %2 Private %5
+%8 = OpTypeFloat 16
+%7 = OpTypeVector %8 3
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(%9 = OpLoad %3 %1
+%6 = OpConvertSToF %7 %9
+)");
+}
+
 TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_F16) {
     Enable(ast::Extension::kF16);
 
-    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::StorageClass::kPrivate);
+    auto* var = GlobalVar("i", ty.vec3<u32>(), ast::AddressSpace::kPrivate);
 
     auto* cast = vec3<f16>("i");
     WrapInFunction(cast);
@@ -4416,6 +4496,34 @@ TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_U32_to_F16) {
     EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
               R"(%9 = OpLoad %3 %1
 %6 = OpConvertUToF %7 %9
+)");
+}
+
+TEST_F(SpvBuilderConstructorTest, Type_Convert_Vectors_F32_to_F16) {
+    Enable(ast::Extension::kF16);
+
+    auto* var = GlobalVar("i", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
+
+    auto* cast = vec3<f16>("i");
+    WrapInFunction(cast);
+
+    spirv::Builder& b = Build();
+
+    b.push_function(Function{});
+    ASSERT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+    EXPECT_EQ(b.GenerateExpression(cast), 6u) << b.error();
+
+    EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeFloat 32
+%3 = OpTypeVector %4 3
+%2 = OpTypePointer Private %3
+%5 = OpConstantNull %3
+%1 = OpVariable %2 Private %5
+%8 = OpTypeFloat 16
+%7 = OpTypeVector %8 3
+)");
+    EXPECT_EQ(DumpInstructions(b.functions()[0].instructions()),
+              R"(%9 = OpLoad %3 %1
+%6 = OpFConvert %7 %9
 )");
 }
 
@@ -4482,9 +4590,9 @@ TEST_F(SpvBuilderConstructorTest, IsConstructorConst_VectorWithAllConstConstruct
 TEST_F(SpvBuilderConstructorTest, IsConstructorConst_Vector_WithIdent) {
     // vec3<f32>(a, b, c)  -> false
 
-    GlobalVar("a", ty.f32(), ast::StorageClass::kPrivate);
-    GlobalVar("b", ty.f32(), ast::StorageClass::kPrivate);
-    GlobalVar("c", ty.f32(), ast::StorageClass::kPrivate);
+    GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("b", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("c", ty.f32(), ast::AddressSpace::kPrivate);
 
     auto* t = vec3<f32>("a", "b", "c");
     WrapInFunction(t);
@@ -4554,8 +4662,8 @@ TEST_F(SpvBuilderConstructorTest, IsConstructorConst_Struct_WithIdentSubExpressi
                                          Member("b", ty.vec3<f32>()),
                                      });
 
-    GlobalVar("a", ty.f32(), ast::StorageClass::kPrivate);
-    GlobalVar("b", ty.vec3<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("a", ty.f32(), ast::AddressSpace::kPrivate);
+    GlobalVar("b", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
 
     auto* t = Construct(ty.Of(s), "a", "b");
     WrapInFunction(t);
@@ -4572,8 +4680,8 @@ TEST_F(SpvBuilderConstructorTest, ConstantCompositeScoping) {
     // }
     // let y = vec3<f32>(1.0, 2.0, 3.0); // Reuses the ID 'x'
 
-    WrapInFunction(If(true, Block(Decl(Let("x", nullptr, vec3<f32>(1_f, 2_f, 3_f))))),
-                   Decl(Let("y", nullptr, vec3<f32>(1_f, 2_f, 3_f))));
+    WrapInFunction(If(true, Block(Decl(Let("x", vec3<f32>(1_f, 2_f, 3_f))))),
+                   Decl(Let("y", vec3<f32>(1_f, 2_f, 3_f))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());
@@ -4616,9 +4724,9 @@ TEST_F(SpvBuilderConstructorTest, CompositeConstructScoping) {
     // }
     // let y = vec3<f32>(one, 2.0, 3.0); // Mustn't reuse the ID 'x'
 
-    WrapInFunction(Decl(Var("one", nullptr, Expr(1_f))),
-                   If(true, Block(Decl(Let("x", nullptr, vec3<f32>("one", 2_f, 3_f))))),
-                   Decl(Let("y", nullptr, vec3<f32>("one", 2_f, 3_f))));
+    WrapInFunction(Decl(Var("one", Expr(1_f))),
+                   If(true, Block(Decl(Let("x", vec3<f32>("one", 2_f, 3_f))))),
+                   Decl(Let("y", vec3<f32>("one", 2_f, 3_f))));
 
     spirv::Builder& b = SanitizeAndBuild();
     ASSERT_TRUE(b.Build());

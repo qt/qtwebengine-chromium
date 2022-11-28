@@ -89,6 +89,21 @@ template<typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
 Packet pcos_float(const Packet& x);
 
+/** \internal \returns asin(x) for single precision float */
+template<typename Packet>
+EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet pasin_float(const Packet& x);
+
+/** \internal \returns acos(x) for single precision float */
+template<typename Packet>
+EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet pacos_float(const Packet& x);
+
+/** \internal \returns atan(x) for single precision float */
+template<typename Packet>
+EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS
+Packet patan_float(const Packet& x);
+
 /** \internal \returns sqrt(x) for complex types */
 template<typename Packet>
 EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS

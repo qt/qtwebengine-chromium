@@ -71,7 +71,7 @@ typedef struct fpdf_pageobject_t__* FPDF_PAGEOBJECT;  // (text, path, etc.)
 typedef struct fpdf_pageobjectmark_t__* FPDF_PAGEOBJECTMARK;
 typedef const struct fpdf_pagerange_t__* FPDF_PAGERANGE;
 typedef const struct fpdf_pathsegment_t* FPDF_PATHSEGMENT;
-typedef void* FPDF_RECORDER;  // Passed into skia.
+typedef void* FPDF_RECORDER;  // Passed into Skia as a SkPictureRecorder.
 typedef struct fpdf_schhandle_t__* FPDF_SCHHANDLE;
 typedef const struct fpdf_signature_t__* FPDF_SIGNATURE;
 typedef struct fpdf_structelement_t__* FPDF_STRUCTELEMENT;
@@ -234,6 +234,15 @@ extern "C" {
 //          future.
 FPDF_EXPORT void FPDF_CALLCONV FPDF_InitLibrary();
 
+// PDF renderer types - Experimental.
+// Selection of 2D graphics library to use for rendering to FPDF_BITMAPs.
+typedef enum {
+  // Anti-Grain Geometry - https://sourceforge.net/projects/agg/
+  FPDF_RENDERERTYPE_AGG = 0,
+  // Skia - https://skia.org/
+  FPDF_RENDERERTYPE_SKIA = 1,
+} FPDF_RENDERER_TYPE;
+
 // Process-wide options for initializing the library.
 typedef struct FPDF_LIBRARY_CONFIG_ {
   // Version number of the interface. Currently must be 2.
@@ -257,10 +266,20 @@ typedef struct FPDF_LIBRARY_CONFIG_ {
   // embedders.
   unsigned int m_v8EmbedderSlot;
 
-  // Version 3 - Experimantal,
+  // Version 3 - Experimental.
 
   // Pointer to the V8::Platform to use.
   void* m_pPlatform;
+
+  // Version 4 - Experimental.
+
+  // Explicit specification of core renderer to use. |m_RendererType| must be
+  // a valid value for |FPDF_LIBRARY_CONFIG| versions of this level or higher,
+  // or else the initialization will fail with an immediate crash.
+  // Note that use of a specified |FPDF_RENDERER_TYPE| value for which the
+  // corresponding render library is not included in the build will similarly
+  // fail with an immediate crash.
+  FPDF_RENDERER_TYPE m_RendererType;
 
 } FPDF_LIBRARY_CONFIG;
 
@@ -892,6 +911,16 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
                                 int flags);
 
 #if defined(_SKIA_SUPPORT_)
+// Experimental API.
+// Function: FPDF_RenderPageSkp
+//          Render contents of a page to a Skia SkPictureRecorder.
+// Parameters:
+//          page        -   Handle to the page.
+//          size_x      -   Horizontal size (in pixels) for displaying the page.
+//          size_y      -   Vertical size (in pixels) for displaying the page.
+// Return value:
+//          The SkPictureRecorder that holds the rendering of the page, or NULL
+//          on failure. Caller takes ownership of the returned result.
 FPDF_EXPORT FPDF_RECORDER FPDF_CALLCONV FPDF_RenderPageSkp(FPDF_PAGE page,
                                                            int size_x,
                                                            int size_y);

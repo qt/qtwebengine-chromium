@@ -24,31 +24,35 @@
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadTask.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 
+#ifdef SK_ENABLE_PIET_GPU
+#include "src/gpu/graphite/PietRenderTask.h"
+#endif
+
 namespace skgpu::graphite {
 
 sk_sp<DrawContext> DrawContext::Make(sk_sp<TextureProxy> target,
-                                     sk_sp<SkColorSpace> colorSpace,
-                                     SkColorType colorType,
-                                     SkAlphaType alphaType) {
+                                     const SkColorInfo& colorInfo,
+                                     const SkSurfaceProps& props) {
     if (!target) {
         return nullptr;
     }
 
     // TODO: validate that the color type and alpha type are compatible with the target's info
-    SkImageInfo imageInfo = SkImageInfo::Make(target->dimensions(),
-                                              colorType,
-                                              alphaType,
-                                              std::move(colorSpace));
-    return sk_sp<DrawContext>(new DrawContext(std::move(target), imageInfo));
+    SkImageInfo imageInfo = SkImageInfo::Make(target->dimensions(), colorInfo);
+    return sk_sp<DrawContext>(new DrawContext(std::move(target), imageInfo, props));
 }
 
-DrawContext::DrawContext(sk_sp<TextureProxy> target, const SkImageInfo& ii)
+DrawContext::DrawContext(sk_sp<TextureProxy> target,
+                         const SkImageInfo& ii,
+                         const SkSurfaceProps& props)
         : fTarget(std::move(target))
         , fImageInfo(ii)
+        , fSurfaceProps(props)
         , fPendingDraws(std::make_unique<DrawList>())
         , fPendingUploads(std::make_unique<UploadList>()) {
     // TBD - Will probably want DrawLists (and its internal commands) to come from an arena
@@ -59,6 +63,19 @@ DrawContext::~DrawContext() {
     // If the DC is destroyed and there are pending commands, they won't be drawn.
     fPendingDraws.reset();
     fDrawPasses.clear();
+}
+
+TextureProxyView DrawContext::readSurfaceView(const Caps* caps) {
+    TextureProxy* proxy = this->target();
+
+    if (!caps->isTexturable(proxy->textureInfo())) {
+        return {};
+    }
+
+    Swizzle swizzle = caps->getReadSwizzle(this->imageInfo().colorType(),
+                                           proxy->textureInfo());
+
+    return TextureProxyView(sk_ref_sp(proxy), swizzle);
 }
 
 void DrawContext::clear(const SkColor4f& clearColor) {
@@ -72,7 +89,7 @@ void DrawContext::clear(const SkColor4f& clearColor) {
     fDrawPasses.clear();
 }
 
-void DrawContext::recordDraw(const Renderer& renderer,
+void DrawContext::recordDraw(const Renderer* renderer,
                              const Transform& localToDevice,
                              const Geometry& geometry,
                              const Clip& clip,
@@ -97,8 +114,17 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          dstRect);
 }
 
+#ifdef SK_ENABLE_PIET_GPU
+bool DrawContext::recordPietSceneRender(Recorder*,
+                                        sk_sp<TextureProxy> targetProxy,
+                                        sk_sp<const skgpu::piet::Scene> scene) {
+    fPendingPietRenders.push_back(PietRenderInstance(std::move(scene), std::move(targetProxy)));
+    return true;
+}
+#endif
+
 void DrawContext::snapDrawPass(Recorder* recorder) {
-    if (fPendingDraws->drawCount() == 0) {
+    if (fPendingDraws->drawCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
         return;
     }
 
@@ -133,7 +159,10 @@ sk_sp<Task> DrawContext::snapRenderPassTask(Recorder* recorder) {
     // this DrawPass then
     SkASSERT(storeOp == StoreOp::kStore);
     if (drawPass->requiresMSAA()) {
-        desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo);
+        // TODO: If the resolve texture isn't readable, the MSAA color attachment will need to be
+        // persistently associated with the framebuffer, in which case it's not discardable.
+        desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo,
+                                                                             Discardable::kYes);
         if (loadOp != LoadOp::kClear) {
             desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
         } else {
@@ -183,5 +212,14 @@ sk_sp<Task> DrawContext::snapUploadTask(Recorder* recorder) {
 
     return uploadTask;
 }
+
+#ifdef SK_ENABLE_PIET_GPU
+sk_sp<Task> DrawContext::snapPietRenderTask(Recorder* recorder) {
+    if (fPendingPietRenders.empty()) {
+        return nullptr;
+    }
+    return sk_sp<Task>(new PietRenderTask(std::move(fPendingPietRenders)));
+}
+#endif
 
 } // namespace skgpu::graphite

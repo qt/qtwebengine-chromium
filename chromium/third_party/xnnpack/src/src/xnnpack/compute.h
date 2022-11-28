@@ -179,6 +179,7 @@ struct gemm_context {
   size_t cg_stride;
   uint32_t log2_csize;
   struct xnn_hmp_gemm_ukernel ukernel;
+  void* fused_params;
   union {
     union xnn_qs8_conv_minmax_params qs8;
     union xnn_qu8_conv_minmax_params qu8;
@@ -544,53 +545,6 @@ struct dwconv2d_context {
       size_t channel);
 #endif
 
-struct depthtospace2d_hwc_context {
-  size_t elements;
-  size_t input_width;
-  size_t block_size;
-  const void* input;
-  void* output;
-  size_t input_height_stride;
-  size_t input_width_stride;
-  size_t output_height_stride;
-  size_t output_width_stride;
-  xnn_univector_ukernel_function ukernel;
-};
-
-#ifndef __cplusplus
-  XNN_PRIVATE void xnn_compute_depthtospace2d_hwc_contiguous(
-      const struct depthtospace2d_hwc_context* context,
-      size_t batch_input_y,
-      size_t input_x,
-      size_t block_y);
-
-  XNN_PRIVATE void xnn_compute_depthtospace2d_hwc_strided(
-      const struct depthtospace2d_hwc_context* context,
-      size_t batch_input_y,
-      size_t input_x,
-      size_t block_y,
-      size_t block_x);
-#endif
-
-struct depthtospace2d_chw2hwc_context {
-  size_t output_channels;
-  size_t input_height;
-  size_t input_width;
-  uint32_t block_size;
-  const void* input;
-  void* output;
-  size_t input_batch_stride;
-  size_t output_batch_stride;
-  size_t output_channel_stride;
-  xnn_depthtospace2d_chw2hwc_ukernel_function ukernel;
-};
-
-#ifndef __cplusplus
-  XNN_PRIVATE void xnn_compute_depthtospace2d_chw2hwc(
-      const struct depthtospace2d_chw2hwc_context* context,
-      size_t batch_index);
-#endif
-
 struct max_pooling_context {
   const void** indirect_input;
   size_t indirect_input_height_stride;
@@ -885,6 +839,18 @@ struct elementwise_binary_context {
 };
 
 #ifndef __cplusplus
+  XNN_PRIVATE void xnn_compute_elementwise_binary_1d(
+      const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t i);
+  XNN_PRIVATE void xnn_compute_elementwise_binary_2d(
+      const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t i, size_t j);
+  XNN_PRIVATE void xnn_compute_elementwise_binary_3d(
+      const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t i, size_t j, size_t k);
+  XNN_PRIVATE void xnn_compute_elementwise_binary_4d(
+      const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+      size_t i, size_t j, size_t k, size_t l);
   XNN_PRIVATE void xnn_compute_elementwise_binary_5d(
       const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
       size_t i, size_t j, size_t k, size_t l, size_t m);
@@ -951,7 +917,7 @@ struct univector_strided_context {
   size_t x_stride;
   void* y;
   size_t y_stride;
-  xnn_univector_ukernel_function ukernel;
+  xnn_vunary_ukernel_function ukernel;
   union {
     union xnn_f16_abs_params f16_abs;
     union xnn_f16_default_params f16_default;
@@ -997,7 +963,7 @@ struct univector_contiguous_context {
   void* y;
   uint16_t log2_xsize;
   uint16_t log2_ysize;
-  xnn_univector_ukernel_function ukernel;
+  xnn_vunary_ukernel_function ukernel;
   union {
     union xnn_f16_abs_params f16_abs;
     union xnn_f16_default_params f16_default;

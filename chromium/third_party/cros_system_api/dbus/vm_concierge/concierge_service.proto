@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium OS Authors. All rights reserved.
+// Copyright 2017 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@ option optimize_for = LITE_RUNTIME;
 // This file defines messages used for starting, stopping, and managing VMs.
 package vm_tools.concierge;
 option go_package = "chromiumos/system_api/vm_concierge_proto";
+
+import "arc/arc.proto";
 
 // Specification of the key components of a VM.
 //
@@ -163,6 +165,8 @@ message StartVmRequest {
   // If true, concierge should also perform termina-specific setup.
   bool start_termina = 5;
 
+  reserved 6;
+
   // The owner of the vm.
   string owner_id = 7;
 
@@ -189,17 +193,10 @@ message StartVmRequest {
   // CPUs on the device and cannot be 0.
   uint32 cpus = 12;
 
+  reserved 13, 14;
+
   // Make the rootfs writable.
   bool writable_rootfs = 15;
-
-  // Kernel cmdline parameters that will be passed to crosvm.
-  repeated string kernel_params = 17;
-
-  // Enable Vulkan in the started Vm.
-  bool enable_vulkan = 18;
-
-  // Enable Big GL rendering for the started Vm (default is GLES).
-  bool enable_big_gl = 19;
 
   enum FdType {
     // Kernel image.
@@ -212,10 +209,21 @@ message StartVmRequest {
     INITRD = 3;
     // BIOS image.
     BIOS = 4;
+    // BIOS pflash image.
+    PFLASH = 5;
   }
   // For each FdType in fds a file descriptor must be passed along with the
   // message and that file descriptor will be used for the type's purpose.
   repeated FdType fds = 16;
+
+  // Kernel cmdline parameters that will be passed to crosvm.
+  repeated string kernel_params = 17;
+
+  // Enable Vulkan in the started Vm.
+  bool enable_vulkan = 18;
+
+  // Enable Big GL rendering for the started Vm (default is GLES).
+  bool enable_big_gl = 19;
 
   // Timeout (seconds) for VM startup
   uint32 timeout = 20;
@@ -239,7 +247,11 @@ message StartVmRequest {
   // Whether the VM should use storage ballooning.
   bool storage_ballooning = 23;
 
-  reserved 13, 14, 6;
+  // Type 11 SMBIOS DMI OEM strings to pass to the VM.
+  repeated string oem_strings = 24;
+
+  // Enable virtgpu drm native context:
+  bool enable_virtgpu_native_context = 25;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -437,6 +449,9 @@ message StartArcVmRequest {
   //       as that disables swap - which can be done more appropriately by
   //       setting |guest_zram_size| to zero.
   int32 guest_swappiness = 33;
+
+  // List of parameters that are shared by ARCVM and container.
+  arc.StartArcMiniInstanceRequest mini_instance_request = 34;
 }
 
 enum VmStatus {
@@ -553,6 +568,9 @@ enum VmStopReason {
 
   // The service process is shutting down.
   SERVICE_SHUTDOWN = 4;
+
+  // Sibling Vm process has exited on the hypervisor.
+  SIBLING_VM_EXITED = 5;
 }
 
 // Message used in the signal for when a VM has stopped.
@@ -568,6 +586,18 @@ message VmStoppedSignal {
 
   // Why the VM has stopped.
   VmStopReason reason = 4;
+}
+
+// Message used in the signal for when a VM is stopping.
+message VmStoppingSignal {
+  // The name of the VM which is stopping.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
+
+  // The virtual socket context id assigned to the VM that is stopping.
+  int64 cid = 3;
 }
 
 // Information that must be included with every SuspendVm dbus message.
@@ -1255,4 +1285,25 @@ message ListVmsResponse {
 
   // The list of VMs that concierge is managing.
   repeated ExtendedVmInfo vms = 3;
+}
+
+message GetVmGpuCachePathRequest {
+  // The name of the VM.
+  string name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+}
+
+message GetVmGpuCachePathResponse {
+  // Path to VM's GPU cache path.
+  string path = 1;
+}
+
+message AddGroupPermissionMesaRequest {
+  // The name of the VM.
+  string name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
 }

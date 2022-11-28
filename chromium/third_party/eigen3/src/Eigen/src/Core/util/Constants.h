@@ -533,6 +533,7 @@ struct DenseShape             { static std::string debugName() { return "DenseSh
 struct SolverShape            { static std::string debugName() { return "SolverShape"; } };
 struct HomogeneousShape       { static std::string debugName() { return "HomogeneousShape"; } };
 struct DiagonalShape          { static std::string debugName() { return "DiagonalShape"; } };
+struct SkewSymmetricShape     { static std::string debugName() { return "SkewSymmetricShape"; } };
 struct BandShape              { static std::string debugName() { return "BandShape"; } };
 struct TriangularShape        { static std::string debugName() { return "TriangularShape"; } };
 struct SelfAdjointShape       { static std::string debugName() { return "SelfAdjointShape"; } };

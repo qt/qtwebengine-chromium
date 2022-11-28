@@ -1,4 +1,19 @@
 "use strict";
+/**
+ * Copyright 2022 Google Inc. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -28,7 +43,7 @@ class EventEmitter {
     /**
      * Bind an event listener to fire when an event occurs.
      * @param event - the event type you'd like to listen to. Can be a string or symbol.
-     * @param handler  - the function to be called when the event occurs.
+     * @param handler - the function to be called when the event occurs.
      * @returns `this` to enable you to chain method calls.
      */
     on(event, handler) {
@@ -38,7 +53,7 @@ class EventEmitter {
     /**
      * Remove an event listener from firing.
      * @param event - the event type you'd like to stop listening to.
-     * @param handler  - the function that should be removed.
+     * @param handler - the function that should be removed.
      * @returns `this` to enable you to chain method calls.
      */
     off(event, handler) {

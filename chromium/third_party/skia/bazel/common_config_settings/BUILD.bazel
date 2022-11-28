@@ -1,4 +1,4 @@
-load("//bazel:macros.bzl", "bool_flag", "string_flag_with_values")
+load("//bazel:macros.bzl", "bool_flag", "selects", "string_flag_with_values")
 
 licenses(["notice"])
 
@@ -14,8 +14,7 @@ config_setting(
 )
 
 # Apple devices with intel processors released before the shift to the M1 chip
-# will use this config setting. Because M1 chips use the arm cpu instruction set,
-# this flag will not be used.
+# will use this config setting.
 config_setting(
     name = "mac_x64",
     constraint_values = [
@@ -24,6 +23,7 @@ config_setting(
     ],
 )
 
+# M1 Macs (and later) will use this setting.
 config_setting(
     name = "mac_arm64",
     constraint_values = [
@@ -106,9 +106,10 @@ config_setting(
 # //src/pdf:enable_pdf_backend.
 
 string_flag_with_values(
+    name = "fontmgr_factory",
     default = "empty_fontmgr_factory",
-    flag_name = "fontmgr_factory",
     values = [
+        "android_fontmgr_factory",
         # Makes the default SkFontMgr load fonts from a hard-coded directory on disk.
         "custom_directory_fontmgr_factory",
         # Makes the default SkFontMgr load fonts from an SkEmbeddedResource that has been compiled
@@ -121,6 +122,8 @@ string_flag_with_values(
         # Makes the default SkFontMgr return null. Typically used when font support is not desired.
         "empty_fontmgr_factory",
         "fontconfig_fontmgr_factory",
+        # Deprecated, do not use.
+        "fci_fontmgr_factory",
     ],
 )
 
@@ -129,9 +132,10 @@ string_flag_with_values(
 # require setting include_fontmgr to custom_embedded_fontmgr, because those sources and settings
 # will already be compiled in due to the _factory flag.
 string_flag_with_values(
-    flag_name = "include_fontmgr",
+    name = "include_fontmgr",
     multiple = True,
     values = [
+        "android_fontmgr",
         # Allows the construction of an SkFontMgr that loads files from a programmatically
         # defined directory on disk.
         "custom_directory_fontmgr",
@@ -141,26 +145,78 @@ string_flag_with_values(
         # Allows the construction of an SkFontMgr which returns empty fonts.
         "custom_empty_fontmgr",
         "fontconfig_fontmgr",
+        # Deprecated, do not use.
+        "fci_fontmgr",
     ],
 )
 
 bool_flag(
+    name = "enable_effect_serialization",
     default = True,
-    flag_name = "enable_effect_serialization",
 )
 
 bool_flag(
+    name = "enable_tracing",
     # See SkTraceEventCommon.h for more on this type of tracing.
     default = True,
-    flag_name = "enable_tracing",
 )
 
 bool_flag(
+    name = "use_harfbuzz",
     default = False,
-    flag_name = "use_harfbuzz",
 )
 
 bool_flag(
+    name = "use_icu",
     default = False,
-    flag_name = "use_icu",
+)
+
+# These are some helpers to mean "either the fontmgr was enabled or its factory was"
+
+selects.config_setting_group(
+    name = "uses_android_fontmgr",
+    match_any = [
+        ":android_fontmgr",
+        ":android_fontmgr_factory",
+    ],
+)
+
+selects.config_setting_group(
+    name = "uses_custom_directory_fontmgr",
+    match_any = [
+        ":custom_directory_fontmgr",
+        ":custom_directory_fontmgr_factory",
+    ],
+)
+
+selects.config_setting_group(
+    name = "uses_custom_embedded_fontmgr",
+    match_any = [
+        ":custom_embedded_fontmgr",
+        ":custom_embedded_fontmgr_factory",
+    ],
+)
+
+selects.config_setting_group(
+    name = "uses_custom_empty_fontmgr",
+    match_any = [
+        ":custom_empty_fontmgr",
+        ":custom_empty_fontmgr_factory",
+    ],
+)
+
+selects.config_setting_group(
+    name = "uses_fontconfig_fontmgr",
+    match_any = [
+        ":fontconfig_fontmgr",
+        ":fontconfig_fontmgr_factory",
+    ],
+)
+
+selects.config_setting_group(
+    name = "uses_fci_fontmgr",
+    match_any = [
+        ":fci_fontmgr",
+        ":fci_fontmgr_factory",
+    ],
 )

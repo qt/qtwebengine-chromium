@@ -13,6 +13,7 @@
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +21,7 @@
 namespace SkSL {
 
 class Context;
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * A ternary expression (test ? ifTrue : ifFalse).
@@ -76,21 +78,13 @@ public:
         return fIfFalse;
     }
 
-    bool hasProperty(Property property) const override {
-        return this->test()->hasProperty(property) || this->ifTrue()->hasProperty(property) ||
-               this->ifFalse()->hasProperty(property);
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::make_unique<TernaryExpression>(pos, this->test()->clone(),
                                                    this->ifTrue()->clone(),
                                                    this->ifFalse()->clone());
     }
 
-    std::string description() const override {
-        return "(" + this->test()->description() + " ? " + this->ifTrue()->description() + " : " +
-               this->ifFalse()->description() + ")";
-    }
+    std::string description(OperatorPrecedence parentPrecedence) const override;
 
 private:
     std::unique_ptr<Expression> fTest;

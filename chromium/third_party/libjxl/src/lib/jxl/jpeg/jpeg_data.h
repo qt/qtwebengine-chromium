@@ -105,6 +105,7 @@ enum struct JPEGReadError {
   EOB_RUN_TOO_LONG,
   IMAGE_TOO_LARGE,
   INVALID_QUANT_TBL_PRECISION,
+  TAIL_DATA_TOO_LARGE
 };
 
 // Quantization values for an 8x8 pixel block.
@@ -216,7 +217,7 @@ struct JPEGData : public Fields {
         error(JPEGReadError::OK),
         has_zero_padding_bit(false) {}
 
-  const char* Name() const override { return "JPEGData"; }
+  JXL_FIELDS_NAME(JPEGData)
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
   // Doesn't serialize everything - skips brotli-encoded data and what is
   // already encoded in the codestream.

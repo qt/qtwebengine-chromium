@@ -117,6 +117,7 @@ bool AssumesSignedOperands(GLSLstd450 extended_opcode) {
         case GLSLstd450SMin:
         case GLSLstd450SMax:
         case GLSLstd450SClamp:
+        case GLSLstd450FindSMsb:
             return true;
         default:
             break;
@@ -150,6 +151,7 @@ bool AssumesUnsignedOperands(GLSLstd450 extended_opcode) {
         case GLSLstd450UMin:
         case GLSLstd450UMax:
         case GLSLstd450UClamp:
+        case GLSLstd450FindUMsb:
             return true;
         default:
             break;
@@ -221,8 +223,9 @@ bool AssumesResultSignednessMatchesFirstOperand(GLSLstd450 extended_opcode) {
         case GLSLstd450UMin:
         case GLSLstd450UMax:
         case GLSLstd450UClamp:
-            // TODO(dneto): FindSMsb?
-            // TODO(dneto): FindUMsb?
+        case GLSLstd450FindILsb:
+        case GLSLstd450FindSMsb:
+        case GLSLstd450FindUMsb:
             return true;
         default:
             break;
@@ -464,7 +467,7 @@ ParserImpl::AttributeList ParserImpl::ConvertMemberDecoration(uint32_t struct_ty
                 return {};
             }
             return {
-                create<ast::StructMemberOffsetAttribute>(Source{}, decoration[1]),
+                builder_.MemberOffset(Source{}, AInt(decoration[1])),
             };
         case SpvDecorationNonReadable:
             // WGSL doesn't have a member decoration for this.  Silently drop it.
@@ -1205,28 +1208,28 @@ const Type* ParserImpl::ConvertType(uint32_t type_id,
         return nullptr;
     }
 
-    auto ast_storage_class = enum_converter_.ToStorageClass(storage_class);
-    if (ast_storage_class == ast::StorageClass::kInvalid) {
+    auto ast_address_space = enum_converter_.ToAddressSpace(storage_class);
+    if (ast_address_space == ast::AddressSpace::kUndefined) {
         Fail() << "SPIR-V pointer type with ID " << type_id << " has invalid storage class "
                << static_cast<uint32_t>(storage_class);
         return nullptr;
     }
-    if (ast_storage_class == ast::StorageClass::kUniform &&
+    if (ast_address_space == ast::AddressSpace::kUniform &&
         remap_buffer_block_type_.count(pointee_type_id)) {
-        ast_storage_class = ast::StorageClass::kStorage;
+        ast_address_space = ast::AddressSpace::kStorage;
         remap_buffer_block_type_.insert(type_id);
     }
 
     // Pipeline input and output variables map to private variables.
-    if (ast_storage_class == ast::StorageClass::kIn ||
-        ast_storage_class == ast::StorageClass::kOut) {
-        ast_storage_class = ast::StorageClass::kPrivate;
+    if (ast_address_space == ast::AddressSpace::kIn ||
+        ast_address_space == ast::AddressSpace::kOut) {
+        ast_address_space = ast::AddressSpace::kPrivate;
     }
     switch (ptr_as) {
         case PtrAs::Ref:
-            return ty_.Reference(ast_elem_ty, ast_storage_class);
+            return ty_.Reference(ast_elem_ty, ast_address_space);
         case PtrAs::Ptr:
-            return ty_.Pointer(ast_elem_ty, ast_storage_class);
+            return ty_.Pointer(ast_elem_ty, ast_address_space);
     }
     Fail() << "invalid value for ptr_as: " << static_cast<int>(ptr_as);
     return nullptr;
@@ -1366,7 +1369,7 @@ bool ParserImpl::EmitScalarSpecConstants() {
                                          "between 0 and 65535: ID %"
                                       << inst.result_id() << " has SpecId " << id;
                     }
-                    auto* cid = create<ast::IdAttribute>(Source{}, id);
+                    auto* cid = builder_.Id(Source{}, AInt(id));
                     spec_id_decos.Push(cid);
                     break;
                 }
@@ -1443,15 +1446,15 @@ bool ParserImpl::EmitModuleScopeVariables() {
                 var.NumInOperands() > 1 ? var.GetSingleWordInOperand(1) : 0u;
             continue;
         }
-        switch (enum_converter_.ToStorageClass(spirv_storage_class)) {
-            case ast::StorageClass::kNone:
-            case ast::StorageClass::kIn:
-            case ast::StorageClass::kOut:
-            case ast::StorageClass::kUniform:
-            case ast::StorageClass::kHandle:
-            case ast::StorageClass::kStorage:
-            case ast::StorageClass::kWorkgroup:
-            case ast::StorageClass::kPrivate:
+        switch (enum_converter_.ToAddressSpace(spirv_storage_class)) {
+            case ast::AddressSpace::kNone:
+            case ast::AddressSpace::kIn:
+            case ast::AddressSpace::kOut:
+            case ast::AddressSpace::kUniform:
+            case ast::AddressSpace::kHandle:
+            case ast::AddressSpace::kStorage:
+            case ast::AddressSpace::kWorkgroup:
+            case ast::AddressSpace::kPrivate:
                 break;
             default:
                 return Fail() << "invalid SPIR-V storage class " << int(spirv_storage_class)
@@ -1481,7 +1484,7 @@ bool ParserImpl::EmitModuleScopeVariables() {
         }
 
         auto* ast_store_type = ast_type->As<Pointer>()->type;
-        auto ast_storage_class = ast_type->As<Pointer>()->storage_class;
+        auto ast_address_space = ast_type->As<Pointer>()->address_space;
         const ast::Expression* ast_constructor = nullptr;
         if (var.NumInOperands() > 1) {
             // SPIR-V initializers are always constants.
@@ -1489,11 +1492,12 @@ bool ParserImpl::EmitModuleScopeVariables() {
             // here.)
             ast_constructor = MakeConstantExpression(var.GetSingleWordInOperand(1)).expr;
         }
-        auto* ast_var = MakeVar(var.result_id(), ast_storage_class, ast_store_type, ast_constructor,
+        auto* ast_var = MakeVar(var.result_id(), ast_address_space, ast_store_type, ast_constructor,
                                 utils::Empty);
         // TODO(dneto): initializers (a.k.a. constructor expression)
         if (ast_var) {
             builder_.AST().AddGlobalVariable(ast_var);
+            module_variable_.GetOrCreate(var.result_id(), [ast_var] { return ast_var; });
         }
     }
 
@@ -1522,10 +1526,12 @@ bool ParserImpl::EmitModuleScopeVariables() {
         }
         auto* ast_var =
             MakeVar(builtin_position_.per_vertex_var_id,
-                    enum_converter_.ToStorageClass(builtin_position_.storage_class),
+                    enum_converter_.ToAddressSpace(builtin_position_.storage_class),
                     ConvertType(builtin_position_.position_member_type_id), ast_constructor, {});
 
         builder_.AST().AddGlobalVariable(ast_var);
+        module_variable_.GetOrCreate(builtin_position_.per_vertex_var_id,
+                                     [ast_var] { return ast_var; });
     }
     return success_;
 }
@@ -1554,7 +1560,7 @@ const spvtools::opt::analysis::IntConstant* ParserImpl::GetArraySize(uint32_t va
 }
 
 ast::Var* ParserImpl::MakeVar(uint32_t id,
-                              ast::StorageClass sc,
+                              ast::AddressSpace address_space,
                               const Type* storage_type,
                               const ast::Expression* constructor,
                               AttributeList decorations) {
@@ -1564,7 +1570,7 @@ ast::Var* ParserImpl::MakeVar(uint32_t id,
     }
 
     ast::Access access = ast::Access::kUndefined;
-    if (sc == ast::StorageClass::kStorage) {
+    if (address_space == ast::AddressSpace::kStorage) {
         bool read_only = false;
         if (auto* tn = storage_type->As<Named>()) {
             read_only = read_only_struct_types_.count(tn->name) > 0;
@@ -1575,19 +1581,19 @@ ast::Var* ParserImpl::MakeVar(uint32_t id,
     }
 
     // Handle variables (textures and samplers) are always in the handle
-    // storage class, so we don't mention the storage class.
-    if (sc == ast::StorageClass::kHandle) {
-        sc = ast::StorageClass::kNone;
+    // address space, so we don't mention the address space.
+    if (address_space == ast::AddressSpace::kHandle) {
+        address_space = ast::AddressSpace::kNone;
     }
 
     if (!ConvertDecorationsForVariable(id, &storage_type, &decorations,
-                                       sc != ast::StorageClass::kPrivate)) {
+                                       address_space != ast::AddressSpace::kPrivate)) {
         return nullptr;
     }
 
     auto sym = builder_.Symbols().Register(namer_.Name(id));
-    return create<ast::Var>(Source{}, sym, storage_type->Build(builder_), sc, access, constructor,
-                            decorations);
+    return create<ast::Var>(Source{}, sym, storage_type->Build(builder_), address_space, access,
+                            constructor, decorations);
 }
 
 ast::Let* ParserImpl::MakeLet(uint32_t id, const Type* type, const ast::Expression* constructor) {
@@ -1674,7 +1680,7 @@ bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                     break;
             }
             auto ast_builtin = enum_converter_.ToBuiltin(spv_builtin);
-            if (ast_builtin == ast::BuiltinValue::kInvalid) {
+            if (ast_builtin == ast::BuiltinValue::kUndefined) {
                 // A diagnostic has already been emitted.
                 return false;
             }
@@ -1690,13 +1696,13 @@ bool ParserImpl::ConvertDecorationsForVariable(uint32_t id,
                 return Fail() << "malformed DescriptorSet decoration on ID " << id
                               << ": has no operand";
             }
-            decorations->Push(create<ast::GroupAttribute>(Source{}, deco[1]));
+            decorations->Push(builder_.Group(Source{}, AInt(deco[1])));
         }
         if (deco[0] == SpvDecorationBinding) {
             if (deco.size() == 1) {
                 return Fail() << "malformed Binding decoration on ID " << id << ": has no operand";
             }
-            decorations->Push(create<ast::BindingAttribute>(Source{}, deco[1]));
+            decorations->Push(builder_.Binding(Source{}, AInt(deco[1])));
         }
     }
 
@@ -1723,25 +1729,22 @@ DecorationList ParserImpl::GetMemberPipelineDecorations(const Struct& struct_typ
     return result;
 }
 
-const ast::Attribute* ParserImpl::SetLocation(AttributeList* attributes,
-                                              const ast::Attribute* replacement) {
+void ParserImpl::SetLocation(AttributeList* attributes, const ast::Attribute* replacement) {
     if (!replacement) {
-        return nullptr;
+        return;
     }
     for (auto*& attribute : *attributes) {
         if (attribute->Is<ast::LocationAttribute>()) {
             // Replace this location attribute with the replacement.
             // The old one doesn't leak because it's kept in the builder's AST node
             // list.
-            const ast::Attribute* result = nullptr;
-            result = attribute;
             attribute = replacement;
-            return result;  // Assume there is only one such decoration.
+            return;  // Assume there is only one such decoration.
         }
     }
     // The list didn't have a location. Add it.
     attributes->Push(replacement);
-    return nullptr;
+    return;
 }
 
 bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
@@ -1749,7 +1752,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
                                             AttributeList* attributes) {
     // Vulkan defaults to perspective-correct interpolation.
     ast::InterpolationType type = ast::InterpolationType::kPerspective;
-    ast::InterpolationSampling sampling = ast::InterpolationSampling::kNone;
+    ast::InterpolationSampling sampling = ast::InterpolationSampling::kUndefined;
 
     for (const auto& deco : decorations) {
         TINT_ASSERT(Reader, deco.size() > 0);
@@ -1759,7 +1762,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
                     return Fail() << "malformed Location decoration on ID requires one "
                                      "literal operand";
                 }
-                SetLocation(attributes, create<ast::LocationAttribute>(Source{}, deco[1]));
+                SetLocation(attributes, builder_.Location(AInt(deco[1])));
                 if (store_type->IsIntegerScalarOrVector()) {
                     // Default to flat interpolation for integral user-defined IO types.
                     type = ast::InterpolationType::kFlat;
@@ -1804,7 +1807,7 @@ bool ParserImpl::ConvertPipelineDecorations(const Type* store_type,
 
     // Apply interpolation.
     if (type == ast::InterpolationType::kPerspective &&
-        sampling == ast::InterpolationSampling::kNone) {
+        sampling == ast::InterpolationSampling::kUndefined) {
         // This is the default. Don't add a decoration.
     } else {
         attributes->Push(create<ast::InterpolateAttribute>(type, sampling));
@@ -2056,7 +2059,8 @@ TypedExpression ParserImpl::RectifyOperandSignedness(const spvtools::opt::Instru
         Fail() << "internal error: RectifyOperandSignedness given a null expr\n";
         return {};
     }
-    auto* type = expr.type;
+    // TODO(crbug.com/tint/1669) should this unpack aliases too?
+    auto* type = expr.type->UnwrapRef();
     if (!type) {
         Fail() << "internal error: unmapped type for: " << expr.expr->TypeInfo().name << "\n";
         return {};
@@ -2081,12 +2085,12 @@ TypedExpression ParserImpl::RectifyOperandSignedness(const spvtools::opt::Instru
 TypedExpression ParserImpl::RectifySecondOperandSignedness(const spvtools::opt::Instruction& inst,
                                                            const Type* first_operand_type,
                                                            TypedExpression&& second_operand_expr) {
-    if ((first_operand_type != second_operand_expr.type) &&
+    const Type* target_type = first_operand_type->UnwrapRef();
+    if ((target_type != second_operand_expr.type->UnwrapRef()) &&
         AssumesSecondOperandSignednessMatchesFirstOperand(inst.opcode())) {
         // Conversion is required.
-        return {first_operand_type,
-                create<ast::BitcastExpression>(Source{}, first_operand_type->Build(builder_),
-                                               second_operand_expr.expr)};
+        return {target_type, create<ast::BitcastExpression>(Source{}, target_type->Build(builder_),
+                                                            second_operand_expr.expr)};
     }
     // No conversion necessary.
     return std::move(second_operand_expr);
@@ -2094,6 +2098,7 @@ TypedExpression ParserImpl::RectifySecondOperandSignedness(const spvtools::opt::
 
 const Type* ParserImpl::ForcedResultType(const spvtools::opt::Instruction& inst,
                                          const Type* first_operand_type) {
+    first_operand_type = first_operand_type->UnwrapRef();
     const auto opcode = inst.opcode();
     if (AssumesResultSignednessMatchesFirstOperand(opcode)) {
         return first_operand_type;
@@ -2474,7 +2479,7 @@ const Pointer* ParserImpl::GetTypeForHandleVar(const spvtools::opt::Instruction&
         } else {
             const auto access = ast::Access::kWrite;
             const auto format = enum_converter_.ToTexelFormat(image_type->format());
-            if (format == ast::TexelFormat::kInvalid) {
+            if (format == ast::TexelFormat::kUndefined) {
                 return nullptr;
             }
             ast_store_type = ty_.StorageTexture(dim, format, access);
@@ -2487,7 +2492,7 @@ const Pointer* ParserImpl::GetTypeForHandleVar(const spvtools::opt::Instruction&
     }
 
     // Form the pointer type.
-    auto* result = ty_.Pointer(ast_store_type, ast::StorageClass::kHandle);
+    auto* result = ty_.Pointer(ast_store_type, ast::AddressSpace::kHandle);
     // Remember it for later.
     handle_type_[&var] = result;
     return result;

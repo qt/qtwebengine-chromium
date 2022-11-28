@@ -342,7 +342,7 @@ bool CPDFSDK_Widget::HandleXFAAAction(
 #endif  // PDF_ENABLE_XFA
 
 bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
-  const CPDF_Dictionary* pAP =
+  RetainPtr<const CPDF_Dictionary> pAP =
       GetAnnotDict()->GetDictFor(pdfium::annotation::kAP);
   if (!pAP)
     return false;
@@ -357,7 +357,7 @@ bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
     ap_entry = "N";
 
   // Get the AP stream or subdirectory
-  const CPDF_Object* pSub = pAP->GetDirectObjectFor(ap_entry);
+  RetainPtr<const CPDF_Object> pSub = pAP->GetDirectObjectFor(ap_entry);
   if (!pSub)
     return false;
 
@@ -1075,7 +1075,7 @@ CPDF_Action CPDFSDK_Widget::GetAAction(CPDF_AAction::AActionType eAAT) {
     case CPDF_AAction::kValidate:
     case CPDF_AAction::kCalculate: {
       CPDF_FormField* pField = GetFormField();
-      if (pField->GetAdditionalAction().GetDict())
+      if (pField->GetAdditionalAction().HasDict())
         return pField->GetAdditionalAction().GetAction(eAAT);
       return CPDFSDK_BAAnnot::GetAAction(eAAT);
     }

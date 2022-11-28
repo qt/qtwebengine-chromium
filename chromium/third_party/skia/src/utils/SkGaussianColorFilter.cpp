@@ -39,7 +39,7 @@ class SkPipelineDataGatherer;
  * Remaps the input color's alpha to a Gaussian ramp and then outputs premul white using the
  * remapped alpha.
  */
-class SkGaussianColorFilter : public SkColorFilterBase {
+class SkGaussianColorFilter final : public SkColorFilterBase {
 public:
     SkGaussianColorFilter() : SkColorFilterBase() {}
 
@@ -96,13 +96,12 @@ GrFPResult SkGaussianColorFilter::asFragmentProcessor(std::unique_ptr<GrFragment
                                                       const GrColorInfo&,
                                                       const SkSurfaceProps&) const {
     static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter,
-        R"(
-            half4 main(half4 inColor) {
-                half factor = 1 - inColor.a;
-                factor = exp(-factor * factor * 4) - 0.018;
-                return half4(factor);
-            }
-        )");
+            "half4 main(half4 inColor) {"
+                "half factor = 1 - inColor.a;"
+                "factor = exp(-factor * factor * 4) - 0.018;"
+                "return half4(factor);"
+            "}"
+        );
     SkASSERT(SkRuntimeEffectPriv::SupportsConstantOutputForConstantInput(effect));
     return GrFPSuccess(GrSkSLFP::Make(effect, "gaussian_fp", std::move(inputFP),
                                       GrSkSLFP::OptFlags::kNone));

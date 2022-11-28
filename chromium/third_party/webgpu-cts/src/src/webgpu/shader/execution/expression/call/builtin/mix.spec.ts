@@ -16,10 +16,10 @@ Same as mix(e1,e2,T2(e3)).
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
-import { kValue } from '../../../../../util/constants.js';
 import { TypeF32 } from '../../../../../util/conversion.js';
 import { mixIntervals } from '../../../../../util/f32_interval.js';
-import { allInputSources, Case, makeTernaryF32IntervalCase, run } from '../../expression.js';
+import { sparseF32Range } from '../../../../../util/math.js';
+import { allInputSources, Case, makeTernaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -41,27 +41,10 @@ g.test('matching_f32')
   )
   .fn(async t => {
     const makeCase = (x: number, y: number, z: number): Case => {
-      return makeTernaryF32IntervalCase(x, y, z, ...mixIntervals);
+      return makeTernaryToF32IntervalCase(x, y, z, ...mixIntervals);
     };
 
-    const values: Array<number> = [
-      Number.NEGATIVE_INFINITY,
-      kValue.f32.negative.min,
-      -10.0,
-      -1.0,
-      kValue.f32.negative.max,
-      kValue.f32.subnormal.negative.min,
-      kValue.f32.subnormal.negative.max,
-      0.0,
-      kValue.f32.subnormal.positive.min,
-      kValue.f32.subnormal.positive.max,
-      kValue.f32.positive.min,
-      1.0,
-      10.0,
-      kValue.f32.positive.max,
-      Number.POSITIVE_INFINITY,
-    ];
-
+    const values = sparseF32Range();
     const cases: Array<Case> = [];
     values.forEach(x => {
       values.forEach(y => {
@@ -70,7 +53,7 @@ g.test('matching_f32')
         });
       });
     });
-    run(t, builtin('mix'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('mix'), [TypeF32, TypeF32, TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('matching_f16')

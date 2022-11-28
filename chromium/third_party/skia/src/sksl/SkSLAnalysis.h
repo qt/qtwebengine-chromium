@@ -14,9 +14,11 @@
 #include <cstdint>
 #include <memory>
 #include <set>
+#include <vector>
 
 namespace SkSL {
 
+class BuiltinMap;
 class Context;
 class ErrorReporter;
 class Expression;
@@ -26,13 +28,13 @@ class Position;
 class ProgramElement;
 class ProgramUsage;
 class Statement;
+class SymbolTable;
 class Variable;
 class VariableReference;
 enum class VariableRefKind : int8_t;
 struct ForLoopPositions;
 struct LoadedModule;
 struct LoopUnrollInfo;
-struct ParsedModule;
 struct Program;
 
 /**
@@ -76,6 +78,15 @@ bool ReturnsOpaqueColor(const FunctionDefinition& function);
  */
 bool CheckProgramStructure(const Program& program, bool enforceSizeLimit);
 
+/** Determines if `expr` contains a reference to the variable sk_RTAdjust. */
+bool ContainsRTAdjust(const Expression& expr);
+
+/** Determines if `expr` has any side effects. (Is the expression state-altering or pure?) */
+bool HasSideEffects(const Expression& expr);
+
+/** Determines if `expr` is a compile-time constant (composed of just constructors and literals). */
+bool IsCompileTimeConstant(const Expression& expr);
+
 /**
  * Detect an orphaned variable declaration outside of a scope, e.g. if (true) int a;. Returns
  * true if an error was reported.
@@ -97,10 +108,15 @@ bool SwitchCaseContainsUnconditionalExit(Statement& stmt);
 bool SwitchCaseContainsConditionalExit(Statement& stmt);
 
 std::unique_ptr<ProgramUsage> GetUsage(const Program& program);
-std::unique_ptr<ProgramUsage> GetUsage(const LoadedModule& module, const ParsedModule& base);
+std::unique_ptr<ProgramUsage> GetUsage(const LoadedModule& module, const BuiltinMap* base);
 
 bool StatementWritesToVariable(const Statement& stmt, const Variable& var);
 
+/**
+ * Returns true if the expression can be assigned-into. Pass `info` if you want to know the
+ * VariableReference that will be written to. Pass `errors` to report an error for expressions that
+ * are not actually writable.
+ */
 struct AssignmentInfo {
     VariableReference* fAssignedVar = nullptr;
 };
@@ -194,8 +210,25 @@ void DoFinalizationChecks(const Program& program);
  * Error checks compute shader in/outs and returns a vector containing them ordered by location.
  */
 SkTArray<const SkSL::Variable*> GetComputeShaderMainParams(const Context& context,
-        const Program& program);
+                                                           const Program& program);
 
+/**
+ * Tracks the symbol table stack, in conjunction with a ProgramVisitor. Inside `visitStatement`,
+ * pass the current statement and a symbol-table vector to a SymbolTableStackBuilder and the symbol
+ * table stack will be maintained automatically.
+ */
+class SymbolTableStackBuilder {
+public:
+    // If the passed-in statement holds a symbol table, adds it to the stack.
+    SymbolTableStackBuilder(const Statement* stmt,
+                            std::vector<std::shared_ptr<SymbolTable>>* stack);
+
+    // If a symbol table was added to the stack earlier, removes it here.
+    ~SymbolTableStackBuilder();
+
+private:
+    std::vector<std::shared_ptr<SymbolTable>>* fStackToPop = nullptr;
+};
 
 }  // namespace Analysis
 }  // namespace SkSL

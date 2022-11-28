@@ -5,24 +5,68 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
-#include "include/effects/SkTableColorFilter.h"
-#include "include/private/SkColorData.h"
-#include "include/private/SkTo.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLSampleUsage.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
+
+#include <cstdint>
+#include <memory>
+#include <tuple>
+#include <utility>
 
 #ifdef SK_GRAPHITE_ENABLED
 #include "src/gpu/graphite/Image_Graphite.h"
 #endif
 
-class SkTable_ColorFilter : public SkColorFilterBase {
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrTypes.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrProcessor.h"
+#include "src/gpu/ganesh/GrProcessorUnitTest.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+
+class GrRecordingContext;
+struct GrShaderCaps;
+namespace skgpu { class KeyBuilder; }
+#endif
+
+#if GR_TEST_UTILS
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/private/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "include/utils/SkRandom.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
+#else
+class SkSurfaceProps;
+#endif
+
+#if defined(SK_ENABLE_SKSL)
+#include "src/core/SkKeyContext.h"
+#include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
+#include "src/core/SkVM.h"
+
+class SkPipelineDataGatherer;
+#endif
+
+class SkTable_ColorFilter final : public SkColorFilterBase {
 public:
     SkTable_ColorFilter(const uint8_t tableA[], const uint8_t tableR[],
                         const uint8_t tableG[], const uint8_t tableB[]) {
@@ -94,32 +138,23 @@ public:
     void flatten(SkWriteBuffer& buffer) const override {
         buffer.writeByteArray(fBitmap.getAddr8(0,0), 4*256);
     }
-    SK_FLATTENABLE_HOOKS(SkTable_ColorFilter)
 
 private:
+    friend void ::SkRegisterTableColorFilterFlattenable();
+    SK_FLATTENABLE_HOOKS(SkTable_ColorFilter)
+
     SkBitmap fBitmap;
 };
 
 sk_sp<SkFlattenable> SkTable_ColorFilter::CreateProc(SkReadBuffer& buffer) {
     uint8_t argb[4*256];
     if (buffer.readByteArray(argb, sizeof(argb))) {
-        return SkTableColorFilter::MakeARGB(argb+0*256,
-                                            argb+1*256,
-                                            argb+2*256,
-                                            argb+3*256);
+        return SkColorFilters::TableARGB(argb+0*256, argb+1*256, argb+2*256, argb+3*256);
     }
     return nullptr;
 }
 
 #if SK_SUPPORT_GPU
-
-#include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/ganesh/GrColorInfo.h"
-#include "src/gpu/ganesh/GrFragmentProcessor.h"
-#include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/effects/GrTextureEffect.h"
-#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 
 class ColorTableEffect : public GrFragmentProcessor {
 public:
@@ -227,7 +262,7 @@ std::unique_ptr<GrFragmentProcessor> ColorTableEffect::TestCreate(GrProcessorTes
             }
         }
     }
-    auto filter(SkTableColorFilter::MakeARGB(
+    auto filter(SkColorFilters::TableARGB(
         (flags & (1 << 0)) ? luts[0] : nullptr,
         (flags & (1 << 1)) ? luts[1] : nullptr,
         (flags & (1 << 2)) ? luts[2] : nullptr,
@@ -256,11 +291,6 @@ GrFPResult SkTable_ColorFilter::asFragmentProcessor(std::unique_ptr<GrFragmentPr
 
 #ifdef SK_ENABLE_SKSL
 
-#include "include/core/SkImage.h"
-#include "src/core/SkKeyContext.h"
-#include "src/core/SkKeyHelpers.h"
-#include "src/core/SkPaintParamsKey.h"
-
 void SkTable_ColorFilter::addToKey(const SkKeyContext& keyContext,
                                    SkPaintParamsKeyBuilder* builder,
                                    SkPipelineDataGatherer* gatherer) const {
@@ -288,14 +318,14 @@ void SkTable_ColorFilter::addToKey(const SkKeyContext& keyContext,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkColorFilter> SkTableColorFilter::Make(const uint8_t table[256]) {
+sk_sp<SkColorFilter> SkColorFilters::Table(const uint8_t table[256]) {
     return sk_make_sp<SkTable_ColorFilter>(table, table, table, table);
 }
 
-sk_sp<SkColorFilter> SkTableColorFilter::MakeARGB(const uint8_t tableA[256],
-                                                  const uint8_t tableR[256],
-                                                  const uint8_t tableG[256],
-                                                  const uint8_t tableB[256]) {
+sk_sp<SkColorFilter> SkColorFilters::TableARGB(const uint8_t tableA[256],
+                                               const uint8_t tableR[256],
+                                               const uint8_t tableG[256],
+                                               const uint8_t tableB[256]) {
     if (!tableA && !tableR && !tableG && !tableB) {
         return nullptr;
     }
@@ -303,4 +333,6 @@ sk_sp<SkColorFilter> SkTableColorFilter::MakeARGB(const uint8_t tableA[256],
     return sk_make_sp<SkTable_ColorFilter>(tableA, tableR, tableG, tableB);
 }
 
-void SkTableColorFilter::RegisterFlattenables() { SK_REGISTER_FLATTENABLE(SkTable_ColorFilter); }
+void SkRegisterTableColorFilterFlattenable() {
+    SK_REGISTER_FLATTENABLE(SkTable_ColorFilter);
+}

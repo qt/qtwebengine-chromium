@@ -157,9 +157,9 @@ TEST(ArrayTest, Clone) {
       EXPECT_NE(arr_elem, arr1_elem);
       EXPECT_NE(arr_elem, arr2_elem);
       for (size_t j = 0; j < kNumOfRowElems; ++j) {
-        auto* elem_obj = arr_elem->GetObjectAt(j);
-        auto* elem_obj1 = arr1_elem->GetObjectAt(j);
-        auto* elem_obj2 = arr2_elem->GetObjectAt(j);
+        auto elem_obj = arr_elem->GetObjectAt(j);
+        auto elem_obj1 = arr1_elem->GetObjectAt(j);
+        auto elem_obj2 = arr2_elem->GetObjectAt(j);
         // Results from not deferencing reference objects.
         EXPECT_NE(elem_obj, elem_obj1);
         EXPECT_TRUE(elem_obj1->IsReference());
@@ -178,7 +178,7 @@ TEST(ArrayTest, Clone) {
     for (size_t i = 0; i < kNumOfRows; ++i) {
       for (size_t j = 0; j < kNumOfRowElems; ++j) {
         // Results from not deferencing reference objects.
-        auto* elem_obj1 = arr1->GetObjectAt(i)->AsArray()->GetObjectAt(j);
+        auto elem_obj1 = arr1->GetObjectAt(i)->AsArray()->GetObjectAt(j);
         EXPECT_TRUE(elem_obj1->IsReference());
         EXPECT_EQ(elems[i][j], elem_obj1->GetInteger());
         // Results from deferencing reference objects.
@@ -230,9 +230,9 @@ TEST(ArrayTest, Iterator) {
   auto arr = pdfium::MakeRetain<CPDF_Array>();
   for (size_t i = 0; i < std::size(elems); ++i)
     arr->InsertNewAt<CPDF_Number>(i, elems[i]);
-  size_t index = 0;
 
-  CPDF_ArrayLocker locker(arr.Get());
+  size_t index = 0;
+  CPDF_ArrayLocker locker(arr);
   for (const auto& it : locker)
     EXPECT_EQ(elems[index++], it->AsNumber()->GetInteger());
   EXPECT_EQ(std::size(elems), index);

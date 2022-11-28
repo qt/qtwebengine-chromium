@@ -22,6 +22,7 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
 #include "perfetto/base/time.h"
+#include "perfetto/ext/base/base64.h"
 #include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
 #include "perfetto/ext/trace_processor/demangle.h"
@@ -51,6 +52,7 @@
 #include "src/trace_processor/iterator_impl.h"
 #include "src/trace_processor/sqlite/create_function.h"
 #include "src/trace_processor/sqlite/create_view_function.h"
+#include "src/trace_processor/sqlite/pprof_functions.h"
 #include "src/trace_processor/sqlite/register_function.h"
 #include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/span_join_operator_table.h"
@@ -66,6 +68,8 @@
 #include "src/trace_processor/util/protozero_to_text.h"
 #include "src/trace_processor/util/status_macros.h"
 
+#include "protos/perfetto/common/builtin_clock.pbzero.h"
+#include "protos/perfetto/trace/clock_snapshot.pbzero.h"
 #include "protos/perfetto/trace/perfetto/perfetto_metatrace.pbzero.h"
 #include "protos/perfetto/trace/trace.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
@@ -302,6 +306,13 @@ void CreateBuiltinViews(sqlite3* db) {
                "FROM internal_args;",
                nullptr, nullptr, &error);
   MaybeRegisterError(error);
+
+  sqlite3_exec(db,
+               "CREATE VIEW thread_slice AS "
+               "SELECT * FROM slice "
+               "WHERE thread_dur is NOT NULL",
+               nullptr, nullptr, &error);
+  MaybeRegisterError(error);
 }
 
 struct ExportJson : public SqlFunction {
@@ -369,6 +380,39 @@ base::Status Hash::Run(void*,
     }
   }
   out = SqlValue::Long(static_cast<int64_t>(hash.digest()));
+  return base::OkStatus();
+}
+
+struct Base64Encode : public SqlFunction {
+  static base::Status Run(void*,
+                          size_t argc,
+                          sqlite3_value** argv,
+                          SqlValue& out,
+                          Destructors&);
+};
+
+base::Status Base64Encode::Run(void*,
+                               size_t argc,
+                               sqlite3_value** argv,
+                               SqlValue& out,
+                               Destructors& destructors) {
+  if (argc != 1)
+    return base::ErrStatus("Unsupported number of arg passed to Base64Encode");
+
+  sqlite3_value* value = argv[0];
+  if (sqlite3_value_type(value) != SQLITE_BLOB)
+    return base::ErrStatus("Base64Encode only supports bytes argument");
+
+  size_t byte_count = static_cast<size_t>(sqlite3_value_bytes(value));
+  std::string res = base::Base64Encode(sqlite3_value_blob(value), byte_count);
+
+  std::unique_ptr<char, base::FreeDeleter> s(
+      static_cast<char*>(malloc(res.size() + 1)));
+  memcpy(s.get(), res.c_str(), res.size() + 1);
+
+  out = SqlValue::String(s.release());
+  destructors.string_destructor = free;
+
   return base::OkStatus();
 }
 
@@ -779,15 +823,26 @@ void IncrementCountForStmt(sqlite3_stmt* stmt,
   if (sqlite_utils::IsStmtDone(stmt))
     return;
 
-  // If the statement only has a single column and that column is named
-  // "suppress_query_output", treat it as a statement without output for
-  // accounting purposes. This is done so that embedders (e.g. shell) can
-  // strictly check that only the last query produces output while also
-  // providing an escape hatch for SELECT RUN_METRIC() invocations (which
-  // sadly produce output).
-  if (sqlite3_column_count(stmt) == 1 &&
-      strcmp(sqlite3_column_name(stmt, 0), "suppress_query_output") == 0) {
-    return;
+  if (sqlite3_column_count(stmt) == 1) {
+    sqlite3_value* value = sqlite3_column_value(stmt, 0);
+
+    // If the "VOID" pointer associated to the return value is not null,
+    // that means this is a function which is forced to return a value
+    // (because all functions in SQLite have to) but doesn't actually
+    // wait to (i.e. it wants to be treated like CREATE TABLE or similar).
+    // Because of this, ignore the return value of this function.
+    // See |WrapSqlFunction| for where this is set.
+    if (sqlite3_value_pointer(value, "VOID") != nullptr) {
+      return;
+    }
+
+    // If the statement only has a single column and that column is named
+    // "suppress_query_output", treat it as a statement without output for
+    // accounting purposes. This allows an escape hatch for cases where the
+    // user explicitly wants to ignore functions as having output.
+    if (strcmp(sqlite3_column_name(stmt, 0), "suppress_query_output") == 0) {
+      return;
+    }
   }
 
   // Otherwise, the statement has output and so increment the count.
@@ -826,7 +881,7 @@ base::Status PrepareAndStepUntilLastValidStmt(
   for (const char* rem_sql = sql.c_str(); rem_sql && rem_sql[0];) {
     ScopedStmt cur_stmt;
     {
-      PERFETTO_TP_TRACE("QUERY_PREPARE");
+      PERFETTO_TP_TRACE(metatrace::Category::QUERY, "QUERY_PREPARE");
       const char* tail = nullptr;
       RETURN_IF_ERROR(sqlite_utils::PrepareStmt(db, rem_sql, &cur_stmt, &tail));
       rem_sql = tail;
@@ -842,20 +897,24 @@ base::Status PrepareAndStepUntilLastValidStmt(
     // the previous statement so we don't have two clashing statements (e.g.
     // SELECT * FROM v and DROP VIEW v) partially stepped into.
     if (prev_stmt) {
-      PERFETTO_TP_TRACE(
-          "STMT_STEP_UNTIL_DONE", [&prev_stmt](metatrace::Record* record) {
-            record->AddArg("SQL", sqlite3_expanded_sql(*prev_stmt));
-          });
+      PERFETTO_TP_TRACE(metatrace::Category::QUERY, "STMT_STEP_UNTIL_DONE",
+                        [&prev_stmt](metatrace::Record* record) {
+                          auto expanded_sql =
+                              sqlite_utils::ExpandedSqlForStmt(*prev_stmt);
+                          record->AddArg("SQL", expanded_sql.get());
+                        });
       RETURN_IF_ERROR(sqlite_utils::StepStmtUntilDone(prev_stmt.get()));
     }
 
     PERFETTO_DLOG("Executing statement: %s", sqlite3_sql(*cur_stmt));
 
     {
-      PERFETTO_TP_TRACE(
-          "STMT_FIRST_STEP", [&cur_stmt](metatrace::Record* record) {
-            record->AddArg("SQL", sqlite3_expanded_sql(*cur_stmt));
-          });
+      PERFETTO_TP_TRACE(metatrace::Category::QUERY, "STMT_FIRST_STEP",
+                        [&cur_stmt](metatrace::Record* record) {
+                          auto expanded_sql =
+                              sqlite_utils::ExpandedSqlForStmt(*cur_stmt);
+                          record->AddArg("SQL", expanded_sql.get());
+                        });
 
       // Now step once into |cur_stmt| so that when we prepare the next statment
       // we will have executed any dependent bytecode in this one.
@@ -881,6 +940,30 @@ base::Status PrepareAndStepUntilLastValidStmt(
   metadata->column_count =
       static_cast<uint32_t>(sqlite3_column_count(output_stmt->get()));
   return base::OkStatus();
+}
+
+const char* TraceTypeToString(TraceType trace_type) {
+  switch (trace_type) {
+    case kUnknownTraceType:
+      return "unknown";
+    case kProtoTraceType:
+      return "proto";
+    case kJsonTraceType:
+      return "json";
+    case kFuchsiaTraceType:
+      return "fuchsia";
+    case kSystraceTraceType:
+      return "systrace";
+    case kGzipTraceType:
+      return "gzip";
+    case kCtraceTraceType:
+      return "ctrace";
+    case kNinjaLogTraceType:
+      return "ninja_log";
+    case kAndroidBugreportTraceType:
+      return "android_bugreport";
+  }
+  PERFETTO_FATAL("For GCC");
 }
 
 }  // namespace
@@ -922,6 +1005,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   // New style function registration.
   RegisterFunction<Glob>(db, "glob", 2);
   RegisterFunction<Hash>(db, "HASH", -1);
+  RegisterFunction<Base64Encode>(db, "BASE64_ENCODE", 1);
   RegisterFunction<Demangle>(db, "DEMANGLE", 1);
   RegisterFunction<SourceGeq>(db, "SOURCE_GEQ", -1);
   RegisterFunction<ExportJson>(db, "EXPORT_JSON", 1, context_.storage.get(),
@@ -943,6 +1027,12 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   // functions are supported.
   RegisterLastNonNullFunction(db);
   RegisterValueAtMaxTsFunction(db);
+  {
+    base::Status status = PprofFunctions::Register(db, &context_);
+    if (!status.ok()) {
+      PERFETTO_ELOG("%s", status.c_message());
+    }
+  }
 
   SetupMetrics(this, *db_, &sql_metrics_, cfg.skip_builtin_metric_paths);
 
@@ -1015,7 +1105,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
 
   RegisterDbTable(storage->slice_table());
   RegisterDbTable(storage->flow_table());
-  RegisterDbTable(storage->thread_slice_table());
+  RegisterDbTable(storage->slice_table());
   RegisterDbTable(storage->sched_slice_table());
   RegisterDbTable(storage->thread_state_table());
   RegisterDbTable(storage->gpu_slice_table());
@@ -1036,6 +1126,9 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->gpu_counter_track_table());
   RegisterDbTable(storage->gpu_counter_group_table());
   RegisterDbTable(storage->perf_counter_track_table());
+  RegisterDbTable(storage->energy_counter_track_table());
+  RegisterDbTable(storage->uid_counter_track_table());
+  RegisterDbTable(storage->energy_per_uid_counter_track_table());
 
   RegisterDbTable(storage->heap_graph_object_table());
   RegisterDbTable(storage->heap_graph_reference_table());
@@ -1049,10 +1142,11 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->stack_profile_mapping_table());
   RegisterDbTable(storage->stack_profile_frame_table());
   RegisterDbTable(storage->package_list_table());
-  RegisterDbTable(storage->android_game_intervention_list_table());
   RegisterDbTable(storage->profiler_smaps_table());
 
   RegisterDbTable(storage->android_log_table());
+  RegisterDbTable(storage->android_dumpstate_table());
+  RegisterDbTable(storage->android_game_intervention_list_table());
 
   RegisterDbTable(storage->vulkan_memory_allocations_table());
 
@@ -1070,6 +1164,10 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->process_memory_snapshot_table());
   RegisterDbTable(storage->memory_snapshot_node_table());
   RegisterDbTable(storage->memory_snapshot_edge_table());
+
+  RegisterDbTable(storage->experimental_proto_content_table());
+
+  RegisterDbTable(storage->experimental_missing_chrome_processes_table());
 }
 
 TraceProcessorImpl::~TraceProcessorImpl() = default;
@@ -1096,6 +1194,10 @@ void TraceProcessorImpl::Flush() {
   context_.metadata_tracker->SetMetadata(
       metadata::trace_size_bytes,
       Variadic::Integer(static_cast<int64_t>(bytes_parsed_)));
+  const StringId trace_type_id =
+      context_.storage->InternString(TraceTypeToString(context_.trace_type));
+  context_.metadata_tracker->SetMetadata(metadata::trace_type,
+                                         Variadic::String(trace_type_id));
   BuildBoundsTable(*db_, context_.storage->GetTraceTimestampBoundsNs());
 }
 
@@ -1172,7 +1274,7 @@ size_t TraceProcessorImpl::RestoreInitialTables() {
 }
 
 Iterator TraceProcessorImpl::ExecuteQuery(const std::string& sql) {
-  PERFETTO_TP_TRACE("QUERY_EXECUTE");
+  PERFETTO_TP_TRACE(metatrace::Category::QUERY, "QUERY_EXECUTE");
 
   uint32_t sql_stats_row =
       context_.storage->mutable_sql_stats()->RecordQueryBegin(
@@ -1333,13 +1435,56 @@ std::vector<uint8_t> TraceProcessorImpl::GetMetricDescriptors() {
   return pool_.SerializeAsDescriptorSet();
 }
 
-void TraceProcessorImpl::EnableMetatrace() {
-  metatrace::Enable();
+namespace {
+
+using ProtoEnum = protos::pbzero::MetatraceCategories;
+ProtoEnum MetatraceCategoriesToProtoEnum(
+    TraceProcessor::MetatraceCategories categories) {
+  switch (categories) {
+    case TraceProcessor::TOPLEVEL:
+      return ProtoEnum::TOPLEVEL;
+    case TraceProcessor::FUNCTION:
+      return ProtoEnum::FUNCTION;
+    case TraceProcessor::QUERY:
+      return ProtoEnum::QUERY;
+    case TraceProcessor::ALL:
+      return ProtoEnum::ALL;
+    case TraceProcessor::NONE:
+      return ProtoEnum::NONE;
+  }
+  return ProtoEnum::NONE;
+}
+
+}  // namespace
+
+void TraceProcessorImpl::EnableMetatrace(MetatraceConfig config) {
+  metatrace::Enable(MetatraceCategoriesToProtoEnum(config.categories));
 }
 
 base::Status TraceProcessorImpl::DisableAndReadMetatrace(
     std::vector<uint8_t>* trace_proto) {
   protozero::HeapBuffered<protos::pbzero::Trace> trace;
+
+  {
+    uint64_t realtime_timestamp = static_cast<uint64_t>(
+        std::chrono::system_clock::now().time_since_epoch() /
+        std::chrono::nanoseconds(1));
+    uint64_t boottime_timestamp = metatrace::TraceTimeNowNs();
+    auto* clock_snapshot = trace->add_packet()->set_clock_snapshot();
+    {
+      auto* realtime_clock = clock_snapshot->add_clocks();
+      realtime_clock->set_clock_id(
+          protos::pbzero::BuiltinClock::BUILTIN_CLOCK_REALTIME);
+      realtime_clock->set_timestamp(realtime_timestamp);
+    }
+    {
+      auto* boottime_clock = clock_snapshot->add_clocks();
+      boottime_clock->set_clock_id(
+          protos::pbzero::BuiltinClock::BUILTIN_CLOCK_BOOTTIME);
+      boottime_clock->set_timestamp(boottime_timestamp);
+    }
+  }
+
   metatrace::DisableAndReadBuffer([&trace](metatrace::Record* record) {
     auto packet = trace->add_packet();
     packet->set_timestamp(record->timestamp_ns);

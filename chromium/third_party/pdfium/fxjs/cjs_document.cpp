@@ -660,7 +660,8 @@ CJS_Result CJS_Document::get_info(CJS_Runtime* pRuntime) {
   if (!m_pFormFillEnv)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  const auto* pDictionary = m_pFormFillEnv->GetPDFDocument()->GetInfo();
+  RetainPtr<const CPDF_Dictionary> pDictionary =
+      m_pFormFillEnv->GetPDFDocument()->GetInfo();
   if (!pDictionary)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
@@ -695,8 +696,7 @@ CJS_Result CJS_Document::get_info(CJS_Runtime* pRuntime) {
                               pRuntime->NewString(cwTrapped.AsStringView()));
 
   // PutObjectProperty() calls below may re-enter JS and change info dict.
-  auto pCopy = pDictionary->Clone();
-  CPDF_DictionaryLocker locker(ToDictionary(pCopy.Get()));
+  CPDF_DictionaryLocker locker(ToDictionary(pDictionary->Clone()));
   for (const auto& it : locker) {
     const ByteString& bsKey = it.first;
     CPDF_Object* pValueObj = it.second.Get();
@@ -726,9 +726,11 @@ CJS_Result CJS_Document::getPropertyInternal(CJS_Runtime* pRuntime,
   if (!m_pFormFillEnv)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  CPDF_Dictionary* pDictionary = m_pFormFillEnv->GetPDFDocument()->GetInfo();
+  RetainPtr<CPDF_Dictionary> pDictionary =
+      m_pFormFillEnv->GetPDFDocument()->GetInfo();
   if (!pDictionary)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
+
   return CJS_Result::Success(pRuntime->NewString(
       pDictionary->GetUnicodeTextFor(propName).AsStringView()));
 }
@@ -1009,7 +1011,7 @@ CJS_Result CJS_Document::getAnnot(
   if (!pPageView)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  CPDFSDK_AnnotForwardIteration annot_iteration(pPageView);
+  CPDFSDK_AnnotIteration annot_iteration(pPageView);
   CPDFSDK_BAAnnot* pSDKBAAnnot = nullptr;
   for (const auto& pSDKAnnotCur : annot_iteration) {
     auto* pBAAnnot = pSDKAnnotCur->AsBAAnnot();
@@ -1051,7 +1053,7 @@ CJS_Result CJS_Document::getAnnots(
     if (!pPageView)
       return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-    CPDFSDK_AnnotForwardIteration annot_iteration(pPageView);
+    CPDFSDK_AnnotIteration annot_iteration(pPageView);
     for (const auto& pSDKAnnotCur : annot_iteration) {
       if (!pSDKAnnotCur)
         return CJS_Result::Failure(JSMessage::kBadObjectError);
@@ -1386,17 +1388,11 @@ CJS_Result CJS_Document::gotoNamedDest(
   if (!dest_array)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  // TODO(tsepez): make CPDF_Dest constructor take retained argument.
-  CPDF_Dest dest(dest_array.Get());
-  const CPDF_Array* arrayObject = dest.GetArray();
-  std::vector<float> scrollPositionArray;
-  if (arrayObject) {
-    for (size_t i = 2; i < arrayObject->size(); i++)
-      scrollPositionArray.push_back(arrayObject->GetNumberAt(i));
-  }
+  CPDF_Dest dest(std::move(dest_array));
+  std::vector<float> positions = dest.GetScrollPositionArray();
   pRuntime->BeginBlock();
   m_pFormFillEnv->DoGoToAction(dest.GetDestPageIndex(pDocument),
-                               dest.GetZoomMode(), scrollPositionArray);
+                               dest.GetZoomMode(), positions);
   pRuntime->EndBlock();
   return CJS_Result::Success();
 }

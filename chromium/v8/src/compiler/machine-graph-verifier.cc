@@ -51,6 +51,7 @@ class MachineRepresentationInferrer {
                           : MachineRepresentation::kBit;
       case IrOpcode::kInt64AddWithOverflow:
       case IrOpcode::kInt64SubWithOverflow:
+      case IrOpcode::kInt64MulWithOverflow:
         CHECK_LE(index, static_cast<size_t>(1));
         return index == 0 ? MachineRepresentation::kWord64
                           : MachineRepresentation::kBit;
@@ -212,7 +213,6 @@ class MachineRepresentationInferrer {
                 MachineRepresentation::kTaggedPointer;
             break;
           case IrOpcode::kNumberConstant:
-          case IrOpcode::kDelayedStringConstant:
           case IrOpcode::kChangeBitToTagged:
           case IrOpcode::kIfException:
           case IrOpcode::kOsrValue:
@@ -824,7 +824,8 @@ class MachineRepresentationChecker {
 
   void CheckValueInputIsTaggedOrPointer(Node const* node, int index) {
     Node const* input = node->InputAt(index);
-    switch (inferrer_->GetRepresentation(input)) {
+    MachineRepresentation rep = inferrer_->GetRepresentation(input);
+    switch (rep) {
       case MachineRepresentation::kTagged:
       case MachineRepresentation::kTaggedPointer:
       case MachineRepresentation::kTaggedSigned:
@@ -840,6 +841,21 @@ class MachineRepresentationChecker {
       case MachineRepresentation::kWord64:
         if (Is64()) {
           return;
+        }
+        break;
+      default:
+        break;
+    }
+    switch (node->opcode()) {
+      case IrOpcode::kLoad:
+      case IrOpcode::kProtectedLoad:
+      case IrOpcode::kUnalignedLoad:
+      case IrOpcode::kLoadImmutable:
+        if (rep == MachineRepresentation::kCompressed ||
+            rep == MachineRepresentation::kCompressedPointer) {
+          if (DECOMPRESS_POINTER_BY_ADDRESSING_MODE && index == 0) {
+            return;
+          }
         }
         break;
       default:

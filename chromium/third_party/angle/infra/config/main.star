@@ -283,6 +283,11 @@ def angle_builder(name, cpu):
 
     ci_properties["sheriff_rotations"] = ["angle"]
 
+    if is_perf:
+        timeout_hours = 5
+    else:
+        timeout_hours = 3
+
     luci.builder(
         name = name,
         bucket = "ci",
@@ -301,6 +306,7 @@ def angle_builder(name, cpu):
             kind = scheduler.LOGARITHMIC_BATCHING_KIND,
             log_base = 2,
         ),
+        execution_timeout = timeout_hours * time.hour,
     )
 
     luci.console_view_entry(
@@ -427,10 +433,10 @@ angle_builder("linux-trace", cpu = "x64")
 angle_builder("win-trace", cpu = "x64")
 
 angle_builder("android-pixel4-perf", cpu = "arm64")
-angle_builder("linux-intel-hd630-perf", cpu = "x64")
-angle_builder("linux-nvidia-p400-perf", cpu = "x64")
-angle_builder("win10-intel-hd630-perf", cpu = "x64")
-angle_builder("win10-nvidia-p400-perf", cpu = "x64")
+angle_builder("linux-intel-uhd630-perf", cpu = "x64")
+angle_builder("linux-nvidia-gtx1660-perf", cpu = "x64")
+angle_builder("win10-intel-uhd630-perf", cpu = "x64")
+angle_builder("win10-nvidia-gtx1660-perf", cpu = "x64")
 
 # Views
 

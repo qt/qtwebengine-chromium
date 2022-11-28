@@ -38,17 +38,15 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
 
   // Total box_size including this header itself.
   uint64_t box_size = LoadBE32(in + pos);
-  memcpy(box->type, in + pos + 4, 4);
-
-  pos += 8;
-
+  pos += 4;
   if (box_size == 1) {
     // If the size is 1, it indicates extended size read from 64-bit integer.
     if (OutOfBounds(pos, 8, size)) return JXL_FAILURE("out of bounds");
     box_size = LoadBE64(in + pos);
     pos += 8;
   }
-
+  memcpy(box->type, in + pos, 4);
+  pos += 4;
   if (!memcmp("uuid", box->type, 4)) {
     if (OutOfBounds(pos, 16, size)) return JXL_FAILURE("out of bounds");
     memcpy(box->extended_type, in + pos, 16);
@@ -135,8 +133,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
   container->xmlc.clear();
   container->jumb = nullptr;
   container->jumb_size = 0;
-  container->codestream = nullptr;
-  container->codestream_size = 0;
+  container->codestream.clear();
   container->jpeg_reconstruction = nullptr;
   container->jpeg_reconstruction_size = 0;
 
@@ -174,12 +171,15 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       if (memcmp(expected, in, 12) != 0) return JXL_FAILURE("Invalid ftyp");
     } else if (!memcmp("jxli", box.type, 4)) {
       // TODO(lode): parse JXL frame index box
-      if (container->codestream) {
+      if (!container->codestream.empty()) {
         return JXL_FAILURE("frame index must come before codestream");
       }
     } else if (!memcmp("jxlc", box.type, 4)) {
-      container->codestream = in;
-      container->codestream_size = data_size;
+      container->codestream.append(in, in + data_size);
+    } else if (!memcmp("jxlp", box.type, 4)) {
+      if (data_size < 4) return JXL_FAILURE("Invalid jxlp");
+      // TODO(jon): don't just ignore the counter
+      container->codestream.append(in + 4, in + data_size);
     } else if (!memcmp("Exif", box.type, 4)) {
       if (data_size < 4) return JXL_FAILURE("Invalid Exif");
       uint32_t tiff_header_offset = LoadBE32(in);
@@ -263,9 +263,9 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          out));
   }
 
-  if (container.codestream) {
-    JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream,
-                                         container.codestream_size, out));
+  if (!container.codestream.empty()) {
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream.data(),
+                                         container.codestream.size(), out));
   } else {
     return JXL_FAILURE("must have primary image frame");
   }
@@ -280,55 +280,6 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
 
 // TODO(veluca): the format defined here encode some things multiple times. Fix
 // that.
-jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
-                               const JpegXlContainer& container,
-                               jxl::CodecInOut* io, jxl::ThreadPool* pool) {
-  params.keep_dct = true;
-  if (container.jpeg_reconstruction == nullptr) {
-    return JXL_FAILURE(
-        "Cannot decode to JPEG without a JPEG reconstruction box");
-  }
-
-  io->Main().jpeg_data = jxl::make_unique<jxl::jpeg::JPEGData>();
-
-  JXL_RETURN_IF_ERROR(DecodeJPEGData(
-      jxl::Span<const uint8_t>(container.jpeg_reconstruction,
-                               container.jpeg_reconstruction_size),
-      io->Main().jpeg_data.get()));
-
-  auto& jpeg_data = io->Main().jpeg_data;
-  bool have_exif = false, have_xmp = false;
-  for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
-    if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
-      if (have_exif)
-        return JXL_FAILURE("Unexpected: more than one Exif box required?");
-      if (jpeg_data->app_data[i].size() != container.exif_size + 9) {
-        return JXL_FAILURE(
-            "Exif box size does not match JPEG reconstruction data");
-      }
-      have_exif = true;
-      memcpy(&jpeg_data->app_data[i][3 + 6], container.exif,
-             container.exif_size);
-    }
-    if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
-      if (have_xmp)
-        return JXL_FAILURE("Unexpected: more than one XMP box required?");
-      if (jpeg_data->app_data[i].size() != container.xml[0].second + 32) {
-        return JXL_FAILURE(
-            "XMP box size does not match JPEG reconstruction data");
-      }
-      have_xmp = true;
-      memcpy(&jpeg_data->app_data[i][3 + 29], container.xml[0].first,
-             container.xml[0].second);
-    }
-  }
-
-  JXL_RETURN_IF_ERROR(DecodeFile(
-      params,
-      jxl::Span<const uint8_t>(container.codestream, container.codestream_size),
-      io, pool));
-  return true;
-}
 
 }  // namespace tools
 }  // namespace jpegxl

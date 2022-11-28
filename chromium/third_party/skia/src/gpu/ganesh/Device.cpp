@@ -748,8 +748,9 @@ sk_sp<SkSpecialImage> Device::makeSpecial(const SkBitmap& bitmap) {
                                                rect,
                                                bitmap.getGenerationID(),
                                                std::move(view),
-                                               SkColorTypeToGrColorType(bitmap.colorType()),
-                                               bitmap.refColorSpace(),
+                                               { SkColorTypeToGrColorType(bitmap.colorType()),
+                                                 kPremul_SkAlphaType,
+                                                 bitmap.refColorSpace() },
                                                this->surfaceProps());
 }
 
@@ -765,8 +766,8 @@ sk_sp<SkSpecialImage> Device::makeSpecial(const SkImage* image) {
                                                    SkIRect::MakeWH(image->width(), image->height()),
                                                    image->uniqueID(),
                                                    std::move(view),
-                                                   ct,
-                                                   image->refColorSpace(),
+                                                   { ct, kPremul_SkAlphaType,
+                                                     image->refColorSpace() },
                                                    this->surfaceProps());
     } else if (image->peekPixels(&pm)) {
         SkBitmap bm;
@@ -813,14 +814,11 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
         finalSubset = SkIRect::MakeSize(view.dimensions());
     }
 
-    GrColorType ct = SkColorTypeToGrColorType(this->imageInfo().colorType());
-
     return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
                                                finalSubset,
                                                kNeedNewImageUniqueID_SpecialImage,
                                                std::move(view),
-                                               ct,
-                                               this->imageInfo().refColorSpace(),
+                                               GrColorInfo(this->imageInfo().colorInfo()),
                                                this->surfaceProps());
 }
 
@@ -1307,6 +1305,19 @@ bool Device::replaceBackingProxy(SkSurface::ContentChangeMode mode) {
     return this->replaceBackingProxy(mode, sk_ref_sp(proxy->asRenderTargetProxy()),
                                      grColorType, ii.refColorSpace(), oldView.origin(),
                                      this->surfaceProps());
+}
+
+void Device::asyncReadPixels(const SkImageInfo& info,
+                             const SkIRect& srcRect,
+                             ReadPixelsCallback callback,
+                             ReadPixelsContext context) {
+    auto* sdc = fSurfaceDrawContext.get();
+    // Context TODO: Elevate direct context requirement to public API.
+    auto dContext = sdc->recordingContext()->asDirectContext();
+    if (!dContext) {
+        return;
+    }
+    sdc->asyncReadPixels(dContext, srcRect, info.colorType(), callback, context);
 }
 
 void Device::asyncRescaleAndReadPixels(const SkImageInfo& info,

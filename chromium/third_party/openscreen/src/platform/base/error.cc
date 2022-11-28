@@ -264,10 +264,14 @@ std::ostream& operator<<(std::ostream& os, const Error::Code& code) {
       return os << "UnencryptedOffer";
     case Error::Code::kRemotingNotSupported:
       return os << "RemotingNotSupported";
-    case Error::Code::kNegotiationFailure:
-      return os << "NegotiationFailure";
     case Error::Code::kNoStreamSelected:
       return os << "NoStreamSelected";
+    case Error::Code::kAnswerTimeout:
+      return os << "AnswerTimeout";
+    case Error::Code::kInvalidAnswer:
+      return os << "InvalidAnswer";
+    case Error::Code::kMessageTimeout:
+      return os << "MessageTimeout";
     case Error::Code::kNone:
       break;
   }

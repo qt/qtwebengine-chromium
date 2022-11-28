@@ -253,6 +253,14 @@ Maybe<bool> KeyAccumulator::CollectKeys(Handle<JSReceiver> receiver,
     Maybe<bool> result = Just(false);  // Dummy initialization.
     if (current->IsJSProxy()) {
       result = CollectOwnJSProxyKeys(receiver, Handle<JSProxy>::cast(current));
+    } else if (current->IsWasmObject()) {
+      if (mode_ == KeyCollectionMode::kIncludePrototypes) {
+        RETURN_FAILURE(isolate_, kThrowOnError,
+                       NewTypeError(MessageTemplate::kWasmObjectsAreOpaque));
+      } else {
+        DCHECK_EQ(KeyCollectionMode::kOwnOnly, mode_);
+        DCHECK_EQ(result, Just(false));  // Stop iterating.
+      }
     } else {
       DCHECK(current->IsJSObject());
       result = CollectOwnKeys(receiver, Handle<JSObject>::cast(current));
@@ -459,7 +467,7 @@ MaybeHandle<FixedArray> GetOwnKeysWithElements(Isolate* isolate,
                                              ONLY_ENUMERABLE);
   }
 
-  if (FLAG_trace_for_in_enumerate) {
+  if (v8_flags.trace_for_in_enumerate) {
     PrintF("| strings=%d symbols=0 elements=%u || prototypes>=1 ||\n",
            keys->length(), result.ToHandleChecked()->length() - keys->length());
   }
@@ -511,7 +519,7 @@ MaybeHandle<FixedArray> FastKeyAccumulator::GetKeysFast(
     Handle<FixedArray> keys;
     // Try initializing the enum cache and return own properties.
     if (GetOwnKeysWithUninitializedEnumCache().ToHandle(&keys)) {
-      if (FLAG_trace_for_in_enumerate) {
+      if (v8_flags.trace_for_in_enumerate) {
         PrintF("| strings=%d symbols=0 elements=0 || prototypes>=1 ||\n",
                keys->length());
       }

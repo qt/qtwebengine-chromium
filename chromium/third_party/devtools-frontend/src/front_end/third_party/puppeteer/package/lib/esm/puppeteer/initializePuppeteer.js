@@ -13,16 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { sync } from 'pkg-dir';
 import { rootDirname } from './constants.js';
 import { PuppeteerNode } from './node/Puppeteer.js';
 import { PUPPETEER_REVISIONS } from './revisions.js';
+import { getPackageDirectory } from './util/getPackageDirectory.js';
 /**
  * @internal
  */
 export const initializePuppeteer = (packageName) => {
     const isPuppeteerCore = packageName === 'puppeteer-core';
-    const puppeteerRootDirectory = sync(rootDirname);
     let preferredRevision = PUPPETEER_REVISIONS.chromium;
     // puppeteer-core ignores environment variables
     const productName = !isPuppeteerCore
@@ -34,7 +33,7 @@ export const initializePuppeteer = (packageName) => {
         preferredRevision = PUPPETEER_REVISIONS.firefox;
     }
     return new PuppeteerNode({
-        projectRoot: puppeteerRootDirectory,
+        projectRoot: isPuppeteerCore ? undefined : getPackageDirectory(rootDirname),
         preferredRevision,
         isPuppeteerCore,
         productName,

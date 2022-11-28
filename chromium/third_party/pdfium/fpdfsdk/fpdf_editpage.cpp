@@ -67,11 +67,11 @@ bool IsPageObject(CPDF_Page* pPage) {
   if (!pPage)
     return false;
 
-  const CPDF_Dictionary* pFormDict = pPage->GetDict();
+  RetainPtr<const CPDF_Dictionary> pFormDict = pPage->GetDict();
   if (!pFormDict->KeyExist(pdfium::page_object::kType))
     return false;
 
-  const CPDF_Name* pName =
+  RetainPtr<const CPDF_Name> pName =
       ToName(pFormDict->GetObjectFor(pdfium::page_object::kType)->GetDirect());
   return pName && pName->GetString() == "Page";
 }
@@ -104,14 +104,14 @@ void CalcBoundingBox(CPDF_PageObject* pPageObj) {
   }
 }
 
-CPDF_Dictionary* GetMarkParamDict(FPDF_PAGEOBJECTMARK mark) {
+RetainPtr<CPDF_Dictionary> GetMarkParamDict(FPDF_PAGEOBJECTMARK mark) {
   CPDF_ContentMarkItem* pMarkItem =
       CPDFContentMarkItemFromFPDFPageObjectMark(mark);
   return pMarkItem ? pMarkItem->GetParam() : nullptr;
 }
 
-CPDF_Dictionary* GetOrCreateMarkParamsDict(FPDF_DOCUMENT document,
-                                           FPDF_PAGEOBJECTMARK mark) {
+RetainPtr<CPDF_Dictionary> GetOrCreateMarkParamsDict(FPDF_DOCUMENT document,
+                                                     FPDF_PAGEOBJECTMARK mark) {
   CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
   if (!pDoc)
     return nullptr;
@@ -121,15 +121,11 @@ CPDF_Dictionary* GetOrCreateMarkParamsDict(FPDF_DOCUMENT document,
   if (!pMarkItem)
     return nullptr;
 
-  CPDF_Dictionary* pParams = pMarkItem->GetParam();
-
-  // If the Params dict does not exist, create a new one.
+  RetainPtr<CPDF_Dictionary> pParams = pMarkItem->GetParam();
   if (!pParams) {
-    auto new_dict = pDoc->New<CPDF_Dictionary>();
-    pParams = new_dict.Get();
-    pMarkItem->SetDirectDict(std::move(new_dict));
+    pParams = pDoc->New<CPDF_Dictionary>();
+    pMarkItem->SetDirectDict(pParams);
   }
-
   return pParams;
 }
 
@@ -172,7 +168,7 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV FPDF_CreateNewDocument() {
     }
   }
 
-  CPDF_Dictionary* pInfoDict = pDoc->GetInfo();
+  RetainPtr<CPDF_Dictionary> pInfoDict = pDoc->GetInfo();
   if (pInfoDict) {
     if (IsPDFSandboxPolicyEnabled(FPDF_POLICY_MACHINETIME_ACCESS))
       pInfoDict->SetNewFor<CPDF_String>("CreationDate", DateStr, false);
@@ -366,7 +362,7 @@ FPDFPageObjMark_CountParams(FPDF_PAGEOBJECTMARK mark) {
   if (!pMarkItem)
     return -1;
 
-  const CPDF_Dictionary* pParams = pMarkItem->GetParam();
+  RetainPtr<const CPDF_Dictionary> pParams = pMarkItem->GetParam();
   return pParams ? fxcrt::CollectionSize<int>(*pParams) : 0;
 }
 
@@ -379,7 +375,7 @@ FPDFPageObjMark_GetParamKey(FPDF_PAGEOBJECTMARK mark,
   if (!out_buflen)
     return false;
 
-  const CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<const CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return false;
 
@@ -399,11 +395,11 @@ FPDFPageObjMark_GetParamKey(FPDF_PAGEOBJECTMARK mark,
 FPDF_EXPORT FPDF_OBJECT_TYPE FPDF_CALLCONV
 FPDFPageObjMark_GetParamValueType(FPDF_PAGEOBJECTMARK mark,
                                   FPDF_BYTESTRING key) {
-  const CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<const CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return FPDF_OBJECT_UNKNOWN;
 
-  const CPDF_Object* pObject = pParams->GetObjectFor(key);
+  RetainPtr<const CPDF_Object> pObject = pParams->GetObjectFor(key);
   return pObject ? pObject->GetType() : FPDF_OBJECT_UNKNOWN;
 }
 
@@ -414,11 +410,11 @@ FPDFPageObjMark_GetParamIntValue(FPDF_PAGEOBJECTMARK mark,
   if (!out_value)
     return false;
 
-  const CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<const CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return false;
 
-  const CPDF_Object* pObj = pParams->GetObjectFor(key);
+  RetainPtr<const CPDF_Object> pObj = pParams->GetObjectFor(key);
   if (!pObj || !pObj->IsNumber())
     return false;
 
@@ -435,11 +431,11 @@ FPDFPageObjMark_GetParamStringValue(FPDF_PAGEOBJECTMARK mark,
   if (!out_buflen)
     return false;
 
-  const CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<const CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return false;
 
-  const CPDF_Object* pObj = pParams->GetObjectFor(key);
+  RetainPtr<const CPDF_Object> pObj = pParams->GetObjectFor(key);
   if (!pObj || !pObj->IsString())
     return false;
 
@@ -457,11 +453,11 @@ FPDFPageObjMark_GetParamBlobValue(FPDF_PAGEOBJECTMARK mark,
   if (!out_buflen)
     return false;
 
-  const CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<const CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return false;
 
-  const CPDF_Object* pObj = pParams->GetObjectFor(key);
+  RetainPtr<const CPDF_Object> pObj = pParams->GetObjectFor(key);
   if (!pObj || !pObj->IsString())
     return false;
 
@@ -485,8 +481,7 @@ FPDFPageObj_HasTransparency(FPDF_PAGEOBJECT page_object) {
   if (pPageObj->m_GeneralState.GetBlendType() != BlendMode::kNormal)
     return true;
 
-  const CPDF_Dictionary* pSMaskDict = pPageObj->m_GeneralState.GetSoftMask();
-  if (pSMaskDict)
+  if (pPageObj->m_GeneralState.GetSoftMask())
     return true;
 
   if (pPageObj->m_GeneralState.GetFillAlpha() != 1.0f)
@@ -516,7 +511,8 @@ FPDFPageObjMark_SetIntParam(FPDF_DOCUMENT document,
   if (!pPageObj || !PageObjectContainsMark(pPageObj, mark))
     return false;
 
-  CPDF_Dictionary* pParams = GetOrCreateMarkParamsDict(document, mark);
+  RetainPtr<CPDF_Dictionary> pParams =
+      GetOrCreateMarkParamsDict(document, mark);
   if (!pParams)
     return false;
 
@@ -535,7 +531,8 @@ FPDFPageObjMark_SetStringParam(FPDF_DOCUMENT document,
   if (!pPageObj || !PageObjectContainsMark(pPageObj, mark))
     return false;
 
-  CPDF_Dictionary* pParams = GetOrCreateMarkParamsDict(document, mark);
+  RetainPtr<CPDF_Dictionary> pParams =
+      GetOrCreateMarkParamsDict(document, mark);
   if (!pParams)
     return false;
 
@@ -555,7 +552,8 @@ FPDFPageObjMark_SetBlobParam(FPDF_DOCUMENT document,
   if (!pPageObj || !PageObjectContainsMark(pPageObj, mark))
     return false;
 
-  CPDF_Dictionary* pParams = GetOrCreateMarkParamsDict(document, mark);
+  RetainPtr<CPDF_Dictionary> pParams =
+      GetOrCreateMarkParamsDict(document, mark);
   if (!pParams)
     return false;
 
@@ -576,7 +574,7 @@ FPDFPageObjMark_RemoveParam(FPDF_PAGEOBJECT page_object,
   if (!pPageObj)
     return false;
 
-  CPDF_Dictionary* pParams = GetMarkParamDict(mark);
+  RetainPtr<CPDF_Dictionary> pParams = GetMarkParamDict(mark);
   if (!pParams)
     return false;
 
@@ -740,7 +738,8 @@ FPDF_BOOL FPDFPageObj_SetFillColor(FPDF_PAGEOBJECT page_object,
   std::vector<float> rgb = {R / 255.f, G / 255.f, B / 255.f};
   pPageObj->m_GeneralState.SetFillAlpha(A / 255.f);
   pPageObj->m_ColorState.SetFillColor(
-      CPDF_ColorSpace::GetStockCS(CPDF_ColorSpace::Family::kDeviceRGB), rgb);
+      CPDF_ColorSpace::GetStockCS(CPDF_ColorSpace::Family::kDeviceRGB),
+      std::move(rgb));
   pPageObj->SetDirty(true);
   return true;
 }
@@ -835,7 +834,8 @@ FPDFPageObj_SetStrokeColor(FPDF_PAGEOBJECT page_object,
   std::vector<float> rgb = {R / 255.f, G / 255.f, B / 255.f};
   pPageObj->m_GeneralState.SetStrokeAlpha(A / 255.f);
   pPageObj->m_ColorState.SetStrokeColor(
-      CPDF_ColorSpace::GetStockCS(CPDF_ColorSpace::Family::kDeviceRGB), rgb);
+      CPDF_ColorSpace::GetStockCS(CPDF_ColorSpace::Family::kDeviceRGB),
+      std::move(rgb));
   pPageObj->SetDirty(true);
   return true;
 }

@@ -123,6 +123,10 @@ class Type : public Castable<Type, Node> {
     /// @returns true if this type is a handle type
     bool is_handle() const;
 
+    /// @returns true if this type is an abstract-numeric or if the type holds an element that is an
+    /// abstract-numeric.
+    bool HoldsAbstract() const;
+
     /// kNoConversion is returned from ConversionRank() when the implicit conversion is not
     /// permitted.
     static constexpr uint32_t kNoConversion = 0xffffffffu;
@@ -140,21 +144,19 @@ class Type : public Castable<Type, Node> {
     /// @param count if not null, then this is assigned the number of child elements in the type.
     /// For example, the count of an `array<vec3<f32>, 5>` type would be 5.
     /// @returns
-    ///   * `ty` if `ty` is an abstract or scalar
     ///   * the element type if `ty` is a vector or array
     ///   * the column type if `ty` is a matrix
-    ///   * `nullptr` if `ty` is none of the above
+    ///   * `ty` if `ty` is none of the above
     static const Type* ElementOf(const Type* ty, uint32_t* count = nullptr);
 
     /// @param ty the type to obtain the deepest element type from
     /// @param count if not null, then this is assigned the full number of most deeply nested
     /// elements in the type. For example, the count of an `array<vec3<f32>, 5>` type would be 15.
     /// @returns
-    ///   * `ty` if `ty` is an abstract or scalar
     ///   * the element type if `ty` is a vector
     ///   * the matrix element type if `ty` is a matrix
     ///   * the deepest element type if `ty` is an array
-    ///   * `nullptr` if `ty` is none of the above
+    ///   * `ty` if `ty` is none of the above
     static const Type* DeepestElementOf(const Type* ty, uint32_t* count = nullptr);
 
     /// @param types the list of types

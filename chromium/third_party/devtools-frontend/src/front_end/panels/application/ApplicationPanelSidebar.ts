@@ -190,6 +190,10 @@ const UIStrings = {
    * @example {"Identity"} PH1
    */
   onInvokeAlert: 'Scrolled to {PH1}',
+  /**
+   * @description Application sidebar panel
+   */
+  applicationSidebarPanel: 'Application panel sidebar',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/application/ApplicationPanelSidebar.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -251,6 +255,10 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
 
     const applicationSectionTitle = i18nString(UIStrings.application);
     this.applicationTreeElement = this.addSidebarSection(applicationSectionTitle);
+    const applicationPanelSidebar = this.applicationTreeElement.treeOutline?.contentElement;
+    if (applicationPanelSidebar) {
+      applicationPanelSidebar.ariaLabel = i18nString(UIStrings.applicationSidebarPanel);
+    }
     const manifestTreeElement = new AppManifestTreeElement(panel);
     this.applicationTreeElement.appendChild(manifestTreeElement);
     manifestTreeElement.generateChildren();
@@ -345,10 +353,8 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
             new BackgroundServiceTreeElement(panel, Protocol.BackgroundService.ServiceName.PushMessaging);
         backgroundServiceTreeElement.appendChild(this.pushMessagingTreeElement);
       }
-      if (Root.Runtime.experiments.isEnabled('reportingApiDebugging')) {
-        this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
-        backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
-      }
+      this.reportingApiTreeElement = new ReportingApiTreeElement(panel);
+      backgroundServiceTreeElement.appendChild(this.reportingApiTreeElement);
     }
     const resourcesSectionTitle = i18nString(UIStrings.frames);
     const resourcesTreeElement = this.addSidebarSection(resourcesSectionTitle);
@@ -396,6 +402,7 @@ export class ApplicationPanelSidebar extends UI.Widget.VBox implements SDK.Targe
     treeElement.setCollapsible(false);
     treeElement.selectable = false;
     this.sidebarTree.appendChild(treeElement);
+    UI.ARIAUtils.markAsHeading(treeElement.listItemElement, 3);
     UI.ARIAUtils.setAccessibleName(treeElement.childrenListElement, title);
     return treeElement;
   }
@@ -981,7 +988,8 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
     for (const section of staticSections) {
       const sectionElement = section.getTitleElement();
       const childTitle = section.title();
-      const child = new ManifestChildTreeElement(this.resourcesPanel, sectionElement, childTitle);
+      const sectionFieldElement = section.getFieldElement();
+      const child = new ManifestChildTreeElement(this.resourcesPanel, sectionElement, childTitle, sectionFieldElement);
       this.appendChild(child);
     }
   }
@@ -998,12 +1006,15 @@ export class AppManifestTreeElement extends ApplicationPanelTreeElement {
 
 export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
   #sectionElement: Element;
-  constructor(storagePanel: ResourcesPanel, element: Element, childTitle: string) {
+  #sectionFieldElement: HTMLElement;
+  constructor(storagePanel: ResourcesPanel, element: Element, childTitle: string, fieldElement: HTMLElement) {
     super(storagePanel, childTitle, false);
     const icon = UI.Icon.Icon.create('mediumicon-manifest', 'resource-tree-item');
     this.setLeadingIcons([icon]);
     this.#sectionElement = element;
+    this.#sectionFieldElement = fieldElement;
     self.onInvokeElement(this.listItemElement, this.onInvoke.bind(this));
+    this.listItemElement.addEventListener('keydown', this.onInvokeElementKeydown.bind(this));
     UI.ARIAUtils.setAccessibleName(
         this.listItemElement, i18nString(UIStrings.beforeInvokeAlert, {PH1: this.listItemElement.title}));
   }
@@ -1017,6 +1028,26 @@ export class ManifestChildTreeElement extends ApplicationPanelTreeElement {
     this.#sectionElement.scrollIntoView();
     UI.ARIAUtils.alert(i18nString(UIStrings.onInvokeAlert, {PH1: this.listItemElement.title}));
     Host.userMetrics.manifestSectionSelected(this.listItemElement.title);
+  }
+  // direct focus to the corresponding element
+  onInvokeElementKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Tab' || event.shiftKey) {
+      return;
+    }
+    const checkBoxElement = this.#sectionFieldElement.querySelector('.mask-checkbox');
+    let focusableElement: HTMLElement|null = this.#sectionFieldElement.querySelector('[tabindex="0"]');
+    if (checkBoxElement && checkBoxElement.shadowRoot) {
+      focusableElement = checkBoxElement.shadowRoot.querySelector('input') || null;
+    } else if (!focusableElement) {
+      // special case for protocol handler section since it is a custom Element and has different structure than the others
+      focusableElement = this.#sectionFieldElement.querySelector('devtools-protocol-handlers-view')
+                             ?.shadowRoot?.querySelector('[tabindex="0"]') ||
+          null;
+    }
+    if (focusableElement) {
+      focusableElement?.focus();
+      event.consume(true);
+    }
   }
 }
 
@@ -1167,7 +1198,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   private view?: IDBDatabaseView;
 
   constructor(storagePanel: ResourcesPanel, model: IndexedDBModel, databaseId: DatabaseId) {
-    super(storagePanel, databaseId.name + ' - ' + databaseId.securityOrigin, false);
+    super(storagePanel, databaseId.name + ' - ' + databaseId.getOriginOrStorageKey(), false);
     this.model = model;
     this.databaseId = databaseId;
     this.idbObjectStoreTreeElements = new Map();
@@ -1177,7 +1208,7 @@ export class IDBDatabaseTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.securityOrigin + '/' + this.databaseId.name as
+    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name as
         Platform.DevToolsPath.UrlString;
   }
 
@@ -1292,8 +1323,8 @@ export class IDBObjectStoreTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.securityOrigin + '/' + this.databaseId.name + '/' + this.objectStore.name as
-        Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name + '/' +
+        this.objectStore.name as Platform.DevToolsPath.UrlString;
   }
 
   onattach(): void {
@@ -1429,8 +1460,8 @@ export class IDBIndexTreeElement extends ApplicationPanelTreeElement {
   }
 
   get itemURL(): Platform.DevToolsPath.UrlString {
-    return 'indexedDB://' + this.databaseId.securityOrigin + '/' + this.databaseId.name + '/' + this.objectStore.name +
-        '/' + this.index.name as Platform.DevToolsPath.UrlString;
+    return 'indexedDB://' + this.databaseId.getOriginOrStorageKey() + '/' + this.databaseId.name + '/' +
+        this.objectStore.name + '/' + this.index.name as Platform.DevToolsPath.UrlString;
   }
 
   markNeedsRefresh(): void {

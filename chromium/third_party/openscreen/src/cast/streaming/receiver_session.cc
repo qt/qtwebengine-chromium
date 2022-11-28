@@ -77,150 +77,17 @@ MediaCapability ToCapability(VideoCodec codec) {
   }
 }
 
-// Calculates whether any codecs present in |second| are not present in |first|.
-template <typename T>
-bool IsMissingCodecs(const std::vector<T>& first,
-                     const std::vector<T>& second) {
-  if (second.size() > first.size()) {
-    return true;
-  }
-
-  for (auto codec : second) {
-    if (!Contains(first, codec)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// Calculates whether the limits defined by |first| are less restrictive than
-// those defined by |second|.
-// NOTE: These variables are intentionally passed by copy - the function will
-// mutate them.
-template <typename T>
-bool HasLessRestrictiveLimits(std::vector<T> first, std::vector<T> second) {
-  // Sort both vectors to allow for element-by-element comparison between the
-  // two. All elements with |applies_to_all_codecs| set are sorted to the front.
-  std::function<bool(const T&, const T&)> sorter = [](const T& x, const T& y) {
-    if (x.applies_to_all_codecs != y.applies_to_all_codecs) {
-      return x.applies_to_all_codecs;
-    }
-    return static_cast<int>(x.codec) < static_cast<int>(y.codec);
-  };
-  std::sort(first.begin(), first.end(), sorter);
-  std::sort(second.begin(), second.end(), sorter);
-  auto first_it = first.begin();
-  auto second_it = second.begin();
-
-  // |applies_to_all_codecs| is a special case, so handle that first.
-  T fake_applies_to_all_codecs_struct;
-  fake_applies_to_all_codecs_struct.applies_to_all_codecs = true;
-  T* first_applies_to_all_codecs_struct =
-      !first.empty() && first.front().applies_to_all_codecs
-          ? &(*first_it++)
-          : &fake_applies_to_all_codecs_struct;
-  T* second_applies_to_all_codecs_struct =
-      !second.empty() && second.front().applies_to_all_codecs
-          ? &(*second_it++)
-          : &fake_applies_to_all_codecs_struct;
-  if (!first_applies_to_all_codecs_struct->IsSupersetOf(
-          *second_applies_to_all_codecs_struct)) {
-    return false;
-  }
-
-  // Now all elements of the vectors can be assumed to NOT have
-  // |applies_to_all_codecs| set. So iterate through all codecs set in either
-  // vector and check that the first has the less restrictive configuration set.
-  while (first_it != first.end() || second_it != second.end()) {
-    // Calculate the current codec to process, and whether each vector contains
-    // an instance of this codec.
-    decltype(T::codec) current_codec;
-    bool use_first_fake = false;
-    bool use_second_fake = false;
-    if (first_it == first.end()) {
-      current_codec = second_it->codec;
-      use_first_fake = true;
-    } else if (second_it == second.end()) {
-      current_codec = first_it->codec;
-      use_second_fake = true;
-    } else {
-      current_codec = std::min(first_it->codec, second_it->codec);
-      use_first_fake = first_it->codec != current_codec;
-      use_second_fake = second_it->codec != current_codec;
-    }
-
-    // Compare each vector's limit associated with this codec, or compare
-    // against the default limits if no such codec limits are set.
-    T fake_codecs_struct;
-    fake_codecs_struct.codec = current_codec;
-    T* first_codec_struct =
-        use_first_fake ? &fake_codecs_struct : &(*first_it++);
-    T* second_codec_struct =
-        use_second_fake ? &fake_codecs_struct : &(*second_it++);
-    OSP_DCHECK(!first_codec_struct->applies_to_all_codecs);
-    OSP_DCHECK(!second_codec_struct->applies_to_all_codecs);
-    if (!first_codec_struct->IsSupersetOf(*second_codec_struct)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 }  // namespace
 
 ReceiverSession::Client::~Client() = default;
 
-using RemotingPreferences = ReceiverSession::RemotingPreferences;
-
-using Preferences = ReceiverSession::Preferences;
-
-Preferences::Preferences() = default;
-Preferences::Preferences(std::vector<VideoCodec> video_codecs,
-                         std::vector<AudioCodec> audio_codecs)
-    : video_codecs(std::move(video_codecs)),
-      audio_codecs(std::move(audio_codecs)) {}
-
-Preferences::Preferences(std::vector<VideoCodec> video_codecs,
-                         std::vector<AudioCodec> audio_codecs,
-                         std::vector<AudioLimits> audio_limits,
-                         std::vector<VideoLimits> video_limits,
-                         std::unique_ptr<Display> description)
-    : video_codecs(std::move(video_codecs)),
-      audio_codecs(std::move(audio_codecs)),
-      audio_limits(std::move(audio_limits)),
-      video_limits(std::move(video_limits)),
-      display_description(std::move(description)) {}
-
-Preferences::Preferences(Preferences&&) noexcept = default;
-Preferences& Preferences::operator=(Preferences&&) noexcept = default;
-
-Preferences::Preferences(const Preferences& other) {
-  *this = other;
-}
-
-Preferences& Preferences::operator=(const Preferences& other) {
-  video_codecs = other.video_codecs;
-  audio_codecs = other.audio_codecs;
-  audio_limits = other.audio_limits;
-  video_limits = other.video_limits;
-  if (other.display_description) {
-    display_description = std::make_unique<Display>(*other.display_description);
-  }
-  if (other.remoting) {
-    remoting = std::make_unique<RemotingPreferences>(*other.remoting);
-  }
-  return *this;
-}
-
 ReceiverSession::ReceiverSession(Client* const client,
                                  Environment* environment,
                                  MessagePort* message_port,
-                                 Preferences preferences)
+                                 ReceiverConstraints constraints)
     : client_(client),
       environment_(environment),
-      preferences_(std::move(preferences)),
+      constraints_(std::move(constraints)),
       session_id_(MakeUniqueSessionId("streaming_receiver")),
       messenger_(message_port,
                  session_id_,
@@ -233,10 +100,10 @@ ReceiverSession::ReceiverSession(Client* const client,
   OSP_DCHECK(environment_);
 
   OSP_DCHECK(!std::any_of(
-      preferences_.video_codecs.begin(), preferences_.video_codecs.end(),
+      constraints_.video_codecs.begin(), constraints_.video_codecs.end(),
       [](VideoCodec c) { return c == VideoCodec::kNotSpecified; }));
   OSP_DCHECK(!std::any_of(
-      preferences_.audio_codecs.begin(), preferences_.audio_codecs.end(),
+      constraints_.audio_codecs.begin(), constraints_.audio_codecs.end(),
       [](AudioCodec c) { return c == AudioCodec::kNotSpecified; }));
 
   messenger_.SetHandler(
@@ -311,7 +178,7 @@ void ReceiverSession::OnOffer(const std::string& sender_id,
   const Offer& offer = absl::get<Offer>(message.body);
 
   if (offer.cast_mode == CastMode::kRemoting) {
-    if (!preferences_.remoting) {
+    if (!constraints_.remoting) {
       SendErrorAnswerReply(
           sender_id, message.sequence_number,
 
@@ -374,7 +241,7 @@ void ReceiverSession::OnCapabilitiesRequest(const std::string& sender_id,
       ReceiverMessage::Type::kCapabilitiesResponse, message.sequence_number,
       true /* valid */
   };
-  if (preferences_.remoting) {
+  if (constraints_.remoting) {
     response.body = CreateRemotingCapabilityV2();
   } else {
     response.valid = false;
@@ -432,13 +299,13 @@ void ReceiverSession::SendRpcMessage(std::vector<uint8_t> message) {
 void ReceiverSession::SelectStreams(const Offer& offer,
                                     PendingOffer* properties) {
   if (offer.cast_mode == CastMode::kMirroring) {
-    if (!offer.audio_streams.empty() && !preferences_.audio_codecs.empty()) {
+    if (!offer.audio_streams.empty() && !constraints_.audio_codecs.empty()) {
       properties->selected_audio =
-          SelectStream(preferences_.audio_codecs, client_, offer.audio_streams);
+          SelectStream(constraints_.audio_codecs, client_, offer.audio_streams);
     }
-    if (!offer.video_streams.empty() && !preferences_.video_codecs.empty()) {
+    if (!offer.video_streams.empty() && !constraints_.video_codecs.empty()) {
       properties->selected_video =
-          SelectStream(preferences_.video_codecs, client_, offer.video_streams);
+          SelectStream(constraints_.video_codecs, client_, offer.video_streams);
     }
   } else {
     OSP_DCHECK(offer.cast_mode == CastMode::kRemoting);
@@ -559,7 +426,7 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
     stream_indexes.push_back(properties.selected_audio->stream.index);
     stream_ssrcs.push_back(properties.selected_audio->stream.ssrc + 1);
 
-    for (const auto& limit : preferences_.audio_limits) {
+    for (const auto& limit : constraints_.audio_limits) {
       if (limit.codec == properties.selected_audio->codec ||
           limit.applies_to_all_codecs) {
         constraints.audio = AudioConstraints{
@@ -575,7 +442,7 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
     stream_indexes.push_back(properties.selected_video->stream.index);
     stream_ssrcs.push_back(properties.selected_video->stream.ssrc + 1);
 
-    for (const auto& limit : preferences_.video_limits) {
+    for (const auto& limit : constraints_.video_limits) {
       if (limit.codec == properties.selected_video->codec ||
           limit.applies_to_all_codecs) {
         constraints.video = VideoConstraints{
@@ -589,8 +456,8 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
   }
 
   absl::optional<DisplayDescription> display;
-  if (preferences_.display_description) {
-    const auto* d = preferences_.display_description.get();
+  if (constraints_.display_description) {
+    const auto* d = constraints_.display_description.get();
     display = DisplayDescription{d->dimensions, absl::nullopt,
                                  d->can_scale_content
                                      ? AspectRatioConstraint::kVariable
@@ -611,21 +478,21 @@ Answer ReceiverSession::ConstructAnswer(const PendingOffer& properties) {
 ReceiverCapability ReceiverSession::CreateRemotingCapabilityV2() {
   // If we don't support remoting, there is no reason to respond to
   // capability requests--they are not used for mirroring.
-  OSP_DCHECK(preferences_.remoting);
+  OSP_DCHECK(constraints_.remoting);
   ReceiverCapability capability;
   capability.remoting_version = kSupportedRemotingVersion;
 
-  for (const AudioCodec& codec : preferences_.audio_codecs) {
+  for (const AudioCodec& codec : constraints_.audio_codecs) {
     capability.media_capabilities.push_back(ToCapability(codec));
   }
-  for (const VideoCodec& codec : preferences_.video_codecs) {
+  for (const VideoCodec& codec : constraints_.video_codecs) {
     capability.media_capabilities.push_back(ToCapability(codec));
   }
 
-  if (preferences_.remoting->supports_chrome_audio_codecs) {
+  if (constraints_.remoting->supports_chrome_audio_codecs) {
     capability.media_capabilities.push_back(MediaCapability::kAudio);
   }
-  if (preferences_.remoting->supports_4k) {
+  if (constraints_.remoting->supports_4k) {
     capability.media_capabilities.push_back(MediaCapability::k4k);
   }
   return capability;
@@ -642,65 +509,6 @@ void ReceiverSession::SendErrorAnswerReply(const std::string& sender_id,
   if (!result.ok()) {
     client_->OnError(this, std::move(result));
   }
-}
-
-bool ReceiverSession::VideoLimits::IsSupersetOf(
-    const ReceiverSession::VideoLimits& second) const {
-  return (applies_to_all_codecs == second.applies_to_all_codecs) &&
-         (applies_to_all_codecs || codec == second.codec) &&
-         (max_pixels_per_second >= second.max_pixels_per_second) &&
-         (min_bit_rate <= second.min_bit_rate) &&
-         (max_bit_rate >= second.max_bit_rate) &&
-         (max_delay >= second.max_delay) &&
-         (max_dimensions.IsSupersetOf(second.max_dimensions));
-}
-
-bool ReceiverSession::AudioLimits::IsSupersetOf(
-    const ReceiverSession::AudioLimits& second) const {
-  return (applies_to_all_codecs == second.applies_to_all_codecs) &&
-         (applies_to_all_codecs || codec == second.codec) &&
-         (max_sample_rate >= second.max_sample_rate) &&
-         (max_channels >= second.max_channels) &&
-         (min_bit_rate <= second.min_bit_rate) &&
-         (max_bit_rate >= second.max_bit_rate) &&
-         (max_delay >= second.max_delay);
-}
-
-bool ReceiverSession::Display::IsSupersetOf(
-    const ReceiverSession::Display& other) const {
-  return dimensions.IsSupersetOf(other.dimensions) &&
-         (can_scale_content || !other.can_scale_content);
-}
-
-bool ReceiverSession::RemotingPreferences::IsSupersetOf(
-    const ReceiverSession::RemotingPreferences& other) const {
-  return (supports_chrome_audio_codecs ||
-          !other.supports_chrome_audio_codecs) &&
-         (supports_4k || !other.supports_4k);
-}
-
-bool ReceiverSession::Preferences::IsSupersetOf(
-    const ReceiverSession::Preferences& other) const {
-  // Check simple cases first.
-  if ((!!display_description != !!other.display_description) ||
-      (display_description &&
-       !display_description->IsSupersetOf(*other.display_description))) {
-    return false;
-  } else if (other.remoting &&
-             (!remoting || !remoting->IsSupersetOf(*other.remoting))) {
-    return false;
-  }
-
-  // Then check set codecs.
-  if (IsMissingCodecs(video_codecs, other.video_codecs) ||
-      IsMissingCodecs(audio_codecs, other.audio_codecs)) {
-    return false;
-  }
-
-  // Then check limits. Do this last because it's the most resource intensive to
-  // check.
-  return HasLessRestrictiveLimits(video_limits, other.video_limits) &&
-         HasLessRestrictiveLimits(audio_limits, other.audio_limits);
 }
 
 }  // namespace cast

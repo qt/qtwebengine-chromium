@@ -270,6 +270,11 @@ template<typename T> struct plain_matrix_type<T,DiagonalShape>
   typedef typename T::PlainObject type;
 };
 
+template<typename T> struct plain_matrix_type<T,SkewSymmetricShape>
+{
+  typedef typename T::PlainObject type;
+};
+
 template<typename T, int Flags> struct plain_matrix_type_dense<T,MatrixXpr,Flags>
 {
   typedef Matrix<typename traits<T>::Scalar,
@@ -312,6 +317,11 @@ template<typename T> struct eval<T,Dense>
 };
 
 template<typename T> struct eval<T,DiagonalShape>
+{
+  typedef typename plain_matrix_type<T>::type type;
+};
+
+template<typename T> struct eval<T,SkewSymmetricShape>
 {
   typedef typename plain_matrix_type<T>::type type;
 };
@@ -553,6 +563,12 @@ template <typename A, int ProductTag> struct product_promote_storage_type<A,    
 template <typename B, int ProductTag> struct product_promote_storage_type<DiagonalShape,      B,                  ProductTag> { typedef B ret; };
 template <int ProductTag>             struct product_promote_storage_type<Dense,              DiagonalShape,      ProductTag> { typedef Dense ret; };
 template <int ProductTag>             struct product_promote_storage_type<DiagonalShape,      Dense,              ProductTag> { typedef Dense ret; };
+
+template <typename A, int ProductTag> struct product_promote_storage_type<A,                  SkewSymmetricShape, ProductTag> { typedef A ret; };
+template <typename B, int ProductTag> struct product_promote_storage_type<SkewSymmetricShape, B,                  ProductTag> { typedef B ret; };
+template <int ProductTag>             struct product_promote_storage_type<Dense,              SkewSymmetricShape, ProductTag> { typedef Dense ret; };
+template <int ProductTag>             struct product_promote_storage_type<SkewSymmetricShape, Dense,              ProductTag> { typedef Dense ret; };
+template <int ProductTag>             struct product_promote_storage_type<SkewSymmetricShape, SkewSymmetricShape, ProductTag> { typedef Dense ret; };
 
 template <typename A, int ProductTag> struct product_promote_storage_type<A,                  PermutationStorage, ProductTag> { typedef A ret; };
 template <typename B, int ProductTag> struct product_promote_storage_type<PermutationStorage, B,                  ProductTag> { typedef B ret; };

@@ -8,6 +8,7 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 
 import type * as ReportRenderer from './LighthouseReporterTypes.js';
+import type * as Protocol from '../../generated/protocol.js';
 
 /**
  * @overview
@@ -55,11 +56,9 @@ export interface LighthouseRun {
  * ProtocolService manages a connection between the frontend (Lighthouse panel) and the Lighthouse worker.
  */
 export class ProtocolService {
-  private targetInfo?: {
-    mainSessionId: string,
-    mainTargetId: string,
-    mainFrameId: string,
-  };
+  private mainSessionId?: string;
+  private mainFrameId?: string;
+  private targetInfos?: Protocol.Target.TargetInfo[];
   private parallelConnection?: ProtocolClient.InspectorBackend.Connection;
   private lighthouseWorkerPromise?: Promise<Worker>;
   private lighthouseMessageUpdateCallback?: ((arg0: string) => void);
@@ -92,11 +91,9 @@ export class ProtocolService {
     });
 
     this.parallelConnection = connection;
-    this.targetInfo = {
-      mainTargetId: await childTargetManager.getParentTargetId(),
-      mainFrameId: mainFrame.id,
-      mainSessionId: sessionId,
-    };
+    this.targetInfos = childTargetManager.targetInfos();
+    this.mainFrameId = mainFrame.id;
+    this.mainSessionId = sessionId;
   }
 
   getLocales(): readonly string[] {
@@ -106,7 +103,7 @@ export class ProtocolService {
   async startTimespan(currentLighthouseRun: LighthouseRun): Promise<void> {
     const {inspectedURL, categoryIDs, flags} = currentLighthouseRun;
 
-    if (!this.targetInfo) {
+    if (!this.mainFrameId || !this.mainSessionId || !this.targetInfos) {
       throw new Error('Unable to get target info required for Lighthouse');
     }
 
@@ -116,14 +113,16 @@ export class ProtocolService {
       flags,
       config: this.configForTesting,
       locales: this.getLocales(),
-      target: this.targetInfo,
+      mainSessionId: this.mainSessionId,
+      mainFrameId: this.mainFrameId,
+      targetInfos: this.targetInfos,
     });
   }
 
   async collectLighthouseResults(currentLighthouseRun: LighthouseRun): Promise<ReportRenderer.RunnerResult> {
     const {inspectedURL, categoryIDs, flags} = currentLighthouseRun;
 
-    if (!this.targetInfo) {
+    if (!this.mainFrameId || !this.mainSessionId || !this.targetInfos) {
       throw new Error('Unable to get target info required for Lighthouse');
     }
 
@@ -138,7 +137,9 @@ export class ProtocolService {
       flags,
       config: this.configForTesting,
       locales: this.getLocales(),
-      target: this.targetInfo,
+      mainSessionId: this.mainSessionId,
+      mainFrameId: this.mainFrameId,
+      targetInfos: this.targetInfos,
     });
   }
 

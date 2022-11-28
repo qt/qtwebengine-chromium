@@ -38,15 +38,7 @@ CPDF_Object::Type CPDF_Array::GetType() const {
   return kArray;
 }
 
-bool CPDF_Array::IsArray() const {
-  return true;
-}
-
-CPDF_Array* CPDF_Array::AsArray() {
-  return this;
-}
-
-const CPDF_Array* CPDF_Array::AsArray() const {
+CPDF_Array* CPDF_Array::AsMutableArray() {
   return this;
 }
 
@@ -74,10 +66,10 @@ CFX_FloatRect CPDF_Array::GetRect() const {
   if (m_Objects.size() != 4)
     return rect;
 
-  rect.left = GetNumberAt(0);
-  rect.bottom = GetNumberAt(1);
-  rect.right = GetNumberAt(2);
-  rect.top = GetNumberAt(3);
+  rect.left = GetFloatAt(0);
+  rect.bottom = GetFloatAt(1);
+  rect.right = GetFloatAt(2);
+  rect.top = GetFloatAt(3);
   return rect;
 }
 
@@ -85,8 +77,8 @@ CFX_Matrix CPDF_Array::GetMatrix() const {
   if (m_Objects.size() != 6)
     return CFX_Matrix();
 
-  return CFX_Matrix(GetNumberAt(0), GetNumberAt(1), GetNumberAt(2),
-                    GetNumberAt(3), GetNumberAt(4), GetNumberAt(5));
+  return CFX_Matrix(GetFloatAt(0), GetFloatAt(1), GetFloatAt(2), GetFloatAt(3),
+                    GetFloatAt(4), GetFloatAt(5));
 }
 
 absl::optional<size_t> CPDF_Array::Find(const CPDF_Object* pThat) const {
@@ -101,26 +93,32 @@ bool CPDF_Array::Contains(const CPDF_Object* pThat) const {
   return Find(pThat).has_value();
 }
 
-RetainPtr<CPDF_Object> CPDF_Array::GetMutableObjectAt(size_t index) {
-  return pdfium::WrapRetain(const_cast<CPDF_Object*>(GetObjectAt(index)));
+CPDF_Object* CPDF_Array::GetMutableObjectAtInternal(size_t index) {
+  return index < m_Objects.size() ? m_Objects[index].Get() : nullptr;
 }
 
-const CPDF_Object* CPDF_Array::GetObjectAt(size_t index) const {
-  if (index >= m_Objects.size())
-    return nullptr;
-  return m_Objects[index].Get();
+const CPDF_Object* CPDF_Array::GetObjectAtInternal(size_t index) const {
+  return const_cast<CPDF_Array*>(this)->GetMutableObjectAtInternal(index);
+}
+
+RetainPtr<CPDF_Object> CPDF_Array::GetMutableObjectAt(size_t index) {
+  return pdfium::WrapRetain(GetMutableObjectAtInternal(index));
+}
+
+RetainPtr<const CPDF_Object> CPDF_Array::GetObjectAt(size_t index) const {
+  return pdfium::WrapRetain(GetObjectAtInternal(index));
+}
+
+RetainPtr<const CPDF_Object> CPDF_Array::GetDirectObjectAt(size_t index) const {
+  return const_cast<CPDF_Array*>(this)->GetMutableDirectObjectAt(index);
 }
 
 RetainPtr<CPDF_Object> CPDF_Array::GetMutableDirectObjectAt(size_t index) {
-  return pdfium::WrapRetain(const_cast<CPDF_Object*>(GetDirectObjectAt(index)));
+  RetainPtr<CPDF_Object> pObj = GetMutableObjectAt(index);
+  return pObj ? pObj->GetMutableDirect() : nullptr;
 }
 
-const CPDF_Object* CPDF_Array::GetDirectObjectAt(size_t index) const {
-  const CPDF_Object* pObj = GetObjectAt(index);
-  return pObj ? pObj->GetDirect() : nullptr;
-}
-
-ByteString CPDF_Array::GetStringAt(size_t index) const {
+ByteString CPDF_Array::GetByteStringAt(size_t index) const {
   if (index >= m_Objects.size())
     return ByteString();
   return m_Objects[index]->GetString();
@@ -145,41 +143,51 @@ int CPDF_Array::GetIntegerAt(size_t index) const {
   return m_Objects[index]->GetInteger();
 }
 
-float CPDF_Array::GetNumberAt(size_t index) const {
+float CPDF_Array::GetFloatAt(size_t index) const {
   if (index >= m_Objects.size())
     return 0;
   return m_Objects[index]->GetNumber();
 }
 
 RetainPtr<CPDF_Dictionary> CPDF_Array::GetMutableDictAt(size_t index) {
-  return pdfium::WrapRetain(const_cast<CPDF_Dictionary*>(GetDictAt(index)));
-}
-
-const CPDF_Dictionary* CPDF_Array::GetDictAt(size_t index) const {
-  const CPDF_Object* p = GetDirectObjectAt(index);
+  RetainPtr<CPDF_Object> p = GetMutableDirectObjectAt(index);
   if (!p)
     return nullptr;
-  if (const CPDF_Dictionary* pDict = p->AsDictionary())
-    return pDict;
-  if (const CPDF_Stream* pStream = p->AsStream())
-    return pStream->GetDict();
+  CPDF_Dictionary* pDict = p->AsMutableDictionary();
+  if (pDict)
+    return pdfium::WrapRetain(pDict);
+  CPDF_Stream* pStream = p->AsMutableStream();
+  if (pStream)
+    return pStream->GetMutableDict();
   return nullptr;
 }
 
-RetainPtr<CPDF_Stream> CPDF_Array::GetMutableStreamAt(size_t index) {
-  return pdfium::WrapRetain(const_cast<CPDF_Stream*>(GetStreamAt(index)));
+RetainPtr<const CPDF_Dictionary> CPDF_Array::GetDictAt(size_t index) const {
+  return const_cast<CPDF_Array*>(this)->GetMutableDictAt(index);
 }
 
-const CPDF_Stream* CPDF_Array::GetStreamAt(size_t index) const {
-  return ToStream(GetDirectObjectAt(index));
+RetainPtr<CPDF_Stream> CPDF_Array::GetMutableStreamAt(size_t index) {
+  return ToStream(GetMutableDirectObjectAt(index));
+}
+
+RetainPtr<const CPDF_Stream> CPDF_Array::GetStreamAt(size_t index) const {
+  return const_cast<CPDF_Array*>(this)->GetMutableStreamAt(index);
 }
 
 RetainPtr<CPDF_Array> CPDF_Array::GetMutableArrayAt(size_t index) {
-  return pdfium::WrapRetain(const_cast<CPDF_Array*>(GetArrayAt(index)));
+  return ToArray(GetMutableDirectObjectAt(index));
 }
 
-const CPDF_Array* CPDF_Array::GetArrayAt(size_t index) const {
-  return ToArray(GetDirectObjectAt(index));
+RetainPtr<const CPDF_Array> CPDF_Array::GetArrayAt(size_t index) const {
+  return const_cast<CPDF_Array*>(this)->GetMutableArrayAt(index);
+}
+
+RetainPtr<const CPDF_Number> CPDF_Array::GetNumberAt(size_t index) const {
+  return ToNumber(GetObjectAt(index));
+}
+
+RetainPtr<const CPDF_String> CPDF_Array::GetStringAt(size_t index) const {
+  return ToString(GetObjectAt(index));
 }
 
 void CPDF_Array::Clear() {
@@ -206,7 +214,20 @@ void CPDF_Array::ConvertToIndirectObjectAt(size_t index,
   m_Objects[index] = pNew->MakeReference(pHolder);
 }
 
-CPDF_Object* CPDF_Array::SetAt(size_t index, RetainPtr<CPDF_Object> pObj) {
+void CPDF_Array::SetAt(size_t index, RetainPtr<CPDF_Object> pObj) {
+  (void)SetAtInternal(index, std::move(pObj));
+}
+
+void CPDF_Array::InsertAt(size_t index, RetainPtr<CPDF_Object> pObj) {
+  (void)InsertAtInternal(index, std::move(pObj));
+}
+
+void CPDF_Array::Append(RetainPtr<CPDF_Object> pObj) {
+  (void)AppendInternal(std::move(pObj));
+}
+
+CPDF_Object* CPDF_Array::SetAtInternal(size_t index,
+                                       RetainPtr<CPDF_Object> pObj) {
   CHECK(!IsLocked());
   CHECK(pObj);
   CHECK(pObj->IsInline());
@@ -218,7 +239,8 @@ CPDF_Object* CPDF_Array::SetAt(size_t index, RetainPtr<CPDF_Object> pObj) {
   return pRet;
 }
 
-CPDF_Object* CPDF_Array::InsertAt(size_t index, RetainPtr<CPDF_Object> pObj) {
+CPDF_Object* CPDF_Array::InsertAtInternal(size_t index,
+                                          RetainPtr<CPDF_Object> pObj) {
   CHECK(!IsLocked());
   CHECK(pObj);
   CHECK(pObj->IsInline());
@@ -230,7 +252,7 @@ CPDF_Object* CPDF_Array::InsertAt(size_t index, RetainPtr<CPDF_Object> pObj) {
   return pRet;
 }
 
-CPDF_Object* CPDF_Array::Append(RetainPtr<CPDF_Object> pObj) {
+CPDF_Object* CPDF_Array::AppendInternal(RetainPtr<CPDF_Object> pObj) {
   CHECK(!IsLocked());
   CHECK(pObj);
   CHECK(pObj->IsInline());
@@ -253,6 +275,16 @@ bool CPDF_Array::WriteTo(IFX_ArchiveStream* archive,
 
 CPDF_ArrayLocker::CPDF_ArrayLocker(const CPDF_Array* pArray)
     : m_pArray(pArray) {
+  m_pArray->m_LockCount++;
+}
+
+CPDF_ArrayLocker::CPDF_ArrayLocker(RetainPtr<CPDF_Array> pArray)
+    : m_pArray(std::move(pArray)) {
+  m_pArray->m_LockCount++;
+}
+
+CPDF_ArrayLocker::CPDF_ArrayLocker(RetainPtr<const CPDF_Array> pArray)
+    : m_pArray(std::move(pArray)) {
   m_pArray->m_LockCount++;
 }
 

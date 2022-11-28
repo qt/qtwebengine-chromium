@@ -93,7 +93,7 @@ int ParserAnnots(CPDF_Document* pSourceDoc,
     return FLATTEN_FAIL;
 
   GetContentsRect(pSourceDoc, pPageDic, pRectArray);
-  const CPDF_Array* pAnnots = pPageDic->GetArrayFor("Annots");
+  RetainPtr<const CPDF_Array> pAnnots = pPageDic->GetArrayFor("Annots");
   if (!pAnnots)
     return FLATTEN_NOTHINGTODO;
 
@@ -105,7 +105,7 @@ int ParserAnnots(CPDF_Document* pSourceDoc,
       continue;
 
     ByteString sSubtype =
-        pAnnotDict->GetStringFor(pdfium::annotation::kSubtype);
+        pAnnotDict->GetByteStringFor(pdfium::annotation::kSubtype);
     if (sSubtype == "Popup")
       continue;
 
@@ -180,12 +180,13 @@ ByteString GenerateFlattenedContent(const ByteString& key) {
   return "q 1 0 0 1 0 0 cm /" + key + " Do Q";
 }
 
-CPDF_Object* NewIndirectContentsStream(CPDF_Document* pDocument,
-                                       const ByteString& contents) {
-  CPDF_Stream* pNewContents = pDocument->NewIndirect<CPDF_Stream>(
+RetainPtr<CPDF_Reference> NewIndirectContentsStreamReference(
+    CPDF_Document* pDocument,
+    const ByteString& contents) {
+  auto pNewContents = pDocument->NewIndirect<CPDF_Stream>(
       nullptr, 0, pDocument->New<CPDF_Dictionary>());
   pNewContents->SetData(contents.raw_span());
-  return pNewContents;
+  return pNewContents->MakeReference(pDocument);
 }
 
 void SetPageContents(const ByteString& key,
@@ -197,10 +198,9 @@ void SetPageContents(const ByteString& key,
       pPage->GetMutableStreamFor(pdfium::page_object::kContents);
   if (!pContentsStream && !pContentsArray) {
     if (!key.IsEmpty()) {
-      pPage->SetFor(
-          pdfium::page_object::kContents,
-          NewIndirectContentsStream(pDocument, GenerateFlattenedContent(key))
-              ->MakeReference(pDocument));
+      pPage->SetFor(pdfium::page_object::kContents,
+                    NewIndirectContentsStreamReference(
+                        pDocument, GenerateFlattenedContent(key)));
     }
     return;
   }
@@ -208,13 +208,12 @@ void SetPageContents(const ByteString& key,
   pPage->ConvertToIndirectObjectFor(pdfium::page_object::kContents, pDocument);
   if (pContentsArray) {
     pContentsArray->InsertAt(
-        0, NewIndirectContentsStream(pDocument, "q")->MakeReference(pDocument));
-    pContentsArray->Append(
-        NewIndirectContentsStream(pDocument, "Q")->MakeReference(pDocument));
+        0, NewIndirectContentsStreamReference(pDocument, "q"));
+    pContentsArray->Append(NewIndirectContentsStreamReference(pDocument, "Q"));
   } else {
     ByteString sStream = "q\n";
     {
-      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pContentsStream.Get());
+      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pContentsStream);
       pAcc->LoadAllDataFiltered();
       sStream += ByteString(pAcc->GetSpan());
       sStream += "\nQ";
@@ -227,9 +226,8 @@ void SetPageContents(const ByteString& key,
                                      pContentsArray->GetObjNum());
   }
   if (!key.IsEmpty()) {
-    pContentsArray->Append(
-        NewIndirectContentsStream(pDocument, GenerateFlattenedContent(key))
-            ->MakeReference(pDocument));
+    pContentsArray->Append(NewIndirectContentsStreamReference(
+        pDocument, GenerateFlattenedContent(key)));
   }
 }
 
@@ -297,7 +295,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
 
   RetainPtr<CPDF_Dictionary> pRes =
       pPageDict->GetOrCreateDictFor(pdfium::page_object::kResources);
-  CPDF_Stream* pNewXObject = pDocument->NewIndirect<CPDF_Stream>(
+  auto pNewXObject = pDocument->NewIndirect<CPDF_Stream>(
       nullptr, 0, pDocument->New<CPDF_Dictionary>());
   RetainPtr<CPDF_Dictionary> pPageXObject = pRes->GetOrCreateDictFor("XObject");
 
@@ -316,7 +314,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
 
   SetPageContents(key, pPageDict.Get(), pDocument);
 
-  CPDF_Dictionary* pNewXORes = nullptr;
+  RetainPtr<CPDF_Dictionary> pNewXORes;
   if (!key.IsEmpty()) {
     pPageXObject->SetNewFor<CPDF_Reference>(key, pDocument,
                                             pNewXObject->GetObjNum());
@@ -337,7 +335,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     CFX_FloatRect rcAnnot = pAnnotDict->GetRectFor(pdfium::annotation::kRect);
     rcAnnot.Normalize();
 
-    ByteString sAnnotState = pAnnotDict->GetStringFor("AS");
+    ByteString sAnnotState = pAnnotDict->GetByteStringFor("AS");
     RetainPtr<CPDF_Dictionary> pAnnotAP =
         pAnnotDict->GetMutableDictFor(pdfium::annotation::kAP);
     if (!pAnnotAP)
@@ -353,14 +351,14 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
         pAPStream = pAPDict->GetMutableStreamFor(sAnnotState);
       } else {
         if (pAPDict->size() > 0) {
-          CPDF_DictionaryLocker locker(pAPDict.Get());
+          CPDF_DictionaryLocker locker(pAPDict);
           RetainPtr<CPDF_Object> pFirstObj = locker.begin()->second;
           if (pFirstObj) {
             if (pFirstObj->IsReference())
               pFirstObj = pFirstObj->GetMutableDirect();
             if (!pFirstObj->IsStream())
               continue;
-            pAPStream = pFirstObj->AsStream();
+            pAPStream.Reset(pFirstObj->AsMutableStream());
           }
         }
       }
@@ -368,7 +366,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
     if (!pAPStream)
       continue;
 
-    const CPDF_Dictionary* pAPDict = pAPStream->GetDict();
+    RetainPtr<const CPDF_Dictionary> pAPDict = pAPStream->GetDict();
     CFX_FloatRect rcStream;
     if (pAPDict->KeyExist("Rect"))
       rcStream = pAPDict->GetRectFor("Rect");
@@ -381,9 +379,8 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_Flatten(FPDF_PAGE page, int nFlag) {
 
     RetainPtr<CPDF_Object> pObj = pAPStream;
     if (pObj->IsInline()) {
-      RetainPtr<CPDF_Object> pNew = pObj->Clone();
-      pObj = pNew.Get();
-      pDocument->AddIndirectObject(std::move(pNew));
+      pObj = pObj->Clone();
+      pDocument->AddIndirectObject(pObj);
     }
 
     RetainPtr<CPDF_Dictionary> pObjDict = pObj->GetMutableDict();

@@ -1,10 +1,9 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "extensions/browser/content_script_tracker.h"
 
-#include <algorithm>
 #include <map>
 
 #include "base/containers/contains.h"
@@ -324,8 +323,7 @@ bool DoContentScriptsMatch(const Extension& extension,
               ExtensionIdForTracing(extension.id()));
   content::RenderProcessHost& process = *frame->GetProcess();
 
-  auto* guest = guest_view::GuestViewBase::FromWebContents(
-      content::WebContents::FromRenderFrameHost(frame));
+  auto* guest = guest_view::GuestViewBase::FromRenderFrameHost(frame);
   if (guest) {
     // Return true if `extension` is an owner of `guest` and it registered
     // content scripts using the `webview.addContentScripts` API.
@@ -632,12 +630,11 @@ void ContentScriptTracker::WillUpdateContentScriptsInRenderer(
   auto& process_data = RenderProcessHostUserData::GetOrCreate(process);
   const std::set<content::RenderFrameHost*>& frames_in_process =
       process_data.frames();
-  bool any_frame_matches_content_scripts =
-      std::any_of(frames_in_process.begin(), frames_in_process.end(),
-                  [extension](content::RenderFrameHost* frame) {
-                    return DoContentScriptsMatch(*extension, frame,
-                                                 frame->GetLastCommittedURL());
-                  });
+  bool any_frame_matches_content_scripts = base::ranges::any_of(
+      frames_in_process, [extension](content::RenderFrameHost* frame) {
+        return DoContentScriptsMatch(*extension, frame,
+                                     frame->GetLastCommittedURL());
+      });
   if (any_frame_matches_content_scripts) {
     process_data.AddContentScript(extension->id());
   } else {

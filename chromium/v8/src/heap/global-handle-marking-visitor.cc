@@ -4,16 +4,16 @@
 
 #include "src/heap/global-handle-marking-visitor.h"
 
+#include "src/heap/marking-state-inl.h"
 #include "src/heap/marking-worklist-inl.h"
 
 namespace v8 {
 namespace internal {
 
 GlobalHandleMarkingVisitor::GlobalHandleMarkingVisitor(
-    Heap& heap, MarkingState& marking_state,
-    MarkingWorklists::Local& local_marking_worklist)
+    Heap& heap, MarkingWorklists::Local& local_marking_worklist)
     : heap_(heap),
-      marking_state_(marking_state),
+      marking_state_(*heap_.marking_state()),
       local_marking_worklist_(local_marking_worklist),
       traced_node_bounds_(
           heap.isolate()->global_handles()->GetTracedNodeBounds()) {}
@@ -41,7 +41,7 @@ void GlobalHandleMarkingVisitor::VisitPointer(const void* address) {
     if (marking_state_.WhiteToGrey(heap_object)) {
       local_marking_worklist_.Push(heap_object);
     }
-    if (V8_UNLIKELY(FLAG_track_retaining_path)) {
+    if (V8_UNLIKELY(v8_flags.track_retaining_path)) {
       heap_.AddRetainingRoot(Root::kWrapperTracing, heap_object);
     }
   }

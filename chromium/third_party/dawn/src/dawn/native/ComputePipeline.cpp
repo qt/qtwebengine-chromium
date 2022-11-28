@@ -23,7 +23,7 @@ namespace dawn::native {
 MaybeError ValidateComputePipelineDescriptor(DeviceBase* device,
                                              const ComputePipelineDescriptor* descriptor) {
     if (descriptor->nextInChain != nullptr) {
-        return DAWN_FORMAT_VALIDATION_ERROR("nextInChain must be nullptr.");
+        return DAWN_VALIDATION_ERROR("nextInChain must be nullptr.");
     }
 
     if (descriptor->layout != nullptr) {
@@ -47,14 +47,14 @@ ComputePipelineBase::ComputePipelineBase(DeviceBase* device,
           {{SingleShaderStage::Compute, descriptor->compute.module, descriptor->compute.entryPoint,
             descriptor->compute.constantCount, descriptor->compute.constants}}) {
     SetContentHash(ComputeContentHash());
-    TrackInDevice();
+    GetObjectTrackingList()->Track(this);
 
     // Initialize the cache key to include the cache type and device information.
     StreamIn(&mCacheKey, CacheKey::Type::ComputePipeline, device->GetCacheKey());
 }
 
 ComputePipelineBase::ComputePipelineBase(DeviceBase* device) : PipelineBase(device) {
-    TrackInDevice();
+    GetObjectTrackingList()->Track(this);
 }
 
 ComputePipelineBase::ComputePipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)

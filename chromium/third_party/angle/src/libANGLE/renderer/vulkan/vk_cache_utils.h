@@ -468,13 +468,14 @@ struct PackedColorBlendStateInfo final
 constexpr size_t kPackedColorBlendStateSize = sizeof(PackedColorBlendStateInfo);
 static_assert(kPackedColorBlendStateSize == 36, "Size check failed");
 
-struct PackedDitherAndWorkarounds final
+struct PackedDitherAndContextState final
 {
     static_assert(gl::IMPLEMENTATION_MAX_DRAW_BUFFERS <= 8,
                   "2 bits per draw buffer is needed for dither emulation");
     uint16_t emulatedDitherControl;
+    uint16_t isRobustContext : 1;
     uint16_t nonZeroStencilWriteMaskWorkaround : 1;
-    uint16_t unused : 15;
+    uint16_t unused : 14;
 };
 
 // State that is dynamic in VK_EXT_extended_dynamic_state and 2.  These are placed at the end of the
@@ -505,8 +506,9 @@ struct PackedDynamicState1And2 final
     // is to support GraphicsPipelineDesc::hash(), allowing it to exclude this state from the hash.
     uint32_t supportsDynamicState1 : 1;
     uint32_t supportsDynamicState2 : 1;
+    uint32_t forceStaticVertexStrideState : 1;
 
-    uint32_t padding : 12;
+    uint32_t padding : 11;
 };
 
 constexpr size_t kPackedDynamicState1And2Size = sizeof(PackedDynamicState1And2);
@@ -538,7 +540,7 @@ static_assert(kPackedDynamicStateSize == 40, "Size check failed");
 constexpr size_t kGraphicsPipelineDescSumOfSizes =
     kVertexInputAttributesSize + kRenderPassDescSize +
     kPackedInputAssemblyAndRasterizationStateSize + kPackedColorBlendStateSize +
-    sizeof(PackedDitherAndWorkarounds) + kPackedDynamicStateSize;
+    sizeof(PackedDitherAndContextState) + kPackedDynamicStateSize;
 
 // Number of dirty bits in the dirty bit set.
 constexpr size_t kGraphicsPipelineDirtyBitBytes = 4;
@@ -669,6 +671,10 @@ class GraphicsPipelineDesc final
                                const gl::DrawBufferMask &alphaMask,
                                const gl::DrawBufferMask &enabledDrawBuffers);
 
+    // Logic op
+    void updateLogicOpEnabled(GraphicsPipelineTransitionBits *transition, bool enable);
+    void updateLogicOp(GraphicsPipelineTransitionBits *transition, VkLogicOp logicOp);
+
     // Depth/stencil states.
     void setDepthTestEnabled(bool enabled);
     void setDepthWriteEnabled(bool enabled);
@@ -723,7 +729,7 @@ class GraphicsPipelineDesc final
     void updateEmulatedDitherControl(GraphicsPipelineTransitionBits *transition, uint16_t value);
     uint32_t getEmulatedDitherControl() const
     {
-        return mDitherAndWorkarounds.emulatedDitherControl;
+        return mDitherAndContextState.emulatedDitherControl;
     }
 
     void updateNonZeroStencilWriteMaskWorkaround(GraphicsPipelineTransitionBits *transition,
@@ -747,7 +753,7 @@ class GraphicsPipelineDesc final
     {
         return mColorBlendStateInfo;
     }
-    const PackedDitherAndWorkarounds &getDitherForLog() const { return mDitherAndWorkarounds; }
+    const PackedDitherAndContextState &getDitherForLog() const { return mDitherAndContextState; }
     const PackedDynamicState &getDynamicStateForLog() const { return mDynamicState; }
 
   private:
@@ -757,7 +763,7 @@ class GraphicsPipelineDesc final
     RenderPassDesc mRenderPassDesc;
     PackedInputAssemblyAndRasterizationStateInfo mInputAssemblyAndRasterizationStateInfo;
     PackedColorBlendStateInfo mColorBlendStateInfo;
-    PackedDitherAndWorkarounds mDitherAndWorkarounds;
+    PackedDitherAndContextState mDitherAndContextState;
     PackedDynamicState mDynamicState;
 };
 
@@ -1859,7 +1865,9 @@ class FramebufferCache final : angle::NonCopyable
     void destroy(RendererVk *rendererVk);
 
     bool get(ContextVk *contextVk, const vk::FramebufferDesc &desc, vk::Framebuffer &framebuffer);
-    void insert(const vk::FramebufferDesc &desc, vk::FramebufferHelper &&framebufferHelper);
+    void insert(ContextVk *contextVk,
+                const vk::FramebufferDesc &desc,
+                vk::FramebufferHelper &&framebufferHelper);
     void erase(ContextVk *contextVk, const vk::FramebufferDesc &desc);
 
     size_t getSize() const { return mPayload.size(); }

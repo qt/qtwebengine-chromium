@@ -25,155 +25,113 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _Page_instances, _Page_closed, _Page_client, _Page_target, _Page_keyboard, _Page_mouse, _Page_timeoutSettings, _Page_touchscreen, _Page_accessibility, _Page_frameManager, _Page_emulationManager, _Page_tracing, _Page_pageBindings, _Page_coverage, _Page_javascriptEnabled, _Page_viewport, _Page_screenshotTaskQueue, _Page_workers, _Page_fileChooserInterceptors, _Page_disconnectPromise, _Page_userDragInterceptionEnabled, _Page_handlerMap, _Page_onDetachedFromTarget, _Page_onAttachedToTarget, _Page_initialize, _Page_onFileChooser, _Page_onTargetCrashed, _Page_onLogEntryAdded, _Page_emitMetrics, _Page_buildMetricsObject, _Page_handleException, _Page_onConsoleAPI, _Page_onBindingCalled, _Page_addConsoleMessage, _Page_onDialog, _Page_resetDefaultBackgroundColor, _Page_setTransparentBackgroundColor, _Page_sessionClosePromise, _Page_go, _Page_screenshotTask;
+var _CDPPage_instances, _CDPPage_closed, _CDPPage_client, _CDPPage_target, _CDPPage_keyboard, _CDPPage_mouse, _CDPPage_timeoutSettings, _CDPPage_touchscreen, _CDPPage_accessibility, _CDPPage_frameManager, _CDPPage_emulationManager, _CDPPage_tracing, _CDPPage_pageBindings, _CDPPage_coverage, _CDPPage_javascriptEnabled, _CDPPage_viewport, _CDPPage_screenshotTaskQueue, _CDPPage_workers, _CDPPage_fileChooserPromises, _CDPPage_disconnectPromise, _CDPPage_userDragInterceptionEnabled, _CDPPage_onDetachedFromTarget, _CDPPage_onAttachedToTarget, _CDPPage_initialize, _CDPPage_onFileChooser, _CDPPage_onTargetCrashed, _CDPPage_onLogEntryAdded, _CDPPage_emitMetrics, _CDPPage_buildMetricsObject, _CDPPage_handleException, _CDPPage_onConsoleAPI, _CDPPage_onBindingCalled, _CDPPage_addConsoleMessage, _CDPPage_onDialog, _CDPPage_resetDefaultBackgroundColor, _CDPPage_setTransparentBackgroundColor, _CDPPage_sessionClosePromise, _CDPPage_go, _CDPPage_screenshotTask;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Page = void 0;
+exports.CDPPage = void 0;
+const assert_js_1 = require("../util/assert.js");
+const DeferredPromise_js_1 = require("../util/DeferredPromise.js");
+const ErrorLike_js_1 = require("../util/ErrorLike.js");
 const Accessibility_js_1 = require("./Accessibility.js");
-const assert_js_1 = require("./assert.js");
 const Connection_js_1 = require("./Connection.js");
 const ConsoleMessage_js_1 = require("./ConsoleMessage.js");
 const Coverage_js_1 = require("./Coverage.js");
 const Dialog_js_1 = require("./Dialog.js");
 const EmulationManager_js_1 = require("./EmulationManager.js");
-const EventEmitter_js_1 = require("./EventEmitter.js");
 const FileChooser_js_1 = require("./FileChooser.js");
 const FrameManager_js_1 = require("./FrameManager.js");
 const Input_js_1 = require("./Input.js");
+const IsolatedWorld_js_1 = require("./IsolatedWorld.js");
 const NetworkManager_js_1 = require("./NetworkManager.js");
 const PDFOptions_js_1 = require("./PDFOptions.js");
 const TimeoutSettings_js_1 = require("./TimeoutSettings.js");
 const Tracing_js_1 = require("./Tracing.js");
 const util_js_1 = require("./util.js");
 const WebWorker_js_1 = require("./WebWorker.js");
+const Page_js_1 = require("../api/Page.js");
 /**
- * Page provides methods to interact with a single tab or
- * {@link https://developer.chrome.com/extensions/background_pages | extension background page}
- * in Chromium.
- *
- * :::note
- *
- * One Browser instance might have multiple Page instances.
- *
- * :::
- *
- * @example
- * This example creates a page, navigates it to a URL, and then saves a screenshot:
- * ```ts
- * const puppeteer = require('puppeteer');
- *
- * (async () => {
- *   const browser = await puppeteer.launch();
- *   const page = await browser.newPage();
- *   await page.goto('https://example.com');
- *   await page.screenshot({path: 'screenshot.png'});
- *   await browser.close();
- * })();
- * ```
- *
- * The Page class extends from Puppeteer's {@link EventEmitter} class and will
- * emit various events which are documented in the {@link PageEmittedEvents} enum.
- *
- * @example
- * This example logs a message for a single page `load` event:
- * ```ts
- * page.once('load', () => console.log('Page loaded!'));
- * ```
- *
- * To unsubscribe from events use the {@link Page.off} method:
- *
- * ```ts
- * function logRequest(interceptedRequest) {
- *   console.log('A request was made:', interceptedRequest.url());
- * }
- * page.on('request', logRequest);
- * // Sometime later...
- * page.off('request', logRequest);
- * ```
- *
- * @public
+ * @internal
  */
-class Page extends EventEmitter_js_1.EventEmitter {
+class CDPPage extends Page_js_1.Page {
     /**
      * @internal
      */
     constructor(client, target, ignoreHTTPSErrors, screenshotTaskQueue) {
         super();
-        _Page_instances.add(this);
-        _Page_closed.set(this, false);
-        _Page_client.set(this, void 0);
-        _Page_target.set(this, void 0);
-        _Page_keyboard.set(this, void 0);
-        _Page_mouse.set(this, void 0);
-        _Page_timeoutSettings.set(this, new TimeoutSettings_js_1.TimeoutSettings());
-        _Page_touchscreen.set(this, void 0);
-        _Page_accessibility.set(this, void 0);
-        _Page_frameManager.set(this, void 0);
-        _Page_emulationManager.set(this, void 0);
-        _Page_tracing.set(this, void 0);
-        _Page_pageBindings.set(this, new Map());
-        _Page_coverage.set(this, void 0);
-        _Page_javascriptEnabled.set(this, true);
-        _Page_viewport.set(this, void 0);
-        _Page_screenshotTaskQueue.set(this, void 0);
-        _Page_workers.set(this, new Map());
-        _Page_fileChooserInterceptors.set(this, new Set());
-        _Page_disconnectPromise.set(this, void 0);
-        _Page_userDragInterceptionEnabled.set(this, false);
-        _Page_handlerMap.set(this, new WeakMap());
-        _Page_onDetachedFromTarget.set(this, (target) => {
+        _CDPPage_instances.add(this);
+        _CDPPage_closed.set(this, false);
+        _CDPPage_client.set(this, void 0);
+        _CDPPage_target.set(this, void 0);
+        _CDPPage_keyboard.set(this, void 0);
+        _CDPPage_mouse.set(this, void 0);
+        _CDPPage_timeoutSettings.set(this, new TimeoutSettings_js_1.TimeoutSettings());
+        _CDPPage_touchscreen.set(this, void 0);
+        _CDPPage_accessibility.set(this, void 0);
+        _CDPPage_frameManager.set(this, void 0);
+        _CDPPage_emulationManager.set(this, void 0);
+        _CDPPage_tracing.set(this, void 0);
+        _CDPPage_pageBindings.set(this, new Map());
+        _CDPPage_coverage.set(this, void 0);
+        _CDPPage_javascriptEnabled.set(this, true);
+        _CDPPage_viewport.set(this, void 0);
+        _CDPPage_screenshotTaskQueue.set(this, void 0);
+        _CDPPage_workers.set(this, new Map());
+        _CDPPage_fileChooserPromises.set(this, new Set());
+        _CDPPage_disconnectPromise.set(this, void 0);
+        _CDPPage_userDragInterceptionEnabled.set(this, false);
+        _CDPPage_onDetachedFromTarget.set(this, (target) => {
             var _a;
             const sessionId = (_a = target._session()) === null || _a === void 0 ? void 0 : _a.id();
-            __classPrivateFieldGet(this, _Page_frameManager, "f").onDetachedFromTarget(target);
-            const worker = __classPrivateFieldGet(this, _Page_workers, "f").get(sessionId);
+            __classPrivateFieldGet(this, _CDPPage_frameManager, "f").onDetachedFromTarget(target);
+            const worker = __classPrivateFieldGet(this, _CDPPage_workers, "f").get(sessionId);
             if (!worker) {
                 return;
             }
-            __classPrivateFieldGet(this, _Page_workers, "f").delete(sessionId);
+            __classPrivateFieldGet(this, _CDPPage_workers, "f").delete(sessionId);
             this.emit("workerdestroyed" /* PageEmittedEvents.WorkerDestroyed */, worker);
         });
-        _Page_onAttachedToTarget.set(this, async (createdTarget) => {
-            await __classPrivateFieldGet(this, _Page_frameManager, "f").onAttachedToTarget(createdTarget);
+        _CDPPage_onAttachedToTarget.set(this, async (createdTarget) => {
+            __classPrivateFieldGet(this, _CDPPage_frameManager, "f").onAttachedToTarget(createdTarget);
             if (createdTarget._getTargetInfo().type === 'worker') {
                 const session = createdTarget._session();
                 (0, assert_js_1.assert)(session);
-                const worker = new WebWorker_js_1.WebWorker(session, createdTarget.url(), __classPrivateFieldGet(this, _Page_instances, "m", _Page_addConsoleMessage).bind(this), __classPrivateFieldGet(this, _Page_instances, "m", _Page_handleException).bind(this));
-                __classPrivateFieldGet(this, _Page_workers, "f").set(session.id(), worker);
+                const worker = new WebWorker_js_1.WebWorker(session, createdTarget.url(), __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_addConsoleMessage).bind(this), __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_handleException).bind(this));
+                __classPrivateFieldGet(this, _CDPPage_workers, "f").set(session.id(), worker);
                 this.emit("workercreated" /* PageEmittedEvents.WorkerCreated */, worker);
             }
             if (createdTarget._session()) {
-                __classPrivateFieldGet(this, _Page_target, "f")
+                __classPrivateFieldGet(this, _CDPPage_target, "f")
                     ._targetManager()
-                    .addTargetInterceptor(createdTarget._session(), __classPrivateFieldGet(this, _Page_onAttachedToTarget, "f"));
+                    .addTargetInterceptor(createdTarget._session(), __classPrivateFieldGet(this, _CDPPage_onAttachedToTarget, "f"));
             }
         });
-        __classPrivateFieldSet(this, _Page_client, client, "f");
-        __classPrivateFieldSet(this, _Page_target, target, "f");
-        __classPrivateFieldSet(this, _Page_keyboard, new Input_js_1.Keyboard(client), "f");
-        __classPrivateFieldSet(this, _Page_mouse, new Input_js_1.Mouse(client, __classPrivateFieldGet(this, _Page_keyboard, "f")), "f");
-        __classPrivateFieldSet(this, _Page_touchscreen, new Input_js_1.Touchscreen(client, __classPrivateFieldGet(this, _Page_keyboard, "f")), "f");
-        __classPrivateFieldSet(this, _Page_accessibility, new Accessibility_js_1.Accessibility(client), "f");
-        __classPrivateFieldSet(this, _Page_frameManager, new FrameManager_js_1.FrameManager(client, this, ignoreHTTPSErrors, __classPrivateFieldGet(this, _Page_timeoutSettings, "f")), "f");
-        __classPrivateFieldSet(this, _Page_emulationManager, new EmulationManager_js_1.EmulationManager(client), "f");
-        __classPrivateFieldSet(this, _Page_tracing, new Tracing_js_1.Tracing(client), "f");
-        __classPrivateFieldSet(this, _Page_coverage, new Coverage_js_1.Coverage(client), "f");
-        __classPrivateFieldSet(this, _Page_screenshotTaskQueue, screenshotTaskQueue, "f");
-        __classPrivateFieldSet(this, _Page_viewport, null, "f");
-        __classPrivateFieldGet(this, _Page_target, "f")
+        __classPrivateFieldSet(this, _CDPPage_client, client, "f");
+        __classPrivateFieldSet(this, _CDPPage_target, target, "f");
+        __classPrivateFieldSet(this, _CDPPage_keyboard, new Input_js_1.Keyboard(client), "f");
+        __classPrivateFieldSet(this, _CDPPage_mouse, new Input_js_1.Mouse(client, __classPrivateFieldGet(this, _CDPPage_keyboard, "f")), "f");
+        __classPrivateFieldSet(this, _CDPPage_touchscreen, new Input_js_1.Touchscreen(client, __classPrivateFieldGet(this, _CDPPage_keyboard, "f")), "f");
+        __classPrivateFieldSet(this, _CDPPage_accessibility, new Accessibility_js_1.Accessibility(client), "f");
+        __classPrivateFieldSet(this, _CDPPage_frameManager, new FrameManager_js_1.FrameManager(client, this, ignoreHTTPSErrors, __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f")), "f");
+        __classPrivateFieldSet(this, _CDPPage_emulationManager, new EmulationManager_js_1.EmulationManager(client), "f");
+        __classPrivateFieldSet(this, _CDPPage_tracing, new Tracing_js_1.Tracing(client), "f");
+        __classPrivateFieldSet(this, _CDPPage_coverage, new Coverage_js_1.Coverage(client), "f");
+        __classPrivateFieldSet(this, _CDPPage_screenshotTaskQueue, screenshotTaskQueue, "f");
+        __classPrivateFieldSet(this, _CDPPage_viewport, null, "f");
+        __classPrivateFieldGet(this, _CDPPage_target, "f")
             ._targetManager()
-            .addTargetInterceptor(__classPrivateFieldGet(this, _Page_client, "f"), __classPrivateFieldGet(this, _Page_onAttachedToTarget, "f"));
-        __classPrivateFieldGet(this, _Page_target, "f")
+            .addTargetInterceptor(__classPrivateFieldGet(this, _CDPPage_client, "f"), __classPrivateFieldGet(this, _CDPPage_onAttachedToTarget, "f"));
+        __classPrivateFieldGet(this, _CDPPage_target, "f")
             ._targetManager()
-            .on("targetGone" /* TargetManagerEmittedEvents.TargetGone */, __classPrivateFieldGet(this, _Page_onDetachedFromTarget, "f"));
-        __classPrivateFieldGet(this, _Page_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameAttached, event => {
+            .on("targetGone" /* TargetManagerEmittedEvents.TargetGone */, __classPrivateFieldGet(this, _CDPPage_onDetachedFromTarget, "f"));
+        __classPrivateFieldGet(this, _CDPPage_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameAttached, event => {
             return this.emit("frameattached" /* PageEmittedEvents.FrameAttached */, event);
         });
-        __classPrivateFieldGet(this, _Page_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameDetached, event => {
+        __classPrivateFieldGet(this, _CDPPage_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameDetached, event => {
             return this.emit("framedetached" /* PageEmittedEvents.FrameDetached */, event);
         });
-        __classPrivateFieldGet(this, _Page_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameNavigated, event => {
+        __classPrivateFieldGet(this, _CDPPage_frameManager, "f").on(FrameManager_js_1.FrameManagerEmittedEvents.FrameNavigated, event => {
             return this.emit("framenavigated" /* PageEmittedEvents.FrameNavigated */, event);
         });
-        const networkManager = __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager();
+        const networkManager = __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager;
         networkManager.on(NetworkManager_js_1.NetworkManagerEmittedEvents.Request, event => {
             return this.emit("request" /* PageEmittedEvents.Request */, event);
         });
@@ -189,7 +147,6 @@ class Page extends EventEmitter_js_1.EventEmitter {
         networkManager.on(NetworkManager_js_1.NetworkManagerEmittedEvents.RequestFinished, event => {
             return this.emit("requestfinished" /* PageEmittedEvents.RequestFinished */, event);
         });
-        __classPrivateFieldSet(this, _Page_fileChooserInterceptors, new Set(), "f");
         client.on('Page.domContentEventFired', () => {
             return this.emit("domcontentloaded" /* PageEmittedEvents.DOMContentLoaded */);
         });
@@ -197,48 +154,58 @@ class Page extends EventEmitter_js_1.EventEmitter {
             return this.emit("load" /* PageEmittedEvents.Load */);
         });
         client.on('Runtime.consoleAPICalled', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onConsoleAPI).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onConsoleAPI).call(this, event);
         });
         client.on('Runtime.bindingCalled', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onBindingCalled).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onBindingCalled).call(this, event);
         });
         client.on('Page.javascriptDialogOpening', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onDialog).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onDialog).call(this, event);
         });
         client.on('Runtime.exceptionThrown', exception => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_handleException).call(this, exception.exceptionDetails);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_handleException).call(this, exception.exceptionDetails);
         });
         client.on('Inspector.targetCrashed', () => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onTargetCrashed).call(this);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onTargetCrashed).call(this);
         });
         client.on('Performance.metrics', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_emitMetrics).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_emitMetrics).call(this, event);
         });
         client.on('Log.entryAdded', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onLogEntryAdded).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onLogEntryAdded).call(this, event);
         });
         client.on('Page.fileChooserOpened', event => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_onFileChooser).call(this, event);
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_onFileChooser).call(this, event);
         });
-        __classPrivateFieldGet(this, _Page_target, "f")._isClosedPromise.then(() => {
-            __classPrivateFieldGet(this, _Page_target, "f")
+        __classPrivateFieldGet(this, _CDPPage_target, "f")._isClosedPromise.then(() => {
+            __classPrivateFieldGet(this, _CDPPage_target, "f")
                 ._targetManager()
-                .removeTargetInterceptor(__classPrivateFieldGet(this, _Page_client, "f"), __classPrivateFieldGet(this, _Page_onAttachedToTarget, "f"));
-            __classPrivateFieldGet(this, _Page_target, "f")
+                .removeTargetInterceptor(__classPrivateFieldGet(this, _CDPPage_client, "f"), __classPrivateFieldGet(this, _CDPPage_onAttachedToTarget, "f"));
+            __classPrivateFieldGet(this, _CDPPage_target, "f")
                 ._targetManager()
-                .off("targetGone" /* TargetManagerEmittedEvents.TargetGone */, __classPrivateFieldGet(this, _Page_onDetachedFromTarget, "f"));
+                .off("targetGone" /* TargetManagerEmittedEvents.TargetGone */, __classPrivateFieldGet(this, _CDPPage_onDetachedFromTarget, "f"));
             this.emit("close" /* PageEmittedEvents.Close */);
-            __classPrivateFieldSet(this, _Page_closed, true, "f");
+            __classPrivateFieldSet(this, _CDPPage_closed, true, "f");
         });
     }
     /**
      * @internal
      */
     static async _create(client, target, ignoreHTTPSErrors, defaultViewport, screenshotTaskQueue) {
-        const page = new Page(client, target, ignoreHTTPSErrors, screenshotTaskQueue);
-        await __classPrivateFieldGet(page, _Page_instances, "m", _Page_initialize).call(page);
+        const page = new CDPPage(client, target, ignoreHTTPSErrors, screenshotTaskQueue);
+        await __classPrivateFieldGet(page, _CDPPage_instances, "m", _CDPPage_initialize).call(page);
         if (defaultViewport) {
-            await page.setViewport(defaultViewport);
+            try {
+                await page.setViewport(defaultViewport);
+            }
+            catch (err) {
+                if ((0, ErrorLike_js_1.isErrorLike)(err) && (0, Connection_js_1.isTargetClosedError)(err)) {
+                    (0, util_js_1.debugError)(err);
+                }
+                else {
+                    throw err;
+                }
+            }
         }
         return page;
     }
@@ -246,48 +213,13 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @returns `true` if drag events are being intercepted, `false` otherwise.
      */
     isDragInterceptionEnabled() {
-        return __classPrivateFieldGet(this, _Page_userDragInterceptionEnabled, "f");
+        return __classPrivateFieldGet(this, _CDPPage_userDragInterceptionEnabled, "f");
     }
     /**
      * @returns `true` if the page has JavaScript enabled, `false` otherwise.
      */
     isJavaScriptEnabled() {
-        return __classPrivateFieldGet(this, _Page_javascriptEnabled, "f");
-    }
-    /**
-     * Listen to page events.
-     *
-     * :::note
-     *
-     * This method exists to define event typings and handle proper wireup of
-     * cooperative request interception. Actual event listening and dispatching is
-     * delegated to {@link EventEmitter}.
-     *
-     * :::
-     */
-    on(eventName, handler) {
-        if (eventName === 'request') {
-            const wrap = __classPrivateFieldGet(this, _Page_handlerMap, "f").get(handler) ||
-                ((event) => {
-                    event.enqueueInterceptAction(() => {
-                        return handler(event);
-                    });
-                });
-            __classPrivateFieldGet(this, _Page_handlerMap, "f").set(handler, wrap);
-            return super.on(eventName, wrap);
-        }
-        return super.on(eventName, handler);
-    }
-    once(eventName, handler) {
-        // Note: this method only exists to define the types; we delegate the impl
-        // to EventEmitter.
-        return super.once(eventName, handler);
-    }
-    off(eventName, handler) {
-        if (eventName === 'request') {
-            handler = __classPrivateFieldGet(this, _Page_handlerMap, "f").get(handler) || handler;
-        }
-        return super.off(eventName, handler);
+        return __classPrivateFieldGet(this, _CDPPage_javascriptEnabled, "f");
     }
     /**
      * This method is typically coupled with an action that triggers file
@@ -310,36 +242,45 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *
      * ```ts
      * const [fileChooser] = await Promise.all([
-     * page.waitForFileChooser(),
-     * page.click('#upload-file-button'),
-     * // some button that triggers file selection
+     *   page.waitForFileChooser(),
+     *   page.click('#upload-file-button'),
+     *   // some button that triggers file selection
      * ]);
      * await fileChooser.accept(['/tmp/myfile.pdf']);
      * ```
      */
-    async waitForFileChooser(options = {}) {
-        if (!__classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f").size) {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Page.setInterceptFileChooserDialog', {
+    waitForFileChooser(options = {}) {
+        const needsEnable = __classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f").size === 0;
+        const { timeout = __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout() } = options;
+        const promise = (0, DeferredPromise_js_1.createDeferredPromise)({
+            message: `Waiting for \`FileChooser\` failed: ${timeout}ms exceeded`,
+            timeout,
+        });
+        __classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f").add(promise);
+        let enablePromise;
+        if (needsEnable) {
+            enablePromise = __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.setInterceptFileChooserDialog', {
                 enabled: true,
             });
         }
-        const { timeout = __classPrivateFieldGet(this, _Page_timeoutSettings, "f").timeout() } = options;
-        let callback;
-        const promise = new Promise(x => {
-            return (callback = x);
-        });
-        __classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f").add(callback);
-        return (0, util_js_1.waitWithTimeout)(promise, 'waiting for file chooser', timeout).catch(error => {
-            __classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f").delete(callback);
+        return Promise.all([promise, enablePromise])
+            .then(([result]) => {
+            return result;
+        })
+            .catch(error => {
+            __classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f").delete(promise);
             throw error;
         });
     }
     /**
      * Sets the page's geolocation.
+     *
      * @remarks
-     * NOTE: Consider using {@link BrowserContext.overridePermissions} to grant
+     * Consider using {@link BrowserContext.overridePermissions} to grant
      * permissions for the page to read its geolocation.
+     *
      * @example
+     *
      * ```ts
      * await page.setGeolocation({latitude: 59.95, longitude: 30.31667});
      * ```
@@ -355,7 +296,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
         if (accuracy < 0) {
             throw new Error(`Invalid accuracy "${accuracy}": precondition 0 <= ACCURACY failed.`);
         }
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setGeolocationOverride', {
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setGeolocationOverride', {
             longitude,
             latitude,
             accuracy,
@@ -365,79 +306,84 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @returns A target this page was created from.
      */
     target() {
-        return __classPrivateFieldGet(this, _Page_target, "f");
+        return __classPrivateFieldGet(this, _CDPPage_target, "f");
     }
     /**
      * @internal
      */
     _client() {
-        return __classPrivateFieldGet(this, _Page_client, "f");
+        return __classPrivateFieldGet(this, _CDPPage_client, "f");
     }
     /**
      * Get the browser the page belongs to.
      */
     browser() {
-        return __classPrivateFieldGet(this, _Page_target, "f").browser();
+        return __classPrivateFieldGet(this, _CDPPage_target, "f").browser();
     }
     /**
      * Get the browser context that the page belongs to.
      */
     browserContext() {
-        return __classPrivateFieldGet(this, _Page_target, "f").browserContext();
+        return __classPrivateFieldGet(this, _CDPPage_target, "f").browserContext();
     }
     /**
      * @returns The page's main frame.
+     *
      * @remarks
      * Page is guaranteed to have a main frame which persists during navigations.
      */
     mainFrame() {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame();
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame();
     }
     get keyboard() {
-        return __classPrivateFieldGet(this, _Page_keyboard, "f");
+        return __classPrivateFieldGet(this, _CDPPage_keyboard, "f");
     }
     get touchscreen() {
-        return __classPrivateFieldGet(this, _Page_touchscreen, "f");
+        return __classPrivateFieldGet(this, _CDPPage_touchscreen, "f");
     }
     get coverage() {
-        return __classPrivateFieldGet(this, _Page_coverage, "f");
+        return __classPrivateFieldGet(this, _CDPPage_coverage, "f");
     }
     get tracing() {
-        return __classPrivateFieldGet(this, _Page_tracing, "f");
+        return __classPrivateFieldGet(this, _CDPPage_tracing, "f");
     }
     get accessibility() {
-        return __classPrivateFieldGet(this, _Page_accessibility, "f");
+        return __classPrivateFieldGet(this, _CDPPage_accessibility, "f");
     }
     /**
      * @returns An array of all frames attached to the page.
      */
     frames() {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").frames();
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").frames();
     }
     /**
-     * @returns all of the dedicated
-     * {@link https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API |
-     * WebWorkers}
-     * associated with the page.
-     * @remarks
-     * NOTE: This does not contain ServiceWorkers
-     */
-    workers() {
-        return Array.from(__classPrivateFieldGet(this, _Page_workers, "f").values());
-    }
-    /**
-     * @param value - Whether to enable request interception.
+     * @returns all of the dedicated {@link
+     * https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API |
+     * WebWorkers} associated with the page.
      *
      * @remarks
+     * This does not contain ServiceWorkers
+     */
+    workers() {
+        return Array.from(__classPrivateFieldGet(this, _CDPPage_workers, "f").values());
+    }
+    /**
      * Activating request interception enables {@link HTTPRequest.abort},
-     * {@link HTTPRequest.continue} and {@link HTTPRequest.respond} methods.  This
+     * {@link HTTPRequest.continue} and {@link HTTPRequest.respond} methods. This
      * provides the capability to modify network requests that are made by a page.
      *
      * Once request interception is enabled, every request will stall unless it's
      * continued, responded or aborted; or completed using the browser cache.
      *
+     * Enabling request interception disables page caching.
+     *
+     * See the
+     * {@link https://pptr.dev/next/guides/request-interception|Request interception guide}
+     * for more details.
+     *
      * @example
      * An example of a naïve request interceptor that aborts all image requests:
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * (async () => {
@@ -445,32 +391,34 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   const page = await browser.newPage();
      *   await page.setRequestInterception(true);
      *   page.on('request', interceptedRequest => {
-     *     if (interceptedRequest.url().endsWith('.png') ||
-     *         interceptedRequest.url().endsWith('.jpg'))
+     *     if (
+     *       interceptedRequest.url().endsWith('.png') ||
+     *       interceptedRequest.url().endsWith('.jpg')
+     *     )
      *       interceptedRequest.abort();
-     *     else
-     *       interceptedRequest.continue();
-     *     });
+     *     else interceptedRequest.continue();
+     *   });
      *   await page.goto('https://example.com');
      *   await browser.close();
      * })();
      * ```
-     * NOTE: Enabling request interception disables page caching.
+     *
+     * @param value - Whether to enable request interception.
      */
     async setRequestInterception(value) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager().setRequestInterception(value);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.setRequestInterception(value);
     }
     /**
      * @param enabled - Whether to enable drag interception.
      *
      * @remarks
      * Activating drag interception enables the `Input.drag`,
-     * methods  This provides the capability to capture drag events emitted
+     * methods This provides the capability to capture drag events emitted
      * on the page, which can then be used to simulate drag-and-drop.
      */
     async setDragInterception(enabled) {
-        __classPrivateFieldSet(this, _Page_userDragInterceptionEnabled, enabled, "f");
-        return __classPrivateFieldGet(this, _Page_client, "f").send('Input.setInterceptDrags', { enabled });
+        __classPrivateFieldSet(this, _CDPPage_userDragInterceptionEnabled, enabled, "f");
+        return __classPrivateFieldGet(this, _CDPPage_client, "f").send('Input.setInterceptDrags', { enabled });
     }
     /**
      * @param enabled - When `true`, enables offline mode for the page.
@@ -480,33 +428,33 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * (#pageemulatenetworkconditionsnetworkconditions)
      */
     setOfflineMode(enabled) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager().setOfflineMode(enabled);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.setOfflineMode(enabled);
     }
     /**
      * @param networkConditions - Passing `null` disables network condition emulation.
      * @example
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * const slow3G = puppeteer.networkConditions['Slow 3G'];
      *
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * await page.emulateNetworkConditions(slow3G);
-     * await page.goto('https://www.google.com');
-     * // other actions...
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   await page.emulateNetworkConditions(slow3G);
+     *   await page.goto('https://www.google.com');
+     *   // other actions...
+     *   await browser.close();
      * })();
      * ```
+     *
      * @remarks
      * NOTE: This does not affect WebSockets and WebRTC PeerConnections (see
      * https://crbug.com/563644). To set the page offline, you can use
      * [page.setOfflineMode(enabled)](#pagesetofflinemodeenabled).
      */
     emulateNetworkConditions(networkConditions) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f")
-            .networkManager()
-            .emulateNetworkConditions(networkConditions);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.emulateNetworkConditions(networkConditions);
     }
     /**
      * This setting will change the default maximum navigation time for the
@@ -523,16 +471,22 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * - {@link Page.setContent | page.setContent(html,options)}
      *
      * - {@link Page.waitForNavigation | page.waitForNavigation(options)}
-     * @param timeout - Maximum navigation time in milliseconds.
+     *   @param timeout - Maximum navigation time in milliseconds.
      */
     setDefaultNavigationTimeout(timeout) {
-        __classPrivateFieldGet(this, _Page_timeoutSettings, "f").setDefaultNavigationTimeout(timeout);
+        __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").setDefaultNavigationTimeout(timeout);
     }
     /**
      * @param timeout - Maximum time in milliseconds.
      */
     setDefaultTimeout(timeout) {
-        __classPrivateFieldGet(this, _Page_timeoutSettings, "f").setDefaultTimeout(timeout);
+        __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").setDefaultTimeout(timeout);
+    }
+    /**
+     * @returns Maximum time in milliseconds.
+     */
+    getDefaultTimeout() {
+        return __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout();
     }
     /**
      * Runs `document.querySelector` within the page. If no element matches the
@@ -569,15 +523,20 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * recommended as they are easier to debug and use with TypeScript):
      *
      * @example
+     *
      * ```ts
-     * const aHandle = await page.evaluateHandle('document')
+     * const aHandle = await page.evaluateHandle('document');
      * ```
      *
      * @example
      * {@link JSHandle} instances can be passed as arguments to the `pageFunction`:
+     *
      * ```ts
      * const aHandle = await page.evaluateHandle(() => document.body);
-     * const resultHandle = await page.evaluateHandle(body => body.innerHTML, aHandle);
+     * const resultHandle = await page.evaluateHandle(
+     *   body => body.innerHTML,
+     *   aHandle
+     * );
      * console.log(await resultHandle.jsonValue());
      * await resultHandle.dispose();
      * ```
@@ -587,14 +546,17 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * you instead get an {@link ElementHandle} back:
      *
      * @example
+     *
      * ```ts
-     * const button = await page.evaluateHandle(() => document.querySelector('button'));
+     * const button = await page.evaluateHandle(() =>
+     *   document.querySelector('button')
+     * );
      * // can call `click` because `button` is an `ElementHandle`
      * await button.click();
      * ```
      *
      * The TypeScript definitions assume that `evaluateHandle` returns
-     *  a `JSHandle`, but if you know it's going to return an
+     * a `JSHandle`, but if you know it's going to return an
      * `ElementHandle`, pass it as the generic argument:
      *
      * ```ts
@@ -612,16 +574,11 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * This method iterates the JavaScript heap and finds all objects with the
      * given prototype.
      *
-     * @remarks
-     * Shortcut for
-     * {@link ExecutionContext.queryObjects |
-     * page.mainFrame().executionContext().queryObjects(prototypeHandle)}.
-     *
      * @example
      *
      * ```ts
      * // Create a Map object
-     * await page.evaluate(() => window.map = new Map());
+     * await page.evaluate(() => (window.map = new Map()));
      * // Get a handle to the Map object prototype
      * const mapPrototype = await page.evaluateHandle(() => Map.prototype);
      * // Query all map instances into an array
@@ -631,13 +588,20 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * await mapInstances.dispose();
      * await mapPrototype.dispose();
      * ```
+     *
      * @param prototypeHandle - a handle to the object prototype.
      * @returns Promise which resolves to a handle to an array of objects with
      * this prototype.
      */
     async queryObjects(prototypeHandle) {
         const context = await this.mainFrame().executionContext();
-        return context.queryObjects(prototypeHandle);
+        (0, assert_js_1.assert)(!prototypeHandle.disposed, 'Prototype JSHandle is disposed!');
+        const remoteObject = prototypeHandle.remoteObject();
+        (0, assert_js_1.assert)(remoteObject.objectId, 'Prototype JSHandle must not be referencing primitive value');
+        const response = await context._client.send('Runtime.queryObjects', {
+            prototypeObjectId: remoteObject.objectId,
+        });
+        return (0, util_js_1.createJSHandle)(context, response.objects);
     }
     /**
      * This method runs `document.querySelector` within the page and passes the
@@ -668,7 +632,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * ```ts
      * // if you don't provide HTMLInputElement here, TS will error
      * // as `value` is not on `Element`
-     * const searchValue = await page.$eval('#search', (el: HTMLInputElement) => el.value);
+     * const searchValue = await page.$eval(
+     *   '#search',
+     *   (el: HTMLInputElement) => el.value
+     * );
      * ```
      *
      * The compiler should be able to infer the return type
@@ -681,7 +648,8 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * // The compiler can infer the return type in this case, but if it can't
      * // or if you want to be more explicit, provide it as the generic type.
      * const searchValue = await page.$eval<string>(
-     *  '#search', (el: HTMLInputElement) => el.value
+     *   '#search',
+     *   (el: HTMLInputElement) => el.value
      * );
      * ```
      *
@@ -705,7 +673,6 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * the page and passes the result as the first argument to the `pageFunction`.
      *
      * @remarks
-     *
      * If `pageFunction` returns a promise `$$eval` will wait for the promise to
      * resolve and then return its value.
      *
@@ -717,7 +684,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *
      * // get the text content of all the `.options` elements:
      * const options = await page.$$eval('div > span.options', options => {
-     *   return options.map(option => option.textContent)
+     *   return options.map(option => option.textContent);
      * });
      * ```
      *
@@ -746,16 +713,17 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * // The compiler can infer the return type in this case, but if it can't
      * // or if you want to be more explicit, provide it as the generic type.
      * const allInputValues = await page.$$eval<string[]>(
-     *  'input', (elements: HTMLInputElement[]) => elements.map(e => e.textContent)
+     *   'input',
+     *   (elements: HTMLInputElement[]) => elements.map(e => e.textContent)
      * );
      * ```
      *
      * @param selector - the
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
      * to query for
-     * @param pageFunction - the function to be evaluated in the page context. Will
-     * be passed the result of `Array.from(document.querySelectorAll(selector))`
-     * as its first argument.
+     * @param pageFunction - the function to be evaluated in the page context.
+     * Will be passed the result of
+     * `Array.from(document.querySelectorAll(selector))` as its first argument.
      * @param args - any additional arguments to pass through to `pageFunction`.
      *
      * @returns The result of calling `pageFunction`. If it returns an element it
@@ -769,8 +737,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * The method evaluates the XPath expression relative to the page document as
      * its context node. If there are no such elements, the method resolves to an
      * empty array.
+     *
      * @remarks
      * Shortcut for {@link Frame.$x | Page.mainFrame().$x(expression) }.
+     *
      * @param expression - Expression to evaluate
      */
     async $x(expression) {
@@ -781,7 +751,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * URL. If URLs are specified, only cookies for those URLs are returned.
      */
     async cookies(...urls) {
-        const originalCookies = (await __classPrivateFieldGet(this, _Page_client, "f").send('Network.getCookies', {
+        const originalCookies = (await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Network.getCookies', {
             urls: urls.length ? urls : [this.url()],
         })).cookies;
         const unsupportedCookieAttributes = ['priority'];
@@ -800,11 +770,12 @@ class Page extends EventEmitter_js_1.EventEmitter {
             if (!cookie.url && pageURL.startsWith('http')) {
                 item.url = pageURL;
             }
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Network.deleteCookies', item);
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Network.deleteCookies', item);
         }
     }
     /**
      * @example
+     *
      * ```ts
      * await page.setCookie(cookieObject1, cookieObject2);
      * ```
@@ -823,89 +794,98 @@ class Page extends EventEmitter_js_1.EventEmitter {
         });
         await this.deleteCookie(...items);
         if (items.length) {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Network.setCookies', { cookies: items });
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Network.setCookies', { cookies: items });
         }
     }
     /**
      * Adds a `<script>` tag into the page with the desired URL or content.
+     *
      * @remarks
-     * Shortcut for {@link Frame.addScriptTag | page.mainFrame().addScriptTag(options) }.
-     * @returns Promise which resolves to the added tag when the script's onload fires or
-     * when the script content was injected into frame.
+     * Shortcut for
+     * {@link Frame.addScriptTag | page.mainFrame().addScriptTag(options)}.
+     *
+     * @param options - Options for the script.
+     * @returns An {@link ElementHandle | element handle} to the injected
+     * `<script>` element.
      */
     async addScriptTag(options) {
         return this.mainFrame().addScriptTag(options);
     }
-    /**
-     * Adds a `<link rel="stylesheet">` tag into the page with the desired URL or a
-     * `<style type="text/css">` tag with the content.
-     * @returns Promise which resolves to the added tag when the stylesheet's
-     * onload fires or when the CSS content was injected into frame.
-     */
     async addStyleTag(options) {
         return this.mainFrame().addStyleTag(options);
     }
     /**
-     * The method adds a function called `name` on the page's `window` object. When
-     * called, the function executes `puppeteerFunction` in node.js and returns a
-     * `Promise` which resolves to the return value of `puppeteerFunction`.
+     * The method adds a function called `name` on the page's `window` object.
+     * When called, the function executes `puppeteerFunction` in node.js and
+     * returns a `Promise` which resolves to the return value of
+     * `puppeteerFunction`.
      *
      * If the puppeteerFunction returns a `Promise`, it will be awaited.
      *
-     * NOTE: Functions installed via `page.exposeFunction` survive navigations.
-     * @param name - Name of the function on the window object
-     * @param pptrFunction -  Callback function which will be called in
-     * Puppeteer's context.
+     * :::note
+     *
+     * Functions installed via `page.exposeFunction` survive navigations.
+     *
+     * :::note
+     *
      * @example
      * An example of adding an `md5` function into the page:
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * const crypto = require('crypto');
      *
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * page.on('console', (msg) => console.log(msg.text()));
-     * await page.exposeFunction('md5', (text) =>
-     * crypto.createHash('md5').update(text).digest('hex')
-     * );
-     * await page.evaluate(async () => {
-     * // use window.md5 to compute hashes
-     * const myString = 'PUPPETEER';
-     * const myHash = await window.md5(myString);
-     * console.log(`md5 of ${myString} is ${myHash}`);
-     * });
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   page.on('console', msg => console.log(msg.text()));
+     *   await page.exposeFunction('md5', text =>
+     *     crypto.createHash('md5').update(text).digest('hex')
+     *   );
+     *   await page.evaluate(async () => {
+     *     // use window.md5 to compute hashes
+     *     const myString = 'PUPPETEER';
+     *     const myHash = await window.md5(myString);
+     *     console.log(`md5 of ${myString} is ${myHash}`);
+     *   });
+     *   await browser.close();
      * })();
      * ```
+     *
+     * @example
      * An example of adding a `window.readfile` function into the page:
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * const fs = require('fs');
      *
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * page.on('console', (msg) => console.log(msg.text()));
-     * await page.exposeFunction('readfile', async (filePath) => {
-     * return new Promise((resolve, reject) => {
-     * fs.readFile(filePath, 'utf8', (err, text) => {
-     *    if (err) reject(err);
-     *    else resolve(text);
-     *  });
-     * });
-     * });
-     * await page.evaluate(async () => {
-     * // use window.readfile to read contents of a file
-     * const content = await window.readfile('/etc/hosts');
-     * console.log(content);
-     * });
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   page.on('console', msg => console.log(msg.text()));
+     *   await page.exposeFunction('readfile', async filePath => {
+     *     return new Promise((resolve, reject) => {
+     *       fs.readFile(filePath, 'utf8', (err, text) => {
+     *         if (err) reject(err);
+     *         else resolve(text);
+     *       });
+     *     });
+     *   });
+     *   await page.evaluate(async () => {
+     *     // use window.readfile to read contents of a file
+     *     const content = await window.readfile('/etc/hosts');
+     *     console.log(content);
+     *   });
+     *   await browser.close();
      * })();
      * ```
+     *
+     * @param name - Name of the function on the window object
+     * @param pptrFunction - Callback function which will be called in Puppeteer's
+     * context.
      */
     async exposeFunction(name, pptrFunction) {
-        if (__classPrivateFieldGet(this, _Page_pageBindings, "f").has(name)) {
+        if (__classPrivateFieldGet(this, _CDPPage_pageBindings, "f").has(name)) {
             throw new Error(`Failed to add page binding with name ${name}: window['${name}'] already exists!`);
         }
         let exposedFunction;
@@ -917,10 +897,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
                 exposedFunction = pptrFunction.default;
                 break;
         }
-        __classPrivateFieldGet(this, _Page_pageBindings, "f").set(name, exposedFunction);
+        __classPrivateFieldGet(this, _CDPPage_pageBindings, "f").set(name, exposedFunction);
         const expression = (0, util_js_1.pageBindingInitString)('exposedFun', name);
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Runtime.addBinding', { name: name });
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Page.addScriptToEvaluateOnNewDocument', {
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Runtime.addBinding', { name: name });
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.addScriptToEvaluateOnNewDocument', {
             source: expression,
         });
         await Promise.all(this.frames().map(frame => {
@@ -929,23 +909,35 @@ class Page extends EventEmitter_js_1.EventEmitter {
     }
     /**
      * Provide credentials for `HTTP authentication`.
-     * @remarks To disable authentication, pass `null`.
+     *
+     * @remarks
+     * To disable authentication, pass `null`.
      */
     async authenticate(credentials) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager().authenticate(credentials);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.authenticate(credentials);
     }
     /**
      * The extra HTTP headers will be sent with every request the page initiates.
-     * NOTE: All HTTP header names are lowercased. (HTTP headers are
+     *
+     * :::tip
+     *
+     * All HTTP header names are lowercased. (HTTP headers are
      * case-insensitive, so this shouldn’t impact your server code.)
-     * NOTE: page.setExtraHTTPHeaders does not guarantee the order of headers in
+     *
+     * :::
+     *
+     * :::note
+     *
+     * page.setExtraHTTPHeaders does not guarantee the order of headers in
      * the outgoing requests.
+     *
+     * :::
+     *
      * @param headers - An object containing additional HTTP headers to be sent
      * with every request. All header values must be strings.
-     * @returns
      */
     async setExtraHTTPHeaders(headers) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager().setExtraHTTPHeaders(headers);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.setExtraHTTPHeaders(headers);
     }
     /**
      * @param userAgent - Specific user agent to use in this page
@@ -954,9 +946,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @returns Promise which resolves when the user agent is set.
      */
     async setUserAgent(userAgent, userAgentMetadata) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f")
-            .networkManager()
-            .setUserAgent(userAgent, userAgentMetadata);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.setUserAgent(userAgent, userAgentMetadata);
     }
     /**
      * @returns Object containing metrics as key/value pairs.
@@ -984,17 +974,17 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *
      * - `TaskDuration` : Combined duration of all tasks performed by the browser.
      *
-     *
      * - `JSHeapUsedSize` : Used JavaScript heap size.
      *
      * - `JSHeapTotalSize` : Total JavaScript heap size.
+     *
      * @remarks
-     * NOTE: All timestamps are in monotonic time: monotonically increasing time
+     * All timestamps are in monotonic time: monotonically increasing time
      * in seconds since an arbitrary point in the past.
      */
     async metrics() {
-        const response = await __classPrivateFieldGet(this, _Page_client, "f").send('Performance.getMetrics');
-        return __classPrivateFieldGet(this, _Page_instances, "m", _Page_buildMetricsObject).call(this, response.metrics);
+        const response = await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Performance.getMetrics');
+        return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_buildMetricsObject).call(this, response.metrics);
     }
     /**
      *
@@ -1006,7 +996,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
         return this.mainFrame().url();
     }
     async content() {
-        return await __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame().content();
+        return await __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame().content();
     }
     /**
      * @param html - HTML markup to assign to the page.
@@ -1020,20 +1010,20 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   {@link Page.setDefaultTimeout} methods.
      *
      * - `waitUntil`: When to consider setting markup succeeded, defaults to
-     *    `load`. Given an array of event strings, setting content is considered
-     *    to be successful after all events have been fired. Events can be
-     *    either:<br/>
-     *  - `load` : consider setting content to be finished when the `load` event
-     *    is fired.<br/>
-     *  - `domcontentloaded` : consider setting content to be finished when the
-     *    `DOMContentLoaded` event is fired.<br/>
-     *  - `networkidle0` : consider setting content to be finished when there are
-     *    no more than 0 network connections for at least `500` ms.<br/>
-     *  - `networkidle2` : consider setting content to be finished when there are
-     *    no more than 2 network connections for at least `500` ms.
+     *   `load`. Given an array of event strings, setting content is considered
+     *   to be successful after all events have been fired. Events can be
+     *   either:<br/>
+     * - `load` : consider setting content to be finished when the `load` event
+     *   is fired.<br/>
+     * - `domcontentloaded` : consider setting content to be finished when the
+     *   `DOMContentLoaded` event is fired.<br/>
+     * - `networkidle0` : consider setting content to be finished when there are
+     *   no more than 0 network connections for at least `500` ms.<br/>
+     * - `networkidle2` : consider setting content to be finished when there are
+     *   no more than 2 network connections for at least `500` ms.
      */
     async setContent(html, options = {}) {
-        await __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame().setContent(html, options);
+        await __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame().setContent(html, options);
     }
     /**
      * @param url - URL to navigate page to. The URL should include scheme, e.g.
@@ -1051,22 +1041,23 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   {@link Page.setDefaultTimeout} methods.
      *
      * - `waitUntil`:When to consider navigation succeeded, defaults to `load`.
-     *    Given an array of event strings, navigation is considered to be
-     *    successful after all events have been fired. Events can be either:<br/>
-     *  - `load` : consider navigation to be finished when the load event is
-     *    fired.<br/>
-     *  - `domcontentloaded` : consider navigation to be finished when the
-     *    DOMContentLoaded event is fired.<br/>
-     *  - `networkidle0` : consider navigation to be finished when there are no
-     *    more than 0 network connections for at least `500` ms.<br/>
-     *  - `networkidle2` : consider navigation to be finished when there are no
-     *    more than 2 network connections for at least `500` ms.
+     *   Given an array of event strings, navigation is considered to be
+     *   successful after all events have been fired. Events can be either:<br/>
+     * - `load` : consider navigation to be finished when the load event is
+     *   fired.<br/>
+     * - `domcontentloaded` : consider navigation to be finished when the
+     *   DOMContentLoaded event is fired.<br/>
+     * - `networkidle0` : consider navigation to be finished when there are no
+     *   more than 0 network connections for at least `500` ms.<br/>
+     * - `networkidle2` : consider navigation to be finished when there are no
+     *   more than 2 network connections for at least `500` ms.
      *
      * - `referer` : Referer header value. If provided it will take preference
      *   over the referer header value set by
      *   {@link Page.setExtraHTTPHeaders |page.setExtraHTTPHeaders()}.
      *
      * `page.goto` will throw an error if:
+     *
      * - there's an SSL error (e.g. in case of self-signed certificates).
      * - target URL is invalid.
      * - the timeout is exceeded during navigation.
@@ -1074,9 +1065,9 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * - the main resource failed to load.
      *
      * `page.goto` will not throw an error when any valid HTTP status code is
-     *   returned by the remote server, including 404 "Not Found" and 500
-     *   "Internal Server Error". The status code for such responses can be
-     *   retrieved by calling response.status().
+     * returned by the remote server, including 404 "Not Found" and 500
+     * "Internal Server Error". The status code for such responses can be
+     * retrieved by calling response.status().
      *
      * NOTE: `page.goto` either throws an error or returns a main resource
      * response. The only exceptions are navigation to about:blank or navigation
@@ -1089,7 +1080,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * Shortcut for {@link Frame.goto | page.mainFrame().goto(url, options)}.
      */
     async goto(url, options = {}) {
-        return await __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame().goto(url, options);
+        return await __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame().goto(url, options);
     }
     /**
      * @param options - Navigation parameters which might have the following
@@ -1106,21 +1097,21 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   {@link Page.setDefaultTimeout} methods.
      *
      * - `waitUntil`: When to consider navigation succeeded, defaults to `load`.
-     *    Given an array of event strings, navigation is considered to be
-     *    successful after all events have been fired. Events can be either:<br/>
-     *  - `load` : consider navigation to be finished when the load event is
-     *    fired.<br/>
-     *  - `domcontentloaded` : consider navigation to be finished when the
-     *    DOMContentLoaded event is fired.<br/>
-     *  - `networkidle0` : consider navigation to be finished when there are no
-     *    more than 0 network connections for at least `500` ms.<br/>
-     *  - `networkidle2` : consider navigation to be finished when there are no
-     *    more than 2 network connections for at least `500` ms.
+     *   Given an array of event strings, navigation is considered to be
+     *   successful after all events have been fired. Events can be either:<br/>
+     * - `load` : consider navigation to be finished when the load event is
+     *   fired.<br/>
+     * - `domcontentloaded` : consider navigation to be finished when the
+     *   DOMContentLoaded event is fired.<br/>
+     * - `networkidle0` : consider navigation to be finished when there are no
+     *   more than 0 network connections for at least `500` ms.<br/>
+     * - `networkidle2` : consider navigation to be finished when there are no
+     *   more than 2 network connections for at least `500` ms.
      */
     async reload(options) {
         const result = await Promise.all([
             this.waitForNavigation(options),
-            __classPrivateFieldGet(this, _Page_client, "f").send('Page.reload'),
+            __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.reload'),
         ]);
         return result[0];
     }
@@ -1129,10 +1120,11 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * you run code that will indirectly cause the page to navigate.
      *
      * @example
+     *
      * ```ts
      * const [response] = await Promise.all([
-     * page.waitForNavigation(), // The promise resolves after navigation has finished
-     * page.click('a.my-link'), // Clicking the link will indirectly cause a navigation
+     *   page.waitForNavigation(), // The promise resolves after navigation has finished
+     *   page.click('a.my-link'), // Clicking the link will indirectly cause a navigation
      * ]);
      * ```
      *
@@ -1144,42 +1136,45 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @param options - Navigation parameters which might have the following
      * properties:
      * @returns A `Promise` which resolves to the main resource response.
+     *
      * - In case of multiple redirects, the navigation will resolve with the
      *   response of the last redirect.
      * - In case of navigation to a different anchor or navigation due to History
      *   API usage, the navigation will resolve with `null`.
      */
     async waitForNavigation(options = {}) {
-        return await __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame().waitForNavigation(options);
+        return await __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame().waitForNavigation(options);
     }
     /**
      * @param urlOrPredicate - A URL or predicate to wait for
      * @param options - Optional waiting parameters
      * @returns Promise which resolves to the matched response
      * @example
+     *
      * ```ts
      * const firstResponse = await page.waitForResponse(
-     * 'https://example.com/resource'
+     *   'https://example.com/resource'
      * );
      * const finalResponse = await page.waitForResponse(
-     * (response) =>
-     * response.url() === 'https://example.com' && response.status() === 200
+     *   response =>
+     *     response.url() === 'https://example.com' && response.status() === 200
      * );
-     * const finalResponse = await page.waitForResponse(async (response) => {
-     * return (await response.text()).includes('<html>');
+     * const finalResponse = await page.waitForResponse(async response => {
+     *   return (await response.text()).includes('<html>');
      * });
      * return finalResponse.ok();
      * ```
+     *
      * @remarks
      * Optional Waiting Parameters have:
      *
      * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds, pass
-     * `0` to disable the timeout. The default value can be changed by using the
-     * {@link Page.setDefaultTimeout} method.
+     *   `0` to disable the timeout. The default value can be changed by using the
+     *   {@link Page.setDefaultTimeout} method.
      */
     async waitForRequest(urlOrPredicate, options = {}) {
-        const { timeout = __classPrivateFieldGet(this, _Page_timeoutSettings, "f").timeout() } = options;
-        return (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _Page_frameManager, "f").networkManager(), NetworkManager_js_1.NetworkManagerEmittedEvents.Request, request => {
+        const { timeout = __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout() } = options;
+        return (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager, NetworkManager_js_1.NetworkManagerEmittedEvents.Request, request => {
             if ((0, util_js_1.isString)(urlOrPredicate)) {
                 return urlOrPredicate === request.url();
             }
@@ -1187,36 +1182,38 @@ class Page extends EventEmitter_js_1.EventEmitter {
                 return !!urlOrPredicate(request);
             }
             return false;
-        }, timeout, __classPrivateFieldGet(this, _Page_instances, "m", _Page_sessionClosePromise).call(this));
+        }, timeout, __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_sessionClosePromise).call(this));
     }
     /**
      * @param urlOrPredicate - A URL or predicate to wait for.
      * @param options - Optional waiting parameters
      * @returns Promise which resolves to the matched response.
      * @example
+     *
      * ```ts
      * const firstResponse = await page.waitForResponse(
-     * 'https://example.com/resource'
+     *   'https://example.com/resource'
      * );
      * const finalResponse = await page.waitForResponse(
-     * (response) =>
-     * response.url() === 'https://example.com' && response.status() === 200
+     *   response =>
+     *     response.url() === 'https://example.com' && response.status() === 200
      * );
-     * const finalResponse = await page.waitForResponse(async (response) => {
-     * return (await response.text()).includes('<html>');
+     * const finalResponse = await page.waitForResponse(async response => {
+     *   return (await response.text()).includes('<html>');
      * });
      * return finalResponse.ok();
      * ```
+     *
      * @remarks
      * Optional Parameter have:
      *
      * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds,
-     * pass `0` to disable the timeout. The default value can be changed by using
-     * the {@link Page.setDefaultTimeout} method.
+     *   pass `0` to disable the timeout. The default value can be changed by using
+     *   the {@link Page.setDefaultTimeout} method.
      */
     async waitForResponse(urlOrPredicate, options = {}) {
-        const { timeout = __classPrivateFieldGet(this, _Page_timeoutSettings, "f").timeout() } = options;
-        return (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _Page_frameManager, "f").networkManager(), NetworkManager_js_1.NetworkManagerEmittedEvents.Response, async (response) => {
+        const { timeout = __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout() } = options;
+        return (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager, NetworkManager_js_1.NetworkManagerEmittedEvents.Response, async (response) => {
             if ((0, util_js_1.isString)(urlOrPredicate)) {
                 return urlOrPredicate === response.url();
             }
@@ -1224,15 +1221,15 @@ class Page extends EventEmitter_js_1.EventEmitter {
                 return !!(await urlOrPredicate(response));
             }
             return false;
-        }, timeout, __classPrivateFieldGet(this, _Page_instances, "m", _Page_sessionClosePromise).call(this));
+        }, timeout, __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_sessionClosePromise).call(this));
     }
     /**
      * @param options - Optional waiting parameters
      * @returns Promise which resolves when network is idle
      */
     async waitForNetworkIdle(options = {}) {
-        const { idleTime = 500, timeout = __classPrivateFieldGet(this, _Page_timeoutSettings, "f").timeout() } = options;
-        const networkManager = __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager();
+        const { idleTime = 500, timeout = __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout() } = options;
+        const networkManager = __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager;
         let idleResolveCallback;
         const idlePromise = new Promise(resolve => {
             idleResolveCallback = resolve;
@@ -1270,7 +1267,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
         await Promise.race([
             idlePromise,
             ...eventPromises,
-            __classPrivateFieldGet(this, _Page_instances, "m", _Page_sessionClosePromise).call(this),
+            __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_sessionClosePromise).call(this),
         ]).then(r => {
             cleanup();
             return r;
@@ -1284,20 +1281,22 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @param options - Optional waiting parameters
      * @returns Promise which resolves to the matched frame.
      * @example
+     *
      * ```ts
-     * const frame = await page.waitForFrame(async (frame) => {
+     * const frame = await page.waitForFrame(async frame => {
      *   return frame.name() === 'Test';
      * });
      * ```
+     *
      * @remarks
      * Optional Parameter have:
      *
      * - `timeout`: Maximum wait time in milliseconds, defaults to `30` seconds,
-     * pass `0` to disable the timeout. The default value can be changed by using
-     * the {@link Page.setDefaultTimeout} method.
+     *   pass `0` to disable the timeout. The default value can be changed by using
+     *   the {@link Page.setDefaultTimeout} method.
      */
     async waitForFrame(urlOrPredicate, options = {}) {
-        const { timeout = __classPrivateFieldGet(this, _Page_timeoutSettings, "f").timeout() } = options;
+        const { timeout = __classPrivateFieldGet(this, _CDPPage_timeoutSettings, "f").timeout() } = options;
         let predicate;
         if ((0, util_js_1.isString)(urlOrPredicate)) {
             predicate = (frame) => {
@@ -1314,8 +1313,8 @@ class Page extends EventEmitter_js_1.EventEmitter {
             };
         }
         const eventRace = Promise.race([
-            (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _Page_frameManager, "f"), FrameManager_js_1.FrameManagerEmittedEvents.FrameAttached, predicate, timeout, __classPrivateFieldGet(this, _Page_instances, "m", _Page_sessionClosePromise).call(this)),
-            (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _Page_frameManager, "f"), FrameManager_js_1.FrameManagerEmittedEvents.FrameNavigated, predicate, timeout, __classPrivateFieldGet(this, _Page_instances, "m", _Page_sessionClosePromise).call(this)),
+            (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _CDPPage_frameManager, "f"), FrameManager_js_1.FrameManagerEmittedEvents.FrameAttached, predicate, timeout, __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_sessionClosePromise).call(this)),
+            (0, util_js_1.waitForEvent)(__classPrivateFieldGet(this, _CDPPage_frameManager, "f"), FrameManager_js_1.FrameManagerEmittedEvents.FrameNavigated, predicate, timeout, __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_sessionClosePromise).call(this)),
             ...this.frames().map(async (frame) => {
                 if (await predicate(frame)) {
                     return frame;
@@ -1340,19 +1339,19 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   {@link Page.setDefaultTimeout} methods.
      *
      * - `waitUntil` : When to consider navigation succeeded, defaults to `load`.
-     *    Given an array of event strings, navigation is considered to be
-     *    successful after all events have been fired. Events can be either:<br/>
-     *  - `load` : consider navigation to be finished when the load event is
-     *    fired.<br/>
-     *  - `domcontentloaded` : consider navigation to be finished when the
-     *    DOMContentLoaded event is fired.<br/>
-     *  - `networkidle0` : consider navigation to be finished when there are no
-     *    more than 0 network connections for at least `500` ms.<br/>
-     *  - `networkidle2` : consider navigation to be finished when there are no
-     *    more than 2 network connections for at least `500` ms.
+     *   Given an array of event strings, navigation is considered to be
+     *   successful after all events have been fired. Events can be either:<br/>
+     * - `load` : consider navigation to be finished when the load event is
+     *   fired.<br/>
+     * - `domcontentloaded` : consider navigation to be finished when the
+     *   DOMContentLoaded event is fired.<br/>
+     * - `networkidle0` : consider navigation to be finished when there are no
+     *   more than 0 network connections for at least `500` ms.<br/>
+     * - `networkidle2` : consider navigation to be finished when there are no
+     *   more than 2 network connections for at least `500` ms.
      */
     async goBack(options = {}) {
-        return __classPrivateFieldGet(this, _Page_instances, "m", _Page_go).call(this, -1, options);
+        return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_go).call(this, -1, options);
     }
     /**
      * This method navigate to the next page in history.
@@ -1369,25 +1368,25 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   {@link Page.setDefaultTimeout} methods.
      *
      * - `waitUntil`: When to consider navigation succeeded, defaults to `load`.
-     *    Given an array of event strings, navigation is considered to be
-     *    successful after all events have been fired. Events can be either:<br/>
-     *  - `load` : consider navigation to be finished when the load event is
-     *    fired.<br/>
-     *  - `domcontentloaded` : consider navigation to be finished when the
-     *    DOMContentLoaded event is fired.<br/>
-     *  - `networkidle0` : consider navigation to be finished when there are no
-     *    more than 0 network connections for at least `500` ms.<br/>
-     *  - `networkidle2` : consider navigation to be finished when there are no
-     *    more than 2 network connections for at least `500` ms.
+     *   Given an array of event strings, navigation is considered to be
+     *   successful after all events have been fired. Events can be either:<br/>
+     * - `load` : consider navigation to be finished when the load event is
+     *   fired.<br/>
+     * - `domcontentloaded` : consider navigation to be finished when the
+     *   DOMContentLoaded event is fired.<br/>
+     * - `networkidle0` : consider navigation to be finished when there are no
+     *   more than 0 network connections for at least `500` ms.<br/>
+     * - `networkidle2` : consider navigation to be finished when there are no
+     *   more than 2 network connections for at least `500` ms.
      */
     async goForward(options = {}) {
-        return __classPrivateFieldGet(this, _Page_instances, "m", _Page_go).call(this, +1, options);
+        return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_go).call(this, +1, options);
     }
     /**
      * Brings page to front (activates tab).
      */
     async bringToFront() {
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Page.bringToFront');
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.bringToFront');
     }
     /**
      * Emulates given device metrics and user agent.
@@ -1400,18 +1399,20 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * don't expect phones to change size, so you should emulate before navigating
      * to the page.
      * @example
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * const iPhone = puppeteer.devices['iPhone 6'];
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * await page.emulate(iPhone);
-     * await page.goto('https://www.google.com');
-     * // other actions...
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   await page.emulate(iPhone);
+     *   await page.goto('https://www.google.com');
+     *   // other actions...
+     *   await browser.close();
      * })();
      * ```
+     *
      * @remarks List of all available devices is available in the source code:
      * {@link https://github.com/puppeteer/puppeteer/blob/main/src/common/DeviceDescriptors.ts | src/common/DeviceDescriptors.ts}.
      */
@@ -1429,11 +1430,11 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * It will take full effect on the next navigation.
      */
     async setJavaScriptEnabled(enabled) {
-        if (__classPrivateFieldGet(this, _Page_javascriptEnabled, "f") === enabled) {
+        if (__classPrivateFieldGet(this, _CDPPage_javascriptEnabled, "f") === enabled) {
             return;
         }
-        __classPrivateFieldSet(this, _Page_javascriptEnabled, enabled, "f");
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setScriptExecutionDisabled', {
+        __classPrivateFieldSet(this, _CDPPage_javascriptEnabled, enabled, "f");
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setScriptExecutionDisabled', {
             value: !enabled,
         });
     }
@@ -1446,13 +1447,14 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * before navigating to the domain.
      */
     async setBypassCSP(enabled) {
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Page.setBypassCSP', { enabled });
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.setBypassCSP', { enabled });
     }
     /**
      * @param type - Changes the CSS media type of the page. The only allowed
      * values are `screen`, `print` and `null`. Passing `null` disables CSS media
      * emulation.
      * @example
+     *
      * ```ts
      * await page.evaluate(() => matchMedia('screen').matches);
      * // → true
@@ -1476,7 +1478,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
         (0, assert_js_1.assert)(type === 'screen' ||
             type === 'print' ||
             (type !== null && type !== void 0 ? type : undefined) === undefined, 'Unsupported media type: ' + type);
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setEmulatedMedia', {
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setEmulatedMedia', {
             media: type || '',
         });
     }
@@ -1486,7 +1488,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      */
     async emulateCPUThrottling(factor) {
         (0, assert_js_1.assert)(factor === null || factor >= 1, 'Throttling rate should be greater or equal to 1');
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setCPUThrottlingRate', {
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setCPUThrottlingRate', {
             rate: factor !== null ? factor : 1,
         });
     }
@@ -1495,45 +1497,54 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * objects, emulates CSS media features on the page. Each media feature object
      * must have the following properties:
      * @example
+     *
      * ```ts
      * await page.emulateMediaFeatures([
-     * { name: 'prefers-color-scheme', value: 'dark' },
-     * ]);
-     * await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
-     * // → true
-     * await page.evaluate(() => matchMedia('(prefers-color-scheme: light)').matches);
-     * // → false
-     *
-     * await page.emulateMediaFeatures([
-     * { name: 'prefers-reduced-motion', value: 'reduce' },
+     *   {name: 'prefers-color-scheme', value: 'dark'},
      * ]);
      * await page.evaluate(
-     * () => matchMedia('(prefers-reduced-motion: reduce)').matches
+     *   () => matchMedia('(prefers-color-scheme: dark)').matches
      * );
      * // → true
      * await page.evaluate(
-     * () => matchMedia('(prefers-reduced-motion: no-preference)').matches
+     *   () => matchMedia('(prefers-color-scheme: light)').matches
      * );
      * // → false
      *
      * await page.emulateMediaFeatures([
-     * { name: 'prefers-color-scheme', value: 'dark' },
-     * { name: 'prefers-reduced-motion', value: 'reduce' },
+     *   {name: 'prefers-reduced-motion', value: 'reduce'},
      * ]);
-     * await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
-     * // → true
-     * await page.evaluate(() => matchMedia('(prefers-color-scheme: light)').matches);
-     * // → false
      * await page.evaluate(
-     * () => matchMedia('(prefers-reduced-motion: reduce)').matches
+     *   () => matchMedia('(prefers-reduced-motion: reduce)').matches
      * );
      * // → true
      * await page.evaluate(
-     * () => matchMedia('(prefers-reduced-motion: no-preference)').matches
+     *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches
      * );
      * // → false
      *
-     * await page.emulateMediaFeatures([{ name: 'color-gamut', value: 'p3' }]);
+     * await page.emulateMediaFeatures([
+     *   {name: 'prefers-color-scheme', value: 'dark'},
+     *   {name: 'prefers-reduced-motion', value: 'reduce'},
+     * ]);
+     * await page.evaluate(
+     *   () => matchMedia('(prefers-color-scheme: dark)').matches
+     * );
+     * // → true
+     * await page.evaluate(
+     *   () => matchMedia('(prefers-color-scheme: light)').matches
+     * );
+     * // → false
+     * await page.evaluate(
+     *   () => matchMedia('(prefers-reduced-motion: reduce)').matches
+     * );
+     * // → true
+     * await page.evaluate(
+     *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches
+     * );
+     * // → false
+     *
+     * await page.emulateMediaFeatures([{name: 'color-gamut', value: 'p3'}]);
      * await page.evaluate(() => matchMedia('(color-gamut: srgb)').matches);
      * // → true
      * await page.evaluate(() => matchMedia('(color-gamut: p3)').matches);
@@ -1544,14 +1555,14 @@ class Page extends EventEmitter_js_1.EventEmitter {
      */
     async emulateMediaFeatures(features) {
         if (!features) {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setEmulatedMedia', {});
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setEmulatedMedia', {});
         }
         if (Array.isArray(features)) {
             for (const mediaFeature of features) {
                 const name = mediaFeature.name;
                 (0, assert_js_1.assert)(/^(?:prefers-(?:color-scheme|reduced-motion)|color-gamut)$/.test(name), 'Unsupported media feature: ' + name);
             }
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setEmulatedMedia', {
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setEmulatedMedia', {
                 features: features,
             });
         }
@@ -1564,12 +1575,12 @@ class Page extends EventEmitter_js_1.EventEmitter {
      */
     async emulateTimezone(timezoneId) {
         try {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setTimezoneOverride', {
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setTimezoneOverride', {
                 timezoneId: timezoneId || '',
             });
         }
         catch (error) {
-            if ((0, util_js_1.isErrorLike)(error) && error.message.includes('Invalid timezone')) {
+            if ((0, ErrorLike_js_1.isErrorLike)(error) && error.message.includes('Invalid timezone')) {
                 throw new Error(`Invalid timezone ID: ${timezoneId}`);
             }
             throw error;
@@ -1580,6 +1591,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * If no arguments set, clears idle state emulation.
      *
      * @example
+     *
      * ```ts
      * // set idle emulation
      * await page.emulateIdleState({isUserActive: true, isScreenUnlocked: false});
@@ -1595,19 +1607,20 @@ class Page extends EventEmitter_js_1.EventEmitter {
      */
     async emulateIdleState(overrides) {
         if (overrides) {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setIdleOverride', {
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setIdleOverride', {
                 isUserActive: overrides.isUserActive,
                 isScreenUnlocked: overrides.isScreenUnlocked,
             });
         }
         else {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.clearIdleOverride');
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.clearIdleOverride');
         }
     }
     /**
      * Simulates the given vision deficiency on the page.
      *
      * @example
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      *
@@ -1617,13 +1630,13 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   await page.goto('https://v8.dev/blog/10-years');
      *
      *   await page.emulateVisionDeficiency('achromatopsia');
-     *   await page.screenshot({ path: 'achromatopsia.png' });
+     *   await page.screenshot({path: 'achromatopsia.png'});
      *
      *   await page.emulateVisionDeficiency('deuteranopia');
-     *   await page.screenshot({ path: 'deuteranopia.png' });
+     *   await page.screenshot({path: 'deuteranopia.png'});
      *
      *   await page.emulateVisionDeficiency('blurredVision');
-     *   await page.screenshot({ path: 'blurred-vision.png' });
+     *   await page.screenshot({path: 'blurred-vision.png'});
      *
      *   await browser.close();
      * })();
@@ -1642,7 +1655,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
         ]);
         try {
             (0, assert_js_1.assert)(!type || visionDeficiencies.has(type), `Unsupported vision deficiency: ${type}`);
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setEmulatedVisionDeficiency', {
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setEmulatedVisionDeficiency', {
                 type: type || 'none',
             });
         }
@@ -1658,12 +1671,13 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * In the case of multiple pages in a single browser, each page can have its
      * own viewport size.
      * @example
+     *
      * ```ts
      * const page = await browser.newPage();
      * await page.setViewport({
-     * width: 640,
-     * height: 480,
-     * deviceScaleFactor: 1,
+     *   width: 640,
+     *   height: 480,
+     *   deviceScaleFactor: 1,
      * });
      * await page.goto('https://example.com');
      * ```
@@ -1690,8 +1704,8 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * set the isMobile or hasTouch properties.
      */
     async setViewport(viewport) {
-        const needsReload = await __classPrivateFieldGet(this, _Page_emulationManager, "f").emulateViewport(viewport);
-        __classPrivateFieldSet(this, _Page_viewport, viewport, "f");
+        const needsReload = await __classPrivateFieldGet(this, _CDPPage_emulationManager, "f").emulateViewport(viewport);
+        __classPrivateFieldSet(this, _CDPPage_viewport, viewport, "f");
         if (needsReload) {
             await this.reload();
         }
@@ -1716,11 +1730,9 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *   `false`.
      */
     viewport() {
-        return __classPrivateFieldGet(this, _Page_viewport, "f");
+        return __classPrivateFieldGet(this, _CDPPage_viewport, "f");
     }
     /**
-     * @remarks
-     *
      * Evaluates a function in the page's context and returns the result.
      *
      * If the function passed to `page.evaluteHandle` returns a Promise, the
@@ -1739,6 +1751,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * recommended as they are easier to debug and use with TypeScript):
      *
      * @example
+     *
      * ```ts
      * const aHandle = await page.evaluate('1 + 2');
      * ```
@@ -1767,7 +1780,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @returns the return value of `pageFunction`.
      */
     async evaluate(pageFunction, ...args) {
-        return __classPrivateFieldGet(this, _Page_frameManager, "f").mainFrame().evaluate(pageFunction, ...args);
+        return __classPrivateFieldGet(this, _CDPPage_frameManager, "f").mainFrame().evaluate(pageFunction, ...args);
     }
     /**
      * Adds a function which would be invoked in one of the following scenarios:
@@ -1775,7 +1788,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * - whenever the page is navigated
      *
      * - whenever the child frame is attached or navigated. In this case, the
-     * function is invoked in the context of the newly attached frame.
+     *   function is invoked in the context of the newly attached frame.
      *
      * The function is invoked after the document was created but before any of
      * its scripts were run. This is useful to amend the JavaScript environment,
@@ -1784,25 +1797,26 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @param args - Arguments to pass to `pageFunction`
      * @example
      * An example of overriding the navigator.languages property before the page loads:
+     *
      * ```ts
      * // preload.js
      *
      * // overwrite the `languages` property to use a custom getter
      * Object.defineProperty(navigator, 'languages', {
-     * get: function () {
-     * return ['en-US', 'en', 'bn'];
-     * },
+     *   get: function () {
+     *     return ['en-US', 'en', 'bn'];
+     *   },
      * });
      *
      * // In your puppeteer script, assuming the preload.js file is
-     * in same folder of our script
+     * // in same folder of our script.
      * const preloadFile = fs.readFileSync('./preload.js', 'utf8');
      * await page.evaluateOnNewDocument(preloadFile);
      * ```
      */
     async evaluateOnNewDocument(pageFunction, ...args) {
         const source = (0, util_js_1.evaluationString)(pageFunction, ...args);
-        await __classPrivateFieldGet(this, _Page_client, "f").send('Page.addScriptToEvaluateOnNewDocument', {
+        await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.addScriptToEvaluateOnNewDocument', {
             source,
         });
     }
@@ -1812,7 +1826,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @param enabled - sets the `enabled` state of cache
      */
     async setCacheEnabled(enabled = true) {
-        await __classPrivateFieldGet(this, _Page_frameManager, "f").networkManager().setCacheEnabled(enabled);
+        await __classPrivateFieldGet(this, _CDPPage_frameManager, "f").networkManager.setCacheEnabled(enabled);
     }
     /**
      * @remarks
@@ -1836,10 +1850,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *
      * - `clip` : An object which specifies clipping region of the page.
      *   Should have the following fields:<br/>
-     *  - `x` : x-coordinate of top-left corner of clip area.<br/>
-     *  - `y` :  y-coordinate of top-left corner of clip area.<br/>
-     *  - `width` : width of clipping area.<br/>
-     *  - `height` : height of clipping area.
+     * - `x` : x-coordinate of top-left corner of clip area.<br/>
+     * - `y` : y-coordinate of top-left corner of clip area.<br/>
+     * - `width` : width of clipping area.<br/>
+     * - `height` : height of clipping area.
      *
      * - `omitBackground` : Hides default white background and allows
      *   capturing screenshots with transparency. Defaults to `false`.
@@ -1916,8 +1930,8 @@ class Page extends EventEmitter_js_1.EventEmitter {
             (0, assert_js_1.assert)(options.clip.width !== 0, 'Expected options.clip.width not to be 0.');
             (0, assert_js_1.assert)(options.clip.height !== 0, 'Expected options.clip.height not to be 0.');
         }
-        return __classPrivateFieldGet(this, _Page_screenshotTaskQueue, "f").postTask(() => {
-            return __classPrivateFieldGet(this, _Page_instances, "m", _Page_screenshotTask).call(this, screenshotType, options);
+        return __classPrivateFieldGet(this, _CDPPage_screenshotTaskQueue, "f").postTask(() => {
+            return __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_screenshotTask).call(this, screenshotType, options);
         });
     }
     /**
@@ -1934,7 +1948,6 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * Use the
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/-webkit-print-color-adjust | `-webkit-print-color-adjust`}
      * property to force rendering of exact colors.
-     *
      *
      * @param options - options for generating the PDF.
      */
@@ -1958,9 +1971,9 @@ class Page extends EventEmitter_js_1.EventEmitter {
         const marginBottom = convertPrintParameterToInches(margin.bottom) || 0;
         const marginRight = convertPrintParameterToInches(margin.right) || 0;
         if (omitBackground) {
-            await __classPrivateFieldGet(this, _Page_instances, "m", _Page_setTransparentBackgroundColor).call(this);
+            await __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_setTransparentBackgroundColor).call(this);
         }
-        const printCommandPromise = __classPrivateFieldGet(this, _Page_client, "f").send('Page.printToPDF', {
+        const printCommandPromise = __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.printToPDF', {
             transferMode: 'ReturnAsStream',
             landscape,
             displayHeaderFooter,
@@ -1979,10 +1992,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
         });
         const result = await (0, util_js_1.waitWithTimeout)(printCommandPromise, 'Page.printToPDF', timeout);
         if (omitBackground) {
-            await __classPrivateFieldGet(this, _Page_instances, "m", _Page_resetDefaultBackgroundColor).call(this);
+            await __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_resetDefaultBackgroundColor).call(this);
         }
         (0, assert_js_1.assert)(result.stream, '`stream` is missing from `Page.printToPDF');
-        return (0, util_js_1.getReadableFromProtocolStream)(__classPrivateFieldGet(this, _Page_client, "f"), result.stream);
+        return (0, util_js_1.getReadableFromProtocolStream)(__classPrivateFieldGet(this, _CDPPage_client, "f"), result.stream);
     }
     /**
      * @param options -
@@ -2004,17 +2017,17 @@ class Page extends EventEmitter_js_1.EventEmitter {
         return this.mainFrame().title();
     }
     async close(options = { runBeforeUnload: undefined }) {
-        const connection = __classPrivateFieldGet(this, _Page_client, "f").connection();
+        const connection = __classPrivateFieldGet(this, _CDPPage_client, "f").connection();
         (0, assert_js_1.assert)(connection, 'Protocol error: Connection closed. Most likely the page has been closed.');
         const runBeforeUnload = !!options.runBeforeUnload;
         if (runBeforeUnload) {
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Page.close');
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.close');
         }
         else {
             await connection.send('Target.closeTarget', {
-                targetId: __classPrivateFieldGet(this, _Page_target, "f")._targetId,
+                targetId: __classPrivateFieldGet(this, _CDPPage_target, "f")._targetId,
             });
-            await __classPrivateFieldGet(this, _Page_target, "f")._isClosedPromise;
+            await __classPrivateFieldGet(this, _CDPPage_target, "f")._isClosedPromise;
         }
     }
     /**
@@ -2022,10 +2035,10 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * @returns
      */
     isClosed() {
-        return __classPrivateFieldGet(this, _Page_closed, "f");
+        return __classPrivateFieldGet(this, _CDPPage_closed, "f");
     }
     get mouse() {
-        return __classPrivateFieldGet(this, _Page_mouse, "f");
+        return __classPrivateFieldGet(this, _CDPPage_mouse, "f");
     }
     /**
      * This method fetches an element with `selector`, scrolls it into view if
@@ -2036,12 +2049,14 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * there's a separate `page.waitForNavigation()` promise to be resolved, you
      * may end up with a race condition that yields unexpected results. The
      * correct pattern for click and wait for navigation is the following:
+     *
      * ```ts
      * const [response] = await Promise.all([
-     * page.waitForNavigation(waitOptions),
-     * page.click(selector, clickOptions),
+     *   page.waitForNavigation(waitOptions),
+     *   page.click(selector, clickOptions),
      * ]);
      * ```
+     *
      * Shortcut for {@link Frame.click | page.mainFrame().click(selector[, options]) }.
      * @param selector - A `selector` to search for element to click. If there are
      * multiple elements satisfying the `selector`, the first will be clicked
@@ -2060,7 +2075,7 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector }
      * of an element to focus. If there are multiple elements satisfying the
      * selector, the first will be focused.
-     * @returns  Promise which resolves when the element matching selector is
+     * @returns Promise which resolves when the element matching selector is
      * successfully focused. The promise will be rejected if there is no element
      * matching selector.
      * @remarks
@@ -2092,10 +2107,12 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * throws an error.
      *
      * @example
+     *
      * ```ts
      * page.select('select#colors', 'blue'); // single selection
      * page.select('select#colors', 'red', 'green', 'blue'); // multiple selections
      * ```
+     *
      * @param selector - A
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | Selector}
      * to query the page for
@@ -2131,12 +2148,14 @@ class Page extends EventEmitter_js_1.EventEmitter {
      *
      * To press a special key, like `Control` or `ArrowDown`, use {@link Keyboard.press}.
      * @example
+     *
      * ```ts
      * await page.type('#mytextarea', 'Hello');
      * // Types instantly
-     * await page.type('#mytextarea', 'World', { delay: 100 });
+     * await page.type('#mytextarea', 'World', {delay: 100});
      * // Types slower, like a user
      * ```
+     *
      * @param selector - A
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
      * of an element to type into. If there are multiple elements satisfying the
@@ -2151,13 +2170,14 @@ class Page extends EventEmitter_js_1.EventEmitter {
         return this.mainFrame().type(selector, text, options);
     }
     /**
+     * @deprecated Use `new Promise(r => setTimeout(r, milliseconds));`.
+     *
      * Causes your script to wait for the given number of milliseconds.
      *
      * @remarks
-     *
      * It's generally recommended to not wait for a number of seconds, but instead
-     * use {@link Page.waitForSelector}, {@link Page.waitForXPath} or
-     * {@link Page.waitForFunction} to wait for exactly the conditions you want.
+     * use {@link Frame.waitForSelector}, {@link Frame.waitForXPath} or
+     * {@link Frame.waitForFunction} to wait for exactly the conditions you want.
      *
      * @example
      *
@@ -2179,25 +2199,27 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * function will throw.
      *
      * This method works across navigations:
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * let currentURL;
-     * page
-     * .waitForSelector('img')
-     * .then(() => console.log('First URL with image: ' + currentURL));
-     * for (currentURL of [
-     * 'https://example.com',
-     * 'https://google.com',
-     * 'https://bbc.com',
-     * ]) {
-     * await page.goto(currentURL);
-     * }
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   let currentURL;
+     *   page
+     *     .waitForSelector('img')
+     *     .then(() => console.log('First URL with image: ' + currentURL));
+     *   for (currentURL of [
+     *     'https://example.com',
+     *     'https://google.com',
+     *     'https://bbc.com',
+     *   ]) {
+     *     await page.goto(currentURL);
+     *   }
+     *   await browser.close();
      * })();
      * ```
+     *
      * @param selector - A
      * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
      * of an element to wait for
@@ -2209,16 +2231,16 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * The optional Parameter in Arguments `options` are :
      *
      * - `Visible`: A boolean wait for element to be present in DOM and to be
-     * visible, i.e. to not have `display: none` or `visibility: hidden` CSS
-     * properties. Defaults to `false`.
+     *   visible, i.e. to not have `display: none` or `visibility: hidden` CSS
+     *   properties. Defaults to `false`.
      *
      * - `hidden`: Wait for element to not be found in the DOM or to be hidden,
-     * i.e. have `display: none` or `visibility: hidden` CSS properties. Defaults to
-     * `false`.
+     *   i.e. have `display: none` or `visibility: hidden` CSS properties. Defaults to
+     *   `false`.
      *
      * - `timeout`: maximum time to wait for in milliseconds. Defaults to `30000`
-     * (30 seconds). Pass `0` to disable timeout. The default value can be changed
-     * by using the {@link Page.setDefaultTimeout} method.
+     *   (30 seconds). Pass `0` to disable timeout. The default value can be changed
+     *   by using the {@link Page.setDefaultTimeout} method.
      */
     async waitForSelector(selector, options = {}) {
         return await this.mainFrame().waitForSelector(selector, options);
@@ -2230,25 +2252,27 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * function will throw.
      *
      * This method works across navigation
+     *
      * ```ts
      * const puppeteer = require('puppeteer');
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * let currentURL;
-     * page
-     * .waitForXPath('//img')
-     * .then(() => console.log('First URL with image: ' + currentURL));
-     * for (currentURL of [
-     * 'https://example.com',
-     * 'https://google.com',
-     * 'https://bbc.com',
-     * ]) {
-     * await page.goto(currentURL);
-     * }
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   let currentURL;
+     *   page
+     *     .waitForXPath('//img')
+     *     .then(() => console.log('First URL with image: ' + currentURL));
+     *   for (currentURL of [
+     *     'https://example.com',
+     *     'https://google.com',
+     *     'https://bbc.com',
+     *   ]) {
+     *     await page.goto(currentURL);
+     *   }
+     *   await browser.close();
      * })();
      * ```
+     *
      * @param xpath - A
      * {@link https://developer.mozilla.org/en-US/docs/Web/XPath | xpath} of an
      * element to wait for
@@ -2260,16 +2284,16 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * The optional Argument `options` have properties:
      *
      * - `visible`: A boolean to wait for element to be present in DOM and to be
-     * visible, i.e. to not have `display: none` or `visibility: hidden` CSS
-     * properties. Defaults to `false`.
+     *   visible, i.e. to not have `display: none` or `visibility: hidden` CSS
+     *   properties. Defaults to `false`.
      *
      * - `hidden`: A boolean wait for element to not be found in the DOM or to be
-     * hidden, i.e. have `display: none` or `visibility: hidden` CSS properties.
-     * Defaults to `false`.
+     *   hidden, i.e. have `display: none` or `visibility: hidden` CSS properties.
+     *   Defaults to `false`.
      *
      * - `timeout`: A number which is maximum time to wait for in milliseconds.
-     * Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default
-     * value can be changed by using the {@link Page.setDefaultTimeout} method.
+     *   Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default
+     *   value can be changed by using the {@link Page.setDefaultTimeout} method.
      */
     waitForXPath(xpath, options = {}) {
         return this.mainFrame().waitForXPath(xpath, options);
@@ -2283,111 +2307,106 @@ class Page extends EventEmitter_js_1.EventEmitter {
      * ```ts
      * const puppeteer = require('puppeteer');
      * (async () => {
-     * const browser = await puppeteer.launch();
-     * const page = await browser.newPage();
-     * const watchDog = page.waitForFunction('window.innerWidth < 100');
-     * await page.setViewport({ width: 50, height: 50 });
-     * await watchDog;
-     * await browser.close();
+     *   const browser = await puppeteer.launch();
+     *   const page = await browser.newPage();
+     *   const watchDog = page.waitForFunction('window.innerWidth < 100');
+     *   await page.setViewport({width: 50, height: 50});
+     *   await watchDog;
+     *   await browser.close();
      * })();
      * ```
      *
      * @example
      * To pass arguments from node.js to the predicate of
      * {@link Page.waitForFunction} function:
+     *
      * ```ts
      * const selector = '.foo';
      * await page.waitForFunction(
-     * (selector) => !!document.querySelector(selector),
-     * {},
-     * selector
+     *   selector => !!document.querySelector(selector),
+     *   {},
+     *   selector
      * );
      * ```
      *
      * @example
      * The predicate of {@link Page.waitForFunction} can be asynchronous too:
+     *
      * ```ts
      * const username = 'github-username';
      * await page.waitForFunction(
-     * async (username) => {
-     * const githubResponse = await fetch(
-     *  `https://api.github.com/users/${username}`
-     * );
-     * const githubUser = await githubResponse.json();
-     * // show the avatar
-     * const img = document.createElement('img');
-     * img.src = githubUser.avatar_url;
-     * // wait 3 seconds
-     * await new Promise((resolve, reject) => setTimeout(resolve, 3000));
-     * img.remove();
-     * },
-     * {},
-     * username
+     *   async username => {
+     *     const githubResponse = await fetch(
+     *       `https://api.github.com/users/${username}`
+     *     );
+     *     const githubUser = await githubResponse.json();
+     *     // show the avatar
+     *     const img = document.createElement('img');
+     *     img.src = githubUser.avatar_url;
+     *     // wait 3 seconds
+     *     await new Promise((resolve, reject) => setTimeout(resolve, 3000));
+     *     img.remove();
+     *   },
+     *   {},
+     *   username
      * );
      * ```
      *
      * @param pageFunction - Function to be evaluated in browser context
-     * @param options - Optional waiting parameters
-     * - `polling` - An interval at which the `pageFunction` is executed, defaults
-     *   to `raf`. If `polling` is a number, then it is treated as an interval in
-     *   milliseconds at which the function would be executed. If polling is a
-     *   string, then it can be one of the following values:
-     *    - `raf` - to constantly execute `pageFunction` in
-     *      `requestAnimationFrame` callback. This is the tightest polling mode
-     *      which is suitable to observe styling changes.
-     *    - `mutation`-  to execute pageFunction on every DOM mutation.
-     * - `timeout` - maximum time to wait for in milliseconds. Defaults to `30000`
-     *   (30 seconds). Pass `0` to disable timeout. The default value can be
-     *   changed by using the {@link Page.setDefaultTimeout} method.
-     * @param args -  Arguments to pass to `pageFunction`
-     * @returns A `Promise` which resolves to a JSHandle/ElementHandle of the the
-     * `pageFunction`'s return value.
+     * @param options - Options for configuring waiting behavior.
      */
     waitForFunction(pageFunction, options = {}, ...args) {
         return this.mainFrame().waitForFunction(pageFunction, options, ...args);
     }
 }
-exports.Page = Page;
-_Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new WeakMap(), _Page_keyboard = new WeakMap(), _Page_mouse = new WeakMap(), _Page_timeoutSettings = new WeakMap(), _Page_touchscreen = new WeakMap(), _Page_accessibility = new WeakMap(), _Page_frameManager = new WeakMap(), _Page_emulationManager = new WeakMap(), _Page_tracing = new WeakMap(), _Page_pageBindings = new WeakMap(), _Page_coverage = new WeakMap(), _Page_javascriptEnabled = new WeakMap(), _Page_viewport = new WeakMap(), _Page_screenshotTaskQueue = new WeakMap(), _Page_workers = new WeakMap(), _Page_fileChooserInterceptors = new WeakMap(), _Page_disconnectPromise = new WeakMap(), _Page_userDragInterceptionEnabled = new WeakMap(), _Page_handlerMap = new WeakMap(), _Page_onDetachedFromTarget = new WeakMap(), _Page_onAttachedToTarget = new WeakMap(), _Page_instances = new WeakSet(), _Page_initialize = async function _Page_initialize() {
-    await Promise.all([
-        __classPrivateFieldGet(this, _Page_frameManager, "f").initialize(__classPrivateFieldGet(this, _Page_target, "f")._targetId),
-        __classPrivateFieldGet(this, _Page_client, "f").send('Performance.enable'),
-        __classPrivateFieldGet(this, _Page_client, "f").send('Log.enable'),
-    ]);
-}, _Page_onFileChooser = async function _Page_onFileChooser(event) {
-    if (!__classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f").size) {
+exports.CDPPage = CDPPage;
+_CDPPage_closed = new WeakMap(), _CDPPage_client = new WeakMap(), _CDPPage_target = new WeakMap(), _CDPPage_keyboard = new WeakMap(), _CDPPage_mouse = new WeakMap(), _CDPPage_timeoutSettings = new WeakMap(), _CDPPage_touchscreen = new WeakMap(), _CDPPage_accessibility = new WeakMap(), _CDPPage_frameManager = new WeakMap(), _CDPPage_emulationManager = new WeakMap(), _CDPPage_tracing = new WeakMap(), _CDPPage_pageBindings = new WeakMap(), _CDPPage_coverage = new WeakMap(), _CDPPage_javascriptEnabled = new WeakMap(), _CDPPage_viewport = new WeakMap(), _CDPPage_screenshotTaskQueue = new WeakMap(), _CDPPage_workers = new WeakMap(), _CDPPage_fileChooserPromises = new WeakMap(), _CDPPage_disconnectPromise = new WeakMap(), _CDPPage_userDragInterceptionEnabled = new WeakMap(), _CDPPage_onDetachedFromTarget = new WeakMap(), _CDPPage_onAttachedToTarget = new WeakMap(), _CDPPage_instances = new WeakSet(), _CDPPage_initialize = async function _CDPPage_initialize() {
+    try {
+        await Promise.all([
+            __classPrivateFieldGet(this, _CDPPage_frameManager, "f").initialize(),
+            __classPrivateFieldGet(this, _CDPPage_client, "f").send('Performance.enable'),
+            __classPrivateFieldGet(this, _CDPPage_client, "f").send('Log.enable'),
+        ]);
+    }
+    catch (err) {
+        if ((0, ErrorLike_js_1.isErrorLike)(err) && (0, Connection_js_1.isTargetClosedError)(err)) {
+            (0, util_js_1.debugError)(err);
+        }
+        else {
+            throw err;
+        }
+    }
+}, _CDPPage_onFileChooser = async function _CDPPage_onFileChooser(event) {
+    if (!__classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f").size) {
         return;
     }
-    const frame = __classPrivateFieldGet(this, _Page_frameManager, "f").frame(event.frameId);
-    (0, assert_js_1.assert)(frame);
-    const context = await frame.executionContext();
-    const element = await context._adoptBackendNodeId(event.backendNodeId);
-    const interceptors = Array.from(__classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f"));
-    __classPrivateFieldGet(this, _Page_fileChooserInterceptors, "f").clear();
-    const fileChooser = new FileChooser_js_1.FileChooser(
-    // This is guaranteed by the event.
-    element, event);
-    for (const interceptor of interceptors) {
-        interceptor.call(undefined, fileChooser);
+    const frame = __classPrivateFieldGet(this, _CDPPage_frameManager, "f").frame(event.frameId);
+    (0, assert_js_1.assert)(frame, 'This should never happen.');
+    // This is guaranteed to be an HTMLInputElement handle by the event.
+    const handle = (await frame.worlds[IsolatedWorld_js_1.MAIN_WORLD].adoptBackendNode(event.backendNodeId));
+    const fileChooser = new FileChooser_js_1.FileChooser(handle, event);
+    for (const promise of __classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f")) {
+        promise.resolve(fileChooser);
     }
-}, _Page_onTargetCrashed = function _Page_onTargetCrashed() {
+    __classPrivateFieldGet(this, _CDPPage_fileChooserPromises, "f").clear();
+}, _CDPPage_onTargetCrashed = function _CDPPage_onTargetCrashed() {
     this.emit('error', new Error('Page crashed!'));
-}, _Page_onLogEntryAdded = function _Page_onLogEntryAdded(event) {
+}, _CDPPage_onLogEntryAdded = function _CDPPage_onLogEntryAdded(event) {
     const { level, text, args, source, url, lineNumber } = event.entry;
     if (args) {
         args.map(arg => {
-            return (0, util_js_1.releaseObject)(__classPrivateFieldGet(this, _Page_client, "f"), arg);
+            return (0, util_js_1.releaseObject)(__classPrivateFieldGet(this, _CDPPage_client, "f"), arg);
         });
     }
     if (source !== 'worker') {
         this.emit("console" /* PageEmittedEvents.Console */, new ConsoleMessage_js_1.ConsoleMessage(level, text, [], [{ url, lineNumber }]));
     }
-}, _Page_emitMetrics = function _Page_emitMetrics(event) {
+}, _CDPPage_emitMetrics = function _CDPPage_emitMetrics(event) {
     this.emit("metrics" /* PageEmittedEvents.Metrics */, {
         title: event.title,
-        metrics: __classPrivateFieldGet(this, _Page_instances, "m", _Page_buildMetricsObject).call(this, event.metrics),
+        metrics: __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_buildMetricsObject).call(this, event.metrics),
     });
-}, _Page_buildMetricsObject = function _Page_buildMetricsObject(metrics) {
+}, _CDPPage_buildMetricsObject = function _CDPPage_buildMetricsObject(metrics) {
     const result = {};
     for (const metric of metrics || []) {
         if (supportedMetrics.has(metric.name)) {
@@ -2395,12 +2414,12 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
         }
     }
     return result;
-}, _Page_handleException = function _Page_handleException(exceptionDetails) {
+}, _CDPPage_handleException = function _CDPPage_handleException(exceptionDetails) {
     const message = (0, util_js_1.getExceptionMessage)(exceptionDetails);
     const err = new Error(message);
     err.stack = ''; // Don't report clientside error with a node stack attached
     this.emit("pageerror" /* PageEmittedEvents.PageError */, err);
-}, _Page_onConsoleAPI = async function _Page_onConsoleAPI(event) {
+}, _CDPPage_onConsoleAPI = async function _CDPPage_onConsoleAPI(event) {
     if (event.executionContextId === 0) {
         // DevTools protocol stores the last 1000 console messages. These
         // messages are always reported even for removed execution contexts. In
@@ -2417,12 +2436,12 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
         // @see https://github.com/puppeteer/puppeteer/issues/3865
         return;
     }
-    const context = __classPrivateFieldGet(this, _Page_frameManager, "f").executionContextById(event.executionContextId, __classPrivateFieldGet(this, _Page_client, "f"));
+    const context = __classPrivateFieldGet(this, _CDPPage_frameManager, "f").executionContextById(event.executionContextId, __classPrivateFieldGet(this, _CDPPage_client, "f"));
     const values = event.args.map(arg => {
         return (0, util_js_1.createJSHandle)(context, arg);
     });
-    __classPrivateFieldGet(this, _Page_instances, "m", _Page_addConsoleMessage).call(this, event.type, values, event.stackTrace);
-}, _Page_onBindingCalled = async function _Page_onBindingCalled(event) {
+    __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_addConsoleMessage).call(this, event.type, values, event.stackTrace);
+}, _CDPPage_onBindingCalled = async function _CDPPage_onBindingCalled(event) {
     let payload;
     try {
         payload = JSON.parse(event.payload);
@@ -2433,31 +2452,31 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
         return;
     }
     const { type, name, seq, args } = payload;
-    if (type !== 'exposedFun' || !__classPrivateFieldGet(this, _Page_pageBindings, "f").has(name)) {
+    if (type !== 'exposedFun' || !__classPrivateFieldGet(this, _CDPPage_pageBindings, "f").has(name)) {
         return;
     }
     let expression = null;
     try {
-        const pageBinding = __classPrivateFieldGet(this, _Page_pageBindings, "f").get(name);
+        const pageBinding = __classPrivateFieldGet(this, _CDPPage_pageBindings, "f").get(name);
         (0, assert_js_1.assert)(pageBinding);
         const result = await pageBinding(...args);
         expression = (0, util_js_1.pageBindingDeliverResultString)(name, seq, result);
     }
     catch (error) {
-        if ((0, util_js_1.isErrorLike)(error)) {
+        if ((0, ErrorLike_js_1.isErrorLike)(error)) {
             expression = (0, util_js_1.pageBindingDeliverErrorString)(name, seq, error.message, error.stack);
         }
         else {
             expression = (0, util_js_1.pageBindingDeliverErrorValueString)(name, seq, error);
         }
     }
-    __classPrivateFieldGet(this, _Page_client, "f")
+    __classPrivateFieldGet(this, _CDPPage_client, "f")
         .send('Runtime.evaluate', {
         expression,
         contextId: event.executionContextId,
     })
         .catch(util_js_1.debugError);
-}, _Page_addConsoleMessage = function _Page_addConsoleMessage(eventType, args, stackTrace) {
+}, _CDPPage_addConsoleMessage = function _CDPPage_addConsoleMessage(eventType, args, stackTrace) {
     if (!this.listenerCount("console" /* PageEmittedEvents.Console */)) {
         args.forEach(arg => {
             return arg.dispose();
@@ -2466,7 +2485,7 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
     }
     const textTokens = [];
     for (const arg of args) {
-        const remoteObject = arg._remoteObject;
+        const remoteObject = arg.remoteObject();
         if (remoteObject.objectId) {
             textTokens.push(arg.toString());
         }
@@ -2486,7 +2505,7 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
     }
     const message = new ConsoleMessage_js_1.ConsoleMessage(eventType, textTokens.join(' '), args, stackTraceLocations);
     this.emit("console" /* PageEmittedEvents.Console */, message);
-}, _Page_onDialog = function _Page_onDialog(event) {
+}, _CDPPage_onDialog = function _CDPPage_onDialog(event) {
     let dialogType = null;
     const validDialogTypes = new Set([
         'alert',
@@ -2498,45 +2517,45 @@ _Page_closed = new WeakMap(), _Page_client = new WeakMap(), _Page_target = new W
         dialogType = event.type;
     }
     (0, assert_js_1.assert)(dialogType, 'Unknown javascript dialog type: ' + event.type);
-    const dialog = new Dialog_js_1.Dialog(__classPrivateFieldGet(this, _Page_client, "f"), dialogType, event.message, event.defaultPrompt);
+    const dialog = new Dialog_js_1.Dialog(__classPrivateFieldGet(this, _CDPPage_client, "f"), dialogType, event.message, event.defaultPrompt);
     this.emit("dialog" /* PageEmittedEvents.Dialog */, dialog);
-}, _Page_resetDefaultBackgroundColor = 
+}, _CDPPage_resetDefaultBackgroundColor = 
 /**
  * Resets default white background
  */
-async function _Page_resetDefaultBackgroundColor() {
-    await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setDefaultBackgroundColorOverride');
-}, _Page_setTransparentBackgroundColor = 
+async function _CDPPage_resetDefaultBackgroundColor() {
+    await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setDefaultBackgroundColorOverride');
+}, _CDPPage_setTransparentBackgroundColor = 
 /**
  * Hides default white background
  */
-async function _Page_setTransparentBackgroundColor() {
-    await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setDefaultBackgroundColorOverride', {
+async function _CDPPage_setTransparentBackgroundColor() {
+    await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setDefaultBackgroundColorOverride', {
         color: { r: 0, g: 0, b: 0, a: 0 },
     });
-}, _Page_sessionClosePromise = function _Page_sessionClosePromise() {
-    if (!__classPrivateFieldGet(this, _Page_disconnectPromise, "f")) {
-        __classPrivateFieldSet(this, _Page_disconnectPromise, new Promise(fulfill => {
-            return __classPrivateFieldGet(this, _Page_client, "f").once(Connection_js_1.CDPSessionEmittedEvents.Disconnected, () => {
+}, _CDPPage_sessionClosePromise = function _CDPPage_sessionClosePromise() {
+    if (!__classPrivateFieldGet(this, _CDPPage_disconnectPromise, "f")) {
+        __classPrivateFieldSet(this, _CDPPage_disconnectPromise, new Promise(fulfill => {
+            return __classPrivateFieldGet(this, _CDPPage_client, "f").once(Connection_js_1.CDPSessionEmittedEvents.Disconnected, () => {
                 return fulfill(new Error('Target closed'));
             });
         }), "f");
     }
-    return __classPrivateFieldGet(this, _Page_disconnectPromise, "f");
-}, _Page_go = async function _Page_go(delta, options) {
-    const history = await __classPrivateFieldGet(this, _Page_client, "f").send('Page.getNavigationHistory');
+    return __classPrivateFieldGet(this, _CDPPage_disconnectPromise, "f");
+}, _CDPPage_go = async function _CDPPage_go(delta, options) {
+    const history = await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.getNavigationHistory');
     const entry = history.entries[history.currentIndex + delta];
     if (!entry) {
         return null;
     }
     const result = await Promise.all([
         this.waitForNavigation(options),
-        __classPrivateFieldGet(this, _Page_client, "f").send('Page.navigateToHistoryEntry', { entryId: entry.id }),
+        __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.navigateToHistoryEntry', { entryId: entry.id }),
     ]);
     return result[0];
-}, _Page_screenshotTask = async function _Page_screenshotTask(format, options = {}) {
-    await __classPrivateFieldGet(this, _Page_client, "f").send('Target.activateTarget', {
-        targetId: __classPrivateFieldGet(this, _Page_target, "f")._targetId,
+}, _CDPPage_screenshotTask = async function _CDPPage_screenshotTask(format, options = {}) {
+    await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Target.activateTarget', {
+        targetId: __classPrivateFieldGet(this, _CDPPage_target, "f")._targetId,
     });
     let clip = options.clip ? processClip(options.clip) : undefined;
     const captureBeyondViewport = typeof options.captureBeyondViewport === 'boolean'
@@ -2546,17 +2565,17 @@ async function _Page_setTransparentBackgroundColor() {
         ? options.fromSurface
         : undefined;
     if (options.fullPage) {
-        const metrics = await __classPrivateFieldGet(this, _Page_client, "f").send('Page.getLayoutMetrics');
+        const metrics = await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.getLayoutMetrics');
         // Fallback to `contentSize` in case of using Firefox.
         const { width, height } = metrics.cssContentSize || metrics.contentSize;
         // Overwrite clip for full page.
         clip = { x: 0, y: 0, width, height, scale: 1 };
         if (!captureBeyondViewport) {
-            const { isMobile = false, deviceScaleFactor = 1, isLandscape = false, } = __classPrivateFieldGet(this, _Page_viewport, "f") || {};
+            const { isMobile = false, deviceScaleFactor = 1, isLandscape = false, } = __classPrivateFieldGet(this, _CDPPage_viewport, "f") || {};
             const screenOrientation = isLandscape
                 ? { angle: 90, type: 'landscapePrimary' }
                 : { angle: 0, type: 'portraitPrimary' };
-            await __classPrivateFieldGet(this, _Page_client, "f").send('Emulation.setDeviceMetricsOverride', {
+            await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Emulation.setDeviceMetricsOverride', {
                 mobile: isMobile,
                 width,
                 height,
@@ -2567,20 +2586,25 @@ async function _Page_setTransparentBackgroundColor() {
     }
     const shouldSetDefaultBackground = options.omitBackground && (format === 'png' || format === 'webp');
     if (shouldSetDefaultBackground) {
-        await __classPrivateFieldGet(this, _Page_instances, "m", _Page_setTransparentBackgroundColor).call(this);
+        await __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_setTransparentBackgroundColor).call(this);
     }
-    const result = await __classPrivateFieldGet(this, _Page_client, "f").send('Page.captureScreenshot', {
+    const result = await __classPrivateFieldGet(this, _CDPPage_client, "f").send('Page.captureScreenshot', {
         format,
         quality: options.quality,
-        clip,
+        clip: clip
+            ? {
+                ...clip,
+                scale: clip.scale === undefined ? 1 : clip.scale,
+            }
+            : undefined,
         captureBeyondViewport,
         fromSurface,
     });
     if (shouldSetDefaultBackground) {
-        await __classPrivateFieldGet(this, _Page_instances, "m", _Page_resetDefaultBackgroundColor).call(this);
+        await __classPrivateFieldGet(this, _CDPPage_instances, "m", _CDPPage_resetDefaultBackgroundColor).call(this);
     }
-    if (options.fullPage && __classPrivateFieldGet(this, _Page_viewport, "f")) {
-        await this.setViewport(__classPrivateFieldGet(this, _Page_viewport, "f"));
+    if (options.fullPage && __classPrivateFieldGet(this, _CDPPage_viewport, "f")) {
+        await this.setViewport(__classPrivateFieldGet(this, _CDPPage_viewport, "f"));
     }
     const buffer = options.encoding === 'base64'
         ? result.data
@@ -2603,7 +2627,7 @@ async function _Page_setTransparentBackgroundColor() {
         const y = Math.round(clip.y);
         const width = Math.round(clip.width + clip.x - x);
         const height = Math.round(clip.height + clip.y - y);
-        return { x, y, width, height, scale: 1 };
+        return { x, y, width, height, scale: clip.scale };
     }
 };
 const supportedMetrics = new Set([

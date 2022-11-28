@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium OS Authors. All rights reserved.
+// Copyright 2019 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -163,6 +163,7 @@ message PluginVmStartupRequest {
 
   // The 1-based index of the desired subnet to allocate for use.
   // Optional.
+  // TODO(b/236092161) Migrate to uint32.
   int32 subnet_index = 2;
 }
 
@@ -374,6 +375,7 @@ message ModifyPortRuleRequest {
   string input_dst_ip = 5;
 
   // A port value in-between 1 and 65535. This is required for all rule types.
+  // TODO(b/236092161) Migrate to uint16.
   uint32 input_dst_port = 6;
 
   // An IPv4 address, or empty if unspecified. This is required for FORWARDING,
@@ -382,6 +384,7 @@ message ModifyPortRuleRequest {
 
   // A port value between 1 and 65535. This is required for FORWARDING, and is
   // ignored for other rule types.
+  // TODO(b/236092161) Migrate to uint16.
   uint32 dst_port = 8;
 }
 

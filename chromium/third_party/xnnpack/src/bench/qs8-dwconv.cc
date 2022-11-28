@@ -13,14 +13,16 @@
 #include <benchmark/benchmark.h>
 #include "bench/dwconv.h"
 #include "bench/utils.h"
+
+#include <xnnpack.h>
 #include <xnnpack/aligned-allocator.h>
 #include <xnnpack/common.h>
 #include <xnnpack/dwconv.h>
 #include <xnnpack/indirection.h>
+#include <xnnpack/microfnptr.h>
+#include <xnnpack/microparams-init.h>
 #include <xnnpack/operator.h>
 #include <xnnpack/pack.h>
-#include <xnnpack/microparams-init.h>
-#include <xnnpack/params.h>
 
 
 static void DWConvBenchmark(benchmark::State& state,
@@ -89,7 +91,7 @@ static void DWConvBenchmark(benchmark::State& state,
   std::fill(w.begin(), w.end(), 0.0f);
   struct xnn_qs8_packing_params packing_params;
   packing_params.input_zero_point = 0;
-  xnn_pack_qs8_dwconv_ghw_w(kernel_height, kernel_width, channels, channel_tile,
+  xnn_pack_qs8_dwconv_ghw_w(primary_tile, kernel_height, kernel_width, channels, channel_tile,
       k.data(), b.data(), w.data(), 0 /* extra bytes */, &packing_params);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(w.cbegin(), w.cbegin() + w_size, w.begin() + n * w_size);
@@ -114,7 +116,7 @@ static void DWConvBenchmark(benchmark::State& state,
   convolution_op.padding_top        = padding_top;
   convolution_op.padding_left       = padding_left;
 
-  xnn_indirection_init_dwconv2d(&convolution_op, step_height, step_width, 0 /* log2(sizeof(int8_t)) */);
+  xnn_indirection_init_dwconv2d(&convolution_op, step_height, step_width, primary_tile, 0 /* log2(sizeof(int8_t)) */);
   for (size_t n = 1; n < num_buffers; n++) {
     std::copy(i.cbegin(), i.cbegin() + i_elements, i.begin() + n * i_elements);
   }

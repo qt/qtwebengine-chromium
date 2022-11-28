@@ -96,6 +96,7 @@ struct interface_var {
     bool is_readable;
     bool is_writable;
     bool is_atomic_operation;
+    bool is_sampler_sampled;
     bool is_sampler_implicitLod_dref_proj;
     bool is_sampler_bias_offset;
     bool is_read_without_format;   // For storage images
@@ -113,6 +114,7 @@ struct interface_var {
           is_readable(false),
           is_writable(false),
           is_atomic_operation(false),
+          is_sampler_sampled(false),
           is_sampler_implicitLod_dref_proj(false),
           is_sampler_bias_offset(false),
           is_read_without_format(false),
@@ -189,6 +191,7 @@ struct builtin_set {
     builtin_set(uint32_t offset, spv::BuiltIn builtin) : offset(offset), builtin(builtin) {}
 };
 
+// Contains all the details for a OpTypeStruct
 struct shader_struct_member {
     uint32_t offset;
     uint32_t size;                                 // A scalar size or a struct size. Not consider array
@@ -197,6 +200,8 @@ struct shader_struct_member {
     std::vector<uint32_t> array_block_size;        // When index increases, how many data increases.
                                              // e.g : array[2][3][4] -> {12,4,1}, it means if the first index increases one, the
                                              // array gets 12 data. If the second index increases one, the array gets 4 data.
+
+    // OpTypeStruct can have OpTypeStruct inside it so need to track the struct-in-struct chain
     std::vector<shader_struct_member> struct_members;  // If the data is not a struct, it's empty.
     shader_struct_member *root;
 
@@ -231,6 +236,8 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
     struct SpirvStaticData {
         SpirvStaticData() = default;
         SpirvStaticData(const SHADER_MODULE_STATE &module_state);
+        SpirvStaticData &operator=(const SpirvStaticData &) = default;
+        SpirvStaticData(SpirvStaticData &&) = default;
 
         // A mapping of <id> to the first word of its def. this is useful because walking type
         // trees, constant expressions, etc requires jumping all over the instruction stream.
@@ -251,7 +258,7 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
         std::unordered_map<uint32_t, atomic_instruction> atomic_inst;
         std::vector<spv::Capability> capability_list;
 
-        bool has_group_decoration = false;
+        bool has_group_decoration{false};
         bool has_specialization_constants{false};
         bool has_invocation_repack_instruction{false};
 
@@ -424,8 +431,5 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
 
     static std::unordered_multimap<std::string, EntryPoint> ProcessEntryPoints(const SHADER_MODULE_STATE &module_state);
 };
-
-// String helpers functions to give better error messages
-char const *StorageClassName(uint32_t sc);
 
 #endif  // VULKAN_SHADER_MODULE_H

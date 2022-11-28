@@ -14,7 +14,6 @@
 #include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLocalMatrixImageFilter.h"
-#include "src/core/SkMatrixImageFilter.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
@@ -224,10 +223,13 @@ skif::FilterResult SkImageFilter_Base::filterImage(const skif::Context& context)
     // (originally passed separately) has an origin of (0, 0). SkComposeImageFilter makes an effort
     // to ensure that remains the case. Once everyone uses the new type systems for bounds, non
     // (0, 0) source origins will be easy to support.
-    SkASSERT(context.source().layerOrigin().x() == 0 && context.source().layerOrigin().y() == 0);
+    SkASSERT(context.source().layerBounds().left() == 0 &&
+             context.source().layerBounds().top() == 0 &&
+             context.source().layerBounds().right() == context.source().image()->width() &&
+             context.source().layerBounds().bottom() == context.source().image()->height());
 
     skif::FilterResult result;
-    if (!context.isValid()) {
+    if (context.desiredOutput().isEmpty() || !context.isValid()) {
         return result;
     }
 
@@ -317,7 +319,7 @@ skif::DeviceSpace<SkIRect> SkImageFilter_Base::getOutputBounds(
 // TODO (michaelludwig) - Default to using the old onFilterImage, as filters are updated one by one.
 // Once the old function is gone, this onFilterImage() will be made a pure virtual.
 skif::FilterResult SkImageFilter_Base::onFilterImage(const skif::Context& context) const {
-    SkIPoint origin;
+    SkIPoint origin = {0, 0};
     auto image = this->onFilterImage(context, &origin);
     return skif::FilterResult(std::move(image), skif::LayerSpace<SkIPoint>(origin));
 }
@@ -597,6 +599,7 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* rContex
                      bounds.size());
 
     auto sfc = rContext->priv().makeSFC(info,
+                                        "ImageFilterBase_DrawWithFP",
                                         SkBackingFit::kApprox,
                                         1,
                                         GrMipmapped::kNo,
@@ -614,8 +617,7 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* rContex
                                                dstIRect,
                                                kNeedNewImageUniqueID_SpecialImage,
                                                sfc->readSurfaceView(),
-                                               sfc->colorInfo().colorType(),
-                                               sfc->colorInfo().refColorSpace(),
+                                               sfc->colorInfo(),
                                                surfaceProps);
 }
 

@@ -46,7 +46,7 @@ static AOM_INLINE void alloc_context_buffers_ext(
     dealloc_context_buffers_ext(mbmi_ext_info);
     CHECK_MEM_ERROR(
         cm, mbmi_ext_info->frame_base,
-        aom_calloc(new_ext_mi_size, sizeof(*mbmi_ext_info->frame_base)));
+        aom_malloc(new_ext_mi_size * sizeof(*mbmi_ext_info->frame_base)));
     mbmi_ext_info->alloc_size = new_ext_mi_size;
   }
   // The stride needs to be updated regardless of whether new allocation
@@ -294,6 +294,8 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   }
 
   if (cpi->ppi->use_svc) av1_free_svc_cyclic_refresh(cpi);
+  aom_free(cpi->svc.layer_context);
+  cpi->svc.layer_context = NULL;
 
   if (cpi->consec_zero_mv) {
     aom_free(cpi->consec_zero_mv);

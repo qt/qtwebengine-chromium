@@ -20,7 +20,6 @@
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLParsedModule.h"
 #include "src/sksl/SkSLPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
@@ -42,7 +41,6 @@
 #include "src/sksl/ir/SkSLReturnStatement.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -54,6 +52,8 @@
 
 namespace SkSL {
 
+class BuiltinMap;
+
 namespace dsl {
 
 void Start(SkSL::Compiler* compiler, ProgramKind kind) {
@@ -62,13 +62,16 @@ void Start(SkSL::Compiler* compiler, ProgramKind kind) {
 
 void Start(SkSL::Compiler* compiler, ProgramKind kind, const ProgramSettings& settings) {
     ThreadContext::SetInstance(std::make_unique<ThreadContext>(compiler, kind, settings,
-            compiler->moduleForProgramKind(kind), /*isModule=*/false));
+                                                               compiler->moduleForProgramKind(kind),
+                                                               /*isModule=*/false));
 }
 
-void StartModule(SkSL::Compiler* compiler, ProgramKind kind, const ProgramSettings& settings,
-                 SkSL::ParsedModule baseModule) {
+void StartModule(SkSL::Compiler* compiler,
+                 ProgramKind kind,
+                 const ProgramSettings& settings,
+                 const SkSL::BuiltinMap* baseModule) {
     ThreadContext::SetInstance(std::make_unique<ThreadContext>(compiler, kind, settings,
-            baseModule, /*isModule=*/true));
+                                                               baseModule, /*isModule=*/true));
 }
 
 void End() {
@@ -175,7 +178,7 @@ public:
             // sk_FragColor can end up with a null declaration despite no error occurring due to
             // specific treatment in the compiler. Ignore the null and just grab the existing
             // variable from the symbol table.
-            const SkSL::Symbol* alreadyDeclared = (*ThreadContext::SymbolTable())[var.fName];
+            SkSL::Symbol* alreadyDeclared = ThreadContext::SymbolTable()->findMutable(var.fName);
             if (alreadyDeclared && alreadyDeclared->is<Variable>()) {
                 var.fVar = &alreadyDeclared->as<Variable>();
                 var.fInitialized = true;
@@ -259,7 +262,7 @@ public:
         DSLType varType = arraySize > 0 ? Array(structType, arraySize) : DSLType(structType);
         DSLGlobalVar var(modifiers, varType, !varName.empty() ? varName : typeName, DSLExpression(),
                 pos);
-        const SkSL::Variable* skslVar = DSLWriter::Var(var);
+        SkSL::Variable* skslVar = DSLWriter::Var(var);
         if (skslVar) {
             auto intf = std::make_unique<SkSL::InterfaceBlock>(pos, *skslVar, typeName, varName,
                     arraySize, ThreadContext::SymbolTable());
@@ -453,8 +456,8 @@ DSLGlobalVar InterfaceBlock(const DSLModifiers& modifiers,  std::string_view typ
                             SkTArray<DSLField> fields, std::string_view varName, int arraySize,
                             Position pos) {
     SkSL::ProgramKind kind = ThreadContext::GetProgramConfig()->fKind;
-    if (!ProgramConfig::IsFragment(kind) &&
-        !ProgramConfig::IsVertex(kind)) {
+    if (!ProgramConfig::IsFragment(kind) && !ProgramConfig::IsVertex(kind) &&
+        !ProgramConfig::IsCompute(kind)) {
         ThreadContext::ReportError("interface blocks are not allowed in this kind of program", pos);
         return DSLGlobalVar();
     }

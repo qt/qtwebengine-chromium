@@ -12,7 +12,6 @@
 #include "include/private/SkSLProgramKind.h"
 #include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLMangler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -22,6 +21,7 @@
 
 namespace SkSL {
 
+class BuiltinMap;
 class Compiler;
 class ModifiersPool;
 class Pool;
@@ -30,12 +30,10 @@ class ProgramElement;
 class SymbolTable;
 class Variable;
 struct Modifiers;
-struct ParsedModule;
 
 namespace dsl {
 
 class DSLCore;
-class DSLWriter;
 
 } // namespace dsl
 
@@ -44,9 +42,11 @@ class DSLWriter;
  */
 class ThreadContext {
 public:
-    ThreadContext(SkSL::Compiler* compiler,  SkSL::ProgramKind kind,
-              const SkSL::ProgramSettings& settings, SkSL::ParsedModule module, bool isModule);
-
+    ThreadContext(SkSL::Compiler* compiler,
+                  SkSL::ProgramKind kind,
+                  const SkSL::ProgramSettings& settings,
+                  const SkSL::BuiltinMap* module,
+                  bool isModule);
     ~ThreadContext();
 
     /**
@@ -127,14 +127,6 @@ public:
      */
     static RTAdjustData& RTAdjustState();
 
-    static const char* Filename() {
-        return Instance().fFilename;
-    }
-
-    static void SetFilename(const char* filename) {
-        Instance().fFilename = filename;
-    }
-
     /**
      * Returns the ErrorReporter associated with the current thread. This object will be notified
      * when any DSL errors occur.
@@ -173,14 +165,10 @@ private:
     DefaultErrorReporter fDefaultErrorReporter;
     ErrorReporter& fOldErrorReporter;
     ProgramSettings fSettings;
-    Mangler fMangler;
     RTAdjustData fRTAdjust;
     Program::Inputs fInputs;
-    // for DSL error reporting purposes
-    const char* fFilename = "";
 
     friend class dsl::DSLCore;
-    friend class dsl::DSLWriter;
 };
 
 } // namespace SkSL

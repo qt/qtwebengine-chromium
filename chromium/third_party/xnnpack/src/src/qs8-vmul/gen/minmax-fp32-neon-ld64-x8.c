@@ -15,12 +15,18 @@
 
 
 void xnn_qs8_vmul_minmax_fp32_ukernel__neon_ld64_x8(
-    size_t n,
+    size_t batch,
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
     const union xnn_qs8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
+  assert(batch != 0);
+  assert(batch % sizeof(int8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const int8x8_t va_zero_point = vld1_dup_s8(params->fp32_neon.a_zero_point);
   const int8x8_t vb_zero_point = vld1_dup_s8(params->fp32_neon.b_zero_point);
   const float32x4_t vscale = vld1q_dup_f32(&params->fp32_neon.scale);
@@ -29,7 +35,7 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__neon_ld64_x8(
   const int8x8_t voutput_min = vld1_dup_s8(&params->fp32_neon.output_min);
   const int8x8_t voutput_max = vld1_dup_s8(&params->fp32_neon.output_max);
 
-  for (; n >= 8 * sizeof(int8_t); n -= 8 * sizeof(int8_t)) {
+  for (; batch >= 8 * sizeof(int8_t); batch -= 8 * sizeof(int8_t)) {
     const int8x8_t va01234567 = vld1_s8(input_a); input_a += 8;
     const int8x8_t vb01234567 = vld1_s8(input_b); input_b += 8;
 
@@ -70,7 +76,7 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__neon_ld64_x8(
 
     vst1_s8(output, vout01234567); output += 8;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     {
       const int8x8_t va01234567 = vld1_s8(input_a);
       const int8x8_t vb01234567 = vld1_s8(input_b);
@@ -104,15 +110,15 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__neon_ld64_x8(
 
       vout01234567 = vmax_s8(vout01234567, voutput_min);
       vout01234567 = vmin_s8(vout01234567, voutput_max);
-      if (n & (4 * sizeof(int8_t))) {
+      if (batch & (4 * sizeof(int8_t))) {
         vst1_lane_u32((void*) output, vreinterpret_u32_s8(vout01234567), 0); output += 4;
         vout01234567 = vext_s8(vout01234567, vout01234567, 4);
       }
-      if (n & (2 * sizeof(int8_t))) {
+      if (batch & (2 * sizeof(int8_t))) {
         vst1_lane_u16((void*) output, vreinterpret_u16_s8(vout01234567), 0); output += 2;
         vout01234567 = vext_s8(vout01234567, vout01234567, 2);
       }
-      if (n & (1 * sizeof(int8_t))) {
+      if (batch & (1 * sizeof(int8_t))) {
         vst1_lane_s8(output, vout01234567, 0);
       }
     }

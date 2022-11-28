@@ -44,14 +44,12 @@ public:
 
     const FunctionDeclaration* overloadChain() const { return fOverloadChain; }
 
-    bool hasProperty(Property property) const override { return false; }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::unique_ptr<Expression>(new MethodReference(
                 pos, this->self()->clone(), this->overloadChain(), &this->type()));
     }
 
-    std::string description() const override {
+    std::string description(OperatorPrecedence) const override {
         return "<method>";
     }
 

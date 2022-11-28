@@ -606,6 +606,9 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       ElementsKind elements_kind = TERMINAL_FAST_ELEMENTS_KIND,
       AllocationType allocation = AllocationType::kYoung);
 
+  Handle<JSArray> NewJSArrayForTemplateLiteralArray(
+      Handle<FixedArray> cooked_strings, Handle<FixedArray> raw_strings);
+
   void NewJSArrayStorage(
       Handle<JSArray> array, int length, int capacity,
       ArrayStorageAllocationMode mode = DONT_INITIALIZE_ARRAY_ELEMENTS);
@@ -623,7 +626,8 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<WasmTypeInfo> NewWasmTypeInfo(Address type_address,
                                        Handle<Map> opt_parent,
                                        int instance_size_bytes,
-                                       Handle<WasmInstanceObject> instance);
+                                       Handle<WasmInstanceObject> instance,
+                                       uint32_t type_index);
   Handle<WasmInternalFunction> NewWasmInternalFunction(Address opt_call_target,
                                                        Handle<HeapObject> ref,
                                                        Handle<Map> rtt);
@@ -634,7 +638,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   Handle<WasmExportedFunctionData> NewWasmExportedFunctionData(
       Handle<CodeT> export_wrapper, Handle<WasmInstanceObject> instance,
       Address call_target, Handle<Object> ref, int func_index,
-      Address sig_address, int wrapper_budget, Handle<Map> rtt,
+      const wasm::FunctionSig* sig, int wrapper_budget, Handle<Map> rtt,
       wasm::Promise promise);
   Handle<WasmApiFunctionRef> NewWasmApiFunctionRef(
       Handle<JSReceiver> callable, wasm::Suspend suspend,
@@ -869,6 +873,15 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   HeapObject NewForTest(Handle<Map> map, AllocationType allocation) {
     return New(map, allocation);
   }
+
+  Handle<JSSharedStruct> NewJSSharedStruct(Handle<JSFunction> constructor);
+
+  Handle<JSSharedArray> NewJSSharedArray(Handle<JSFunction> constructor,
+                                         int length);
+
+  Handle<JSAtomicsMutex> NewJSAtomicsMutex();
+
+  Handle<JSAtomicsCondition> NewJSAtomicsCondition();
 
   // Helper class for creating JSFunction objects.
   class V8_EXPORT_PRIVATE JSFunctionBuilder final {
@@ -1130,6 +1143,9 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   // verification of the backing storage because it may not yet be filled.
   Handle<JSArray> NewJSArrayWithUnverifiedElements(
       Handle<FixedArrayBase> elements, ElementsKind elements_kind, int length,
+      AllocationType allocation = AllocationType::kYoung);
+  Handle<JSArray> NewJSArrayWithUnverifiedElements(
+      Handle<Map> map, Handle<FixedArrayBase> elements, int length,
       AllocationType allocation = AllocationType::kYoung);
 
   // Creates the backing storage for a JSArray. This handle must be discarded

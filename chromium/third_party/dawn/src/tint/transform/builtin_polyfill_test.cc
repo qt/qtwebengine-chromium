@@ -1387,5 +1387,238 @@ fn f() {
     EXPECT_EQ(expect, str(got));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// saturate
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillSaturate() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.saturate = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunSaturate) {
+    auto* src = R"(
+fn f() {
+  saturate(0.5);
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillSaturate()));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_f32) {
+    auto* src = R"(
+fn f() {
+  let r : f32 = saturate(0.5f);
+}
+)";
+
+    auto* expect = R"(
+fn tint_saturate(v : f32) -> f32 {
+  return clamp(v, f32(0), f32(1));
+}
+
+fn f() {
+  let r : f32 = tint_saturate(0.5f);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_f32_from_abstract_float) {
+    auto* src = R"(
+fn f() {
+  let r : f32 = saturate(0.5);
+}
+)";
+
+    auto* expect = R"(
+fn tint_saturate(v : f32) -> f32 {
+  return clamp(v, f32(0), f32(1));
+}
+
+fn f() {
+  let r : f32 = tint_saturate(0.5);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_f16) {
+    auto* src = R"(
+enable f16;
+
+fn f() {
+  let r : f16 = saturate(0.5h);
+}
+)";
+
+    auto* expect = R"(
+enable f16;
+
+fn tint_saturate(v : f16) -> f16 {
+  return clamp(v, f16(0), f16(1));
+}
+
+fn f() {
+  let r : f16 = tint_saturate(0.5h);
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_vec3_f32) {
+    auto* src = R"(
+fn f() {
+  let r : vec3<f32> = saturate(vec3<f32>(0.5f));
+}
+)";
+
+    auto* expect = R"(
+fn tint_saturate(v : vec3<f32>) -> vec3<f32> {
+  return clamp(v, vec3<f32>(0), vec3<f32>(1));
+}
+
+fn f() {
+  let r : vec3<f32> = tint_saturate(vec3<f32>(0.5f));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_vec3_f32_from_abstract_float) {
+    auto* src = R"(
+fn f() {
+  let r : vec3<f32> = saturate(vec3(0.5));
+}
+)";
+
+    auto* expect = R"(
+fn tint_saturate(v : vec3<f32>) -> vec3<f32> {
+  return clamp(v, vec3<f32>(0), vec3<f32>(1));
+}
+
+fn f() {
+  let r : vec3<f32> = tint_saturate(vec3(0.5));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(BuiltinPolyfillTest, Saturate_vec3_f16) {
+    auto* src = R"(
+enable f16;
+
+fn f() {
+  let r : vec3<f16> = saturate(vec3<f16>(0.5h));
+}
+)";
+
+    auto* expect = R"(
+enable f16;
+
+fn tint_saturate(v : vec3<f16>) -> vec3<f16> {
+  return clamp(v, vec3<f16>(0), vec3<f16>(1));
+}
+
+fn f() {
+  let r : vec3<f16> = tint_saturate(vec3<f16>(0.5h));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillSaturate());
+
+    EXPECT_EQ(expect, str(got));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// textureSampleBaseClampToEdge
+////////////////////////////////////////////////////////////////////////////////
+DataMap polyfillTextureSampleBaseClampToEdge_2d_f32() {
+    BuiltinPolyfill::Builtins builtins;
+    builtins.texture_sample_base_clamp_to_edge_2d_f32 = true;
+    DataMap data;
+    data.Add<BuiltinPolyfill::Config>(builtins);
+    return data;
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunTextureSampleBaseClampToEdge_2d_f32) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+@group(0) @binding(1) var s : sampler;
+
+fn f() {
+  textureSampleBaseClampToEdge(t, s, vec2<f32>(0.5));
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_TRUE(ShouldRun<BuiltinPolyfill>(src, polyfillTextureSampleBaseClampToEdge_2d_f32()));
+}
+
+TEST_F(BuiltinPolyfillTest, ShouldRunTextureSampleBaseClampToEdge_external) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_external;
+@group(0) @binding(1) var s : sampler;
+
+fn f() {
+  textureSampleBaseClampToEdge(t, s, vec2<f32>(0.5));
+}
+)";
+
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src));
+    EXPECT_FALSE(ShouldRun<BuiltinPolyfill>(src, polyfillTextureSampleBaseClampToEdge_2d_f32()));
+}
+
+TEST_F(BuiltinPolyfillTest, TextureSampleBaseClampToEdge_2d_f32_f32) {
+    auto* src = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+@group(0) @binding(1) var s : sampler;
+
+fn f() {
+  let r = textureSampleBaseClampToEdge(t, s, vec2<f32>(0.5));
+}
+)";
+
+    auto* expect = R"(
+@group(0) @binding(0) var t : texture_2d<f32>;
+
+@group(0) @binding(1) var s : sampler;
+
+fn tint_textureSampleBaseClampToEdge(t : texture_2d<f32>, s : sampler, coord : vec2<f32>) -> vec4<f32> {
+  let dims = vec2<f32>(textureDimensions(t, 0));
+  let half_texel = (vec2<f32>(0.5) / dims);
+  let clamped = clamp(coord, half_texel, (1 - half_texel));
+  return textureSampleLevel(t, s, clamped, 0);
+}
+
+fn f() {
+  let r = tint_textureSampleBaseClampToEdge(t, s, vec2<f32>(0.5));
+}
+)";
+
+    auto got = Run<BuiltinPolyfill>(src, polyfillTextureSampleBaseClampToEdge_2d_f32());
+
+    EXPECT_EQ(expect, str(got));
+}
+
 }  // namespace
 }  // namespace tint::transform

@@ -6,10 +6,10 @@
 
 #include "src/base/logging.h"
 #include "src/base/platform/platform.h"
-#include "src/base/platform/wrappers.h"
 #include "src/common/globals.h"
 #include "src/heap/basic-memory-chunk.h"
 #include "src/heap/code-object-registry.h"
+#include "src/heap/marking-state-inl.h"
 #include "src/heap/memory-allocator.h"
 #include "src/heap/memory-chunk-inl.h"
 #include "src/heap/memory-chunk-layout.h"
@@ -75,7 +75,7 @@ void MemoryChunk::SetReadable() {
 }
 
 void MemoryChunk::SetReadAndExecutable() {
-  DCHECK(!FLAG_jitless);
+  DCHECK(!v8_flags.jitless);
   DecrementWriteUnprotectCounterAndMaybeSetPermissions(
       PageAllocator::kReadExecute);
 }
@@ -104,7 +104,7 @@ void MemoryChunk::SetCodeModificationPermissions() {
 }
 
 void MemoryChunk::SetDefaultCodePermissions() {
-  if (FLAG_jitless) {
+  if (v8_flags.jitless) {
     SetReadable();
   } else {
     SetReadAndExecutable();
@@ -117,7 +117,7 @@ PageAllocator::Permission DefaultWritableCodePermissions() {
   DCHECK(!V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT);
   // On MacOS on ARM64 RWX permissions are allowed to be set only when
   // fast W^X is enabled (see V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT).
-  return V8_HAS_PTHREAD_JIT_WRITE_PROTECT || FLAG_jitless
+  return V8_HAS_PTHREAD_JIT_WRITE_PROTECT || v8_flags.jitless
              ? PageAllocator::kReadWrite
              : PageAllocator::kReadWriteExecute;
 }
@@ -163,8 +163,7 @@ MemoryChunk::MemoryChunk(Heap* heap, BaseSpace* space, size_t chunk_size,
 
   categories_ = nullptr;
 
-  heap->incremental_marking()->non_atomic_marking_state()->SetLiveBytes(this,
-                                                                        0);
+  heap->non_atomic_marking_state()->SetLiveBytes(this, 0);
   if (executable == EXECUTABLE) {
     SetFlag(IS_EXECUTABLE);
     if (heap->write_protect_code_memory()) {
@@ -196,7 +195,10 @@ MemoryChunk::MemoryChunk(Heap* heap, BaseSpace* space, size_t chunk_size,
   }
 
   // All pages of a shared heap need to be marked with this flag.
-  if (heap->IsShared()) SetFlag(MemoryChunk::IN_SHARED_HEAP);
+  if (heap->IsShared() || owner()->identity() == SHARED_SPACE ||
+      owner()->identity() == SHARED_LO_SPACE) {
+    SetFlag(MemoryChunk::IN_SHARED_HEAP);
+  }
 
 #ifdef DEBUG
   ValidateOffsets(this);
@@ -234,6 +236,7 @@ void MemoryChunk::SetYoungGenerationPageFlags(bool is_marking) {
 // MemoryChunk implementation
 
 void MemoryChunk::ReleaseAllocatedMemoryNeededForWritableChunk() {
+  DCHECK(SweepingDone());
   if (mutex_ != nullptr) {
     delete mutex_;
     mutex_ = nullptr;

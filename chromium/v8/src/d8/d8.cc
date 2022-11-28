@@ -34,6 +34,7 @@
 #include "src/api/api-inl.h"
 #include "src/base/cpu.h"
 #include "src/base/logging.h"
+#include "src/base/platform/memory.h"
 #include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/platform/wrappers.h"
@@ -484,7 +485,6 @@ std::atomic<int> Shell::unhandled_promise_rejections_{0};
 
 Global<Context> Shell::evaluation_context_;
 ArrayBuffer::Allocator* Shell::array_buffer_allocator;
-Isolate* Shell::shared_isolate = nullptr;
 bool check_d8_flag_contradictions = true;
 ShellOptions Shell::options;
 base::OnceType Shell::quit_once_ = V8_ONCE_INIT;
@@ -786,7 +786,7 @@ bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
                           ReportExceptions report_exceptions,
                           ProcessMessageQueue process_message_queue) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  if (i::FLAG_parse_only) {
+  if (i::v8_flags.parse_only) {
     i::VMState<PARSER> state(i_isolate);
     i::Handle<i::String> str = Utils::OpenHandle(*(source));
 
@@ -796,8 +796,8 @@ bool Shell::ExecuteString(Isolate* isolate, Local<String> source,
 
     i::UnoptimizedCompileFlags flags =
         i::UnoptimizedCompileFlags::ForToplevelCompile(
-            i_isolate, true, i::construct_language_mode(i::FLAG_use_strict),
-            i::REPLMode::kNo, ScriptType::kClassic, i::FLAG_lazy);
+            i_isolate, true, i::construct_language_mode(i::v8_flags.use_strict),
+            i::REPLMode::kNo, ScriptType::kClassic, i::v8_flags.lazy);
 
     if (options.compile_options == v8::ScriptCompiler::kEagerCompile) {
       flags.set_is_eager(true);
@@ -1573,7 +1573,7 @@ bool Shell::LoadJSON(Isolate* isolate, const char* file_name) {
 PerIsolateData::PerIsolateData(Isolate* isolate)
     : isolate_(isolate), realms_(nullptr) {
   isolate->SetData(0, this);
-  if (i::FLAG_expose_async_hooks) {
+  if (i::v8_flags.expose_async_hooks) {
     async_hooks_wrapper_ = new AsyncHooks(isolate);
   }
   ignore_unhandled_promises_ = false;
@@ -1585,7 +1585,7 @@ PerIsolateData::PerIsolateData(Isolate* isolate)
 
 PerIsolateData::~PerIsolateData() {
   isolate_->SetData(0, nullptr);  // Not really needed, just to be sure...
-  if (i::FLAG_expose_async_hooks) {
+  if (i::v8_flags.expose_async_hooks) {
     delete async_hooks_wrapper_;  // This uses the isolate
   }
 #if defined(LEAK_SANITIZER)
@@ -1748,16 +1748,148 @@ int PerIsolateData::RealmIndexOrThrow(
   return index;
 }
 
-// performance.now() returns a time stamp as double, measured in milliseconds.
-// When FLAG_verify_predictable mode is enabled it returns result of
+// GetTimestamp() returns a time stamp as double, measured in milliseconds.
+// When v8_flags.verify_predictable mode is enabled it returns result of
 // v8::Platform::MonotonicallyIncreasingTime().
-void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args) {
-  if (i::FLAG_verify_predictable) {
-    args.GetReturnValue().Set(g_platform->MonotonicallyIncreasingTime());
+double Shell::GetTimestamp() {
+  if (i::v8_flags.verify_predictable) {
+    return g_platform->MonotonicallyIncreasingTime();
   } else {
     base::TimeDelta delta = base::TimeTicks::Now() - kInitialTicks;
-    args.GetReturnValue().Set(delta.InMillisecondsF());
+    return delta.InMillisecondsF();
   }
+}
+int64_t Shell::GetTracingTimestampFromPerformanceTimestamp(
+    double performance_timestamp) {
+  // Don't use this in --verify-predictable mode, predictable timestamps don't
+  // work well with tracing.
+  DCHECK(!i::v8_flags.verify_predictable);
+  base::TimeDelta delta =
+      base::TimeDelta::FromMillisecondsD(performance_timestamp);
+  // See TracingController::CurrentTimestampMicroseconds().
+  return (delta + kInitialTicks).ToInternalValue();
+}
+
+// performance.now() returns GetTimestamp().
+void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  args.GetReturnValue().Set(GetTimestamp());
+}
+
+// performance.mark() records and returns a PerformanceEntry with the current
+// timestamp.
+void Shell::PerformanceMark(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if (args.Length() < 1 || !args[0]->IsString()) {
+    args.GetIsolate()->ThrowError("Invalid 'name' argument");
+    return;
+  }
+  Local<String> name = args[0].As<String>();
+
+  double timestamp = GetTimestamp();
+
+  Local<Object> performance_entry = Object::New(isolate);
+  performance_entry
+      ->DefineOwnProperty(context,
+                          String::NewFromUtf8Literal(isolate, "entryType"),
+                          String::NewFromUtf8Literal(isolate, "mark"), ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(context, String::NewFromUtf8Literal(isolate, "name"),
+                          name, ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(context,
+                          String::NewFromUtf8Literal(isolate, "startTime"),
+                          Number::New(isolate, timestamp), ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(context,
+                          String::NewFromUtf8Literal(isolate, "duration"),
+                          Integer::New(isolate, 0), ReadOnly)
+      .Check();
+
+  args.GetReturnValue().Set(performance_entry);
+}
+
+// performance.measure() records and returns a PerformanceEntry with a duration
+// since a given mark, or since zero.
+void Shell::PerformanceMeasure(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if (args.Length() < 1 || !args[0]->IsString()) {
+    args.GetIsolate()->ThrowError("Invalid 'name' argument");
+    return;
+  }
+  v8::Local<String> name = args[0].As<String>();
+
+  double start_timestamp = 0;
+  if (args.Length() >= 2) {
+    Local<Value> start_mark = args[1].As<Value>();
+    if (!start_mark->IsObject()) {
+      args.GetIsolate()->ThrowError(
+          "Invalid 'startMark' argument: Not an Object");
+      return;
+    }
+    Local<Value> start_time_field;
+    if (!start_mark.As<Object>()
+             ->Get(context, String::NewFromUtf8Literal(isolate, "startTime"))
+             .ToLocal(&start_time_field)) {
+      return;
+    }
+    if (!start_time_field->IsNumber()) {
+      args.GetIsolate()->ThrowError(
+          "Invalid 'startMark' argument: No numeric 'startTime' field");
+      return;
+    }
+    start_timestamp = start_time_field.As<Number>()->Value();
+  }
+  if (args.Length() > 2) {
+    args.GetIsolate()->ThrowError("Too many arguments");
+    return;
+  }
+
+  double end_timestamp = GetTimestamp();
+
+  if (options.trace_enabled) {
+    size_t hash = base::hash_combine(name->GetIdentityHash(), start_timestamp,
+                                     end_timestamp);
+
+    String::Utf8Value utf8(isolate, name);
+    TRACE_EVENT_COPY_NESTABLE_ASYNC_BEGIN_WITH_TIMESTAMP1(
+        "v8", *utf8, static_cast<uint64_t>(hash),
+        GetTracingTimestampFromPerformanceTimestamp(start_timestamp),
+        "startTime", start_timestamp);
+    TRACE_EVENT_COPY_NESTABLE_ASYNC_END_WITH_TIMESTAMP0(
+        "v8", *utf8, static_cast<uint64_t>(hash),
+        GetTracingTimestampFromPerformanceTimestamp(end_timestamp));
+  }
+
+  Local<Object> performance_entry = Object::New(isolate);
+  performance_entry
+      ->DefineOwnProperty(
+          context, String::NewFromUtf8Literal(isolate, "entryType"),
+          String::NewFromUtf8Literal(isolate, "measure"), ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(context, String::NewFromUtf8Literal(isolate, "name"),
+                          name, ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(context,
+                          String::NewFromUtf8Literal(isolate, "startTime"),
+                          Number::New(isolate, start_timestamp), ReadOnly)
+      .Check();
+  performance_entry
+      ->DefineOwnProperty(
+          context, String::NewFromUtf8Literal(isolate, "duration"),
+          Number::New(isolate, end_timestamp - start_timestamp), ReadOnly)
+      .Check();
+
+  args.GetReturnValue().Set(performance_entry);
 }
 
 // performance.measureMemory() implements JavaScript Memory API proposal.
@@ -2296,9 +2428,19 @@ void Shell::AsyncHooksTriggerAsyncId(
       PerIsolateData::Get(isolate)->GetAsyncHooks()->GetTriggerAsyncId()));
 }
 
+static v8::debug::DebugDelegate dummy_delegate;
+
+void Shell::EnableDebugger(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  v8::debug::SetDebugDelegate(args.GetIsolate(), &dummy_delegate);
+}
+
+void Shell::DisableDebugger(const v8::FunctionCallbackInfo<v8::Value>& args) {
+  v8::debug::SetDebugDelegate(args.GetIsolate(), nullptr);
+}
+
 void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
   Isolate* isolate = args.GetIsolate();
-  if (i::FLAG_correctness_fuzzer_suppressions) {
+  if (i::v8_flags.correctness_fuzzer_suppressions) {
     // Setting promise hoooks dynamically has unexpected timing side-effects
     // with certain promise optimizations. We might not get all callbacks for
     // previously scheduled Promises or optimized code-paths that skip Promise
@@ -3036,15 +3178,6 @@ Local<String> Shell::Stringify(Isolate* isolate, Local<Value> value) {
 void Shell::NodeTypeCallback(const v8::FunctionCallbackInfo<v8::Value>& args) {
   v8::Isolate* isolate = args.GetIsolate();
 
-  // HasInstance does a slow prototype chain lookup, and this function is used
-  // for micro benchmarks too.
-#ifdef DEBUG
-  PerIsolateData* data = PerIsolateData::Get(isolate);
-  if (!data->GetDomNodeCtor()->HasInstance(args.This())) {
-    isolate->ThrowError("Calling .nodeType on wrong instance type.");
-  }
-#endif
-
   args.GetReturnValue().Set(v8::Number::New(isolate, 1));
 }
 
@@ -3167,7 +3300,7 @@ Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
   global_template->Set(isolate, "Worker", Shell::CreateWorkerTemplate(isolate));
 
   // Prevent fuzzers from creating side effects.
-  if (!i::FLAG_fuzzing) {
+  if (!i::v8_flags.fuzzing) {
     global_template->Set(isolate, "os", Shell::CreateOSTemplate(isolate));
   }
   global_template->Set(isolate, "d8", Shell::CreateD8Template(isolate));
@@ -3179,7 +3312,7 @@ Local<ObjectTemplate> Shell::CreateGlobalTemplate(Isolate* isolate) {
       FunctionTemplate::New(isolate, Fuzzilli), PropertyAttribute::DontEnum);
 #endif  // V8_FUZZILLI
 
-  if (i::FLAG_expose_async_hooks) {
+  if (i::v8_flags.expose_async_hooks) {
     global_template->Set(isolate, "async_hooks",
                          Shell::CreateAsyncHookTemplate(isolate));
   }
@@ -3271,6 +3404,10 @@ Local<ObjectTemplate> Shell::CreatePerformanceTemplate(Isolate* isolate) {
   Local<ObjectTemplate> performance_template = ObjectTemplate::New(isolate);
   performance_template->Set(isolate, "now",
                             FunctionTemplate::New(isolate, PerformanceNow));
+  performance_template->Set(isolate, "mark",
+                            FunctionTemplate::New(isolate, PerformanceMark));
+  performance_template->Set(isolate, "measure",
+                            FunctionTemplate::New(isolate, PerformanceMeasure));
   performance_template->Set(
       isolate, "measureMemory",
       FunctionTemplate::New(isolate, PerformanceMeasureMemory));
@@ -3347,7 +3484,7 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
     Local<ObjectTemplate> test_template = ObjectTemplate::New(isolate);
     // For different runs of correctness fuzzing the bytecode of a function
     // might get flushed, resulting in spurious errors.
-    if (!i::FLAG_correctness_fuzzer_suppressions) {
+    if (!i::v8_flags.correctness_fuzzer_suppressions) {
       test_template->Set(
           isolate, "verifySourcePositions",
           FunctionTemplate::New(isolate, TestVerifySourcePositions));
@@ -3355,8 +3492,8 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
     // Correctness fuzzing will attempt to compare results of tests with and
     // without turbo_fast_api_calls, so we don't expose the fast_c_api
     // constructor when --correctness_fuzzer_suppressions is on.
-    if (options.expose_fast_api && i::FLAG_turbo_fast_api_calls &&
-        !i::FLAG_correctness_fuzzer_suppressions) {
+    if (options.expose_fast_api && i::v8_flags.turbo_fast_api_calls &&
+        !i::v8_flags.correctness_fuzzer_suppressions) {
       test_template->Set(isolate, "FastCAPI",
                          Shell::CreateTestFastCApiTemplate(isolate));
       test_template->Set(isolate, "LeafInterfaceType",
@@ -3377,6 +3514,18 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
         FunctionTemplate::New(isolate, SetPromiseHooks, Local<Value>(),
                               Local<Signature>(), 4));
     d8_template->Set(isolate, "promise", promise_template);
+  }
+  {
+    Local<ObjectTemplate> debugger_template = ObjectTemplate::New(isolate);
+    debugger_template->Set(
+        isolate, "enable",
+        FunctionTemplate::New(isolate, EnableDebugger, Local<Value>(),
+                              Local<Signature>(), 0));
+    debugger_template->Set(
+        isolate, "disable",
+        FunctionTemplate::New(isolate, DisableDebugger, Local<Value>(),
+                              Local<Signature>(), 0));
+    d8_template->Set(isolate, "debugger", debugger_template);
   }
   {
     Local<ObjectTemplate> serializer_template = ObjectTemplate::New(isolate);
@@ -3474,8 +3623,8 @@ void Shell::Initialize(Isolate* isolate, D8Console* console,
   isolate->SetPromiseRejectCallback(PromiseRejectCallback);
   if (isOnMainThread) {
     // Set up counters
-    if (i::FLAG_map_counters[0] != '\0') {
-      MapCounters(isolate, i::FLAG_map_counters);
+    if (i::v8_flags.map_counters[0] != '\0') {
+      MapCounters(isolate, i::v8_flags.map_counters);
     }
     // Disable default message reporting.
     isolate->AddMessageListenerWithErrorLevel(
@@ -3537,7 +3686,8 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
   Local<Context> context = Context::New(isolate, nullptr, global_template);
   DCHECK_IMPLIES(context.IsEmpty(), isolate->IsExecutionTerminating());
   if (context.IsEmpty()) return {};
-  if (i::FLAG_perf_prof_annotate_wasm || i::FLAG_vtune_prof_annotate_wasm) {
+  if (i::v8_flags.perf_prof_annotate_wasm ||
+      i::v8_flags.vtune_prof_annotate_wasm) {
     isolate->SetWasmLoadSourceMapCallback(Shell::WasmLoadSourceMapCallback);
   }
   InitializeModuleEmbedderData(context);
@@ -3578,7 +3728,7 @@ void Shell::WriteIgnitionDispatchCountersFile(v8::Isolate* isolate) {
           ->interpreter()
           ->GetDispatchCountersObject();
   std::ofstream dispatch_counters_stream(
-      i::FLAG_trace_ignition_dispatches_output_file);
+      i::v8_flags.trace_ignition_dispatches_output_file);
   dispatch_counters_stream << *String::Utf8Value(
       isolate, JSON::Stringify(context, Utils::ToLocal(dispatch_counters))
                    .ToLocalChecked());
@@ -3677,9 +3827,6 @@ void Shell::WriteLcovData(v8::Isolate* isolate, const char* file) {
 void Shell::OnExit(v8::Isolate* isolate, bool dispose) {
   platform::NotifyIsolateShutdown(g_default_platform, isolate);
   isolate->Dispose();
-  if (shared_isolate) {
-    i::Isolate::Delete(reinterpret_cast<i::Isolate*>(shared_isolate));
-  }
 
   // Simulate errors before disposing V8, as that resets flags (via
   // FlagList::ResetAllFlags()), but error simulation reads the random seed.
@@ -3758,7 +3905,7 @@ void Dummy(char* arg) {}
 V8_NOINLINE void FuzzerMonitor::SimulateErrors() {
   // Initialize a fresh RNG to not interfere with JS execution.
   std::unique_ptr<base::RandomNumberGenerator> rng;
-  int64_t seed = internal::FLAG_random_seed;
+  int64_t seed = i::v8_flags.random_seed;
   if (seed != 0) {
     rng = std::make_unique<base::RandomNumberGenerator>(seed);
   } else {
@@ -3925,7 +4072,7 @@ MaybeLocal<String> Shell::ReadFile(Isolate* isolate, const char* name,
 
   int size = static_cast<int>(file->size());
   char* chars = static_cast<char*>(file->memory());
-  if (i::FLAG_use_external_strings && i::String::IsAscii(chars, size)) {
+  if (i::v8_flags.use_external_strings && i::String::IsAscii(chars, size)) {
     String::ExternalOneByteStringResource* resource =
         new ExternalOwningOneByteStringResource(std::move(file));
     return String::NewExternalOneByte(isolate, resource);
@@ -4252,7 +4399,6 @@ SourceGroup::IsolateThread::IsolateThread(SourceGroup* group)
 void SourceGroup::ExecuteInThread() {
   Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = Shell::array_buffer_allocator;
-  create_params.experimental_attach_to_shared_isolate = Shell::shared_isolate;
   Isolate* isolate = Isolate::New(create_params);
   Shell::SetWaitUntilDone(isolate, false);
   D8Console console(isolate);
@@ -4491,7 +4637,6 @@ void Worker::ProcessMessages() {
 void Worker::ExecuteInThread() {
   Isolate::CreateParams create_params;
   create_params.array_buffer_allocator = Shell::array_buffer_allocator;
-  create_params.experimental_attach_to_shared_isolate = Shell::shared_isolate;
   isolate_ = Isolate::New(create_params);
 
   task_runner_ = g_default_platform->GetForegroundTaskRunner(isolate_);
@@ -4637,7 +4782,6 @@ void PreProcessUnicodeFilenameArg(char* argv[], int i) {
 
 bool Shell::SetOptions(int argc, char* argv[]) {
   bool logfile_per_isolate = false;
-  bool no_always_turbofan = false;
   options.d8_path = argv[0];
   for (int i = 0; i < argc; i++) {
     if (strcmp(argv[i], "--") == 0) {
@@ -4653,16 +4797,6 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--simulate-errors") == 0) {
       options.simulate_errors = true;
       argv[i] = nullptr;
-    } else if (strcmp(argv[i], "--stress-opt") == 0) {
-      options.stress_opt = true;
-      argv[i] = nullptr;
-    } else if (strcmp(argv[i], "--nostress-opt") == 0 ||
-               strcmp(argv[i], "--no-stress-opt") == 0) {
-      options.stress_opt = false;
-      argv[i] = nullptr;
-    } else if (strcmp(argv[i], "--noalways-turbofan") == 0 ||
-               strcmp(argv[i], "--no-always-turbofan") == 0) {
-      no_always_turbofan = true;
     } else if (strcmp(argv[i], "--fuzzing") == 0 ||
                strcmp(argv[i], "--no-abort-on-contradictory-flags") == 0 ||
                strcmp(argv[i], "--noabort-on-contradictory-flags") == 0) {
@@ -4715,11 +4849,11 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       options.no_fail = true;
       argv[i] = nullptr;
     } else if (strcmp(argv[i], "--dump-counters") == 0) {
-      i::FLAG_slow_histograms = true;
+      i::v8_flags.slow_histograms = true;
       options.dump_counters = true;
       argv[i] = nullptr;
     } else if (strcmp(argv[i], "--dump-counters-nvp") == 0) {
-      i::FLAG_slow_histograms = true;
+      i::v8_flags.slow_histograms = true;
       options.dump_counters_nvp = true;
       argv[i] = nullptr;
     } else if (strncmp(argv[i], "--icu-data-file=", 16) == 0) {
@@ -4840,7 +4974,7 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--enable-etw-stack-walking") == 0) {
       options.enable_etw_stack_walking = true;
       // This needs to be manually triggered for JIT ETW events to work.
-      i::FLAG_enable_etw_stack_walking = true;
+      i::v8_flags.enable_etw_stack_walking = true;
 #if defined(V8_ENABLE_SYSTEM_INSTRUMENTATION)
     } else if (strcmp(argv[i], "--enable-system-instrumentation") == 0) {
       options.enable_system_instrumentation = true;
@@ -4849,7 +4983,7 @@ bool Shell::SetOptions(int argc, char* argv[]) {
 #if defined(V8_OS_WIN)
       // Guard this bc the flag has a lot of overhead and is not currently used
       // by macos
-      i::FLAG_interpreted_frames_native_stack = true;
+      i::v8_flags.interpreted_frames_native_stack = true;
 #endif
       argv[i] = nullptr;
 #endif
@@ -4882,11 +5016,6 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     }
   }
 
-  if (options.stress_opt && no_always_turbofan &&
-      check_d8_flag_contradictions) {
-    FATAL("Flag --no-always-turbofan is incompatible with --stress-opt.");
-  }
-
   if (options.throw_on_failed_access_check &&
       options.noop_on_failed_access_check && check_d8_flag_contradictions) {
     FATAL(
@@ -4904,17 +5033,17 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       "  --module  execute a file as a JavaScript module\n"
       "  --web-snapshot  execute a file as a web snapshot\n\n";
   using HelpOptions = i::FlagList::HelpOptions;
-  i::FLAG_abort_on_contradictory_flags = true;
+  i::v8_flags.abort_on_contradictory_flags = true;
   i::FlagList::SetFlagsFromCommandLine(&argc, argv, true,
                                        HelpOptions(HelpOptions::kExit, usage));
-  options.mock_arraybuffer_allocator = i::FLAG_mock_arraybuffer_allocator;
+  options.mock_arraybuffer_allocator = i::v8_flags.mock_arraybuffer_allocator;
   options.mock_arraybuffer_allocator_limit =
-      i::FLAG_mock_arraybuffer_allocator_limit;
+      i::v8_flags.mock_arraybuffer_allocator_limit;
 #if MULTI_MAPPED_ALLOCATOR_AVAILABLE
-  options.multi_mapped_mock_allocator = i::FLAG_multi_mapped_mock_allocator;
+  options.multi_mapped_mock_allocator = i::v8_flags.multi_mapped_mock_allocator;
 #endif
 
-  if (i::FLAG_stress_snapshot && options.expose_fast_api &&
+  if (i::v8_flags.stress_snapshot && options.expose_fast_api &&
       check_d8_flag_contradictions) {
     FATAL("Flag --expose-fast-api is incompatible with --stress-snapshot.");
   }
@@ -4934,7 +5063,7 @@ bool Shell::SetOptions(int argc, char* argv[]) {
                strcmp(str, "--json") == 0) {
       // Pass on to SourceGroup, which understands these options.
     } else if (strncmp(str, "--", 2) == 0) {
-      if (!i::FLAG_correctness_fuzzer_suppressions) {
+      if (!i::v8_flags.correctness_fuzzer_suppressions) {
         printf("Warning: unknown flag %s.\nTry --help for options\n", str);
       }
     } else if (strcmp(str, "-e") == 0 && i + 1 < argc) {
@@ -4979,7 +5108,7 @@ int Shell::RunMain(Isolate* isolate, bool last_run) {
       if (!CompleteMessageLoop(isolate)) success = false;
     }
     WriteLcovData(isolate, options.lcov_file);
-    if (last_run && i::FLAG_stress_snapshot) {
+    if (last_run && i::v8_flags.stress_snapshot) {
       static constexpr bool kClearRecompilableData = true;
       i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
       i::Handle<i::Context> i_context = Utils::OpenHandle(*context);
@@ -5088,7 +5217,7 @@ bool ProcessMessages(
       // task queue of the {kProcessGlobalPredictablePlatformWorkerTaskQueue}
       // isolate. We execute all background tasks after running one foreground
       // task.
-      if (i::FLAG_verify_predictable) {
+      if (i::v8_flags.verify_predictable) {
         while (v8::platform::PumpMessageLoop(
             g_default_platform,
             kProcessGlobalPredictablePlatformWorkerTaskQueue,
@@ -5119,7 +5248,7 @@ bool Shell::CompleteMessageLoop(Isolate* isolate) {
     return should_wait ? platform::MessageLoopBehavior::kWaitForWork
                        : platform::MessageLoopBehavior::kDoNotWait;
   };
-  if (i::FLAG_verify_predictable) {
+  if (i::v8_flags.verify_predictable) {
     bool ran_tasks = ProcessMessages(
         isolate, [] { return platform::MessageLoopBehavior::kDoNotWait; });
     if (get_waiting_behaviour() ==
@@ -5250,28 +5379,10 @@ class Serializer : public ValueSerializer::Delegate {
 
   void FreeBufferMemory(void* buffer) override { base::Free(buffer); }
 
-  bool SupportsSharedValues() const override { return true; }
-
-  Maybe<uint32_t> GetSharedValueId(Isolate* isolate,
-                                   Local<Value> shared_value) override {
-    DCHECK_NOT_NULL(data_);
-    for (size_t index = 0; index < data_->shared_values_.size(); ++index) {
-      if (data_->shared_values_[index] == shared_value) {
-        return Just<uint32_t>(static_cast<uint32_t>(index));
-      }
-    }
-
-    size_t index = data_->shared_values_.size();
-    // Shared values in transit are kept alive by global handles in the shared
-    // isolate. No code ever runs in the shared Isolate, so locking it does not
-    // contend with long-running tasks.
-    {
-      DCHECK_EQ(reinterpret_cast<i::Isolate*>(isolate)->shared_isolate(),
-                reinterpret_cast<i::Isolate*>(Shell::shared_isolate));
-      v8::Locker locker(Shell::shared_isolate);
-      data_->shared_values_.emplace_back(Shell::shared_isolate, shared_value);
-    }
-    return Just<uint32_t>(static_cast<uint32_t>(index));
+  bool AdoptSharedValueConveyor(Isolate* isolate,
+                                SharedValueConveyor&& conveyor) override {
+    data_->shared_value_conveyor_.emplace(std::move(conveyor));
+    return true;
   }
 
  private:
@@ -5331,6 +5442,7 @@ class Serializer : public ValueSerializer::Delegate {
     return Just(true);
   }
 
+  // This must come before ValueSerializer as it caches this value.
   Isolate* isolate_;
   ValueSerializer serializer_;
   std::unique_ptr<SerializationData> data_;
@@ -5341,12 +5453,6 @@ class Serializer : public ValueSerializer::Delegate {
   size_t current_memory_usage_;
 };
 
-void SerializationData::ClearSharedValuesUnderLockIfNeeded() {
-  if (shared_values_.empty()) return;
-  v8::Locker locker(Shell::shared_isolate);
-  shared_values_.clear();
-}
-
 class Deserializer : public ValueDeserializer::Delegate {
  public:
   Deserializer(Isolate* isolate, std::unique_ptr<SerializationData> data)
@@ -5354,12 +5460,6 @@ class Deserializer : public ValueDeserializer::Delegate {
         deserializer_(isolate, data->data(), data->size(), this),
         data_(std::move(data)) {
     deserializer_.SetSupportsLegacyWireFormat(true);
-  }
-
-  ~Deserializer() {
-    DCHECK_EQ(reinterpret_cast<i::Isolate*>(isolate_)->shared_isolate(),
-              reinterpret_cast<i::Isolate*>(Shell::shared_isolate));
-    data_->ClearSharedValuesUnderLockIfNeeded();
   }
 
   Deserializer(const Deserializer&) = delete;
@@ -5399,15 +5499,12 @@ class Deserializer : public ValueDeserializer::Delegate {
         isolate_, data_->compiled_wasm_modules().at(transfer_id));
   }
 
-  bool SupportsSharedValues() const override { return true; }
-
-  MaybeLocal<Value> GetSharedValueFromId(Isolate* isolate,
-                                         uint32_t id) override {
+  const SharedValueConveyor* GetSharedValueConveyor(Isolate* isolate) override {
     DCHECK_NOT_NULL(data_);
-    if (id < data_->shared_values().size()) {
-      return data_->shared_values().at(id).Get(isolate);
+    if (data_->shared_value_conveyor()) {
+      return &data_->shared_value_conveyor().value();
     }
-    return MaybeLocal<Value>();
+    return nullptr;
   }
 
  private:
@@ -5423,7 +5520,7 @@ class D8Testing {
    * stress coverage.
    */
   static int GetStressRuns() {
-    if (internal::FLAG_stress_runs != 0) return internal::FLAG_stress_runs;
+    if (i::v8_flags.stress_runs != 0) return i::v8_flags.stress_runs;
 #ifdef DEBUG
     // In debug mode the code runs much slower so stressing will only make two
     // runs.
@@ -5431,24 +5528,6 @@ class D8Testing {
 #else
     return 5;
 #endif
-  }
-
-  /**
-   * Indicate the number of the run which is about to start. The value of run
-   * should be between 0 and one less than the result from GetStressRuns()
-   */
-  static void PrepareStressRun(int run) {
-    static const char* kLazyOptimizations =
-        "--prepare-always-turbofan "
-        "--max-inlined-bytecode-size=999999 "
-        "--max-inlined-bytecode-size-cumulative=999999 "
-        "--noalways-turbofan";
-
-    if (run == 0) {
-      V8::SetFlagsFromString(kLazyOptimizations);
-    } else if (run == GetStressRuns() - 1) {
-      i::FLAG_always_turbofan = true;
-    }
   }
 
   /**
@@ -5515,10 +5594,6 @@ void Shell::WaitForRunningWorkers(const i::ParkedScope& parked) {
 
 namespace {
 
-bool HasFlagThatRequiresSharedIsolate() {
-  return i::FLAG_shared_string_table || i::FLAG_harmony_struct;
-}
-
 #ifdef V8_OS_POSIX
 void d8_sigterm_handler(int signal, siginfo_t* info, void* context) {
   // Dump stacktraces when terminating d8 instances with SIGTERM.
@@ -5533,7 +5608,7 @@ void d8_sigterm_handler(int signal, siginfo_t* info, void* context) {
 
 void d8_install_sigterm_handler() {
 #ifdef V8_OS_POSIX
-  CHECK(!i::FLAG_fuzzing);
+  CHECK(!i::v8_flags.fuzzing);
   struct sigaction sa;
   sa.sa_sigaction = d8_sigterm_handler;
   sigemptyset(&sa.sa_mask);
@@ -5549,7 +5624,7 @@ void d8_install_sigterm_handler() {
 int Shell::Main(int argc, char* argv[]) {
   v8::base::EnsureConsoleOutput();
   if (!SetOptions(argc, argv)) return 1;
-  if (!i::FLAG_fuzzing) d8_install_sigterm_handler();
+  if (!i::v8_flags.fuzzing) d8_install_sigterm_handler();
 
   v8::V8::InitializeICUDefaultLocation(argv[0], options.icu_data_file);
 
@@ -5568,7 +5643,7 @@ int Shell::Main(int argc, char* argv[]) {
 
   std::ofstream trace_file;
   std::unique_ptr<platform::tracing::TracingController> tracing;
-  if (options.trace_enabled && !i::FLAG_verify_predictable) {
+  if (options.trace_enabled && !i::v8_flags.verify_predictable) {
     tracing = std::make_unique<platform::tracing::TracingController>();
 
     if (!options.enable_etw_stack_walking) {
@@ -5617,31 +5692,29 @@ int Shell::Main(int argc, char* argv[]) {
       options.thread_pool_size, v8::platform::IdleTaskSupport::kEnabled,
       in_process_stack_dumping, std::move(tracing));
   g_default_platform = g_platform.get();
-  if (i::FLAG_predictable) {
+  if (i::v8_flags.predictable) {
     g_platform = MakePredictablePlatform(std::move(g_platform));
   }
   if (options.stress_delay_tasks) {
-    int64_t random_seed = i::FLAG_fuzzer_random_seed;
-    if (!random_seed) random_seed = i::FLAG_random_seed;
+    int64_t random_seed = i::v8_flags.fuzzer_random_seed;
+    if (!random_seed) random_seed = i::v8_flags.random_seed;
     // If random_seed is still 0 here, the {DelayedTasksPlatform} will choose a
     // random seed.
     g_platform = MakeDelayedTasksPlatform(std::move(g_platform), random_seed);
   }
 
-  if (i::FLAG_trace_turbo_cfg_file == nullptr) {
+  if (i::v8_flags.trace_turbo_cfg_file == nullptr) {
     V8::SetFlagsFromString("--trace-turbo-cfg-file=turbo.cfg");
   }
-  if (i::FLAG_redirect_code_traces_to == nullptr) {
+  if (i::v8_flags.redirect_code_traces_to == nullptr) {
     V8::SetFlagsFromString("--redirect-code-traces-to=code.asm");
   }
   v8::V8::InitializePlatform(g_platform.get());
 
   // Disable flag freezing if we are producing a code cache, because for that we
-  // modify FLAG_hash_seed (below).
-  // Also --stress-opt modifies flags between runs.
-  if (options.code_cache_options != ShellOptions::kNoProduceCache ||
-      options.stress_opt) {
-    i::FLAG_freeze_flags_after_init = false;
+  // modify v8_flags.hash_seed (below).
+  if (options.code_cache_options != ShellOptions::kNoProduceCache) {
+    i::v8_flags.freeze_flags_after_init = false;
   }
 
   v8::V8::Initialize();
@@ -5678,7 +5751,7 @@ int Shell::Main(int argc, char* argv[]) {
   }
   create_params.array_buffer_allocator = Shell::array_buffer_allocator;
 #ifdef ENABLE_VTUNE_JIT_INTERFACE
-  if (i::FLAG_enable_vtunejit) {
+  if (i::v8_flags.enable_vtunejit) {
     create_params.code_event_handler = vTune::GetVtuneCodeEventHandler();
   }
 #endif
@@ -5711,17 +5784,6 @@ int Shell::Main(int argc, char* argv[]) {
     }
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
-
-  if (HasFlagThatRequiresSharedIsolate()) {
-    Isolate::CreateParams shared_create_params;
-    shared_create_params.constraints.ConfigureDefaults(
-        base::SysInfo::AmountOfPhysicalMemory(),
-        base::SysInfo::AmountOfVirtualMemory());
-    shared_create_params.array_buffer_allocator = Shell::array_buffer_allocator;
-    shared_isolate =
-        reinterpret_cast<Isolate*>(i::Isolate::NewShared(shared_create_params));
-    create_params.experimental_attach_to_shared_isolate = shared_isolate;
-  }
 
   Isolate* isolate = Isolate::New(create_params);
 
@@ -5771,19 +5833,8 @@ int Shell::Main(int argc, char* argv[]) {
                                      CpuProfilingOptions{});
       }
 
-      if (options.stress_opt) {
-        options.stress_runs = D8Testing::GetStressRuns();
-        for (int i = 0; i < options.stress_runs && result == 0; i++) {
-          printf("============ Stress %d/%d ============\n", i + 1,
-                 options.stress_runs.get());
-          D8Testing::PrepareStressRun(i);
-          bool last_run = i == options.stress_runs - 1;
-          result = RunMain(isolate, last_run);
-        }
-        printf("======== Full Deoptimization =======\n");
-        D8Testing::DeoptimizeAll(isolate);
-      } else if (i::FLAG_stress_runs > 0) {
-        options.stress_runs = i::FLAG_stress_runs;
+      if (i::v8_flags.stress_runs > 0) {
+        options.stress_runs = i::v8_flags.stress_runs;
         for (int i = 0; i < options.stress_runs && result == 0; i++) {
           printf("============ Run %d/%d ============\n", i + 1,
                  options.stress_runs.get());
@@ -5801,13 +5852,11 @@ int Shell::Main(int argc, char* argv[]) {
           // First run to produce the cache
           Isolate::CreateParams create_params2;
           create_params2.array_buffer_allocator = Shell::array_buffer_allocator;
-          create_params2.experimental_attach_to_shared_isolate =
-              Shell::shared_isolate;
           // Use a different hash seed.
-          i::FLAG_hash_seed = i::FLAG_hash_seed ^ 1337;
+          i::v8_flags.hash_seed = i::v8_flags.hash_seed ^ 1337;
           Isolate* isolate2 = Isolate::New(create_params2);
           // Restore old hash seed.
-          i::FLAG_hash_seed = i::FLAG_hash_seed ^ 1337;
+          i::v8_flags.hash_seed = i::v8_flags.hash_seed ^ 1337;
           {
             D8Console console2(isolate2);
             Initialize(isolate2, &console2);
@@ -5843,7 +5892,7 @@ int Shell::Main(int argc, char* argv[]) {
         RunShell(isolate);
       }
 
-      if (i::FLAG_trace_ignition_dispatches_output_file != nullptr) {
+      if (i::v8_flags.trace_ignition_dispatches_output_file != nullptr) {
         WriteIgnitionDispatchCountersFile(isolate);
       }
 

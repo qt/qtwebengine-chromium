@@ -395,6 +395,8 @@ class MemoryProperties final : angle::NonCopyable
         return mMemoryProperties.memoryHeaps[heapIndex].size;
     }
 
+    const VkMemoryType &getMemoryType(uint32_t i) const { return mMemoryProperties.memoryTypes[i]; }
+
     uint32_t getMemoryTypeCount() const { return mMemoryProperties.memoryTypeCount; }
 
   private:
@@ -1029,7 +1031,11 @@ void InitExtendedDynamicStateEXTFunctions(VkDevice device);
 void InitExtendedDynamicState2EXTFunctions(VkDevice device);
 
 // VK_KHR_fragment_shading_rate
-void InitFragmentShadingRateKHRFunctions(VkDevice device);
+void InitFragmentShadingRateKHRInstanceFunction(VkInstance instance);
+void InitFragmentShadingRateKHRDeviceFunction(VkDevice device);
+
+// VK_GOOGLE_display_timing
+void InitGetPastPresentationTimingGoogleFunction(VkDevice device);
 
 #endif  // !defined(ANGLE_SHARED_LIBVULKAN)
 
@@ -1049,6 +1055,7 @@ VkSampleCountFlagBits GetSamples(GLint sampleCount);
 VkComponentSwizzle GetSwizzle(const GLenum swizzle);
 VkCompareOp GetCompareOp(const GLenum compareFunc);
 VkStencilOp GetStencilOp(const GLenum compareOp);
+VkLogicOp GetLogicOp(const GLenum logicOp);
 
 constexpr gl::ShaderMap<VkShaderStageFlagBits> kShaderStageMap = {
     {gl::ShaderType::Vertex, VK_SHADER_STAGE_VERTEX_BIT},
@@ -1150,6 +1157,7 @@ enum class RenderPassClosureReason
     BeginNonRenderPassQuery,
     EndNonRenderPassQuery,
     TimestampQuery,
+    EndRenderPassQuery,
     GLReadPixels,
 
     // Synchronization

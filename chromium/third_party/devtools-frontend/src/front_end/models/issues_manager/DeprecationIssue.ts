@@ -140,24 +140,72 @@ const UIStrings = {
   insecurePrivateNetworkSubresourceRequest:
       'The website requested a subresource from a network that it could only access because of its users\' privileged network position. These requests expose non-public devices and servers to the internet, increasing the risk of a cross-site request forgery (CSRF) attack, and/or information leakage. To mitigate these risks, Chrome deprecates requests to non-public subresources when initiated from non-secure contexts, and will start blocking them.',
   /**
-   * @description A deprecation warning shown in the DevTools Issues tab.
-   * It's shown when a video conferencing website attempts to disable
-   * use of IPv6 addresses with a non-standard API.
-   */
-  legacyConstraintGoogIPv6:
-      'IPv6 is enabled-by-default and the ability to disable it using `googIPv6` is targeted to be removed in M108, after which it will be ignored. Please stop using this legacy constraint.',
-  /**
    * @description TODO(crbug.com/1318865): Description needed for translation
    */
   localCSSFileExtensionRejected:
       'CSS cannot be loaded from `file:` URLs unless they end in a `.css` file extension.',
   /**
-   * @description TODO(crbug.com/1320345): Description needed for translation
+   * @description This is a deprecation warning to developers that occurs when
+   * the script attempts to use the Media Source Extensions API in a way that
+   * is no longer supported by the specification for the API. The usage
+   * that is problematic is when the script calls the `SourceBuffer.abort()`
+   * method at a time when there is still processing happening in response to a
+   * previous `SourceBuffer.remove()` call for the same SourceBuffer object.
+   * More precisely, we show this warning to developers when script calls the
+   * SourceBuffer abort() method while the asynchronous processing of a remove()
+   * call on that SourceBuffer is not yet complete. Early versions of the Media
+   * Source Extensions specification allowed such aborts, but standardization of
+   * the specification resulted in disallowing the aborts. The script should
+   * instead wait for the asynchronous remove() operation to complete, which is
+   * observable by listening for the associated 'updateend' event from the
+   * SourceBuffer. A note is also included in the warning, describing when
+   * abort() is meaningful and allowed by the specification for purposes other
+   * than interrupting a remove() operation's asynchronous steps. Those
+   * supported purposes include using abort() to interrupt processing that may
+   * still be happening in response to a previous appendBuffer() call on that
+   * SourceBuffer, or using abort() to clear the internal of any unprocessed
+   * data remaining from previous appendBuffer() calls.
+   * See https://www.w3.org/TR/media-source-2/#dom-sourcebuffer-abort for the
+   * currently specified behavior, which would throw an exception once the
+   * deprecated removal abort is no longer supported.
+   * See https://github.com/w3c/media-source/issues/19 for the discussion that
+   * led to the specification change.
    */
   mediaSourceAbortRemove:
       'Using `SourceBuffer.abort()` to abort `remove()`\'s asynchronous range removal is deprecated due to specification change. Support will be removed in the future. You should listen to the `updateend` event instead. `abort()` is intended to only abort an asynchronous media append or reset parser state.',
   /**
-   * @description TODO(crbug.com/1320346): Description needed for translation
+   * @description This is a deprecation warning to developers that occurs when
+   * the script attempts to use the Media Source Extensions API in a way that is
+   * no longer supported by the specification for the API. The usage that is
+   * problematic is when the script sets the duration attribute of a MediaSource
+   * object too low. The duration attribute of a MediaSource must be longer than
+   * the actual duration of any media (audio or video) already in the
+   * MediaSource. When set too low, the MediaSource must remove audio and video
+   * content that is beyond the time indicated by the new duration. Content
+   * removal that is caused by setting the duration attribute too low is no
+   * longer allowed by the specification. The message describes the minimum
+   * allowable duration value as the "highest presentation timestamp of any
+   * buffered coded frames" as a more precise way of describing the duration of
+   * content already in the MediaSource: "coded frames" are the specification's
+   * way of describing compressed audio frames or compressed video frames, and
+   * they each have a "presentation timestamp" that describes precisely when
+   * that frame's playback occurs in the overall media presentation. Early
+   * versions of the Media Source Extensions specification allowed this to
+   * happen, but standardization of the specification resulted in disallowing
+   * this behavior. The underlying issue leading to this specification change
+   * was that setting the duration attribute should be synchronous, but setting
+   * it lower than the timestamp of something currently buffered would cause
+   * confusing removal of media between that new duration and the previous,
+   * larger, duration. The script should instead explicitly remove that range of
+   * media first, before lowering the duration.
+   * See https://www.w3.org/TR/media-source-2/#dom-mediasource-duration and
+   * https://www.w3.org/TR/media-source-2/#dom-mediasource-duration for the
+   * currently specified behavior, which would throw an exception once support
+   * is removed for deprecated implicit asynchronous range removal when duration
+   * is truncated.
+   * See both https://github.com/w3c/media-source/issues/20 and
+   * https://github.com/w3c/media-source/issues/26 for the discussion that led
+   * to the specification change.
    */
   mediaSourceDurationTruncatingBuffered:
       'Setting `MediaSource.duration` below the highest presentation timestamp of any buffered coded frames is deprecated due to specification change. Support for implicit removal of truncated buffered media will be removed in the future. You should instead perform explicit `remove(newDuration, oldDuration)` on all `sourceBuffers`, where `newDuration < oldDuration`.',
@@ -185,7 +233,15 @@ const UIStrings = {
    * @description Warning displayed to developers when `window.openDatabase` is used in non-secure contexts to notify that the API is deprecated and will be removed.
    */
   openWebDatabaseInsecureContext:
-      'WebSQL in non-secure contexts is deprecated and will be removed in M107. Please use Web Storage or Indexed Database.',
+      'WebSQL in non-secure contexts is deprecated and will be removed soon. Please use Web Storage or Indexed Database.',
+  /**
+   * @description Warning displayed to developers when they use the PaymentInstruments API to let them know this API is deprecated.
+   */
+  paymentInstruments: '`paymentManager.instruments` is deprecated. Please use just-in-time install for payment handlers instead.',
+  /**
+   * @description Warning displayed to developers when their Web Payment API usage violates their Content-Security-Policy (CSP) connect-src directive to let them know this CSP bypass has been deprecated.
+   */
+  paymentRequestCSPViolation: 'Your `PaymentRequest` call bypassed Content-Security-Policy (CSP) `connect-src` directive. This bypass is deprecated. Please add the payment method identifier from the `PaymentRequest` API (in `supportedMethods` field) to your CSP `connect-src` directive.',
   /**
    * @description Warning displayed to developers when persistent storage type is used to notify that storage type is deprecated.
    */
@@ -311,6 +367,14 @@ const UIStrings = {
    */
   xrSupportsSession:
       '`supportsSession()` is deprecated. Please use `isSessionSupported()` and check the resolved boolean value instead.',
+  /**
+   * @description Warning displayed to developers that use overflow:visible
+   * for replaced elements. This declaration was earlier ignored but will now
+   * change the element's painting based on whether the overflow value allows
+   * the element to paint outside its bounds.
+   */
+  overflowVisibleOnReplacedElement:
+      'Specifying `overflow: visible` on img, video and canvas tags may cause them to produce visual content outside of the element bounds. See https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md.',
 };
 // clang-format on
 const str_ = i18n.i18n.registerUIStrings('models/issues_manager/DeprecationIssue.ts', UIStrings);
@@ -420,10 +484,6 @@ export class DeprecationIssue extends Issue {
         feature = 5436853517811712;
         milestone = 92;
         break;
-      case Protocol.Audits.DeprecationIssueType.LegacyConstraintGoogIPv6:
-        messageFunction = i18nLazyString(UIStrings.legacyConstraintGoogIPv6);
-        milestone = 103;
-        break;
       case Protocol.Audits.DeprecationIssueType.LocalCSSFileExtensionRejected:
         messageFunction = i18nLazyString(UIStrings.localCSSFileExtensionRejected);
         milestone = 64;
@@ -435,15 +495,6 @@ export class DeprecationIssue extends Issue {
       case Protocol.Audits.DeprecationIssueType.MediaSourceDurationTruncatingBuffered:
         messageFunction = i18nLazyString(UIStrings.mediaSourceDurationTruncatingBuffered);
         feature = 6107495151960064;
-        break;
-      case Protocol.Audits.DeprecationIssueType.NavigateEventRestoreScroll:
-        messageFunction = i18nLazyString(
-            UIStrings.deprecatedWithReplacement, {PH1: 'navigateEvent.restoreScroll()', PH2: 'navigateEvent.scroll()'});
-        break;
-      case Protocol.Audits.DeprecationIssueType.NavigateEventTransitionWhile:
-        messageFunction = i18nLazyString(
-            UIStrings.deprecatedWithReplacement,
-            {PH1: 'navigateEvent.transitionWhile()', PH2: 'navigateEvent.intercept()'});
         break;
       case Protocol.Audits.DeprecationIssueType.NoSysexWebMIDIWithoutPermission:
         messageFunction = i18nLazyString(UIStrings.noSysexWebMIDIWithoutPermission);
@@ -465,6 +516,14 @@ export class DeprecationIssue extends Issue {
         messageFunction = i18nLazyString(UIStrings.openWebDatabaseInsecureContext);
         feature = 5175124599767040;
         milestone = 105;
+        break;
+      case Protocol.Audits.DeprecationIssueType.PaymentInstruments:
+        messageFunction = i18nLazyString(UIStrings.paymentInstruments);
+        feature = 5099285054488576;
+        break;
+      case Protocol.Audits.DeprecationIssueType.PaymentRequestCSPViolation:
+        messageFunction = i18nLazyString(UIStrings.paymentRequestCSPViolation);
+        feature = 6286595631087616;
         break;
       case Protocol.Audits.DeprecationIssueType.PersistentQuotaType:
         messageFunction = i18nLazyString(UIStrings.persistentQuotaType);
@@ -522,6 +581,11 @@ export class DeprecationIssue extends Issue {
       case Protocol.Audits.DeprecationIssueType.RequestedSubresourceWithEmbeddedCredentials:
         messageFunction = i18nLazyString(UIStrings.requestedSubresourceWithEmbeddedCredentials);
         feature = 5669008342777856;
+        break;
+      case Protocol.Audits.DeprecationIssueType.OverflowVisibleOnReplacedElement:
+        messageFunction = i18nLazyString(UIStrings.overflowVisibleOnReplacedElement);
+        feature = 5137515594383360;
+        milestone = 108;
         break;
       case Protocol.Audits.DeprecationIssueType.RTCConstraintEnableDtlsSrtpFalse:
         messageFunction = i18nLazyString(UIStrings.rtcConstraintEnableDtlsSrtpFalse);

@@ -7,6 +7,7 @@
 #include "core/fpdfdoc/cpdf_iconfit.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -18,7 +19,8 @@ constexpr float kDefaultPosition = 0.5f;
 
 }  // namespace
 
-CPDF_IconFit::CPDF_IconFit(const CPDF_Dictionary* pDict) : m_pDict(pDict) {}
+CPDF_IconFit::CPDF_IconFit(RetainPtr<const CPDF_Dictionary> pDict)
+    : m_pDict(std::move(pDict)) {}
 
 CPDF_IconFit::CPDF_IconFit(const CPDF_IconFit& that) = default;
 
@@ -28,7 +30,7 @@ CPDF_IconFit::ScaleMethod CPDF_IconFit::GetScaleMethod() const {
   if (!m_pDict)
     return ScaleMethod::kAlways;
 
-  ByteString csSW = m_pDict->GetStringFor("SW", "A");
+  ByteString csSW = m_pDict->GetByteStringFor("SW", "A");
   if (csSW == "B")
     return ScaleMethod::kBigger;
   if (csSW == "S")
@@ -39,7 +41,7 @@ CPDF_IconFit::ScaleMethod CPDF_IconFit::GetScaleMethod() const {
 }
 
 bool CPDF_IconFit::IsProportionalScale() const {
-  return !m_pDict || m_pDict->GetStringFor("S", "P") != "A";
+  return !m_pDict || m_pDict->GetByteStringFor("S", "P") != "A";
 }
 
 CFX_PointF CPDF_IconFit::GetIconBottomLeftPosition() const {
@@ -48,15 +50,15 @@ CFX_PointF CPDF_IconFit::GetIconBottomLeftPosition() const {
   if (!m_pDict)
     return {fLeft, fBottom};
 
-  const CPDF_Array* pA = m_pDict->GetArrayFor("A");
+  RetainPtr<const CPDF_Array> pA = m_pDict->GetArrayFor("A");
   if (!pA)
     return {fLeft, fBottom};
 
   size_t dwCount = pA->size();
   if (dwCount > 0)
-    fLeft = pA->GetNumberAt(0);
+    fLeft = pA->GetFloatAt(0);
   if (dwCount > 1)
-    fBottom = pA->GetNumberAt(1);
+    fBottom = pA->GetFloatAt(1);
   return {fLeft, fBottom};
 }
 
@@ -68,13 +70,13 @@ CFX_PointF CPDF_IconFit::GetIconPosition() const {
   if (!m_pDict)
     return CFX_PointF();
 
-  const CPDF_Array* pA = m_pDict->GetArrayFor("A");
+  RetainPtr<const CPDF_Array> pA = m_pDict->GetArrayFor("A");
   if (!pA)
     return CFX_PointF();
 
   size_t dwCount = pA->size();
-  return {dwCount > 0 ? pA->GetNumberAt(0) : 0.0f,
-          dwCount > 1 ? pA->GetNumberAt(1) : 0.0f};
+  return {dwCount > 0 ? pA->GetFloatAt(0) : 0.0f,
+          dwCount > 1 ? pA->GetFloatAt(1) : 0.0f};
 }
 
 CFX_VectorF CPDF_IconFit::GetScale(const CFX_SizeF& image_size,

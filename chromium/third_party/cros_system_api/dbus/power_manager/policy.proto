@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium OS Authors. All rights reserved.
+// Copyright 2013 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@ option go_package = "chromiumos/system_api/power_manager_proto";
 // opposed to continuing to use a value set by a previous message).  An
 // empty message will restore all settings to their defaults.
 //
-// Next ID to use: 30
+// Next ID to use: 31
 message PowerManagementPolicy {
 
   enum Action {
@@ -298,7 +298,11 @@ message PowerManagementPolicy {
   // Unused unless Adaptive Charging is enabled.
   optional double adaptive_charging_min_probability = 29;
 
-  // Next value to use: 30
+  // The percentile of the charge durations recorded in Charge History to use as
+  // the max delay until full charge for Adaptive Charging.
+  optional double adaptive_charging_max_delay_percentile = 30;
+
+  // Next value to use: 31
 }
 
 // Message included in IdleActionImminent signals.

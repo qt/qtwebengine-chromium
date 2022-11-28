@@ -28,12 +28,6 @@
 #define EIGEN_USE_AVX512_TRSM_L_KERNELS 0
 #endif
 
-#if defined(EIGEN_HAS_CXX17_IFCONSTEXPR)
-#define EIGEN_IF_CONSTEXPR(X) if constexpr (X)
-#else
-#define EIGEN_IF_CONSTEXPR(X) if (X)
-#endif
-
 // Need this for some std::min calls.
 #ifdef min
 #undef min

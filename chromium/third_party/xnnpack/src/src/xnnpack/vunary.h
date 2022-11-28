@@ -189,6 +189,10 @@ DECLARE_F16_VSQR_UKERNEL_FUNCTION(xnn_f16_vsqr_ukernel__f16c_x16)
       void* y,                                      \
       const union xnn_f16_sqrt_params* params);
 
+DECLARE_F16_VSQRT_UKERNEL_FUNCTION(xnn_f16_vsqrt_ukernel__fp16arith_sqrt_x1)
+DECLARE_F16_VSQRT_UKERNEL_FUNCTION(xnn_f16_vsqrt_ukernel__fp16arith_sqrt_x2)
+DECLARE_F16_VSQRT_UKERNEL_FUNCTION(xnn_f16_vsqrt_ukernel__fp16arith_sqrt_x4)
+
 DECLARE_F16_VSQRT_UKERNEL_FUNCTION(xnn_f16_vsqrt_ukernel__neonfp16arith_sqrt_x8)
 DECLARE_F16_VSQRT_UKERNEL_FUNCTION(xnn_f16_vsqrt_ukernel__neonfp16arith_sqrt_x16)
 
@@ -1075,6 +1079,16 @@ DECLARE_U8_VCLAMP_UKERNEL_FUNCTION(xnn_u8_vclamp_ukernel__neon_x64)
 DECLARE_U8_VCLAMP_UKERNEL_FUNCTION(xnn_u8_vclamp_ukernel__scalar_x4)
 DECLARE_U8_VCLAMP_UKERNEL_FUNCTION(xnn_u8_vclamp_ukernel__sse2_x64)
 DECLARE_U8_VCLAMP_UKERNEL_FUNCTION(xnn_u8_vclamp_ukernel__wasmsimd_x64)
+
+
+#define DECLARE_U64_U32_VSQRTSHIFT_UKERNEL_FUNCTION(fn_name) \
+  XNN_INTERNAL void fn_name(                                 \
+      size_t n,                                              \
+      const uint64_t* x,                                     \
+      uint32_t* y,                                           \
+      uint32_t shift);
+
+DECLARE_U64_U32_VSQRTSHIFT_UKERNEL_FUNCTION(xnn_u64_u32_vsqrtshift_ukernel__scalar_cvtu32_sqrt_cvtu32f64_x1)
 
 
 #define DECLARE_XX_VUNARY_UKERNEL_FUNCTION(fn_name) \

@@ -19,6 +19,7 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/fx_font.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
@@ -35,7 +36,7 @@
 #include "testing/utils/path_service.h"
 #include "third_party/base/check.h"
 
-using pdfium::kHelloWorldChecksum;
+using pdfium::HelloWorldChecksum;
 
 namespace {
 
@@ -43,31 +44,33 @@ const char kAllRemovedChecksum[] = "eee4600ac08b458ac7ac2320e225674c";
 
 const wchar_t kBottomText[] = L"I'm at the bottom of the page";
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-static constexpr char kBottomTextChecksum[] =
-    "81636489006a31fcb00cf29efcdf7909";
-#else
-static constexpr char kBottomTextChecksum[] =
-    "891dcb6e914c8360998055f1f47c9727";
+const char* BottomTextChecksum() {
+#if BUILDFLAG(IS_APPLE)
+  if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+    return "81636489006a31fcb00cf29efcdf7909";
 #endif
+  return "891dcb6e914c8360998055f1f47c9727";
+}
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-const char kFirstRemovedChecksum[] = "a1dc2812692fcc7ee4f01ca77435df9d";
-#else
-const char kFirstRemovedChecksum[] = "e1477dc3b5b3b9c560814c4d1135a02b";
+const char* FirstRemovedChecksum() {
+#if BUILDFLAG(IS_APPLE)
+  if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+    return "a1dc2812692fcc7ee4f01ca77435df9d";
 #endif
+  return "e1477dc3b5b3b9c560814c4d1135a02b";
+}
 
 const wchar_t kLoadedFontText[] = L"I am testing my loaded font, WEE.";
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-const char kLoadedFontTextChecksum[] = "d58570cc045dfb818b92cbabbd1a364c";
-#elif BUILDFLAG(IS_APPLE)
-const char kLoadedFontTextChecksum[] = "0f3e4a7d71f9e7eb8a1a0d69403b9848";
+const char* LoadedFontTextChecksum() {
+  if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+    return "d58570cc045dfb818b92cbabbd1a364c";
+#if BUILDFLAG(IS_APPLE)
+  return "0f3e4a7d71f9e7eb8a1a0d69403b9848";
 #else
-const char kLoadedFontTextChecksum[] = "d58570cc045dfb818b92cbabbd1a364c";
+  return "d58570cc045dfb818b92cbabbd1a364c";
 #endif
+}
 
 const char kRedRectangleChecksum[] = "66d02eaa6181e2c069ce2ea99beda497";
 
@@ -89,7 +92,8 @@ class FPDFEditEmbedderTest : public EmbedderTest {
                            bool bold,
                            bool italic,
                            pdfium::span<const uint8_t> span) {
-    const CPDF_Dictionary* font_desc = font_dict->GetDictFor("FontDescriptor");
+    RetainPtr<const CPDF_Dictionary> font_desc =
+        font_dict->GetDictFor("FontDescriptor");
     ASSERT_TRUE(font_desc);
     EXPECT_EQ("FontDescriptor", font_desc->GetNameFor("Type"));
     ByteString font_name = font_desc->GetNameFor("FontName");
@@ -106,7 +110,7 @@ class FPDFEditEmbedderTest : public EmbedderTest {
     EXPECT_TRUE(FontStyleIsNonSymbolic(font_flags));
     ASSERT_TRUE(font_desc->KeyExist("FontBBox"));
 
-    const CPDF_Array* fontBBox = font_desc->GetArrayFor("FontBBox");
+    RetainPtr<const CPDF_Array> fontBBox = font_desc->GetArrayFor("FontBBox");
     ASSERT_TRUE(fontBBox);
     EXPECT_EQ(4u, fontBBox->size());
     // Check that the coordinates are in the preferred order according to spec
@@ -133,11 +137,10 @@ class FPDFEditEmbedderTest : public EmbedderTest {
     // Check that the font stream is the one that was provided
     ASSERT_EQ(span.size(), streamAcc->GetSize());
     if (font_type == FPDF_FONT_TRUETYPE) {
-      ASSERT_EQ(static_cast<int>(span.size()),
-                streamAcc->GetDict()->GetIntegerFor("Length1"));
+      ASSERT_EQ(static_cast<int>(span.size()), streamAcc->GetLength1ForTest());
     }
 
-    const uint8_t* stream_data = streamAcc->GetData();
+    pdfium::span<const uint8_t> stream_data = streamAcc->GetSpan();
     for (size_t j = 0; j < span.size(); j++)
       EXPECT_EQ(span[j], stream_data[j]) << " at byte " << j;
   }
@@ -151,17 +154,17 @@ class FPDFEditEmbedderTest : public EmbedderTest {
     int num_cids_checked = 0;
     int cur_cid = 0;
     for (size_t idx = 0; idx < widths_array->size(); idx++) {
-      int cid = widths_array->GetNumberAt(idx);
+      int cid = widths_array->GetFloatAt(idx);
       EXPECT_GE(cid, cur_cid);
       ASSERT_FALSE(++idx == widths_array->size());
-      const CPDF_Object* next = widths_array->GetObjectAt(idx);
+      RetainPtr<const CPDF_Object> next = widths_array->GetObjectAt(idx);
       if (next->IsArray()) {
         // We are in the c [w1 w2 ...] case
         const CPDF_Array* arr = next->AsArray();
         int cnt = static_cast<int>(arr->size());
         size_t inner_idx = 0;
         for (cur_cid = cid; cur_cid < cid + cnt; cur_cid++) {
-          int width = arr->GetNumberAt(inner_idx++);
+          int width = arr->GetFloatAt(inner_idx++);
           EXPECT_EQ(width, typed_font->GetCharWidthF(cur_cid))
               << " at cid " << cur_cid;
         }
@@ -172,7 +175,7 @@ class FPDFEditEmbedderTest : public EmbedderTest {
       ASSERT_TRUE(next->IsNumber());
       int last_cid = next->AsNumber()->GetInteger();
       ASSERT_FALSE(++idx == widths_array->size());
-      int width = widths_array->GetNumberAt(idx);
+      int width = widths_array->GetFloatAt(idx);
       for (cur_cid = cid; cur_cid <= last_cid; cur_cid++) {
         EXPECT_EQ(width, typed_font->GetCharWidthF(cur_cid))
             << " at cid " << cur_cid;
@@ -318,7 +321,7 @@ TEST_F(FPDFEditEmbedderTest, EmptyCreation) {
 
 // Regression test for https://crbug.com/667012
 TEST_F(FPDFEditEmbedderTest, RasterizePDF) {
-  const char kAllBlackMd5sum[] = "5708fc5c4a8bd0abde99c8e8f0390615";
+  const char kAllBlackChecksum[] = "5708fc5c4a8bd0abde99c8e8f0390615";
 
   // Get the bitmap for the original document.
   ScopedFPDFBitmap orig_bitmap;
@@ -327,7 +330,7 @@ TEST_F(FPDFEditEmbedderTest, RasterizePDF) {
     FPDF_PAGE orig_page = LoadPage(0);
     ASSERT_TRUE(orig_page);
     orig_bitmap = RenderLoadedPage(orig_page);
-    CompareBitmap(orig_bitmap.get(), 612, 792, kAllBlackMd5sum);
+    CompareBitmap(orig_bitmap.get(), 612, 792, kAllBlackChecksum);
     UnloadPage(orig_page);
   }
 
@@ -353,7 +356,7 @@ TEST_F(FPDFEditEmbedderTest, RasterizePDF) {
   // Get the generated content. Make sure it is at least as big as the original
   // PDF.
   EXPECT_GT(GetString().size(), 923u);
-  VerifySavedDocument(612, 792, kAllBlackMd5sum);
+  VerifySavedDocument(612, 792, kAllBlackChecksum);
 }
 
 TEST_F(FPDFEditEmbedderTest, AddPaths) {
@@ -514,14 +517,14 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
   EXPECT_TRUE(FPDFPath_BezierTo(blue_path, 375, 330, 390, 360, 400, 400));
   EXPECT_TRUE(FPDFPath_Close(blue_path));
   FPDFPage_InsertObject(page, blue_path);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  static constexpr char kLastChecksum[] = "ed14c60702b1489c597c7d46ece7f86d";
-#else
-  static constexpr char kLastChecksum[] = "9823e1a21bd9b72b6a442ba4f12af946";
-#endif
+  const char* last_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "ed14c60702b1489c597c7d46ece7f86d";
+    return "9823e1a21bd9b72b6a442ba4f12af946";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 612, 792, kLastChecksum);
+    CompareBitmap(page_bitmap.get(), 612, 792, last_checksum);
   }
 
   // Now save the result, closing the page and document
@@ -530,7 +533,7 @@ TEST_F(FPDFEditEmbedderTest, AddPaths) {
   FPDF_ClosePage(page);
 
   // Render the saved result
-  VerifySavedDocument(612, 792, kLastChecksum);
+  VerifySavedDocument(612, 792, last_checksum);
 }
 
 TEST_F(FPDFEditEmbedderTest, ClipPath) {
@@ -715,15 +718,16 @@ TEST_F(FPDFEditEmbedderTest, SetText) {
   // now displayed.
   ASSERT_EQ(2, FPDFPage_CountObjects(page));
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  const char kChangedChecksum[] = "b720e83476fd6819d47c533f1f43c728";
-#else
-  const char kChangedChecksum[] = "9a85b9354a69c61772ed24151c140f46";
+  const char* changed_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "b720e83476fd6819d47c533f1f43c728";
 #endif
+    return "9a85b9354a69c61772ed24151c140f46";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kChangedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, changed_checksum);
   }
 
   // Now save the result.
@@ -739,7 +743,7 @@ TEST_F(FPDFEditEmbedderTest, SetText) {
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kChangedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, changed_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -771,18 +775,17 @@ TEST_F(FPDFEditEmbedderTest, SetTextKeepClippingPath) {
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  static constexpr char kOriginalChecksum[] =
-      "ae7a25c85e0e2dd0c5cb9dd5cd37f6df";
-#else
-  static constexpr char kOriginalChecksum[] =
-      "7af7fe5b281298261eb66ac2d22f5054";
+  const char* original_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "ae7a25c85e0e2dd0c5cb9dd5cd37f6df";
 #endif
+    return "7af7fe5b281298261eb66ac2d22f5054";
+  }();
   {
     // When opened before any editing and saving, the clipping path is rendered.
     ScopedFPDFBitmap original_bitmap = RenderPage(page);
-    CompareBitmap(original_bitmap.get(), 200, 200, kOriginalChecksum);
+    CompareBitmap(original_bitmap.get(), 200, 200, original_checksum);
   }
 
   // "Change" the text in the objects to their current values to force them to
@@ -809,7 +812,7 @@ TEST_F(FPDFEditEmbedderTest, SetTextKeepClippingPath) {
   {
     // After editing but before saving, the clipping path is retained.
     ScopedFPDFBitmap edited_bitmap = RenderPage(page);
-    CompareBitmap(edited_bitmap.get(), 200, 200, kOriginalChecksum);
+    CompareBitmap(edited_bitmap.get(), 200, 200, original_checksum);
   }
 
   // Save the file.
@@ -824,7 +827,7 @@ TEST_F(FPDFEditEmbedderTest, SetTextKeepClippingPath) {
 
   {
     ScopedFPDFBitmap saved_bitmap = RenderSavedPage(saved_page);
-    CompareBitmap(saved_bitmap.get(), 200, 200, kOriginalChecksum);
+    CompareBitmap(saved_bitmap.get(), 200, 200, original_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -837,18 +840,17 @@ TEST_F(FPDFEditEmbedderTest, BUG_1574) {
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  static constexpr char kOriginalChecksum[] =
-      "1226bc2b8072622eb28f52321876e814";
-#else
-  static constexpr char kOriginalChecksum[] =
-      "c5241eef60b9eac68ed1f2a5fd002703";
+  const char* original_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "1226bc2b8072622eb28f52321876e814";
 #endif
+    return "c5241eef60b9eac68ed1f2a5fd002703";
+  }();
   {
     // When opened before any editing and saving, the text object is rendered.
     ScopedFPDFBitmap original_bitmap = RenderPage(page);
-    CompareBitmap(original_bitmap.get(), 200, 300, kOriginalChecksum);
+    CompareBitmap(original_bitmap.get(), 200, 300, original_checksum);
   }
 
   // "Change" the text in the objects to their current values to force them to
@@ -882,7 +884,7 @@ TEST_F(FPDFEditEmbedderTest, BUG_1574) {
 
   {
     ScopedFPDFBitmap saved_bitmap = RenderSavedPage(saved_page);
-    CompareBitmap(saved_bitmap.get(), 200, 300, kOriginalChecksum);
+    CompareBitmap(saved_bitmap.get(), 200, 300, original_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -898,7 +900,7 @@ TEST_F(FPDFEditEmbedderTest, RemovePageObject) {
   // Show what the original file looks like.
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
 
   // Get the "Hello, world!" text object and remove it.
@@ -910,7 +912,7 @@ TEST_F(FPDFEditEmbedderTest, RemovePageObject) {
   // Verify the "Hello, world!" text is gone.
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kFirstRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, FirstRemovedChecksum());
   }
   ASSERT_EQ(1, FPDFPage_CountObjects(page));
 
@@ -1039,18 +1041,17 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
 
   // Show what the original file looks like.
   {
-#if defined(_SKIA_SUPPORT_)
-    static constexpr char kOriginalChecksum[] =
-        "34ac4e0f3ba510760be09d0e19c1b43e";
-#elif BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char kOriginalChecksum[] =
-        "966579fb98206858ce2f0a1f94a74d05";
-#else
-    static constexpr char kOriginalChecksum[] =
-        "3d5a3de53d5866044c2b6bf339742c97";
+    const char* original_checksum = []() {
+      if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+        return "34ac4e0f3ba510760be09d0e19c1b43e";
+#if BUILDFLAG(IS_APPLE)
+      if (!CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
+        return "966579fb98206858ce2f0a1f94a74d05";
 #endif
+      return "3d5a3de53d5866044c2b6bf339742c97";
+    }();
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kOriginalChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, original_checksum);
   }
 
   constexpr int expected_object_count = 19;
@@ -1086,25 +1087,27 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
   }
 
   EXPECT_EQ(11, FPDFPage_CountObjects(page));
-#if defined(_SKIA_SUPPORT_)
-  static constexpr char kNonPrimesChecksum[] =
-      "c671fa07b63e85c4201b9926e880fda8";
-  static constexpr char kNonPrimesAfterSaveChecksum[] =
-      "c671fa07b63e85c4201b9926e880fda8";
-#elif BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_PATHS_)
-  static constexpr char kNonPrimesChecksum[] =
-      "6e19a4dd674b522cd39cf41956559bd6";
-  static constexpr char kNonPrimesAfterSaveChecksum[] =
-      "3cb35c681f8fb5a43a49146ac7caa818";
-#else
-  static constexpr char kNonPrimesChecksum[] =
-      "bc8623c052f12376c3d8dd09a6cd27df";
-  static constexpr char kNonPrimesAfterSaveChecksum[] =
-      "bc8623c052f12376c3d8dd09a6cd27df";
+  const char* non_primes_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "c671fa07b63e85c4201b9926e880fda8";
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
+      return "6e19a4dd674b522cd39cf41956559bd6";
 #endif
+    return "bc8623c052f12376c3d8dd09a6cd27df";
+  }();
+  const char* non_primes_after_save_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "c671fa07b63e85c4201b9926e880fda8";
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
+      return "3cb35c681f8fb5a43a49146ac7caa818";
+#endif
+    return "bc8623c052f12376c3d8dd09a6cd27df";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kNonPrimesChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, non_primes_checksum);
   }
 
   // Save the file.
@@ -1120,7 +1123,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveMarkedObjectsPrime) {
 
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kNonPrimesAfterSaveChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, non_primes_after_save_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -1375,15 +1378,16 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsNotLonely) {
 
   // Verify the "Hello, world!" text is gone.
   ASSERT_EQ(2, FPDFPage_CountObjects(page));
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  const char kHelloRemovedChecksum[] = "5508c2f06d104050f74f655693e38c2c";
-#else
-  const char kHelloRemovedChecksum[] = "a8cd82499cf744e0862ca468c9d4ceb8";
+  const char* hello_removed_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "5508c2f06d104050f74f655693e38c2c";
 #endif
+    return "a8cd82499cf744e0862ca468c9d4ceb8";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, hello_removed_checksum);
   }
 
   // Save the file
@@ -1400,7 +1404,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsNotLonely) {
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, hello_removed_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -1424,7 +1428,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsLonely) {
   ASSERT_EQ(2, FPDFPage_CountObjects(page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
 
   // Save the file
@@ -1441,7 +1445,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveExistingPageObjectSplitStreamsLonely) {
   EXPECT_EQ(2, FPDFPage_CountObjects(saved_page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
 
   CloseSavedPage(saved_page);
@@ -1532,16 +1536,18 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
       EXPECT_EQ(1, cpdf_page_object->GetContentStream()) << i;
   }
 
-#if defined(_SKIA_SUPPORT_)
-  const char kStream1RemovedChecksum[] = "b9bb0acfdba4bb5d2e578e7b73341baf";
-#elif BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_PATHS_)
-  const char kStream1RemovedChecksum[] = "3cdc75af44c15bed80998facd6e674c9";
-#else
-  const char kStream1RemovedChecksum[] = "b474826df1acedb05c7b82e1e49e64a6";
+  const char* stream1_removed_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "b9bb0acfdba4bb5d2e578e7b73341baf";
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
+      return "3cdc75af44c15bed80998facd6e674c9";
 #endif
+    return "b474826df1acedb05c7b82e1e49e64a6";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kStream1RemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, stream1_removed_checksum);
   }
 
   // Save the file
@@ -1570,7 +1576,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveAllFromStream) {
 
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kStream1RemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, stream1_removed_checksum);
   }
 
   CloseSavedPage(saved_page);
@@ -1667,7 +1673,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveFirstFromSingleStream) {
 
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kFirstRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, FirstRemovedChecksum());
   }
 
   // Save the file
@@ -1686,7 +1692,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveFirstFromSingleStream) {
   ASSERT_EQ(0, cpdf_page_object->GetContentStream());
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kFirstRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, FirstRemovedChecksum());
   }
 
   CloseSavedPage(saved_page);
@@ -1727,10 +1733,10 @@ TEST_F(FPDFEditEmbedderTest, RemoveLastFromSingleStream) {
   cpdf_page_object = CPDFPageObjectFromFPDFPageObject(page_object);
   ASSERT_EQ(0, cpdf_page_object->GetContentStream());
 
-  using pdfium::kHelloWorldRemovedChecksum;
+  using pdfium::HelloWorldRemovedChecksum;
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldRemovedChecksum());
   }
 
   // Save the file
@@ -1749,7 +1755,7 @@ TEST_F(FPDFEditEmbedderTest, RemoveLastFromSingleStream) {
   ASSERT_EQ(0, cpdf_page_object->GetContentStream());
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldRemovedChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldRemovedChecksum());
   }
 
   CloseSavedPage(saved_page);
@@ -1880,10 +1886,10 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-  using pdfium::kManyRectanglesChecksum;
+  using pdfium::ManyRectanglesChecksum;
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 300, kManyRectanglesChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 300, ManyRectanglesChecksum());
   }
 
   // Add a black rectangle.
@@ -1895,14 +1901,14 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
 
   // Verify the black rectangle was added.
   ASSERT_EQ(kOriginalObjectCount + 1, FPDFPage_CountObjects(page));
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kPlusRectangleMD5[] = "0d3715fcfb9bd0dd25dcce60800bff47";
-#else
-  const char kPlusRectangleMD5[] = "6b9396ab570754b32b04ca629e902f77";
-#endif
+  const char* plus_rectangle_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "0d3715fcfb9bd0dd25dcce60800bff47";
+    return "6b9396ab570754b32b04ca629e902f77";
+  }();
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 300, kPlusRectangleMD5);
+    CompareBitmap(page_bitmap.get(), 200, 300, plus_rectangle_checksum);
   }
 
   // Save the file.
@@ -1917,7 +1923,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   EXPECT_EQ(kOriginalObjectCount + 1, FPDFPage_CountObjects(saved_page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 300, kPlusRectangleMD5);
+    CompareBitmap(page_bitmap.get(), 200, 300, plus_rectangle_checksum);
   }
 
   // Remove the added rectangle.
@@ -1927,7 +1933,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   FPDFPageObj_Destroy(added_object);
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 300, kManyRectanglesChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 300, ManyRectanglesChecksum());
   }
   EXPECT_EQ(kOriginalObjectCount, FPDFPage_CountObjects(saved_page));
 
@@ -1946,7 +1952,7 @@ TEST_F(FPDFEditEmbedderTest, InsertAndRemoveLargeFile) {
   EXPECT_EQ(kOriginalObjectCount, FPDFPage_CountObjects(saved_page));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 300, kManyRectanglesChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 300, ManyRectanglesChecksum());
   }
 
   CloseSavedPage(saved_page);
@@ -2044,14 +2050,16 @@ TEST_F(FPDFEditEmbedderTest, PathOnTopOfText) {
 
   // Render and check the result.
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kChecksum[] = "8a48b019826492331454f2809990aba8";
-#elif BUILDFLAG(IS_APPLE)
-  const char kChecksum[] = "279693baca9f48da2d75a8e289aed58e";
+  const char* checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "8a48b019826492331454f2809990aba8";
+#if BUILDFLAG(IS_APPLE)
+    return "279693baca9f48da2d75a8e289aed58e";
 #else
-  const char kChecksum[] = "fe415d47945c10b9cc8e9ca08887369e";
+    return "fe415d47945c10b9cc8e9ca08887369e";
 #endif
-  CompareBitmap(bitmap.get(), 200, 200, kChecksum);
+  }();
+  CompareBitmap(bitmap.get(), 200, 200, checksum);
   UnloadPage(page);
 }
 
@@ -2073,13 +2081,13 @@ TEST_F(FPDFEditEmbedderTest, EditOverExistingContent) {
   EXPECT_TRUE(FPDFPath_SetDrawMode(red_rect, FPDF_FILLMODE_ALTERNATE, 0));
   FPDFPage_InsertObject(page, red_rect);
 
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kOriginalChecksum[] = "1e82fbdd21490cee9d3479fe6125af67";
-#else
-  const char kOriginalChecksum[] = "ad04e5bd0f471a9a564fb034bd0fb073";
-#endif
+  const char* original_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "1e82fbdd21490cee9d3479fe6125af67";
+    return "ad04e5bd0f471a9a564fb034bd0fb073";
+  }();
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
-  CompareBitmap(bitmap.get(), 612, 792, kOriginalChecksum);
+  CompareBitmap(bitmap.get(), 612, 792, original_checksum);
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
 
   // Now save the result, closing the page and document
@@ -2089,7 +2097,7 @@ TEST_F(FPDFEditEmbedderTest, EditOverExistingContent) {
   ASSERT_TRUE(OpenSavedDocument());
   FPDF_PAGE saved_page = LoadSavedPage(0);
   ASSERT_TRUE(saved_page);
-  VerifySavedRendering(saved_page, 612, 792, kOriginalChecksum);
+  VerifySavedRendering(saved_page, 612, 792, original_checksum);
 
   ClearString();
   // Add another opaque rectangle on top of the existing content
@@ -2103,14 +2111,14 @@ TEST_F(FPDFEditEmbedderTest, EditOverExistingContent) {
   EXPECT_TRUE(FPDFPageObj_SetFillColor(green_rect2, 0, 255, 0, 100));
   EXPECT_TRUE(FPDFPath_SetDrawMode(green_rect2, FPDF_FILLMODE_ALTERNATE, 0));
   FPDFPage_InsertObject(saved_page, green_rect2);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kLastChecksum[] = "8705d023e5fec3499d1e30cf2bcc5dc1";
-#else
-  const char kLastChecksum[] = "4b5b00f824620f8c9b8801ebb98e1cdd";
-#endif
+  const char* last_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "8705d023e5fec3499d1e30cf2bcc5dc1";
+    return "4b5b00f824620f8c9b8801ebb98e1cdd";
+  }();
   {
     ScopedFPDFBitmap new_bitmap = RenderSavedPage(saved_page);
-    CompareBitmap(new_bitmap.get(), 612, 792, kLastChecksum);
+    CompareBitmap(new_bitmap.get(), 612, 792, last_checksum);
   }
   EXPECT_TRUE(FPDFPage_GenerateContent(saved_page));
 
@@ -2121,16 +2129,10 @@ TEST_F(FPDFEditEmbedderTest, EditOverExistingContent) {
   CloseSavedDocument();
 
   // Render the saved result
-  VerifySavedDocument(612, 792, kLastChecksum);
+  VerifySavedDocument(612, 792, last_checksum);
 }
 
-// TODO(crbug.com/pdfium/1651): Fix this issue and enable the test for Skia.
-#if defined(_SKIA_SUPPORT_)
-#define MAYBE_AddStrokedPaths DISABLED_AddStrokedPaths
-#else
-#define MAYBE_AddStrokedPaths AddStrokedPaths
-#endif
-TEST_F(FPDFEditEmbedderTest, MAYBE_AddStrokedPaths) {
+TEST_F(FPDFEditEmbedderTest, AddStrokedPaths) {
   // Start with a blank page
   FPDF_PAGE page = FPDFPage_New(CreateNewDocument(), 0, 612, 792);
 
@@ -2148,12 +2150,12 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_AddStrokedPaths) {
   FPDFPage_InsertObject(page, rect);
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char kChecksum_1[] = "1469acf60e7647ebeb8e1fb08c5d6c7a";
-#else
-    static constexpr char kChecksum_1[] = "64bd31f862a89e0a9e505a5af6efd506";
-#endif
-    CompareBitmap(page_bitmap.get(), 612, 792, kChecksum_1);
+    const char* checksum_1 = []() {
+      if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "1469acf60e7647ebeb8e1fb08c5d6c7a";
+      return "64bd31f862a89e0a9e505a5af6efd506";
+    }();
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum_1);
   }
 
   // Add crossed-checkmark
@@ -2168,12 +2170,12 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_AddStrokedPaths) {
   FPDFPage_InsertObject(page, check);
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char kChecksum_2[] = "68b3194f74abd9d471695ce1415be43f";
-#else
-    static constexpr char kChecksum_2[] = "4b6f3b9d25c4e194821217d5016c3724";
-#endif
-    CompareBitmap(page_bitmap.get(), 612, 792, kChecksum_2);
+    const char* checksum_2 = []() {
+      if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "68b3194f74abd9d471695ce1415be43f";
+      return "4b6f3b9d25c4e194821217d5016c3724";
+    }();
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum_2);
   }
 
   // Add stroked and filled oval-ish path.
@@ -2189,12 +2191,12 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_AddStrokedPaths) {
   FPDFPage_InsertObject(page, path);
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char kChecksum_3[] = "ea784068651df2b9ba132ce9215e6780";
-#else
-    static constexpr char kChecksum_3[] = "ff3e6a22326754944cc6e56609acd73b";
-#endif
-    CompareBitmap(page_bitmap.get(), 612, 792, kChecksum_3);
+    const char* checksum_3 = []() {
+      if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "ea784068651df2b9ba132ce9215e6780";
+      return "ff3e6a22326754944cc6e56609acd73b";
+    }();
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum_3);
   }
   FPDF_ClosePage(page);
 }
@@ -2216,10 +2218,10 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
-    CompareBitmap(page_bitmap.get(), 612, 792, kBottomTextChecksum);
+    CompareBitmap(page_bitmap.get(), 612, 792, BottomTextChecksum());
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
-    VerifySavedDocument(612, 792, kBottomTextChecksum);
+    VerifySavedDocument(612, 792, BottomTextChecksum());
   }
 
   // Try another font
@@ -2234,16 +2236,17 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char md5[] = "983baaa1f688eff7a14b1bf91c171a1a";
-#else
-    static constexpr char md5[] = "161523e196eb5341604cd73e12c97922";
+    const char* checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+      if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "983baaa1f688eff7a14b1bf91c171a1a";
 #endif
-    CompareBitmap(page_bitmap.get(), 612, 792, md5);
+      return "161523e196eb5341604cd73e12c97922";
+    }();
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
-    VerifySavedDocument(612, 792, md5);
+    VerifySavedDocument(612, 792, checksum);
   }
 
   // And some randomly transformed text
@@ -2257,16 +2260,17 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText) {
   EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-    static constexpr char md5[] = "e0b3493c5c16e41d0d892ffb48e63fba";
-#else
-    static constexpr char md5[] = "1fbf772dca8d82b960631e6683934964";
+    const char* checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+      if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "e0b3493c5c16e41d0d892ffb48e63fba";
 #endif
-    CompareBitmap(page_bitmap.get(), 612, 792, md5);
+      return "1fbf772dca8d82b960631e6683934964";
+    }();
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
-    VerifySavedDocument(612, 792, md5);
+    VerifySavedDocument(612, 792, checksum);
   }
 
   FS_MATRIX matrix;
@@ -2336,16 +2340,20 @@ TEST_F(FPDFEditEmbedderTest, GetTextRenderMode) {
 }
 
 TEST_F(FPDFEditEmbedderTest, SetTextRenderMode) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kOriginalChecksum[] = "39a4ac8f1fdc6653edd3b91862ea7b75";
-  const char kStrokeChecksum[] = "d16eb1bb4748eeb5fb801594da70d519";
-#elif BUILDFLAG(IS_APPLE)
-  const char kOriginalChecksum[] = "c488514ce0fc949069ff560407edacd2";
-  const char kStrokeChecksum[] = "e06ee84aeebe926e8c980b7822027e8a";
+  const char* original_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "39a4ac8f1fdc6653edd3b91862ea7b75";
+#if BUILDFLAG(IS_APPLE)
+    return "c488514ce0fc949069ff560407edacd2";
 #else
-  const char kOriginalChecksum[] = "97a4fcf3c9581e19917895631af31d41";
-  const char kStrokeChecksum[] = "e06ee84aeebe926e8c980b7822027e8a";
+    return "97a4fcf3c9581e19917895631af31d41";
 #endif
+  }();
+  const char* stroke_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "d16eb1bb4748eeb5fb801594da70d519";
+    return "e06ee84aeebe926e8c980b7822027e8a";
+  }();
 
   {
     ASSERT_TRUE(OpenDocument("text_render_mode.pdf"));
@@ -2356,7 +2364,7 @@ TEST_F(FPDFEditEmbedderTest, SetTextRenderMode) {
     // Check the bitmap
     {
       ScopedFPDFBitmap page_bitmap = RenderPage(page);
-      CompareBitmap(page_bitmap.get(), 612, 446, kOriginalChecksum);
+      CompareBitmap(page_bitmap.get(), 612, 446, original_checksum);
     }
 
     // Cannot set on a null object.
@@ -2382,7 +2390,7 @@ TEST_F(FPDFEditEmbedderTest, SetTextRenderMode) {
     // Check that bitmap displays changed content
     {
       ScopedFPDFBitmap page_bitmap = RenderPage(page);
-      CompareBitmap(page_bitmap.get(), 612, 446, kStrokeChecksum);
+      CompareBitmap(page_bitmap.get(), 612, 446, stroke_checksum);
     }
 
     // Save a copy.
@@ -2405,7 +2413,7 @@ TEST_F(FPDFEditEmbedderTest, SetTextRenderMode) {
               FPDFTextObj_GetTextRenderMode(page_object));
 
     ScopedFPDFBitmap bitmap = RenderSavedPage(saved_page);
-    CompareBitmap(bitmap.get(), 612, 446, kStrokeChecksum);
+    CompareBitmap(bitmap.get(), 612, 446, stroke_checksum);
 
     CloseSavedPage(saved_page);
     CloseSavedDocument();
@@ -2590,6 +2598,9 @@ TEST_F(FPDFEditEmbedderTest, GlyphPaths) {
   FPDF_FONT font = FPDFTextObj_GetFont(text);
   ASSERT_TRUE(font);
 
+  // bad glyph argument.
+  ASSERT_FALSE(FPDFFont_GetGlyphPath(font, 1, 12.0f));
+
   // good glyphpath
   FPDF_GLYPHPATH gpath = FPDFFont_GetGlyphPath(font, 's', 12.0f);
   ASSERT_TRUE(gpath);
@@ -2657,14 +2668,20 @@ TEST_F(FPDFEditEmbedderTest, FormGetObjects) {
 }
 
 TEST_F(FPDFEditEmbedderTest, ModifyFormObject) {
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  const char kOrigChecksum[] = "a637057185f50aac1aa5490f726aef95";
-  const char kNewChecksum[] = "8ad9d79b02b609ff734e2a2195c96e2d";
-#else
-  const char kOrigChecksum[] = "34a9ec0a9581a7970e073c0bcc4ca676";
-  const char kNewChecksum[] = "609b5632a21c886fa93182dbc290bf7a";
+  const char* orig_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "a637057185f50aac1aa5490f726aef95";
 #endif
+    return "34a9ec0a9581a7970e073c0bcc4ca676";
+  }();
+  const char* new_checksum = []() {
+#if BUILDFLAG(IS_APPLE)
+    if (!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "8ad9d79b02b609ff734e2a2195c96e2d";
+#endif
+    return "609b5632a21c886fa93182dbc290bf7a";
+  }();
 
   ASSERT_TRUE(OpenDocument("form_object.pdf"));
   FPDF_PAGE page = LoadPage(0);
@@ -2673,7 +2690,7 @@ TEST_F(FPDFEditEmbedderTest, ModifyFormObject) {
 
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
-    CompareBitmap(bitmap.get(), 62, 69, kOrigChecksum);
+    CompareBitmap(bitmap.get(), 62, 69, orig_checksum);
   }
 
   FPDF_PAGEOBJECT form = FPDFPage_GetObject(page, 0);
@@ -2684,11 +2701,11 @@ TEST_F(FPDFEditEmbedderTest, ModifyFormObject) {
 
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page);
-    CompareBitmap(bitmap.get(), 62, 69, kNewChecksum);
+    CompareBitmap(bitmap.get(), 62, 69, new_checksum);
   }
 
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
-  VerifySavedDocument(62, 69, kNewChecksum);
+  VerifySavedDocument(62, 69, new_checksum);
 
   UnloadPage(page);
 }
@@ -2711,7 +2728,7 @@ TEST_F(FPDFEditEmbedderTest, AddStandardFontText2) {
   FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 20, 20);
   FPDFPage_InsertObject(page.get(), text_object);
   ScopedFPDFBitmap page_bitmap = RenderPage(page.get());
-  CompareBitmap(page_bitmap.get(), 612, 792, kBottomTextChecksum);
+  CompareBitmap(page_bitmap.get(), 612, 792, BottomTextChecksum());
 }
 
 TEST_F(FPDFEditEmbedderTest, LoadStandardFonts) {
@@ -2767,7 +2784,7 @@ TEST_F(FPDFEditEmbedderTest, GraphicsData) {
 
   // Check that the ExtGState was created
   CPDF_Page* cpage = CPDFPageFromFPDFPage(page.get());
-  const CPDF_Dictionary* graphics_dict =
+  RetainPtr<const CPDF_Dictionary> graphics_dict =
       cpage->GetResources()->GetDictFor("ExtGState");
   ASSERT_TRUE(graphics_dict);
   EXPECT_EQ(2u, graphics_dict->size());
@@ -2821,7 +2838,7 @@ TEST_F(FPDFEditEmbedderTest, DoubleGenerating) {
 
   // Check the ExtGState
   CPDF_Page* cpage = CPDFPageFromFPDFPage(page);
-  const CPDF_Dictionary* graphics_dict =
+  RetainPtr<const CPDF_Dictionary> graphics_dict =
       cpage->GetResources()->GetDictFor("ExtGState");
   ASSERT_TRUE(graphics_dict);
   EXPECT_EQ(2u, graphics_dict->size());
@@ -2863,7 +2880,8 @@ TEST_F(FPDFEditEmbedderTest, DoubleGenerating) {
   FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 300, 300);
   FPDFPage_InsertObject(page, text_object);
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
-  const CPDF_Dictionary* font_dict = cpage->GetResources()->GetDictFor("Font");
+  RetainPtr<const CPDF_Dictionary> font_dict =
+      cpage->GetResources()->GetDictFor("Font");
   ASSERT_TRUE(font_dict);
   EXPECT_EQ(1u, font_dict->size());
 
@@ -2886,7 +2904,7 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleType1Font) {
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsType1Font());
 
-  const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
+  RetainPtr<const CPDF_Dictionary> font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetNameFor("Type"));
   EXPECT_EQ("Type1", font_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Tinos-Bold", font_dict->GetNameFor("BaseFont"));
@@ -2895,12 +2913,12 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleType1Font) {
   EXPECT_EQ(32, font_dict->GetIntegerFor("FirstChar"));
   EXPECT_EQ(255, font_dict->GetIntegerFor("LastChar"));
 
-  const CPDF_Array* widths_array = font_dict->GetArrayFor("Widths");
+  RetainPtr<const CPDF_Array> widths_array = font_dict->GetArrayFor("Widths");
   ASSERT_TRUE(widths_array);
   ASSERT_EQ(224u, widths_array->size());
-  EXPECT_EQ(250, widths_array->GetNumberAt(0));
-  EXPECT_EQ(569, widths_array->GetNumberAt(11));
-  EXPECT_EQ(500, widths_array->GetNumberAt(223));
+  EXPECT_EQ(250, widths_array->GetFloatAt(0));
+  EXPECT_EQ(569, widths_array->GetFloatAt(11));
+  EXPECT_EQ(500, widths_array->GetFloatAt(223));
   CheckFontDescriptor(font_dict, FPDF_FONT_TYPE1, true, false, span);
 }
 
@@ -2915,7 +2933,7 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleTrueTypeFont) {
   CPDF_Font* typed_font = CPDFFontFromFPDFFont(font.get());
   EXPECT_TRUE(typed_font->IsTrueTypeFont());
 
-  const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
+  RetainPtr<const CPDF_Dictionary> font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetNameFor("Type"));
   EXPECT_EQ("TrueType", font_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Cousine-Regular", font_dict->GetNameFor("BaseFont"));
@@ -2924,12 +2942,12 @@ TEST_F(FPDFEditEmbedderTest, LoadSimpleTrueTypeFont) {
   EXPECT_EQ(32, font_dict->GetIntegerFor("FirstChar"));
   EXPECT_EQ(255, font_dict->GetIntegerFor("LastChar"));
 
-  const CPDF_Array* widths_array = font_dict->GetArrayFor("Widths");
+  RetainPtr<const CPDF_Array> widths_array = font_dict->GetArrayFor("Widths");
   ASSERT_TRUE(widths_array);
   ASSERT_EQ(224u, widths_array->size());
-  EXPECT_EQ(600, widths_array->GetNumberAt(33));
-  EXPECT_EQ(600, widths_array->GetNumberAt(74));
-  EXPECT_EQ(600, widths_array->GetNumberAt(223));
+  EXPECT_EQ(600, widths_array->GetFloatAt(33));
+  EXPECT_EQ(600, widths_array->GetFloatAt(74));
+  EXPECT_EQ(600, widths_array->GetFloatAt(223));
   CheckFontDescriptor(font_dict, FPDF_FONT_TRUETYPE, false, false, span);
 }
 
@@ -2945,40 +2963,43 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType0Font) {
   EXPECT_TRUE(typed_font->IsCIDFont());
 
   // Check font dictionary entries
-  const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
+  RetainPtr<const CPDF_Dictionary> font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetNameFor("Type"));
   EXPECT_EQ("Type0", font_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Tinos-Regular-Identity-H", font_dict->GetNameFor("BaseFont"));
   EXPECT_EQ("Identity-H", font_dict->GetNameFor("Encoding"));
-  const CPDF_Array* descendant_array =
+  RetainPtr<const CPDF_Array> descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
   ASSERT_TRUE(descendant_array);
   EXPECT_EQ(1u, descendant_array->size());
 
   // Check the CIDFontDict
-  const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
+  RetainPtr<const CPDF_Dictionary> cidfont_dict =
+      descendant_array->GetDictAt(0);
   EXPECT_EQ("Font", cidfont_dict->GetNameFor("Type"));
   EXPECT_EQ("CIDFontType0", cidfont_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Tinos-Regular", cidfont_dict->GetNameFor("BaseFont"));
-  const CPDF_Dictionary* cidinfo_dict =
+  RetainPtr<const CPDF_Dictionary> cidinfo_dict =
       cidfont_dict->GetDictFor("CIDSystemInfo");
   ASSERT_TRUE(cidinfo_dict);
-  const CPDF_Object* registry = cidinfo_dict->GetObjectFor("Registry");
+  RetainPtr<const CPDF_Object> registry =
+      cidinfo_dict->GetObjectFor("Registry");
   ASSERT_TRUE(registry);
   EXPECT_EQ(CPDF_Object::kString, registry->GetType());
   EXPECT_EQ("Adobe", registry->GetString());
-  const CPDF_Object* ordering = cidinfo_dict->GetObjectFor("Ordering");
+  RetainPtr<const CPDF_Object> ordering =
+      cidinfo_dict->GetObjectFor("Ordering");
   ASSERT_TRUE(ordering);
   EXPECT_EQ(CPDF_Object::kString, ordering->GetType());
   EXPECT_EQ("Identity", ordering->GetString());
-  EXPECT_EQ(0, cidinfo_dict->GetNumberFor("Supplement"));
-  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TYPE1, false, false, span);
+  EXPECT_EQ(0, cidinfo_dict->GetFloatFor("Supplement"));
+  CheckFontDescriptor(cidfont_dict.Get(), FPDF_FONT_TYPE1, false, false, span);
 
   // Check widths
-  const CPDF_Array* widths_array = cidfont_dict->GetArrayFor("W");
+  RetainPtr<const CPDF_Array> widths_array = cidfont_dict->GetArrayFor("W");
   ASSERT_TRUE(widths_array);
   EXPECT_GT(widths_array->size(), 1u);
-  CheckCompositeFontWidths(widths_array, typed_font);
+  CheckCompositeFontWidths(widths_array.Get(), typed_font);
 }
 
 TEST_F(FPDFEditEmbedderTest, LoadCIDType2Font) {
@@ -2993,33 +3014,35 @@ TEST_F(FPDFEditEmbedderTest, LoadCIDType2Font) {
   EXPECT_TRUE(typed_font->IsCIDFont());
 
   // Check font dictionary entries
-  const CPDF_Dictionary* font_dict = typed_font->GetFontDict();
+  RetainPtr<const CPDF_Dictionary> font_dict = typed_font->GetFontDict();
   EXPECT_EQ("Font", font_dict->GetNameFor("Type"));
   EXPECT_EQ("Type0", font_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Arimo-Italic", font_dict->GetNameFor("BaseFont"));
   EXPECT_EQ("Identity-H", font_dict->GetNameFor("Encoding"));
-  const CPDF_Array* descendant_array =
+  RetainPtr<const CPDF_Array> descendant_array =
       font_dict->GetArrayFor("DescendantFonts");
   ASSERT_TRUE(descendant_array);
   EXPECT_EQ(1u, descendant_array->size());
 
   // Check the CIDFontDict
-  const CPDF_Dictionary* cidfont_dict = descendant_array->GetDictAt(0);
+  RetainPtr<const CPDF_Dictionary> cidfont_dict =
+      descendant_array->GetDictAt(0);
   EXPECT_EQ("Font", cidfont_dict->GetNameFor("Type"));
   EXPECT_EQ("CIDFontType2", cidfont_dict->GetNameFor("Subtype"));
   EXPECT_EQ("Arimo-Italic", cidfont_dict->GetNameFor("BaseFont"));
-  const CPDF_Dictionary* cidinfo_dict =
+  RetainPtr<const CPDF_Dictionary> cidinfo_dict =
       cidfont_dict->GetDictFor("CIDSystemInfo");
   ASSERT_TRUE(cidinfo_dict);
-  EXPECT_EQ("Adobe", cidinfo_dict->GetStringFor("Registry"));
-  EXPECT_EQ("Identity", cidinfo_dict->GetStringFor("Ordering"));
-  EXPECT_EQ(0, cidinfo_dict->GetNumberFor("Supplement"));
-  CheckFontDescriptor(cidfont_dict, FPDF_FONT_TRUETYPE, false, true, span);
+  EXPECT_EQ("Adobe", cidinfo_dict->GetByteStringFor("Registry"));
+  EXPECT_EQ("Identity", cidinfo_dict->GetByteStringFor("Ordering"));
+  EXPECT_EQ(0, cidinfo_dict->GetFloatFor("Supplement"));
+  CheckFontDescriptor(cidfont_dict.Get(), FPDF_FONT_TRUETYPE, false, true,
+                      span);
 
   // Check widths
-  const CPDF_Array* widths_array = cidfont_dict->GetArrayFor("W");
+  RetainPtr<const CPDF_Array> widths_array = cidfont_dict->GetArrayFor("W");
   ASSERT_TRUE(widths_array);
-  CheckCompositeFontWidths(widths_array, typed_font);
+  CheckCompositeFontWidths(widths_array.Get(), typed_font);
 }
 
 TEST_F(FPDFEditEmbedderTest, NormalizeNegativeRotation) {
@@ -3052,7 +3075,7 @@ TEST_F(FPDFEditEmbedderTest, AddTrueTypeFontText) {
     FPDFPageObj_Transform(text_object, 1, 0, 0, 1, 400, 400);
     FPDFPage_InsertObject(page, text_object);
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 612, 792, kLoadedFontTextChecksum);
+    CompareBitmap(page_bitmap.get(), 612, 792, LoadedFontTextChecksum());
 
     // Add some more text, same font
     FPDF_PAGEOBJECT text_object2 =
@@ -3063,20 +3086,22 @@ TEST_F(FPDFEditEmbedderTest, AddTrueTypeFontText) {
     FPDFPage_InsertObject(page, text_object2);
   }
   ScopedFPDFBitmap page_bitmap2 = RenderPage(page);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kInsertTrueTypeChecksum[] = "683f4a385a891494100192cb338b11f0";
-#elif BUILDFLAG(IS_APPLE)
-  const char kInsertTrueTypeChecksum[] = "c7e2271a7f30e5b919a13ead47cea105";
+  const char* insert_true_type_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "683f4a385a891494100192cb338b11f0";
+#if BUILDFLAG(IS_APPLE)
+    return "c7e2271a7f30e5b919a13ead47cea105";
 #else
-  const char kInsertTrueTypeChecksum[] = "683f4a385a891494100192cb338b11f0";
+    return "683f4a385a891494100192cb338b11f0";
 #endif
-  CompareBitmap(page_bitmap2.get(), 612, 792, kInsertTrueTypeChecksum);
+  }();
+  CompareBitmap(page_bitmap2.get(), 612, 792, insert_true_type_checksum);
 
   EXPECT_TRUE(FPDFPage_GenerateContent(page));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
 
-  VerifySavedDocument(612, 792, kInsertTrueTypeChecksum);
+  VerifySavedDocument(612, 792, insert_true_type_checksum);
 }
 
 TEST_F(FPDFEditEmbedderTest, TransformAnnot) {
@@ -3140,10 +3165,10 @@ TEST_F(FPDFEditEmbedderTest, AddCIDFontText) {
   }
 
   // Check that the text renders properly.
-  static constexpr char md5[] = "84d31d11b76845423a2cfc1879c0fbb9";
+  static constexpr char kChecksum[] = "84d31d11b76845423a2cfc1879c0fbb9";
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 612, 792, md5);
+    CompareBitmap(page_bitmap.get(), 612, 792, kChecksum);
   }
 
   // Save the document, close the page.
@@ -3151,22 +3176,18 @@ TEST_F(FPDFEditEmbedderTest, AddCIDFontText) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   FPDF_ClosePage(page);
 
-  VerifySavedDocument(612, 792, md5);
+  VerifySavedDocument(612, 792, kChecksum);
 }
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
-// TODO(crbug.com/pdfium/1651): Fix this issue and enable the test for Skia.
-#if defined(_SKIA_SUPPORT_)
-#define MAYBE_SaveAndRender DISABLED_SaveAndRender
-#else
-#define MAYBE_SaveAndRender SaveAndRender
-#endif
-TEST_F(FPDFEditEmbedderTest, MAYBE_SaveAndRender) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  static constexpr char kChecksum[] = "0e8b079e349e34f64211c495845a3529";
-#else
-  static constexpr char kChecksum[] = "3c20472b0552c0c22b88ab1ed8c6202b";
-#endif
+TEST_F(FPDFEditEmbedderTest, SaveAndRender) {
+  const char* checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "9a78649e85e69d220c22e0fc316da740";
+    if (CFX_DefaultRenderDevice::SkiaPathsIsDefaultRenderer())
+      return "0e8b079e349e34f64211c495845a3529";
+    return "3c20472b0552c0c22b88ab1ed8c6202b";
+  }();
   {
     ASSERT_TRUE(OpenDocument("bug_779.pdf"));
     FPDF_PAGE page = LoadPage(0);
@@ -3185,7 +3206,7 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_SaveAndRender) {
     EXPECT_TRUE(FPDFPath_Close(green_path));
     FPDFPage_InsertObject(page, green_path);
     ScopedFPDFBitmap page_bitmap = RenderLoadedPage(page);
-    CompareBitmap(page_bitmap.get(), 612, 792, kChecksum);
+    CompareBitmap(page_bitmap.get(), 612, 792, checksum);
 
     // Now save the result, closing the page and document
     EXPECT_TRUE(FPDFPage_GenerateContent(page));
@@ -3193,7 +3214,7 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_SaveAndRender) {
     UnloadPage(page);
   }
 
-  VerifySavedDocument(612, 792, kChecksum);
+  VerifySavedDocument(612, 792, checksum);
 }
 
 TEST_F(FPDFEditEmbedderTest, AddMark) {
@@ -3238,7 +3259,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkCompressedStream) {
   // Render and check there are no marks.
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
   CheckMarkCounts(page, 0, 2, 0, 0, 0, 0);
 
@@ -3252,7 +3273,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkCompressedStream) {
   // Render and check there is 1 mark.
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
   CheckMarkCounts(page, 0, 2, 0, 0, 0, 1);
 
@@ -3268,7 +3289,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkCompressedStream) {
 
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(saved_page);
-    CompareBitmap(page_bitmap.get(), 200, 200, kHelloWorldChecksum);
+    CompareBitmap(page_bitmap.get(), 200, 200, HelloWorldChecksum());
   }
   CheckMarkCounts(saved_page, 0, 2, 0, 0, 0, 1);
 
@@ -3420,7 +3441,7 @@ TEST_F(FPDFEditEmbedderTest, AddMarkedText) {
   // Render and check the bitmap is the expected one.
   {
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmap(page_bitmap.get(), 612, 792, kLoadedFontTextChecksum);
+    CompareBitmap(page_bitmap.get(), 612, 792, LoadedFontTextChecksum());
   }
 
   // Now save the result.
@@ -3819,15 +3840,7 @@ TEST_F(FPDFEditEmbedderTest, GetBitmapIgnoresSMask) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_)
-#define MAYBE_GetRenderedBitmapHandlesSetMatrix \
-  DISABLED_GetRenderedBitmapHandlesSetMatrix
-#else
-#define MAYBE_GetRenderedBitmapHandlesSetMatrix \
-  GetRenderedBitmapHandlesSetMatrix
-#endif
-TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSetMatrix) {
+TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapHandlesSetMatrix) {
   ASSERT_TRUE(OpenDocument("embedded_images.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
@@ -3837,14 +3850,19 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSetMatrix) {
   ASSERT_EQ(FPDF_PAGEOBJ_IMAGE, FPDFPageObj_GetType(obj));
 
   {
-    // Render |obj| as is.
+    // Render `obj` as is.
     ScopedFPDFBitmap bitmap(
         FPDFImageObj_GetRenderedBitmap(document(), page, obj));
     EXPECT_EQ(FPDFBitmap_BGRA, FPDFBitmap_GetFormat(bitmap.get()));
-    CompareBitmap(bitmap.get(), 53, 43, "582ca300e003f512d7b552c7b5b45d2e");
+    const char* checksum = []() {
+      if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+        return "3b51fc066ee18efbf70bab0501763603";
+      return "582ca300e003f512d7b552c7b5b45d2e";
+    }();
+    CompareBitmap(bitmap.get(), 53, 43, checksum);
   }
 
-  // Check the matrix for |obj|.
+  // Check the matrix for `obj`.
   FS_MATRIX matrix;
   EXPECT_TRUE(FPDFPageObj_GetMatrix(obj, &matrix));
   EXPECT_FLOAT_EQ(53.0f, matrix.a);
@@ -3854,7 +3872,7 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSetMatrix) {
   EXPECT_FLOAT_EQ(72.0f, matrix.e);
   EXPECT_FLOAT_EQ(646.510009765625f, matrix.f);
 
-  // Modify the matrix for |obj|.
+  // Modify the matrix for `obj`.
   matrix.a = 120.0;
   EXPECT_TRUE(FPDFPageObj_SetMatrix(obj, &matrix));
 
@@ -3868,31 +3886,40 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSetMatrix) {
   EXPECT_FLOAT_EQ(646.510009765625f, matrix.f);
 
   {
-    // Render |obj| again. Note that the FPDFPageObj_SetMatrix() call has an
+    // Render `obj` again. Note that the FPDFPageObj_SetMatrix() call has an
     // effect.
     ScopedFPDFBitmap bitmap(
         FPDFImageObj_GetRenderedBitmap(document(), page, obj));
     EXPECT_EQ(FPDFBitmap_BGRA, FPDFBitmap_GetFormat(bitmap.get()));
-    CompareBitmap(bitmap.get(), 120, 43, "0824c16dcf2dfcef44b45d88db1fddce");
+    const char* checksum = []() {
+      if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+        return "74081c2a48c2fd4f1fde544f056e956b";
+      return "0824c16dcf2dfcef44b45d88db1fddce";
+    }();
+    CompareBitmap(bitmap.get(), 120, 43, checksum);
   }
 
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_)
-#define MAYBE_GetRenderedBitmapHandlesSMask \
-  DISABLED_GetRenderedBitmapHandlesSMask
-#else
-#define MAYBE_GetRenderedBitmapHandlesSMask GetRenderedBitmapHandlesSMask
-#endif
-TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSMask) {
+TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapHandlesSMask) {
   ASSERT_TRUE(OpenDocument("matte.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
   constexpr int kExpectedObjects = 4;
   ASSERT_EQ(kExpectedObjects, FPDFPage_CountObjects(page));
+
+  const char* smask_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "5ddf871ab737746b1b8390f0bc4ec52c";
+    return "5a3ae4a660ce919e29c42ec2258142f1";
+  }();
+  const char* no_smask_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaIsDefaultRenderer())
+      return "6bb3b5bd93e26f4c2e52db64a1f57686";
+    return "67504e83f5d78214ea00efc19082c5c1";
+  }();
 
   for (int i = 0; i < kExpectedObjects; ++i) {
     FPDF_PAGEOBJECT obj = FPDFPage_GetObject(page, i);
@@ -3902,9 +3929,9 @@ TEST_F(FPDFEditEmbedderTest, MAYBE_GetRenderedBitmapHandlesSMask) {
     ASSERT_TRUE(bitmap);
     EXPECT_EQ(FPDFBitmap_BGRA, FPDFBitmap_GetFormat(bitmap.get()));
     if (i == 0)
-      CompareBitmap(bitmap.get(), 40, 60, "5a3ae4a660ce919e29c42ec2258142f1");
+      CompareBitmap(bitmap.get(), 40, 60, smask_checksum);
     else
-      CompareBitmap(bitmap.get(), 40, 60, "67504e83f5d78214ea00efc19082c5c1");
+      CompareBitmap(bitmap.get(), 40, 60, no_smask_checksum);
   }
 
   UnloadPage(page);
@@ -4200,12 +4227,12 @@ TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapForHelloWorldText) {
     ScopedFPDFBitmap x10_bitmap(
         FPDFTextObj_GetRenderedBitmap(document(), page, text_object, 10));
     ASSERT_TRUE(x10_bitmap);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-    const char kX10Checksum[] = "bfabf04699139d05c3924526beeb4b95";
-#else
-    const char kX10Checksum[] = "149f63de758ab01d3b75605cdfd4c176";
-#endif
-    CompareBitmap(x10_bitmap.get(), 631, 103, kX10Checksum);
+    const char* x10_checksum = []() {
+      if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "bfabf04699139d05c3924526beeb4b95";
+      return "149f63de758ab01d3b75605cdfd4c176";
+    }();
+    CompareBitmap(x10_bitmap.get(), 631, 103, x10_checksum);
   }
 
   {
@@ -4227,12 +4254,12 @@ TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapForHelloWorldText) {
     ScopedFPDFBitmap x10_bitmap(
         FPDFTextObj_GetRenderedBitmap(document(), page, text_object, 10));
     ASSERT_TRUE(x10_bitmap);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-    const char kX10Checksum[] = "c7eef7859332c75ab793ebae1c6e7221";
-#else
-    const char kX10Checksum[] = "f5f93bf64de579b59e775d7076ca0a5a";
-#endif
-    CompareBitmap(x10_bitmap.get(), 1143, 150, kX10Checksum);
+    const char* x10_checksum = []() {
+      if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+        return "c7eef7859332c75ab793ebae1c6e7221";
+      return "f5f93bf64de579b59e775d7076ca0a5a";
+    }();
+    CompareBitmap(x10_bitmap.get(), 1143, 150, x10_checksum);
   }
 
   UnloadPage(page);
@@ -4261,12 +4288,12 @@ TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapForRotatedText) {
   ScopedFPDFBitmap x10_bitmap(
       FPDFTextObj_GetRenderedBitmap(document(), page, text_object, 10));
   ASSERT_TRUE(x10_bitmap);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kX10Checksum[] = "4816dd6782e9a977c58fb1ca0ced74d3";
-#else
-  const char kX10Checksum[] = "bbd3842a4b50dbfcbce4eee2b067a297";
-#endif
-  CompareBitmap(x10_bitmap.get(), 275, 275, kX10Checksum);
+  const char* x10_checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "4816dd6782e9a977c58fb1ca0ced74d3";
+    return "bbd3842a4b50dbfcbce4eee2b067a297";
+  }();
+  CompareBitmap(x10_bitmap.get(), 275, 275, x10_checksum);
 
   UnloadPage(page);
 }
@@ -4282,12 +4309,12 @@ TEST_F(FPDFEditEmbedderTest, GetRenderedBitmapForColorText) {
   ScopedFPDFBitmap bitmap(
       FPDFTextObj_GetRenderedBitmap(document(), page, text_object, 7.3f));
   ASSERT_TRUE(bitmap);
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kChecksum[] = "bb3778ba739c921525de44e9ab412868";
-#else
-  const char kChecksum[] = "e8154fa8ededf4d9b8b35b5260897b6c";
-#endif
-  CompareBitmap(bitmap.get(), 120, 186, kChecksum);
+  const char* checksum = []() {
+    if (CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer())
+      return "bb3778ba739c921525de44e9ab412868";
+    return "e8154fa8ededf4d9b8b35b5260897b6c";
+  }();
+  CompareBitmap(bitmap.get(), 120, 186, checksum);
 
   UnloadPage(page);
 }

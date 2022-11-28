@@ -13,8 +13,8 @@
 
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
-#include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/base/span.h"
 
 class CPDF_Dictionary;
@@ -32,34 +32,48 @@ class CPDF_StreamAcc final : public Retainable {
   void LoadAllDataImageAcc(uint32_t estimated_size);
   void LoadAllDataRaw();
 
-  const CPDF_Stream* GetStream() const { return m_pStream.Get(); }
-  const CPDF_Dictionary* GetDict() const;
+  RetainPtr<const CPDF_Stream> GetStream() const;
+  RetainPtr<const CPDF_Dictionary> GetImageParam() const;
 
-  uint8_t* GetData() const;
   uint32_t GetSize() const;
-  pdfium::span<uint8_t> GetSpan();
   pdfium::span<const uint8_t> GetSpan() const;
+  uint64_t KeyForCache() const;
   ByteString ComputeDigest() const;
   ByteString GetImageDecoder() const { return m_ImageDecoder; }
-  const CPDF_Dictionary* GetImageParam() const { return m_pImageParam.Get(); }
   std::unique_ptr<uint8_t, FxFreeDeleter> DetachData();
 
+  int GetLength1ForTest() const;
+
  private:
-  explicit CPDF_StreamAcc(const CPDF_Stream* pStream);
+  // TODO(crbug.com/pdfium/1872): Replace with fxcrt::DataVector.
+  struct OwnedData {
+    OwnedData(std::unique_ptr<uint8_t, FxFreeDeleter> buffer, uint32_t size);
+    OwnedData(OwnedData&&);
+    OwnedData& operator=(OwnedData&&);
+    ~OwnedData();
+
+    std::unique_ptr<uint8_t, FxFreeDeleter> buffer;
+    uint32_t size;
+  };
+
+  explicit CPDF_StreamAcc(RetainPtr<const CPDF_Stream> pStream);
   ~CPDF_StreamAcc() override;
 
   void LoadAllData(bool bRawAccess, uint32_t estimated_size, bool bImageAcc);
   void ProcessRawData();
   void ProcessFilteredData(uint32_t estimated_size, bool bImageAcc);
+  const uint8_t* GetData() const;
 
   // Reads the raw data from |m_pStream|, or return nullptr on failure.
   std::unique_ptr<uint8_t, FxFreeDeleter> ReadRawStream() const;
 
-  MaybeOwned<uint8_t, FxFreeDeleter> m_pData;
-  uint32_t m_dwSize = 0;
+  bool is_owned() const { return m_Data.index() == 1; }
+
   ByteString m_ImageDecoder;
   RetainPtr<const CPDF_Dictionary> m_pImageParam;
+  // Needs to outlive `m_Data` when the data is not owned.
   RetainPtr<const CPDF_Stream> const m_pStream;
+  absl::variant<pdfium::span<const uint8_t>, OwnedData> m_Data;
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_STREAM_ACC_H_

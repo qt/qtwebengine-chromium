@@ -57,7 +57,8 @@ int main(int argc, char * argv[])
         printf("Encoding from converted RGBA\n");
 
         avifRGBImageSetDefaults(&rgb, image);
-        // Override RGB(A)->YUV(A) defaults here: depth, format, chromaDownsampling, ignoreAlpha, alphaPremultiplied, libYUVUsage, etc
+        // Override RGB(A)->YUV(A) defaults here:
+        //   depth, format, chromaDownsampling, avoidLibYUV, ignoreAlpha, alphaPremultiplied, etc.
 
         // Alternative: set rgb.pixels and rgb.rowBytes yourself, which should match your chosen rgb.format
         // Be sure to use uint16_t* instead of uint8_t* for rgb.pixels/rgb.rowBytes if (rgb.depth > 8)

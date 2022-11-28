@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <string>
@@ -29,6 +30,8 @@
 #include "quiche/quic/core/quic_versions.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_flags.h"
+#include "quiche/quic/platform/api/quic_ip_address.h"
+#include "quiche/quic/platform/api/quic_ip_address_family.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/quic_framer_peer.h"
@@ -7306,7 +7309,7 @@ TEST_P(QuicFramerTest, CryptoFrame) {
 }
 
 TEST_P(QuicFramerTest, BuildVersionNegotiationPacket) {
-  SetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness, true);
+  SetQuicFlag(quic_disable_version_negotiation_grease_randomness, true);
   // clang-format off
   unsigned char packet[] = {
       // public flags (version, 8 byte connection_id)
@@ -7372,7 +7375,7 @@ TEST_P(QuicFramerTest, BuildVersionNegotiationPacketWithClientConnectionId) {
     return;
   }
 
-  SetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness, true);
+  SetQuicFlag(quic_disable_version_negotiation_grease_randomness, true);
 
   // clang-format off
   unsigned char packet[] = {
@@ -10369,6 +10372,43 @@ TEST_P(QuicFramerTest, BuildIetfStatelessResetPacket) {
   EXPECT_EQ(QuicFramer::GetMinStatelessResetPacketLength() + 1 +
                 kQuicMaxConnectionIdWithLengthPrefixLength,
             data3->length());
+}
+
+TEST_P(QuicFramerTest, BuildIetfStatelessResetPacketCallerProvidedRandomBytes) {
+  // clang-format off
+    unsigned char packet[] = {
+      // 1st byte 01XX XXXX
+      0x7c,
+      // Random bytes
+      0x7c, 0x7c, 0x7c, 0x7c,
+      // stateless reset token
+      0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57,
+      0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f
+    };
+  // clang-format on
+
+  // Build the minimal stateless reset packet with caller-provided random bytes.
+  MockRandom random;
+  auto generate_random_bytes = [](void* data, size_t len) {
+    std::string bytes(len, 0x7c);
+    memcpy(data, bytes.data(), bytes.size());
+  };
+  EXPECT_CALL(random, InsecureRandBytes(_, _))
+      .WillOnce(testing::Invoke(generate_random_bytes));
+  std::unique_ptr<QuicEncryptedPacket> data(
+      framer_.BuildIetfStatelessResetPacket(
+          FramerTestConnectionId(),
+          QuicFramer::GetMinStatelessResetPacketLength() + 1,
+          kTestStatelessResetToken, &random));
+  ASSERT_TRUE(data);
+  EXPECT_EQ(QuicFramer::GetMinStatelessResetPacketLength(), data->length());
+  // Verify the first 2 bits are 01.
+  EXPECT_FALSE(data->data()[0] & FLAGS_LONG_HEADER);
+  EXPECT_TRUE(data->data()[0] & FLAGS_FIXED_BIT);
+  // Verify the entire packet.
+  quiche::test::CompareCharArraysWithHexError(
+      "constructed packet", data->data(), data->length(), AsChars(packet),
+      ABSL_ARRAYSIZE(packet));
 }
 
 TEST_P(QuicFramerTest, EncryptPacket) {

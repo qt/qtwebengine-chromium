@@ -8,13 +8,14 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
-#include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
@@ -284,9 +285,10 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
   if (!pObject) {
     for (size_t i = 0; i < count; ++i) {
       WideString wsTemp;
-      CPDF_Object* pTempObject = name_tree->LookupValueAndName(i, &wsTemp);
+      RetainPtr<CPDF_Object> pTempObject =
+          name_tree->LookupValueAndName(i, &wsTemp);
       if (wsTemp == wsName) {
-        pObject = pTempObject;
+        pObject = std::move(pTempObject);
         break;
       }
     }
@@ -296,12 +298,11 @@ RetainPtr<CFX_DIBitmap> CXFA_FFDoc::GetPDFNamedImage(WideStringView wsName,
   if (!pStream)
     return nullptr;
 
-  // TODO(tsepez): make CPDF_StreamAcc constructor take retained argument.
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream.Get());
+  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
   pAcc->LoadAllDataFiltered();
 
   auto pImageFileRead =
-      pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(pAcc->GetSpan());
+      pdfium::MakeRetain<CFX_ReadOnlySpanStream>(pAcc->GetSpan());
 
   RetainPtr<CFX_DIBitmap> pDibSource = XFA_LoadImageFromBuffer(
       pImageFileRead, FXCODEC_IMAGE_UNKNOWN, iImageXDpi, iImageYDpi);

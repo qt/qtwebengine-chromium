@@ -13,7 +13,7 @@
 #include "core/fpdfapi/parser/cpdf_linearized_header.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
-#include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/retain_ptr.h"
@@ -38,7 +38,7 @@ class TestObjectsHolder final : public CPDF_Parser::ParsedObjectsHolder {
 
   // CPDF_Parser::ParsedObjectsHolder:
   bool TryInit() override { return true; }
-  MOCK_METHOD1(GetOrParseIndirectObject, CPDF_Object*(uint32_t objnum));
+  MOCK_METHOD1(ParseIndirectObject, RetainPtr<CPDF_Object>(uint32_t objnum));
 };
 
 }  // namespace
@@ -65,7 +65,7 @@ class CPDF_TestParser final : public CPDF_Parser {
   bool InitTestFromBufferWithOffset(pdfium::span<const uint8_t> buffer,
                                     FX_FILESIZE header_offset) {
     SetSyntaxParserForTesting(CPDF_SyntaxParser::CreateForTesting(
-        pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(buffer), header_offset));
+        pdfium::MakeRetain<CFX_ReadOnlySpanStream>(buffer), header_offset));
     return true;
   }
 
@@ -357,8 +357,8 @@ TEST(ParserTest, XrefObjectIndicesTooBig) {
   // Satisfy CPDF_Parser's checks, so the test data below can concentrate on the
   // /XRef stream and avoid also providing other valid dictionaries.
   auto dummy_root = pdfium::MakeRetain<CPDF_Dictionary>();
-  EXPECT_CALL(parser.object_holder(), GetOrParseIndirectObject)
-      .WillRepeatedly(Return(dummy_root.Get()));
+  EXPECT_CALL(parser.object_holder(), ParseIndirectObject)
+      .WillRepeatedly(Return(dummy_root));
 
   // Since /Index starts at 4194303, the object number will go past
   // `kMaxObjectNumber`.
@@ -409,8 +409,8 @@ TEST(ParserTest, XrefHasInvalidArchiveObjectNumber) {
   // Satisfy CPDF_Parser's checks, so the test data below can concentrate on the
   // /XRef stream and avoid also providing other valid dictionaries.
   auto dummy_root = pdfium::MakeRetain<CPDF_Dictionary>();
-  EXPECT_CALL(parser.object_holder(), GetOrParseIndirectObject)
-      .WillRepeatedly(Return(dummy_root.Get()));
+  EXPECT_CALL(parser.object_holder(), ParseIndirectObject)
+      .WillRepeatedly(Return(dummy_root));
 
   // 0xFF in the first object in the xref object stream is invalid.
   const unsigned char kData[] =

@@ -278,12 +278,12 @@ class ParserImpl {
         /// Constructor
         /// @param source_in variable declaration source
         /// @param name_in variable name
-        /// @param storage_class_in variable storage class
+        /// @param address_space_in variable address space
         /// @param access_in variable access control
         /// @param type_in variable type
         VarDeclInfo(Source source_in,
                     std::string name_in,
-                    ast::StorageClass storage_class_in,
+                    ast::AddressSpace address_space_in,
                     ast::Access access_in,
                     const ast::Type* type_in);
         /// Destructor
@@ -293,8 +293,8 @@ class ParserImpl {
         Source source;
         /// Variable name
         std::string name;
-        /// Variable storage class
-        ast::StorageClass storage_class = ast::StorageClass::kNone;
+        /// Variable address space
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         /// Variable access control
         ast::Access access = ast::Access::kUndefined;
         /// Variable type
@@ -303,10 +303,18 @@ class ParserImpl {
 
     /// VariableQualifier contains the parsed information for a variable qualifier
     struct VariableQualifier {
-        /// The variable's storage class
-        ast::StorageClass storage_class = ast::StorageClass::kNone;
+        /// The variable's address space
+        ast::AddressSpace address_space = ast::AddressSpace::kNone;
         /// The variable's access control
         ast::Access access = ast::Access::kUndefined;
+    };
+
+    /// MatrixDimensions contains the column and row information for a matrix
+    struct MatrixDimensions {
+        /// The number of columns
+        uint32_t columns = 0;
+        /// The number of rows
+        uint32_t rows = 0;
     };
 
     /// Creates a new parser using the given file
@@ -419,8 +427,8 @@ class ParserImpl {
     /// @param use a description of what was being parsed if an error was raised.
     /// @param allow_inferred allow the identifier to be parsed without a type
     /// @returns the parsed identifier, and possibly type, or empty otherwise
-    Expect<TypedIdentifier> expect_ident_with_optional_type_decl(std::string_view use,
-                                                                 bool allow_inferred);
+    Expect<TypedIdentifier> expect_ident_with_optional_type_specifier(std::string_view use,
+                                                                      bool allow_inferred);
     /// Parses a `ident` or a `variable_ident_decl` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
     /// @returns the identifier or empty otherwise.
@@ -428,20 +436,32 @@ class ParserImpl {
     /// Parses a `variable_ident_decl` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
     /// @returns the identifier and type parsed or empty otherwise
-    Expect<TypedIdentifier> expect_ident_with_type_decl(std::string_view use);
+    Expect<TypedIdentifier> expect_ident_with_type_specifier(std::string_view use);
     /// Parses a `variable_qualifier` grammar element
     /// @returns the variable qualifier information
     Maybe<VariableQualifier> variable_qualifier();
     /// Parses a `type_alias_decl` grammar element
     /// @returns the type alias or nullptr on error
     Maybe<const ast::Alias*> type_alias_decl();
-    /// Parses a `type_decl` grammar element
+    /// Parses a `callable` grammar element
+    /// @returns the type or nullptr
+    Maybe<const ast::Type*> callable();
+    /// Parses a `vec_prefix` grammar element
+    /// @returns the vector size or nullptr
+    Maybe<uint32_t> vec_prefix();
+    /// Parses a `mat_prefix` grammar element
+    /// @returns the matrix dimensions or nullptr
+    Maybe<MatrixDimensions> mat_prefix();
+    /// Parses a `type_specifier_without_ident` grammar element
     /// @returns the parsed Type or nullptr if none matched.
-    Maybe<const ast::Type*> type_decl();
+    Maybe<const ast::Type*> type_specifier_without_ident();
+    /// Parses a `type_specifier` grammar element
+    /// @returns the parsed Type or nullptr if none matched.
+    Maybe<const ast::Type*> type_specifier();
     /// Parses an `address_space` grammar element, erroring on parse failure.
     /// @param use a description of what was being parsed if an error was raised.
-    /// @returns the address space or StorageClass::kNone if none matched
-    Expect<ast::StorageClass> expect_address_space(std::string_view use);
+    /// @returns the address space or ast::AddressSpace::kNone if none matched
+    Expect<ast::AddressSpace> expect_address_space(std::string_view use);
     /// Parses a `struct_decl` grammar element.
     /// @returns the struct type or nullptr on error
     Maybe<const ast::Struct*> struct_decl();
@@ -601,94 +621,54 @@ class ParserImpl {
     /// Parses a `unary_expression` grammar element
     /// @returns the parsed expression or nullptr
     Maybe<const ast::Expression*> unary_expression();
-    /// Parses the recursive part of the `multiplicative_expression`, erroring on
-    /// parse failure.
-    /// @param lhs the left side of the expression
+    /// Parses the `expression` grammar rule
     /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_multiplicative_expr(const ast::Expression* lhs);
-    /// Parses the `multiplicative_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> multiplicative_expression();
-    /// Parses the recursive part of the `additive_expression`, erroring on parse
-    /// failure.
-    /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_additive_expr(const ast::Expression* lhs);
-    /// Parses the `additive_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> additive_expression();
-    /// Parses the recursive part of the `shift_expression`, erroring on parse
-    /// failure.
-    /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_shift_expr(const ast::Expression* lhs);
-    /// Parses the `shift_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> shift_expression();
-    /// Parses the recursive part of the `relational_expression`, erroring on
-    /// parse failure.
-    /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_relational_expr(const ast::Expression* lhs);
-    /// Parses the `relational_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> relational_expression();
-    /// Parses the recursive part of the `equality_expression`, erroring on parse
-    /// failure.
-    /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_equality_expr(const ast::Expression* lhs);
-    /// Parses the `equality_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> equality_expression();
+    Maybe<const ast::Expression*> expression();
     /// Parses the `bitwise_expression.post.unary_expression` grammar element
     /// @param lhs the left side of the expression
     /// @returns the parsed expression or nullptr
     Maybe<const ast::Expression*> bitwise_expression_post_unary_expression(
         const ast::Expression* lhs);
-    /// Parses the recursive part of the `and_expression`, erroring on parse
-    /// failure.
+    /// Parse the `multiplicative_operator` grammar element
+    /// @returns the parsed operator if successful
+    Maybe<ast::BinaryOp> multiplicative_operator();
+    /// Parses multiplicative elements
     /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_and_expr(const ast::Expression* lhs);
-    /// Parses the `and_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> and_expression();
-    /// Parses the recursive part of the `exclusive_or_expression`, erroring on
-    /// parse failure.
+    /// @returns the parsed expression or `lhs` if no match
+    Expect<const ast::Expression*> expect_multiplicative_expression_post_unary_expression(
+        const ast::Expression* lhs);
+    /// Parses additive elements
     /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_exclusive_or_expr(const ast::Expression* lhs);
-    /// Parses the `exclusive_or_expression` grammar elememnt
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> exclusive_or_expression();
-    /// Parses the recursive part of the `inclusive_or_expression`, erroring on
-    /// parse failure.
+    /// @returns the parsed expression or `lhs` if no match
+    Expect<const ast::Expression*> expect_additive_expression_post_unary_expression(
+        const ast::Expression* lhs);
+    /// Parses math elements
     /// @param lhs the left side of the expression
+    /// @returns the parsed expression or `lhs` if no match
+    Expect<const ast::Expression*> expect_math_expression_post_unary_expression(
+        const ast::Expression* lhs);
+    /// Parses an `element_count_expression` grammar element
     /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_inclusive_or_expr(const ast::Expression* lhs);
-    /// Parses the `inclusive_or_expression` grammar element
+    Maybe<const ast::Expression*> element_count_expression();
+    /// Parses a `unary_expression shift.post.unary_expression`
     /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> inclusive_or_expression();
-    /// Parses the recursive part of the `logical_and_expression`, erroring on
-    /// parse failure.
+    Maybe<const ast::Expression*> shift_expression();
+    /// Parses a `shift_expression.post.unary_expression` grammar element
     /// @param lhs the left side of the expression
+    /// @returns the parsed expression or `lhs` if no match
+    Expect<const ast::Expression*> expect_shift_expression_post_unary_expression(
+        const ast::Expression* lhs);
+    /// Parses a `unary_expression relational_expression.post.unary_expression`
     /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_logical_and_expr(const ast::Expression* lhs);
-    /// Parses a `logical_and_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> logical_and_expression();
-    /// Parses the recursive part of the `logical_or_expression`, erroring on
-    /// parse failure.
+    Maybe<const ast::Expression*> relational_expression();
+    /// Parses a `relational_expression.post.unary_expression` grammar element
     /// @param lhs the left side of the expression
-    /// @returns the parsed expression or nullptr
-    Expect<const ast::Expression*> expect_logical_or_expr(const ast::Expression* lhs);
-    /// Parses a `logical_or_expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> logical_or_expression();
-    /// Parses an `expression` grammar element
-    /// @returns the parsed expression or nullptr
-    Maybe<const ast::Expression*> expression();
+    /// @returns the parsed expression or `lhs` if no match
+    Expect<const ast::Expression*> expect_relational_expression_post_unary_expression(
+        const ast::Expression* lhs);
+    /// Parse the `additive_operator` grammar element
+    /// @returns the parsed operator if successful
+    Maybe<ast::BinaryOp> additive_operator();
     /// Parses a `compound_assignment_operator` grammar element
     /// @returns the parsed compound assignment operator
     Maybe<ast::BinaryOp> compound_assignment_operator();
@@ -718,6 +698,11 @@ class ParserImpl {
     /// @see #attribute for the full list of attributes this method parses.
     /// @return the parsed attribute, or nullptr on error.
     Expect<const ast::Attribute*> expect_attribute();
+
+    /// Splits a peekable token into to parts filling in the peekable fields.
+    /// @param lhs the token to set in the current position
+    /// @param rhs the token to set in the placeholder
+    void split_token(Token::Type lhs, Token::Type rhs);
 
   private:
     /// ReturnType resolves to the return type for the function or lambda F.
@@ -876,19 +861,30 @@ class ParserImpl {
     /// Used to ensure that all attributes are consumed.
     bool expect_attributes_consumed(utils::VectorRef<const ast::Attribute*> list);
 
-    Expect<const ast::Type*> expect_type_decl_pointer(const Token& t);
-    Expect<const ast::Type*> expect_type_decl_atomic(const Token& t);
-    Expect<const ast::Type*> expect_type_decl_vector(const Token& t);
-    Expect<const ast::Type*> expect_type_decl_array(const Token& t);
-    Expect<const ast::Type*> expect_type_decl_matrix(const Token& t);
+    Expect<const ast::Type*> expect_type_specifier_pointer(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_atomic(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_vector(const Source& s, uint32_t count);
+    Expect<const ast::Type*> expect_type_specifier_array(const Source& s);
+    Expect<const ast::Type*> expect_type_specifier_matrix(const Source& s,
+                                                          const MatrixDimensions& dims);
+
+    /// Parses the given enum, providing sensible error messages if the next token does not match
+    /// any of the enum values.
+    /// @param name the name of the enumerator
+    /// @param parse the optimized function used to parse the enum
+    /// @param strings the list of possible strings in the enum
+    /// @param use an optional description of what was being parsed if an error was raised.
+    template <typename ENUM, size_t N>
+    Expect<ENUM> expect_enum(std::string_view name,
+                             ENUM (*parse)(std::string_view str),
+                             const char* const (&strings)[N],
+                             std::string_view use = "");
 
     Expect<const ast::Type*> expect_type(std::string_view use);
 
     Maybe<const ast::Statement*> non_block_statement();
     Maybe<const ast::Statement*> for_header_initializer();
     Maybe<const ast::Statement*> for_header_continuing();
-
-    void split_token(Token::Type lhs, Token::Type rhs);
 
     class MultiTokenSource;
     MultiTokenSource make_source_range();

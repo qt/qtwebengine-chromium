@@ -46,7 +46,9 @@ class StagingDescriptorAllocator;
 // Definition of backend types
 class Device final : public DeviceBase {
   public:
-    static ResultOrError<Ref<Device>> Create(Adapter* adapter, const DeviceDescriptor* descriptor);
+    static ResultOrError<Ref<Device>> Create(Adapter* adapter,
+                                             const DeviceDescriptor* descriptor,
+                                             const TripleStateTogglesSet& userProvidedToggles);
     ~Device() override;
 
     MaybeError Initialize(const DeviceDescriptor* descriptor);
@@ -60,6 +62,7 @@ class Device final : public DeviceBase {
     ID3D12Device* GetD3D12Device() const;
     ComPtr<ID3D12CommandQueue> GetCommandQueue() const;
     ID3D12SharingContract* GetSharingContract() const;
+    HANDLE GetFenceHandle() const;
 
     ComPtr<ID3D12CommandSignature> GetDispatchIndirectSignature() const;
     ComPtr<ID3D12CommandSignature> GetDrawIndirectSignature() const;
@@ -112,7 +115,8 @@ class Device final : public DeviceBase {
     ResultOrError<ResourceHeapAllocation> AllocateMemory(
         D3D12_HEAP_TYPE heapType,
         const D3D12_RESOURCE_DESC& resourceDescriptor,
-        D3D12_RESOURCE_STATES initialUsage);
+        D3D12_RESOURCE_STATES initialUsage,
+        uint32_t formatBytesPerBlock);
 
     void DeallocateMemory(ResourceHeapAllocation& allocation);
 
@@ -136,10 +140,8 @@ class Device final : public DeviceBase {
 
     Ref<TextureBase> CreateD3D12ExternalTexture(const TextureDescriptor* descriptor,
                                                 ComPtr<ID3D12Resource> d3d12Texture,
-                                                ComPtr<ID3D12Fence> d3d12Fence,
+                                                std::vector<Ref<Fence>> waitFences,
                                                 Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
-                                                uint64_t fenceWaitValue,
-                                                uint64_t fenceSignalValue,
                                                 bool isSwapChainTexture,
                                                 bool isInitialized);
 
@@ -159,8 +161,6 @@ class Device final : public DeviceBase {
 
     bool ShouldDuplicateParametersForDrawIndirect(
         const RenderPipelineBase* renderPipelineBase) const override;
-
-    bool IsFeatureEnabled(Feature feature) const override;
 
     uint64_t GetBufferCopyOffsetAlignmentForDepthStencil() const override;
 
@@ -218,6 +218,7 @@ class Device final : public DeviceBase {
 
     ComPtr<ID3D12Fence> mFence;
     HANDLE mFenceEvent = nullptr;
+    HANDLE mFenceHandle = nullptr;
     ResultOrError<ExecutionSerial> CheckAndUpdateCompletedSerials() override;
 
     ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.

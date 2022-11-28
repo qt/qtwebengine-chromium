@@ -1037,6 +1037,22 @@ ObjectData* JSHeapBroker::TryGetOrCreateData(Handle<Object> object,
 HEAP_BROKER_OBJECT_LIST(DEFINE_IS_AND_AS)
 #undef DEFINE_IS_AND_AS
 
+bool ObjectRef::IsCodeT() const {
+#ifdef V8_EXTERNAL_CODE_SPACE
+  return IsCodeDataContainer();
+#else
+  return IsCode();
+#endif
+}
+
+CodeTRef ObjectRef::AsCodeT() const {
+#ifdef V8_EXTERNAL_CODE_SPACE
+  return AsCodeDataContainer();
+#else
+  return AsCode();
+#endif
+}
+
 bool ObjectRef::IsSmi() const { return data()->is_smi(); }
 
 int ObjectRef::AsSmi() const {
@@ -1276,8 +1292,12 @@ bool StringRef::SupportedStringKind() const {
   return IsInternalizedString() || object()->IsThinString();
 }
 
+bool StringRef::IsContentAccessible() const {
+  return data_->kind() != kNeverSerializedHeapObject || SupportedStringKind();
+}
+
 base::Optional<Handle<String>> StringRef::ObjectIfContentAccessible() {
-  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+  if (!IsContentAccessible()) {
     TRACE_BROKER_MISSING(
         broker(),
         "content for kNeverSerialized unsupported string kind " << *this);
@@ -1287,21 +1307,12 @@ base::Optional<Handle<String>> StringRef::ObjectIfContentAccessible() {
   }
 }
 
-base::Optional<int> StringRef::length() const {
-  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
-    TRACE_BROKER_MISSING(
-        broker(),
-        "length for kNeverSerialized unsupported string kind " << *this);
-    return base::nullopt;
-  } else {
-    return object()->length(kAcquireLoad);
-  }
-}
+int StringRef::length() const { return object()->length(kAcquireLoad); }
 
 base::Optional<uint16_t> StringRef::GetFirstChar() const { return GetChar(0); }
 
 base::Optional<uint16_t> StringRef::GetChar(int index) const {
-  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+  if (!IsContentAccessible()) {
     TRACE_BROKER_MISSING(
         broker(),
         "get char for kNeverSerialized unsupported string kind " << *this);
@@ -1318,7 +1329,7 @@ base::Optional<uint16_t> StringRef::GetChar(int index) const {
 }
 
 base::Optional<double> StringRef::ToNumber() {
-  if (data_->kind() == kNeverSerializedHeapObject && !SupportedStringKind()) {
+  if (!IsContentAccessible()) {
     TRACE_BROKER_MISSING(
         broker(),
         "number for kNeverSerialized unsupported string kind " << *this);
@@ -1550,6 +1561,7 @@ ObjectRef CallHandlerInfoRef::data() const {
 HEAP_ACCESSOR_C(ScopeInfo, int, ContextLength)
 HEAP_ACCESSOR_C(ScopeInfo, bool, HasContextExtensionSlot)
 HEAP_ACCESSOR_C(ScopeInfo, bool, HasOuterScopeInfo)
+HEAP_ACCESSOR_C(ScopeInfo, bool, ClassScopeHasPrivateBrand)
 
 ScopeInfoRef ScopeInfoRef::OuterScopeInfo() const {
   return MakeRefAssumeMemoryFence(broker(), object()->OuterScopeInfo());
@@ -1690,7 +1702,7 @@ ZoneVector<const CFunctionInfo*> FunctionTemplateInfoRef::c_signatures() const {
 
 bool StringRef::IsSeqString() const { return object()->IsSeqString(); }
 
-ScopeInfoRef NativeContextRef::scope_info() const {
+ScopeInfoRef ContextRef::scope_info() const {
   // The scope_info is immutable after initialization.
   return MakeRefAssumeMemoryFence(broker(), object()->scope_info());
 }
@@ -1821,17 +1833,23 @@ base::Optional<Object> JSObjectRef::GetOwnConstantElementFromHeap(
   // This block is carefully constructed to avoid Ref creation and access since
   // this method may be called after the broker has retired.
   // The relaxed `length` read is safe to use in this case since:
-  // - GetOwnConstantElement only detects a constant for JSArray holders if
-  //   the array is frozen/sealed.
-  // - Frozen/sealed arrays can't change length.
-  // - We've already seen a map with frozen/sealed elements_kinds (above);
+  // - TryGetOwnConstantElement (below) only detects a constant for JSArray
+  //   holders if the array is frozen.
+  // - Frozen arrays can't change length.
+  // - We've already seen the corresponding map (when this JSObjectRef was
+  //   created);
   // - The release-load of that map ensures we read the newest value
   //   of `length` below.
   if (holder->IsJSArray()) {
+    Object array_length_obj =
+        JSArray::cast(*holder).length(broker()->isolate(), kRelaxedLoad);
+    if (!array_length_obj.IsSmi()) {
+      // Can't safely read into HeapNumber objects without atomic semantics
+      // (relaxed would be sufficient due to the guarantees above).
+      return {};
+    }
     uint32_t array_length;
-    if (!JSArray::cast(*holder)
-             .length(broker()->isolate(), kRelaxedLoad)
-             .ToArrayLength(&array_length)) {
+    if (!array_length_obj.ToArrayLength(&array_length)) {
       return {};
     }
     // See also ElementsAccessorBase::GetMaxIndex.
@@ -2239,7 +2257,7 @@ base::Optional<PropertyCellRef> JSGlobalObjectRef::GetPropertyCell(
 }
 
 std::ostream& operator<<(std::ostream& os, const ObjectRef& ref) {
-  if (!FLAG_concurrent_recompilation) {
+  if (!v8_flags.concurrent_recompilation) {
     // We cannot be in a background thread so it's safe to read the heap.
     AllowHandleDereference allow_handle_dereference;
     return os << ref.data() << " {" << ref.object() << "}";

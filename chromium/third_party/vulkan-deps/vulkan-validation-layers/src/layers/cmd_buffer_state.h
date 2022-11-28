@@ -213,6 +213,7 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     // Track if certain commands have been called at least once in lifetime of the command buffer
     // primary command buffers values are set true if a secondary command buffer has a command
     bool has_draw_cmd;
+    bool has_draw_cmd_in_current_render_pass;
     bool has_dispatch_cmd;
     bool has_trace_rays_cmd;
     bool has_build_as_cmd;
@@ -220,8 +221,7 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     CB_STATE state;         // Track cmd buffer update state
     uint64_t commandCount;  // Number of commands recorded. Currently only used with VK_KHR_performance_query
     uint64_t submitCount;   // Number of times CB has been submitted
-    bool pipeline_bound = false;                  // True if CmdBindPipeline has been called on this command buffer, false otherwise
-    uint64_t commands_since_begin_rendering = 0;  // Number of commands since the last CmdBeginRenderingCommand
+    bool pipeline_bound = false;  // True if CmdBindPipeline has been called on this command buffer, false otherwise
     typedef uint64_t ImageLayoutUpdateCount;
     ImageLayoutUpdateCount image_layout_change_count;  // The sequence number for changes to image layout (for cached validation)
     CBStatusFlags status;                              // Track status of various bindings on cmd buffer
@@ -321,7 +321,6 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     bool vertex_buffer_used;  // Track for perf warning to make sure any bound vtx buffer used
     VkCommandBuffer primaryCommandBuffer;
     // If primary, the secondary command buffers we will call.
-    // If secondary, the primary command buffers we will be called by.
     layer_data::unordered_set<CMD_BUFFER_STATE *> linkedCommandBuffers;
     // Validation functions run at primary CB queue submit time
     using QueueCallback = std::function<bool(const ValidationStateTracker &device_data, const class QUEUE_STATE &queue_state,
@@ -334,10 +333,9 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     std::vector<std::function<bool(const CMD_BUFFER_STATE &secondary, const CMD_BUFFER_STATE *primary, const FRAMEBUFFER_STATE *)>>
         cmd_execute_commands_functions;
     std::vector<std::function<bool(CMD_BUFFER_STATE &cb, bool do_validate, EventToStageMap *localEventToStageMap)>> eventUpdates;
-    std::vector<std::function<bool(const ValidationStateTracker *device_data, bool do_validate, VkQueryPool &firstPerfQueryPool,
-                                   uint32_t perfQueryPass, QueryMap *localQueryToStateMap)>>
+    std::vector<std::function<bool(CMD_BUFFER_STATE &cb, bool do_validate, VkQueryPool &firstPerfQueryPool, uint32_t perfQueryPass,
+                                   QueryMap *localQueryToStateMap)>>
         queryUpdates;
-    layer_data::unordered_set<const cvdescriptorset::DescriptorSet *> validated_descriptor_sets;
     layer_data::unordered_map<const cvdescriptorset::DescriptorSet *, cvdescriptorset::DescriptorSet::CachedValidation>
         descriptorset_cache;
     // Contents valid only after an index buffer is bound (CBSTATUS_INDEX_BUFFER_BOUND set)
@@ -455,6 +453,7 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     void EndQuery(const QueryObject &query_obj);
     void EndQueries(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount);
     void ResetQueryPool(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount);
+    bool UpdatesQuery(const QueryObject &query_obj) const;
 
     void BeginRenderPass(CMD_TYPE cmd_type, const VkRenderPassBeginInfo *pRenderPassBegin, VkSubpassContents contents);
     void NextSubpass(CMD_TYPE cmd_type, VkSubpassContents contents);
@@ -506,7 +505,7 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     void Submit(uint32_t perf_submit_pass);
     void Retire(uint32_t perf_submit_pass, const std::function<bool(const QueryObject &)> &is_query_updated_after);
 
-    uint32_t GetDynamicColorAttachmentCount() {
+    uint32_t GetDynamicColorAttachmentCount() const {
         if (activeRenderPass) {
             if (activeRenderPass->use_dynamic_rendering_inherited) {
                 return activeRenderPass->inheritance_rendering_info.colorAttachmentCount;
@@ -517,12 +516,35 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
         }
         return 0;
     }
-    uint32_t GetDynamicColorAttachmentImageIndex(uint32_t index) { return index; }
-    uint32_t GetDynamicColorResolveAttachmentImageIndex(uint32_t index) { return index + GetDynamicColorAttachmentCount(); }
-    uint32_t GetDynamicDepthAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount(); }
-    uint32_t GetDynamicDepthResolveAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 1; }
-    uint32_t GetDynamicStencilAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 2; }
-    uint32_t GetDynamicStencilResolveAttachmentImageIndex() { return 2 * GetDynamicColorAttachmentCount() + 3; }
+    bool IsValidDynamicColorAttachmentImageIndex(uint32_t index) const { return index < GetDynamicColorAttachmentCount(); }
+    uint32_t GetDynamicColorAttachmentImageIndex(uint32_t index) const { return index; }
+    uint32_t GetDynamicColorResolveAttachmentImageIndex(uint32_t index) const { return index + GetDynamicColorAttachmentCount(); }
+    uint32_t GetDynamicDepthAttachmentImageIndex() const { return 2 * GetDynamicColorAttachmentCount(); }
+    uint32_t GetDynamicDepthResolveAttachmentImageIndex() const { return 2 * GetDynamicColorAttachmentCount() + 1; }
+    uint32_t GetDynamicStencilAttachmentImageIndex() const { return 2 * GetDynamicColorAttachmentCount() + 2; }
+    uint32_t GetDynamicStencilResolveAttachmentImageIndex() const { return 2 * GetDynamicColorAttachmentCount() + 3; }
+    bool HasValidDynamicDepthAttachment() const {
+        if (activeRenderPass) {
+            if (activeRenderPass->use_dynamic_rendering_inherited) {
+                return activeRenderPass->inheritance_rendering_info.depthAttachmentFormat != VK_FORMAT_UNDEFINED;
+            }
+            if (activeRenderPass->use_dynamic_rendering) {
+                return activeRenderPass->dynamic_rendering_begin_rendering_info.pDepthAttachment != nullptr;
+            }
+        }
+        return false;
+    }
+    bool HasValidDynamicStencilAttachment() const {
+        if (activeRenderPass) {
+            if (activeRenderPass->use_dynamic_rendering_inherited) {
+                return activeRenderPass->inheritance_rendering_info.stencilAttachmentFormat != VK_FORMAT_UNDEFINED;
+            }
+            if (activeRenderPass->use_dynamic_rendering) {
+                return activeRenderPass->dynamic_rendering_begin_rendering_info.pStencilAttachment != nullptr;
+            }
+        }
+        return false;
+    }
 
     bool RasterizationDisabled() const;
     inline void BindPipeline(LvlBindPoint bind_point, PIPELINE_STATE *pipe_state) {

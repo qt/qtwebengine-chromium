@@ -1,4 +1,5 @@
 {
+  "root": true,
   "parser": "@typescript-eslint/parser",
   "parserOptions": { "project": "./tsconfig.json" },
   "extends": [
@@ -111,7 +112,7 @@
           {
             "target": "./src/common",
             "from": "./src",
-            "except": ["./common"],
+            "except": ["./common", "./external"],
             "message": "Non common/ code imported from common/"
           }
         ]

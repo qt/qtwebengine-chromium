@@ -158,7 +158,7 @@ class FakeVideoRenderer : public rtc::VideoSinkInterface<VideoFrame> {
   TimeController* const time_controller_;
 };
 
-MATCHER_P2(Resolution, w, h, "") {
+MATCHER_P2(MatchResolution, w, h, "") {
   return arg.resolution().width == w && arg.resolution().height == h;
 }
 
@@ -203,12 +203,6 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
                      &fake_metronome_,
                      time_controller_.GetMainThread()),
         h264_decoder_factory_(&mock_decoder_) {
-    if (UseMetronome()) {
-      fake_call_.SetFieldTrial("WebRTC-FrameBuffer3/arm:SyncDecoding/");
-    } else {
-      fake_call_.SetFieldTrial("WebRTC-FrameBuffer3/arm:FrameBuffer3/");
-    }
-
     // By default, mock decoder factory is backed by VideoDecoderProxyFactory.
     ON_CALL(mock_h264_decoder_factory_, CreateVideoDecoder)
         .WillByDefault(
@@ -270,7 +264,7 @@ class VideoReceiveStream2Test : public ::testing::TestWithParam<bool> {
             time_controller_.GetTaskQueueFactory(), &fake_call_,
             kDefaultNumCpuCores, &packet_router_, config_.Copy(), &call_stats_,
             clock_, absl::WrapUnique(timing_), &nack_periodic_processor_,
-            GetParam() ? &decode_sync_ : nullptr, nullptr);
+            UseMetronome() ? &decode_sync_ : nullptr, nullptr);
     video_receive_stream_->RegisterWithTransport(
         &rtp_stream_receiver_controller_);
     if (state)
@@ -491,19 +485,15 @@ TEST_P(VideoReceiveStream2Test, LazyDecoderCreation) {
   rtppacket.SetSequenceNumber(1);
   rtppacket.SetTimestamp(0);
 
-  // Only 1 decoder is created by default. It will be H265 since that was the
-  // first in the decoder list.
+  // No decoders are created by default.
   EXPECT_CALL(mock_h264_decoder_factory_, CreateVideoDecoder(_)).Times(0);
-  EXPECT_CALL(
-      mock_h264_decoder_factory_,
-      CreateVideoDecoder(Field(&SdpVideoFormat::name, testing::Eq("H265"))));
   video_receive_stream_->Start();
-  // Decoder creation happens on the decoder thread, make sure it runs.
   time_controller_.AdvanceTime(TimeDelta::Zero());
 
   EXPECT_TRUE(
       testing::Mock::VerifyAndClearExpectations(&mock_h264_decoder_factory_));
-
+  // Verify that the decoder is created when we receive payload data and tries
+  // to decode a frame.
   EXPECT_CALL(
       mock_h264_decoder_factory_,
       CreateVideoDecoder(Field(&SdpVideoFormat::name, testing::Eq("H264"))));
@@ -746,8 +736,9 @@ TEST_P(VideoReceiveStream2Test,
       /*generate_key_frame=*/false);
 
   InSequence s;
-  EXPECT_CALL(callback, Call(Resolution(test::FakeDecoder::kDefaultWidth,
-                                        test::FakeDecoder::kDefaultHeight)));
+  EXPECT_CALL(callback,
+              Call(MatchResolution(test::FakeDecoder::kDefaultWidth,
+                                   test::FakeDecoder::kDefaultHeight)));
   EXPECT_CALL(callback, Call);
 
   video_receive_stream_->OnCompleteFrame(
@@ -769,7 +760,7 @@ TEST_P(VideoReceiveStream2Test,
       /*generate_key_frame=*/false);
 
   InSequence s;
-  EXPECT_CALL(callback, Call(Resolution(1080u, 720u)));
+  EXPECT_CALL(callback, Call(MatchResolution(1080u, 720u)));
   EXPECT_CALL(callback, Call);
 
   video_receive_stream_->OnCompleteFrame(

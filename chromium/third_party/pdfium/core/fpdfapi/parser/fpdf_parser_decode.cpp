@@ -106,7 +106,7 @@ bool ValidateDecoderPipeline(const CPDF_Array* pDecoders) {
       "FlateDecode",    "Fl",  "LZWDecode",       "LZW", "ASCII85Decode", "A85",
       "ASCIIHexDecode", "AHx", "RunLengthDecode", "RL"};
   for (size_t i = 0; i < count - 1; ++i) {
-    if (!pdfium::Contains(kValidDecoders, pDecoders->GetStringAt(i)))
+    if (!pdfium::Contains(kValidDecoders, pDecoders->GetByteStringAt(i)))
       return false;
   }
   return true;
@@ -364,15 +364,16 @@ uint32_t FlateOrLZWDecode(bool bLZW,
                                        estimated_size, dest_buf, dest_size);
 }
 
-absl::optional<DecoderArray> GetDecoderArray(const CPDF_Dictionary* pDict) {
-  const CPDF_Object* pFilter = pDict->GetDirectObjectFor("Filter");
+absl::optional<DecoderArray> GetDecoderArray(
+    RetainPtr<const CPDF_Dictionary> pDict) {
+  RetainPtr<const CPDF_Object> pFilter = pDict->GetDirectObjectFor("Filter");
   if (!pFilter)
     return DecoderArray();
 
   if (!pFilter->IsArray() && !pFilter->IsName())
     return absl::nullopt;
 
-  const CPDF_Object* pParams =
+  RetainPtr<const CPDF_Object> pParams =
       pDict->GetDirectObjectFor(pdfium::stream::kDecodeParms);
 
   DecoderArray decoder_array;
@@ -380,10 +381,10 @@ absl::optional<DecoderArray> GetDecoderArray(const CPDF_Dictionary* pDict) {
     if (!ValidateDecoderPipeline(pDecoders))
       return absl::nullopt;
 
-    const CPDF_Array* pParamsArray = ToArray(pParams);
+    RetainPtr<const CPDF_Array> pParamsArray = ToArray(pParams);
     for (size_t i = 0; i < pDecoders->size(); ++i) {
       decoder_array.push_back(
-          {pDecoders->GetStringAt(i),
+          {pDecoders->GetByteStringAt(i),
            pParamsArray ? pParamsArray->GetDictAt(i) : nullptr});
     }
   } else {
@@ -395,15 +396,14 @@ absl::optional<DecoderArray> GetDecoderArray(const CPDF_Dictionary* pDict) {
   return decoder_array;
 }
 
-bool PDF_DataDecode(
-    pdfium::span<const uint8_t> src_span,
-    uint32_t last_estimated_size,
-    bool bImageAcc,
-    const std::vector<std::pair<ByteString, const CPDF_Object*>>& decoder_array,
-    std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
-    uint32_t* dest_size,
-    ByteString* ImageEncoding,
-    RetainPtr<const CPDF_Dictionary>* pImageParams) {
+bool PDF_DataDecode(pdfium::span<const uint8_t> src_span,
+                    uint32_t last_estimated_size,
+                    bool bImageAcc,
+                    const DecoderArray& decoder_array,
+                    std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
+                    uint32_t* dest_size,
+                    ByteString* ImageEncoding,
+                    RetainPtr<const CPDF_Dictionary>* pImageParams) {
   std::unique_ptr<uint8_t, FxFreeDeleter> result;
   // May be changed to point to |result| in the for-loop below. So put it below
   // |result| and let it get destroyed first.
@@ -594,10 +594,8 @@ ByteString PDF_HexEncodeString(ByteStringView src) {
   return result;
 }
 
-bool FlateEncode(pdfium::span<const uint8_t> src_span,
-                 std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
-                 uint32_t* dest_size) {
-  return FlateModule::Encode(src_span, dest_buf, dest_size);
+DataVector<uint8_t> FlateEncode(pdfium::span<const uint8_t> src_span) {
+  return FlateModule::Encode(src_span);
 }
 
 uint32_t FlateDecode(pdfium::span<const uint8_t> src_span,

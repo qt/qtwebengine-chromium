@@ -12,8 +12,14 @@
 #include <memory>
 
 #include "build/build_config.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
 #include "third_party/base/span.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/retain_ptr.h"
+#endif
+
+class CFX_DIBBase;
 
 namespace fxcodec {
 
@@ -42,12 +48,8 @@ class FaxModule {
                          uint8_t* dest_buf);
 
 #if BUILDFLAG(IS_WIN)
-  static void FaxEncode(const uint8_t* src_buf,
-                        int width,
-                        int height,
-                        int pitch,
-                        std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
-                        uint32_t* dest_size);
+  // `src` must have a BPP value of 1.
+  static DataVector<uint8_t> FaxEncode(RetainPtr<CFX_DIBBase> src);
 #endif  // BUILDFLAG(IS_WIN)
 
   FaxModule() = delete;

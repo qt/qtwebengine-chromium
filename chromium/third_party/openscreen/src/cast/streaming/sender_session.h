@@ -38,30 +38,18 @@ class SenderSession final {
     // In practice, we may have 0, 1, or 2 senders configured, depending
     // on if the device supports audio and video, and if we were able to
     // successfully negotiate a sender configuration.
-
+    //
     // If the sender is audio- or video-only, either of the senders
     // may be nullptr. However, in the majority of cases they will be populated.
-    Sender* audio_sender = nullptr;
+    std::unique_ptr<Sender> audio_sender;
     AudioCaptureConfig audio_config;
 
-    Sender* video_sender = nullptr;
+    std::unique_ptr<Sender> video_sender;
     VideoCaptureConfig video_config;
   };
 
-  // This struct contains all of the information necessary to begin remoting
-  // after we receive the capabilities from the receiver.
-  struct RemotingNegotiation {
-    ConfiguredSenders senders;
-
-    // The capabilities reported by the connected receiver. NOTE: SenderSession
-    // reports the capabilities as-is from the Receiver, so clients concerned
-    // about legacy devices, such as pre-1.27 Earth receivers should do
-    // a version check when using these capabilities to offer remoting.
-    RemotingCapabilities capabilities;
-  };
-
-  // The embedder should provide a client for handling negotiation events.
-  // The client is required to implement a mirorring handler, and may choose
+  // The consumer should provide a client for handling negotiation events.
+  // The client is required to implement a mirroring handler, and may choose
   // to provide a remoting negotiation if it supports remoting.
   // When the negotiation is complete, the appropriate |On*Negotiated| handler
   // is called.
@@ -77,14 +65,25 @@ class SenderSession final {
         ConfiguredSenders senders,
         capture_recommendations::Recommendations capture_recommendations) = 0;
 
-    // Called when a new set of remoting senders has been negotiated. Since
-    // remoting is an optional feature, the default behavior here is to leave
-    // this method unhandled.
-    virtual void OnRemotingNegotiated(const SenderSession* session,
-                                      RemotingNegotiation negotiation) {}
+    // Called when the receiver's remoting-related capabilities have been
+    // determined. The consumer may then determine if they want to switch to
+    // remoting.
+    virtual void OnCapabilitiesDetermined(const SenderSession* session,
+                                          RemotingCapabilities capabilities) {}
 
-    // Called whenever an error occurs. Ends the ongoing session, and the caller
-    // must call Negotiate() again if they wish to re-establish streaming.
+    // Called whenever an error occurs. Cancels any in progress negotiation
+    // and Negotiate()/NegotiateRemoting() must be called again to re-establish
+    // streaming.
+    //
+    // Consumers of this API may care about some of the potential values of
+    // `error.code()`, including:
+    // * kAnswerTimeout: no ANSWER was received before timeout occurred.
+    // * kInvalidAnswer: received an invalid ANSWER.
+    // * kNoStreamSelected: the receiver was unable to select a stream.
+    // * kMessageTimeout: a generic message timeout occurred, such as
+    //   trying to get capabilities.
+    // * kRemotingNotSupported: the receiver does not support remoting, or
+    //   uses a version that is too new for us.
     virtual void OnError(const SenderSession* session, Error error) = 0;
 
    protected:
@@ -150,15 +149,22 @@ class SenderSession final {
   Error NegotiateRemoting(AudioCaptureConfig audio_config,
                           VideoCaptureConfig video_config);
 
+  // Ask the session to get remoting capabilities from the receiver.
+  Error RequestCapabilities();
+
   // Get the current network usage (in bits per second). This includes all
   // senders managed by this session, and is a best guess based on receiver
-  // feedback. Embedders may use this information to throttle capture devices.
+  // feedback. Consumers may use this information to throttle capture devices.
   int GetEstimatedNetworkBandwidth() const;
 
   // The RPC messenger for this session. NOTE: RPC messages may come at
   // any time from the receiver, so subscriptions to RPC remoting messages
   // should be done before calling |NegotiateRemoting|.
-  RpcMessenger* rpc_messenger() { return &rpc_messenger_; }
+  RpcMessenger& rpc_messenger() { return rpc_messenger_; }
+
+  // TODO(https://crbug.com/1357839): remove this as part of refactoring Chrome
+  // to rely on |rpc_messenger()| instead.
+  SenderSessionMessenger& session_messenger() { return messenger_; }
 
  private:
   // We store the current negotiation, so that when we get an answer from the
@@ -204,12 +210,16 @@ class SenderSession final {
                          Offer offer);
 
   // Specific message type handler methods.
-  void OnAnswer(ReceiverMessage message);
-  void OnCapabilitiesResponse(ReceiverMessage message);
-  void OnRpcMessage(ReceiverMessage message);
-  void HandleErrorMessage(ReceiverMessage message, const std::string& text);
+  void OnAnswer(ErrorOr<ReceiverMessage> message);
+  void OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message);
+  void OnRpcMessage(ErrorOr<ReceiverMessage> message);
 
-  // Used by SpawnSenders to generate a sender for a specific stream.
+  // Handles an error `message` response from a receiver. If the receiver does
+  // not contain any error information, `default_error` will be reported
+  // instead.
+  void HandleErrorMessage(ReceiverMessage message, const Error& default_error);
+
+  // Used by SelectSenders to generate a sender for a specific stream.
   std::unique_ptr<Sender> CreateSender(Ssrc receiver_ssrc,
                                        const Stream& stream,
                                        RtpPayloadType type);
@@ -225,7 +235,7 @@ class SenderSession final {
                         int config_index);
 
   // Spawn a set of configured senders from the currently stored negotiation.
-  ConfiguredSenders SpawnSenders(const Answer& answer);
+  ConfiguredSenders SelectSenders(const Answer& answer);
 
   // Used by the RPC messenger to send outbound messages.
   void SendRpcMessage(std::vector<uint8_t> message_body);
@@ -258,11 +268,6 @@ class SenderSession final {
   // limited. |kStreaming| or |kRemoting| means that we are either starting
   // a negotiation or actively sending to a receiver.
   State state_ = State::kIdle;
-
-  // If the negotiation has succeeded, we store the current audio and video
-  // senders used for this session. Either or both may be nullptr.
-  std::unique_ptr<Sender> current_audio_sender_;
-  std::unique_ptr<Sender> current_video_sender_;
 };  // namespace cast
 
 }  // namespace cast

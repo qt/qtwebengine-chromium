@@ -27,6 +27,7 @@
 #include <xnnpack/operator.h>
 #include <xnnpack/pack.h>
 #include <xnnpack/params.h>
+#include <xnnpack/post-operation.h>
 #include <xnnpack/microparams-init.h>
 
 #ifndef XNN_ENABLE_GEMM_M_SPECIALIZATION
@@ -241,6 +242,8 @@ static enum xnn_status create_convolution2d_nhwc(
     bool relu_activation,
     uint32_t datatype_init_flags,
     enum xnn_operator_type operator_type,
+    size_t num_post_operations,
+    void* post_operation_params,
     xnn_caches_t caches,
     xnn_operator_t* convolution_op_out)
 {
@@ -378,6 +381,14 @@ static enum xnn_status create_convolution2d_nhwc(
   }
   assert(ukernel_type != xnn_ukernel_type_default);
 
+  if (num_post_operations != 0 && ukernel_type != xnn_ukernel_type_gemm) {
+    xnn_log_error(
+        "convolution with post operations not support for these parameters: "
+        "kernel_size: %zu unit_subsampling: %d padding: %d",
+        kernel_size, unit_subsampling, any_padding);
+    goto error;
+  }
+
   size_t zero_size = 0;
   switch (ukernel_type) {
     case xnn_ukernel_type_vmulcaddc:
@@ -432,6 +443,7 @@ static enum xnn_status create_convolution2d_nhwc(
 
       if (flags & XNN_FLAG_DEPTHWISE_CONVOLUTION) {
         pack_dwconv_hwg_w(
+          dwconv_ukernel->primary_tile,
           kernel_height, kernel_width,
           groups, dwconv_ukernel->channel_tile,
           kernel, bias, weights_ptr,
@@ -439,6 +451,7 @@ static enum xnn_status create_convolution2d_nhwc(
           packing_params);
       } else {
         pack_dwconv_ghw_w(
+          dwconv_ukernel->primary_tile,
           kernel_height, kernel_width,
           groups, dwconv_ukernel->channel_tile,
           kernel, bias, weights_ptr,
@@ -493,6 +506,8 @@ static enum xnn_status create_convolution2d_nhwc(
         goto error;
       }
       memcpy(&convolution_op->params, gemm_params, gemm_params_size);
+      convolution_op->num_post_operation_params = num_post_operations;
+      convolution_op->post_operation_params = post_operation_params;
 
       const struct gemm_fused_ukernels* gemm_ukernels = &gemm_parameters->minmax;
       const uint32_t mr = gemm_parameters->mr;
@@ -749,6 +764,7 @@ enum xnn_status xnn_create_convolution2d_nhwc_qu8(
     NULL /* jit_gemm_params */,
     false /* linear activation */, false /* relu activation */, XNN_INIT_FLAG_QU8,
     xnn_operator_type_convolution_nhwc_qu8,
+    0, NULL,
     caches,
     convolution_op_out);
 }
@@ -862,6 +878,7 @@ enum xnn_status xnn_create_convolution2d_nhwc_qs8(
     NULL /* jit_gemm_params */,
     false /* linear activation */, false /* relu activation */, XNN_INIT_FLAG_QS8,
     xnn_operator_type_convolution_nhwc_qs8,
+    0, NULL,
     caches,
     convolution_op_out);
 }
@@ -943,13 +960,13 @@ enum xnn_status xnn_create_convolution2d_nhwc_qc8(
 
   const struct xnn_qs8_packing_params packing_params = { .input_zero_point = input_zero_point, };
 
-  union xnn_qs8_minmax_params gemm_params;
+  union xnn_qc8_conv_minmax_params gemm_params;
   if XNN_LIKELY(xnn_params.qc8.gemm.init.qc8 != NULL) {
     xnn_params.qc8.gemm.init.qc8(&gemm_params,
       output_zero_point, output_min, output_max);
   }
 
-  union xnn_qs8_minmax_params dwconv_params;
+  union xnn_qc8_conv_minmax_params dwconv_params;
   const struct dwconv_parameters* dwconv_ukernel =
     find_dwconv_ukernel(kernel_height * kernel_width, xnn_params.qc8.dwconv, XNN_MAX_QC8_DWCONV_UKERNELS);
   if XNN_LIKELY(dwconv_ukernel != NULL) {
@@ -983,6 +1000,7 @@ enum xnn_status xnn_create_convolution2d_nhwc_qc8(
     NULL /* jit_gemm_params */,
     false /* linear activation */, false /* relu activation */, XNN_INIT_FLAG_QC8,
     xnn_operator_type_convolution_nhwc_qc8,
+    0, NULL,
     caches,
     convolution_op_out);
 }
@@ -1095,6 +1113,7 @@ enum xnn_status xnn_create_convolution2d_nhwc_f16(
     NULL /* jit_gemm_params */,
     false /* linear activation */, false /* relu activation */, XNN_INIT_FLAG_F16,
     xnn_operator_type_convolution_nhwc_f16,
+    0, NULL,
     caches,
     convolution_op_out);
 }
@@ -1206,6 +1225,101 @@ enum xnn_status xnn_create_convolution2d_nhwc_f32(
     &jit_gemm_params,
     linear_activation, relu_activation, XNN_INIT_FLAG_F32,
     xnn_operator_type_convolution_nhwc_f32,
+    0, NULL,
+    caches,
+    convolution_op_out);
+}
+
+enum xnn_status xnn_create_fused_convolution2d_nhwc_f32(
+    uint32_t input_padding_top,
+    uint32_t input_padding_right,
+    uint32_t input_padding_bottom,
+    uint32_t input_padding_left,
+    uint32_t kernel_height,
+    uint32_t kernel_width,
+    uint32_t subsampling_height,
+    uint32_t subsampling_width,
+    uint32_t dilation_height,
+    uint32_t dilation_width,
+    uint32_t groups,
+    size_t group_input_channels,
+    size_t group_output_channels,
+    size_t input_channel_stride,
+    size_t output_channel_stride,
+    const float* kernel,
+    const float* bias,
+    size_t num_post_operations,
+    struct xnn_post_operation* post_operations,
+    uint32_t flags,
+    xnn_caches_t caches,
+    xnn_operator_t* convolution_op_out)
+{
+  #if !XNN_ENABLE_JIT
+    xnn_log_error(
+      "failed to create %s operator: convolution with post operations available only if JIT is enabled",
+      xnn_operator_type_to_string(xnn_operator_type_convolution_nhwc_f32));
+    return xnn_status_invalid_parameter;
+  #endif
+
+  // Convolution is specified with linear activation, any clamping should be specified as a post operator.
+  const float output_max = INFINITY;
+  const float output_min = -INFINITY;
+
+  struct jit_gemm_params jit_gemm_params = {
+    .f32_minmax = {
+      .min = output_min,
+      .max = output_max
+    },
+    .num_post_operations = num_post_operations,
+    .post_operations = post_operations,
+  };
+
+  char* post_operation_params = allocate_and_initialize_post_operation_params(num_post_operations, post_operations);
+
+  union xnn_f32_minmax_params gemm_params;
+  if XNN_LIKELY(xnn_params.f32.gemm.init.f32 != NULL) {
+    xnn_params.f32.gemm.init.f32(&gemm_params, output_min, output_max);
+  }
+
+  union xnn_f32_minmax_params dwconv_params;
+  const struct dwconv_parameters* dwconv_ukernel =
+    find_dwconv_ukernel(kernel_height * kernel_width, xnn_params.f32.dwconv, XNN_MAX_F32_DWCONV_UKERNELS);
+  if XNN_LIKELY(dwconv_ukernel != NULL) {
+    dwconv_ukernel->init.f32(&dwconv_params, output_min, output_max);
+  }
+
+  union xnn_f32_minmax_params vmulcaddc_params;
+  if XNN_LIKELY(xnn_params.f32.vmulcaddc.init.f32 != NULL) {
+    xnn_params.f32.vmulcaddc.init.f32(&vmulcaddc_params, output_min, output_max);
+  }
+
+  return create_convolution2d_nhwc(
+    input_padding_top, input_padding_right, input_padding_bottom, input_padding_left,
+    kernel_height, kernel_width,
+    subsampling_height, subsampling_width,
+    dilation_height, dilation_width,
+    groups, group_input_channels, group_output_channels,
+    input_channel_stride, output_channel_stride,
+    kernel, bias, flags,
+    2 /* log2(sizeof(input element)) = log2(sizeof(float)) */,
+    2 /* log2(sizeof(filter element)) = log2(sizeof(float)) */,
+    sizeof(float) /* sizeof(bias element) */,
+    (xnn_pack_vmulcaddc_w_function) xnn_pack_f32_vmulcaddc_w,
+    (xnn_pack_dwconv_hwg_w_function) xnn_pack_f32_dwconv_hwg_w,
+    (xnn_pack_dwconv_ghw_w_function) xnn_pack_f32_dwconv_ghw_w,
+    (xnn_pack_gemm_goi_w_function) xnn_pack_f32_gemm_goi_w,
+    (xnn_pack_conv_kgo_w_function) xnn_pack_f32_conv_kgo_w,
+    (xnn_pack_conv_goki_w_function) xnn_pack_f32_conv_goki_w,
+    NULL /* packing params */, 0 /* input padding byte */, 0 /* packed weights padding byte */,
+    0 /* extra weights bytes */, NULL /* init scale params fn */, NULL /* scale params */,
+    (void*) &gemm_params, sizeof(gemm_params),
+    &dwconv_params, sizeof(dwconv_params),
+    &vmulcaddc_params, sizeof(vmulcaddc_params),
+    &xnn_params.f32.gemm, dwconv_ukernel, &xnn_params.f32.vmulcaddc,
+    &jit_gemm_params,
+    true /* linear_activation */, false /* relu_activation */, XNN_INIT_FLAG_F32,
+    xnn_operator_type_convolution_nhwc_f32,
+    num_post_operations, post_operation_params,
     caches,
     convolution_op_out);
 }
@@ -1353,6 +1467,11 @@ static enum xnn_status setup_convolution2d_nhwc(
           .ukernel = gemm_ukernel,
       };
       memcpy(&convolution_op->context.gemm.params, &convolution_op->params, sizeof(convolution_op->context.gemm.params));
+      if (convolution_op->num_post_operation_params == 0) {
+        convolution_op->context.gemm.fused_params = &convolution_op->context.gemm.params;
+      } else {
+        convolution_op->context.gemm.fused_params = convolution_op->post_operation_params;
+      }
 
       #if XNN_TEST_MODE
         const size_t nc = nr;
@@ -1592,8 +1711,11 @@ static enum xnn_status setup_convolution2d_nhwc(
       const size_t output_width = convolution_op->output_width;
       const size_t step_width = convolution_op->dilation_width == 1 ? convolution_op->stride_width : kernel_width;
       const size_t step_height = kernel_size + (output_width - 1) * step_width * kernel_height;
+      const size_t primary_tile = convolution_op->ukernel.dwconv.primary_tile;
       if (input_height != convolution_op->last_input_height || input_width != convolution_op->last_input_width) {
-        const size_t indirection_buffer_size = sizeof(void*) * output_height * step_height;
+        // Micro-kernel will read (primary_tile - kernel_size) elements after the end of indirection buffer.
+        const size_t indirection_buffer_size =
+          sizeof(void*) * (primary_tile - kernel_size + output_height * step_height);
 
         const void** indirection_buffer =
           (const void**) xnn_reallocate_memory(convolution_op->indirection_buffer, indirection_buffer_size);
@@ -1604,7 +1726,7 @@ static enum xnn_status setup_convolution2d_nhwc(
         }
         convolution_op->indirection_buffer = indirection_buffer;
 
-        xnn_indirection_init_dwconv2d(convolution_op, step_height, step_width, log2_input_element_size);
+        xnn_indirection_init_dwconv2d(convolution_op, step_height, step_width, primary_tile, log2_input_element_size);
 
         convolution_op->last_input = input;
         convolution_op->last_input_height = input_height;

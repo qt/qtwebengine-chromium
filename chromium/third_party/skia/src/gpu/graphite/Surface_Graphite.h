@@ -18,6 +18,12 @@ class Recorder;
 
 class Surface final : public SkSurface_Base {
 public:
+    static sk_sp<SkSurface> MakeGraphite(Recorder* recorder,
+                                         const SkImageInfo& info,
+                                         SkBudgeted budgeted,
+                                         Mipmapped = Mipmapped::kNo,
+                                         const SkSurfaceProps* props = nullptr);
+
     Surface(sk_sp<Device>);
     ~Surface() override;
 
@@ -26,6 +32,24 @@ public:
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
     sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
     void onWritePixels(const SkPixmap&, int x, int y) override;
+    void onAsyncReadPixels(const SkImageInfo& info,
+                           SkIRect srcRect,
+                           ReadPixelsCallback callback,
+                           ReadPixelsContext context) override;
+    void onAsyncRescaleAndReadPixels(const SkImageInfo& info,
+                                     SkIRect srcRect,
+                                     RescaleGamma rescaleGamma,
+                                     RescaleMode rescaleMode,
+                                     ReadPixelsCallback callback,
+                                     ReadPixelsContext context) override;
+    void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                           sk_sp<SkColorSpace> dstColorSpace,
+                                           SkIRect srcRect,
+                                           SkISize dstSize,
+                                           RescaleGamma rescaleGamma,
+                                           RescaleMode,
+                                           ReadPixelsCallback callback,
+                                           ReadPixelsContext context) override;
     bool onCopyOnWrite(ContentChangeMode) override;
     bool onReadPixels(Context*, Recorder*, const SkPixmap& dst, int srcX, int srcY);
     sk_sp<const SkCapabilities> onCapabilities() override;
@@ -41,7 +65,7 @@ public:
     // work when looping in a benchmark, as the controlling code expects.
     GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access,
                                   const GrFlushInfo&,
-                                  const GrBackendSurfaceMutableState*) override;
+                                  const skgpu::MutableTextureState*) override;
 #endif
 
 private:

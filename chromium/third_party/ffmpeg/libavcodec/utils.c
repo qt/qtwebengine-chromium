@@ -36,6 +36,7 @@
 #include "avcodec.h"
 #include "codec.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "hwconfig.h"
 #include "thread.h"
 #include "threadframe.h"
@@ -681,6 +682,10 @@ static int get_audio_frame_duration(enum AVCodecID id, int sr, int ch, int ba,
             return 256 * (frame_bytes / 64);
         if (id == AV_CODEC_ID_RA_144)
             return 160 * (frame_bytes / 20);
+        if (id == AV_CODEC_ID_APTX)
+            return 4 * (frame_bytes / 4);
+        if (id == AV_CODEC_ID_APTX_HD)
+            return 4 * (frame_bytes / 6);
 
         if (bps > 0) {
             /* calc from frame_bytes and bits_per_coded_sample */
@@ -949,7 +954,7 @@ void ff_thread_report_progress(ThreadFrame *f, int progress, int field)
 {
 }
 
-void ff_thread_await_progress(ThreadFrame *f, int progress, int field)
+void ff_thread_await_progress(const ThreadFrame *f, int progress, int field)
 {
 }
 
@@ -963,13 +968,9 @@ int ff_slice_thread_init_progress(AVCodecContext *avctx)
     return 0;
 }
 
-int ff_alloc_entries(AVCodecContext *avctx, int count)
+int ff_slice_thread_allocz_entries(AVCodecContext *avctx, int count)
 {
     return 0;
-}
-
-void ff_reset_entries(AVCodecContext *avctx)
-{
 }
 
 void ff_thread_await_progress2(AVCodecContext *avctx, int field, int thread, int shift)

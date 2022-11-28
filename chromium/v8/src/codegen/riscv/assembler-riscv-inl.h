@@ -65,8 +65,7 @@ void RelocInfo::apply(intptr_t delta) {
 }
 
 Address RelocInfo::target_address() {
-  DCHECK(IsCodeTargetMode(rmode_) || IsRuntimeEntry(rmode_) ||
-         IsWasmCall(rmode_));
+  DCHECK(IsCodeTargetMode(rmode_) || IsWasmCall(rmode_));
   return Assembler::target_address_at(pc_, constant_pool_);
 }
 
@@ -161,10 +160,8 @@ void Assembler::deserialization_set_target_internal_reference_at(
 
 HeapObject RelocInfo::target_object(PtrComprCageBase cage_base) {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
-  if (IsDataEmbeddedObject(rmode_)) {
-    return HeapObject::cast(Object(ReadUnalignedValue<Address>(pc_)));
-  } else if (IsCompressedEmbeddedObject(rmode_)) {
-    return HeapObject::cast(Object(DecompressTaggedAny(
+  if (IsCompressedEmbeddedObject(rmode_)) {
+    return HeapObject::cast(Object(V8HeapCompressionScheme::DecompressTaggedAny(
         cage_base,
         Assembler::target_compressed_address_at(pc_, constant_pool_))));
   } else {
@@ -174,9 +171,7 @@ HeapObject RelocInfo::target_object(PtrComprCageBase cage_base) {
 }
 
 Handle<HeapObject> RelocInfo::target_object_handle(Assembler* origin) {
-  if (IsDataEmbeddedObject(rmode_)) {
-    return Handle<HeapObject>::cast(ReadUnalignedValue<Handle<Object>>(pc_));
-  } else if (IsCodeTarget(rmode_)) {
+  if (IsCodeTarget(rmode_)) {
     return Handle<HeapObject>::cast(
         origin->code_target_object_handle_at(pc_, constant_pool_));
   } else if (IsCompressedEmbeddedObject(rmode_)) {
@@ -194,19 +189,18 @@ void RelocInfo::set_target_object(Heap* heap, HeapObject target,
                                   WriteBarrierMode write_barrier_mode,
                                   ICacheFlushMode icache_flush_mode) {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
-  if (IsDataEmbeddedObject(rmode_)) {
-    WriteUnalignedValue(pc_, target.ptr());
-    // No need to flush icache since no instructions were changed.
-  } else if (IsCompressedEmbeddedObject(rmode_)) {
+  if (IsCompressedEmbeddedObject(rmode_)) {
     Assembler::set_target_compressed_address_at(
-        pc_, constant_pool_, CompressTagged(target.ptr()), icache_flush_mode);
+        pc_, constant_pool_,
+        V8HeapCompressionScheme::CompressTagged(target.ptr()),
+        icache_flush_mode);
   } else {
     DCHECK(IsFullEmbeddedObject(rmode_));
     Assembler::set_target_address_at(pc_, constant_pool_, target.ptr(),
                                      icache_flush_mode);
   }
   if (write_barrier_mode == UPDATE_WRITE_BARRIER && !host().is_null() &&
-      !FLAG_disable_write_barriers) {
+      !v8_flags.disable_write_barriers) {
     WriteBarrierForCode(host(), this, target);
   }
 }
@@ -250,18 +244,7 @@ Handle<Code> Assembler::relative_code_target_object_handle_at(
   return Handle<Code>::cast(GetEmbeddedObject(code_target_index));
 }
 
-Address RelocInfo::target_runtime_entry(Assembler* origin) {
-  DCHECK(IsRuntimeEntry(rmode_));
-  return target_address();
-}
-
-void RelocInfo::set_target_runtime_entry(Address target,
-                                         WriteBarrierMode write_barrier_mode,
-                                         ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsRuntimeEntry(rmode_));
-  if (target_address() != target)
-    set_target_address(target, write_barrier_mode, icache_flush_mode);
-}
+Builtin RelocInfo::target_builtin_at(Assembler* origin) { UNREACHABLE(); }
 
 Address RelocInfo::target_off_heap_target() {
   DCHECK(IsOffHeapTarget(rmode_));
@@ -270,9 +253,8 @@ Address RelocInfo::target_off_heap_target() {
 
 void RelocInfo::WipeOut() {
   DCHECK(IsFullEmbeddedObject(rmode_) || IsCodeTarget(rmode_) ||
-         IsRuntimeEntry(rmode_) || IsExternalReference(rmode_) ||
-         IsInternalReference(rmode_) || IsInternalReferenceEncoded(rmode_) ||
-         IsOffHeapTarget(rmode_));
+         IsExternalReference(rmode_) || IsInternalReference(rmode_) ||
+         IsInternalReferenceEncoded(rmode_) || IsOffHeapTarget(rmode_));
   if (IsInternalReference(rmode_)) {
     Memory<Address>(pc_) = kNullAddress;
   } else if (IsInternalReferenceEncoded(rmode_)) {

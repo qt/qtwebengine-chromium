@@ -25,6 +25,7 @@
 #include "src/tint/ast/pipeline_stage.h"
 #include "src/tint/program_builder.h"
 #include "src/tint/resolver/sem_helper.h"
+#include "src/tint/sem/evaluation_stage.h"
 #include "src/tint/source.h"
 
 // Forward declarations
@@ -72,7 +73,7 @@ namespace tint::resolver {
 class Validator {
   public:
     /// The valid type storage layouts typedef
-    using ValidTypeStorageLayouts = std::set<std::pair<const sem::Type*, ast::StorageClass>>;
+    using ValidTypeStorageLayouts = std::set<std::pair<const sem::Type*, ast::AddressSpace>>;
 
     /// Constructor
     /// @param builder the program builder
@@ -128,9 +129,10 @@ class Validator {
 
     /// Validates the array
     /// @param arr the array to validate
-    /// @param source the source of the array
+    /// @param el_source the source of the array element, or the array if the array does not have a
+    ///        locally-declared element AST node.
     /// @returns true on success, false otherwise.
-    bool Array(const sem::Array* arr, const Source& source) const;
+    bool Array(const sem::Array* arr, const Source& el_source) const;
 
     /// Validates an array stride attribute
     /// @param attr the stride attribute to validate
@@ -208,6 +210,15 @@ class Validator {
     /// @returns true on success, false otherwise
     bool EntryPoint(const sem::Function* func, ast::PipelineStage stage) const;
 
+    /// Validates that the expression must not be evaluated any later than @p latest_stage
+    /// @param expr the expression to check
+    /// @param latest_stage the latest evaluation stage that the expression can be evaluated
+    /// @param constraint the 'thing' that is imposing the contraint. e.g. "var declaration"
+    /// @returns true if @p expr is evaluated in or before @p latest_stage, false otherwise
+    bool EvaluationStage(const sem::Expression* expr,
+                         sem::EvaluationStage latest_stage,
+                         std::string_view constraint) const;
+
     /// Validates a for loop
     /// @param stmt the for loop statement to validate
     /// @returns true on success, false otherwise
@@ -273,14 +284,16 @@ class Validator {
     bool LocalVariable(const sem::Variable* v) const;
 
     /// Validates a location attribute
-    /// @param location the location attribute to validate
+    /// @param loc_attr the location attribute to validate
+    /// @param location the location value
     /// @param type the variable type
     /// @param locations the set of locations in the module
     /// @param stage the current pipeline stage
     /// @param source the source of the attribute
     /// @param is_input true if this is an input variable
     /// @returns true on success, false otherwise.
-    bool LocationAttribute(const ast::LocationAttribute* location,
+    bool LocationAttribute(const ast::LocationAttribute* loc_attr,
+                           uint32_t location,
                            const sem::Type* type,
                            std::unordered_set<uint32_t>& locations,
                            ast::PipelineStage stage,
@@ -376,7 +389,7 @@ class Validator {
     /// @param v the variable to validate
     /// @param override_id the set of override ids in the module
     /// @returns true on success, false otherwise.
-    bool Override(const sem::Variable* v,
+    bool Override(const sem::GlobalVariable* v,
                   const std::unordered_map<OverrideId, const sem::Variable*>& override_id) const;
 
     /// Validates a 'const' variable declaration
@@ -386,12 +399,12 @@ class Validator {
 
     /// Validates a variable initializer
     /// @param v the variable to validate
-    /// @param storage_class the storage class of the variable
+    /// @param address_space the address space of the variable
     /// @param storage_type the type of the storage
     /// @param initializer the RHS initializer expression
     /// @returns true on succes, false otherwise
     bool VariableInitializer(const ast::Variable* v,
-                             ast::StorageClass storage_class,
+                             ast::AddressSpace address_space,
                              const sem::Type* storage_type,
                              const sem::Expression* initializer) const;
 
@@ -424,23 +437,23 @@ class Validator {
     /// @returns true on success, false otherwise.
     bool NoDuplicateAttributes(utils::VectorRef<const ast::Attribute*> attributes) const;
 
-    /// Validates a storage class layout
+    /// Validates a address space layout
     /// @param type the type to validate
-    /// @param sc the storage class
+    /// @param sc the address space
     /// @param source the source of the type
     /// @param layouts previously validated storage layouts
     /// @returns true on success, false otherwise
-    bool StorageClassLayout(const sem::Type* type,
-                            ast::StorageClass sc,
+    bool AddressSpaceLayout(const sem::Type* type,
+                            ast::AddressSpace sc,
                             Source source,
                             ValidTypeStorageLayouts& layouts) const;
 
-    /// Validates a storage class layout
+    /// Validates a address space layout
     /// @param var the variable to validate
     /// @param layouts previously validated storage layouts
     /// @param enabled_extensions all the extensions declared in current module
     /// @returns true on success, false otherwise.
-    bool StorageClassLayout(const sem::Variable* var,
+    bool AddressSpaceLayout(const sem::Variable* var,
                             const ast::Extensions& enabled_extensions,
                             ValidTypeStorageLayouts& layouts) const;
 
@@ -461,6 +474,16 @@ class Validator {
                              ast::DisabledValidation validation) const;
 
   private:
+    /// @param ty the type to check
+    /// @returns true if @p ty is an array with an `override` expression element count, otherwise
+    ///          false.
+    bool IsArrayWithOverrideCount(const sem::Type* ty) const;
+
+    /// Raises an error about an array type using an `override` expression element count, outside
+    /// the single allowed use of a `var<workgroup>`.
+    /// @param source the source for the error
+    void RaiseArrayWithOverrideCountError(const Source& source) const;
+
     /// Searches the current statement and up through parents of the current
     /// statement looking for a loop or for-loop continuing statement.
     /// @returns the closest continuing statement to the current statement that

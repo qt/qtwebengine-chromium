@@ -61,7 +61,7 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
   std::unique_ptr<StreamingVideoEncoder> CreateVideoEncoder(
       const StreamingVideoEncoder::Parameters& params,
       TaskRunner* task_runner,
-      Sender* sender);
+      std::unique_ptr<Sender> sender);
 
   // Holds the required injected dependencies (clock, task runner) used for Cast
   // Streaming, and owns the UDP socket over which all communications occur with

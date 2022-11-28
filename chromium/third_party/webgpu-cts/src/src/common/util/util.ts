@@ -1,3 +1,5 @@
+import { Float16Array } from '../../external/petamoriken/float16/float16.js';
+import { globalTestConfig } from '../framework/test_config.js';
 import { Logger } from '../internal/logging/logger.js';
 
 import { keysOf } from './data_tables.js';
@@ -105,6 +107,9 @@ export function rejectOnTimeout(ms: number, msg: string): Promise<never> {
  * and otherwise passes the result through.
  */
 export function raceWithRejectOnTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  if (globalTestConfig.noRaceWithRejectOnTimeout) {
+    return p;
+  }
   // Setup a promise that will reject after `ms` milliseconds. We cancel this timeout when
   // `p` is finalized, so the JavaScript VM doesn't hang around waiting for the timer to
   // complete, once the test runner has finished executing the tests.
@@ -115,6 +120,27 @@ export function raceWithRejectOnTimeout<T>(p: Promise<T>, ms: number, msg: strin
     p = p.finally(() => clearTimeout(handle));
   });
   return Promise.race([p, timeoutPromise]) as Promise<T>;
+}
+
+/**
+ * Takes a promise `p` and returns a new one which rejects if `p` resolves or rejects,
+ * and otherwise resolves after the specified time.
+ */
+export function assertNotSettledWithinTime(
+  p: Promise<unknown>,
+  ms: number,
+  msg: string
+): Promise<undefined> {
+  // Rejects regardless of whether p resolves or rejects.
+  const rejectWhenSettled = p.then(() => Promise.reject(new Error(msg)));
+  // Resolves after `ms` milliseconds.
+  const timeoutPromise = new Promise<undefined>(resolve => {
+    const handle = timeout(() => {
+      resolve(undefined);
+    }, ms);
+    p.finally(() => clearTimeout(handle));
+  });
+  return Promise.race([rejectWhenSettled, timeoutPromise]);
 }
 
 /**
@@ -195,6 +221,7 @@ const TypedArrayBufferViewInstances = [
   new Int8Array(),
   new Int16Array(),
   new Int32Array(),
+  new Float16Array(),
   new Float32Array(),
   new Float64Array(),
 ] as const;

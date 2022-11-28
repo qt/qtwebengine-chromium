@@ -6,6 +6,7 @@
 
 #include "core/fpdfapi/parser/cpdf_reference.h"
 
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_indirect_object_holder.h"
 #include "core/fxcrt/fx_stream.h"
 #include "third_party/base/check_op.h"
@@ -21,34 +22,26 @@ CPDF_Object::Type CPDF_Reference::GetType() const {
 }
 
 ByteString CPDF_Reference::GetString() const {
-  const CPDF_Object* obj = SafeGetDirect();
+  const CPDF_Object* obj = FastGetDirect();
   return obj ? obj->GetString() : ByteString();
 }
 
 float CPDF_Reference::GetNumber() const {
-  const CPDF_Object* obj = SafeGetDirect();
+  const CPDF_Object* obj = FastGetDirect();
   return obj ? obj->GetNumber() : 0;
 }
 
 int CPDF_Reference::GetInteger() const {
-  const CPDF_Object* obj = SafeGetDirect();
+  const CPDF_Object* obj = FastGetDirect();
   return obj ? obj->GetInteger() : 0;
 }
 
-const CPDF_Dictionary* CPDF_Reference::GetDict() const {
-  const CPDF_Object* obj = SafeGetDirect();
+RetainPtr<const CPDF_Dictionary> CPDF_Reference::GetDict() const {
+  const CPDF_Object* obj = FastGetDirect();
   return obj ? obj->GetDict() : nullptr;
 }
 
-bool CPDF_Reference::IsReference() const {
-  return true;
-}
-
-CPDF_Reference* CPDF_Reference::AsReference() {
-  return this;
-}
-
-const CPDF_Reference* CPDF_Reference::AsReference() const {
+CPDF_Reference* CPDF_Reference::AsMutableReference() {
   return this;
 }
 
@@ -60,22 +53,20 @@ RetainPtr<CPDF_Object> CPDF_Reference::CloneNonCyclic(
     bool bDirect,
     std::set<const CPDF_Object*>* pVisited) const {
   pVisited->insert(this);
-  if (bDirect) {
-    auto* pDirect = GetDirect();
-    return pDirect && !pdfium::Contains(*pVisited, pDirect)
-               ? pDirect->CloneNonCyclic(true, pVisited)
-               : nullptr;
+  if (!bDirect) {
+    return pdfium::MakeRetain<CPDF_Reference>(m_pObjList.Get(), m_RefObjNum);
   }
-  return pdfium::MakeRetain<CPDF_Reference>(m_pObjList.Get(), m_RefObjNum);
+  RetainPtr<const CPDF_Object> pDirect = GetDirect();
+  return pDirect && !pdfium::Contains(*pVisited, pDirect.Get())
+             ? pDirect->CloneNonCyclic(true, pVisited)
+             : nullptr;
 }
 
-CPDF_Object* CPDF_Reference::SafeGetDirect() {
-  RetainPtr<CPDF_Object> obj = GetMutableDirect();
-  return (obj && !obj->IsReference()) ? obj.Get() : nullptr;
-}
-
-const CPDF_Object* CPDF_Reference::SafeGetDirect() const {
-  const CPDF_Object* obj = GetDirect();
+const CPDF_Object* CPDF_Reference::FastGetDirect() const {
+  if (!m_pObjList)
+    return nullptr;
+  const CPDF_Object* obj =
+      m_pObjList->GetOrParseIndirectObjectInternal(m_RefObjNum);
   return (obj && !obj->IsReference()) ? obj : nullptr;
 }
 
@@ -84,7 +75,7 @@ void CPDF_Reference::SetRef(CPDF_IndirectObjectHolder* pDoc, uint32_t objnum) {
   m_RefObjNum = objnum;
 }
 
-const CPDF_Object* CPDF_Reference::GetDirect() const {
+RetainPtr<CPDF_Object> CPDF_Reference::GetMutableDirect() {
   return m_pObjList ? m_pObjList->GetOrParseIndirectObject(m_RefObjNum)
                     : nullptr;
 }
@@ -95,7 +86,7 @@ bool CPDF_Reference::WriteTo(IFX_ArchiveStream* archive,
          archive->WriteString(" 0 R ");
 }
 
-RetainPtr<CPDF_Object> CPDF_Reference::MakeReference(
+RetainPtr<CPDF_Reference> CPDF_Reference::MakeReference(
     CPDF_IndirectObjectHolder* holder) const {
   DCHECK_EQ(holder, m_pObjList);
   // Do not allow reference to reference, just create other reference for same

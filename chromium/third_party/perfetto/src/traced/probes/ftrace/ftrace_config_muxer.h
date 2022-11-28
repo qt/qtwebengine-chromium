@@ -20,9 +20,11 @@
 #include <map>
 #include <set>
 
+#include "perfetto/ext/base/optional.h"
+#include "src/kernel_utils/syscall_table.h"
 #include "src/traced/probes/ftrace/compact_sched.h"
 #include "src/traced/probes/ftrace/ftrace_config_utils.h"
-#include "src/traced/probes/ftrace/ftrace_controller.h"
+#include "src/traced/probes/ftrace/ftrace_print_filter.h"
 #include "src/traced/probes/ftrace/ftrace_procfs.h"
 #include "src/traced/probes/ftrace/proto_translation_table.h"
 
@@ -40,12 +42,16 @@ struct FtraceSetupErrors;
 // that data source's config.
 struct FtraceDataSourceConfig {
   FtraceDataSourceConfig(EventFilter _event_filter,
+                         EventFilter _syscall_filter,
                          CompactSchedConfig _compact_sched,
+                         base::Optional<FtracePrintFilterConfig> _print_filter,
                          std::vector<std::string> _atrace_apps,
                          std::vector<std::string> _atrace_categories,
                          bool _symbolize_ksyms)
       : event_filter(std::move(_event_filter)),
+        syscall_filter(std::move(_syscall_filter)),
         compact_sched(_compact_sched),
+        print_filter(std::move(_print_filter)),
         atrace_apps(std::move(_atrace_apps)),
         atrace_categories(std::move(_atrace_categories)),
         symbolize_ksyms(_symbolize_ksyms) {}
@@ -54,8 +60,16 @@ struct FtraceDataSourceConfig {
   // x is enabled for this data source.
   EventFilter event_filter;
 
+  // Specifies the syscalls (by id) that are enabled for this data source. An
+  // empty filter implies all events are enabled.
+  EventFilter syscall_filter;
+
   // Configuration of the optional compact encoding of scheduling events.
   const CompactSchedConfig compact_sched;
+
+  // Optional configuration that's used to filter "ftrace/print" events based on
+  // the content of their "buf" field.
+  base::Optional<FtracePrintFilterConfig> print_filter;
 
   // Used only in Android for ATRACE_EVENT/os.Trace() userspace annotations.
   std::vector<std::string> atrace_apps;
@@ -84,6 +98,7 @@ class FtraceConfigMuxer {
   FtraceConfigMuxer(
       FtraceProcfs* ftrace,
       ProtoTranslationTable* table,
+      SyscallTable syscalls,
       std::map<std::string, std::vector<GroupAndName>> vendor_events);
   virtual ~FtraceConfigMuxer();
 
@@ -107,19 +122,23 @@ class FtraceConfigMuxer {
 
   const FtraceDataSourceConfig* GetDataSourceConfig(FtraceConfigId id);
 
+  // Resets the current tracer to "nop" (the default). This cannot be handled
+  // by |RemoveConfig| because it requires all ftrace readers to be released
+  // beforehand, which is the reponsibility of ftrace_controller.
+  bool ResetCurrentTracer();
+
   // Returns the current per-cpu buffer size, as configured by this muxer
   // (without consulting debugfs). Constant for a given tracing session.
   // Note that if there are multiple concurrent tracing sessions, the first
   // session's buffer size is used for all of them.
   size_t GetPerCpuBufferSizePages();
 
-  // public for testing
-  void SetupClockForTesting(const FtraceConfig& request) {
-    SetupClock(request);
-  }
-
   protos::pbzero::FtraceClock ftrace_clock() const {
     return current_state_.ftrace_clock;
+  }
+
+  void SetupClockForTesting(const FtraceConfig& request) {
+    SetupClock(request);
   }
 
   std::set<GroupAndName> GetFtraceEventsForTesting(
@@ -132,6 +151,10 @@ class FtraceConfigMuxer {
     return &current_state_.ftrace_events;
   }
 
+  const std::set<size_t>& GetSyscallFilterForTesting() const {
+    return current_state_.syscall_filter;
+  }
+
  private:
   static bool StartAtrace(const std::vector<std::string>& apps,
                           const std::vector<std::string>& categories,
@@ -139,12 +162,14 @@ class FtraceConfigMuxer {
 
   struct FtraceState {
     EventFilter ftrace_events;
-    // Used only in Android for ATRACE_EVENT/os.Trace() userspace
+    std::set<size_t> syscall_filter;  // syscall ids or kAllSyscallsId
+    bool funcgraph_on = false;        // current_tracer == "function_graph"
+    size_t cpu_buffer_size_pages = 0;
+    protos::pbzero::FtraceClock ftrace_clock{};
+    // Used only in Android for ATRACE_EVENT/os.Trace() userspace:
+    bool atrace_on = false;
     std::vector<std::string> atrace_apps;
     std::vector<std::string> atrace_categories;
-    size_t cpu_buffer_size_pages = 0;
-    bool atrace_on = false;
-    protos::pbzero::FtraceClock ftrace_clock{};
   };
 
   FtraceConfigMuxer(const FtraceConfigMuxer&) = delete;
@@ -162,11 +187,30 @@ class FtraceConfigMuxer {
   std::set<GroupAndName> GetFtraceEvents(const FtraceConfig& request,
                                          const ProtoTranslationTable*);
 
+  // Returns true if the event filter has at least one event from group.
+  bool FilterHasGroup(const EventFilter& filter, const std::string& group);
+
+  // Configs have three states:
+  // 1. The config does not include raw_syscall ftrace events (empty filter).
+  // 2. The config has at least one raw_syscall ftrace events, then either:
+  //   a. The syscall_events is left empty (match all events).
+  //   b. The syscall_events is non-empty (match only those events).
+  EventFilter BuildSyscallFilter(const EventFilter& ftrace_filter,
+                                 const FtraceConfig& request);
+
+  // Updates the ftrace syscall filters such that they satisfy all ds_configs_
+  // and the extra_syscalls provided here. The filter is set to be the union of
+  // all configs meaning no config will lose events, but concurrent configs can
+  // see additional events. You may provide a syscall filter during SetUpConfig
+  // so the filter can be updated before ds_configs_.
+  bool SetSyscallEventFilter(const EventFilter& extra_syscalls);
+
   FtraceConfigId GetNextId();
 
   FtraceConfigId last_id_ = 1;
   FtraceProcfs* ftrace_;
   ProtoTranslationTable* table_;
+  SyscallTable syscalls_;
 
   FtraceState current_state_;
 

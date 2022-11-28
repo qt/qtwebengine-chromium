@@ -108,7 +108,8 @@ constexpr int GCTracer::Scope::IncrementalOffset(ScopeId id) {
 
 constexpr bool GCTracer::Event::IsYoungGenerationEvent(Type type) {
   DCHECK_NE(START, type);
-  return type == SCAVENGER || type == MINOR_MARK_COMPACTOR;
+  return type == SCAVENGER || type == MINOR_MARK_COMPACTOR ||
+         type == INCREMENTAL_MINOR_MARK_COMPACTOR;
 }
 
 CollectionEpoch GCTracer::CurrentEpoch(Scope::ScopeId id) const {
@@ -120,11 +121,16 @@ bool GCTracer::IsInObservablePause() const {
   return 0.0 < start_of_observable_pause_;
 }
 
+bool GCTracer::IsInAtomicPause() const {
+  return current_.state == Event::State::ATOMIC;
+}
+
 bool GCTracer::IsConsistentWithCollector(GarbageCollector collector) const {
   return (collector == GarbageCollector::SCAVENGER &&
           current_.type == Event::SCAVENGER) ||
          (collector == GarbageCollector::MINOR_MARK_COMPACTOR &&
-          current_.type == Event::MINOR_MARK_COMPACTOR) ||
+          (current_.type == Event::MINOR_MARK_COMPACTOR ||
+           current_.type == Event::INCREMENTAL_MINOR_MARK_COMPACTOR)) ||
          (collector == GarbageCollector::MARK_COMPACTOR &&
           (current_.type == Event::MARK_COMPACTOR ||
            current_.type == Event::INCREMENTAL_MARK_COMPACTOR));
@@ -183,7 +189,7 @@ RuntimeCallCounterId GCTracer::RCSCounterFromScope(Scope::ScopeId id) {
 #endif  // defined(V8_RUNTIME_CALL_STATS)
 
 double GCTracer::MonotonicallyIncreasingTimeInMs() {
-  if (V8_UNLIKELY(FLAG_predictable)) {
+  if (V8_UNLIKELY(v8_flags.predictable)) {
     return heap_->MonotonicallyIncreasingTimeInMs();
   } else {
     return base::TimeTicks::Now().ToInternalValue() /

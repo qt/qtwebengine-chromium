@@ -448,7 +448,12 @@ typedef struct {
   TX_MODE tx_mode_search_type;
 
   /*!
-   * Flag to enable/disable DC block prediction.
+   * Determines whether a block can be predicted as transform skip or DC only
+   * based on residual mean and variance.
+   * Type 0 : No skip block or DC only block prediction
+   * Type 1 : Prediction of skip block based on residual mean and variance
+   * Type 2 : Prediction of skip block or DC only block based on residual mean
+   * and variance
    */
   unsigned int predict_dc_level;
 
@@ -491,7 +496,7 @@ typedef struct {
  */
 typedef struct {
   //! Whether to skip transform and quantization on a partition block level.
-  int skip_txfm;
+  uint8_t skip_txfm;
 
   /*! \brief Whether to skip transform and quantization on a txfm block level.
    *
@@ -796,13 +801,14 @@ typedef struct {
 /*!\cond */
 typedef enum {
   kZeroSad = 0,
-  kLowSad = 1,
-  kMedSad = 2,
-  kHighSad = 3
+  kVeryLowSad = 1,
+  kLowSad = 2,
+  kMedSad = 3,
+  kHighSad = 4
 } SOURCE_SAD;
 
 typedef struct {
-  //! SAD levels in non-rd path for var-based part and inter-mode search
+  //! SAD levels in non-rd path
   SOURCE_SAD source_sad_nonrd;
   //! SAD levels in rd-path for var-based part qindex thresholds
   SOURCE_SAD source_sad_rd;
@@ -1011,9 +1017,16 @@ typedef struct macroblock {
    */
   int cnt_zeromv;
 
-  /*!\brief Flag to force zeromv-skip block, for nonrd path.
+  /*!\brief Flag to force zeromv-skip at superblock level, for nonrd path.
+   *
+   * 0/1 imply zeromv-skip is disabled/enabled. 2 implies that the blocks
+   * in the superblock may be marked as zeromv-skip at block level.
    */
-  int force_zeromv_skip;
+  int force_zeromv_skip_for_sb;
+
+  /*!\brief Flag to force zeromv-skip at block level, for nonrd path.
+   */
+  int force_zeromv_skip_for_blk;
 
   /*! \brief Previous segment id for which qmatrices were updated.
    * This is used to bypass setting of qmatrices if no change in qindex.
@@ -1202,6 +1215,9 @@ typedef struct macroblock {
   PixelLevelGradientInfo *pixel_gradient_info;
   /*! \brief Flags indicating the availability of cached gradient info. */
   bool is_sb_gradient_cached[PLANE_TYPES];
+
+  /*! \brief Flag to reuse predicted samples of inter block. */
+  bool reuse_inter_pred;
   /**@}*/
 
   /*****************************************************************************
@@ -1256,6 +1272,8 @@ typedef struct macroblock {
    * of moving color objects.
    */
   uint8_t color_sensitivity_sb[2];
+  //! Color sensitivity flag for the superblock for golden reference.
+  uint8_t color_sensitivity_sb_g[2];
   //! Color sensitivity flag for the coding block.
   uint8_t color_sensitivity[2];
   /**@}*/

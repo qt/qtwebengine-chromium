@@ -758,6 +758,9 @@
   "core/sdk/sdk-meta.ts | enableNetworkRequestBlocking": {
     "message": "Увімкнути блокування запитів мережі"
   },
+  "core/sdk/sdk-meta.ts | enableUNCLoading": {
+    "message": "Дозволити DevTools завантажувати ресурси, як-от карти джерел, із загальних ресурсів Windows через шляхи UNC. За умовчанням цю опцію вимкнено з міркувань безпеки."
+  },
   "core/sdk/sdk-meta.ts | enableWebpFormat": {
     "message": "Увімкнути формат WebP"
   },
@@ -1000,6 +1003,15 @@
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | rendering": {
     "message": "Відрисовка"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeCommand": {
+    "message": "Увімкнути пошук під час введення"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchAsYouTypeSetting": {
+    "message": "Пошук під час введення"
+  },
+  "entrypoints/inspector_main/inspector_main-meta.ts | searchOnEnterCommand": {
+    "message": "Вимкнути пошук під час введення (натисніть Enter, щоб шукати)"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | showAds": {
     "message": "Показувати оголошення на цьому сайті, якщо їх дозволено"
@@ -1397,6 +1409,9 @@
   "models/issues_manager/DeprecationIssue.ts | eventPath": {
     "message": "Метод Event.path не підтримується, його буде вилучено. Натомість використовуйте Event.composedPath()."
   },
+  "models/issues_manager/DeprecationIssue.ts | expectCTHeader": {
+    "message": "Заголовок Expect-CT не підтримується, і його буде вилучено. Chrome вимагає перевірки всіх загальнодоступних надійних сертифікатів, виданих після 30 квітня 2018 року."
+  },
   "models/issues_manager/DeprecationIssue.ts | feature": {
     "message": "Щоб дізнатися більше, перегляньте сторінку зі статусом функції."
   },
@@ -1446,13 +1461,16 @@
     "message": "Ваш партнер використовує застарілу версію (D)TLS. Щоб вирішити проблему, зверніться до партнера."
   },
   "models/issues_manager/DeprecationIssue.ts | openWebDatabaseInsecureContext": {
-    "message": "Підтримку WebSQL у незахищених контекстах припинено. Його буде вилучено у версії M107. Використовуйте веб-сховище чи проіндексовану базу даних."
+    "message": "Інтерфейс WebSQL не підтримується в незахищених контекстах, і невдовзі його буде вилучено. Використовуйте веб-сховище або проіндексовану базу даних."
+  },
+  "models/issues_manager/DeprecationIssue.ts | persistentQuotaType": {
+    "message": "StorageType.persistent не підтримується. Натомість використовуйте стандартну властивість navigator.storage."
   },
   "models/issues_manager/DeprecationIssue.ts | pictureSourceSrc": {
     "message": "Елемент <source src> із батьківським елементом <picture> недійсний і тому ігнорується. Натомість використовуйте <source srcset>."
   },
   "models/issues_manager/DeprecationIssue.ts | prefixedStorageInfo": {
-    "message": "window.webkitStorageInfo не підтримується. Натомість використовуйте стандартний метод navigator.storage."
+    "message": "window.webkitStorageInfo не підтримується. Натомість використовуйте стандартну властивість navigator.storage."
   },
   "models/issues_manager/DeprecationIssue.ts | requestedSubresourceWithEmbeddedCredentials": {
     "message": "Запити субресурсів за URL-адресами, що містять вставлені облікові дані (наприклад, https://user:pass@host/), блокуються."
@@ -1702,6 +1720,9 @@
   },
   "models/timeline_model/TimelineModel.ts | unknownWorkletS": {
     "message": "Аукціон Worklet – {PH1}"
+  },
+  "models/timeline_model/TimelineModel.ts | userInteractions": {
+    "message": "Взаємодії користувача"
   },
   "models/timeline_model/TimelineModel.ts | workerS": {
     "message": "Worker — {PH1}"
@@ -2434,6 +2455,9 @@
   },
   "panels/application/ApplicationPanelSidebar.ts | application": {
     "message": "Додаток"
+  },
+  "panels/application/ApplicationPanelSidebar.ts | applicationSidebarPanel": {
+    "message": "Бічна панель додатка"
   },
   "panels/application/ApplicationPanelSidebar.ts | backgroundServices": {
     "message": "Фонові сервіси"
@@ -3740,6 +3764,9 @@
   "panels/application/components/Prerender2.ts | CrossOriginRedirect": {
     "message": "Спроба попередньої відрисовки URL-адреси, яка переспрямовує на міждоменну URL-адресу. Зараз попередню відрисовку сторінок із міждоменним джерелом заборонено."
   },
+  "panels/application/components/Prerender2.ts | DataSaverEnabled": {
+    "message": "Заощадження трафіку ввімкнено"
+  },
   "panels/application/components/Prerender2.ts | Destroyed": {
     "message": "Попередню відрисовку сторінки перервано через невідомі проблеми."
   },
@@ -3752,11 +3779,11 @@
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndCrossOriginRedirected": {
     "message": "Попередню відрисовку, внутрішньо активовану Chrome (наприклад, попередню відрисовку універсального вікна пошуку) скасовано, оскільки навігацію переспрямовано на іншу сторінку з міждоменним джерелом."
   },
-  "panels/application/components/Prerender2.ts | EmbedderTriggeredAndDestroyed": {
-    "message": "Попередню відрисовку, внутрішньо активовану Chrome (наприклад, попередню відрисовку універсального вікна пошуку) знищено в деструкторі."
-  },
   "panels/application/components/Prerender2.ts | EmbedderTriggeredAndSameOriginRedirected": {
     "message": "Попередню відрисовку, внутрішньо активовану Chrome (наприклад, попередню відрисовку універсального вікна пошуку) скасовано, оскільки навігацію переспрямовано на іншу сторінку з таким самим джерелом."
+  },
+  "panels/application/components/Prerender2.ts | FailToGetMemoryUsage": {
+    "message": "Не вдалось отримати дані про використання пам’яті"
   },
   "panels/application/components/Prerender2.ts | InProgressNavigation": {
     "message": "InProgressNavigation."
@@ -3778,6 +3805,9 @@
   },
   "panels/application/components/Prerender2.ts | MaxNumOfRunningPrerendersExceeded": {
     "message": "Перевищено максимальну кількість попередніх відрисовок."
+  },
+  "panels/application/components/Prerender2.ts | MemoryLimitExceeded": {
+    "message": "Ліміт пам’яті перевищено"
   },
   "panels/application/components/Prerender2.ts | MixedContent": {
     "message": "Попередня відрисовка скасована фреймом змішаного контенту."
@@ -4731,22 +4761,25 @@
     "message": "Показати \"Ресурси розробника\""
   },
   "panels/elements/CSSRuleValidator.ts | deprecatedPropertyHintPrefix": {
-    "message": "Ресурс не підтримується"
+    "message": "Властивість не підтримується"
   },
-  "panels/elements/CSSRuleValidator.ts | ruleValidationHintPrefix": {
-    "message": "Неактивне правило"
+  "panels/elements/CSSRuleValidator.ts | inactivePropertyHintPrefix": {
+    "message": "Неактивна властивість"
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleFix": {
-    "message": "Щоб вирішити цю проблему, змініть батьківські елементи {EXISTING_PARENT_ELEMENT_RULE} на {TARGET_PARENT_ELEMENT_RULE}."
+    "message": "Спробуйте змінити властивість {EXISTING_PARENT_ELEMENT_RULE} для батьківського елемента на {TARGET_PARENT_ELEMENT_RULE}."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedByParentElementRuleReason": {
-    "message": "Правило {AFFECTED_RULE_CODE} цього елемента не діє, оскільки батьківський елемент має правило {REASON_RULE_CODE}"
+    "message": "Властивість {REASON_PROPERTY_DECLARATION_CODE} для батьківського елемента обходить дію властивості {AFFECTED_PROPERTY_DECLARATION_CODE}."
+  },
+  "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleChangeSuggestion": {
+    "message": "Спробуйте змінити властивість {EXISTING_PROPERTY_DECLARATION} на {TARGET_PROPERTY_DECLARATION}."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleFix": {
-    "message": "Щоб цей ресурс працював, вилучіть або змініть значення {REASON_RULE_CODE}"
+    "message": "Вилучіть властивість {REASON_PROPERTY_DECLARATION_CODE} або змініть її значення."
   },
   "panels/elements/CSSRuleValidator.ts | ruleViolatedBySameElementRuleReason": {
-    "message": "Правило {AFFECTED_RULE_CODE} не діє, оскільки цей елемент має правило {REASON_RULE_CODE}."
+    "message": "Властивість {REASON_PROPERTY_DECLARATION_CODE} для цього елемента обходить дію властивості {AFFECTED_PROPERTY_DECLARATION_CODE}."
   },
   "panels/elements/ClassesPaneWidget.ts | addNewClass": {
     "message": "Додати новий клас"
@@ -5183,8 +5216,8 @@
   "panels/elements/StylesSidebarPane.ts | unknownPropertyName": {
     "message": "Невідома назва властивості"
   },
-  "panels/elements/TopLayerContainer.ts | topLayer": {
-    "message": "верхній шар"
+  "panels/elements/TopLayerContainer.ts | reveal": {
+    "message": "показати"
   },
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Ігнорується"
@@ -5200,6 +5233,12 @@
   },
   "panels/elements/components/ElementsBreadcrumbs.ts | breadcrumbs": {
     "message": "Ланцюжки навігації дерева DOM"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollLeft": {
+    "message": "Прокрутити ліворуч"
+  },
+  "panels/elements/components/ElementsBreadcrumbs.ts | scrollRight": {
+    "message": "Прокрутити праворуч"
   },
   "panels/elements/components/ElementsBreadcrumbsUtils.ts | text": {
     "message": "(текст)"
@@ -5699,11 +5738,11 @@
   "panels/issues/AttributionReportingIssueDetailsView.ts | element": {
     "message": "Елемент"
   },
-  "panels/issues/AttributionReportingIssueDetailsView.ts | frame": {
-    "message": "Фрейм"
-  },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidHeaderValue": {
     "message": "Недійсне значення заголовка"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | maximumConcurrentRegistrations": {
+    "message": "Максимальна кількість одночасних реєстрацій"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n,plural, =1{# порушення}one{# порушення}few{# порушення}many{# порушень}other{# порушення}}"
@@ -7443,10 +7482,10 @@
     "message": "Цей запит не містить файлів cookie."
   },
   "panels/network/RequestHeadersView.ts | activeClientExperimentVariation": {
-    "message": "Активні client experiment variation IDs."
+    "message": "client experiment variation IDs: активно."
   },
   "panels/network/RequestHeadersView.ts | activeClientExperimentVariationIds": {
-    "message": "Активні client experiment variation IDs, які активують поведінку на стороні сервера."
+    "message": "Активні client experiment variation IDs, які запускають поведінку на стороні сервера."
   },
   "panels/network/RequestHeadersView.ts | chooseThisOptionIfTheResourceAnd": {
     "message": "Виберіть цей варіант, якщо ресурс і документ розміщено на одному сайті."
@@ -7868,8 +7907,32 @@
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Переглянути сертифікат"
   },
-  "panels/network/components/RequestHeadersView.ts | chooseThisOptionIfTheResourceAnd": {
-    "message": "Виберіть цей варіант, якщо ресурс і документ розміщено на одному сайті."
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariation": {
+    "message": "client experiment variation IDs: активно."
+  },
+  "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariationIds": {
+    "message": "Активні client experiment variation IDs, які запускають поведінку на стороні сервера."
+  },
+  "panels/network/components/HeaderSectionRow.ts | decoded": {
+    "message": "Розкодовано:"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMore": {
+    "message": "Докладніше"
+  },
+  "panels/network/components/HeaderSectionRow.ts | learnMoreInTheIssuesTab": {
+    "message": "Докладніше на вкладці \"Проблеми\""
+  },
+  "panels/network/components/RequestHeaderSection.ts | learnMore": {
+    "message": "Докладніше"
+  },
+  "panels/network/components/RequestHeaderSection.ts | onlyProvisionalHeadersAre": {
+    "message": "Доступні лише попередньо завантажені заголовки, оскільки цей запит надіслано не через мережу, а з локального кешу, який не зберігає початкові заголовки запитів. Щоб переглянути повні заголовки, вимкніть кеш."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShown": {
+    "message": "Показано попередньо завантажені заголовки."
+  },
+  "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShownDisableCache": {
+    "message": "Показано попередньо завантажені заголовки. Щоб переглянути повні, вимкніть кеш."
   },
   "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
     "message": "(джерело: кеш диска)"
@@ -7892,23 +7955,8 @@
   "panels/network/components/RequestHeadersView.ts | general": {
     "message": "Загальні"
   },
-  "panels/network/components/RequestHeadersView.ts | learnMore": {
-    "message": "Докладніше"
-  },
-  "panels/network/components/RequestHeadersView.ts | learnMoreInTheIssuesTab": {
-    "message": "Докладніше на вкладці \"Проблеми\""
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyChooseThisOptionIfAn": {
-    "message": "Вибирайте цю опцію лише в тому випадку, якщо довільний веб-сайт, зокрема цей ресурс, не загрожує безпеці."
-  },
-  "panels/network/components/RequestHeadersView.ts | onlyProvisionalHeadersAre": {
-    "message": "Доступні лише попередньо завантажені заголовки, оскільки цей запит надіслано не через мережу, а з локального кешу, який не зберігає початкові заголовки запитів. Щоб переглянути повні заголовки, вимкніть кеш."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShown": {
-    "message": "Показано попередньо завантажені заголовки."
-  },
-  "panels/network/components/RequestHeadersView.ts | provisionalHeadersAreShownDisableCache": {
-    "message": "Показано попередньо завантажені заголовки. Щоб переглянути повні, вимкніть кеш."
+  "panels/network/components/RequestHeadersView.ts | headerOverrides": {
+    "message": "Перевизначення заголовків"
   },
   "panels/network/components/RequestHeadersView.ts | raw": {
     "message": "Необроблені"
@@ -7936,21 +7984,6 @@
   },
   "panels/network/components/RequestHeadersView.ts | statusCode": {
     "message": "Код статусу"
-  },
-  "panels/network/components/RequestHeadersView.ts | thisDocumentWasBlockedFrom": {
-    "message": "Завантаження цього документа у вікні iframe з атрибутом sandbox заблоковано, оскільки для документа визначено Cross-Origin Opener Policy."
-  },
-  "panels/network/components/RequestHeadersView.ts | toEmbedThisFrameInYourDocument": {
-    "message": "Щоб вбудувати цей фрейм у документ, потрібно ввімкнути правило Cross-Origin Embedder Policy, указавши такий заголовок відповіді:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferent": {
-    "message": "Щоб скористатися цим ресурсом з іншого джерела, сервер має вказати правило Cross-Origin Resource Policy в заголовках відповіді:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentOrigin": {
-    "message": "Щоб скористатися цим ресурсом з іншого джерела, сервер може послабити конфігурацію Cross-Origin Resource Policy в заголовку відповіді:"
-  },
-  "panels/network/components/RequestHeadersView.ts | toUseThisResourceFromADifferentSite": {
-    "message": "Щоб скористатися цим ресурсом з іншого сайту, сервер може послабити конфігурацію Cross-Origin Resource Policy в заголовку відповіді:"
   },
   "panels/network/components/RequestTrustTokensView.ts | aClientprovidedArgumentWas": {
     "message": "Аргумент, наданий клієнтом, має неправильний формат або недійсний через інші причини."
@@ -8002,6 +8035,27 @@
   },
   "panels/network/components/RequestTrustTokensView.ts | type": {
     "message": "Тип"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | chooseThisOptionIfTheResourceAnd": {
+    "message": "Виберіть цей варіант, якщо ресурс і документ розміщено на одному сайті."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | onlyChooseThisOptionIfAn": {
+    "message": "Вибирайте цей варіант, лише якщо довільний веб-сайт, зокрема цей ресурс, не загрожує безпеці."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | thisDocumentWasBlockedFrom": {
+    "message": "Завантаження цього документа у вікні iframe з атрибутом sandbox заблоковано, оскільки для документа визначено правило Cross-Origin Opener Policy."
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toEmbedThisFrameInYourDocument": {
+    "message": "Щоб вбудувати цей фрейм у документ, потрібно ввімкнути правило Cross-Origin Embedder Policy, указавши такий заголовок відповіді:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferent": {
+    "message": "Щоб скористатися цим ресурсом з іншого джерела, сервер має вказати правило Cross-Origin Resource Policy в заголовках відповіді:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentOrigin": {
+    "message": "Щоб скористатися цим ресурсом з іншого джерела, сервер може послабити конфігурацію Cross-Origin Resource Policy в заголовку відповіді:"
+  },
+  "panels/network/components/ResponseHeaderSection.ts | toUseThisResourceFromADifferentSite": {
+    "message": "Щоб скористатися цим ресурсом з іншого сайту, сервер може послабити конфігурацію Cross-Origin Resource Policy в заголовку відповіді:"
   },
   "panels/network/components/WebBundleInfoView.ts | bundledResource": {
     "message": "Ресурс у пакеті"
@@ -8771,6 +8825,9 @@
   "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommand": {
     "message": "Надіслати необроблену команду CDP"
   },
+  "panels/protocol_monitor/ProtocolMonitor.ts | sendRawCDPCommandExplanation": {
+    "message": "Формат: 'Domain.commandName' для команди без параметрів або '{\"command\":\"Domain.commandName\", \"parameters\": {...}}' як об’єкт JSON для команди з параметрами. 'cmd'/'method' і 'args'/'params'/'arguments' також підтримуються як альтернативні ключі для об’єкта JSON."
+  },
   "panels/protocol_monitor/ProtocolMonitor.ts | session": {
     "message": "Сеанс"
   },
@@ -9527,6 +9584,9 @@
   "panels/settings/SettingsScreen.ts | restoreDefaultsAndReload": {
     "message": "Відновити налаштування за умовчанням і оновити сторінку"
   },
+  "panels/settings/SettingsScreen.ts | sendFeedback": {
+    "message": "Надіслати відгук"
+  },
   "panels/settings/SettingsScreen.ts | settings": {
     "message": "Налаштування"
   },
@@ -9990,7 +10050,7 @@
     "message": "Увімкнути точки зупину у файлі"
   },
   "panels/sources/JavaScriptBreakpointsSidebarPane.ts | mixed": {
-    "message": "змішано"
+    "message": "комбінація"
   },
   "panels/sources/JavaScriptBreakpointsSidebarPane.ts | noBreakpoints": {
     "message": "Немає точок зупинки"
@@ -10136,9 +10196,6 @@
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘+Enter"
   },
-  "panels/sources/SourcesNavigator.ts | authoredDescription": {
-    "message": "Групувати файли за автором/введенням у дію"
-  },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Очистити конфігурацію"
   },
@@ -10216,6 +10273,9 @@
   },
   "panels/sources/SourcesPanel.ts | hideDebugger": {
     "message": "Сховати налагоджувач"
+  },
+  "panels/sources/SourcesPanel.ts | hideIgnoreListed": {
+    "message": "Сховати джерела зі списку ігнорування"
   },
   "panels/sources/SourcesPanel.ts | hideNavigator": {
     "message": "Сховати інструмент навігації"
@@ -10306,6 +10366,18 @@
   },
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Оновити вирази відстеження"
+  },
+  "panels/sources/components/BreakpointsView.ts | breakpointHit": {
+    "message": "{PH1} точка зупину: досягнуто"
+  },
+  "panels/sources/components/BreakpointsView.ts | checked": {
+    "message": "вибрано"
+  },
+  "panels/sources/components/BreakpointsView.ts | indeterminate": {
+    "message": "комбінація"
+  },
+  "panels/sources/components/BreakpointsView.ts | unchecked": {
+    "message": "не вибрано"
   },
   "panels/sources/components/HeadersView.ts | addHeader": {
     "message": "Додати заголовок"
@@ -10741,6 +10813,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | timings": {
     "message": "Фактичний час"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | userInteractions": {
+    "message": "Взаємодії"
   },
   "panels/timeline/TimelineFlameChartNetworkDataProvider.ts | network": {
     "message": "Мережа"
@@ -11222,6 +11297,9 @@
   "panels/timeline/TimelineUIUtils.ts | event": {
     "message": "Подія"
   },
+  "panels/timeline/TimelineUIUtils.ts | eventTiming": {
+    "message": "Часові мітки події"
+  },
   "panels/timeline/TimelineUIUtils.ts | evolvedClsLink": {
     "message": "покращений"
   },
@@ -11320,6 +11398,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | installTimer": {
     "message": "Встановлення таймера"
+  },
+  "panels/timeline/TimelineUIUtils.ts | interactionEvent": {
+    "message": "Тип взаємодії: {PH1}; ідентифікатор: {PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | invalidateLayout": {
     "message": "Анулювання макета"
@@ -12094,6 +12175,12 @@
   },
   "ui/components/issue_counter/IssueLinkIcon.ts | issueUnavailable": {
     "message": "Проблема наразі недоступна"
+  },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | deleteHighlight": {
+    "message": "Припинити виділення цієї частини пам’яті"
+  },
+  "ui/components/linear_memory_inspector/LinearMemoryHighlightChipList.ts | jumpToAddress": {
+    "message": "Перейти до цієї частини пам’яті"
   },
   "ui/components/linear_memory_inspector/LinearMemoryInspector.ts | addressHasToBeANumberBetweenSAnd": {
     "message": "Адреса має бути числом від {PH1} до {PH2}"

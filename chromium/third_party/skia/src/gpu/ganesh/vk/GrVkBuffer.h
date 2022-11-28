@@ -39,11 +39,11 @@ private:
                GrGpuBufferType bufferType,
                GrAccessPattern accessPattern,
                VkBuffer buffer,
-               const GrVkAlloc& alloc,
+               const skgpu::VulkanAlloc& alloc,
                const GrVkDescriptorSet* uniformDescriptorSet,
                std::string_view label);
 
-    bool isVkMappable() const { return fAlloc.fFlags & GrVkAlloc::kMappable_Flag; }
+    bool isVkMappable() const { return fAlloc.fFlags & skgpu::VulkanAlloc::kMappable_Flag; }
 
     bool vkIsMapped() const { return SkToBool(fMapPtr); }
     void vkMap(size_t readOffset, size_t readSize);
@@ -52,6 +52,7 @@ private:
 
     void onMap(MapType) override;
     void onUnmap(MapType) override;
+    bool onClearToZero() override;
     bool onUpdateData(const void* src, size_t offset, size_t size, bool preserve) override;
 
     void vkRelease();
@@ -62,7 +63,7 @@ private:
     GrVkGpu* getVkGpu() const;
 
     VkBuffer fBuffer;
-    GrVkAlloc fAlloc;
+    skgpu::VulkanAlloc fAlloc;
 
     const GrVkDescriptorSet* fUniformDescriptorSet;
 

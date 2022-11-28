@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_memorystream.h"
-#include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/cfx_read_only_string_stream.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/xml/cfx_xmldocument.h"
 #include "core/fxcrt/xml/cfx_xmlelement.h"
@@ -219,7 +219,7 @@ CJS_Result CJX_Node::loadXML(CFXJSE_Engine* runtime,
     bOverwrite = runtime->ToBoolean(params[2]);
 
   auto stream =
-      pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(expression.raw_span());
+      pdfium::MakeRetain<CFX_ReadOnlyStringStream>(std::move(expression));
 
   CFX_XMLParser parser(stream);
   std::unique_ptr<CFX_XMLDocument> xml_doc = parser.Parse();
@@ -370,8 +370,8 @@ CJS_Result CJX_Node::saveXML(CFXJSE_Engine* runtime,
     pElement->Save(pMemoryStream);
   }
 
-  return CJS_Result::Success(runtime->NewString(
-      ByteStringView(pMemoryStream->GetBuffer(), pMemoryStream->GetSize())));
+  return CJS_Result::Success(
+      runtime->NewString(ByteStringView(pMemoryStream->GetSpan())));
 }
 
 CJS_Result CJX_Node::setAttribute(
@@ -420,8 +420,13 @@ void CJX_Node::model(v8::Isolate* pIsolate,
     ThrowInvalidPropertyException(pIsolate);
     return;
   }
-  *pValue = GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
-      GetXFANode()->GetModelNode());
+  CXFA_Node* pModel = GetXFANode()->GetModelNode();
+  if (!pModel) {
+    *pValue = fxv8::NewNullHelper(pIsolate);
+    return;
+  }
+  *pValue =
+      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(pModel);
 }
 
 void CJX_Node::isContainer(v8::Isolate* pIsolate,

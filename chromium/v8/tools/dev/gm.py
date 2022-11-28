@@ -40,12 +40,13 @@ BUILD_TARGETS_ALL = ["all"]
 
 # All arches that this script understands.
 ARCHES = [
-    "ia32", "x64", "arm", "arm64", "mipsel", "mips64el", "ppc", "ppc64",
-    "riscv32", "riscv64", "s390", "s390x", "android_arm", "android_arm64",
-    "loong64", "fuchsia_x64", "fuchsia_arm64"
+    "ia32", "x64", "arm", "arm64", "mips64el", "ppc", "ppc64", "riscv32",
+    "riscv64", "s390", "s390x", "android_arm", "android_arm64", "loong64",
+    "fuchsia_x64", "fuchsia_arm64"
 ]
 # Arches that get built/run when you don't specify any.
 DEFAULT_ARCHES = ["ia32", "x64", "arm", "arm64"]
+SANDBOX_SUPPORTED_ARCHES = ["x64", "arm64"]
 # Modes that this script understands.
 MODES = {
     "release": "release",
@@ -324,8 +325,8 @@ class Config(object):
       v8_cpu = "arm"
     elif self.arch == "android_arm64" or self.arch == "fuchsia_arm64":
       v8_cpu = "arm64"
-    elif self.arch in ("arm", "arm64", "mipsel", "mips64el", "ppc", "ppc64",
-                       "riscv64", "riscv32", "s390", "s390x", "loong64"):
+    elif self.arch in ("arm", "arm64", "mips64el", "ppc", "ppc64", "riscv64",
+                       "riscv32", "s390", "s390x", "loong64"):
       v8_cpu = self.arch
     else:
       return []
@@ -345,12 +346,18 @@ class Config(object):
       return ["clang_base_path = \"/usr\"", "clang_use_chrome_plugins = false"]
     return []
 
+  def GetSandboxFlag(self):
+    if self.arch in SANDBOX_SUPPORTED_ARCHES:
+      return ["v8_enable_sandbox = true"]
+    return []
+
   def GetGnArgs(self):
     # Use only substring before first '-' as the actual mode
     mode = re.match("([^-]+)", self.mode).group(1)
     template = ARGS_TEMPLATES[mode]
-    arch_specific = (self.GetTargetCpu() + self.GetV8TargetCpu() +
-                     self.GetTargetOS() + self.GetSpecialCompiler())
+    arch_specific = (
+        self.GetTargetCpu() + self.GetV8TargetCpu() + self.GetTargetOS() +
+        self.GetSpecialCompiler() + self.GetSandboxFlag())
     return template % "\n".join(arch_specific)
 
   def Build(self):

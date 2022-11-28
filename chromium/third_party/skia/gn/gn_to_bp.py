@@ -77,14 +77,10 @@ cc_defaults {
     name: "skia_arch_defaults",
     arch: {
         arm: {
-            srcs: [
-                $arm_srcs
-            ],
+            srcs: [],
 
             neon: {
-                srcs: [
-                    $arm_neon_srcs
-                ],
+                srcs: [],
             },
         },
 
@@ -544,7 +540,7 @@ def generate_args(target_os, enable_gpu, renderengine = False):
     d['skia_use_libjpeg_turbo_encode'] = 'false'
     d['skia_use_libwebp_decode'] = 'false'
     d['skia_use_libwebp_encode'] = 'false'
-    d['skia_use_libgifcodec'] = 'false'
+    d['skia_use_wuffs'] = 'false'
     d['skia_enable_pdf'] = 'false'
     d['skia_use_freetype'] = 'false'
     d['skia_use_fixed_gamma_text'] = 'false'
@@ -610,8 +606,8 @@ gn_to_bp_utils.GrabDependentValues(js, '//:nanobench', 'sources',
                                    nanobench_srcs, ['//:skia', '//:gm'])
 
 # skcms is a little special, kind of a second-party library.
-local_includes.add("include/third_party/skcms")
-gm_includes   .add("include/third_party/skcms")
+local_includes.add("modules/skcms")
+gm_includes   .add("modules/skcms")
 
 # Android's build will choke if we list headers.
 def strip_headers(sources):
@@ -794,13 +790,8 @@ with open('Android.bp', 'w') as Android_bp:
     'cflags':          bpfmt(8, cflags, False),
     'cflags_cc':       bpfmt(8, cflags_cc),
 
-    'arm_srcs':      bpfmt(16, strip_headers(defs['armv7'])),
-    'arm_neon_srcs': bpfmt(20, strip_headers(defs['neon'])),
-    'arm64_srcs':    bpfmt(16, strip_headers(defs['arm64'] +
-                                             defs['crc32'])),
-    'x86_srcs':      bpfmt(16, strip_headers(defs['sse2'] +
-                                             defs['ssse3'] +
-                                             defs['sse41'] +
+    'arm64_srcs':    bpfmt(16, strip_headers(defs['crc32'])),
+    'x86_srcs':      bpfmt(16, strip_headers(defs['ssse3'] +
                                              defs['sse42'] +
                                              defs['avx'  ] +
                                              defs['hsw'  ] +

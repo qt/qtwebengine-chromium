@@ -37,7 +37,6 @@
 #define EIGEN_HALF_H
 
 #include "../../InternalHeaderCheck.h"
-#include <sstream>
 
 #if defined(EIGEN_HAS_GPU_FP16) || defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC)
 // When compiling with GPU support, the "__half_raw" base class as well as
@@ -391,7 +390,7 @@ EIGEN_STRONG_INLINE __device__ bool operator >= (const half& a, const half& b) {
 }
 #endif
 
-#if defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC)
+#if defined(EIGEN_HAS_ARM64_FP16_SCALAR_ARITHMETIC) && !defined(EIGEN_GPU_COMPILE_PHASE)
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half operator + (const half& a, const half& b) {
   return half(vaddh_f16(a.x, b.x));
 }

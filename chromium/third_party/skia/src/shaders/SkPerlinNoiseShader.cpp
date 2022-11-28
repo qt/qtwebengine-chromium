@@ -22,6 +22,7 @@
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/KeyBuilder.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
@@ -535,12 +536,10 @@ SkShaderBase::Context* SkPerlinNoiseShaderImpl::onMakeContext(const ContextRec& 
 
 static inline SkMatrix total_matrix(const SkShaderBase::ContextRec& rec,
                                     const SkShaderBase& shader) {
-    SkMatrix matrix = SkMatrix::Concat(*rec.fMatrix, shader.getLocalMatrix());
     if (rec.fLocalMatrix) {
-        matrix.preConcat(*rec.fLocalMatrix);
+        return SkMatrix::Concat(*rec.fMatrix, *rec.fLocalMatrix);
     }
-
-    return matrix;
+    return *rec.fMatrix;
 }
 
 SkPerlinNoiseShaderImpl::PerlinNoiseShaderContext::PerlinNoiseShaderContext(
@@ -722,20 +721,22 @@ void GrPerlinNoise2Effect::Impl::emitCode(EmitArgs& args) {
     SkString noiseCode;
 
     noiseCode.append(
-            R"(half4 floorVal;
-               floorVal.xy = floor(noiseVec);
-               floorVal.zw = floorVal.xy + half2(1);
-               half2 fractVal = fract(noiseVec);
-               // smooth curve : t^2*(3 - 2*t)
-               half2 noiseSmooth = fractVal*fractVal*(half2(3) - 2*fractVal);)");
+        "half4 floorVal;"
+        "floorVal.xy = floor(noiseVec);"
+        "floorVal.zw = floorVal.xy + half2(1);"
+        "half2 fractVal = fract(noiseVec);"
+        // smooth curve : t^2*(3 - 2*t)
+        "half2 noiseSmooth = fractVal*fractVal*(half2(3) - 2*fractVal);"
+    );
 
     // Adjust frequencies if we're stitching tiles
     if (pne.stitchTiles()) {
         noiseCode.append(
-             R"(if (floorVal.x >= stitchData.x) { floorVal.x -= stitchData.x; };
-                if (floorVal.y >= stitchData.y) { floorVal.y -= stitchData.y; };
-                if (floorVal.z >= stitchData.x) { floorVal.z -= stitchData.x; };
-                if (floorVal.w >= stitchData.y) { floorVal.w -= stitchData.y; };)");
+            "if (floorVal.x >= stitchData.x) { floorVal.x -= stitchData.x; };"
+            "if (floorVal.y >= stitchData.y) { floorVal.y -= stitchData.y; };"
+            "if (floorVal.z >= stitchData.x) { floorVal.z -= stitchData.x; };"
+            "if (floorVal.w >= stitchData.y) { floorVal.w -= stitchData.y; };"
+        );
     }
 
     // NOTE: We need to explicitly pass half4(1) as input color here, because the helper function
@@ -827,7 +828,7 @@ void GrPerlinNoise2Effect::Impl::emitCode(EmitArgs& args) {
 
     // Loop over all octaves
     fragBuilder->codeAppendf("for (int octave = 0; octave < %d; ++octave) {", pne.numOctaves());
-    fragBuilder->codeAppendf("    color += ");
+    fragBuilder->codeAppendf(    "color += ");
     if (pne.type() != SkPerlinNoiseShaderImpl::kFractalNoise_Type) {
         fragBuilder->codeAppend("abs(");
     }
@@ -838,17 +839,17 @@ void GrPerlinNoise2Effect::Impl::emitCode(EmitArgs& args) {
     static constexpr const char* chanCoordB = "2.5";
     static constexpr const char* chanCoordA = "3.5";
     if (pne.stitchTiles()) {
-        fragBuilder->codeAppendf(R"(
-           half4(%s(%s, noiseVec, stitchData), %s(%s, noiseVec, stitchData),
-                 %s(%s, noiseVec, stitchData), %s(%s, noiseVec, stitchData)))",
+        fragBuilder->codeAppendf(
+           "half4(%s(%s, noiseVec, stitchData), %s(%s, noiseVec, stitchData),"
+                 "%s(%s, noiseVec, stitchData), %s(%s, noiseVec, stitchData))",
             noiseFuncName.c_str(), chanCoordR,
             noiseFuncName.c_str(), chanCoordG,
             noiseFuncName.c_str(), chanCoordB,
             noiseFuncName.c_str(), chanCoordA);
     } else {
-        fragBuilder->codeAppendf(R"(
-            half4(%s(%s, noiseVec), %s(%s, noiseVec),
-                  %s(%s, noiseVec), %s(%s, noiseVec)))",
+        fragBuilder->codeAppendf(
+            "half4(%s(%s, noiseVec), %s(%s, noiseVec),"
+                  "%s(%s, noiseVec), %s(%s, noiseVec))",
             noiseFuncName.c_str(), chanCoordR,
             noiseFuncName.c_str(), chanCoordG,
             noiseFuncName.c_str(), chanCoordB,
@@ -859,8 +860,8 @@ void GrPerlinNoise2Effect::Impl::emitCode(EmitArgs& args) {
     }
     fragBuilder->codeAppend(" * ratio;");
 
-    fragBuilder->codeAppend(R"(noiseVec *= half2(2.0);
-                               ratio *= 0.5;)");
+    fragBuilder->codeAppend("noiseVec *= half2(2.0);"
+                            "ratio *= 0.5;");
 
     if (pne.stitchTiles()) {
         fragBuilder->codeAppend("stitchData *= half2(2.0);");
@@ -921,8 +922,8 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
         const GrFPArgs& args) const {
     SkASSERT(args.fContext);
 
-    const auto localMatrix = this->totalLocalMatrix(args.fPreLocalMatrix);
-    const auto paintMatrix = SkMatrix::Concat(args.fMatrixProvider.localToDevice(), *localMatrix);
+    const auto& localMatrix = args.fLocalMatrix ? *args.fLocalMatrix : SkMatrix::I();
+    const auto  paintMatrix = SkMatrix::Concat(args.fMatrixProvider.localToDevice(), localMatrix);
 
     // Either we don't stitch tiles, either we have a valid tile size
     SkASSERT(!fStitchTiles || !fTileSize.isEmpty());
@@ -935,8 +936,8 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
                                                                   paintMatrix);
 
     SkMatrix m = args.fMatrixProvider.localToDevice();
-    m.setTranslateX(-localMatrix->getTranslateX() + SK_Scalar1);
-    m.setTranslateY(-localMatrix->getTranslateY() + SK_Scalar1);
+    m.setTranslateX(-localMatrix.getTranslateX() + SK_Scalar1);
+    m.setTranslateY(-localMatrix.getTranslateY() + SK_Scalar1);
 
     auto context = args.fContext;
 

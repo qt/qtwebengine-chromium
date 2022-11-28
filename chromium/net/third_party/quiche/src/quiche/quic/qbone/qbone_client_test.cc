@@ -6,19 +6,19 @@
 
 #include "quiche/quic/qbone/qbone_client.h"
 
+#include <memory>
+
 #include "absl/strings/string_view.h"
+#include "quiche/quic/core/io/quic_default_event_loop.h"
+#include "quiche/quic/core/io/quic_event_loop.h"
 #include "quiche/quic/core/quic_alarm_factory.h"
+#include "quiche/quic/core/quic_default_clock.h"
 #include "quiche/quic/core/quic_default_connection_helper.h"
-#include "quiche/quic/core/quic_default_packet_writer.h"
 #include "quiche/quic/core/quic_dispatcher.h"
-#include "quiche/quic/core/quic_epoll_alarm_factory.h"
-#include "quiche/quic/core/quic_epoll_connection_helper.h"
-#include "quiche/quic/core/quic_packet_reader.h"
 #include "quiche/quic/platform/api/quic_mutex.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/platform/api/quic_test_loopback.h"
-#include "quiche/quic/qbone/qbone_constants.h"
 #include "quiche/quic/qbone/qbone_packet_processor_test_tools.h"
 #include "quiche/quic/qbone/qbone_server_session.h"
 #include "quiche/quic/test_tools/crypto_test_utils.h"
@@ -104,11 +104,11 @@ class QuicQboneDispatcher : public QuicDispatcher {
       std::unique_ptr<QuicConnectionHelperInterface> helper,
       std::unique_ptr<QuicCryptoServerStreamBase::Helper> session_helper,
       std::unique_ptr<QuicAlarmFactory> alarm_factory,
-      QbonePacketWriter* writer)
+      QbonePacketWriter* writer, ConnectionIdGeneratorInterface& generator)
       : QuicDispatcher(config, crypto_config, version_manager,
                        std::move(helper), std::move(session_helper),
-                       std::move(alarm_factory),
-                       kQuicDefaultConnectionIdLength),
+                       std::move(alarm_factory), kQuicDefaultConnectionIdLength,
+                       generator),
         writer_(writer) {}
 
   std::unique_ptr<QuicSession> CreateQuicSession(
@@ -120,7 +120,7 @@ class QuicQboneDispatcher : public QuicDispatcher {
     QuicConnection* connection = new QuicConnection(
         id, self_address, peer_address, helper(), alarm_factory(), writer(),
         /* owns_writer= */ false, Perspective::IS_SERVER,
-        ParsedQuicVersionVector{version});
+        ParsedQuicVersionVector{version}, connection_id_generator());
     // The connection owning wrapper owns the connection created.
     auto session = std::make_unique<ConnectionOwningQboneServerSession>(
         GetSupportedVersions(), connection, this, config(), crypto_config(),
@@ -143,7 +143,8 @@ class QboneTestServer : public QuicServer {
         &config(), &crypto_config(), version_manager(),
         std::make_unique<QuicDefaultConnectionHelper>(),
         std::make_unique<QboneCryptoServerStreamHelper>(),
-        event_loop()->CreateAlarmFactory(), &writer_);
+        event_loop()->CreateAlarmFactory(), &writer_,
+        connection_id_generator());
   }
 
   std::vector<std::string> data() { return writer_.data(); }
@@ -157,10 +158,10 @@ class QboneTestClient : public QboneClient {
   QboneTestClient(QuicSocketAddress server_address,
                   const QuicServerId& server_id,
                   const ParsedQuicVersionVector& supported_versions,
-                  QuicEpollServer* epoll_server,
+                  QuicEventLoop* event_loop,
                   std::unique_ptr<ProofVerifier> proof_verifier)
       : QboneClient(server_address, server_id, supported_versions,
-                    /*session_owner=*/nullptr, QuicConfig(), epoll_server,
+                    /*session_owner=*/nullptr, QuicConfig(), event_loop,
                     std::move(proof_verifier), &qbone_writer_, nullptr) {}
 
   ~QboneTestClient() override {}
@@ -214,11 +215,12 @@ TEST_P(QboneClientTest, SendDataFromClient) {
       QuicSocketAddress(server_address.host(), server_thread.GetPort());
   server_thread.Start();
 
-  QuicEpollServer epoll_server;
+  std::unique_ptr<QuicEventLoop> event_loop =
+      GetDefaultEventLoop()->Create(quic::QuicDefaultClock::Get());
   QboneTestClient client(
       server_address,
       QuicServerId("test.example.com", server_address.port(), false),
-      ParsedQuicVersionVector{GetParam()}, &epoll_server,
+      ParsedQuicVersionVector{GetParam()}, event_loop.get(),
       crypto_test_utils::ProofVerifierForTesting());
   ASSERT_TRUE(client.Initialize());
   ASSERT_TRUE(client.Connect());

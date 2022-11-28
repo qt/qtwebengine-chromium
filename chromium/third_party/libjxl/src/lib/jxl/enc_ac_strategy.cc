@@ -269,6 +269,14 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::AbsDiff;
+using hwy::HWY_NAMESPACE::Eq;
+using hwy::HWY_NAMESPACE::IfThenElseZero;
+using hwy::HWY_NAMESPACE::IfThenZeroElse;
+using hwy::HWY_NAMESPACE::Round;
+using hwy::HWY_NAMESPACE::Sqrt;
+
 bool MultiBlockTransformCrossesHorizontalBoundary(
     const AcStrategyImage& ac_strategy, size_t start_x, size_t y,
     size_t end_x) {
@@ -409,28 +417,28 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     auto cost_delta = Set(df, config.cost_delta);
     for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
       const auto in = Load(df, block + c * size + i);
-      const auto in_y = Load(df, block + size + i) * cmap_factor;
+      const auto in_y = Mul(Load(df, block + size + i), cmap_factor);
       const auto im = Load(df, inv_matrix + i);
-      const auto val = (in - in_y) * im * q;
+      const auto val = Mul(Sub(in, in_y), Mul(im, q));
       const auto rval = Round(val);
       const auto diff = AbsDiff(val, rval);
-      info_loss += diff;
-      info_loss2 += diff * diff;
+      info_loss = Add(info_loss, diff);
+      info_loss2 = MulAdd(diff, diff, info_loss2);
       const auto q = Abs(rval);
-      const auto q_is_zero = q == Zero(df);
-      entropy_v += IfThenElseZero(q >= Set(df, 1.5f), cost2);
+      const auto q_is_zero = Eq(q, Zero(df));
+      entropy_v = Add(entropy_v, IfThenElseZero(Ge(q, Set(df, 1.5f)), cost2));
       // We used to have q * C here, but that cost model seems to
       // be punishing large values more than necessary. Sqrt tries
       // to avoid large values less aggressively. Having high accuracy
       // around zero is most important at low qualities, and there
       // we have directly specified costs for 0, 1, and 2.
-      entropy_v += Sqrt(q) * cost_delta;
-      nzeros_v += IfThenZeroElse(q_is_zero, Set(df, 1.0f));
+      entropy_v = MulAdd(Sqrt(q), cost_delta, entropy_v);
+      nzeros_v = Add(nzeros_v, IfThenZeroElse(q_is_zero, Set(df, 1.0f)));
     }
-    entropy_v += nzeros_v * cost1;
+    entropy_v = MulAdd(nzeros_v, cost1, entropy_v);
 
-    entropy += GetLane(SumOfLanes(entropy_v));
-    size_t num_nzeros = GetLane(SumOfLanes(nzeros_v));
+    entropy += GetLane(SumOfLanes(df, entropy_v));
+    size_t num_nzeros = GetLane(SumOfLanes(df, nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
     // number of non-zeros of the block.
     size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
@@ -441,9 +449,9 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   float ret =
       entropy +
       masking *
-          ((config.info_loss_multiplier * GetLane(SumOfLanes(info_loss))) +
+          ((config.info_loss_multiplier * GetLane(SumOfLanes(df, info_loss))) +
            (config.info_loss_multiplier2 *
-            sqrt(num_blocks * GetLane(SumOfLanes(info_loss2)))));
+            sqrt(num_blocks * GetLane(SumOfLanes(df, info_loss2)))));
   return ret;
 }
 
@@ -1007,6 +1015,17 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   config.dequant = &enc_state->shared.matrices;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
+
+  if (cparams.speed_tier >= SpeedTier::kCheetah) {
+    JXL_CHECK(enc_state->shared.matrices.EnsureComputed(1));  // DCT8 only
+  } else {
+    uint32_t acs_mask = 0;
+    // All transforms up to 64x64.
+    for (size_t i = 0; i < AcStrategy::DCT128X128; i++) {
+      acs_mask |= (1 << i);
+    }
+    JXL_CHECK(enc_state->shared.matrices.EnsureComputed(acs_mask));
+  }
 
   // Image row pointers and strides.
   config.quant_field_row = enc_state->initial_quant_field.Row(0);

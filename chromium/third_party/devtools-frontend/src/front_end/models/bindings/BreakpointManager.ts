@@ -119,7 +119,8 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
       Promise<void> {
     const breakpointItems = this.storage.breakpointItems(fromURL);
     for (const item of breakpointItems) {
-      await this.setBreakpoint(toSourceCode, item.lineNumber, item.columnNumber, item.condition, item.enabled);
+      await this.setBreakpoint(
+          toSourceCode, item.lineNumber, item.columnNumber, item.condition, item.enabled, BreakpointOrigin.OTHER);
     }
   }
 
@@ -227,7 +228,8 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
     this.storage.mute();
     const breakpointItems = this.storage.breakpointItems(url);
     for (const item of breakpointItems) {
-      this.innerSetBreakpoint(uiSourceCode, item.lineNumber, item.columnNumber, item.condition, item.enabled);
+      this.innerSetBreakpoint(
+          uiSourceCode, item.lineNumber, item.columnNumber, item.condition, item.enabled, BreakpointOrigin.OTHER);
     }
     this.storage.unmute();
   }
@@ -256,7 +258,7 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
 
   async setBreakpoint(
       uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber: number, columnNumber: number|undefined,
-      condition: string, enabled: boolean): Promise<Breakpoint> {
+      condition: string, enabled: boolean, origin: BreakpointOrigin): Promise<Breakpoint> {
     let uiLocation: Workspace.UISourceCode.UILocation =
         new Workspace.UISourceCode.UILocation(uiSourceCode, lineNumber, columnNumber);
     const normalizedLocation = await this.debuggerWorkspaceBinding.normalizeUILocation(uiLocation);
@@ -265,12 +267,12 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
       uiLocation = normalizedLocation;
     }
     return this.innerSetBreakpoint(
-        uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, condition, enabled);
+        uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber, condition, enabled, origin);
   }
 
   private innerSetBreakpoint(
       uiSourceCode: Workspace.UISourceCode.UISourceCode, lineNumber: number, columnNumber: number|undefined,
-      condition: string, enabled: boolean): Breakpoint {
+      condition: string, enabled: boolean, origin: BreakpointOrigin): Breakpoint {
     const itemId = BreakpointManager.breakpointStorageId(uiSourceCode.url(), lineNumber, columnNumber);
     let breakpoint = this.#breakpointByStorageId.get(itemId);
     if (breakpoint) {
@@ -279,7 +281,8 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
       void breakpoint.updateBreakpoint();
       return breakpoint;
     }
-    breakpoint = new Breakpoint(this, uiSourceCode, uiSourceCode.url(), lineNumber, columnNumber, condition, enabled);
+    breakpoint =
+        new Breakpoint(this, uiSourceCode, uiSourceCode.url(), lineNumber, columnNumber, condition, enabled, origin);
     this.#breakpointByStorageId.set(itemId, breakpoint);
     return breakpoint;
   }
@@ -386,7 +389,7 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
       breakpoints = new Map();
       this.#breakpointsForUISourceCode.set(uiLocation.uiSourceCode, breakpoints);
     }
-    const breakpointLocation = {breakpoint: breakpoint, uiLocation: uiLocation};
+    const breakpointLocation = new BreakpointLocation(breakpoint, uiLocation);
     breakpoints.set(uiLocation.id(), breakpointLocation);
     this.dispatchEventToListeners(Events.BreakpointAdded, breakpointLocation);
   }
@@ -404,7 +407,11 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
     if (breakpoints.size === 0) {
       this.#breakpointsForUISourceCode.delete(uiLocation.uiSourceCode);
     }
-    this.dispatchEventToListeners(Events.BreakpointRemoved, {breakpoint: breakpoint, uiLocation: uiLocation});
+    this.dispatchEventToListeners(Events.BreakpointRemoved, breakpointLocation);
+  }
+
+  supportsConditionalBreakpoints(uiSourceCode: Workspace.UISourceCode.UISourceCode): boolean {
+    return this.debuggerWorkspaceBinding.supportsConditionalBreakpoints(uiSourceCode);
   }
 }
 
@@ -446,6 +453,7 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
   uiSourceCodes: Set<Workspace.UISourceCode.UISourceCode>;
   #conditionInternal!: string;
   #enabledInternal!: boolean;
+  #origin: BreakpointOrigin;
   isRemoved = false;
   currentState: Breakpoint.State|null;
   readonly #modelBreakpoints: Map<SDK.DebuggerModel.DebuggerModel, ModelBreakpoint>;
@@ -453,11 +461,12 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
   constructor(
       breakpointManager: BreakpointManager, primaryUISourceCode: Workspace.UISourceCode.UISourceCode,
       url: Platform.DevToolsPath.UrlString, lineNumber: number, columnNumber: number|undefined, condition: string,
-      enabled: boolean) {
+      enabled: boolean, origin: BreakpointOrigin) {
     this.breakpointManager = breakpointManager;
     this.urlInternal = url;
     this.#lineNumberInternal = lineNumber;
     this.#columnNumberInternal = columnNumber;
+    this.#origin = origin;
 
     this.#uiLocations = new Set();   // Bound locations
     this.uiSourceCodes = new Set();  // All known UISourceCodes with this url
@@ -468,6 +477,10 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
     this.updateState(condition, enabled);
     this.addUISourceCode(primaryUISourceCode);
     this.breakpointManager.targetManager.observeModels(SDK.DebuggerModel.DebuggerModel, this);
+  }
+
+  get origin(): BreakpointOrigin {
+    return this.#origin;
   }
 
   async refreshInDebugger(): Promise<void> {
@@ -793,7 +806,6 @@ export class ModelBreakpoint {
           const script = loc.script() as SDK.Script.Script;
           return {
             url: script.sourceURL,
-            scriptId: script.scriptId,
             scriptHash: script.hash,
             lineNumber: loc.lineNumber,
             columnNumber: loc.columnNumber,
@@ -811,7 +823,6 @@ export class ModelBreakpoint {
           // really resolved.
           const position = {
             url: this.#breakpoint.url(),
-            scriptId: '' as Protocol.Runtime.ScriptId,
             scriptHash: '',
             lineNumber,
             columnNumber,
@@ -894,7 +905,7 @@ export class ModelBreakpoint {
         return this.#debuggerModel.setBreakpointByURL(pos.url, pos.lineNumber, pos.columnNumber, condition);
       }
       return this.#debuggerModel.setBreakpointInAnonymousScript(
-          pos.scriptId, pos.scriptHash as string, pos.lineNumber, pos.columnNumber, condition);
+          pos.scriptHash as string, pos.lineNumber, pos.columnNumber, condition);
     }));
     const breakpointIds: Protocol.Debugger.BreakpointId[] = [];
     let locations: SDK.DebuggerModel.Location[] = [];
@@ -983,10 +994,14 @@ export class ModelBreakpoint {
 
 interface Position {
   url: Platform.DevToolsPath.UrlString;
-  scriptId: Protocol.Runtime.ScriptId;
   scriptHash: string;
   lineNumber: number;
   columnNumber?: number;
+}
+
+export const enum BreakpointOrigin {
+  USER_ACTION = 'USER_ACTION',
+  OTHER = 'RESTORED',
 }
 
 export namespace Breakpoint {
@@ -1013,9 +1028,6 @@ export namespace Breakpoint {
         const positionA = stateA.positions[i];
         const positionB = stateB.positions[i];
         if (positionA.url !== positionB.url) {
-          return false;
-        }
-        if (positionA.scriptId !== positionB.scriptId) {
           return false;
         }
         if (positionA.scriptHash !== positionB.scriptHash) {
@@ -1101,7 +1113,12 @@ namespace Storage {
   }
 }
 
-export interface BreakpointLocation {
-  breakpoint: Breakpoint;
-  uiLocation: Workspace.UISourceCode.UILocation;
+export class BreakpointLocation {
+  readonly breakpoint: Breakpoint;
+  readonly uiLocation: Workspace.UISourceCode.UILocation;
+
+  constructor(breakpoint: Breakpoint, uiLocation: Workspace.UISourceCode.UILocation) {
+    this.breakpoint = breakpoint;
+    this.uiLocation = uiLocation;
+  }
 }

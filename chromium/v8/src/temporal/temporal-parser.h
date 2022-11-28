@@ -15,9 +15,9 @@ namespace internal {
  * ParsedISO8601Result contains the parsed result of ISO 8601 grammar
  * documented in #sec-temporal-iso8601grammar
  * for TemporalInstantString, TemporalZonedDateTimeString,
- * TemporalCalendarString, TemporalDateString, TemporalDateTimeString,
+ * CalendarName, TemporalDateString, TemporalDateTimeString,
  * TemporalMonthDayString, TemporalRelativeToString, TemporalTimeString,
- * TemporalTimeZoneString, and TemporalYearMonthString. For all the fields
+ * TimeZoneIdentifier, and TemporalYearMonthString. For all the fields
  * represented by int32_t, a special value kMinInt31 is used to represent the
  * field is "undefined" after parsing.
  */
@@ -95,20 +95,20 @@ struct ParsedISO8601Result {
  * field is "undefined" after parsing for all fields except sign.
  */
 struct ParsedISO8601Duration {
-  int64_t sign;              // Sign production
-  int64_t years;             // DurationYears production
-  int64_t months;            // DurationMonths production
-  int64_t weeks;             // DurationWeeks production
-  int64_t days;              // DurationDays production
-  int64_t whole_hours;       // DurationWholeHours production
-  int64_t hours_fraction;    // DurationHoursFraction, in unit of 1e-9 hours
-  int64_t whole_minutes;     // DurationWholeMinutes production
-  int64_t minutes_fraction;  // DurationMinuteFraction, in unit of 1e-9 minutes
-  int64_t whole_seconds;     // DurationWholeSeconds production
-  int64_t seconds_fraction;  // DurationSecondFraction, in unit of nanosecond (
+  double sign;               // Sign production
+  double years;              // DurationYears production
+  double months;             // DurationMonths production
+  double weeks;              // DurationWeeks production
+  double days;               // DurationDays production
+  double whole_hours;        // DurationWholeHours production
+  double whole_minutes;      // DurationWholeMinutes production
+  double whole_seconds;      // DurationWholeSeconds production
+  int32_t hours_fraction;    // DurationHoursFraction, in unit of 1e-9 hours
+  int32_t minutes_fraction;  // DurationMinuteFraction, in unit of 1e-9 minutes
+  int32_t seconds_fraction;  // DurationSecondFraction, in unit of nanosecond (
                              // 1e-9 seconds).
 
-  static constexpr int64_t kEmpty = -1;
+  static constexpr int32_t kEmpty = -1;
   ParsedISO8601Duration()
       : sign(1),
         years(kEmpty),
@@ -116,10 +116,10 @@ struct ParsedISO8601Duration {
         weeks(kEmpty),
         days(kEmpty),
         whole_hours(kEmpty),
-        hours_fraction(kEmpty),
         whole_minutes(kEmpty),
-        minutes_fraction(kEmpty),
         whole_seconds(kEmpty),
+        hours_fraction(kEmpty),
+        minutes_fraction(kEmpty),
         seconds_fraction(kEmpty) {}
 };
 
@@ -143,9 +143,9 @@ class V8_EXPORT_PRIVATE TemporalParser {
   DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalMonthDayString);
   DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalInstantString);
   DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalZonedDateTimeString);
-  DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalTimeZoneString);
+  DEFINE_PARSE_METHOD(ParsedISO8601Result, TimeZoneIdentifier);
   DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalRelativeToString);
-  DEFINE_PARSE_METHOD(ParsedISO8601Result, TemporalCalendarString);
+  DEFINE_PARSE_METHOD(ParsedISO8601Result, CalendarName);
   DEFINE_PARSE_METHOD(ParsedISO8601Duration, TemporalDurationString);
   DEFINE_PARSE_METHOD(ParsedISO8601Result, TimeZoneNumericUTCOffset);
 };

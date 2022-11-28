@@ -58,19 +58,19 @@ endif()  # JPEGXL_ENABLE_VIEWERS
 
 # Tools are added conditionally below.
 set(TOOL_BINARIES)
+# Tools that depend on jxl internal functions.
+set(INTERNAL_TOOL_BINARIES)
 
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
-  cpu/cpu.cc
-  cpu/os_specific.cc
+  speed_stats.cc
+  file_io.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(jxl_tool jxl-static)
-
-target_include_directories(jxl_tool
-  PUBLIC "${PROJECT_SOURCE_DIR}")
+target_include_directories(jxl_tool PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(jxl_tool hwy)
 
 # The JPEGXL_VERSION is set from the builders.
 if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
@@ -121,53 +121,55 @@ else()
 endif()
 
 if(JPEGXL_ENABLE_TOOLS)
-  list(APPEND TOOL_BINARIES
-    cjxl
-    djxl
-  )
-
   # Main compressor.
-  add_executable(cjxl
-    cjxl.cc
-    speed_stats.cc
-    cjxl_main.cc
-  )
+  add_executable(cjxl cjxl_main.cc)
   target_link_libraries(cjxl
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
+    jxl
+    jxl_extras_codec-static
+    jxl_threads
+    jxl_tool
   )
-
+  list(APPEND TOOL_BINARIES cjxl)
 
   # Main decompressor.
-  add_library(djxltool STATIC
-    djxl.cc
-    speed_stats.cc
+  add_executable(djxl djxl_main.cc)
+  target_link_libraries(djxl
+    jxl
+    jxl_extras_codec-static
+    jxl_threads
+    jxl_tool
   )
-  target_link_libraries(djxltool
-      box
-      jxl-static
-      jxl_extras-static
-      jxl_threads-static
-  )
+  list(APPEND TOOL_BINARIES djxl)
 
-  add_executable(djxl
-      djxl_main.cc
-  )
-target_link_libraries(djxl djxltool)
+  add_executable(cjpeg_hdr cjpeg_hdr.cc)
+  list(APPEND INTERNAL_TOOL_BINARIES cjpeg_hdr)
+
+  add_executable(jxlinfo jxlinfo.c)
+  target_link_libraries(jxlinfo jxl)
+  list(APPEND TOOL_BINARIES jxlinfo)
+
+  if(NOT SANITIZER STREQUAL "none")
+    # Linking a C test binary with the C++ JPEG XL implementation when using
+    # address sanitizer is not well supported by clang 9, so force using clang++
+    # for linking this test if a sanitizer is used.
+    set_target_properties(jxlinfo PROPERTIES LINKER_LANGUAGE CXX)
+  endif()  # SANITIZER != "none"
+
 endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
-if(${JPEGXL_ENABLE_DEVTOOLS})
-  list(APPEND TOOL_BINARIES
+if(JPEGXL_ENABLE_DEVTOOLS)
+  list(APPEND INTERNAL_TOOL_BINARIES
     fuzzer_corpus
     butteraugli_main
     decode_and_encode
-    epf_main
+    display_to_hlg
+    exr_to_pq
     pq_to_hlg
     render_hlg
     tone_map
+    texture_to_cube
+    generate_lut_template
     ssimulacra_main
     xyb_range
     jxl_from_tree
@@ -178,17 +180,20 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
-  add_executable(epf_main epf_main.cc epf.cc epf.h)
+  add_executable(display_to_hlg hdr/display_to_hlg.cc)
+  add_executable(exr_to_pq hdr/exr_to_pq.cc)
   add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
   add_executable(render_hlg hdr/render_hlg.cc)
   add_executable(tone_map hdr/tone_map.cc)
+  add_executable(texture_to_cube hdr/texture_to_cube.cc)
+  add_executable(generate_lut_template hdr/generate_lut_template.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
-if(${JPEGXL_ENABLE_BENCHMARK})
-  list(APPEND TOOL_BINARIES
+if(JPEGXL_ENABLE_BENCHMARK AND JPEGXL_ENABLE_TOOLS)
+  list(APPEND INTERNAL_TOOL_BINARIES
     benchmark_xl
   )
 
@@ -204,10 +209,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    benchmark/benchmark_codec_png.cc
-    benchmark/benchmark_codec_png.h
-    speed_stats.cc
-    speed_stats.h
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
@@ -222,10 +223,17 @@ if(${JPEGXL_ENABLE_BENCHMARK})
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
     )
-    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_JPEG)
-    target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
-    target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
   endif ()
+
+  if(NOT JPEGXL_BUNDLE_LIBPNG)
+    find_package(PNG)
+  endif()
+  if(PNG_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_png.h"
+    )
+  endif()
 
   find_package(PkgConfig)
   pkg_check_modules(WebP IMPORTED_TARGET libwebp)
@@ -239,7 +247,7 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     # Use the static version of webp if available.
     find_library(WebP_STATIC_LINK_LIBRARY NAMES libwebp.a
         PATHS "${WebP_LIBDIR}")
-    if("${WebP_STATIC_LINK_LIBRARY}" STREQUAL "WebP_STATIC_LINK_LIBRARY-NOTFOUND")
+    if(NOT WebP_STATIC_LINK_LIBRARY)
       message(WARNING "Using dynamic libwebp")
       target_link_libraries(benchmark_xl PkgConfig::WebP)
     else()
@@ -247,7 +255,7 @@ if(${JPEGXL_ENABLE_BENCHMARK})
       target_include_directories(benchmark_xl
           PRIVATE ${WebP_STATIC_INCLUDE_DIRS})
       target_compile_options(benchmark_xl PRIVATE ${WebP_STATIC_CFLAGS_OTHER})
-    endif()
+    endif()  # NOT WebP_STATIC_LINK_LIBRARY
   endif()
 
   pkg_check_modules(AVIF IMPORTED_TARGET libavif)
@@ -262,16 +270,28 @@ if(${JPEGXL_ENABLE_BENCHMARK})
 endif()  # JPEGXL_ENABLE_BENCHMARK
 
 # All tool binaries depend on "jxl" library and the tool helpers.
-foreach(BINARY IN LISTS TOOL_BINARIES)
-  target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+foreach(BINARY IN LISTS INTERNAL_TOOL_BINARIES)
+  target_link_libraries("${BINARY}"
+    jxl_extras-static
+    jxl_tool
+  )
 endforeach()
+
+list(APPEND TOOL_BINARIES ${INTERNAL_TOOL_BINARIES})
+
+foreach(BINARY IN LISTS TOOL_BINARIES)
+  if(JPEGXL_EMSCRIPTEN)
+    set_target_properties(${BINARY} PROPERTIES LINK_FLAGS "-s USE_LIBPNG=1")
+  endif()
+endforeach()
+
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 message(STATUS "Building tools: ${TOOL_BINARIES}")
 
 set(FUZZER_BINARIES
   color_encoding_fuzzer
   decode_basic_info_fuzzer
+  cjxl_fuzzer
   djxl_fuzzer
   icc_codec_fuzzer
   fields_fuzzer
@@ -282,7 +302,7 @@ set(FUZZER_BINARIES
 
 # Fuzzers.
 foreach(FUZZER IN LISTS FUZZER_BINARIES)
-  if(${JPEGXL_ENABLE_FUZZERS})
+  if(JPEGXL_ENABLE_FUZZERS)
     set(BINARY "${FUZZER}")
     add_executable("${BINARY}" "${BINARY}.cc")
     target_link_libraries("${BINARY}" ${JPEGXL_FUZZER_LINK_FLAGS})
@@ -294,16 +314,14 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
         "fuzzer_stub.cc" "${FUZZER}.cc")
   endif()  # JPEGXL_ENABLE_FUZZERS
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-  if(${FUZZER} STREQUAL djxl_fuzzer)
+  if(FUZZER STREQUAL djxl_fuzzer)
     target_link_libraries("${BINARY}"
       jxl_dec-static
       jxl_threads-static
     )
   else()
     target_link_libraries("${BINARY}"
-      jxl-static
       jxl_extras-static
-      jxl_threads-static
       jxl_tool
     )
   endif()
@@ -317,7 +335,7 @@ if(BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 add_executable(libjxl_test libjxl_test.c)
 set_property(TARGET libjxl_test PROPERTY C_STANDARD 99)
-if(NOT ${SANITIZER} STREQUAL "none")
+if(NOT SANITIZER STREQUAL "none")
   # Linking a C test binary with the C++ JPEG XL implementation when using
   # address sanitizer is not well supported by clang 9, so force using clang++
   # for linking this test if a sanitizer is used.
@@ -332,11 +350,16 @@ if(NOT WIN32)
 endif()  # NOT WIN32
 endif()  # NOT MSVC
 
-add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+add_test(
+  NAME LibraryCLinkageTest
+  COMMAND libjxl_test
+  WORKING_DIRECTORY $<TARGET_FILE_DIR:jxl>
+)
+
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
-if(${JPEGXL_ENABLE_VIEWERS})
+if(JPEGXL_ENABLE_VIEWERS)
 add_subdirectory(viewer)
 add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
@@ -345,50 +368,65 @@ endif()
 add_subdirectory(box)
 add_subdirectory(conformance)
 
-if ("${JPEGXL_EMSCRIPTEN}")
+
+if (JPEGXL_ENABLE_TOOLS AND JPEGXL_EMSCRIPTEN)
 # WASM API facade.
 add_executable(jxl_emcc jxl_emcc.cc)
-target_link_libraries(jxl_emcc jxl-static jxl_extras-static)
+target_link_libraries(jxl_emcc
+    jxl_extras-static
+)
 set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
-  -s ALLOW_MEMORY_GROWTH=1 \
-  -flto \
-  --llvm-lto 1 \
+  -s TOTAL_MEMORY=75mb \
+  -s USE_LIBPNG=1 \
   -s DISABLE_EXCEPTION_CATCHING=1 \
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \
+  -s USE_PTHREADS=1 \
+  -s PTHREAD_POOL_SIZE=4 \
   -s EXPORT_NAME=\"JxlCodecModule\"\
   -s \"EXPORTED_FUNCTIONS=[\
-    _jxlCompress,\
-    _jxlDecompress,\
+    _malloc,\
     _free,\
-    _malloc\
+    _jxlCreateInstance,\
+    _jxlDestroyInstance,\
+    _jxlFlush,\
+    _jxlProcessInput\
   ]\"\
 ")
-endif ()  # JPEGXL_EMSCRIPTEN
+endif ()  # JPEGXL_ENABLE_TOOLS AND JPEGXL_EMSCRIPTEN
 
 if(JPEGXL_ENABLE_JNI)
 find_package(JNI QUIET)
 find_package(Java QUIET)
 
-if ("${JNI_FOUND}" AND "${Java_FOUND}")
+if (JNI_FOUND AND Java_FOUND)
   include(UseJava)
 
   # decoder_jni_onload.cc might be necessary for Android; not used yet.
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_threads-static)
+  if(NOT DEFINED JPEGXL_INSTALL_JNIDIR)
+    set(JPEGXL_INSTALL_JNIDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install(TARGETS jxl_jni DESTINATION ${JPEGXL_INSTALL_JNIDIR})
 
-  add_jar(jxl_jni_wrapper
+  add_jar(jxl_jni_wrapper SOURCES
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
     jni/org/jpeg/jpegxl/wrapper/Status.java
     jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
+    OUTPUT_NAME org.jpeg.jpegxl
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
+  if(NOT DEFINED JPEGXL_INSTALL_JARDIR)
+    set(JPEGXL_INSTALL_JARDIR ${CMAKE_INSTALL_LIBDIR})
+  endif()
+  install_jar(jxl_jni_wrapper DESTINATION ${JPEGXL_INSTALL_JARDIR})
 
   add_jar(jxl_jni_wrapper_test
     SOURCES jni/org/jpeg/jpegxl/wrapper/DecoderTest.java
@@ -396,7 +434,7 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
-  if(NOT "${SANITIZER}" MATCHES ".san")
+  if(NOT SANITIZER MATCHES ".san")
     # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
     #     "which java" or JAVA_HOME environment variable point to the path like
     #     "/usr/lib/jvm/java-xx-openjdk-yyy" on Debian Linux).
@@ -410,3 +448,17 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
 endif()  # JPEGXL_ENABLE_JNI
+
+# End-to-end tests for the tools
+if(BUILD_TESTING AND JPEGXL_ENABLE_TOOLS AND JPEGXL_ENABLE_DEVTOOLS AND JPEGXL_ENABLE_TRANSCODE_JPEG AND (NOT JPEGXL_ENABLE_JNI))
+find_program (BASH_PROGRAM bash)
+if(BASH_PROGRAM AND $<TARGET_EXISTS:cjxl> AND $<TARGET_EXISTS:djxl> AND $<TARGET_EXISTS:ssimulacra_main>)
+  add_test(
+    NAME roundtrip_test
+    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/roundtrip_test.sh
+            ${CMAKE_BINARY_DIR})
+  if (CMAKE_CROSSCOMPILING_EMULATOR)
+    set_tests_properties(roundtrip_test PROPERTIES ENVIRONMENT "EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}")
+  endif()
+endif()
+endif() # BUILD_TESTING

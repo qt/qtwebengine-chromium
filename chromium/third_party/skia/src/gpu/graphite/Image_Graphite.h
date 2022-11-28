@@ -19,6 +19,7 @@ class Recorder;
 
 class Image final : public SkImage_Base {
 public:
+    Image(uint32_t uniqueID, TextureProxyView, const SkColorInfo&);
     Image(TextureProxyView, const SkColorInfo&);
     ~Image() override;
 
@@ -39,7 +40,9 @@ public:
                                 int srcX,
                                 int srcY);
 
-    bool onHasMipmaps() const override { return false; }
+    bool onHasMipmaps() const override {
+        return fTextureProxyView.proxy()->mipmapped() == Mipmapped::kYes;
+    }
 
     bool isGraphiteBacked() const override { return true; }
 
@@ -55,13 +58,32 @@ public:
 
     sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType,
                                                 sk_sp<SkColorSpace>,
-                                                GrDirectContext*) const override {
-        return nullptr;
-    }
+                                                GrDirectContext*) const override;
 
-    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override {
-        return nullptr;
-    }
+    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
+
+    void onAsyncReadPixels(const SkImageInfo&,
+                           SkIRect srcRect,
+                           ReadPixelsCallback,
+                           ReadPixelsContext) const override;
+
+    void onAsyncRescaleAndReadPixels(const SkImageInfo&,
+                                     SkIRect srcRect,
+                                     RescaleGamma,
+                                     RescaleMode,
+                                     ReadPixelsCallback,
+                                     ReadPixelsContext) const override;
+
+    void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
+                                           sk_sp<SkColorSpace>,
+                                           SkIRect srcRect,
+                                           SkISize dstSize,
+                                           RescaleGamma,
+                                           RescaleMode,
+                                           ReadPixelsCallback,
+                                           ReadPixelsContext) const override;
+
+    TextureProxyView textureProxyView() const { return fTextureProxyView; }
 
 private:
 #if SK_SUPPORT_GPU
@@ -71,9 +93,8 @@ private:
             const SkTileMode[2],
             const SkMatrix&,
             const SkRect* subset,
-            const SkRect* domain) const override {
-        return nullptr;
-    }
+            const SkRect* domain) const override;
+
     std::tuple<GrSurfaceProxyView, GrColorType> onAsView(
             GrRecordingContext*,
             GrMipmapped,
@@ -82,8 +103,7 @@ private:
     }
 #endif
 
-    std::tuple<TextureProxyView, SkColorType> onAsView(Recorder*,
-                                                       Mipmapped) const override;
+    sk_sp<SkImage> onMakeTextureImage(Recorder*, RequiredImageProperties) const override;
 
     TextureProxyView fTextureProxyView;
 };

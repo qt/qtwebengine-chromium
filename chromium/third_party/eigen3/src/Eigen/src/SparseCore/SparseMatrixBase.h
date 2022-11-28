@@ -214,7 +214,7 @@ template<typename Derived> class SparseMatrixBase
     inline void assignGeneric(const OtherDerived& other);
 
   public:
-
+#ifndef EIGEN_NO_IO
     friend std::ostream & operator << (std::ostream & s, const SparseMatrixBase& m)
     {
       typedef typename Derived::Nested Nested;
@@ -263,6 +263,7 @@ template<typename Derived> class SparseMatrixBase
       }
       return s;
     }
+#endif
 
     template<typename OtherDerived>
     Derived& operator+=(const SparseMatrixBase<OtherDerived>& other);

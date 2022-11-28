@@ -82,6 +82,16 @@ extern "C" {
 #define FPDF_FORMFLAG_CHOICE_EDIT (1 << 18)
 #define FPDF_FORMFLAG_CHOICE_MULTI_SELECT (1 << 21)
 
+// Additional actions type of form field:
+//   K, on key stroke, JavaScript action.
+//   F, on format, JavaScript action.
+//   V, on validate, JavaScript action.
+//   C, on calculate, JavaScript action.
+#define FPDF_ANNOT_AACTION_KEY_STROKE 12
+#define FPDF_ANNOT_AACTION_FORMAT 13
+#define FPDF_ANNOT_AACTION_VALIDATE 14
+#define FPDF_ANNOT_AACTION_CALCULATE 15
+
 typedef enum FPDFANNOT_COLORTYPE {
   FPDFANNOT_COLORTYPE_Color = 0,
   FPDFANNOT_COLORTYPE_InteriorColor
@@ -495,6 +505,31 @@ FPDFAnnot_GetBorder(FPDF_ANNOTATION annot,
                     float* border_width);
 
 // Experimental API.
+// Get the JavaScript of an event of the annotation's additional actions.
+// |buffer| is only modified if |buflen| is large enough to hold the whole
+// JavaScript string. If |buflen| is smaller, the total size of the JavaScript
+// is still returned, but nothing is copied.  If there is no JavaScript for
+// |event| in |annot|, an empty string is written to |buf| and 2 is returned,
+// denoting the size of the null terminator in the buffer.  On other errors,
+// nothing is written to |buffer| and 0 is returned.
+//
+//    hHandle     -   handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//    annot       -   handle to an interactive form annotation.
+//    event       -   event type, one of the FPDF_ANNOT_AACTION_* values.
+//    buffer      -   buffer for holding the value string, encoded in UTF-16LE.
+//    buflen      -   length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes, including the 2-byte
+// null terminator.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormAdditionalActionJavaScript(FPDF_FORMHANDLE hHandle,
+                                            FPDF_ANNOTATION annot,
+                                            int event,
+                                            FPDF_WCHAR* buffer,
+                                            unsigned long buflen);
+
+// Experimental API.
 // Check if |annot|'s dictionary has |key| as a key.
 //
 //   annot  - handle to an annotation.
@@ -685,6 +720,26 @@ FPDFAnnot_GetFormFieldName(FPDF_FORMHANDLE hHandle,
                            FPDF_ANNOTATION annot,
                            FPDF_WCHAR* buffer,
                            unsigned long buflen);
+
+// Experimental API.
+// Gets the alternate name of |annot|, which is an interactive form annotation.
+// |buffer| is only modified if |buflen| is longer than the length of contents.
+// In case of error, nothing will be added to |buffer| and the return value will
+// be 0. Note that return value of empty string is 2 for "\0\0".
+//
+//    hHandle     -   handle to the form fill module, returned by
+//                    FPDFDOC_InitFormFillEnvironment().
+//    annot       -   handle to an interactive form annotation.
+//    buffer      -   buffer for holding the alternate name string, encoded in
+//                    UTF-16LE.
+//    buflen      -   length of the buffer in bytes.
+//
+// Returns the length of the string value in bytes.
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAnnot_GetFormFieldAlternateName(FPDF_FORMHANDLE hHandle,
+                                    FPDF_ANNOTATION annot,
+                                    FPDF_WCHAR* buffer,
+                                    unsigned long buflen);
 
 // Experimental API.
 // Gets the form field type of |annot|, which is an interactive form annotation.

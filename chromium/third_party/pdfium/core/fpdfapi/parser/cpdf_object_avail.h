@@ -21,7 +21,7 @@ class CPDF_ObjectAvail {
  public:
   CPDF_ObjectAvail(RetainPtr<CPDF_ReadValidator> validator,
                    CPDF_IndirectObjectHolder* holder,
-                   const CPDF_Object* root);
+                   RetainPtr<const CPDF_Object> root);
   CPDF_ObjectAvail(RetainPtr<CPDF_ReadValidator> validator,
                    CPDF_IndirectObjectHolder* holder,
                    uint32_t obj_num);
@@ -35,7 +35,7 @@ class CPDF_ObjectAvail {
  private:
   bool LoadRootObject();
   bool CheckObjects();
-  bool AppendObjectSubRefs(const CPDF_Object* object,
+  bool AppendObjectSubRefs(RetainPtr<const CPDF_Object> object,
                            std::stack<uint32_t>* refs) const;
   void CleanMemory();
   bool HasObjectParsed(uint32_t obj_num) const;

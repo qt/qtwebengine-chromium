@@ -65,6 +65,19 @@ export const kAllBufferUsageBits = kBufferUsages.reduce(
   0
 );
 
+// Errors
+
+/** Per-GPUErrorFilter info. */
+export const kErrorScopeFilterInfo: {
+  readonly [k in GPUErrorFilter]: {};
+} = /* prettier-ignore */ {
+  'out-of-memory': {},
+  'validation':    {},
+  'internal':      {},
+};
+/** List of all GPUTextureAspect values. */
+export const kErrorScopeFilters = keysOf(kErrorScopeFilterInfo);
+
 // Textures
 
 // Definitions for use locally. To access the table entries, use `kTextureFormatInfo`.
@@ -1035,6 +1048,24 @@ export const kLimitInfo = /* prettier-ignore */ makeTable(
 
 /** List of all entries of GPUSupportedLimits. */
 export const kLimits = keysOf(kLimitInfo);
+
+/** Per-GPUFeatureName info. */
+export const kFeatureNameInfo: {
+  readonly [k in GPUFeatureName]: {};
+} = /* prettier-ignore */ {
+  'depth-clip-control': {},
+  'depth32float-stencil8': {},
+  'texture-compression-bc': {},
+  'texture-compression-etc2': {},
+  'texture-compression-astc': {},
+  'timestamp-query': {},
+  'indirect-first-instance': {},
+  'shader-f16': {},
+  'bgra8unorm-storage': {},
+  'rg11b10ufloat-renderable': {},
+};
+/** List of all GPUFeatureName values. */
+export const kFeatureNames = keysOf(kFeatureNameInfo);
 
 /**
  * Check if two formats are view format compatible.

@@ -19,7 +19,6 @@
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-aux-data.h"
 #include "src/compiler/node-origin-table.h"
-#include "src/compiler/node-properties.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
 #include "src/compiler/schedule.h"
@@ -202,6 +201,7 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
       case BasicBlock::kReturn:
       case BasicBlock::kDeoptimize:
       case BasicBlock::kThrow:
+      case BasicBlock::kTailCall:
         break;
       case BasicBlock::kCall: {
         Node* call = block->control_input();
@@ -209,18 +209,20 @@ base::Optional<BailoutReason> GraphBuilder::Run() {
         DCHECK_EQ(block->SuccessorCount(), 2);
         Block* if_success = Map(block->SuccessorAt(0));
         Block* if_exception = Map(block->SuccessorAt(1));
-        assembler.CatchException(Map(call), if_success, if_exception);
+        OpIndex catch_exception =
+            assembler.CatchException(Map(call), if_success, if_exception);
+        Node* if_exception_node = block->SuccessorAt(1)->NodeAt(0);
+        DCHECK_EQ(if_exception_node->opcode(), IrOpcode::kIfException);
+        op_mapping.Set(if_exception_node, catch_exception);
         break;
       }
-      case BasicBlock::kTailCall:
-        UNIMPLEMENTED();
       case BasicBlock::kNone:
         UNREACHABLE();
     }
     DCHECK_NULL(assembler.current_block());
   }
 
-  if (source_positions) {
+  if (source_positions->IsEnabled()) {
     for (OpIndex index : assembler.graph().AllOperationIndices()) {
       compiler::NodeId origin =
           assembler.graph().operation_origins()[index].DecodeTurbofanNodeId();
@@ -264,8 +266,13 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kIfSuccess:
       return OpIndex::Invalid();
 
-    case IrOpcode::kIfException:
-      return assembler.ExceptionValueProjection(Map(node->InputAt(0)));
+    case IrOpcode::kIfException: {
+      // Use the `CatchExceptionOp` that has already been produced when
+      // processing the call.
+      OpIndex catch_exception = Map(node);
+      DCHECK(assembler.graph().Get(catch_exception).Is<CatchExceptionOp>());
+      return catch_exception;
+    }
 
     case IrOpcode::kParameter: {
       const ParameterInfo& info = ParameterInfoOf(op);
@@ -278,7 +285,9 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kPhi: {
       int input_count = op->ValueInputCount();
-      MachineRepresentation rep = PhiRepresentationOf(op);
+      RegisterRepresentation rep =
+          RegisterRepresentation::FromMachineRepresentation(
+              PhiRepresentationOf(op));
       if (assembler.current_block()->IsLoop()) {
         DCHECK_EQ(input_count, 2);
         return assembler.PendingLoopPhi(Map(node->InputAt(0)), rep,
@@ -293,65 +302,117 @@ OpIndex GraphBuilder::Process(
     }
 
     case IrOpcode::kInt64Constant:
-      return assembler.Constant(
-          ConstantOp::Kind::kWord64,
+      return assembler.Word64Constant(
           static_cast<uint64_t>(OpParameter<int64_t>(op)));
     case IrOpcode::kInt32Constant:
-      return assembler.Constant(
-          ConstantOp::Kind::kWord32,
-          uint64_t{static_cast<uint32_t>(OpParameter<int32_t>(op))});
+      return assembler.Word32Constant(
+          static_cast<uint32_t>(OpParameter<int32_t>(op)));
     case IrOpcode::kFloat64Constant:
-      return assembler.Constant(ConstantOp::Kind::kFloat64,
-                                OpParameter<double>(op));
+      return assembler.Float64Constant(OpParameter<double>(op));
     case IrOpcode::kFloat32Constant:
-      return assembler.Constant(ConstantOp::Kind::kFloat32,
-                                OpParameter<float>(op));
+      return assembler.Float32Constant(OpParameter<float>(op));
     case IrOpcode::kNumberConstant:
-      return assembler.Constant(ConstantOp::Kind::kNumber,
-                                OpParameter<double>(op));
+      return assembler.NumberConstant(OpParameter<double>(op));
     case IrOpcode::kTaggedIndexConstant:
-      return assembler.Constant(
-          ConstantOp::Kind::kTaggedIndex,
-          uint64_t{static_cast<uint32_t>(OpParameter<int32_t>(op))});
+      return assembler.TaggedIndexConstant(OpParameter<int32_t>(op));
     case IrOpcode::kHeapConstant:
-      return assembler.Constant(ConstantOp::Kind::kHeapObject,
-                                HeapConstantOf(op));
+      return assembler.HeapConstant(HeapConstantOf(op));
     case IrOpcode::kCompressedHeapConstant:
-      return assembler.Constant(ConstantOp::Kind::kCompressedHeapObject,
-                                HeapConstantOf(op));
+      return assembler.CompressedHeapConstant(HeapConstantOf(op));
     case IrOpcode::kExternalConstant:
-      return assembler.Constant(ConstantOp::Kind::kExternal,
-                                OpParameter<ExternalReference>(op));
-    case IrOpcode::kDelayedStringConstant:
-      return assembler.Constant(ConstantOp::Kind::kDelayedString,
-                                StringConstantBaseOf(op));
+      return assembler.ExternalConstant(OpParameter<ExternalReference>(op));
+    case IrOpcode::kRelocatableInt64Constant:
+      return assembler.RelocatableConstant(
+          OpParameter<RelocatablePtrConstantInfo>(op).value(),
+          OpParameter<RelocatablePtrConstantInfo>(op).rmode());
+#define BINOP_CASE(opcode, assembler_op) \
+  case IrOpcode::k##opcode:              \
+    return assembler.assembler_op(Map(node->InputAt(0)), Map(node->InputAt(1)));
 
-    case IrOpcode::kWord32And:
-      return assembler.BitwiseAnd(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kWord64And:
-      return assembler.BitwiseAnd(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord64);
+      BINOP_CASE(Int32Add, Word32Add)
+      BINOP_CASE(Int64Add, Word64Add)
+      BINOP_CASE(Int32Mul, Word32Mul)
+      BINOP_CASE(Int64Mul, Word64Mul)
+      BINOP_CASE(Word32And, Word32BitwiseAnd)
+      BINOP_CASE(Word64And, Word64BitwiseAnd)
+      BINOP_CASE(Word32Or, Word32BitwiseOr)
+      BINOP_CASE(Word64Or, Word64BitwiseOr)
+      BINOP_CASE(Word32Xor, Word32BitwiseXor)
+      BINOP_CASE(Word64Xor, Word64BitwiseXor)
+      BINOP_CASE(Int32Sub, Word32Sub)
+      BINOP_CASE(Int64Sub, Word64Sub)
+      BINOP_CASE(Int32Div, Int32Div)
+      BINOP_CASE(Uint32Div, Uint32Div)
+      BINOP_CASE(Int64Div, Int64Div)
+      BINOP_CASE(Uint64Div, Uint64Div)
+      BINOP_CASE(Int32Mod, Int32Mod)
+      BINOP_CASE(Uint32Mod, Uint32Mod)
+      BINOP_CASE(Int64Mod, Int64Mod)
+      BINOP_CASE(Uint64Mod, Uint64Mod)
+      BINOP_CASE(Int32MulHigh, Int32MulOverflownBits)
+      BINOP_CASE(Int64MulHigh, Int64MulOverflownBits)
+      BINOP_CASE(Uint32MulHigh, Uint32MulOverflownBits)
+      BINOP_CASE(Uint64MulHigh, Uint64MulOverflownBits)
 
-    case IrOpcode::kWord32Or:
-      return assembler.BitwiseOr(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Or:
-      return assembler.BitwiseOr(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord64);
+      BINOP_CASE(Float32Add, Float32Add)
+      BINOP_CASE(Float64Add, Float64Add)
+      BINOP_CASE(Float32Sub, Float32Sub)
+      BINOP_CASE(Float64Sub, Float64Sub)
+      BINOP_CASE(Float64Mul, Float64Mul)
+      BINOP_CASE(Float32Mul, Float32Mul)
+      BINOP_CASE(Float32Div, Float32Div)
+      BINOP_CASE(Float64Div, Float64Div)
+      BINOP_CASE(Float32Min, Float32Min)
+      BINOP_CASE(Float64Min, Float64Min)
+      BINOP_CASE(Float32Max, Float32Max)
+      BINOP_CASE(Float64Max, Float64Max)
+      BINOP_CASE(Float64Mod, Float64Mod)
+      BINOP_CASE(Float64Pow, Float64Power)
+      BINOP_CASE(Float64Atan2, Float64Atan2)
 
-    case IrOpcode::kWord32Xor:
-      return assembler.BitwiseXor(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Xor:
-      return assembler.BitwiseXor(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord64);
+      BINOP_CASE(Int32AddWithOverflow, Int32AddCheckOverflow)
+      BINOP_CASE(Int64AddWithOverflow, Int64AddCheckOverflow)
+      BINOP_CASE(Int32MulWithOverflow, Int32MulCheckOverflow)
+      BINOP_CASE(Int32SubWithOverflow, Int32SubCheckOverflow)
+      BINOP_CASE(Int64SubWithOverflow, Int64SubCheckOverflow)
+
+      BINOP_CASE(Word32Shr, Word32ShiftRightLogical)
+      BINOP_CASE(Word64Shr, Word64ShiftRightLogical)
+
+      BINOP_CASE(Word32Shl, Word32ShiftLeft)
+      BINOP_CASE(Word64Shl, Word64ShiftLeft)
+
+      BINOP_CASE(Word32Rol, Word32RotateLeft)
+      BINOP_CASE(Word64Rol, Word64RotateLeft)
+
+      BINOP_CASE(Word32Ror, Word32RotateRight)
+      BINOP_CASE(Word64Ror, Word64RotateRight)
+
+      BINOP_CASE(Word32Equal, Word32Equal)
+      BINOP_CASE(Word64Equal, Word64Equal)
+      BINOP_CASE(Float32Equal, Float32Equal)
+      BINOP_CASE(Float64Equal, Float64Equal)
+
+      BINOP_CASE(Int32LessThan, Int32LessThan)
+      BINOP_CASE(Int64LessThan, Int64LessThan)
+      BINOP_CASE(Uint32LessThan, Uint32LessThan)
+      BINOP_CASE(Uint64LessThan, Uint64LessThan)
+      BINOP_CASE(Float32LessThan, Float32LessThan)
+      BINOP_CASE(Float64LessThan, Float64LessThan)
+
+      BINOP_CASE(Int32LessThanOrEqual, Int32LessThanOrEqual)
+      BINOP_CASE(Int64LessThanOrEqual, Int64LessThanOrEqual)
+      BINOP_CASE(Uint32LessThanOrEqual, Uint32LessThanOrEqual)
+      BINOP_CASE(Uint64LessThanOrEqual, Uint64LessThanOrEqual)
+      BINOP_CASE(Float32LessThanOrEqual, Float32LessThanOrEqual)
+      BINOP_CASE(Float64LessThanOrEqual, Float64LessThanOrEqual)
+#undef BINOP_CASE
 
     case IrOpcode::kWord64Sar:
     case IrOpcode::kWord32Sar: {
-      MachineRepresentation rep = opcode == IrOpcode::kWord64Sar
-                                      ? MachineRepresentation::kWord64
-                                      : MachineRepresentation::kWord32;
+      WordRepresentation rep = opcode == IrOpcode::kWord64Sar
+                                   ? WordRepresentation::Word64()
+                                   : WordRepresentation::Word32();
       ShiftOp::Kind kind;
       switch (ShiftKindOf(op)) {
         case ShiftKind::kShiftOutZeros:
@@ -365,456 +426,129 @@ OpIndex GraphBuilder::Process(
                              rep);
     }
 
-    case IrOpcode::kWord32Shr:
-      return assembler.ShiftRightLogical(Map(node->InputAt(0)),
-                                         Map(node->InputAt(1)),
-                                         MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Shr:
-      return assembler.ShiftRightLogical(Map(node->InputAt(0)),
-                                         Map(node->InputAt(1)),
-                                         MachineRepresentation::kWord64);
+#define UNARY_CASE(opcode, assembler_op) \
+  case IrOpcode::k##opcode:              \
+    return assembler.assembler_op(Map(node->InputAt(0)));
 
-    case IrOpcode::kWord32Shl:
-      return assembler.ShiftLeft(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Shl:
-      return assembler.ShiftLeft(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord64);
+      UNARY_CASE(Word32ReverseBytes, Word32ReverseBytes)
+      UNARY_CASE(Word64ReverseBytes, Word64ReverseBytes)
+      UNARY_CASE(Word32Clz, Word32CountLeadingZeros)
+      UNARY_CASE(Word64Clz, Word64CountLeadingZeros)
+      UNARY_CASE(Word32Ctz, Word32CountTrailingZeros)
+      UNARY_CASE(Word64Ctz, Word64CountTrailingZeros)
+      UNARY_CASE(Word32Popcnt, Word32PopCount)
+      UNARY_CASE(Word64Popcnt, Word64PopCount)
+      UNARY_CASE(SignExtendWord8ToInt32, Word32SignExtend8)
+      UNARY_CASE(SignExtendWord16ToInt32, Word32SignExtend16)
+      UNARY_CASE(SignExtendWord8ToInt64, Word64SignExtend8)
+      UNARY_CASE(SignExtendWord16ToInt64, Word64SignExtend16)
 
-    case IrOpcode::kWord32Rol:
-      return assembler.RotateLeft(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Rol:
-      return assembler.RotateLeft(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  MachineRepresentation::kWord64);
+      UNARY_CASE(Float32Abs, Float32Abs)
+      UNARY_CASE(Float64Abs, Float64Abs)
+      UNARY_CASE(Float32Neg, Float32Negate)
+      UNARY_CASE(Float64Neg, Float64Negate)
+      UNARY_CASE(Float64SilenceNaN, Float64SilenceNaN)
+      UNARY_CASE(Float32RoundDown, Float32RoundDown)
+      UNARY_CASE(Float64RoundDown, Float64RoundDown)
+      UNARY_CASE(Float32RoundUp, Float32RoundUp)
+      UNARY_CASE(Float64RoundUp, Float64RoundUp)
+      UNARY_CASE(Float32RoundTruncate, Float32RoundToZero)
+      UNARY_CASE(Float64RoundTruncate, Float64RoundToZero)
+      UNARY_CASE(Float32RoundTiesEven, Float32RoundTiesEven)
+      UNARY_CASE(Float64RoundTiesEven, Float64RoundTiesEven)
+      UNARY_CASE(Float64Log, Float64Log)
+      UNARY_CASE(Float32Sqrt, Float32Sqrt)
+      UNARY_CASE(Float64Sqrt, Float64Sqrt)
+      UNARY_CASE(Float64Exp, Float64Exp)
+      UNARY_CASE(Float64Expm1, Float64Expm1)
+      UNARY_CASE(Float64Sin, Float64Sin)
+      UNARY_CASE(Float64Cos, Float64Cos)
+      UNARY_CASE(Float64Sinh, Float64Sinh)
+      UNARY_CASE(Float64Cosh, Float64Cosh)
+      UNARY_CASE(Float64Asin, Float64Asin)
+      UNARY_CASE(Float64Acos, Float64Acos)
+      UNARY_CASE(Float64Asinh, Float64Asinh)
+      UNARY_CASE(Float64Acosh, Float64Acosh)
+      UNARY_CASE(Float64Tan, Float64Tan)
+      UNARY_CASE(Float64Tanh, Float64Tanh)
+      UNARY_CASE(Float64Log2, Float64Log2)
+      UNARY_CASE(Float64Log10, Float64Log10)
+      UNARY_CASE(Float64Log1p, Float64Log1p)
+      UNARY_CASE(Float64Atan, Float64Atan)
+      UNARY_CASE(Float64Atanh, Float64Atanh)
+      UNARY_CASE(Float64Cbrt, Float64Cbrt)
 
-    case IrOpcode::kWord32Ror:
-      return assembler.RotateRight(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Ror:
-      return assembler.RotateRight(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord64);
+      UNARY_CASE(BitcastWord32ToWord64, BitcastWord32ToWord64)
+      UNARY_CASE(BitcastFloat32ToInt32, BitcastFloat32ToWord32)
+      UNARY_CASE(BitcastInt32ToFloat32, BitcastWord32ToFloat32)
+      UNARY_CASE(BitcastFloat64ToInt64, BitcastFloat64ToWord64)
+      UNARY_CASE(BitcastInt64ToFloat64, BitcastWord64ToFloat64)
+      UNARY_CASE(ChangeUint32ToUint64, ChangeUint32ToUint64)
+      UNARY_CASE(ChangeInt32ToInt64, ChangeInt32ToInt64)
+      UNARY_CASE(SignExtendWord32ToInt64, ChangeInt32ToInt64)
 
-    case IrOpcode::kWord32Equal:
-      return assembler.Equal(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Equal:
-      return assembler.Equal(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kWord64);
-    case IrOpcode::kFloat32Equal:
-      return assembler.Equal(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Equal:
-      return assembler.Equal(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kFloat64);
+      UNARY_CASE(ChangeFloat32ToFloat64, ChangeFloat32ToFloat64)
 
-    case IrOpcode::kInt32LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThan,
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kInt64LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThan,
-                                  MachineRepresentation::kWord64);
-    case IrOpcode::kUint32LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kUnsignedLessThan,
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kUint64LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kUnsignedLessThan,
-                                  MachineRepresentation::kWord64);
-    case IrOpcode::kFloat32LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThan,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64LessThan:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThan,
-                                  MachineRepresentation::kFloat64);
+      UNARY_CASE(ChangeFloat64ToInt32, ReversibleFloat64ToInt32)
+      UNARY_CASE(ChangeFloat64ToInt64, ReversibleFloat64ToInt64)
+      UNARY_CASE(ChangeFloat64ToUint32, ReversibleFloat64ToUint32)
+      UNARY_CASE(ChangeFloat64ToUint64, ReversibleFloat64ToUint64)
 
-    case IrOpcode::kInt32LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThanOrEqual,
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kInt64LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThanOrEqual,
-                                  MachineRepresentation::kWord64);
-    case IrOpcode::kUint32LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kUnsignedLessThanOrEqual,
-                                  MachineRepresentation::kWord32);
-    case IrOpcode::kUint64LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kUnsignedLessThanOrEqual,
-                                  MachineRepresentation::kWord64);
-    case IrOpcode::kFloat32LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThanOrEqual,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64LessThanOrEqual:
-      return assembler.Comparison(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                  ComparisonOp::Kind::kSignedLessThanOrEqual,
-                                  MachineRepresentation::kFloat64);
+      UNARY_CASE(ChangeInt32ToFloat64, ChangeInt32ToFloat64)
+      UNARY_CASE(ChangeInt64ToFloat64, ReversibleInt64ToFloat64)
+      UNARY_CASE(ChangeUint32ToFloat64, ChangeUint32ToFloat64)
 
-    case IrOpcode::kInt32Add:
-      return assembler.Add(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord32);
-    case IrOpcode::kInt32AddWithOverflow:
-      return assembler.AddWithOverflow(Map(node->InputAt(0)),
-                                       Map(node->InputAt(1)),
-                                       MachineRepresentation::kWord32);
-    case IrOpcode::kInt64Add:
-      return assembler.Add(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord64);
-    case IrOpcode::kInt64AddWithOverflow:
-      return assembler.AddWithOverflow(Map(node->InputAt(0)),
-                                       Map(node->InputAt(1)),
-                                       MachineRepresentation::kWord64);
-    case IrOpcode::kFloat64Add:
-      return assembler.Add(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32Add:
-      return assembler.Add(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat32);
+      UNARY_CASE(RoundFloat64ToInt32, TruncateFloat64ToInt32OverflowUndefined)
+      UNARY_CASE(RoundInt32ToFloat32, ChangeInt32ToFloat32)
+      UNARY_CASE(RoundInt64ToFloat32, ChangeInt64ToFloat32)
+      UNARY_CASE(RoundInt64ToFloat64, ChangeInt64ToFloat64)
+      UNARY_CASE(RoundUint32ToFloat32, ChangeUint32ToFloat32)
+      UNARY_CASE(RoundUint64ToFloat32, ChangeUint64ToFloat32)
+      UNARY_CASE(RoundUint64ToFloat64, ChangeUint64ToFloat64)
+      UNARY_CASE(TruncateFloat64ToFloat32, ChangeFloat64ToFloat32)
+      UNARY_CASE(TruncateFloat64ToUint32,
+                 TruncateFloat64ToUint32OverflowUndefined)
+      UNARY_CASE(TruncateFloat64ToWord32, JSTruncateFloat64ToWord32)
+      UNARY_CASE(TryTruncateFloat32ToInt64, TryTruncateFloat32ToInt64)
+      UNARY_CASE(TryTruncateFloat32ToUint64, TryTruncateFloat32ToUint64)
+      UNARY_CASE(TryTruncateFloat64ToInt32, TryTruncateFloat64ToInt32)
+      UNARY_CASE(TryTruncateFloat64ToInt64, TryTruncateFloat64ToInt64)
+      UNARY_CASE(TryTruncateFloat64ToUint32, TryTruncateFloat64ToUint32)
+      UNARY_CASE(TryTruncateFloat64ToUint64, TryTruncateFloat64ToUint64)
 
-    case IrOpcode::kInt32Mul:
-      return assembler.Mul(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord32);
-    case IrOpcode::kInt32MulHigh:
-      return assembler.SignedMulOverflownBits(Map(node->InputAt(0)),
-                                              Map(node->InputAt(1)),
-                                              MachineRepresentation::kWord32);
-    case IrOpcode::kUint32MulHigh:
-      return assembler.UnsignedMulOverflownBits(Map(node->InputAt(0)),
-                                                Map(node->InputAt(1)),
-                                                MachineRepresentation::kWord32);
-    case IrOpcode::kInt32MulWithOverflow:
-      return assembler.MulWithOverflow(Map(node->InputAt(0)),
-                                       Map(node->InputAt(1)),
-                                       MachineRepresentation::kWord32);
-    case IrOpcode::kInt64Mul:
-      return assembler.Mul(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord64);
-    case IrOpcode::kFloat64Mul:
-      return assembler.Mul(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32Mul:
-      return assembler.Mul(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat32);
-
-    case IrOpcode::kInt32Div:
-      return assembler.SignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord32);
-    case IrOpcode::kUint32Div:
-      return assembler.UnsignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord32);
-    case IrOpcode::kInt64Div:
-      return assembler.SignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord64);
-    case IrOpcode::kUint64Div:
-      return assembler.UnsignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord64);
-    case IrOpcode::kFloat32Div:
-      return assembler.SignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Div:
-      return assembler.SignedDiv(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kFloat64);
-
-    case IrOpcode::kInt32Mod:
-      return assembler.SignedMod(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord32);
-    case IrOpcode::kUint32Mod:
-      return assembler.UnsignedMod(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord32);
-    case IrOpcode::kInt64Mod:
-      return assembler.SignedMod(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kWord64);
-    case IrOpcode::kUint64Mod:
-      return assembler.UnsignedMod(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                   MachineRepresentation::kWord64);
-    case IrOpcode::kFloat64Mod:
-      return assembler.SignedMod(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                                 MachineRepresentation::kFloat64);
-
-    case IrOpcode::kInt32Sub:
-      return assembler.Sub(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord32);
-    case IrOpcode::kInt32SubWithOverflow:
-      return assembler.SubWithOverflow(Map(node->InputAt(0)),
-                                       Map(node->InputAt(1)),
-                                       MachineRepresentation::kWord32);
-    case IrOpcode::kInt64Sub:
-      return assembler.Sub(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kWord64);
-    case IrOpcode::kInt64SubWithOverflow:
-      return assembler.SubWithOverflow(Map(node->InputAt(0)),
-                                       Map(node->InputAt(1)),
-                                       MachineRepresentation::kWord64);
-    case IrOpcode::kFloat64Sub:
-      return assembler.Sub(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32Sub:
-      return assembler.Sub(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat32);
-
-    case IrOpcode::kFloat64Min:
-      return assembler.Min(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32Min:
-      return assembler.Min(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Max:
-      return assembler.Max(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32Max:
-      return assembler.Max(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                           MachineRepresentation::kFloat32);
-
-    case IrOpcode::kFloat64Pow:
-      return assembler.Power(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Atan2:
-      return assembler.Atan2(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                             MachineRepresentation::kFloat64);
-
-    case IrOpcode::kWord32ReverseBytes:
-      return assembler.IntegerUnary(Map(node->InputAt(0)),
-                                    IntegerUnaryOp::Kind::kReverseBytes,
-                                    MachineRepresentation::kWord32);
-    case IrOpcode::kWord64ReverseBytes:
-      return assembler.IntegerUnary(Map(node->InputAt(0)),
-                                    IntegerUnaryOp::Kind::kReverseBytes,
-                                    MachineRepresentation::kWord64);
-    case IrOpcode::kWord32Clz:
-      return assembler.IntegerUnary(Map(node->InputAt(0)),
-                                    IntegerUnaryOp::Kind::kCountLeadingZeros,
-                                    MachineRepresentation::kWord32);
-    case IrOpcode::kWord64Clz:
-      return assembler.IntegerUnary(Map(node->InputAt(0)),
-                                    IntegerUnaryOp::Kind::kCountLeadingZeros,
-                                    MachineRepresentation::kWord64);
-
-    case IrOpcode::kFloat32Abs:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAbs,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Abs:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAbs,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat32Neg:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kNegate,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Neg:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kNegate,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat64SilenceNaN:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kSilenceNaN,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat32RoundDown:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundDown,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64RoundDown:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundDown,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32RoundUp:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundUp,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64RoundUp:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundUp,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32RoundTruncate:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundToZero,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64RoundTruncate:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundToZero,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat32RoundTiesEven:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundTiesEven,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64RoundTiesEven:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kRoundTiesEven,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat64Log:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kLog,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat32Sqrt:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kSqrt,
-                                  MachineRepresentation::kFloat32);
-    case IrOpcode::kFloat64Sqrt:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kSqrt,
-                                  MachineRepresentation::kFloat64);
-
-    case IrOpcode::kFloat64Exp:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kExp,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Expm1:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kExpm1,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Sin:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kSin,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Cos:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kCos,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Sinh:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kSinh,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Cosh:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kCosh,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Asin:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAsin,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Acos:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAcos,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Asinh:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAsinh,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Acosh:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kAcosh,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Tan:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kTan,
-                                  MachineRepresentation::kFloat64);
-    case IrOpcode::kFloat64Tanh:
-      return assembler.FloatUnary(Map(node->InputAt(0)),
-                                  FloatUnaryOp::Kind::kTanh,
-                                  MachineRepresentation::kFloat64);
-
+      UNARY_CASE(Float64ExtractLowWord32, Float64ExtractLowWord32)
+      UNARY_CASE(Float64ExtractHighWord32, Float64ExtractHighWord32)
+#undef UNARY_CASE
     case IrOpcode::kTruncateInt64ToInt32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kIntegerTruncate,
-          MachineRepresentation::kWord64, MachineRepresentation::kWord32);
-    case IrOpcode::kBitcastWord32ToWord64:
-      return assembler.Change(Map(node->InputAt(0)), ChangeOp::Kind::kBitcast,
-                              MachineRepresentation::kWord32,
-                              MachineRepresentation::kWord64);
-    case IrOpcode::kBitcastFloat32ToInt32:
-      return assembler.Change(Map(node->InputAt(0)), ChangeOp::Kind::kBitcast,
-                              MachineRepresentation::kFloat32,
-                              MachineRepresentation::kWord32);
-    case IrOpcode::kBitcastInt32ToFloat32:
-      return assembler.Change(Map(node->InputAt(0)), ChangeOp::Kind::kBitcast,
-                              MachineRepresentation::kWord32,
-                              MachineRepresentation::kFloat32);
-    case IrOpcode::kBitcastFloat64ToInt64:
-      return assembler.Change(Map(node->InputAt(0)), ChangeOp::Kind::kBitcast,
-                              MachineRepresentation::kFloat64,
-                              MachineRepresentation::kWord64);
-    case IrOpcode::kBitcastInt64ToFloat64:
-      return assembler.Change(Map(node->InputAt(0)), ChangeOp::Kind::kBitcast,
-                              MachineRepresentation::kWord64,
-                              MachineRepresentation::kFloat64);
-    case IrOpcode::kChangeUint32ToUint64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kZeroExtend,
-          MachineRepresentation::kWord32, MachineRepresentation::kWord64);
-    case IrOpcode::kChangeInt32ToInt64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignExtend,
-          MachineRepresentation::kWord32, MachineRepresentation::kWord64);
-    case IrOpcode::kChangeInt32ToFloat64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignedToFloat,
-          MachineRepresentation::kWord32, MachineRepresentation::kFloat64);
-    case IrOpcode::kChangeInt64ToFloat64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignedToFloat,
-          MachineRepresentation::kWord64, MachineRepresentation::kFloat64);
-    case IrOpcode::kChangeUint32ToFloat64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kUnsignedToFloat,
-          MachineRepresentation::kWord32, MachineRepresentation::kFloat64);
-    case IrOpcode::kTruncateFloat64ToInt64: {
-      ChangeOp::Kind kind;
-      switch (OpParameter<TruncateKind>(op)) {
+      // 64- to 32-bit truncation is implicit in Turboshaft.
+      return Map(node->InputAt(0));
+    case IrOpcode::kTruncateFloat32ToInt32:
+      switch (OpParameter<TruncateKind>(node->op())) {
         case TruncateKind::kArchitectureDefault:
-          kind = ChangeOp::Kind::kSignedFloatTruncate;
-          break;
+          return assembler.TruncateFloat32ToInt32OverflowUndefined(
+              Map(node->InputAt(0)));
         case TruncateKind::kSetOverflowToMin:
-          kind = ChangeOp::Kind::kSignedFloatTruncateOverflowToMin;
-          break;
+          return assembler.TruncateFloat32ToInt32OverflowToMin(
+              Map(node->InputAt(0)));
       }
-      return assembler.Change(Map(node->InputAt(0)), kind,
-                              MachineRepresentation::kFloat64,
-                              MachineRepresentation::kWord64);
-    }
-    case IrOpcode::kTruncateFloat64ToWord32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kUnsignedFloatTruncate,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-    case IrOpcode::kTruncateFloat64ToFloat32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kFloatConversion,
-          MachineRepresentation::kFloat64, MachineRepresentation::kFloat32);
-    case IrOpcode::kChangeFloat32ToFloat64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kFloatConversion,
-          MachineRepresentation::kFloat32, MachineRepresentation::kFloat64);
-    case IrOpcode::kRoundFloat64ToInt32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignedFloatTruncate,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-    case IrOpcode::kChangeFloat64ToInt32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignedNarrowing,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-    case IrOpcode::kChangeFloat64ToUint32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kUnsignedNarrowing,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-    case IrOpcode::kChangeFloat64ToInt64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kSignedNarrowing,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord64);
-    case IrOpcode::kChangeFloat64ToUint64:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kUnsignedNarrowing,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord64);
-    case IrOpcode::kFloat64ExtractLowWord32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kExtractLowHalf,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-    case IrOpcode::kFloat64ExtractHighWord32:
-      return assembler.Change(
-          Map(node->InputAt(0)), ChangeOp::Kind::kExtractHighHalf,
-          MachineRepresentation::kFloat64, MachineRepresentation::kWord32);
-
+    case IrOpcode::kTruncateFloat32ToUint32:
+      switch (OpParameter<TruncateKind>(node->op())) {
+        case TruncateKind::kArchitectureDefault:
+          return assembler.TruncateFloat32ToUint32OverflowUndefined(
+              Map(node->InputAt(0)));
+        case TruncateKind::kSetOverflowToMin:
+          return assembler.TruncateFloat32ToUint32OverflowToMin(
+              Map(node->InputAt(0)));
+      }
+    case IrOpcode::kTruncateFloat64ToInt64:
+      switch (OpParameter<TruncateKind>(node->op())) {
+        case TruncateKind::kArchitectureDefault:
+          return assembler.TruncateFloat64ToInt64OverflowUndefined(
+              Map(node->InputAt(0)));
+        case TruncateKind::kSetOverflowToMin:
+          return assembler.TruncateFloat64ToInt64OverflowToMin(
+              Map(node->InputAt(0)));
+      }
     case IrOpcode::kFloat64InsertLowWord32:
       return assembler.Float64InsertWord32(
           Map(node->InputAt(0)), Map(node->InputAt(1)),
@@ -826,69 +560,100 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kBitcastTaggedToWord:
       return assembler.TaggedBitcast(Map(node->InputAt(0)),
-                                     MachineRepresentation::kTagged,
-                                     MachineType::PointerRepresentation());
+                                     RegisterRepresentation::Tagged(),
+                                     RegisterRepresentation::PointerSized());
     case IrOpcode::kBitcastWordToTagged:
       return assembler.TaggedBitcast(Map(node->InputAt(0)),
-                                     MachineType::PointerRepresentation(),
-                                     MachineRepresentation::kTagged);
+                                     RegisterRepresentation::PointerSized(),
+                                     RegisterRepresentation::Tagged());
+
+    case IrOpcode::kWord32Select:
+      return assembler.Word32Select(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
+    case IrOpcode::kWord64Select:
+      return assembler.Word64Select(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
 
     case IrOpcode::kLoad:
+    case IrOpcode::kLoadImmutable:
     case IrOpcode::kUnalignedLoad: {
-      MachineType loaded_rep = LoadRepresentationOf(op);
+      MemoryRepresentation loaded_rep =
+          MemoryRepresentation::FromMachineType(LoadRepresentationOf(op));
+      RegisterRepresentation result_rep = loaded_rep.ToRegisterRepresentation();
       Node* base = node->InputAt(0);
       Node* index = node->InputAt(1);
-      LoadOp::Kind kind = opcode == IrOpcode::kLoad
-                              ? LoadOp::Kind::kRawAligned
-                              : LoadOp::Kind::kRawUnaligned;
+      // It's ok to merge LoadImmutable into Load after scheduling.
+      LoadOp::Kind kind = opcode == IrOpcode::kUnalignedLoad
+                              ? LoadOp::Kind::kRawUnaligned
+                              : LoadOp::Kind::kRawAligned;
       if (index->opcode() == IrOpcode::kInt32Constant) {
         int32_t offset = OpParameter<int32_t>(index->op());
-        return assembler.Load(Map(base), kind, loaded_rep, offset);
+        return assembler.Load(Map(base), kind, loaded_rep, result_rep, offset);
       }
       if (index->opcode() == IrOpcode::kInt64Constant) {
         int64_t offset = OpParameter<int64_t>(index->op());
         if (base::IsValueInRangeForNumericType<int32_t>(offset)) {
-          return assembler.Load(Map(base), kind, loaded_rep,
+          return assembler.Load(Map(base), kind, loaded_rep, result_rep,
                                 static_cast<int32_t>(offset));
         }
       }
       int32_t offset = 0;
       uint8_t element_size_log2 = 0;
       return assembler.IndexedLoad(Map(base), Map(index), kind, loaded_rep,
-                                   offset, element_size_log2);
+                                   result_rep, offset, element_size_log2);
+    }
+    case IrOpcode::kProtectedLoad: {
+      MemoryRepresentation loaded_rep =
+          MemoryRepresentation::FromMachineType(LoadRepresentationOf(op));
+      RegisterRepresentation result_rep = loaded_rep.ToRegisterRepresentation();
+      return assembler.ProtectedLoad(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), loaded_rep, result_rep);
     }
 
     case IrOpcode::kStore:
     case IrOpcode::kUnalignedStore: {
-      bool aligned = opcode == IrOpcode::kStore;
+      bool aligned = opcode != IrOpcode::kUnalignedStore;
       StoreRepresentation store_rep =
           aligned ? StoreRepresentationOf(op)
                   : StoreRepresentation(UnalignedStoreRepresentationOf(op),
                                         WriteBarrierKind::kNoWriteBarrier);
-      StoreOp::Kind kind =
-          aligned ? StoreOp::Kind::kRawAligned : StoreOp::Kind::kRawUnaligned;
+      StoreOp::Kind kind = opcode == IrOpcode::kStore
+                               ? StoreOp::Kind::kRawAligned
+                               : StoreOp::Kind::kRawUnaligned;
+
       Node* base = node->InputAt(0);
       Node* index = node->InputAt(1);
       Node* value = node->InputAt(2);
       if (index->opcode() == IrOpcode::kInt32Constant) {
         int32_t offset = OpParameter<int32_t>(index->op());
         return assembler.Store(Map(base), Map(value), kind,
-                               store_rep.representation(),
+                               MemoryRepresentation::FromMachineRepresentation(
+                                   store_rep.representation()),
                                store_rep.write_barrier_kind(), offset);
       }
       if (index->opcode() == IrOpcode::kInt64Constant) {
         int64_t offset = OpParameter<int64_t>(index->op());
         if (base::IsValueInRangeForNumericType<int32_t>(offset)) {
           return assembler.Store(
-              Map(base), Map(value), kind, store_rep.representation(),
+              Map(base), Map(value), kind,
+              MemoryRepresentation::FromMachineRepresentation(
+                  store_rep.representation()),
               store_rep.write_barrier_kind(), static_cast<int32_t>(offset));
         }
       }
       int32_t offset = 0;
       uint8_t element_size_log2 = 0;
       return assembler.IndexedStore(
-          Map(base), Map(index), Map(value), kind, store_rep.representation(),
+          Map(base), Map(index), Map(value), kind,
+          MemoryRepresentation::FromMachineRepresentation(
+              store_rep.representation()),
           store_rep.write_barrier_kind(), offset, element_size_log2);
+    }
+    case IrOpcode::kProtectedStore: {
+      return assembler.ProtectedStore(
+          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)),
+          MemoryRepresentation::FromMachineRepresentation(
+              OpParameter<MachineRepresentation>(node->op())));
     }
 
     case IrOpcode::kRetain:
@@ -949,6 +714,21 @@ OpIndex GraphBuilder::Process(
       return call;
     }
 
+    case IrOpcode::kTailCall: {
+      auto call_descriptor = CallDescriptorOf(op);
+      base::SmallVector<OpIndex, 16> arguments;
+      // The input `0` is the callee, the following value inputs are the
+      // arguments. `CallDescriptor::InputCount()` counts the callee and
+      // arguments.
+      OpIndex callee = Map(node->InputAt(0));
+      for (int i = 1; i < static_cast<int>(call_descriptor->InputCount());
+           ++i) {
+        arguments.emplace_back(Map(node->InputAt(i)));
+      }
+      return assembler.TailCall(callee, base::VectorOf(arguments),
+                                call_descriptor);
+    }
+
     case IrOpcode::kFrameState: {
       FrameState frame_state{node};
       FrameStateData::Builder builder;
@@ -966,6 +746,13 @@ OpIndex GraphBuilder::Process(
       bool negated = op->opcode() == IrOpcode::kDeoptimizeUnless;
       return assembler.DeoptimizeIf(condition, frame_state, negated,
                                     &DeoptimizeParametersOf(op));
+    }
+
+    case IrOpcode::kTrapIf:
+    case IrOpcode::kTrapUnless: {
+      OpIndex condition = Map(node->InputAt(0));
+      bool negated = op->opcode() == IrOpcode::kTrapUnless;
+      return assembler.TrapIf(condition, negated, TrapIdOf(op));
     }
 
     case IrOpcode::kDeoptimize: {
@@ -993,13 +780,12 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kProjection: {
       Node* input = node->InputAt(0);
       size_t index = ProjectionIndexOf(op);
-      return assembler.Projection(Map(input), ProjectionOp::Kind::kTuple,
-                                  index);
+      return assembler.Projection(Map(input), index);
     }
 
     default:
-      std::cout << "unsupported node type: " << *node->op() << "\n";
-      node->Print();
+      std::cerr << "unsupported node type: " << *node->op() << "\n";
+      node->Print(std::cerr);
       UNIMPLEMENTED();
   }
 }

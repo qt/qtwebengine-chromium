@@ -10,6 +10,8 @@
 
 #include <stdint.h>
 
+#include "lib/jxl/base/sanitizer_definitions.h"
+
 // #if is shorter and safer than #ifdef. *_VERSION are zero if not detected,
 // otherwise 100 * major + minor version. Note that other packages check for
 // #ifdef COMPILER_MSVC, so we cannot use that same name.
@@ -55,6 +57,8 @@
 #define JXL_NORETURN __declspec(noreturn)
 #elif JXL_COMPILER_GCC || JXL_COMPILER_CLANG
 #define JXL_NORETURN __attribute__((noreturn))
+#else
+#define JXL_NORETURN
 #endif
 
 #if JXL_COMPILER_MSVC
@@ -73,6 +77,16 @@
 #define JXL_MAYBE_UNUSED __attribute__((unused))
 #endif
 
+// MSAN execution won't hurt if some code it not inlined, but this can greatly
+// improve compilation time. Unfortunately this macro can not be used just
+// everywhere - inside header files it leads to "multiple definition" error;
+// though it would be better not to have JXL_INLINE in header overall.
+#if JXL_MEMORY_SANITIZER || JXL_ADDRESS_SANITIZER || JXL_THREAD_SANITIZER
+#define JXL_MAYBE_INLINE JXL_MAYBE_UNUSED
+#else
+#define JXL_MAYBE_INLINE JXL_INLINE
+#endif
+
 #if JXL_COMPILER_MSVC
 // Unsupported, __assume is not the same.
 #define JXL_LIKELY(expr) expr
@@ -80,17 +94,6 @@
 #else
 #define JXL_LIKELY(expr) __builtin_expect(!!(expr), 1)
 #define JXL_UNLIKELY(expr) __builtin_expect(!!(expr), 0)
-#endif
-
-#if JXL_COMPILER_MSVC
-#include <intrin.h>
-
-#pragma intrinsic(_ReadWriteBarrier)
-#define JXL_COMPILER_FENCE _ReadWriteBarrier()
-#elif JXL_COMPILER_GCC || JXL_COMPILER_CLANG
-#define JXL_COMPILER_FENCE asm volatile("" : : : "memory")
-#else
-#define JXL_COMPILER_FENCE
 #endif
 
 // Returns a void* pointer which the compiler then assumes is N-byte aligned.

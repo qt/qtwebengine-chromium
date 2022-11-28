@@ -25,25 +25,6 @@ namespace sw {
 
 static constexpr float PI = 3.141592653589793f;
 
-static SIMD::Float Interpolate(const SIMD::Float &x, const SIMD::Float &y, const SIMD::Float &rhw,
-                               const SIMD::Float &A, const SIMD::Float &B, const SIMD::Float &C,
-                               SpirvRoutine::Interpolation interpolation)
-{
-	SIMD::Float interpolant = C;
-
-	if(interpolation != SpirvRoutine::Flat)
-	{
-		interpolant += x * A + y * B;
-
-		if(interpolation == SpirvRoutine::Perspective)
-		{
-			interpolant *= rhw;
-		}
-	}
-
-	return interpolant;
-}
-
 SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitState *state) const
 {
 	auto &type = getType(insn.resultTypeId());
@@ -539,35 +520,12 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 		break;
 	case GLSLstd450Ldexp:
 		{
-			auto significand = Operand(this, state, insn.word(5));
-			auto exponent = Operand(this, state, insn.word(6));
+			auto x = Operand(this, state, insn.word(5));
+			auto exp = Operand(this, state, insn.word(6));
+
 			for(auto i = 0u; i < type.componentCount; i++)
 			{
-				// Assumes IEEE 754
-				auto in = significand.Float(i);
-				auto significandExponent = Exponent(in);
-				auto combinedExponent = exponent.Int(i) + significandExponent;
-				auto isSignificandZero = SIMD::UInt(CmpEQ(significand.Int(i), SIMD::Int(0)));
-				auto isSignificandInf = SIMD::UInt(IsInf(in));
-				auto isSignificandNaN = SIMD::UInt(IsNan(in));
-				auto isExponentNotTooSmall = SIMD::UInt(CmpGE(combinedExponent, SIMD::Int(-126)));
-				auto isExponentNotTooLarge = SIMD::UInt(CmpLE(combinedExponent, SIMD::Int(128)));
-				auto isExponentInBounds = isExponentNotTooSmall & isExponentNotTooLarge;
-
-				SIMD::UInt v;
-				v = significand.UInt(i) & SIMD::UInt(0x7FFFFF);                          // Add significand.
-				v |= (SIMD::UInt(combinedExponent + SIMD::Int(126)) << SIMD::UInt(23));  // Add exponent.
-				v &= isExponentInBounds;                                                 // Clear v if the exponent is OOB.
-
-				v |= significand.UInt(i) & SIMD::UInt(0x80000000);     // Add sign bit.
-				v |= ~isExponentNotTooLarge & SIMD::UInt(0x7F800000);  // Mark as inf if the exponent is too great.
-
-				// If the input significand is zero, inf or nan, just return the
-				// input significand.
-				auto passthrough = isSignificandZero | isSignificandInf | isSignificandNaN;
-				v = (v & ~passthrough) | (significand.UInt(i) & passthrough);
-
-				dst.move(i, As<SIMD::Float>(v));
+				dst.move(i, Ldexp(x.Float(i), exp.Int(i)));
 			}
 		}
 		break;
@@ -1001,7 +959,26 @@ SpirvShader::EmitResult SpirvShader::EmitExtGLSLstd450(InsnIterator insn, EmitSt
 	return EmitResult::Continue;
 }
 
-SIMD::Float SpirvShader::EmitInterpolate(SIMD::Pointer const &ptr, int32_t location, Object::ID paramId,
+static SIMD::Float Interpolate(const SIMD::Float &x, const SIMD::Float &y, const SIMD::Float &rhw,
+                               const SIMD::Float &A, const SIMD::Float &B, const SIMD::Float &C,
+                               SpirvRoutine::Interpolation interpolation)
+{
+	SIMD::Float interpolant = C;
+
+	if(interpolation != SpirvRoutine::Flat)
+	{
+		interpolant += x * A + y * B;
+
+		if(interpolation == SpirvRoutine::Perspective)
+		{
+			interpolant *= rhw;
+		}
+	}
+
+	return interpolant;
+}
+
+SIMD::Float SpirvShader::EmitInterpolate(const SIMD::Pointer &ptr, int32_t location, Object::ID paramId,
                                          uint32_t component, EmitState *state, InterpolationType type) const
 {
 	uint32_t interpolant = (location * 4);

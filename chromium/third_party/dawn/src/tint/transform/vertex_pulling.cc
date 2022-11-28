@@ -260,11 +260,8 @@ struct State {
         for (uint32_t i = 0; i < cfg.vertex_state.size(); ++i) {
             // The decorated variable with struct type
             ctx.dst->GlobalVar(GetVertexBufferName(i), ctx.dst->ty.Of(struct_type),
-                               ast::StorageClass::kStorage, ast::Access::kRead,
-                               utils::Vector{
-                                   ctx.dst->create<ast::BindingAttribute>(i),
-                                   ctx.dst->create<ast::GroupAttribute>(cfg.pulling_group),
-                               });
+                               ast::AddressSpace::kStorage, ast::Access::kRead,
+                               ctx.dst->Binding(AInt(i)), ctx.dst->Group(AInt(cfg.pulling_group)));
         }
     }
 
@@ -303,7 +300,7 @@ struct State {
             }
 
             // let pulling_offset_n = <attribute_offset>
-            stmts.Push(ctx.dst->Decl(ctx.dst->Let(buffer_array_base, nullptr, attribute_offset)));
+            stmts.Push(ctx.dst->Decl(ctx.dst->Let(buffer_array_base, attribute_offset)));
 
             for (const VertexAttributeDescriptor& attribute_desc : buffer_layout.attributes) {
                 auto it = location_info.find(attribute_desc.shader_location);
@@ -695,7 +692,7 @@ struct State {
     /// @param func the entry point function
     /// @param param the parameter to process
     void ProcessNonStructParameter(const ast::Function* func, const ast::Parameter* param) {
-        if (auto* location = ast::GetAttribute<ast::LocationAttribute>(param->attributes)) {
+        if (ast::HasAttribute<ast::LocationAttribute>(param->attributes)) {
             // Create a function-scope variable to replace the parameter.
             auto func_var_sym = ctx.Clone(param->symbol);
             auto* func_var_type = ctx.Clone(param->type);
@@ -704,8 +701,15 @@ struct State {
             // Capture mapping from location to the new variable.
             LocationInfo info;
             info.expr = [this, func_var]() { return ctx.dst->Expr(func_var); };
-            info.type = ctx.src->Sem().Get(param)->Type();
-            location_info[location->value] = info;
+
+            auto* sem = ctx.src->Sem().Get<sem::Parameter>(param);
+            info.type = sem->Type();
+
+            if (!sem->Location().has_value()) {
+                TINT_ICE(Transform, ctx.dst->Diagnostics()) << "Location missing value";
+                return;
+            }
+            location_info[sem->Location().value()] = info;
         } else if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(param->attributes)) {
             // Check for existing vertex_index and instance_index builtins.
             if (builtin->builtin == ast::BuiltinValue::kVertexIndex) {
@@ -745,12 +749,16 @@ struct State {
                 return ctx.dst->MemberAccessor(param_sym, member_sym);
             };
 
-            if (auto* location = ast::GetAttribute<ast::LocationAttribute>(member->attributes)) {
+            if (ast::HasAttribute<ast::LocationAttribute>(member->attributes)) {
                 // Capture mapping from location to struct member.
                 LocationInfo info;
                 info.expr = member_expr;
-                info.type = ctx.src->Sem().Get(member)->Type();
-                location_info[location->value] = info;
+
+                auto* sem = ctx.src->Sem().Get(member);
+                info.type = sem->Type();
+
+                TINT_ASSERT(Transform, sem->Location().has_value());
+                location_info[sem->Location().value()] = info;
                 has_locations = true;
             } else if (auto* builtin =
                            ast::GetAttribute<ast::BuiltinAttribute>(member->attributes)) {

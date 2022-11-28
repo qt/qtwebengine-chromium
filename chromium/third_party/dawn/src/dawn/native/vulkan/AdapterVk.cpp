@@ -147,7 +147,10 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
         mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
     }
 
-    if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE) {
+    // TODO(dawn:1559) Resolving timestamp queries after a render pass is failing on Qualcomm-based
+    // Android devices.
+    if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE &&
+        !IsAndroidQualcomm()) {
         mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
     }
 
@@ -157,6 +160,15 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
 
     if (mDeviceInfo.features.drawIndirectFirstInstance == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::IndirectFirstInstance);
+    }
+
+    if (mDeviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
+        mDeviceInfo.HasExt(DeviceExt::_16BitStorage) &&
+        mDeviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
+        mDeviceInfo._16BitStorageFeatures.storageBuffer16BitAccess == VK_TRUE &&
+        mDeviceInfo._16BitStorageFeatures.storageInputOutput16 == VK_TRUE &&
+        mDeviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE) {
+        mSupportedFeatures.EnableFeature(Feature::ShaderF16);
     }
 
     if (mDeviceInfo.HasExt(DeviceExt::ShaderIntegerDotProduct) &&
@@ -170,6 +182,16 @@ MaybeError Adapter::InitializeSupportedFeaturesImpl() {
     if (mDeviceInfo.HasExt(DeviceExt::DepthClipEnable) &&
         mDeviceInfo.depthClipEnableFeatures.depthClipEnable == VK_TRUE) {
         mSupportedFeatures.EnableFeature(Feature::DepthClipControl);
+    }
+
+    VkFormatProperties properties;
+    mVulkanInstance->GetFunctions().GetPhysicalDeviceFormatProperties(
+        mPhysicalDevice, VK_FORMAT_B10G11R11_UFLOAT_PACK32, &properties);
+
+    if (IsSubset(static_cast<VkFormatFeatureFlags>(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                                   VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT),
+                 properties.optimalTilingFeatures)) {
+        mSupportedFeatures.EnableFeature(Feature::RG11B10UfloatRenderable);
     }
 
 #if defined(DAWN_USE_SYNC_FDS)
@@ -288,6 +310,16 @@ MaybeError Adapter::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
         return DAWN_INTERNAL_ERROR("Insufficient Vulkan limits for framebufferDepthSampleCounts");
     }
 
+    if (mDeviceInfo.HasExt(DeviceExt::Maintenance3)) {
+        limits->v1.maxBufferSize = mDeviceInfo.propertiesMaintenance3.maxMemoryAllocationSize;
+        if (mDeviceInfo.propertiesMaintenance3.maxMemoryAllocationSize <
+            baseLimits.v1.maxBufferSize) {
+            return DAWN_INTERNAL_ERROR("Insufficient Vulkan maxBufferSize limit");
+        }
+    } else {
+        limits->v1.maxBufferSize = kAssumedMaxBufferSize;
+    }
+
     // Only check maxFragmentCombinedOutputResources on mobile GPUs. Desktop GPUs drivers seem
     // to put incorrect values for this limit with things like 8 or 16 when they can do bindless
     // storage buffers. Mesa llvmpipe driver also puts 8 here.
@@ -354,8 +386,25 @@ bool Adapter::SupportsExternalImages() const {
                                                      mVulkanInstance->GetFunctions());
 }
 
-ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor) {
-    return Device::Create(this, descriptor);
+ResultOrError<Ref<DeviceBase>> Adapter::CreateDeviceImpl(
+    const DeviceDescriptor* descriptor,
+    const TripleStateTogglesSet& userProvidedToggles) {
+    return Device::Create(this, descriptor, userProvidedToggles);
+}
+
+MaybeError Adapter::ValidateFeatureSupportedWithTogglesImpl(
+    wgpu::FeatureName feature,
+    const TripleStateTogglesSet& userProvidedToggles) {
+    return {};
+}
+
+// Android devices with Qualcomm GPUs have a myriad of known issues. (dawn:1549)
+bool Adapter::IsAndroidQualcomm() {
+#if DAWN_PLATFORM_IS(ANDROID)
+    return gpu_info::IsQualcomm(GetVendorId());
+#else
+    return false;
+#endif
 }
 
 }  // namespace dawn::native::vulkan

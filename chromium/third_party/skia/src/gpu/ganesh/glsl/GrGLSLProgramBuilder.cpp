@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "include/sksl/DSL.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
@@ -48,7 +47,6 @@ void GrGLSLProgramBuilder::addFeature(GrShaderFlags shaders,
 bool GrGLSLProgramBuilder::emitAndInstallProcs() {
     // First we loop over all of the installed processors and collect coord transforms.  These will
     // be sent to the ProgramImpl in its emitCode function
-    SkSL::dsl::Start(this->shaderCompiler());
     SkString inputColor;
     SkString inputCoverage;
     if (!this->emitAndInstallPrimProc(&inputColor, &inputCoverage)) {
@@ -64,7 +62,6 @@ bool GrGLSLProgramBuilder::emitAndInstallProcs() {
         return false;
     }
     fGPImpl->emitTransformCode(&fVS, this->uniformHandler());
-    SkSL::dsl::End();
 
     return this->checkSamplerCounts();
 }

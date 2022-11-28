@@ -24,15 +24,15 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up2x3__scalar_imagic(
     size_t output_increment,
     size_t input_offset,
     const int8_t* zero,
-    const union xnn_qs8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_qc8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
   assert(channels != 0);
   assert(output_width != 0);
 
-  const float vmagic_bias = params->scalar_imagic.magic_bias;
-  const int32_t vmagic_min = params->scalar_imagic.magic_min;
-  const int32_t vmagic_max = params->scalar_imagic.magic_max;
-  const int32_t vmagic_bias_less_zero_point = params->scalar_imagic.magic_bias_less_zero_point;
+  const float vmagic_bias = params->fp32_scalar_imagic.magic_bias;
+  const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
+  const int32_t vmagic_max = params->fp32_scalar_imagic.magic_max;
+  const int32_t vmagic_bias_less_zero_point = params->fp32_scalar_imagic.magic_bias_less_zero_point;
   do {
     const int8_t* i0 = input[0];
     assert(i0 != NULL);
@@ -132,8 +132,7 @@ void xnn_qc8_dwconv_minmax_fp32_ukernel_up2x3__scalar_imagic(
       const int32_t vk2 = (int32_t) ((const int8_t*) ((uintptr_t) w + 2 * sizeof(int32_t)))[4];
       vacc += vi2 * vk2;
 
-      typedef XNN_UNALIGNED float unaligned_float;
-      const float vscale = *((const unaligned_float*) ((uintptr_t) w + 2 * sizeof(int32_t) + 6 * sizeof(int8_t)));
+      const float vscale = unaligned_load_f32((const void*) ((uintptr_t) w + 2 * sizeof(int32_t) + 6 * sizeof(int8_t)));
       float vfpacc = (float) vacc * vscale;
 
       vfpacc += vmagic_bias;

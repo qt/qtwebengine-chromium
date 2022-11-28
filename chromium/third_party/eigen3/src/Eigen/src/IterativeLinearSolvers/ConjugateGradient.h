@@ -31,8 +31,6 @@ void conjugate_gradient(const MatrixType& mat, const Rhs& rhs, Dest& x,
                         const Preconditioner& precond, Index& iters,
                         typename Dest::RealScalar& tol_error)
 {
-  using std::sqrt;
-  using std::abs;
   typedef typename Dest::RealScalar RealScalar;
   typedef typename Dest::Scalar Scalar;
   typedef Matrix<Scalar,Dynamic,1> VectorType;
@@ -58,7 +56,7 @@ void conjugate_gradient(const MatrixType& mat, const Rhs& rhs, Dest& x,
   if (residualNorm2 < threshold)
   {
     iters = 0;
-    tol_error = sqrt(residualNorm2 / rhsNorm2);
+    tol_error = numext::sqrt(residualNorm2 / rhsNorm2);
     return;
   }
 
@@ -88,7 +86,7 @@ void conjugate_gradient(const MatrixType& mat, const Rhs& rhs, Dest& x,
     p = z + beta * p;                           // update search direction
     i++;
   }
-  tol_error = sqrt(residualNorm2 / rhsNorm2);
+  tol_error = numext::sqrt(residualNorm2 / rhsNorm2);
   iters = i;
 }
 

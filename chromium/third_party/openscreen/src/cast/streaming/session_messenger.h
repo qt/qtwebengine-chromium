@@ -45,14 +45,21 @@ class SessionMessenger : public MessagePort::Client {
   // Used to report errors in subclasses.
   void ReportError(Error error);
 
+  const std::string& source_id() override { return source_id_; }
+
  private:
   MessagePort* const message_port_;
+  const std::string source_id_;
   ErrorCallback error_callback_;
 };
 
+// Message port interface designed to handle sending messages to and
+// from a receiver. When possible, errors receiving messages are reported
+// to the ReplyCallback passed to SendRequest(), otherwise errors are
+// reported to the ErrorCallback passed in the constructor.
 class SenderSessionMessenger final : public SessionMessenger {
  public:
-  using ReplyCallback = std::function<void(ReceiverMessage)>;
+  using ReplyCallback = std::function<void(ErrorOr<ReceiverMessage>)>;
 
   SenderSessionMessenger(MessagePort* message_port,
                          std::string source_id,
@@ -64,9 +71,15 @@ class SenderSessionMessenger final : public SessionMessenger {
   // applied for messages that don't have sequence numbers, like RPC
   // and status messages.
   void SetHandler(ReceiverMessage::Type type, ReplyCallback cb);
+  void ResetHandler(ReceiverMessage::Type type);
+
+  // Send a message that doesn't require a reply.
+  [[nodiscard]] Error SendOutboundMessage(SenderMessage message);
+
+  // Convenience method for sending a valid RPC message.
+  [[nodiscard]] Error SendRpcMessage(const std::vector<uint8_t>& message);
 
   // Send a request (with optional reply callback).
-  [[nodiscard]] Error SendOutboundMessage(SenderMessage message);
   [[nodiscard]] Error SendRequest(SenderMessage message,
                                   ReceiverMessage::Type reply_type,
                                   ReplyCallback cb);
@@ -96,6 +109,7 @@ class SenderSessionMessenger final : public SessionMessenger {
   WeakPtrFactory<SenderSessionMessenger> weak_factory_{this};
 };
 
+// Message port interface designed for messaging to and from a sender.
 class ReceiverSessionMessenger final : public SessionMessenger {
  public:
   using RequestCallback =
@@ -106,9 +120,10 @@ class ReceiverSessionMessenger final : public SessionMessenger {
 
   // Set sender message handler.
   void SetHandler(SenderMessage::Type type, RequestCallback cb);
+  void ResetHandler(SenderMessage::Type type);
 
   // Send a JSON message.
-  [[nodiscard]] Error SendMessage(const std::string& sender_id,
+  [[nodiscard]] Error SendMessage(const std::string& source_id,
                                   ReceiverMessage message);
 
   // MessagePort::Client overrides

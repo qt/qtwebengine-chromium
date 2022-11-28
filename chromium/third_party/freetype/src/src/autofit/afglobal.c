@@ -301,7 +301,7 @@
           if ( !( count % 10 ) )
             FT_TRACE4(( " " ));
 
-          FT_TRACE4(( " %ld", idx ));
+          FT_TRACE4(( " %d", idx ));
           count++;
 
           if ( !( count % 10 ) )
@@ -317,7 +317,7 @@
 
 #endif /* FT_DEBUG_LEVEL_TRACE */
 
-    FT_Set_Charmap( face, old_charmap );
+    face->charmap = old_charmap;
     return error;
   }
 

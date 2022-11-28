@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "src/tint/debug.h"
+#include "src/tint/utils/hash.h"
 #include "src/tint/utils/vector.h"
 
 namespace tint::utils {
@@ -39,7 +40,7 @@ enum class AddAction {
 
 /// An unordered set that uses a robin-hood hashing algorithm.
 /// @see the fantastic tutorial: https://programming.guide/robin-hood-hashing.html
-template <typename T, size_t N, typename HASH = std::hash<T>, typename EQUAL = std::equal_to<T>>
+template <typename T, size_t N, typename HASH = Hasher<T>, typename EQUAL = std::equal_to<T>>
 class Hashset {
     /// A slot is a single entry in the underlying vector.
     /// A slot can either be empty or filled with a value. If the slot is empty, #hash and #distance
@@ -72,7 +73,8 @@ class Hashset {
     static constexpr size_t kMinSlots = std::max<size_t>(kNumFixedSlots, 4);
 
   public:
-    /// Iterator for entries in the set
+    /// Iterator for entries in the set.
+    /// Iterators are invalidated if the set is modified.
     class Iterator {
       public:
         /// @returns the value pointed to by this iterator
@@ -151,6 +153,7 @@ class Hashset {
         slots_.Clear();  // Destructs all entries
         slots_.Resize(kMinSlots);
         count_ = 0;
+        generation_++;
     }
 
     /// Result of Add()
@@ -218,6 +221,7 @@ class Hashset {
 
         // Entry was removed.
         count_--;
+        generation_++;
 
         return true;
     }
@@ -298,6 +302,9 @@ class Hashset {
     /// @returns true if the set contains no entries.
     bool IsEmpty() const { return count_ == 0; }
 
+    /// @returns a monotonic counter which is incremented whenever the set is mutated.
+    size_t Generation() const { return generation_; }
+
     /// @returns an iterator to the start of the set.
     Iterator begin() const { return Iterator{slots_.begin(), slots_.end()}; }
 
@@ -350,6 +357,7 @@ class Hashset {
                 slot.hash = hash.value;
                 slot.distance = distance;
                 count_++;
+                generation_++;
                 result = AddResult{AddAction::kAdded, &slot.value.value()};
                 return Action::kStop;
             }
@@ -360,6 +368,7 @@ class Hashset {
                 // Slot is equal to value. Replace or preserve?
                 if constexpr (MODE == PutMode::kReplace) {
                     slot.value = std::forward<V>(value);
+                    generation_++;
                     result = AddResult{AddAction::kReplaced, &slot.value.value()};
                 } else {
                     result = AddResult{AddAction::kKeptExisting, &slot.value.value()};
@@ -379,6 +388,7 @@ class Hashset {
                 InsertShuffle(Wrap(index + 1), std::move(evicted));
 
                 count_++;
+                generation_++;
                 result = AddResult{AddAction::kAdded, &slot.value.value()};
 
                 return Action::kStop;
@@ -501,6 +511,9 @@ class Hashset {
 
     /// The number of entries in the set.
     size_t count_ = 0;
+
+    /// Counter that's incremented with each modification to the set.
+    size_t generation_ = 0;
 };
 
 }  // namespace tint::utils

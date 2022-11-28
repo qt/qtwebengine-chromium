@@ -37,6 +37,7 @@
 #include "samples/pdfium_test_dump_helper.h"
 #include "samples/pdfium_test_event_helper.h"
 #include "samples/pdfium_test_write_helper.h"
+#include "testing/command_line_helpers.h"
 #include "testing/font_renamer.h"
 #include "testing/fx_string_testhelpers.h"
 #include "testing/test_loader.h"
@@ -128,6 +129,7 @@ struct Options {
   bool save_thumbnails = false;
   bool save_thumbnails_decoded = false;
   bool save_thumbnails_raw = false;
+  absl::optional<FPDF_RENDERER_TYPE> use_renderer_type;
 #ifdef PDF_ENABLE_V8
   bool disable_javascript = false;
   std::string js_flags;  // Extra flags to pass to v8 init.
@@ -405,17 +407,6 @@ void ExampleUnsupportedHandler(UNSUPPORT_INFO*, int type) {
   printf("Unsupported feature: %s.\n", feature.c_str());
 }
 
-// |arg| is expected to be "--key=value", and |key| is "--key=".
-bool ParseSwitchKeyValue(const std::string& arg,
-                         const std::string& key,
-                         std::string* value) {
-  if (arg.size() <= key.size() || arg.compare(0, key.size(), key) != 0)
-    return false;
-
-  *value = arg.substr(key.size());
-  return true;
-}
-
 bool ParseCommandLine(const std::vector<std::string>& args,
                       Options* options,
                       std::vector<std::string>* files) {
@@ -483,6 +474,23 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       options->save_thumbnails_decoded = true;
     } else if (cur_arg == "--save-thumbs-raw") {
       options->save_thumbnails_raw = true;
+#if defined(_SKIA_SUPPORT_)
+    } else if (ParseSwitchKeyValue(cur_arg, "--use-renderer=", &value)) {
+      if (options->use_renderer_type.has_value()) {
+        fprintf(stderr, "Duplicate --use-renderer argument\n");
+        return false;
+      }
+      if (value == "agg") {
+        options->use_renderer_type = FPDF_RENDERERTYPE_AGG;
+      } else if (value == "skia") {
+        options->use_renderer_type = FPDF_RENDERERTYPE_SKIA;
+      } else {
+        fprintf(stderr,
+                "Invalid --use-renderer argument, value must be one of agg or "
+                "skia\n");
+        return false;
+      }
+#endif  // defined(_SKIA_SUPPORT_)
 #ifdef PDF_ENABLE_V8
     } else if (cur_arg == "--disable-javascript") {
       options->disable_javascript = true;
@@ -1133,9 +1141,12 @@ constexpr char kUsageString[] =
     "<pdf-name>.thumbnail.decoded.<page-number>.png\n"
     "  --save-thumbs-raw      - write page thumbnails' raw stream data"
     "<pdf-name>.thumbnail.raw.<page-number>.png\n"
+#if defined(_SKIA_SUPPORT_)
+    "  --use-renderer         - renderer to use, one of [agg | skia]\n"
+#endif
 #ifdef PDF_ENABLE_V8
     "  --disable-javascript   - do not execute JS in PDF files\n"
-    "  --js-flags=<flags>     - additional flags to pas to V8"
+    "  --js-flags=<flags>     - additional flags to pass to V8\n"
 #ifdef PDF_ENABLE_XFA
     "  --disable-xfa          - do not process XFA forms\n"
 #endif  // PDF_ENABLE_XFA
@@ -1198,11 +1209,13 @@ int main(int argc, const char* argv[]) {
   }
 
   FPDF_LIBRARY_CONFIG config;
-  config.version = 3;
+  config.version = 4;
   config.m_pUserFontPaths = nullptr;
   config.m_pIsolate = nullptr;
   config.m_v8EmbedderSlot = 0;
   config.m_pPlatform = nullptr;
+  config.m_RendererType =
+      options.use_renderer_type.value_or(GetDefaultRendererType());
 
   std::function<void()> idler = []() {};
 #ifdef PDF_ENABLE_V8

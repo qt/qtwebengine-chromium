@@ -223,6 +223,11 @@ export class SoftContextMenu {
     if (item.element && !item.label) {
       const wrapper = menuItemElement.createChild('div', 'soft-context-menu-custom-item');
       wrapper.appendChild(item.element);
+      if (item.element?.classList.contains('location-menu')) {
+        const label = item.element.ariaLabel || '';
+        item.element.ariaLabel = '';
+        ARIAUtils.setAccessibleName(menuItemElement, label);
+      }
       detailsForElement.customElement = (item.element as HTMLElement);
       this.detailsForElementMap.set(menuItemElement, detailsForElement);
       return menuItemElement;
@@ -422,7 +427,8 @@ export class SoftContextMenu {
       this.highlightedMenuItemElement.classList.add('force-white-icons');
       this.highlightedMenuItemElement.classList.add('soft-context-menu-item-mouse-over');
       const detailsForElement = this.detailsForElementMap.get(this.highlightedMenuItemElement);
-      if (detailsForElement && detailsForElement.customElement) {
+      if (detailsForElement && detailsForElement.customElement &&
+          !detailsForElement.customElement.classList.contains('location-menu')) {
         detailsForElement.customElement.focus();
       } else {
         this.highlightedMenuItemElement.focus();
@@ -513,6 +519,10 @@ export class SoftContextMenu {
             this.subMenu.highlightNext();
           }
         }
+        if (detailsForElement?.customElement?.classList.contains('location-menu')) {
+          detailsForElement.customElement.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight'}));
+          this.highlightMenuItem(null, true);
+        }
         keyboardEvent.consume(true);
         break;
       }
@@ -544,7 +554,9 @@ export class SoftContextMenu {
       return;
     }
     for (const child of this.contextMenuElement.children) {
-      ARIAUtils.markAsMenuItemCheckBox(child);
+      if (child.className !== 'soft-context-menu-separator') {
+        ARIAUtils.markAsMenuItemCheckBox(child);
+      }
     }
   }
 }

@@ -6,6 +6,8 @@
 
 #include "fpdfsdk/cpdfsdk_helpers.h"
 
+#include <utility>
+
 #include "build/build_config.h"
 #include "constants/form_fields.h"
 #include "constants/stream_dict_common.h"
@@ -47,7 +49,7 @@ bool DocHasXFA(const CPDF_Document* doc) {
   if (!root)
     return false;
 
-  const CPDF_Dictionary* form = root->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> form = root->GetDictFor("AcroForm");
   return form && form->GetArrayFor("XFA");
 }
 
@@ -56,7 +58,8 @@ unsigned long GetStreamMaybeCopyAndReturnLengthImpl(const CPDF_Stream* stream,
                                                     unsigned long buflen,
                                                     bool decode) {
   DCHECK(stream);
-  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(stream);
+  auto stream_acc =
+      pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(stream));
 
   if (decode)
     stream_acc->LoadAllDataFiltered();
@@ -67,7 +70,8 @@ unsigned long GetStreamMaybeCopyAndReturnLengthImpl(const CPDF_Stream* stream,
   if (!buffer || buflen < stream_data_size)
     return stream_data_size;
 
-  memcpy(buffer, stream_acc->GetData(), stream_data_size);
+  pdfium::span<const uint8_t> span = stream_acc->GetSpan();
+  memcpy(buffer, span.data(), span.size());
   return stream_data_size;
 }
 
@@ -220,7 +224,7 @@ RetainPtr<IFX_SeekableStream> MakeSeekableStream(
 }
 #endif  // PDF_ENABLE_XFA
 
-const CPDF_Array* GetQuadPointsArrayFromDictionary(
+RetainPtr<const CPDF_Array> GetQuadPointsArrayFromDictionary(
     const CPDF_Dictionary* dict) {
   return dict->GetArrayFor("QuadPoints");
 }
@@ -228,10 +232,10 @@ const CPDF_Array* GetQuadPointsArrayFromDictionary(
 RetainPtr<CPDF_Array> GetMutableQuadPointsArrayFromDictionary(
     CPDF_Dictionary* dict) {
   return pdfium::WrapRetain(
-      const_cast<CPDF_Array*>(GetQuadPointsArrayFromDictionary(dict)));
+      const_cast<CPDF_Array*>(GetQuadPointsArrayFromDictionary(dict).Get()));
 }
 
-CPDF_Array* AddQuadPointsArrayToDictionary(CPDF_Dictionary* dict) {
+RetainPtr<CPDF_Array> AddQuadPointsArrayToDictionary(CPDF_Dictionary* dict) {
   return dict->SetNewFor<CPDF_Array>(kQuadPoints);
 }
 
@@ -239,7 +243,7 @@ bool IsValidQuadPointsIndex(const CPDF_Array* array, size_t index) {
   return array && index < array->size() / 8;
 }
 
-bool GetQuadPointsAtIndex(const CPDF_Array* array,
+bool GetQuadPointsAtIndex(RetainPtr<const CPDF_Array> array,
                           size_t quad_index,
                           FS_QUADPOINTSF* quad_points) {
   DCHECK(quad_points);
@@ -249,14 +253,14 @@ bool GetQuadPointsAtIndex(const CPDF_Array* array,
     return false;
 
   quad_index *= 8;
-  quad_points->x1 = array->GetNumberAt(quad_index);
-  quad_points->y1 = array->GetNumberAt(quad_index + 1);
-  quad_points->x2 = array->GetNumberAt(quad_index + 2);
-  quad_points->y2 = array->GetNumberAt(quad_index + 3);
-  quad_points->x3 = array->GetNumberAt(quad_index + 4);
-  quad_points->y3 = array->GetNumberAt(quad_index + 5);
-  quad_points->x4 = array->GetNumberAt(quad_index + 6);
-  quad_points->y4 = array->GetNumberAt(quad_index + 7);
+  quad_points->x1 = array->GetFloatAt(quad_index);
+  quad_points->y1 = array->GetFloatAt(quad_index + 1);
+  quad_points->x2 = array->GetFloatAt(quad_index + 2);
+  quad_points->y2 = array->GetFloatAt(quad_index + 3);
+  quad_points->x3 = array->GetFloatAt(quad_index + 4);
+  quad_points->y3 = array->GetFloatAt(quad_index + 5);
+  quad_points->x4 = array->GetFloatAt(quad_index + 6);
+  quad_points->y4 = array->GetFloatAt(quad_index + 7);
   return true;
 }
 
@@ -353,17 +357,18 @@ void ReportUnsupportedFeatures(const CPDF_Document* pDoc) {
   if (pRootDict->KeyExist("Collection"))
     RaiseUnsupportedError(FPDF_UNSP_DOC_PORTABLECOLLECTION);
 
-  const CPDF_Dictionary* pNameDict = pRootDict->GetDictFor("Names");
+  RetainPtr<const CPDF_Dictionary> pNameDict = pRootDict->GetDictFor("Names");
   if (pNameDict) {
     if (pNameDict->KeyExist("EmbeddedFiles"))
       RaiseUnsupportedError(FPDF_UNSP_DOC_ATTACHMENT);
 
-    const CPDF_Dictionary* pJSDict = pNameDict->GetDictFor("JavaScript");
+    RetainPtr<const CPDF_Dictionary> pJSDict =
+        pNameDict->GetDictFor("JavaScript");
     if (pJSDict) {
-      const CPDF_Array* pArray = pJSDict->GetArrayFor("Names");
+      RetainPtr<const CPDF_Array> pArray = pJSDict->GetArrayFor("Names");
       if (pArray) {
         for (size_t i = 0; i < pArray->size(); i++) {
-          ByteString cbStr = pArray->GetStringAt(i);
+          ByteString cbStr = pArray->GetByteStringAt(i);
           if (cbStr == "com.adobe.acrobat.SharedReview.Register") {
             RaiseUnsupportedError(FPDF_UNSP_DOC_SHAREDREVIEW);
             break;
@@ -374,9 +379,9 @@ void ReportUnsupportedFeatures(const CPDF_Document* pDoc) {
   }
 
   // SharedForm
-  const CPDF_Stream* pStream = pRootDict->GetStreamFor("Metadata");
+  RetainPtr<const CPDF_Stream> pStream = pRootDict->GetStreamFor("Metadata");
   if (pStream) {
-    CPDF_Metadata metadata(pStream);
+    CPDF_Metadata metadata(std::move(pStream));
     for (const UnsupportedFeature& feature : metadata.CheckForSharedForm())
       RaiseUnsupportedError(static_cast<int>(feature));
   }
@@ -400,7 +405,7 @@ void CheckForUnsupportedAnnot(const CPDF_Annot* pAnnot) {
       break;
     case CPDF_Annot::Subtype::SCREEN: {
       const CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
-      ByteString cbString = pAnnotDict->GetStringFor("IT");
+      ByteString cbString = pAnnotDict->GetByteStringFor("IT");
       if (cbString != "Img")
         RaiseUnsupportedError(FPDF_UNSP_ANNOT_SCREEN_MEDIA);
       break;
@@ -413,7 +418,8 @@ void CheckForUnsupportedAnnot(const CPDF_Annot* pAnnot) {
       break;
     case CPDF_Annot::Subtype::WIDGET: {
       const CPDF_Dictionary* pAnnotDict = pAnnot->GetAnnotDict();
-      ByteString cbString = pAnnotDict->GetStringFor(pdfium::form_fields::kFT);
+      ByteString cbString =
+          pAnnotDict->GetByteStringFor(pdfium::form_fields::kFT);
       if (cbString == pdfium::form_fields::kSig)
         RaiseUnsupportedError(FPDF_UNSP_ANNOT_SIG);
       break;

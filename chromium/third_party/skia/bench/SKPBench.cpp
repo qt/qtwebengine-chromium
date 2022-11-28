@@ -64,7 +64,7 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
     int yTiles = SkScalarCeilToInt(bounds.height() / SkIntToScalar(tileH));
 
     fSurfaces.reserve_back(xTiles * yTiles);
-    fTileRects.setReserve(xTiles * yTiles);
+    fTileRects.reserve(xTiles * yTiles);
 
     SkImageInfo ii = canvas->imageInfo().makeWH(tileW, tileH);
 
@@ -89,14 +89,14 @@ void SKPBench::onPerCanvasPreDraw(SkCanvas* canvas) {
 void SKPBench::onPerCanvasPostDraw(SkCanvas* canvas) {
     // Draw the last set of tiles into the main canvas in case we're
     // saving the images
-    for (int i = 0; i < fTileRects.count(); ++i) {
+    for (int i = 0; i < fTileRects.size(); ++i) {
         sk_sp<SkImage> image(fSurfaces[i]->makeImageSnapshot());
         canvas->drawImage(image,
                           SkIntToScalar(fTileRects[i].fLeft), SkIntToScalar(fTileRects[i].fTop));
     }
 
     fSurfaces.reset();
-    fTileRects.rewind();
+    fTileRects.clear();
 }
 
 bool SKPBench::isSuitableFor(Backend backend) {
@@ -129,13 +129,13 @@ void SKPBench::drawMPDPicture() {
 }
 
 void SKPBench::drawPicture() {
-    for (int j = 0; j < fTileRects.count(); ++j) {
+    for (int j = 0; j < fTileRects.size(); ++j) {
         const SkMatrix trans = SkMatrix::Translate(-fTileRects[j].fLeft / fScale,
                                                    -fTileRects[j].fTop / fScale);
         fSurfaces[j]->getCanvas()->drawPicture(fPic.get(), &trans, nullptr);
     }
 
-    for (int j = 0; j < fTileRects.count(); ++j) {
+    for (int j = 0; j < fTileRects.size(); ++j) {
         fSurfaces[j]->flush();
     }
 }

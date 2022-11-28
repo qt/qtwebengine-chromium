@@ -3689,31 +3689,281 @@ protected:
     SkString name() override { return SkString("ParagraphView65"); }
 
     void onDrawContent(SkCanvas* canvas) override {
-
         canvas->drawColor(SK_ColorWHITE);
+
+        auto fontCollection =
+                sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), false, true);
+
         ParagraphStyle paragraph_style;
-        paragraph_style.setReplaceTabCharacters(substituteTab);
-        auto fontCollection = sk_make_sp<FontCollection>();
-        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
-        fontCollection->enableFontFallback();
+        TextStyle textStyle;
+        textStyle.setFontFamilies({SkString("Roboto")});
+        textStyle.setFontSize(50.0);
+        textStyle.setColor(SK_ColorBLACK);
         ParagraphBuilderImpl builder(paragraph_style, fontCollection);
-        TextStyle text_style;
-        text_style.setColor(SK_ColorBLACK);
-        // "Noto Sans Thai"
-        text_style.setFontFamilies({SkString("Roboto")});
-        text_style.setFontSize(100);
-        builder.pushStyle(text_style);
-        builder.addText(u"\u0eb9\u0952\u0301\u0e51A");
-        auto paragraph = builder.Build();
-        paragraph->layout(this->width());
+        builder.pushStyle(textStyle);
+        builder.addText("The quick brown fox ate a hamburgerfons and got sick.");
+
+        auto text0 = builder.getText();
+        SkString text(text0.data(), text0.size());
+        std::vector<SkUnicode::BidiRegion> bidis = {{0, text.size(), 0}};
+        std::vector<size_t> words = {0, text.size()};
+        std::vector<size_t> graphemes;
+        for (auto i = 0ul; i <= text.size(); ++i) {
+            graphemes.emplace_back(i);
+        }
+        std::vector<SkUnicode::LineBreakBefore> breaks;
+        for (auto i = 0ul; i <= text.size(); ++i) {
+            breaks.emplace_back(text.size(), SkUnicode::LineBreakType::kSoftLineBreak);
+        }
+        breaks[0] = {0ul, SkUnicode::LineBreakType::kSoftLineBreak};
+        for (int i = 0; i < SkToS16(text.size()); ++i) {
+            i = text.find(" ");
+            if (i == -1) break;
+            breaks[i + 1] = {SkToU32(i + 1), SkUnicode::LineBreakType::kSoftLineBreak};
+            text[i] = '?';
+        }
+        for (int i = 0; i < SkToS16(text.size()); ++i) {
+            i = text.find("\n");
+            if (i == -1) break;
+            breaks[i + 1] = {SkToU32(i + 1), SkUnicode::LineBreakType::kHardLineBreak};
+            text[i] = '?';
+        }
+
+        for (auto i = text.size(); i > 0; --i) {
+            if (breaks[i - 1].pos == text.size()) {
+                breaks.erase(breaks.begin() + i - 1);
+            }
+        }
+
+        auto fIcu = SkUnicode::Make();
+        std::vector<SkUnicode::BidiRegion> bidiRegions;
+        fIcu->getBidiRegions(
+                text.c_str(), text.size(), SkUnicode::TextDirection::kLTR, &bidiRegions);
+
+        std::vector<SkUnicode::Position> words1;
+        fIcu->getWords(text.c_str(), text.size(), &words1);
+
+        SkTArray<SkUnicode::CodeUnitFlags, true> codeUnitFlags;
+        fIcu->computeCodeUnitFlags(text.writable_str(), text.size(), false, &codeUnitFlags);
+
+        std::vector<SkUnicode::Position> graphemeBreaks;
+        std::vector<SkUnicode::LineBreakBefore> lineBreaks;
+        SkUnicode::Position pos = 0;
+        for (auto& flag : codeUnitFlags) {
+            if (SkUnicode::isGraphemeStart(flag)) {
+                graphemeBreaks.emplace_back(pos);
+            }
+            if (SkUnicode::isHardLineBreak(flag)) {
+                lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kHardLineBreak);
+            }
+            if (SkUnicode::isSoftLineBreak(flag)) {
+                lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kSoftLineBreak);
+            }
+            ++pos;
+        }
+
+        auto paragraph = builder.BuildWithClientInfo(std::move(bidis),
+                                                     std::move(words),
+                                                     std::move(graphemes),
+                                                     std::move(breaks));
+        paragraph->layout(600);
         paragraph->paint(canvas, 0, 0);
     }
 
 private:
     using INHERITED = Sample;
-    bool substituteTab = false;
 };
 
+// Non-monotonic glyph placement
+class ParagraphView66 : public ParagraphView_Base {
+protected:
+    SkString name() override { return SkString("ParagraphView66"); }
+    void onDrawContent(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = sk_make_sp<TestFontCollection>(GetResourcePath("fonts").c_str(), true);
+        fontCollection->disableFontFallback();
+        fontCollection->addFontFromFile("abc/abc.ttf", "abc");
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("abc"), SkString("Roboto")});
+        text_style.setFontSize(20);
+        text_style.setColor(SK_ColorBLACK);
+        ParagraphStyle paragraph_style;
+        paragraph_style.setMaxLines(1);
+        paragraph_style.setEllipsis(u"\u2026");
+        paragraph_style.setTextStyle(text_style);
+        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
+
+        auto draw = [&](bool fallback, const SkString& font) {
+            if(fallback) {
+                fontCollection->enableFontFallback();
+            } else {
+                fontCollection->disableFontFallback();
+            }
+            ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+            text_style.setFontFamilies({SkString("abc"), font});
+            builder.pushStyle(text_style);
+            builder.addText(u"abc \u2026 abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc abc");
+            auto paragraph = builder.Build();
+            paragraph->layout(this->width());
+            paragraph->paint(canvas, 0, 0);
+            canvas->translate(0, paragraph->getHeight());
+        };
+
+        draw(true, SkString("Roboto"));
+        draw(true, SkString("Roboto1"));
+        draw(false, SkString("Roboto"));
+        draw(false, SkString("Roboto1"));
+    }
+private:
+    using INHERITED = Sample;
+};
+
+class ParagraphView67 : public ParagraphView_Base {
+protected:
+    SkString name() override { return SkString("ParagraphView67"); }
+    void onDrawContent(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = getFontCollection();
+        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
+        fontCollection->enableFontFallback();
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextDirection(TextDirection::kLtr);
+        TextStyle text_style;
+        text_style.setColor(SK_ColorBLACK);
+        text_style.setFontFamilies({SkString("Roboto")});
+        text_style.setFontSize(14.0);
+        SkPaint paint;
+        paint.setColor(SK_ColorBLUE);
+        //text_style.setBackgroundColor(paint);
+        TextStyle text_style1;
+        text_style1.setColor(SK_ColorBLACK);
+        text_style1.setFontFamilies({SkString("Roboto")});
+        text_style1.setFontSize(30);
+        text_style1.setHeight(2.0);
+        text_style1.setHeightOverride(true);
+        paint.setColor(SK_ColorRED);
+        text_style1.setDecorationStyle(TextDecorationStyle::kSolid);
+        text_style1.setDecorationColor(SK_ColorRED);
+        text_style1.setBackgroundColor(paint);
+        StrutStyle strut_style;
+        strut_style.setFontSize(30);
+        strut_style.setHeight(3.0);
+        strut_style.setHeightOverride(true);
+        strut_style.setFontFamilies({SkString("Roboto")});
+
+        auto draw = [&](const char* text, bool test = false) {
+            if (test) {
+                paragraph_style.setTextHeightBehavior(TextHeightBehavior::kDisableAll);
+                strut_style.setStrutEnabled(true);
+                paragraph_style.setStrutStyle(strut_style);
+            } else {
+                paragraph_style.setTextHeightBehavior(TextHeightBehavior::kAll);
+                strut_style.setStrutEnabled(false);
+                paragraph_style.setStrutStyle(strut_style);
+            }
+            ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+            if (test) {
+                if (text[0] == 'u') {
+                    text_style1.setDecoration(TextDecoration::kUnderline);
+                } else if (text[0] == 'o') {
+                    text_style1.setDecoration(TextDecoration::kOverline);
+                    text_style1.setDecorationColor(SK_ColorGREEN);
+                } else if (text[0] == 's') {
+                    text_style1.setDecoration(TextDecoration::kLineThrough);
+                } else {
+                    text_style1.setDecoration(TextDecoration::kNoDecoration);
+                }
+                builder.pushStyle(text_style1);
+            } else {
+                builder.pushStyle(text_style);
+            }
+            builder.addText(text);
+            builder.pop();
+            auto paragraph = builder.Build();
+            paragraph->layout(width());
+            paragraph->paint(canvas, 0, 0);
+            if (test) {
+                /*
+                auto boxes = paragraph->getRectsForRange(0, 12, RectHeightStyle::kMax, RectWidthStyle::kTight);
+                for (auto& box : boxes) {
+                    SkPaint paint;
+                    paint.setColor(SK_ColorGREEN);
+                    paint.setStyle(SkPaint::kStroke_Style);
+                    paint.setAntiAlias(true);
+                    paint.setStrokeWidth(2);
+                    canvas->drawRect(box.rect, paint);
+                }
+                */
+            }
+            canvas->translate(0, paragraph->getHeight());
+        };
+
+        draw("+++++++++++++++++++");
+        draw("AAA\nBBB\nCCC", true);
+        draw("===================");
+        draw("underline\nBBB\nCCC", true);
+        draw("===================");
+        draw("strike\nBBB\nCCC", true);
+        draw("===================");
+        draw("overline\nBBB\nCCC", true);
+        draw("===================");
+    }
+private:
+    using INHERITED = Sample;
+};
+
+class ParagraphViewLast : public ParagraphView_Base {
+protected:
+    SkString name() override { return SkString("ParagraphViewLast"); }
+    void onDrawContent(SkCanvas* canvas) override {
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = getFontCollection();
+        fontCollection->setDefaultFontManager(SkFontMgr::RefDefault());
+        fontCollection->enableFontFallback();
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextDirection(TextDirection::kLtr);
+        TextStyle text_style;
+        text_style.setColor(SK_ColorBLACK);
+        text_style.setFontFamilies({SkString("Roboto")});
+        text_style.setFontSize(14.0);
+        SkPaint paint;
+        paint.setColor(SK_ColorBLUE);
+        text_style.setBackgroundColor(paint);
+        TextStyle text_style1;
+        text_style1.setColor(SK_ColorBLACK);
+        text_style1.setFontFamilies({SkString("Roboto")});
+        text_style1.setFontSize(7);
+        text_style1.setHeight(11.0);
+        text_style1.setHeightOverride(true);
+        paint.setColor(SK_ColorRED);
+        text_style1.setBackgroundColor(paint);
+        StrutStyle strut_style;
+        strut_style.setFontSize(7);
+        strut_style.setHeight(11.0);
+        strut_style.setHeightOverride(true);
+        strut_style.setFontFamilies({SkString("Roboto")});
+
+        paragraph_style.setTextHeightBehavior(TextHeightBehavior::kDisableAll);
+        strut_style.setStrutEnabled(true);
+        paragraph_style.setStrutStyle(strut_style);
+
+        auto draw = [&](const char* text) {
+            ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+            builder.pushStyle(text_style1);
+            builder.addText(text);
+            builder.pop();
+            auto paragraph = builder.Build();
+            paragraph->layout(width());
+            paragraph->paint(canvas, 0, 0);
+            SkDebugf("paragraph='%s' %f\n", text, paragraph->getHeight());
+            canvas->translate(0, paragraph->getHeight() + 20);
+        };
+        draw("x");
+        draw("");
+    }
+private:
+    using INHERITED = Sample;
+};
 
 }  // namespace
 
@@ -3781,3 +4031,6 @@ DEF_SAMPLE(return new ParagraphView62();)
 DEF_SAMPLE(return new ParagraphView63();)
 DEF_SAMPLE(return new ParagraphView64();)
 DEF_SAMPLE(return new ParagraphView65();)
+DEF_SAMPLE(return new ParagraphView66();)
+DEF_SAMPLE(return new ParagraphView67();)
+DEF_SAMPLE(return new ParagraphViewLast();)

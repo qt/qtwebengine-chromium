@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium OS Authors. All rights reserved.
+// Copyright 2021 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,9 @@ const char kFuseBoxServicePath[] = "/org/chromium/FuseBoxService";
 
 // FuseBoxService debugging methods.
 const char kGetDebugInfoMethod[] = "GetDebugInfo";
+const char kGetPrivateDebugInfoMethod[] = "GetPrivateDebugInfo";
+const char kGetPublicDebugInfoMethod[] = "GetPublicDebugInfo";
+const char kPingMethod[] = "Ping";
 
 // FuseBoxService entry methods.
 const char kStatMethod[] = "Stat";
@@ -37,6 +40,9 @@ const char kClose2Method[] = "Close2";
 const char kCloseFDMethod[] = "CloseFD";
 const char kCreateMethod[] = "Create";
 const char kUnlinkMethod[] = "Unlink";
+
+// FuseBoxService other methods.
+const char kListStoragesMethod[] = "ListStorages";
 
 // FuseBoxService signals.
 const char kStorageAttachedSignal[] = "StorageAttached";

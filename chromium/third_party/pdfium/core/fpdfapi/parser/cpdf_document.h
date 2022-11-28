@@ -31,7 +31,6 @@ class CPDF_Document : public Observable,
   class Extension {
    public:
     virtual ~Extension() = default;
-    virtual CPDF_Document* GetPDFDoc() const = 0;
     virtual int GetPageCount() const = 0;
     virtual void DeletePage(int page_index) = 0;
     virtual uint32_t GetUserPermissions() const = 0;
@@ -53,11 +52,13 @@ class CPDF_Document : public Observable,
 
     virtual void ClearStockFont() = 0;
     virtual RetainPtr<CPDF_StreamAcc> GetFontFileStreamAcc(
-        const CPDF_Stream* pFontStream) = 0;
+        RetainPtr<const CPDF_Stream> pFontStream) = 0;
     virtual void MaybePurgeFontFileStreamAcc(
-        const CPDF_Stream* pFontStream) = 0;
+        RetainPtr<CPDF_StreamAcc>&& pStreamAcc) = 0;
 
     void SetDocument(CPDF_Document* pDoc) { m_pDoc = pDoc; }
+
+   protected:
     CPDF_Document* GetDocument() const { return m_pDoc.Get(); }
 
    private:
@@ -70,6 +71,8 @@ class CPDF_Document : public Observable,
     virtual ~RenderDataIface();
 
     void SetDocument(CPDF_Document* pDoc) { m_pDoc = pDoc; }
+
+   protected:
     CPDF_Document* GetDocument() const { return m_pDoc.Get(); }
 
    private:
@@ -92,13 +95,13 @@ class CPDF_Document : public Observable,
   CPDF_Parser* GetParser() const { return m_pParser.get(); }
   const CPDF_Dictionary* GetRoot() const { return m_pRootDict.Get(); }
   RetainPtr<CPDF_Dictionary> GetMutableRoot() { return m_pRootDict; }
-  CPDF_Dictionary* GetInfo();
-  const CPDF_Array* GetFileIdentifier() const;
+  RetainPtr<CPDF_Dictionary> GetInfo();
+  RetainPtr<const CPDF_Array> GetFileIdentifier() const;
 
   void DeletePage(int iPage);
   int GetPageCount() const;
   bool IsPageLoaded(int iPage) const;
-  const CPDF_Dictionary* GetPageDictionary(int iPage);
+  RetainPtr<const CPDF_Dictionary> GetPageDictionary(int iPage);
   RetainPtr<CPDF_Dictionary> GetMutablePageDictionary(int iPage);
   int GetPageIndex(uint32_t objnum);
   uint32_t GetUserPermissions() const;
@@ -116,7 +119,7 @@ class CPDF_Document : public Observable,
   }
 
   // Behaves like NewIndirect<CPDF_Stream>(), but keeps track of the new stream.
-  CPDF_Stream* CreateModifiedAPStream();
+  RetainPtr<CPDF_Stream> CreateModifiedAPStream();
 
   // Returns whether CreateModifiedAPStream() created `stream`.
   bool IsModifiedAPStream(const CPDF_Stream* stream) const;
@@ -144,7 +147,7 @@ class CPDF_Document : public Observable,
  protected:
   void SetParser(std::unique_ptr<CPDF_Parser> pParser);
 
-  void SetRootForTesting(CPDF_Dictionary* root);
+  void SetRootForTesting(RetainPtr<CPDF_Dictionary> root);
   void ResizePageListForTesting(size_t size);
 
  private:
@@ -161,18 +164,22 @@ class CPDF_Document : public Observable,
 
   // Retrieve page count information by getting count value from the tree nodes
   int RetrievePageCount();
+
   // When this method is called, m_pTreeTraversal[level] exists.
-  CPDF_Dictionary* TraversePDFPages(int iPage, int* nPagesToGo, size_t level);
+  RetainPtr<CPDF_Dictionary> TraversePDFPages(int iPage,
+                                              int* nPagesToGo,
+                                              size_t level);
 
-  const CPDF_Dictionary* GetPagesDict() const;
-  CPDF_Dictionary* GetPagesDict();
+  RetainPtr<const CPDF_Dictionary> GetPagesDict() const;
+  RetainPtr<CPDF_Dictionary> GetMutablePagesDict();
 
-  bool InsertDeletePDFPage(CPDF_Dictionary* pPages,
+  bool InsertDeletePDFPage(RetainPtr<CPDF_Dictionary> pPages,
                            int nPagesToGo,
-                           CPDF_Dictionary* pPageDict,
+                           RetainPtr<CPDF_Dictionary> pPageDict,
                            bool bInsert,
-                           std::set<CPDF_Dictionary*>* pVisited);
-  bool InsertNewPage(int iPage, CPDF_Dictionary* pPageDict);
+                           std::set<RetainPtr<CPDF_Dictionary>>* pVisited);
+
+  bool InsertNewPage(int iPage, RetainPtr<CPDF_Dictionary> pPageDict);
   void ResetTraversal();
   CPDF_Parser::Error HandleLoadResult(CPDF_Parser::Error error);
 
@@ -184,7 +191,7 @@ class CPDF_Document : public Observable,
   // vector corresponds to the level being described. The pair contains a
   // pointer to the dictionary being processed at the level, and an index of the
   // of the child being processed within the dictionary's /Kids array.
-  std::vector<std::pair<CPDF_Dictionary*, size_t>> m_pTreeTraversal;
+  std::vector<std::pair<RetainPtr<CPDF_Dictionary>, size_t>> m_pTreeTraversal;
 
   // True if the CPDF_Parser succeeded without having to rebuild the cross
   // reference table.

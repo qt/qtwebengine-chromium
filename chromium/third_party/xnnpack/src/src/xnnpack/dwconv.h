@@ -466,6 +466,10 @@ DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_uk
 DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic)
 DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_ukernel_up4x9__wasm_fmagic)
 
+DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_rndnu_ukernel_up1x9__scalar)
+DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_rndnu_ukernel_up2x9__scalar)
+DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_rndnu_ukernel_up4x9__scalar)
+
 DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_ukernel_up1x9__scalar_fmagic)
 DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_ukernel_up2x9__scalar_fmagic)
 DECLARE_QU8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qu8_dwconv_minmax_fp32_ukernel_up4x9__scalar_fmagic)
@@ -644,6 +648,10 @@ DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_uk
 DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__wasm_fmagic)
 DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__wasm_fmagic)
 
+DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_rndnu_ukernel_up1x9__scalar)
+DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_rndnu_ukernel_up2x9__scalar)
+DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_rndnu_ukernel_up4x9__scalar)
+
 DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_ukernel_up1x9__scalar_fmagic)
 DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_ukernel_up2x9__scalar_fmagic)
 DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_ukernel_up4x9__scalar_fmagic)
@@ -760,7 +768,7 @@ DECLARE_QS8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qs8_dwconv_minmax_fp32_uk
     size_t output_increment,                                        \
     size_t input_offset,                                            \
     const int8_t* zero,                                             \
-    const union xnn_qs8_minmax_params* params);
+    const union xnn_qc8_conv_minmax_params* params);
 
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up8x3__aarch32_neonv8_mla8_cortex_a35)
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up16x3__aarch32_neonv8_mla8_cortex_a35)
@@ -834,6 +842,7 @@ DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_uk
 
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up16x3__wasmsimd_mul16_add16)
 
+DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up1x3__scalar_fmagic)
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up2x3__scalar_imagic)
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up2x3__scalar_lrintf)
 DECLARE_QC8_DWCONV_MINMAX_UNIPASS_UKERNEL_FUNCTION(xnn_qc8_dwconv_minmax_fp32_ukernel_up2x3__wasm_fmagic)

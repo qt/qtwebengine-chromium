@@ -243,11 +243,11 @@ class Vector {
 
     /// Move constructor from a mutable vector reference
     /// @param other the vector reference to move
-    explicit Vector(VectorRef<T>&& other) { MoveOrCopy(std::move(other)); }
+    Vector(VectorRef<T>&& other) { MoveOrCopy(std::move(other)); }  // NOLINT(runtime/explicit)
 
     /// Copy constructor from an immutable vector reference
     /// @param other the vector reference to copy
-    explicit Vector(const VectorRef<T>& other) { Copy(other.slice_); }
+    Vector(const VectorRef<T>& other) { Copy(other.slice_); }  // NOLINT(runtime/explicit)
 
     /// Destructor
     ~Vector() { ClearAndFree(); }
@@ -463,16 +463,27 @@ class Vector {
     /// Equality operator
     /// @param other the other vector
     /// @returns true if this vector is the same length as `other`, and all elements are equal.
-    bool operator==(const Vector& other) const {
+    template <typename T2, size_t N2>
+    bool operator==(const Vector<T2, N2>& other) const {
         const size_t len = Length();
-        if (len == other.Length()) {
-            for (size_t i = 0; i < len; i++) {
-                if ((*this)[i] != other[i]) {
-                    return false;
-                }
+        if (len != other.Length()) {
+            return false;
+        }
+        for (size_t i = 0; i < len; i++) {
+            if ((*this)[i] != other[i]) {
+                return false;
             }
         }
         return true;
+    }
+
+    /// Inequality operator
+    /// @param other the other vector
+    /// @returns true if this vector is not the same length as `other`, or all elements are not
+    ///          equal.
+    template <typename T2, size_t N2>
+    bool operator!=(const Vector<T2, N2>& other) const {
+        return !(*this == other);
     }
 
   private:

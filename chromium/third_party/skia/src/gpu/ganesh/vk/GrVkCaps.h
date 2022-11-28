@@ -12,9 +12,12 @@
 #include "include/private/SkTDArray.h"
 #include "src/gpu/ganesh/GrCaps.h"
 
-class GrVkExtensions;
-struct GrVkInterface;
 class GrVkRenderTarget;
+
+namespace skgpu {
+class VulkanExtensions;
+struct VulkanInterface;
+}
 
 /**
  * Stores some capabilities of a Vk backend.
@@ -26,12 +29,12 @@ public:
      * be called to fill out the caps.
      */
     GrVkCaps(const GrContextOptions& contextOptions,
-             const GrVkInterface* vkInterface,
+             const skgpu::VulkanInterface* vkInterface,
              VkPhysicalDevice device,
              const VkPhysicalDeviceFeatures2& features,
              uint32_t instanceVersion,
              uint32_t physicalDeviceVersion,
-             const GrVkExtensions& extensions,
+             const skgpu::VulkanExtensions& extensions,
              GrProtected isProtected = GrProtected::kNo);
 
     bool isFormatSRGB(const GrBackendFormat&) const override;
@@ -312,25 +315,31 @@ private:
         SkUNREACHABLE;
     }
 
-    void init(const GrContextOptions& contextOptions, const GrVkInterface* vkInterface,
-              VkPhysicalDevice device, const VkPhysicalDeviceFeatures2&,
-              uint32_t physicalDeviceVersion, const GrVkExtensions&, GrProtected isProtected);
-    void initGrCaps(const GrVkInterface* vkInterface,
+    void init(const GrContextOptions& contextOptions,
+              const skgpu::VulkanInterface* vkInterface,
+              VkPhysicalDevice device,
+              const VkPhysicalDeviceFeatures2&,
+              uint32_t physicalDeviceVersion,
+              const skgpu::VulkanExtensions&,
+              GrProtected isProtected);
+    void initGrCaps(const skgpu::VulkanInterface* vkInterface,
                     VkPhysicalDevice physDev,
                     const VkPhysicalDeviceProperties&,
                     const VkPhysicalDeviceMemoryProperties&,
                     const VkPhysicalDeviceFeatures2&,
-                    const GrVkExtensions&);
+                    const skgpu::VulkanExtensions&);
     void initShaderCaps(const VkPhysicalDeviceProperties&, const VkPhysicalDeviceFeatures2&);
 
-    void initFormatTable(const GrVkInterface*, VkPhysicalDevice, const VkPhysicalDeviceProperties&);
-    void initStencilFormat(const GrVkInterface* iface, VkPhysicalDevice physDev);
+    void initFormatTable(const skgpu::VulkanInterface*,
+                         VkPhysicalDevice,
+                         const VkPhysicalDeviceProperties&);
+    void initStencilFormat(const skgpu::VulkanInterface* iface, VkPhysicalDevice physDev);
 
     void applyDriverCorrectnessWorkarounds(const VkPhysicalDeviceProperties&);
 
     bool onSurfaceSupportsWritePixels(const GrSurface*) const override;
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
+    bool onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                          const GrSurfaceProxy* src, const SkIRect& srcRect) const override;
     GrBackendFormat onGetDefaultBackendFormat(GrColorType) const override;
 
     bool onAreColorTypeAndFormatCompatible(GrColorType, const GrBackendFormat&) const override;
@@ -373,11 +382,15 @@ private:
             return 0;
         }
 
-        void init(const GrVkInterface*, VkPhysicalDevice, const VkPhysicalDeviceProperties&,
+        void init(const skgpu::VulkanInterface*,
+                  VkPhysicalDevice,
+                  const VkPhysicalDeviceProperties&,
                   VkFormat);
         static void InitFormatFlags(VkFormatFeatureFlags, uint16_t* flags);
-        void initSampleCounts(const GrVkInterface*, VkPhysicalDevice,
-                              const VkPhysicalDeviceProperties&, VkFormat);
+        void initSampleCounts(const skgpu::VulkanInterface*,
+                              VkPhysicalDevice,
+                              const VkPhysicalDeviceProperties&,
+                              VkFormat);
 
         enum {
             kTexturable_Flag = 0x1,

@@ -14,12 +14,18 @@
 
 
 void xnn_qs8_vmul_minmax_fp32_ukernel__scalar_x1(
-    size_t n,
+    size_t batch,
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
     const union xnn_qs8_mul_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
+  assert(batch != 0);
+  assert(batch % sizeof(int8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const int32_t va_zero_point = params->fp32_scalar.a_zero_point;
   const int32_t vb_zero_point = params->fp32_scalar.b_zero_point;
   const float vscale = params->fp32_scalar.scale;
@@ -40,6 +46,6 @@ void xnn_qs8_vmul_minmax_fp32_ukernel__scalar_x1(
     const int32_t vout = (int32_t) float_as_uint32(vfpacc) - vmagic_bias_less_output_zero_point;
     *output++ = (int8_t) vout;
 
-    n -= sizeof(int8_t);
-  } while (n != 0);
+    batch -= sizeof(int8_t);
+  } while (batch != 0);
 }

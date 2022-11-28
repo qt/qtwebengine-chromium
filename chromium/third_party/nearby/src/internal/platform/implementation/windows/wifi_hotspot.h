@@ -15,6 +15,10 @@
 #ifndef PLATFORM_IMPL_WINDOWS_WIFI_HOTSPOT_H_
 #define PLATFORM_IMPL_WINDOWS_WIFI_HOTSPOT_H_
 
+// Windows headers
+#include <windows.h>
+#include <wlanapi.h>
+
 // Standard C/C++ headers
 #include <functional>
 #include <optional>
@@ -83,7 +87,9 @@ using ::winrt::Windows::Networking::Sockets::StreamSocketListener;
 using ::winrt::Windows::Networking::Sockets::
     StreamSocketListenerConnectionReceivedEventArgs;
 
-// using winrt::Windows::Foundation::IInspectable;
+constexpr int kMaxRetries = 3;
+constexpr int kRetryIntervalMilliSeconds = 300;
+constexpr int kMaxScans = 2;
 
 // WifiHotspotSocket wraps the socket functions to read and write stream.
 // In WiFi HOTSPOT, A WifiHotspotSocket will be passed to

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -161,6 +161,10 @@ bool VideoPictureInPictureWindowControllerImpl::IsPlayerActive() {
 
 WebContents* VideoPictureInPictureWindowControllerImpl::GetWebContents() {
   return web_contents();
+}
+
+WebContents* VideoPictureInPictureWindowControllerImpl::GetChildWebContents() {
+  return nullptr;
 }
 
 void VideoPictureInPictureWindowControllerImpl::UpdatePlaybackState() {
@@ -440,6 +444,13 @@ void VideoPictureInPictureWindowControllerImpl::CloseInternal(
 const gfx::Rect& VideoPictureInPictureWindowControllerImpl::GetSourceBounds()
     const {
   return source_bounds_;
+}
+
+absl::optional<gfx::Rect>
+VideoPictureInPictureWindowControllerImpl::GetWindowBounds() {
+  if (!window_)
+    return absl::nullopt;
+  return window_->GetBounds();
 }
 
 void VideoPictureInPictureWindowControllerImpl::

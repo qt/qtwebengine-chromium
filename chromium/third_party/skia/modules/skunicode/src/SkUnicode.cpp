@@ -7,6 +7,9 @@
 
 #include "modules/skunicode/include/SkUnicode.h"
 
+#include "include/private/SkBitmaskEnum.h"
+#include "include/private/SkTemplates.h"
+
 SkString SkUnicode::convertUtf16ToUtf8(const char16_t* utf16, int utf16Units) {
 
     int utf8Units = SkUTF::UTF16ToUTF8(nullptr, 0, (uint16_t*)utf16, utf16Units);
@@ -50,6 +53,14 @@ bool SkUnicode::isTabulation(SkUnicode::CodeUnitFlags flags) {
 
 bool SkUnicode::isHardLineBreak(SkUnicode::CodeUnitFlags flags) {
     return (flags & SkUnicode::kHardLineBreakBefore) == SkUnicode::kHardLineBreakBefore;
+}
+
+bool SkUnicode::isSoftLineBreak(SkUnicode::CodeUnitFlags flags) {
+    return (flags & SkUnicode::kSoftLineBreakBefore) == SkUnicode::kSoftLineBreakBefore;
+}
+
+bool SkUnicode::isGraphemeStart(SkUnicode::CodeUnitFlags flags) {
+    return (flags & SkUnicode::kGraphemeStart) == SkUnicode::kGraphemeStart;
 }
 
 bool SkUnicode::isControl(SkUnicode::CodeUnitFlags flags) {

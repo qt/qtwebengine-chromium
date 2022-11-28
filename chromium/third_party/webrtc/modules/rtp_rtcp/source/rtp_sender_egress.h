@@ -91,6 +91,10 @@ class RtpSenderEgress {
                                   const FecProtectionParams& key_params);
   std::vector<std::unique_ptr<RtpPacketToSend>> FetchFecPackets();
 
+  // Clears pending status for these sequence numbers in the packet history.
+  void OnAbortedRetransmissions(
+      rtc::ArrayView<const uint16_t> sequence_numbers);
+
  private:
   // Maps capture time in milliseconds to send-side delay in milliseconds.
   // Send-side delay is the difference between transmission time and capture
@@ -161,7 +165,6 @@ class RtpSenderEgress {
   SendDelayMap::const_iterator max_delay_it_ RTC_GUARDED_BY(lock_);
   // The sum of delays over a kSendSideDelayWindowMs sliding window.
   int64_t sum_delays_ms_ RTC_GUARDED_BY(lock_);
-  uint64_t total_packet_send_delay_ms_ RTC_GUARDED_BY(lock_);
   StreamDataCounters rtp_stats_ RTC_GUARDED_BY(lock_);
   StreamDataCounters rtx_rtp_stats_ RTC_GUARDED_BY(lock_);
   // One element per value in RtpPacketMediaType, with index matching value.

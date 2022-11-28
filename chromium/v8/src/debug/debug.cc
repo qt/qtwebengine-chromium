@@ -187,7 +187,8 @@ int BreakLocation::BreakIndexFromCodeOffset(Handle<DebugInfo> debug_info,
   // Run through all break points to locate the one closest to the address.
   int closest_break = 0;
   int distance = kMaxInt;
-  DCHECK(0 <= offset && offset < abstract_code->Size());
+  DCHECK(kFunctionEntryBytecodeOffset <= offset &&
+         offset < abstract_code->Size());
   for (BreakIterator it(debug_info); !it.Done(); it.Next()) {
     // Check if this break point is closer that what was previously found.
     if (it.code_offset() <= offset && offset - it.code_offset() < distance) {
@@ -248,9 +249,11 @@ BreakIterator::BreakIterator(Handle<DebugInfo> debug_info)
 
 int BreakIterator::BreakIndexFromPosition(int source_position) {
   for (; !Done(); Next()) {
+    if (GetDebugBreakType() == DEBUG_BREAK_SLOT_AT_SUSPEND) continue;
     if (source_position <= position()) {
       int first_break = break_index();
       for (; !Done(); Next()) {
+        if (GetDebugBreakType() == DEBUG_BREAK_SLOT_AT_SUSPEND) continue;
         if (source_position == position()) return break_index();
       }
       return first_break;
@@ -296,6 +299,10 @@ DebugBreakType BreakIterator::GetDebugBreakType() {
   } else if (bytecode == interpreter::Bytecode::kReturn) {
     return DEBUG_BREAK_SLOT_AT_RETURN;
   } else if (bytecode == interpreter::Bytecode::kSuspendGenerator) {
+    // SuspendGenerator should always only carry an expression position that
+    // is used in stack trace construction, but should never be a breakable
+    // position reported to the debugger front-end.
+    DCHECK(!source_position_iterator_.is_statement());
     return DEBUG_BREAK_SLOT_AT_SUSPEND;
   } else if (interpreter::Bytecodes::IsCallOrConstruct(bytecode)) {
     return DEBUG_BREAK_SLOT_AT_CALL;
@@ -386,6 +393,7 @@ void Debug::ThreadInit() {
   base::Relaxed_Store(&thread_local_.current_debug_scope_,
                       static_cast<base::AtomicWord>(0));
   thread_local_.break_on_next_function_call_ = false;
+  thread_local_.scheduled_break_on_next_function_call_ = false;
   UpdateHookOnFunctionCall();
   thread_local_.promise_stack_ = Smi::zero();
 }
@@ -512,15 +520,22 @@ void Debug::Break(JavaScriptFrame* frame, Handle<JSFunction> break_target) {
   bool has_break_points;
   MaybeHandle<FixedArray> break_points_hit =
       CheckBreakPoints(debug_info, &location, &has_break_points);
-  if (!break_points_hit.is_null() || break_on_next_function_call()) {
+  if (!break_points_hit.is_null() || break_on_next_function_call() ||
+      scheduled_break_on_function_call()) {
     StepAction lastStepAction = last_step_action();
+    DCHECK_IMPLIES(scheduled_break_on_function_call(),
+                   lastStepAction == StepNone);
+    debug::BreakReasons break_reasons;
+    if (scheduled_break_on_function_call()) {
+      break_reasons.Add(debug::BreakReason::kScheduled);
+    }
     // Clear all current stepping setup.
     ClearStepping();
     // Notify the debug event listeners.
     OnDebugBreak(!break_points_hit.is_null()
                      ? break_points_hit.ToHandleChecked()
                      : isolate_->factory()->empty_fixed_array(),
-                 lastStepAction);
+                 lastStepAction, break_reasons);
     return;
   }
 
@@ -565,20 +580,21 @@ void Debug::Break(JavaScriptFrame* frame, Handle<JSFunction> break_target) {
       if (current_frame_count > target_frame_count) return;
       V8_FALLTHROUGH;
     case StepInto: {
-      // Special case StepInto and StepOver for generators that are about to
-      // suspend, in which case we go into "generator stepping" mode. The
-      // exception here is the initial implicit yield in generators (which
-      // always has a suspend ID of 0), where we return to the caller first,
-      // instead of triggering "generator stepping" mode straight away.
-      if (location.IsSuspend() && (!IsGeneratorFunction(shared->kind()) ||
-                                   location.generator_suspend_id() > 0)) {
+      // StepInto and StepOver should enter "generator stepping" mode, except
+      // for the implicit initial yield in generators, where it should simply
+      // step out of the generator function.
+      if (location.IsSuspend()) {
         DCHECK(!has_suspended_generator());
-        thread_local_.suspended_generator_ =
-            location.GetGeneratorObjectForSuspendedFrame(frame);
         ClearStepping();
+        if (!IsGeneratorFunction(shared->kind()) ||
+            location.generator_suspend_id() > 0) {
+          thread_local_.suspended_generator_ =
+              location.GetGeneratorObjectForSuspendedFrame(frame);
+        } else {
+          PrepareStep(StepOut);
+        }
         return;
       }
-
       FrameSummary summary = FrameSummary::GetTop(frame);
       step_break = step_break || location.IsReturn() ||
                    current_frame_count != last_frame_count ||
@@ -1067,7 +1083,8 @@ void Debug::ClearBreakOnNextFunctionCall() {
 
 void Debug::PrepareStepIn(Handle<JSFunction> function) {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
-  CHECK(last_step_action() >= StepInto || break_on_next_function_call());
+  CHECK(last_step_action() >= StepInto || break_on_next_function_call() ||
+        scheduled_break_on_function_call());
   if (ignore_events()) return;
   if (in_debug_scope()) return;
   if (break_disabled()) return;
@@ -1210,9 +1227,7 @@ void Debug::PrepareStep(StepAction step_action) {
     // Any step at a return is a step-out, and a step-out at a suspend behaves
     // like a return.
     if (location.IsReturn() ||
-        (location.IsSuspend() &&
-         (step_action == StepOut || (IsGeneratorFunction(shared->kind()) &&
-                                     location.generator_suspend_id() == 0)))) {
+        (location.IsSuspend() && step_action == StepOut)) {
       // On StepOut we'll ignore our further calls to current function in
       // PrepareStepIn callback.
       if (last_step_action() == StepOut) {
@@ -1377,6 +1392,7 @@ void Debug::ClearStepping() {
   thread_local_.last_frame_count_ = -1;
   thread_local_.target_frame_count_ = -1;
   thread_local_.break_on_next_function_call_ = false;
+  thread_local_.scheduled_break_on_next_function_call_ = false;
   clear_restart_frame();
   UpdateHookOnFunctionCall();
 }
@@ -1413,8 +1429,14 @@ class DiscardBaselineCodeVisitor : public ThreadVisitor {
         BaselineFrame* frame = BaselineFrame::cast(it.frame());
         int bytecode_offset = frame->GetBytecodeOffset();
         Address* pc_addr = frame->pc_address();
-        Address advance = BUILTIN_CODE(isolate, InterpreterEnterAtNextBytecode)
-                              ->InstructionStart();
+        Address advance;
+        if (bytecode_offset == kFunctionEntryBytecodeOffset) {
+          advance = BUILTIN_CODE(isolate, BaselineOutOfLinePrologueDeopt)
+                        ->InstructionStart();
+        } else {
+          advance = BUILTIN_CODE(isolate, InterpreterEnterAtNextBytecode)
+                        ->InstructionStart();
+        }
         PointerAuthentication::ReplacePC(pc_addr, advance, kSystemPointerSize);
         InterpretedFrame::cast(it.Reframe())
             ->PatchBytecodeOffset(bytecode_offset);
@@ -1620,23 +1642,18 @@ void Debug::InstallDebugBreakTrampoline() {
 }
 
 namespace {
-template <typename Iterator>
-void GetBreakablePositions(Iterator* it, int start_position, int end_position,
-                           std::vector<BreakLocation>* locations) {
-  while (!it->Done()) {
-    if (it->position() >= start_position && it->position() < end_position) {
-      locations->push_back(it->GetBreakLocation());
-    }
-    it->Next();
-  }
-}
-
 void FindBreakablePositions(Handle<DebugInfo> debug_info, int start_position,
                             int end_position,
                             std::vector<BreakLocation>* locations) {
   DCHECK(debug_info->HasInstrumentedBytecodeArray());
   BreakIterator it(debug_info);
-  GetBreakablePositions(&it, start_position, end_position, locations);
+  while (!it.Done()) {
+    if (it.GetDebugBreakType() != DEBUG_BREAK_SLOT_AT_SUSPEND &&
+        it.position() >= start_position && it.position() < end_position) {
+      locations->push_back(it.GetBreakLocation());
+    }
+    it.Next();
+  }
 }
 
 bool CompileTopLevel(Isolate* isolate, Handle<Script> script) {
@@ -2487,13 +2504,28 @@ void Debug::HandleDebugBreak(IgnoreBreakMode ignore_break_mode,
   HandleScope scope(isolate_);
   MaybeHandle<FixedArray> break_points;
   {
-    JavaScriptFrameIterator it(isolate_);
+    StackTraceFrameIterator it(isolate_);
     DCHECK(!it.done());
-    Object fun = it.frame()->function();
-    if (fun.IsJSFunction()) {
-      Handle<JSFunction> function(JSFunction::cast(fun), isolate_);
-      // Don't stop in builtin and blackboxed functions.
+    JavaScriptFrame* frame = it.frame()->is_java_script()
+                                 ? JavaScriptFrame::cast(it.frame())
+                                 : nullptr;
+    if (frame && frame->function().IsJSFunction()) {
+      Handle<JSFunction> function(frame->function(), isolate_);
       Handle<SharedFunctionInfo> shared(function->shared(), isolate_);
+
+      // kScheduled breaks are triggered by the stack check. While we could
+      // pause here, the JSFunction didn't have time yet to create and push
+      // it's context. Instead, we step into the function and pause at the
+      // first official breakable position.
+      // This behavior mirrors "BreakOnNextFunctionCall".
+      if (break_reasons.contains(v8::debug::BreakReason::kScheduled)) {
+        CHECK_EQ(last_step_action(), StepAction::StepNone);
+        thread_local_.scheduled_break_on_next_function_call_ = true;
+        PrepareStepIn(function);
+        return;
+      }
+
+      // Don't stop in builtin and blackboxed functions.
       bool ignore_break = ignore_break_mode == kIgnoreIfTopFrameBlackboxed
                               ? IsBlackboxed(shared)
                               : AllFramesOnStackAreBlackboxed();
@@ -2505,7 +2537,7 @@ void Debug::HandleDebugBreak(IgnoreBreakMode ignore_break_mode,
         DebugScope debug_scope(this);
 
         std::vector<BreakLocation> break_locations;
-        BreakLocation::AllAtCurrentStatement(debug_info, it.frame(),
+        BreakLocation::AllAtCurrentStatement(debug_info, frame,
                                              &break_locations);
 
         for (size_t i = 0; i < break_locations.size(); i++) {
@@ -2541,7 +2573,7 @@ void Debug::HandleDebugBreak(IgnoreBreakMode ignore_break_mode,
 
 #ifdef DEBUG
 void Debug::PrintBreakLocation() {
-  if (!FLAG_print_break_location) return;
+  if (!v8_flags.print_break_location) return;
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kDebugger);
   HandleScope scope(isolate_);
   StackTraceFrameIterator iterator(isolate_);
@@ -2751,7 +2783,7 @@ bool Debug::PerformSideEffectCheck(Handle<JSFunction> function,
       debug_info->GetSideEffectState(isolate_);
   switch (side_effect_state) {
     case DebugInfo::kHasSideEffects:
-      if (FLAG_trace_side_effect_free_debug_evaluate) {
+      if (v8_flags.trace_side_effect_free_debug_evaluate) {
         PrintF("[debug-evaluate] Function %s failed side effect check.\n",
                function->shared().DebugNameCStr().get());
       }
@@ -2814,7 +2846,7 @@ bool Debug::PerformSideEffectCheckForCallback(
         case SideEffectType::kHasSideEffect:
           break;
       }
-      if (FLAG_trace_side_effect_free_debug_evaluate) {
+      if (v8_flags.trace_side_effect_free_debug_evaluate) {
         PrintF("[debug-evaluate] API Callback '");
         info.name().ShortPrint();
         PrintF("' may cause side effect.\n");
@@ -2822,13 +2854,13 @@ bool Debug::PerformSideEffectCheckForCallback(
     } else if (callback_info->IsInterceptorInfo()) {
       InterceptorInfo info = InterceptorInfo::cast(*callback_info);
       if (info.has_no_side_effect()) return true;
-      if (FLAG_trace_side_effect_free_debug_evaluate) {
+      if (v8_flags.trace_side_effect_free_debug_evaluate) {
         PrintF("[debug-evaluate] API Interceptor may cause side effect.\n");
       }
     } else if (callback_info->IsCallHandlerInfo()) {
       CallHandlerInfo info = CallHandlerInfo::cast(*callback_info);
       if (info.IsSideEffectFreeCallHandlerInfo()) return true;
-      if (FLAG_trace_side_effect_free_debug_evaluate) {
+      if (v8_flags.trace_side_effect_free_debug_evaluate) {
         PrintF("[debug-evaluate] API CallHandlerInfo may cause side effect.\n");
       }
     }
@@ -2890,7 +2922,7 @@ bool Debug::PerformSideEffectCheckForObject(Handle<Object> object) {
     return true;
   }
 
-  if (FLAG_trace_side_effect_free_debug_evaluate) {
+  if (v8_flags.trace_side_effect_free_debug_evaluate) {
     PrintF("[debug-evaluate] failed runtime side effect check.\n");
   }
   side_effect_check_failed_ = true;

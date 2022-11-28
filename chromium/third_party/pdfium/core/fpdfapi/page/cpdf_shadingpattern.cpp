@@ -7,6 +7,7 @@
 #include "core/fpdfapi/page/cpdf_shadingpattern.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "core/fpdfapi/page/cpdf_docpagedata.h"
 #include "core/fpdfapi/page/cpdf_function.h"
@@ -30,10 +31,11 @@ ShadingType ToShadingType(int type) {
 }  // namespace
 
 CPDF_ShadingPattern::CPDF_ShadingPattern(CPDF_Document* pDoc,
-                                         CPDF_Object* pPatternObj,
+                                         RetainPtr<CPDF_Object> pPatternObj,
                                          bool bShading,
                                          const CFX_Matrix& parentMatrix)
-    : CPDF_Pattern(pDoc, pPatternObj, parentMatrix), m_bShading(bShading) {
+    : CPDF_Pattern(pDoc, std::move(pPatternObj), parentMatrix),
+      m_bShading(bShading) {
   DCHECK(document());
   if (!bShading)
     SetPatternToFormMatrix();
@@ -49,29 +51,32 @@ bool CPDF_ShadingPattern::Load() {
   if (m_ShadingType != kInvalidShading)
     return true;
 
-  const CPDF_Object* pShadingObj = GetShadingObject();
-  const CPDF_Dictionary* pShadingDict =
+  RetainPtr<const CPDF_Object> pShadingObj = GetShadingObject();
+  RetainPtr<const CPDF_Dictionary> pShadingDict =
       pShadingObj ? pShadingObj->GetDict() : nullptr;
   if (!pShadingDict)
     return false;
 
   m_pFunctions.clear();
-  const CPDF_Object* pFunc = pShadingDict->GetDirectObjectFor("Function");
+  RetainPtr<const CPDF_Object> pFunc =
+      pShadingDict->GetDirectObjectFor("Function");
   if (pFunc) {
     if (const CPDF_Array* pArray = pFunc->AsArray()) {
       m_pFunctions.resize(std::min<size_t>(pArray->size(), 4));
-      for (size_t i = 0; i < m_pFunctions.size(); ++i)
+      for (size_t i = 0; i < m_pFunctions.size(); ++i) {
         m_pFunctions[i] = CPDF_Function::Load(pArray->GetDirectObjectAt(i));
+      }
     } else {
-      m_pFunctions.push_back(CPDF_Function::Load(pFunc));
+      m_pFunctions.push_back(CPDF_Function::Load(std::move(pFunc)));
     }
   }
-  const CPDF_Object* pCSObj = pShadingDict->GetDirectObjectFor("ColorSpace");
+  RetainPtr<const CPDF_Object> pCSObj =
+      pShadingDict->GetDirectObjectFor("ColorSpace");
   if (!pCSObj)
     return false;
 
   auto* pDocPageData = CPDF_DocPageData::FromDocument(document());
-  m_pCS = pDocPageData->GetColorSpace(pCSObj, nullptr);
+  m_pCS = pDocPageData->GetColorSpace(pCSObj.Get(), nullptr);
 
   // The color space is required and cannot be a Pattern space, according to the
   // PDF 1.7 spec, page 305.
@@ -82,7 +87,7 @@ bool CPDF_ShadingPattern::Load() {
   return Validate();
 }
 
-const CPDF_Object* CPDF_ShadingPattern::GetShadingObject() const {
+RetainPtr<const CPDF_Object> CPDF_ShadingPattern::GetShadingObject() const {
   return m_bShading ? pattern_obj()
                     : pattern_obj()->GetDict()->GetDirectObjectFor("Shading");
 }

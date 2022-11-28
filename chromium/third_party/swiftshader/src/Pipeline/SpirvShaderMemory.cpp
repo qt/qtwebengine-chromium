@@ -125,8 +125,9 @@ void SpirvShader::Store(Object::ID pointerId, const Operand &value, bool atomic,
 	if(value.isPointer())
 	{
 		VisitMemoryObject(pointerId, true, [&](const MemoryElement &el) {
+			ASSERT(el.index == 0);
 			auto p = GetElementPointer(ptr, el.offset, interleavedByLane);
-			p.Store(value.Pointer(el.index), robustness, mask, atomic, memoryOrder);
+			p.Store(value.Pointer(), robustness, mask, atomic, memoryOrder);
 		});
 	}
 	else
@@ -173,7 +174,7 @@ SpirvShader::EmitResult SpirvShader::EmitVariable(InsnIterator insn, EmitState *
 				auto &dst = routine->getVariable(resultId);
 				int offset = 0;
 				VisitInterface(resultId,
-				               [&](Decorations const &d, AttribType type) {
+				               [&](const Decorations &d, AttribType type) {
 					               auto scalarSlot = d.Location << 2 | d.Component;
 					               dst[offset++] = routine->inputs[scalarSlot];
 				               });
@@ -314,7 +315,7 @@ SpirvShader::EmitResult SpirvShader::EmitMemoryBarrier(InsnIterator insn, EmitSt
 void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::SpirvShader::Decorations d, uint32_t &index, uint32_t offset, bool resultIsPointer, const MemoryVisitor &f) const
 {
 	ApplyDecorationsForId(&d, id);
-	auto const &type = getType(id);
+	const auto &type = getType(id);
 
 	if(d.HasOffset)
 	{
@@ -385,7 +386,7 @@ void SpirvShader::VisitMemoryObjectInner(sw::SpirvShader::Type::ID id, sw::Spirv
 void SpirvShader::VisitMemoryObject(Object::ID id, bool resultIsPointer, const MemoryVisitor &f) const
 {
 	auto typeId = getObject(id).typeId();
-	auto const &type = getType(typeId);
+	const auto &type = getType(typeId);
 
 	if(IsExplicitLayout(type.storageClass))
 	{
@@ -405,7 +406,7 @@ void SpirvShader::VisitMemoryObject(Object::ID id, bool resultIsPointer, const M
 	}
 }
 
-SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndices, bool nonUniform, EmitState const *state) const
+SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndices, bool nonUniform, const EmitState *state) const
 {
 	auto routine = state->routine;
 	auto &object = getObject(id);
@@ -492,7 +493,7 @@ SIMD::Pointer SpirvShader::GetPointerToData(Object::ID id, SIMD::Int arrayIndice
 	}
 }
 
-void SpirvShader::OffsetToElement(SIMD::Pointer &ptr, Object::ID elementId, int32_t arrayStride, EmitState const *state) const
+void SpirvShader::OffsetToElement(SIMD::Pointer &ptr, Object::ID elementId, int32_t arrayStride, const EmitState *state) const
 {
 	if(elementId != 0 && arrayStride != 0)
 	{

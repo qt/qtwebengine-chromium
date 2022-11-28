@@ -52,15 +52,13 @@ CPDF_Font::CPDF_Font(CPDF_Document* pDocument,
                      RetainPtr<CPDF_Dictionary> pFontDict)
     : m_pDocument(pDocument),
       m_pFontDict(std::move(pFontDict)),
-      m_BaseFontName(m_pFontDict->GetStringFor("BaseFont")) {}
+      m_BaseFontName(m_pFontDict->GetByteStringFor("BaseFont")) {}
 
 CPDF_Font::~CPDF_Font() {
   if (m_pFontFile) {
     auto* pPageData = m_pDocument->GetPageData();
-    if (pPageData) {
-      pPageData->MaybePurgeFontFileStreamAcc(
-          m_pFontFile->GetStream()->AsStream());
-    }
+    if (pPageData)
+      pPageData->MaybePurgeFontFileStreamAcc(std::move(m_pFontFile));
   }
 }
 
@@ -194,7 +192,7 @@ void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* pFontDesc) {
   }
   if (m_Descent > 10)
     m_Descent = -m_Descent;
-  const CPDF_Array* pBBox = pFontDesc->GetArrayFor("FontBBox");
+  RetainPtr<const CPDF_Array> pBBox = pFontDesc->GetArrayFor("FontBBox");
   if (pBBox) {
     m_FontBBox.left = pBBox->GetIntegerAt(0);
     m_FontBBox.bottom = pBBox->GetIntegerAt(1);
@@ -202,7 +200,7 @@ void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* pFontDesc) {
     m_FontBBox.top = pBBox->GetIntegerAt(3);
   }
 
-  const CPDF_Stream* pFontFile = pFontDesc->GetStreamFor("FontFile");
+  RetainPtr<const CPDF_Stream> pFontFile = pFontDesc->GetStreamFor("FontFile");
   if (!pFontFile)
     pFontFile = pFontDesc->GetStreamFor("FontFile2");
   if (!pFontFile)
@@ -210,16 +208,14 @@ void CPDF_Font::LoadFontDescriptor(const CPDF_Dictionary* pFontDesc) {
   if (!pFontFile)
     return;
 
+  const uint64_t key = pFontFile->KeyForCache();
   auto* pData = m_pDocument->GetPageData();
-  m_pFontFile = pData->GetFontFileStreamAcc(pFontFile);
+  m_pFontFile = pData->GetFontFileStreamAcc(std::move(pFontFile));
   if (!m_pFontFile)
     return;
 
-  if (!m_Font.LoadEmbedded(m_pFontFile->GetSpan(), IsVertWriting(),
-                           pFontFile->KeyForCache())) {
-    pData->MaybePurgeFontFileStreamAcc(m_pFontFile->GetStream()->AsStream());
-    m_pFontFile = nullptr;
-  }
+  if (!m_Font.LoadEmbedded(m_pFontFile->GetSpan(), IsVertWriting(), key))
+    pData->MaybePurgeFontFileStreamAcc(std::move(m_pFontFile));
 }
 
 void CPDF_Font::CheckFontMetrics() {
@@ -262,11 +258,11 @@ void CPDF_Font::CheckFontMetrics() {
 
 void CPDF_Font::LoadUnicodeMap() const {
   m_bToUnicodeLoaded = true;
-  const CPDF_Stream* pStream = m_pFontDict->GetStreamFor("ToUnicode");
+  RetainPtr<const CPDF_Stream> pStream = m_pFontDict->GetStreamFor("ToUnicode");
   if (!pStream)
     return;
 
-  m_pToUnicodeMap = std::make_unique<CPDF_ToUnicodeMap>(pStream);
+  m_pToUnicodeMap = std::make_unique<CPDF_ToUnicodeMap>(std::move(pStream));
 }
 
 int CPDF_Font::GetStringWidth(ByteStringView pString) {
@@ -306,13 +302,13 @@ RetainPtr<CPDF_Font> CPDF_Font::GetStockFont(CPDF_Document* pDoc,
 RetainPtr<CPDF_Font> CPDF_Font::Create(CPDF_Document* pDoc,
                                        RetainPtr<CPDF_Dictionary> pFontDict,
                                        FormFactoryIface* pFactory) {
-  ByteString type = pFontDict->GetStringFor("Subtype");
+  ByteString type = pFontDict->GetByteStringFor("Subtype");
   RetainPtr<CPDF_Font> pFont;
   if (type == "TrueType") {
-    ByteString tag = pFontDict->GetStringFor("BaseFont").First(4);
+    ByteString tag = pFontDict->GetByteStringFor("BaseFont").First(4);
     for (size_t i = 0; i < std::size(kChineseFontNames); ++i) {
       if (tag == ByteString(kChineseFontNames[i], kChineseFontNameSize)) {
-        const CPDF_Dictionary* pFontDesc =
+        RetainPtr<const CPDF_Dictionary> pFontDesc =
             pFontDict->GetDictFor("FontDescriptor");
         if (!pFontDesc || !pFontDesc->KeyExist("FontFile2"))
           pFont = pdfium::MakeRetain<CPDF_CIDFont>(pDoc, std::move(pFontDict));

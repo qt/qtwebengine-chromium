@@ -15,6 +15,7 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -135,7 +136,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
       else
         ft_matrix.xy -= ft_matrix.xx * skew / 100;
     }
-    if (pSubstFont->m_bFlagMM) {
+    if (pSubstFont->IsBuiltInGenericFont()) {
       pFont->AdjustMMParams(glyph_index, dest_width,
                             pFont->GetSubstFont()->m_Weight);
     }
@@ -163,7 +164,7 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
     weight = pSubstFont->m_WeightCJK;
   else
     weight = pSubstFont ? pSubstFont->m_Weight : 0;
-  if (pSubstFont && !pSubstFont->m_bFlagMM && weight > 400) {
+  if (pSubstFont && !pSubstFont->IsBuiltInGenericFont() && weight > 400) {
     uint32_t index = (weight - 400) / 10;
     pdfium::base::CheckedNumeric<signed long> level =
         CFX_Font::GetWeightLevel(pSubstFont->m_Charset, index);
@@ -261,9 +262,10 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
   GenKey(&keygen, pFont, matrix, dest_width, anti_alias, bNative);
   ByteString FaceGlyphsKey(keygen.key_, keygen.key_len_);
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
-  const bool bDoLookUp = !text_options->native_text;
+#if BUILDFLAG(IS_APPLE)
+  const bool bDoLookUp =
+      !text_options->native_text ||
+      CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer();
 #else
   const bool bDoLookUp = true;
 #endif
@@ -272,8 +274,9 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
                              bFontStyle, dest_width, anti_alias);
   }
 
-#if BUILDFLAG(IS_APPLE) && !defined(_SKIA_SUPPORT_) && \
-    !defined(_SKIA_SUPPORT_PATHS_)
+#if BUILDFLAG(IS_APPLE)
+  DCHECK(!CFX_DefaultRenderDevice::SkiaVariantIsDefaultRenderer());
+
   std::unique_ptr<CFX_GlyphBitmap> pGlyphBitmap;
   auto it = m_SizeMap.find(FaceGlyphsKey);
   if (it != m_SizeMap.end()) {
@@ -307,7 +310,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
   text_options->native_text = false;
   return LookUpGlyphBitmap(pFont, matrix, FaceGlyphsKey2, glyph_index,
                            bFontStyle, dest_width, anti_alias);
-#endif
+#endif  // BUILDFLAG(IS_APPLE)
 }
 
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)

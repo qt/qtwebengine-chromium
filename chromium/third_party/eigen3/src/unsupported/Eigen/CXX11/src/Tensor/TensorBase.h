@@ -331,10 +331,12 @@ class TensorBase<Derived, ReadOnlyAccessors>
       return choose(Cond<NumTraits<CoeffReturnType>::IsComplex>(), unaryExpr(internal::scalar_conjugate_op<Scalar>()), derived());
     }
 
-    EIGEN_DEVICE_FUNC
-    EIGEN_STRONG_INLINE const TensorCwiseUnaryOp<internal::bind2nd_op<internal::scalar_pow_op<Scalar,Scalar> >, const Derived>
-    pow(Scalar exponent) const {
-      return unaryExpr(internal::bind2nd_op<internal::scalar_pow_op<Scalar,Scalar> >(exponent));
+    template<typename ScalarExponent>
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const std::enable_if_t<internal::is_arithmetic<typename NumTraits<ScalarExponent>::Real>::value,
+        TensorCwiseUnaryOp<internal::scalar_unary_pow_op<Scalar, ScalarExponent>, const Derived>>
+        pow(ScalarExponent exponent) const
+    {
+        return unaryExpr(internal::scalar_unary_pow_op<Scalar, ScalarExponent>(exponent));
     }
 
     EIGEN_DEVICE_FUNC

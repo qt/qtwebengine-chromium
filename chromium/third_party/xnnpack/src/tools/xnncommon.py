@@ -33,17 +33,21 @@ _ARCH_TO_MACRO_MAP = {
 # Mapping from ISA extension to macro guarding build-time enabled/disabled
 # status for the ISA. Only ISAs that can be enabled/disabled have an entry.
 _ISA_TO_MACRO_MAP = {
+  "fp16arith": "XNN_ENABLE_ARM_FP16",
   "neonfp16arith": "XNN_ENABLE_ARM_FP16",
+  "neonbf16": "XNN_ENABLE_ARM_BF16",
   "neondot": "XNN_ENABLE_ARM_DOTPROD",
 }
 
 _ISA_TO_ARCH_MAP = {
-  "armv6simd": ["aarch32"],
+  "armsimd32": ["aarch32"],
+  "fp16arith": ["aarch64"],
   "neon": ["aarch32", "aarch64"],
   "neonfp16": ["aarch32", "aarch64"],
   "neonfma": ["aarch32", "aarch64"],
   "neonv8": ["aarch32", "aarch64"],
   "neonfp16arith": ["aarch32", "aarch64"],
+  "neonbf16": ["aarch32", "aarch64"],
   "neondot": ["aarch32", "aarch64"],
   "sse": ["x86-32", "x86-64"],
   "sse2": ["x86-32", "x86-64"],
@@ -63,12 +67,14 @@ _ISA_TO_ARCH_MAP = {
 }
 
 _ISA_TO_CHECK_MAP = {
-  "armv6simd": "TEST_REQUIRES_ARM_V6_SIMD",
+  "armsimd32": "TEST_REQUIRES_ARM_SIMD32",
+  "fp16arith": "TEST_REQUIRES_ARM_FP16_ARITH",
   "neon": "TEST_REQUIRES_ARM_NEON",
   "neonfp16": "TEST_REQUIRES_ARM_NEON_FP16",
   "neonfma": "TEST_REQUIRES_ARM_NEON_FMA",
   "neonv8": "TEST_REQUIRES_ARM_NEON_V8",
   "neonfp16arith": "TEST_REQUIRES_ARM_NEON_FP16_ARITH",
+  "neonbf16": "TEST_REQUIRES_ARM_NEON_BF16",
   "neondot": "TEST_REQUIRES_ARM_NEON_DOT",
   "sse": "TEST_REQUIRES_X86_SSE",
   "sse2": "TEST_REQUIRES_X86_SSE2",

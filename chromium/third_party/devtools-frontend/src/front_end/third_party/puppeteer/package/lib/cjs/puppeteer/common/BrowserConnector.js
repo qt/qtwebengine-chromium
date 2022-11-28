@@ -38,10 +38,11 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports._connectToBrowser = void 0;
+exports._connectToCDPBrowser = void 0;
 const util_js_1 = require("./util.js");
+const ErrorLike_js_1 = require("../util/ErrorLike.js");
 const environment_js_1 = require("../environment.js");
-const assert_js_1 = require("./assert.js");
+const assert_js_1 = require("../util/assert.js");
 const Browser_js_1 = require("./Browser.js");
 const Connection_js_1 = require("./Connection.js");
 const fetch_js_1 = require("./fetch.js");
@@ -57,7 +58,7 @@ const getWebSocketTransportClass = async () => {
  *
  * @internal
  */
-async function _connectToBrowser(options) {
+async function _connectToCDPBrowser(options) {
     const { browserWSEndpoint, browserURL, ignoreHTTPSErrors = false, defaultViewport = { width: 800, height: 600 }, transport, slowMo = 0, targetFilter, _isPageTarget: isPageTarget, } = options;
     (0, assert_js_1.assert)(Number(!!browserWSEndpoint) + Number(!!browserURL) + Number(!!transport) ===
         1, 'Exactly one of browserWSEndpoint, browserURL or transport must be passed to puppeteer.connect');
@@ -81,13 +82,12 @@ async function _connectToBrowser(options) {
         ? 'firefox'
         : 'chrome';
     const { browserContextIds } = await connection.send('Target.getBrowserContexts');
-    const browser = await Browser_js_1.Browser._create(product || 'chrome', connection, browserContextIds, ignoreHTTPSErrors, defaultViewport, undefined, () => {
+    const browser = await Browser_js_1.CDPBrowser._create(product || 'chrome', connection, browserContextIds, ignoreHTTPSErrors, defaultViewport, undefined, () => {
         return connection.send('Browser.close').catch(util_js_1.debugError);
     }, targetFilter, isPageTarget);
-    await browser.pages();
     return browser;
 }
-exports._connectToBrowser = _connectToBrowser;
+exports._connectToCDPBrowser = _connectToCDPBrowser;
 async function getWSEndpoint(browserURL) {
     const endpointURL = new URL('/json/version', browserURL);
     const fetch = await (0, fetch_js_1.getFetch)();
@@ -102,7 +102,7 @@ async function getWSEndpoint(browserURL) {
         return data.webSocketDebuggerUrl;
     }
     catch (error) {
-        if ((0, util_js_1.isErrorLike)(error)) {
+        if ((0, ErrorLike_js_1.isErrorLike)(error)) {
             error.message =
                 `Failed to fetch browser webSocket URL from ${endpointURL}: ` +
                     error.message;

@@ -12,11 +12,11 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "quiche/quic/core/io/socket_factory.h"
-#include "quiche/quic/core/io/stream_client_socket.h"
+#include "quiche/quic/core/connecting_client_socket.h"
 #include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_types.h"
+#include "quiche/quic/core/socket_factory.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/platform/api/quic_test_loopback.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
@@ -53,6 +53,7 @@ class MockRequestHandler : public QuicSimpleServerBackend::RequestHandler {
   QuicStreamId stream_id() const override { return 100; }
   std::string peer_host() const override { return "127.0.0.1"; }
 
+  MOCK_METHOD(QuicSpdyStream*, GetStream, (), (override));
   MOCK_METHOD(void, OnResponseBackendComplete,
               (const QuicBackendResponse* response), (override));
   MOCK_METHOD(void, SendStreamData, (absl::string_view data, bool close_stream),
@@ -63,19 +64,28 @@ class MockRequestHandler : public QuicSimpleServerBackend::RequestHandler {
 
 class MockSocketFactory : public SocketFactory {
  public:
-  MOCK_METHOD(std::unique_ptr<StreamClientSocket>, CreateTcpClientSocket,
+  MOCK_METHOD(std::unique_ptr<ConnectingClientSocket>, CreateTcpClientSocket,
               (const quic::QuicSocketAddress& peer_address,
                QuicByteCount receive_buffer_size,
                QuicByteCount send_buffer_size,
-               StreamClientSocket::AsyncVisitor* async_visitor),
+               ConnectingClientSocket::AsyncVisitor* async_visitor),
+              (override));
+  MOCK_METHOD(std::unique_ptr<ConnectingClientSocket>,
+              CreateConnectingUdpClientSocket,
+              (const quic::QuicSocketAddress& peer_address,
+               QuicByteCount receive_buffer_size,
+               QuicByteCount send_buffer_size,
+               ConnectingClientSocket::AsyncVisitor* async_visitor),
               (override));
 };
 
-class MockSocket : public StreamClientSocket {
+class MockSocket : public ConnectingClientSocket {
  public:
   MOCK_METHOD(absl::Status, ConnectBlocking, (), (override));
   MOCK_METHOD(void, ConnectAsync, (), (override));
   MOCK_METHOD(void, Disconnect, (), (override));
+  MOCK_METHOD(absl::StatusOr<QuicSocketAddress>, GetLocalAddress, (),
+              (override));
   MOCK_METHOD(absl::StatusOr<quiche::QuicheMemSlice>, ReceiveBlocking,
               (QuicByteCount max_size), (override));
   MOCK_METHOD(void, ReceiveAsync, (QuicByteCount max_size), (override));
@@ -107,12 +117,13 @@ class ConnectTunnelTest : public quiche::test::QuicheTest {
   NiceMock<MockSocketFactory> socket_factory_;
   StrictMock<MockSocket>* socket_;
 
-  ConnectTunnel tunnel_{&request_handler_,
-                        &socket_factory_,
-                        /*acceptable_destinations=*/
-                        {{std::string(kAcceptableDestination), kAcceptablePort},
-                         {TestLoopback4().ToString(), kAcceptablePort},
-                         {TestLoopback6().ToString(), kAcceptablePort}}};
+  ConnectTunnel tunnel_{
+      &request_handler_,
+      &socket_factory_,
+      /*acceptable_destinations=*/
+      {{std::string(kAcceptableDestination), kAcceptablePort},
+       {TestLoopback4().ToString(), kAcceptablePort},
+       {absl::StrCat("[", TestLoopback6().ToString(), "]"), kAcceptablePort}}};
 };
 
 TEST_F(ConnectTunnelTest, OpenTunnel) {

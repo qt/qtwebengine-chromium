@@ -22,6 +22,8 @@
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/ftrace/binder_tracker.h"
 #include "src/trace_processor/importers/ftrace/thread_state_tracker.h"
+#include "src/trace_processor/importers/ftrace/v4l2_tracker.h"
+#include "src/trace_processor/importers/ftrace/virtio_video_tracker.h"
 #include "src/trace_processor/importers/i2c/i2c_tracker.h"
 #include "src/trace_processor/importers/proto/async_track_set_tracker.h"
 #include "src/trace_processor/importers/proto/metadata_tracker.h"
@@ -90,17 +92,22 @@ struct FtraceEventAndFieldId {
 // TODO(lalitm): going through this array is O(n) on a hot-path (see
 // ParseTypedFtraceToRaw). Consider changing this if we end up adding a lot of
 // events here.
-constexpr auto kKernelFunctionFields = std::array<FtraceEventAndFieldId, 3>{
-    {FtraceEventAndFieldId{
-         protos::pbzero::FtraceEvent::kSchedBlockedReasonFieldNumber,
-         protos::pbzero::SchedBlockedReasonFtraceEvent::kCallerFieldNumber},
-     FtraceEventAndFieldId{
-         protos::pbzero::FtraceEvent::kWorkqueueExecuteStartFieldNumber,
-         protos::pbzero::WorkqueueExecuteStartFtraceEvent::
-             kFunctionFieldNumber},
-     FtraceEventAndFieldId{
-         protos::pbzero::FtraceEvent::kWorkqueueQueueWorkFieldNumber,
-         protos::pbzero::WorkqueueQueueWorkFtraceEvent::kFunctionFieldNumber}}};
+constexpr auto kKernelFunctionFields = std::array<FtraceEventAndFieldId, 5>{
+    FtraceEventAndFieldId{
+        protos::pbzero::FtraceEvent::kSchedBlockedReasonFieldNumber,
+        protos::pbzero::SchedBlockedReasonFtraceEvent::kCallerFieldNumber},
+    FtraceEventAndFieldId{
+        protos::pbzero::FtraceEvent::kWorkqueueExecuteStartFieldNumber,
+        protos::pbzero::WorkqueueExecuteStartFtraceEvent::kFunctionFieldNumber},
+    FtraceEventAndFieldId{
+        protos::pbzero::FtraceEvent::kWorkqueueQueueWorkFieldNumber,
+        protos::pbzero::WorkqueueQueueWorkFtraceEvent::kFunctionFieldNumber},
+    FtraceEventAndFieldId{
+        protos::pbzero::FtraceEvent::kFuncgraphEntryFieldNumber,
+        protos::pbzero::FuncgraphEntryFtraceEvent::kFuncFieldNumber},
+    FtraceEventAndFieldId{
+        protos::pbzero::FtraceEvent::kFuncgraphExitFieldNumber,
+        protos::pbzero::FuncgraphExitFtraceEvent::kFuncFieldNumber}};
 
 std::string GetUfsCmdString(uint32_t ufsopcode, uint32_t gid) {
   std::string buffer;
@@ -483,70 +490,18 @@ void FtraceParser::ParseFtraceStats(ConstBytes blob) {
   }
 }
 
-PERFETTO_ALWAYS_INLINE
 util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
-                                            const TimestampedTracePiece& ttp) {
-  int64_t ts = ttp.timestamp;
-
-  // On the first ftrace packet, check the metadata table for the
-  // ts of the event which is specified in the config. If it exists we can use
-  // it to filter out ftrace packets which happen earlier than it.
-  if (PERFETTO_UNLIKELY(!has_seen_first_ftrace_packet_)) {
-    DropFtraceDataBefore drop_before = context_->config.drop_ftrace_data_before;
-    switch (drop_before) {
-      case DropFtraceDataBefore::kNoDrop: {
-        drop_ftrace_data_before_ts_ = 0;
-        break;
-      }
-      case DropFtraceDataBefore::kAllDataSourcesStarted:
-      case DropFtraceDataBefore::kTracingStarted: {
-        metadata::KeyId event_key =
-            drop_before == DropFtraceDataBefore::kAllDataSourcesStarted
-                ? metadata::all_data_source_started_ns
-                : metadata::tracing_started_ns;
-        const auto& metadata = context_->storage->metadata_table();
-        base::Optional<uint32_t> opt_row =
-            metadata.name().IndexOf(metadata::kNames[event_key]);
-        if (opt_row) {
-          drop_ftrace_data_before_ts_ = *metadata.int_value()[*opt_row];
-        }
-        break;
-      }
-    }
-    has_seen_first_ftrace_packet_ = true;
-  }
-
+                                            int64_t ts,
+                                            const FtraceEventData& data) {
+  MaybeOnFirstFtraceEvent();
   if (PERFETTO_UNLIKELY(ts < drop_ftrace_data_before_ts_)) {
     context_->storage->IncrementStats(
         stats::ftrace_packet_before_tracing_start);
     return util::OkStatus();
   }
-
   using protos::pbzero::FtraceEvent;
-  SchedEventTracker* sched_tracker = SchedEventTracker::GetOrCreate(context_);
-
-  // Handle the (optional) alternative encoding format for sched_switch.
-  if (ttp.type == TimestampedTracePiece::Type::kInlineSchedSwitch) {
-    const auto& event = ttp.sched_switch;
-    sched_tracker->PushSchedSwitchCompact(cpu, ts, event.prev_state,
-                                          static_cast<uint32_t>(event.next_pid),
-                                          event.next_prio, event.next_comm);
-    return util::OkStatus();
-  }
-
-  // Handle the (optional) alternative encoding format for sched_waking.
-  if (ttp.type == TimestampedTracePiece::Type::kInlineSchedWaking) {
-    const auto& event = ttp.sched_waking;
-    sched_tracker->PushSchedWakingCompact(
-        cpu, ts, static_cast<uint32_t>(event.pid), event.target_cpu, event.prio,
-        event.comm);
-    return util::OkStatus();
-  }
-
-  PERFETTO_DCHECK(ttp.type == TimestampedTracePiece::Type::kFtraceEvent);
-  const TraceBlobView& event = ttp.ftrace_event.event;
-  PacketSequenceStateGeneration* seq_state =
-      ttp.ftrace_event.sequence_state.get();
+  const TraceBlobView& event = data.event;
+  PacketSequenceStateGeneration* seq_state = data.sequence_state.get();
   ProtoDecoder decoder(event.data(), event.length());
   uint64_t raw_pid = 0;
   if (auto pid_field = decoder.FindField(FtraceEvent::kPidFieldNumber)) {
@@ -562,274 +517,274 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
     if (is_metadata_field)
       continue;
 
-    ConstBytes data = fld.as_bytes();
+    ConstBytes fld_bytes = fld.as_bytes();
     if (fld.id() == FtraceEvent::kGenericFieldNumber) {
-      ParseGenericFtrace(ts, cpu, pid, data);
+      ParseGenericFtrace(ts, cpu, pid, fld_bytes);
     } else if (fld.id() != FtraceEvent::kSchedSwitchFieldNumber) {
       // sched_switch parsing populates the raw table by itself
-      ParseTypedFtraceToRaw(fld.id(), ts, cpu, pid, data, seq_state);
+      ParseTypedFtraceToRaw(fld.id(), ts, cpu, pid, fld_bytes, seq_state);
     }
 
     switch (fld.id()) {
       case FtraceEvent::kSchedSwitchFieldNumber: {
-        ParseSchedSwitch(cpu, ts, data);
+        ParseSchedSwitch(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSchedWakingFieldNumber: {
-        ParseSchedWaking(ts, pid, data);
+        ParseSchedWaking(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kSchedProcessFreeFieldNumber: {
-        ParseSchedProcessFree(ts, data);
+        ParseSchedProcessFree(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kCpuFrequencyFieldNumber: {
-        ParseCpuFreq(ts, data);
+        ParseCpuFreq(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kGpuFrequencyFieldNumber: {
-        ParseGpuFreq(ts, data);
+        ParseGpuFreq(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kCpuIdleFieldNumber: {
-        ParseCpuIdle(ts, data);
+        ParseCpuIdle(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kPrintFieldNumber: {
-        ParsePrint(ts, pid, data);
+        ParsePrint(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kZeroFieldNumber: {
-        ParseZero(ts, pid, data);
+        ParseZero(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kRssStatThrottledFieldNumber:
       case FtraceEvent::kRssStatFieldNumber: {
-        rss_stat_tracker_.ParseRssStat(ts, fld.id(), pid, data);
+        rss_stat_tracker_.ParseRssStat(ts, fld.id(), pid, fld_bytes);
         break;
       }
       case FtraceEvent::kIonHeapGrowFieldNumber: {
-        ParseIonHeapGrowOrShrink(ts, pid, data, true);
+        ParseIonHeapGrowOrShrink(ts, pid, fld_bytes, true);
         break;
       }
       case FtraceEvent::kIonHeapShrinkFieldNumber: {
-        ParseIonHeapGrowOrShrink(ts, pid, data, false);
+        ParseIonHeapGrowOrShrink(ts, pid, fld_bytes, false);
         break;
       }
       case FtraceEvent::kIonStatFieldNumber: {
-        ParseIonStat(ts, pid, data);
+        ParseIonStat(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kDmaHeapStatFieldNumber: {
-        ParseDmaHeapStat(ts, pid, data);
+        ParseDmaHeapStat(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kSignalGenerateFieldNumber: {
-        ParseSignalGenerate(ts, data);
+        ParseSignalGenerate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSignalDeliverFieldNumber: {
-        ParseSignalDeliver(ts, pid, data);
+        ParseSignalDeliver(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kOomScoreAdjUpdateFieldNumber: {
-        ParseOOMScoreAdjUpdate(ts, data);
+        ParseOOMScoreAdjUpdate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kMarkVictimFieldNumber: {
-        ParseOOMKill(ts, data);
+        ParseOOMKill(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kMmEventRecordFieldNumber: {
-        ParseMmEventRecord(ts, pid, data);
+        ParseMmEventRecord(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kSysEnterFieldNumber: {
-        ParseSysEvent(ts, pid, true, data);
+        ParseSysEvent(ts, pid, true, fld_bytes);
         break;
       }
       case FtraceEvent::kSysExitFieldNumber: {
-        ParseSysEvent(ts, pid, false, data);
+        ParseSysEvent(ts, pid, false, fld_bytes);
         break;
       }
       case FtraceEvent::kTaskNewtaskFieldNumber: {
-        ParseTaskNewTask(ts, pid, data);
+        ParseTaskNewTask(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kTaskRenameFieldNumber: {
-        ParseTaskRename(data);
+        ParseTaskRename(fld_bytes);
         break;
       }
       case FtraceEvent::kBinderTransactionFieldNumber: {
-        ParseBinderTransaction(ts, pid, data);
+        ParseBinderTransaction(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kBinderTransactionReceivedFieldNumber: {
-        ParseBinderTransactionReceived(ts, pid, data);
+        ParseBinderTransactionReceived(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kBinderTransactionAllocBufFieldNumber: {
-        ParseBinderTransactionAllocBuf(ts, pid, data);
+        ParseBinderTransactionAllocBuf(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kBinderLockFieldNumber: {
-        ParseBinderLock(ts, pid, data);
+        ParseBinderLock(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kBinderUnlockFieldNumber: {
-        ParseBinderUnlock(ts, pid, data);
+        ParseBinderUnlock(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kBinderLockedFieldNumber: {
-        ParseBinderLocked(ts, pid, data);
+        ParseBinderLocked(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kSdeTracingMarkWriteFieldNumber: {
-        ParseSdeTracingMarkWrite(ts, pid, data);
+        ParseSdeTracingMarkWrite(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kClockSetRateFieldNumber: {
-        ParseClockSetRate(ts, data);
+        ParseClockSetRate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kClockEnableFieldNumber: {
-        ParseClockEnable(ts, data);
+        ParseClockEnable(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kClockDisableFieldNumber: {
-        ParseClockDisable(ts, data);
+        ParseClockDisable(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kScmCallStartFieldNumber: {
-        ParseScmCallStart(ts, pid, data);
+        ParseScmCallStart(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kScmCallEndFieldNumber: {
-        ParseScmCallEnd(ts, pid, data);
+        ParseScmCallEnd(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kMmVmscanDirectReclaimBeginFieldNumber: {
-        ParseDirectReclaimBegin(ts, pid, data);
+        ParseDirectReclaimBegin(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kMmVmscanDirectReclaimEndFieldNumber: {
-        ParseDirectReclaimEnd(ts, pid, data);
+        ParseDirectReclaimEnd(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kWorkqueueExecuteStartFieldNumber: {
-        ParseWorkqueueExecuteStart(cpu, ts, pid, data, seq_state);
+        ParseWorkqueueExecuteStart(cpu, ts, pid, fld_bytes, seq_state);
         break;
       }
       case FtraceEvent::kWorkqueueExecuteEndFieldNumber: {
-        ParseWorkqueueExecuteEnd(ts, pid, data);
+        ParseWorkqueueExecuteEnd(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kIrqHandlerEntryFieldNumber: {
-        ParseIrqHandlerEntry(cpu, ts, data);
+        ParseIrqHandlerEntry(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kIrqHandlerExitFieldNumber: {
-        ParseIrqHandlerExit(cpu, ts, data);
+        ParseIrqHandlerExit(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSoftirqEntryFieldNumber: {
-        ParseSoftIrqEntry(cpu, ts, data);
+        ParseSoftIrqEntry(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSoftirqExitFieldNumber: {
-        ParseSoftIrqExit(cpu, ts, data);
+        ParseSoftIrqExit(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kGpuMemTotalFieldNumber: {
-        ParseGpuMemTotal(ts, data);
+        ParseGpuMemTotal(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kThermalTemperatureFieldNumber: {
-        ParseThermalTemperature(ts, data);
+        ParseThermalTemperature(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kCdevUpdateFieldNumber: {
-        ParseCdevUpdate(ts, data);
+        ParseCdevUpdate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSchedBlockedReasonFieldNumber: {
-        ParseSchedBlockedReason(data, seq_state);
+        ParseSchedBlockedReason(fld_bytes, seq_state);
         break;
       }
       case FtraceEvent::kFastrpcDmaStatFieldNumber: {
-        ParseFastRpcDmaStat(ts, pid, data);
+        ParseFastRpcDmaStat(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kG2dTracingMarkWriteFieldNumber: {
-        ParseG2dTracingMarkWrite(ts, pid, data);
+        ParseG2dTracingMarkWrite(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kDpuTracingMarkWriteFieldNumber: {
-        ParseDpuTracingMarkWrite(ts, pid, data);
+        ParseDpuTracingMarkWrite(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kMaliTracingMarkWriteFieldNumber: {
-        ParseMaliTracingMarkWrite(ts, pid, data);
+        ParseMaliTracingMarkWrite(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kCpuhpPauseFieldNumber: {
-        ParseCpuhpPause(ts, pid, data);
+        ParseCpuhpPause(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kNetifReceiveSkbFieldNumber: {
-        ParseNetifReceiveSkb(cpu, ts, data);
+        ParseNetifReceiveSkb(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kNetDevXmitFieldNumber: {
-        ParseNetDevXmit(cpu, ts, data);
+        ParseNetDevXmit(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kInetSockSetStateFieldNumber: {
-        ParseInetSockSetState(ts, pid, data);
+        ParseInetSockSetState(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kTcpRetransmitSkbFieldNumber: {
-        ParseTcpRetransmitSkb(ts, data);
+        ParseTcpRetransmitSkb(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kNapiGroReceiveEntryFieldNumber: {
-        ParseNapiGroReceiveEntry(cpu, ts, data);
+        ParseNapiGroReceiveEntry(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kNapiGroReceiveExitFieldNumber: {
-        ParseNapiGroReceiveExit(cpu, ts, data);
+        ParseNapiGroReceiveExit(cpu, ts, fld_bytes);
         break;
       }
       case FtraceEvent::kCpuFrequencyLimitsFieldNumber: {
-        ParseCpuFrequencyLimits(ts, data);
+        ParseCpuFrequencyLimits(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kKfreeSkbFieldNumber: {
-        ParseKfreeSkb(ts, data);
+        ParseKfreeSkb(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kCrosEcSensorhubDataFieldNumber: {
-        ParseCrosEcSensorhubData(ts, data);
+        ParseCrosEcSensorhubData(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kUfshcdCommandFieldNumber: {
-        ParseUfshcdCommand(ts, data);
+        ParseUfshcdCommand(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kWakeupSourceActivateFieldNumber: {
-        ParseWakeSourceActivate(ts, data);
+        ParseWakeSourceActivate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kWakeupSourceDeactivateFieldNumber: {
-        ParseWakeSourceDeactivate(ts, data);
+        ParseWakeSourceDeactivate(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kUfshcdClkGatingFieldNumber: {
-        ParseUfshcdClkGating(ts, data);
+        ParseUfshcdClkGating(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSuspendResumeFieldNumber: {
-        ParseSuspendResume(ts, data);
+        ParseSuspendResume(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kDrmVblankEventFieldNumber:
@@ -842,31 +797,57 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
       case FtraceEvent::kDmaFenceSignaledFieldNumber:
       case FtraceEvent::kDmaFenceWaitStartFieldNumber:
       case FtraceEvent::kDmaFenceWaitEndFieldNumber: {
-        drm_tracker_.ParseDrm(ts, fld.id(), pid, data);
+        drm_tracker_.ParseDrm(ts, fld.id(), pid, fld_bytes);
         break;
       }
       case FtraceEvent::kF2fsIostatFieldNumber: {
-        iostat_tracker_.ParseF2fsIostat(ts, data);
+        iostat_tracker_.ParseF2fsIostat(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kF2fsIostatLatencyFieldNumber: {
-        iostat_tracker_.ParseF2fsIostatLatency(ts, data);
+        iostat_tracker_.ParseF2fsIostatLatency(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kSchedCpuUtilCfsFieldNumber: {
-        ParseSchedCpuUtilCfs(ts, data);
+        ParseSchedCpuUtilCfs(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kI2cReadFieldNumber: {
-        ParseI2cReadEvent(ts, pid, data);
+        ParseI2cReadEvent(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kI2cWriteFieldNumber: {
-        ParseI2cWriteEvent(ts, pid, data);
+        ParseI2cWriteEvent(ts, pid, fld_bytes);
         break;
       }
       case FtraceEvent::kI2cResultFieldNumber: {
-        ParseI2cResultEvent(ts, pid, data);
+        ParseI2cResultEvent(ts, pid, fld_bytes);
+        break;
+      }
+      case FtraceEvent::kFuncgraphEntryFieldNumber: {
+        ParseFuncgraphEntry(ts, pid, fld_bytes, seq_state);
+        break;
+      }
+      case FtraceEvent::kFuncgraphExitFieldNumber: {
+        ParseFuncgraphExit(ts, pid, fld_bytes, seq_state);
+        break;
+      }
+      case FtraceEvent::kV4l2QbufFieldNumber:
+      case FtraceEvent::kV4l2DqbufFieldNumber:
+      case FtraceEvent::kVb2V4l2BufQueueFieldNumber:
+      case FtraceEvent::kVb2V4l2BufDoneFieldNumber:
+      case FtraceEvent::kVb2V4l2QbufFieldNumber:
+      case FtraceEvent::kVb2V4l2DqbufFieldNumber: {
+        V4l2Tracker::GetOrCreate(context_)->ParseV4l2Event(fld.id(), ts, pid,
+                                                           fld_bytes);
+        break;
+      }
+      case FtraceEvent::kVirtioVideoCmdFieldNumber:
+      case FtraceEvent::kVirtioVideoCmdDoneFieldNumber:
+      case FtraceEvent::kVirtioVideoResourceQueueFieldNumber:
+      case FtraceEvent::kVirtioVideoResourceQueueDoneFieldNumber: {
+        VirtioVideoTracker::GetOrCreate(context_)->ParseVirtioVideoEvent(
+            fld.id(), ts, fld_bytes);
         break;
       }
       default:
@@ -876,6 +857,70 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
 
   PERFETTO_DCHECK(!decoder.bytes_left());
   return util::OkStatus();
+}
+util::Status FtraceParser::ParseInlineSchedSwitch(
+    uint32_t cpu,
+    int64_t ts,
+    const InlineSchedSwitch& data) {
+  MaybeOnFirstFtraceEvent();
+  if (PERFETTO_UNLIKELY(ts < drop_ftrace_data_before_ts_)) {
+    context_->storage->IncrementStats(
+        stats::ftrace_packet_before_tracing_start);
+    return util::OkStatus();
+  }
+
+  using protos::pbzero::FtraceEvent;
+  SchedEventTracker* sched_tracker = SchedEventTracker::GetOrCreate(context_);
+  sched_tracker->PushSchedSwitchCompact(cpu, ts, data.prev_state,
+                                        static_cast<uint32_t>(data.next_pid),
+                                        data.next_prio, data.next_comm);
+  return util::OkStatus();
+}
+
+util::Status FtraceParser::ParseInlineSchedWaking(
+    uint32_t cpu,
+    int64_t ts,
+    const InlineSchedWaking& data) {
+  MaybeOnFirstFtraceEvent();
+  if (PERFETTO_UNLIKELY(ts < drop_ftrace_data_before_ts_)) {
+    context_->storage->IncrementStats(
+        stats::ftrace_packet_before_tracing_start);
+    return util::OkStatus();
+  }
+  using protos::pbzero::FtraceEvent;
+  SchedEventTracker* sched_tracker = SchedEventTracker::GetOrCreate(context_);
+  sched_tracker->PushSchedWakingCompact(cpu, ts,
+                                        static_cast<uint32_t>(data.pid),
+                                        data.target_cpu, data.prio, data.comm);
+  return util::OkStatus();
+}
+
+void FtraceParser::MaybeOnFirstFtraceEvent() {
+  if (PERFETTO_LIKELY(has_seen_first_ftrace_packet_)) {
+    return;
+  }
+  DropFtraceDataBefore drop_before = context_->config.drop_ftrace_data_before;
+  switch (drop_before) {
+    case DropFtraceDataBefore::kNoDrop: {
+      drop_ftrace_data_before_ts_ = 0;
+      break;
+    }
+    case DropFtraceDataBefore::kAllDataSourcesStarted:
+    case DropFtraceDataBefore::kTracingStarted: {
+      metadata::KeyId event_key =
+          drop_before == DropFtraceDataBefore::kAllDataSourcesStarted
+              ? metadata::all_data_source_started_ns
+              : metadata::tracing_started_ns;
+      const auto& metadata = context_->storage->metadata_table();
+      base::Optional<uint32_t> opt_row =
+          metadata.name().IndexOf(metadata::kNames[event_key]);
+      if (opt_row) {
+        drop_ftrace_data_before_ts_ = *metadata.int_value()[*opt_row];
+      }
+      break;
+    }
+  }
+  has_seen_first_ftrace_packet_ = true;
 }
 
 void FtraceParser::ParseGenericFtrace(int64_t ts,
@@ -1077,6 +1122,28 @@ void FtraceParser::ParseCpuIdle(int64_t timestamp, ConstBytes blob) {
 void FtraceParser::ParsePrint(int64_t timestamp,
                               uint32_t pid,
                               ConstBytes blob) {
+  // Atrace slices are emitted as begin/end events written into the tracefs
+  // trace_marker. If we're tracing syscalls, the reconstructed atrace slice
+  // would start and end in the middle of different sys_write slices (on the
+  // same track). Since trace_processor enforces strict slice nesting, we need
+  // to resolve this conflict. The chosen approach is to distort the data, and
+  // pretend that the write syscall ended at the atrace slice's boundary.
+  //
+  // In other words, this true structure:
+  // [write...].....[write...]
+  // ....[atrace_slice..].....
+  //
+  // Is turned into:
+  // [wr][atrace_slice..]
+  // ...............[wri]
+  //
+  base::Optional<UniqueTid> opt_utid =
+      context_->process_tracker->GetThreadOrNull(pid);
+  if (opt_utid) {
+    SyscallTracker::GetOrCreate(context_)->MaybeTruncateOngoingWriteSlice(
+        timestamp, *opt_utid);
+  }
+
   protos::pbzero::PrintFtraceEvent::Decoder evt(blob.data, blob.size);
   SystraceParser::GetOrCreate(context_)->ParsePrintEvent(timestamp, pid,
                                                          evt.buf());
@@ -1618,19 +1685,7 @@ void FtraceParser::ParseWorkqueueExecuteStart(
     PacketSequenceStateGeneration* seq_state) {
   protos::pbzero::WorkqueueExecuteStartFtraceEvent::Decoder evt(blob.data,
                                                                 blob.size);
-
-  auto* interned_string = seq_state->LookupInternedMessage<
-      protos::pbzero::InternedData::kKernelSymbolsFieldNumber,
-      protos::pbzero::InternedString>(static_cast<uint32_t>(evt.function()));
-  StringId name_id;
-  if (interned_string) {
-    protozero::ConstBytes str = interned_string->str();
-    name_id = context_->storage->InternString(
-        base::StringView(reinterpret_cast<const char*>(str.data), str.size));
-  } else {
-    base::StackString<255> slice_name("%#" PRIx64, evt.function());
-    name_id = context_->storage->InternString(slice_name.string_view());
-  }
+  StringId name_id = InternedKernelSymbolOrFallback(evt.function(), seq_state);
 
   UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
   TrackId track = context_->track_tracker->InternThreadTrack(utid);
@@ -2135,20 +2190,17 @@ void FtraceParser::ParseUfshcdCommand(int64_t timestamp,
 
   // Parse ufs command tag
   base::StackString<32> cmd_track_name("io.ufs.command.tag[%03d]", evt.tag());
-  auto async_track =
-    context_->async_track_set_tracker->InternGlobalTrackSet(
-    context_->storage->InternString(cmd_track_name.string_view()));
+  auto async_track = context_->async_track_set_tracker->InternGlobalTrackSet(
+      context_->storage->InternString(cmd_track_name.string_view()));
   if (evt.str_t() == 0) {
     std::string ufs_op_str = GetUfsCmdString(evt.opcode(), evt.group_id());
-    StringId ufs_slice_name = context_->storage->InternString(
-      base::StringView(ufs_op_str));
-    TrackId start_id =
-      context_->async_track_set_tracker->Begin(async_track, 0);
+    StringId ufs_slice_name =
+        context_->storage->InternString(base::StringView(ufs_op_str));
+    TrackId start_id = context_->async_track_set_tracker->Begin(async_track, 0);
     context_->slice_tracker->Begin(timestamp, start_id, kNullStringId,
                                    ufs_slice_name);
   } else {
-    TrackId end_id =
-      context_->async_track_set_tracker->End(async_track, 0);
+    TrackId end_id = context_->async_track_set_tracker->End(async_track, 0);
     context_->slice_tracker->End(timestamp, end_id);
   }
 }
@@ -2207,18 +2259,24 @@ void FtraceParser::ParseSuspendResume(int64_t timestamp,
   auto async_track = context_->async_track_set_tracker->InternGlobalTrackSet(
       suspend_resume_name_id_);
 
+  // Hard code fix the timekeeping_freeze action's value to zero, the value is
+  // processor_id and device could enter suspend/resume from different
+  // processor.
+  auto val =
+      (evt.action().ToStdString() == "timekeeping_freeze") ? 0 : evt.val();
+
   base::StackString<64> str("%s(%" PRIu32 ")",
-                            evt.action().ToStdString().c_str(), evt.val());
+                            evt.action().ToStdString().c_str(), val);
   StringId slice_name_id = context_->storage->InternString(str.string_view());
 
   if (evt.start()) {
     TrackId start_id = context_->async_track_set_tracker->Begin(
-        async_track, static_cast<int64_t>(evt.val()));
+        async_track, static_cast<int64_t>(val));
     context_->slice_tracker->Begin(timestamp, start_id, suspend_resume_name_id_,
                                    slice_name_id);
   } else {
     TrackId end_id = context_->async_track_set_tracker->End(
-        async_track, static_cast<int64_t>(evt.val()));
+        async_track, static_cast<int64_t>(val));
     context_->slice_tracker->End(timestamp, end_id);
   }
 }
@@ -2253,6 +2311,60 @@ void FtraceParser::ParseSchedCpuUtilCfs(int64_t timestamp,
       context_->track_tracker->InternGlobalCounterTrack(nrr_track_name_id);
   context_->event_tracker->PushCounter(
       timestamp, static_cast<double>(evt.nr_running()), nrr_track);
+}
+
+void FtraceParser::ParseFuncgraphEntry(
+    int64_t timestamp,
+    uint32_t pid,
+    protozero::ConstBytes blob,
+    PacketSequenceStateGeneration* seq_state) {
+  // TODO(rsavitski): remove if/when we stop collapsing all idle (swapper)
+  // threads to a single track, otherwise this breaks slice nesting.
+  if (pid == 0)
+    return;
+
+  protos::pbzero::FuncgraphEntryFtraceEvent::Decoder evt(blob.data, blob.size);
+  StringId name_id = InternedKernelSymbolOrFallback(evt.func(), seq_state);
+
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track = context_->track_tracker->InternThreadTrack(utid);
+  context_->slice_tracker->Begin(timestamp, track, kNullStringId, name_id);
+}
+
+void FtraceParser::ParseFuncgraphExit(
+    int64_t timestamp,
+    uint32_t pid,
+    protozero::ConstBytes blob,
+    PacketSequenceStateGeneration* seq_state) {
+  // TODO(rsavitski): remove if/when we stop collapsing all idle (swapper)
+  // threads to a single track, otherwise this breaks slice nesting.
+  if (pid == 0)
+    return;
+
+  protos::pbzero::FuncgraphExitFtraceEvent::Decoder evt(blob.data, blob.size);
+  StringId name_id = InternedKernelSymbolOrFallback(evt.func(), seq_state);
+
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track = context_->track_tracker->InternThreadTrack(utid);
+  context_->slice_tracker->End(timestamp, track, kNullStringId, name_id);
+}
+
+StringId FtraceParser::InternedKernelSymbolOrFallback(
+    uint64_t key,
+    PacketSequenceStateGeneration* seq_state) {
+  auto* interned_string = seq_state->LookupInternedMessage<
+      protos::pbzero::InternedData::kKernelSymbolsFieldNumber,
+      protos::pbzero::InternedString>(key);
+  StringId name_id;
+  if (interned_string) {
+    protozero::ConstBytes str = interned_string->str();
+    name_id = context_->storage->InternString(
+        base::StringView(reinterpret_cast<const char*>(str.data), str.size));
+  } else {
+    base::StackString<255> slice_name("%#" PRIx64, key);
+    name_id = context_->storage->InternString(slice_name.string_view());
+  }
+  return name_id;
 }
 
 }  // namespace trace_processor

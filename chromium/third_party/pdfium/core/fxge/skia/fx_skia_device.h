@@ -100,6 +100,7 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
                        int dest_top,
                        int bitmap_alpha,
                        BlendMode blend_type) override;
+  void SetGroupKnockout(bool group_knockout) override;
 #endif
 
 #if defined(_SKIA_SUPPORT_PATHS_)
@@ -172,6 +173,15 @@ class CFX_SkiaDeviceDriver final : public RenderDeviceDriverIface {
 #endif
 
  private:
+#if defined(_SKIA_SUPPORT_)
+  bool StartDIBitsSkia(const RetainPtr<CFX_DIBBase>& pBitmap,
+                       int bitmap_alpha,
+                       uint32_t color,
+                       const CFX_Matrix& matrix,
+                       const FXDIB_ResampleOptions& options,
+                       BlendMode blend_type);
+#endif
+
   RetainPtr<CFX_DIBitmap> m_pBitmap;
   RetainPtr<CFX_DIBitmap> m_pBackdropBitmap;
   SkCanvas* m_pCanvas;

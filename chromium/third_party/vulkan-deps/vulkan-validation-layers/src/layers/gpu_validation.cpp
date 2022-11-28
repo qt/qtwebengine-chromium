@@ -559,7 +559,7 @@ struct GPUAV_RESTORABLE_PIPELINE_STATE {
     VkPipelineBindPoint pipeline_bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    std::vector<VkDescriptorSet> descriptor_sets;
+    std::vector<std::pair<VkDescriptorSet, uint32_t>> descriptor_sets;
     std::vector<std::vector<uint32_t>> dynamic_offsets;
     uint32_t push_descriptor_set_index = 0;
     std::vector<safe_VkWriteDescriptorSet> push_descriptor_set_writes;
@@ -578,7 +578,7 @@ struct GPUAV_RESTORABLE_PIPELINE_STATE {
             for (std::size_t i = 0; i < last_bound.per_set.size(); i++) {
                 const auto &bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
                 if (bound_descriptor_set) {
-                    descriptor_sets.push_back(bound_descriptor_set->GetSet());
+                    descriptor_sets.push_back(std::make_pair(bound_descriptor_set->GetSet(), static_cast<uint32_t>(i)));
                     if (bound_descriptor_set->IsPushDescriptor()) {
                         push_descriptor_set_index = static_cast<uint32_t>(i);
                     }
@@ -602,10 +602,10 @@ struct GPUAV_RESTORABLE_PIPELINE_STATE {
             DispatchCmdBindPipeline(command_buffer, pipeline_bind_point, pipeline);
             if (!descriptor_sets.empty()) {
                 for (std::size_t i = 0; i < descriptor_sets.size(); i++) {
-                    VkDescriptorSet descriptor_set = descriptor_sets[i];
+                    VkDescriptorSet descriptor_set = descriptor_sets[i].first;
                     if (descriptor_set != VK_NULL_HANDLE) {
                         DispatchCmdBindDescriptorSets(command_buffer, pipeline_bind_point, pipeline_layout,
-                                                      static_cast<uint32_t>(i), 1, &descriptor_set,
+                                                      descriptor_sets[i].second, 1, &descriptor_set,
                                                       static_cast<uint32_t>(dynamic_offsets[i].size()), dynamic_offsets[i].data());
                     }
                 }
@@ -1541,7 +1541,7 @@ VkPipeline GpuAssisted::GetValidationPipeline(VkRenderPass render_pass) {
 }
 
 void GpuAssisted::AllocatePreDrawValidationResources(GpuAssistedDeviceMemoryBlock output_block,
-                                                     GpuAssistedPreDrawResources &resources, const LAST_BOUND_STATE &state,
+                                                     GpuAssistedPreDrawResources &resources, const VkRenderPass render_pass,
                                                      VkPipeline *pPipeline, const GpuAssistedCmdIndirectState *indirect_state) {
     VkResult result;
     if (!pre_draw_validation_state.initialized) {
@@ -1589,7 +1589,6 @@ void GpuAssisted::AllocatePreDrawValidationResources(GpuAssistedDeviceMemoryBloc
         pre_draw_validation_state.initialized = true;
     }
 
-    VkRenderPass render_pass = state.pipeline_state->RenderPassState()->renderPass();
     *pPipeline = GetValidationPipeline(render_pass);
     if (*pPipeline == VK_NULL_HANDLE) {
         ReportSetupProblem(device, "Could not find or create a pipeline.  Aborting GPU-AV");
@@ -1809,7 +1808,8 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
         assert(bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS);
         assert(indirect_state != NULL);
         VkPipeline validation_pipeline;
-        AllocatePreDrawValidationResources(output_block, pre_draw_resources, state, &validation_pipeline, indirect_state);
+        AllocatePreDrawValidationResources(output_block, pre_draw_resources, cb_node->activeRenderPass.get()->renderPass(),
+                                           &validation_pipeline, indirect_state);
         if (aborted) return;
 
         // Save current graphics pipeline state

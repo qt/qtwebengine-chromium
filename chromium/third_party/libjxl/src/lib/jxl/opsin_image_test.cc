@@ -10,6 +10,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/linalg.h"
@@ -17,11 +18,6 @@
 
 namespace jxl {
 namespace {
-
-class OpsinImageTargetTest : public hwy::TestWithParamTarget {};
-HWY_TARGET_INSTANTIATE_TEST_SUITE_P(OpsinImageTargetTest);
-
-TEST_P(OpsinImageTargetTest, MaxCubeRootError) { TestCubeRoot(); }
 
 // Convert a single linear sRGB color to xyb, using the exact image conversion
 // procedure that jpeg xl uses.
@@ -39,7 +35,7 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
   ImageBundle ib(&metadata);
   ib.SetFromImage(std::move(linear), metadata.color_encoding);
   Image3F opsin(1, 1);
-  (void)ToXYB(ib, /*pool=*/nullptr, &opsin);
+  (void)ToXYB(ib, /*pool=*/nullptr, &opsin, GetJxlCms());
 
   *xyb_x = opsin.PlaneRow(0, 0)[0];
   *xyb_y = opsin.PlaneRow(1, 0)[0];

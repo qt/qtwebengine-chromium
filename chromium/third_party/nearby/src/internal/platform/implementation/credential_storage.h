@@ -16,86 +16,47 @@
 #define THIRD_PARTY_NEARBY_INTERNAL_PLATFORM_IMPLEMENTATION_CREDENTIAL_STORAGE_H_
 
 #include <functional>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "internal/platform/exception.h"
+#include "internal/platform/implementation/credential_callbacks.h"
 #include "internal/proto/credential.pb.h"
 
 namespace location {
 namespace nearby {
 namespace api {
 
-enum class CredentialOperationStatus {
-  kUnknown = 0,
-  kFailed = 1,
-  kSucceeded = 2,
-};
-
-struct CredentialSelector {
-  std::string manager_app_id;
-  std::string account_name;
-  ::nearby::internal::IdentityType identity_type;
-};
-
-enum PublicCredentialType {
-  kLocalPublicCredential = 1,
-  kRemotePublicCredential = 2,
-};
-
-struct SaveCredentialsResultCallback {
-  std::function<void(CredentialOperationStatus)> credentials_saved_cb;
-};
-
-struct GetPrivateCredentialsResultCallback {
-  std::function<void(std::vector<::nearby::internal::PrivateCredential>)>
-      credentials_fetched_cb;
-  std::function<void(CredentialOperationStatus)> get_credentials_failed_cb;
-};
-
-struct GetPublicCredentialsResultCallback {
-  std::function<void(std::vector<::nearby::internal::PublicCredential>)>
-      credentials_fetched_cb;
-  std::function<void(CredentialOperationStatus)> get_credentials_failed_cb;
-};
-
 /*
  * This class specifies the virtual functions for native platforms to implement.
  */
 class CredentialStorage {
  public:
-  CredentialStorage() = default;
   virtual ~CredentialStorage() = default;
   // Used for
   // 1. Save private creds after (re)generate credentials invoked by manager app
   // 2. Update remote public creds after manager app update the public creds.
   // Skip the save/update if the provided vector is empty.
   // Another way is to break this into two APIs for save and update separately.
-  virtual void SavePrivateCredentials(
-      std::string manager_app_id, absl::string_view account_name,
+  virtual void SaveCredentials(
+      absl::string_view manager_app_id, absl::string_view account_name,
       const std::vector<::nearby::internal::PrivateCredential>&
           private_credentials,
-      SaveCredentialsResultCallback callback) = 0;
-
-  virtual void SavePublicCredentials(
-      std::string manager_app_id, absl::string_view account_name,
       const std::vector<::nearby::internal::PublicCredential>&
           public_credentials,
-      PublicCredentialType public_credential_type,
-      SaveCredentialsResultCallback callback) = 0;
+      ::nearby::presence::PublicCredentialType public_credential_type,
+      ::nearby::presence::GenerateCredentialsCallback callback) = 0;
 
   // Used to fetch private creds when broadcasting.
   virtual void GetPrivateCredentials(
-      const CredentialSelector& credential_selector,
-      GetPrivateCredentialsResultCallback callback) = 0;
+      const ::nearby::presence::CredentialSelector& credential_selector,
+      ::nearby::presence::GetPrivateCredentialsResultCallback callback) = 0;
 
   // Used to fetch remote public creds when scanning.
   virtual void GetPublicCredentials(
-      const CredentialSelector& credential_selector,
-      PublicCredentialType public_credential_type,
-      GetPublicCredentialsResultCallback callback) = 0;
+      const ::nearby::presence::CredentialSelector& credential_selector,
+      ::nearby::presence::PublicCredentialType public_credential_type,
+      ::nearby::presence::GetPublicCredentialsResultCallback callback) = 0;
 };
 
 }  // namespace api

@@ -60,11 +60,13 @@ const path = __importStar(require("path"));
 const readline = __importStar(require("readline"));
 const rimraf_1 = __importDefault(require("rimraf"));
 const util_1 = require("util");
-const assert_js_1 = require("../common/assert.js");
+const assert_js_1 = require("../util/assert.js");
 const Connection_js_1 = require("../common/Connection.js");
+const Connection_js_2 = require("../common/bidi/Connection.js");
 const Debug_js_1 = require("../common/Debug.js");
 const Errors_js_1 = require("../common/Errors.js");
 const util_js_1 = require("../common/util.js");
+const ErrorLike_js_1 = require("../util/ErrorLike.js");
 const NodeWebSocketTransport_js_1 = require("../node/NodeWebSocketTransport.js");
 const PipeTransport_js_1 = require("./PipeTransport.js");
 const removeFolderAsync = (0, util_1.promisify)(rimraf_1.default);
@@ -232,7 +234,7 @@ class BrowserRunner {
                 }
             }
             catch (error) {
-                throw new Error(`${PROCESS_ERROR_EXPLANATION}\nError cause: ${(0, util_js_1.isErrorLike)(error) ? error.stack : error}`);
+                throw new Error(`${PROCESS_ERROR_EXPLANATION}\nError cause: ${(0, ErrorLike_js_1.isErrorLike)(error) ? error.stack : error}`);
             }
         }
         // Attempt to remove temporary profile directory to avoid littering.
@@ -245,6 +247,14 @@ class BrowserRunner {
         // Cleanup this listener last, as that makes sure the full callback runs. If we
         // perform this earlier, then the previous function calls would not happen.
         (0, util_js_1.removeEventListeners)(__classPrivateFieldGet(this, _BrowserRunner_listeners, "f"));
+    }
+    async setupWebDriverBiDiConnection(options) {
+        (0, assert_js_1.assert)(this.proc, 'BrowserRunner not started.');
+        const { timeout, slowMo, preferredRevision } = options;
+        let browserWSEndpoint = await waitForWSEndpoint(this.proc, timeout, preferredRevision, /^WebDriver BiDi listening on (ws:\/\/.*)$/);
+        browserWSEndpoint += '/session';
+        const transport = await NodeWebSocketTransport_js_1.NodeWebSocketTransport.create(browserWSEndpoint);
+        return new Connection_js_2.Connection(transport, slowMo);
     }
     async setupConnection(options) {
         (0, assert_js_1.assert)(this.proc, 'BrowserRunner not started.');
@@ -266,7 +276,7 @@ class BrowserRunner {
 }
 exports.BrowserRunner = BrowserRunner;
 _BrowserRunner_product = new WeakMap(), _BrowserRunner_executablePath = new WeakMap(), _BrowserRunner_processArguments = new WeakMap(), _BrowserRunner_userDataDir = new WeakMap(), _BrowserRunner_isTempUserDataDir = new WeakMap(), _BrowserRunner_closed = new WeakMap(), _BrowserRunner_listeners = new WeakMap(), _BrowserRunner_processClosing = new WeakMap();
-function waitForWSEndpoint(browserProcess, timeout, preferredRevision) {
+function waitForWSEndpoint(browserProcess, timeout, preferredRevision, regex = /^DevTools listening on (ws:\/\/.*)$/) {
     (0, assert_js_1.assert)(browserProcess.stderr, '`browserProcess` does not have stderr.');
     const rl = readline.createInterface(browserProcess.stderr);
     let stderr = '';
@@ -301,7 +311,7 @@ function waitForWSEndpoint(browserProcess, timeout, preferredRevision) {
         }
         function onLine(line) {
             stderr += line + '\n';
-            const match = line.match(/^DevTools listening on (ws:\/\/.*)$/);
+            const match = line.match(regex);
             if (!match) {
                 return;
             }
@@ -322,7 +332,7 @@ function pidExists(pid) {
         return process.kill(pid, 0);
     }
     catch (error) {
-        if ((0, util_js_1.isErrnoException)(error)) {
+        if ((0, ErrorLike_js_1.isErrnoException)(error)) {
             if (error.code && error.code === 'ESRCH') {
                 return false;
             }

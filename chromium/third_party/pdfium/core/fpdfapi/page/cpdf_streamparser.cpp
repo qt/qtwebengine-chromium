@@ -74,7 +74,7 @@ uint32_t DecodeInlineStream(pdfium::span<const uint8_t> src_span,
                             int width,
                             int height,
                             const ByteString& decoder,
-                            const CPDF_Dictionary* pParam,
+                            RetainPtr<const CPDF_Dictionary> pParam,
                             uint32_t orig_size) {
   // |decoder| should not be an abbreviation.
   DCHECK(decoder != "A85");
@@ -88,11 +88,11 @@ uint32_t DecodeInlineStream(pdfium::span<const uint8_t> src_span,
   std::unique_ptr<uint8_t, FxFreeDeleter> ignored_result;
   uint32_t ignored_size;
   if (decoder == "FlateDecode") {
-    return FlateOrLZWDecode(false, src_span, pParam, orig_size, &ignored_result,
-                            &ignored_size);
+    return FlateOrLZWDecode(false, src_span, pParam.Get(), orig_size,
+                            &ignored_result, &ignored_size);
   }
   if (decoder == "LZWDecode") {
-    return FlateOrLZWDecode(true, src_span, pParam, 0, &ignored_result,
+    return FlateOrLZWDecode(true, src_span, pParam.Get(), 0, &ignored_result,
                             &ignored_size);
   }
   if (decoder == "DCTDecode") {
@@ -103,7 +103,7 @@ uint32_t DecodeInlineStream(pdfium::span<const uint8_t> src_span,
   }
   if (decoder == "CCITTFaxDecode") {
     std::unique_ptr<ScanlineDecoder> pDecoder =
-        CreateFaxDecoder(src_span, width, height, pParam);
+        CreateFaxDecoder(src_span, width, height, pParam.Get());
     return DecodeAllScanlines(std::move(pDecoder));
   }
 
@@ -139,13 +139,13 @@ RetainPtr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     return nullptr;
 
   ByteString decoder;
-  const CPDF_Dictionary* pParam = nullptr;
-  const CPDF_Object* pFilter = pDict->GetDirectObjectFor("Filter");
+  RetainPtr<const CPDF_Dictionary> pParam;
+  RetainPtr<const CPDF_Object> pFilter = pDict->GetDirectObjectFor("Filter");
   if (pFilter) {
     const CPDF_Array* pArray = pFilter->AsArray();
     if (pArray) {
-      decoder = pArray->GetStringAt(0);
-      const CPDF_Array* pParams =
+      decoder = pArray->GetByteStringAt(0);
+      RetainPtr<const CPDF_Array> pParams =
           pDict->GetArrayFor(pdfium::stream::kDecodeParms);
       if (pParams)
         pParam = pParams->GetDictAt(0);
@@ -186,7 +186,7 @@ RetainPtr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
     m_Pos += dwOrigSize;
   } else {
     dwStreamSize = DecodeInlineStream(m_pBuf.subspan(m_Pos), width, height,
-                                      decoder, pParam, dwOrigSize);
+                                      decoder, std::move(pParam), dwOrigSize);
     if (!pdfium::base::IsValueInRangeForNumericType<int>(dwStreamSize))
       return nullptr;
 
@@ -309,14 +309,12 @@ RetainPtr<CPDF_Object> CPDF_StreamParser::ReadNextObject(
 
   if (bIsNumber) {
     m_WordBuffer[m_WordSize] = 0;
-    return pdfium::MakeRetain<CPDF_Number>(
-        ByteStringView(m_WordBuffer, m_WordSize));
+    return pdfium::MakeRetain<CPDF_Number>(GetWord());
   }
 
   int first_char = m_WordBuffer[0];
   if (first_char == '/') {
-    ByteString name =
-        PDF_NameDecode(ByteStringView(m_WordBuffer + 1, m_WordSize - 1));
+    ByteString name = PDF_NameDecode(GetWord().Substr(1));
     return pdfium::MakeRetain<CPDF_Name>(m_pPool, name);
   }
 
@@ -338,8 +336,7 @@ RetainPtr<CPDF_Object> CPDF_StreamParser::ReadNextObject(
       if (!m_WordSize || m_WordBuffer[0] != '/')
         return nullptr;
 
-      ByteString key =
-          PDF_NameDecode(ByteStringView(m_WordBuffer + 1, m_WordSize - 1));
+      ByteString key = PDF_NameDecode(GetWord().Substr(1));
       RetainPtr<CPDF_Object> pObj =
           ReadNextObject(true, bInArray, dwRecursionLevel + 1);
       if (!pObj)

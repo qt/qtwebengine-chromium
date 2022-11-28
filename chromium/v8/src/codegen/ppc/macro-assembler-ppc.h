@@ -615,9 +615,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void SwapSimd128(Simd128Register src, Simd128Register dst,
                    Simd128Register scratch);
   void SwapSimd128(Simd128Register src, MemOperand dst,
-                   Simd128Register scratch);
+                   Simd128Register scratch1, Register scratch2);
   void SwapSimd128(MemOperand src, MemOperand dst, Simd128Register scratch1,
-                   Simd128Register scratch2);
+                   Simd128Register scratch2, Register scratch3);
 
   void ByteReverseU16(Register dst, Register val, Register scratch);
   void ByteReverseU32(Register dst, Register val, Register scratch);
@@ -670,7 +670,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // Calls Abort(msg) if the condition cond is not satisfied.
   // Use --debug_code to enable.
   void Assert(Condition cond, AbortReason reason,
-              CRegister cr = cr7) NOOP_UNLESS_DEBUG_CODE;
+              CRegister cr = cr7) NOOP_UNLESS_DEBUG_CODE
 
   // Like Assert(), but always enabled.
   void Check(Condition cond, AbortReason reason, CRegister cr = cr7);
@@ -696,6 +696,15 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void LoadFromConstantsTable(Register destination, int constant_index) final;
   void LoadRootRegisterOffset(Register destination, intptr_t offset) final;
   void LoadRootRelative(Register destination, int32_t offset) final;
+
+  // Operand pointing to an external reference.
+  // May emit code to set up the scratch register. The operand is
+  // only guaranteed to be correct as long as the scratch register
+  // isn't changed.
+  // If the operand is used more than once, use a scratch register
+  // that is guaranteed not to be clobbered.
+  MemOperand ExternalReferenceAsOperand(ExternalReference reference,
+                                        Register scratch);
 
   // Jump, Call, and Ret pseudo instructions implementing inter-working.
   void Jump(Register target);
@@ -795,7 +804,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
     }
   }
   void SmiToInt32(Register smi) {
-    if (FLAG_enable_slow_asserts) {
+    if (v8_flags.enable_slow_asserts) {
       AssertSmi(smi);
     }
     DCHECK(SmiValuesAre32Bits() || SmiValuesAre31Bits());
@@ -809,8 +818,8 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   }
 
   // Abort execution if argument is a smi, enabled via --debug-code.
-  void AssertNotSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
-  void AssertSmi(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertNotSmi(Register object) NOOP_UNLESS_DEBUG_CODE
+  void AssertSmi(Register object) NOOP_UNLESS_DEBUG_CODE
 
   void ZeroExtByte(Register dst, Register src);
   void ZeroExtHalfWord(Register dst, Register src);
@@ -1071,6 +1080,139 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
                   Register scratch2);
 
   // Simd Support.
+#define SIMD_BINOP_LIST(V) \
+  V(F64x2Add)              \
+  V(F64x2Sub)              \
+  V(F64x2Mul)              \
+  V(F64x2Div)              \
+  V(F64x2Eq)               \
+  V(F64x2Lt)               \
+  V(F64x2Le)               \
+  V(F32x4Add)              \
+  V(F32x4Sub)              \
+  V(F32x4Mul)              \
+  V(F32x4Div)              \
+  V(F32x4Min)              \
+  V(F32x4Max)              \
+  V(F32x4Eq)               \
+  V(F32x4Lt)               \
+  V(F32x4Le)               \
+  V(I64x2Add)              \
+  V(I64x2Sub)              \
+  V(I64x2Eq)               \
+  V(I64x2GtS)              \
+  V(I32x4MinS)             \
+  V(I32x4MinU)             \
+  V(I32x4MaxS)             \
+  V(I32x4MaxU)             \
+  V(I32x4Add)              \
+  V(I32x4Sub)              \
+  V(I32x4Mul)              \
+  V(I32x4Eq)               \
+  V(I32x4GtS)              \
+  V(I32x4GtU)              \
+  V(I16x8Add)              \
+  V(I16x8Sub)              \
+  V(I16x8Mul)              \
+  V(I16x8MinS)             \
+  V(I16x8MinU)             \
+  V(I16x8MaxS)             \
+  V(I16x8MaxU)             \
+  V(I16x8Eq)               \
+  V(I16x8GtS)              \
+  V(I16x8GtU)              \
+  V(I16x8AddSatS)          \
+  V(I16x8SubSatS)          \
+  V(I16x8AddSatU)          \
+  V(I16x8SubSatU)          \
+  V(I8x16Add)              \
+  V(I8x16Sub)              \
+  V(I8x16MinS)             \
+  V(I8x16MinU)             \
+  V(I8x16MaxS)             \
+  V(I8x16MaxU)             \
+  V(I8x16Eq)               \
+  V(I8x16GtS)              \
+  V(I8x16GtU)              \
+  V(I8x16AddSatS)          \
+  V(I8x16SubSatS)          \
+  V(I8x16AddSatU)          \
+  V(I8x16SubSatU)
+
+#define PROTOTYPE_SIMD_BINOP(name) \
+  void name(Simd128Register dst, Simd128Register src1, Simd128Register src2);
+  SIMD_BINOP_LIST(PROTOTYPE_SIMD_BINOP)
+#undef PROTOTYPE_SIMD_BINOP
+#undef SIMD_BINOP_LIST
+
+#define SIMD_BINOP_WITH_SCRATCH_LIST(V) \
+  V(F64x2Ne)                            \
+  V(F32x4Ne)                            \
+  V(I64x2Ne)                            \
+  V(I64x2GeS)                           \
+  V(I32x4Ne)                            \
+  V(I32x4GeS)                           \
+  V(I32x4GeU)                           \
+  V(I16x8Ne)                            \
+  V(I16x8GeS)                           \
+  V(I16x8GeU)                           \
+  V(I8x16Ne)                            \
+  V(I8x16GeS)                           \
+  V(I8x16GeU)
+
+#define PROTOTYPE_SIMD_BINOP_WITH_SCRATCH(name)                              \
+  void name(Simd128Register dst, Simd128Register src1, Simd128Register src2, \
+            Simd128Register scratch);
+  SIMD_BINOP_WITH_SCRATCH_LIST(PROTOTYPE_SIMD_BINOP_WITH_SCRATCH)
+#undef PROTOTYPE_SIMD_BINOP_WITH_SCRATCH
+#undef SIMD_BINOP_WITH_SCRATCH_LIST
+
+#define SIMD_SHIFT_LIST(V) \
+  V(I64x2Shl)              \
+  V(I64x2ShrS)             \
+  V(I64x2ShrU)             \
+  V(I32x4Shl)              \
+  V(I32x4ShrS)             \
+  V(I32x4ShrU)             \
+  V(I16x8Shl)              \
+  V(I16x8ShrS)             \
+  V(I16x8ShrU)             \
+  V(I8x16Shl)              \
+  V(I8x16ShrS)             \
+  V(I8x16ShrU)
+
+#define PROTOTYPE_SIMD_SHIFT(name)                                          \
+  void name(Simd128Register dst, Simd128Register src1, Register src2,       \
+            Simd128Register scratch);                                       \
+  void name(Simd128Register dst, Simd128Register src1, const Operand& src2, \
+            Register scratch1, Simd128Register scratch2);
+  SIMD_SHIFT_LIST(PROTOTYPE_SIMD_SHIFT)
+#undef PROTOTYPE_SIMD_SHIFT
+#undef SIMD_SHIFT_LIST
+
+#define SIMD_UNOP_LIST(V) \
+  V(F64x2Abs)             \
+  V(F64x2Neg)             \
+  V(F64x2Sqrt)            \
+  V(F64x2Ceil)            \
+  V(F64x2Floor)           \
+  V(F64x2Trunc)           \
+  V(F32x4Abs)             \
+  V(F32x4Neg)             \
+  V(F32x4Sqrt)            \
+  V(F32x4Ceil)            \
+  V(F32x4Floor)           \
+  V(F32x4Trunc)           \
+  V(I64x2Neg)             \
+  V(I32x4Neg)             \
+  V(I8x16Popcnt)
+
+#define PROTOTYPE_SIMD_UNOP(name) \
+  void name(Simd128Register dst, Simd128Register src);
+  SIMD_UNOP_LIST(PROTOTYPE_SIMD_UNOP)
+#undef PROTOTYPE_SIMD_UNOP
+#undef SIMD_UNOP_LIST
+
   void LoadSimd128(Simd128Register dst, const MemOperand& mem,
                    Register scratch);
   void StoreSimd128(Simd128Register src, const MemOperand& mem,
@@ -1123,6 +1265,25 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void I8x16ReplaceLane(Simd128Register dst, Simd128Register src1,
                         Register src2, uint8_t imm_lane_idx,
                         Simd128Register scratch);
+  void I64x2Mul(Simd128Register dst, Simd128Register src1, Simd128Register src2,
+                Register scratch1, Register scrahc2, Register scratch3,
+                Simd128Register scratch4);
+  void F64x2Min(Simd128Register dst, Simd128Register src1, Simd128Register src2,
+                Simd128Register scratch1, Simd128Register scratch2);
+  void F64x2Max(Simd128Register dst, Simd128Register src1, Simd128Register src2,
+                Simd128Register scratch1, Simd128Register scratch2);
+  void I64x2Abs(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
+  void I32x4Abs(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
+  void I16x8Abs(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
+  void I16x8Neg(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
+  void I8x16Abs(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
+  void I8x16Neg(Simd128Register dst, Simd128Register src,
+                Simd128Register scratch);
 
  private:
   static const int kSmiShift = kSmiTagSize + kSmiShiftSize;
@@ -1297,16 +1458,16 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   // Tiering support.
   void AssertFeedbackVector(Register object,
-                            Register scratch) NOOP_UNLESS_DEBUG_CODE;
+                            Register scratch) NOOP_UNLESS_DEBUG_CODE
   void ReplaceClosureCodeWithOptimizedCode(Register optimized_code,
                                            Register closure, Register scratch1,
                                            Register slot_address);
   void GenerateTailCallToReturnedCode(Runtime::FunctionId function_id);
-  void LoadTieringStateAndJumpIfNeedsProcessing(
-      Register optimization_state, Register feedback_vector,
-      Label* has_optimized_code_or_state);
-  void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(Register optimization_state,
-                                                    Register feedback_vector);
+  void LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
+      Register flags, Register feedback_vector, CodeKind current_code_kind,
+      Label* flags_need_processing);
+  void OptimizeCodeOrTailCallOptimizedCodeSlot(Register flags,
+                                               Register feedback_vector);
 
   // ---------------------------------------------------------------------------
   // Runtime calls
@@ -1356,14 +1517,14 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 
   void IncrementCounter(StatsCounter* counter, int value, Register scratch1,
                         Register scratch2) {
-    if (!FLAG_native_code_counters) return;
+    if (!v8_flags.native_code_counters) return;
     EmitIncrementCounter(counter, value, scratch1, scratch2);
   }
   void EmitIncrementCounter(StatsCounter* counter, int value, Register scratch1,
                             Register scratch2);
   void DecrementCounter(StatsCounter* counter, int value, Register scratch1,
                         Register scratch2) {
-    if (!FLAG_native_code_counters) return;
+    if (!v8_flags.native_code_counters) return;
     EmitDecrementCounter(counter, value, scratch1, scratch2);
   }
   void EmitDecrementCounter(StatsCounter* counter, int value, Register scratch1,
@@ -1398,27 +1559,27 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
 #endif
 
   // Abort execution if argument is not a Constructor, enabled via --debug-code.
-  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertConstructor(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSFunction, enabled via --debug-code.
-  void AssertFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a callable JSFunction, enabled via
   // --debug-code.
-  void AssertCallableFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertCallableFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSBoundFunction,
   // enabled via --debug-code.
-  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertBoundFunction(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not a JSGeneratorObject (or subclass),
   // enabled via --debug-code.
-  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE;
+  void AssertGeneratorObject(Register object) NOOP_UNLESS_DEBUG_CODE
 
   // Abort execution if argument is not undefined or an AllocationSite, enabled
   // via --debug-code.
   void AssertUndefinedOrAllocationSite(Register object,
-                                       Register scratch) NOOP_UNLESS_DEBUG_CODE;
+                                       Register scratch) NOOP_UNLESS_DEBUG_CODE
 
   // ---------------------------------------------------------------------------
   // Patching helpers.

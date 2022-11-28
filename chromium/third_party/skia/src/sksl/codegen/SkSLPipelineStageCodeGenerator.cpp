@@ -23,6 +23,7 @@
 #include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
@@ -78,7 +79,7 @@ public:
     void generateCode();
 
 private:
-    using Precedence = Operator::Precedence;
+    using Precedence = OperatorPrecedence;
 
     void write(std::string_view s);
     void writeLine(std::string_view s = std::string_view());

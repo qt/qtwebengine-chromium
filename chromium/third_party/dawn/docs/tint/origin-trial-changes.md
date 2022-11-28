@@ -1,5 +1,30 @@
 # Tint changes during Origin Trial
 
+## Changes for M108
+
+### New features
+
+* `textureSampleBaseClampToEdge()` has been implemented. [tint:1671](crbug.com/tint/1671)
+
+### Deprecated Features
+
+* The `external_texture` overload of `textureSampleLevel()` has been deprecated. Use `textureSampleBaseClampToEdge()` instead. [tint:1671](crbug.com/tint/1671)
+
+### Fixes
+
+* Constant evaluation of type conversions where the value exceeds the limits of the target type have been fixed. [tint:1707](crbug.com/tint/1707)
+
+## Changes for M107
+
+### New features
+
+* `saturate()` has been implemented. [tint:1591](crbug.com/tint/1591)
+
+### Breaking changes
+
+* Uniformity analysis failures are now an error [tint:880](crbug.com/tint/880)
+* Indexing an array, vector or matrix with a compile-time expression that's out-of-bounds is now an error [tint:1665](crbug.com/tint/1665)
+
 ## Changes for M106
 
 ### New features

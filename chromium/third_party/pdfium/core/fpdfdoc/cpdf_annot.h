@@ -73,13 +73,12 @@ class CPDF_Annot {
                                           size_t nIndex);
   static size_t QuadPointCount(const CPDF_Array* pArray);
 
-  CPDF_Annot(CPDF_Dictionary* pDict, CPDF_Document* pDocument);
+  CPDF_Annot(RetainPtr<CPDF_Dictionary> pDict, CPDF_Document* pDocument);
   ~CPDF_Annot();
 
   Subtype GetSubtype() const;
   uint32_t GetFlags() const;
   CFX_FloatRect GetRect() const;
-  CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
   const CPDF_Dictionary* GetAnnotDict() const { return m_pAnnotDict.Get(); }
   RetainPtr<CPDF_Dictionary> GetMutableAnnotDict() { return m_pAnnotDict; }
 

@@ -445,8 +445,11 @@ bool CPDF_HintTables::LoadHintStream(CPDF_Stream* pHintStream) {
   if (!pHintStream || !m_pLinearized->HasHintTable())
     return false;
 
-  const CPDF_Dictionary* pDict = pHintStream->GetDict();
-  const CPDF_Object* pOffset = pDict ? pDict->GetObjectFor("S") : nullptr;
+  RetainPtr<const CPDF_Dictionary> pDict = pHintStream->GetDict();
+  if (!pDict)
+    return false;
+
+  RetainPtr<const CPDF_Object> pOffset = pDict->GetObjectFor("S");
   if (!pOffset || !pOffset->IsNumber())
     return false;
 
@@ -454,7 +457,8 @@ bool CPDF_HintTables::LoadHintStream(CPDF_Stream* pHintStream) {
   if (shared_hint_table_offset <= 0)
     return false;
 
-  auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pHintStream);
+  auto pAcc =
+      pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(pHintStream));
   pAcc->LoadAllDataFiltered();
 
   uint32_t size = pAcc->GetSize();

@@ -188,7 +188,7 @@ class MemoryChunk : public BasicMemoryChunk {
     DCHECK(!V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT);
     // On MacOS on ARM64 RWX permissions are allowed to be set only when
     // fast W^X is enabled (see V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT).
-    return !V8_HAS_PTHREAD_JIT_WRITE_PROTECT && FLAG_write_code_using_rwx
+    return !V8_HAS_PTHREAD_JIT_WRITE_PROTECT && v8_flags.write_code_using_rwx
                ? PageAllocator::kReadWriteExecute
                : PageAllocator::kReadWrite;
   }
@@ -219,6 +219,10 @@ class MemoryChunk : public BasicMemoryChunk {
     return &object_start_bitmap_;
   }
 #endif  // V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
+
+  void MarkWasUsedForAllocation() { was_used_for_allocation_ = true; }
+  void ClearWasUsedForAllocation() { was_used_for_allocation_ = false; }
+  bool WasUsedForAllocation() const { return was_used_for_allocation_; }
 
  protected:
   // Release all memory allocated by the chunk. Should be called when memory
@@ -286,6 +290,10 @@ class MemoryChunk : public BasicMemoryChunk {
 #ifdef V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
   ObjectStartBitmap object_start_bitmap_;
 #endif  // V8_ENABLE_INNER_POINTER_RESOLUTION_OSB
+
+  // Marks a chunk that was used for allocation since it was last swept. Used
+  // only for new space pages.
+  size_t was_used_for_allocation_ = false;
 
  private:
   friend class ConcurrentMarkingState;

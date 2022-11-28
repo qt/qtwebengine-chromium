@@ -57,12 +57,17 @@ struct allocate_small_svd {
   }
 };
 
+EIGEN_DIAGNOSTICS(push)
+EIGEN_DISABLE_DEPRECATED_WARNING
+
 template <typename MatrixType>
 struct allocate_small_svd<MatrixType, 0> {
   static void run(JacobiSVD<MatrixType>& smallSvd, Index rows, Index cols, unsigned int computationOptions) {
     smallSvd = JacobiSVD<MatrixType>(rows, cols, computationOptions);
   }
 };
+
+EIGEN_DIAGNOSTICS(pop)
 
 } // end namespace internal
 

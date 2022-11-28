@@ -4,6 +4,8 @@
 
 #include "cast/standalone_sender/simulated_capturer.h"
 
+#include <libavformat/version.h>
+
 #include <algorithm>
 #include <chrono>
 #include <ratio>
@@ -45,7 +47,12 @@ SimulatedCapturer::SimulatedCapturer(Environment* environment,
     return;  // Capturer is halted (unable to start).
   }
 
+#if LIBAVFORMAT_VERSION_MAJOR < 59
   AVCodec* codec;
+#else
+  const AVCodec* codec;
+#endif  // LIBAVFORMAT_VERSION_MAJOR < 59
+
   const int stream_result = av_find_best_stream(format_context_.get(),
                                                 media_type_, -1, -1, &codec, 0);
   if (stream_result < 0) {

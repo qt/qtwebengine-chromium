@@ -251,7 +251,7 @@ public:
 
     /** Retrieves alpha from the color used when stroking and filling.
 
-        @return  alpha ranging from zero, fully transparent, to 255, fully opaque
+        @return  alpha ranging from zero, fully transparent, to one, fully opaque
     */
     float getAlphaf() const { return fColor4f.fA; }
 
@@ -678,6 +678,8 @@ public:
     const SkRect& doComputeFastBounds(const SkRect& orig, SkRect* storage,
                                       Style style) const;
 
+    using sk_is_trivially_relocatable = std::true_type;
+
 private:
     sk_sp<SkPathEffect>   fPathEffect;
     sk_sp<SkShader>       fShader;
@@ -700,6 +702,15 @@ private:
         } fBitfields;
         uint32_t fBitfieldsUInt;
     };
+
+    static_assert(::sk_is_trivially_relocatable<decltype(fPathEffect)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fShader)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fMaskFilter)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fColorFilter)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fImageFilter)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fBlender)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fColor4f)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fBitfields)>::value);
 
     friend class SkPaintPriv;
 };

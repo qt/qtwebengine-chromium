@@ -24,12 +24,6 @@ namespace location {
 namespace nearby {
 namespace windows {
 
-namespace {
-constexpr int kMaxRetries = 3;
-constexpr int kRetryIntervalMilliSeconds = 300;
-constexpr int kMaxScans = 2;
-}  // namespace
-
 WifiHotspotMedium::WifiHotspotMedium() {}
 
 WifiHotspotMedium::~WifiHotspotMedium() {
@@ -38,10 +32,20 @@ WifiHotspotMedium::~WifiHotspotMedium() {
 }
 
 bool WifiHotspotMedium::IsInterfaceValid() const {
-  // Windows 10 starts to support WiFi direct feature, so don't need to check
-  // feature by OS due to targeting OS version is at leat Windows 10.
-  NEARBY_LOGS(ERROR) << "WiFi hotspot: valid interface found.";
-  return true;
+  HANDLE wifi_direct_handle = NULL;
+  DWORD negotiated_version = 0;
+  DWORD result = 0;
+
+  result =
+      WFDOpenHandle(WFD_API_VERSION, &negotiated_version, &wifi_direct_handle);
+  if (result == ERROR_SUCCESS) {
+    NEARBY_LOGS(INFO) << "WiFi can support Hotspot";
+    WFDCloseHandle(wifi_direct_handle);
+    return true;
+  }
+
+  NEARBY_LOGS(ERROR) << "WiFi can't support Hotspot";
+  return false;
 }
 
 std::unique_ptr<api::WifiHotspotSocket> WifiHotspotMedium::ConnectToService(
@@ -159,14 +163,15 @@ bool WifiHotspotMedium::StartWifiHotspot(
   publisher_.Advertisement().IsAutonomousGroupOwnerEnabled(true);
 
   // Using WIFIDirect legacy mode to create a softAP. AP means "access point".
+  Prng prng;
   publisher_.Advertisement().LegacySettings().IsEnabled(true);
-  std::string password = absl::StrFormat("%08x", Prng().NextUint32());
+  std::string password = absl::StrFormat("%08x", prng.NextUint32());
   hotspot_credentials_->SetPassword(password);
   PasswordCredential creds;
   creds.Password(winrt::to_hstring(password));
   publisher_.Advertisement().LegacySettings().Passphrase(creds);
 
-  std::string ssid = "DIRECT-" + std::to_string(Prng().NextUint32());
+  std::string ssid = "DIRECT-" + std::to_string(prng.NextUint32());
   hotspot_credentials_->SetSSID(ssid);
   publisher_.Advertisement().LegacySettings().Ssid(winrt::to_hstring(ssid));
 

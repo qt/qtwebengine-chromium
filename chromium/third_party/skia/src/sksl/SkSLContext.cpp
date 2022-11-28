@@ -14,10 +14,10 @@
 
 namespace SkSL {
 
-Context::Context(ErrorReporter& errors, const ShaderCaps& caps, Mangler& mangler)
-        : fCaps(caps)
-        , fErrors(&errors)
-        , fMangler(&mangler) {
+Context::Context(const BuiltinTypes& types, const ShaderCaps* caps, ErrorReporter& errors)
+        : fTypes(types)
+        , fCaps(caps)
+        , fErrors(&errors) {
     SkASSERT(!Pool::IsAttached());
 }
 

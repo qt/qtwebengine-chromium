@@ -47,7 +47,7 @@ class ComputeProgram : public Coroutine<SpirvShader::YieldResult(
                            int32_t subgroupCount)>
 {
 public:
-	ComputeProgram(vk::Device *device, std::shared_ptr<SpirvShader> spirvShader, vk::PipelineLayout const *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets);
+	ComputeProgram(vk::Device *device, std::shared_ptr<SpirvShader> spirvShader, const vk::PipelineLayout *pipelineLayout, const vk::DescriptorSet::Bindings &descriptorSets);
 
 	virtual ~ComputeProgram();
 
@@ -56,10 +56,10 @@ public:
 
 	// run executes the compute shader routine for all workgroups.
 	void run(
-	    vk::DescriptorSet::Array const &descriptorSetObjects,
-	    vk::DescriptorSet::Bindings const &descriptorSetBindings,
-	    vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
-	    vk::Pipeline::PushConstantStorage const &pushConstants,
+	    const vk::DescriptorSet::Array &descriptorSetObjects,
+	    const vk::DescriptorSet::Bindings &descriptorSetBindings,
+	    const vk::DescriptorSet::DynamicOffsets &descriptorDynamicOffsets,
+	    const vk::Pipeline::PushConstantStorage &pushConstants,
 	    uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
 	    uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);
 

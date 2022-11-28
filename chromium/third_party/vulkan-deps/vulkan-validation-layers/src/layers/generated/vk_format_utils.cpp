@@ -66,7 +66,7 @@ struct FORMAT_INFO {
 namespace std {
 template <>
 struct hash<VkFormat> {
-    size_t operator()(VkFormat fmt) const NOEXCEPT {
+    size_t operator()(VkFormat fmt) const noexcept {
         return hash<uint32_t>()(static_cast<uint32_t>(fmt));
     }
 };
@@ -596,6 +596,9 @@ static const layer_data::unordered_map<VkFormat, FORMAT_INFO> kVkFormatTable = {
     {VK_FORMAT_R16G16B16_USCALED,
         {FORMAT_COMPATIBILITY_CLASS::_48BIT, 6, 1, {1, 1, 1}, 3,
         {{COMPONENT_TYPE::R, 16}, {COMPONENT_TYPE::G, 16}, {COMPONENT_TYPE::B, 16}} }},
+    {VK_FORMAT_R16G16_S10_5_NV,
+        {FORMAT_COMPATIBILITY_CLASS::_32BIT, 4, 1, {1, 1, 1}, 2,
+        {{COMPONENT_TYPE::R, 16}, {COMPONENT_TYPE::G, 16}} }},
     {VK_FORMAT_R16G16_SFLOAT,
         {FORMAT_COMPATIBILITY_CLASS::_32BIT, 4, 1, {1, 1, 1}, 2,
         {{COMPONENT_TYPE::R, 16}, {COMPONENT_TYPE::G, 16}} }},
@@ -1189,6 +1192,7 @@ bool FormatIsSINT(VkFormat format) {
         case VK_FORMAT_R64G64_SINT:
         case VK_FORMAT_R64G64B64_SINT:
         case VK_FORMAT_R64G64B64A64_SINT:
+        case VK_FORMAT_R16G16_S10_5_NV:
         found = true;
             break;
         default:
@@ -1901,4 +1905,29 @@ double FormatTexelSize(VkFormat format, VkImageAspectFlags aspectMask) {
     return texel_size;
 }
 
+static bool FormatHasComponent(VkFormat format, COMPONENT_TYPE component) {
+    auto item = kVkFormatTable.find(format);
+    if (item == kVkFormatTable.end()) {
+        return false;
+    }
+    const COMPONENT_INFO* begin = item->second.components;
+    const COMPONENT_INFO* end = item->second.components + FORMAT_MAX_COMPONENTS;
+    return std::find_if(begin, end, [component](const COMPONENT_INFO& info) { return info.type == component; }) != end;
+}
+
+bool FormatHasRed(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::R);
+}
+
+bool FormatHasGreen(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::G);
+}
+
+bool FormatHasBlue(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::B);
+}
+
+bool FormatHasAlpha(VkFormat format) {
+    return FormatHasComponent(format, COMPONENT_TYPE::A);
+}
 

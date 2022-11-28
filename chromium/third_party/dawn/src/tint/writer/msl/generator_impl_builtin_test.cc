@@ -184,16 +184,16 @@ const ast::CallExpression* GenerateCall(BuiltinType builtin,
             } else {
                 return builder->Call(str.str(), "m2x2");
             }
-        case BuiltinType::kPack2x16snorm:
-        case BuiltinType::kPack2x16unorm:
+        case BuiltinType::kPack2X16Snorm:
+        case BuiltinType::kPack2X16Unorm:
             return builder->Call(str.str(), "f2");
-        case BuiltinType::kPack4x8snorm:
-        case BuiltinType::kPack4x8unorm:
+        case BuiltinType::kPack4X8Snorm:
+        case BuiltinType::kPack4X8Unorm:
             return builder->Call(str.str(), "f4");
-        case BuiltinType::kUnpack4x8snorm:
-        case BuiltinType::kUnpack4x8unorm:
-        case BuiltinType::kUnpack2x16snorm:
-        case BuiltinType::kUnpack2x16unorm:
+        case BuiltinType::kUnpack4X8Snorm:
+        case BuiltinType::kUnpack4X8Unorm:
+        case BuiltinType::kUnpack2X16Snorm:
+        case BuiltinType::kUnpack2X16Unorm:
             return builder->Call(str.str(), "u1");
         case BuiltinType::kWorkgroupBarrier:
             return builder->Call(str.str());
@@ -216,21 +216,21 @@ TEST_P(MslBuiltinTest, Emit) {
     if (param.type == CallParamType::kF16) {
         Enable(ast::Extension::kF16);
 
-        GlobalVar("h2", ty.vec2<f16>(), ast::StorageClass::kPrivate);
-        GlobalVar("h3", ty.vec3<f16>(), ast::StorageClass::kPrivate);
-        GlobalVar("hm2x2", ty.mat2x2<f16>(), ast::StorageClass::kPrivate);
-        GlobalVar("hm3x2", ty.mat3x2<f16>(), ast::StorageClass::kPrivate);
+        GlobalVar("h2", ty.vec2<f16>(), ast::AddressSpace::kPrivate);
+        GlobalVar("h3", ty.vec3<f16>(), ast::AddressSpace::kPrivate);
+        GlobalVar("hm2x2", ty.mat2x2<f16>(), ast::AddressSpace::kPrivate);
+        GlobalVar("hm3x2", ty.mat3x2<f16>(), ast::AddressSpace::kPrivate);
     }
 
-    GlobalVar("f2", ty.vec2<f32>(), ast::StorageClass::kPrivate);
-    GlobalVar("f3", ty.vec3<f32>(), ast::StorageClass::kPrivate);
-    GlobalVar("f4", ty.vec4<f32>(), ast::StorageClass::kPrivate);
-    GlobalVar("u1", ty.u32(), ast::StorageClass::kPrivate);
-    GlobalVar("u2", ty.vec2<u32>(), ast::StorageClass::kPrivate);
-    GlobalVar("i2", ty.vec2<i32>(), ast::StorageClass::kPrivate);
-    GlobalVar("b2", ty.vec2<bool>(), ast::StorageClass::kPrivate);
-    GlobalVar("m2x2", ty.mat2x2<f32>(), ast::StorageClass::kPrivate);
-    GlobalVar("m3x2", ty.mat3x2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("f2", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("f3", ty.vec3<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("f4", ty.vec4<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("u1", ty.u32(), ast::AddressSpace::kPrivate);
+    GlobalVar("u2", ty.vec2<u32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("i2", ty.vec2<i32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("b2", ty.vec2<bool>(), ast::AddressSpace::kPrivate);
+    GlobalVar("m2x2", ty.mat2x2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("m3x2", ty.mat3x2<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = GenerateCall(param.builtin, param.type, this);
     ASSERT_NE(nullptr, call) << "Unhandled builtin";
@@ -357,21 +357,21 @@ INSTANTIATE_TEST_SUITE_P(
         BuiltinData{BuiltinType::kFwidthCoarse, CallParamType::kF32, "fwidth"},
         BuiltinData{BuiltinType::kFwidthFine, CallParamType::kF32, "fwidth"},
         /* Data packing builtin */
-        BuiltinData{BuiltinType::kPack4x8snorm, CallParamType::kF32, "pack_float_to_snorm4x8"},
-        BuiltinData{BuiltinType::kPack4x8unorm, CallParamType::kF32, "pack_float_to_unorm4x8"},
-        BuiltinData{BuiltinType::kPack2x16snorm, CallParamType::kF32, "pack_float_to_snorm2x16"},
-        BuiltinData{BuiltinType::kPack2x16unorm, CallParamType::kF32, "pack_float_to_unorm2x16"},
+        BuiltinData{BuiltinType::kPack4X8Snorm, CallParamType::kF32, "pack_float_to_snorm4x8"},
+        BuiltinData{BuiltinType::kPack4X8Unorm, CallParamType::kF32, "pack_float_to_unorm4x8"},
+        BuiltinData{BuiltinType::kPack2X16Snorm, CallParamType::kF32, "pack_float_to_snorm2x16"},
+        BuiltinData{BuiltinType::kPack2X16Unorm, CallParamType::kF32, "pack_float_to_unorm2x16"},
         /* Data unpacking builtin */
-        BuiltinData{BuiltinType::kUnpack4x8snorm, CallParamType::kU32, "unpack_snorm4x8_to_float"},
-        BuiltinData{BuiltinType::kUnpack4x8unorm, CallParamType::kU32, "unpack_unorm4x8_to_float"},
-        BuiltinData{BuiltinType::kUnpack2x16snorm, CallParamType::kU32,
+        BuiltinData{BuiltinType::kUnpack4X8Snorm, CallParamType::kU32, "unpack_snorm4x8_to_float"},
+        BuiltinData{BuiltinType::kUnpack4X8Unorm, CallParamType::kU32, "unpack_unorm4x8_to_float"},
+        BuiltinData{BuiltinType::kUnpack2X16Snorm, CallParamType::kU32,
                     "unpack_snorm2x16_to_float"},
-        BuiltinData{BuiltinType::kUnpack2x16unorm, CallParamType::kU32,
+        BuiltinData{BuiltinType::kUnpack2X16Unorm, CallParamType::kU32,
                     "unpack_unorm2x16_to_float"}));
 
 TEST_F(MslGeneratorImplTest, Builtin_Call) {
-    GlobalVar("param1", ty.vec2<f32>(), ast::StorageClass::kPrivate);
-    GlobalVar("param2", ty.vec2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("param1", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
+    GlobalVar("param2", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
 
     auto* call = Call("dot", "param1", "param2");
     WrapInFunction(CallStmt(call));
@@ -855,7 +855,7 @@ kernel void test_function() {
 
 TEST_F(MslGeneratorImplTest, Pack2x16Float) {
     auto* call = Call("pack2x16float", "p1");
-    GlobalVar("p1", ty.vec2<f32>(), ast::StorageClass::kPrivate);
+    GlobalVar("p1", ty.vec2<f32>(), ast::AddressSpace::kPrivate);
     WrapInFunction(CallStmt(call));
 
     GeneratorImpl& gen = Build();
@@ -867,7 +867,7 @@ TEST_F(MslGeneratorImplTest, Pack2x16Float) {
 
 TEST_F(MslGeneratorImplTest, Unpack2x16Float) {
     auto* call = Call("unpack2x16float", "p1");
-    GlobalVar("p1", ty.u32(), ast::StorageClass::kPrivate);
+    GlobalVar("p1", ty.u32(), ast::AddressSpace::kPrivate);
     WrapInFunction(CallStmt(call));
 
     GeneratorImpl& gen = Build();
@@ -878,7 +878,7 @@ TEST_F(MslGeneratorImplTest, Unpack2x16Float) {
 }
 
 TEST_F(MslGeneratorImplTest, DotI32) {
-    GlobalVar("v", ty.vec3<i32>(), ast::StorageClass::kPrivate);
+    GlobalVar("v", ty.vec3<i32>(), ast::AddressSpace::kPrivate);
     WrapInFunction(CallStmt(Call("dot", "v", "v")));
 
     GeneratorImpl& gen = SanitizeAndBuild();

@@ -14,12 +14,18 @@
 
 
 void xnn_qu8_vadd_minmax_ukernel__scalar_x2(
-    size_t n,
+    size_t batch,
     const uint8_t* input_a,
     const uint8_t* input_b,
     uint8_t* output,
     const union xnn_qu8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
+  assert(batch != 0);
+  assert(batch % sizeof(uint8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const int32_t vbias = params->scalar.bias;
   const int32_t va_multiplier = params->scalar.a_multiplier;
   const int32_t vb_multiplier = params->scalar.b_multiplier;
@@ -28,7 +34,7 @@ void xnn_qu8_vadd_minmax_ukernel__scalar_x2(
   const int32_t voutput_max_less_zero_point = params->scalar.output_max_less_zero_point;
   const int32_t voutput_zero_point = params->scalar.output_zero_point;
 
-  for (; n >= 2 * sizeof(uint8_t); n -= 2 * sizeof(uint8_t)) {
+  for (; batch >= 2 * sizeof(uint8_t); batch -= 2 * sizeof(uint8_t)) {
     const int32_t va0 = input_a[0];
     const int32_t va1 = input_a[1];
     input_a += 2;
@@ -58,7 +64,7 @@ void xnn_qu8_vadd_minmax_ukernel__scalar_x2(
     output[1] = (uint8_t) vout1;
     output += 2;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     const int32_t va = *input_a;
     const int32_t vb = *input_b;
     const int32_t vacc = vbias + va * va_multiplier + vb * vb_multiplier;

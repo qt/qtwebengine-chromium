@@ -437,7 +437,7 @@ class ValidationStateTracker : public ValidationObject {
         if (found_it == map.end()) {
             return nullptr;
         }
-        return std::move(found_it->second);
+        return found_it->second;
     };
 
     std::shared_ptr<BUFFER_STATE> GetBufferByAddress(VkDeviceAddress address) {
@@ -471,23 +471,6 @@ class ValidationStateTracker : public ValidationObject {
         return result;
     }
 
-    using CommandBufferResetCallback = std::function<void(VkCommandBuffer)>;
-    template <typename Fn>
-    void SetCommandBufferResetCallback(Fn&& fn) {
-        command_buffer_reset_callback.reset(new CommandBufferResetCallback(std::forward<Fn>(fn)));
-    }
-
-    using CommandBufferFreeCallback = std::function<void(VkCommandBuffer)>;
-    template <typename Fn>
-    void SetCommandBufferFreeCallback(Fn&& fn) {
-        command_buffer_free_callback.reset(new CommandBufferFreeCallback(std::forward<Fn>(fn)));
-    }
-
-    void ResetCommandBufferCallbacks() {
-        command_buffer_reset_callback.reset();
-        command_buffer_free_callback.reset();
-    }
-
     using SetImageViewInitialLayoutCallback = std::function<void(CMD_BUFFER_STATE*, const IMAGE_VIEW_STATE&, VkImageLayout)>;
     template <typename Fn>
     void SetSetImageViewInitialLayoutCallback(Fn&& fn) {
@@ -518,7 +501,8 @@ class ValidationStateTracker : public ValidationObject {
     void PostCallRecordGetBufferMemoryRequirements2KHR(VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo,
                                                        VkMemoryRequirements2* pMemoryRequirements) override;
 
-    virtual std::shared_ptr<QUEUE_STATE> CreateQueue(VkQueue queue, uint32_t queue_family_index, VkDeviceQueueCreateFlags flags);
+    virtual std::shared_ptr<QUEUE_STATE> CreateQueue(VkQueue queue, uint32_t queue_family_index, VkDeviceQueueCreateFlags flags,
+                                                     const VkQueueFamilyProperties &queueFamilyProperties);
 
     void PostCallRecordGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) override;
     void PostCallRecordGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue) override;
@@ -600,6 +584,7 @@ class ValidationStateTracker : public ValidationObject {
                                                      VkResult result) override;
 #endif  // VK_USE_PLATFORM_WIN32_KHR
     void PostCallRecordSignalSemaphoreKHR(VkDevice device, const VkSemaphoreSignalInfo* pSignalInfo, VkResult result) override;
+    void PostCallRecordSignalSemaphore(VkDevice device, const VkSemaphoreSignalInfo* pSignalInfo, VkResult result) override;
 
     // Create/Destroy/Bind
     void PostCallRecordBindAccelerationStructureMemoryNV(VkDevice device, uint32_t bindInfoCount,
@@ -879,6 +864,13 @@ class ValidationStateTracker : public ValidationObject {
     void PreCallRecordUpdateDescriptorSetWithTemplateKHR(VkDevice device, VkDescriptorSet descriptorSet,
                                                          VkDescriptorUpdateTemplate descriptorUpdateTemplate,
                                                          const void* pData) override;
+
+    virtual std::shared_ptr<DEVICE_MEMORY_STATE> CreateDeviceMemoryState(VkDeviceMemory mem,
+                                                                         const VkMemoryAllocateInfo* p_alloc_info,
+                                                                         uint64_t fake_address, const VkMemoryType& memory_type,
+                                                                         const VkMemoryHeap& memory_heap,
+                                                                         layer_data::optional<DedicatedBinding>&& dedicated_binding,
+                                                                         uint32_t physical_device_count);
 
     // Memory mapping
     void PostCallRecordMapMemory(VkDevice device, VkDeviceMemory mem, VkDeviceSize offset, VkDeviceSize size, VkFlags flags,
@@ -1340,8 +1332,6 @@ class ValidationStateTracker : public ValidationObject {
     // Link for derived device objects back to their parent instance object
     ValidationStateTracker* instance_state;
 
-    std::unique_ptr<CommandBufferResetCallback> command_buffer_reset_callback;
-    std::unique_ptr<CommandBufferFreeCallback> command_buffer_free_callback;
     std::unique_ptr<SetImageViewInitialLayoutCallback> set_image_view_initial_layout_callback;
 
     DeviceFeatures enabled_features = {};

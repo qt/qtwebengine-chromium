@@ -280,6 +280,10 @@ void HeapObject::HeapObjectPrint(std::ostream& os) {
     case UNCACHED_EXTERNAL_ONE_BYTE_STRING_TYPE:
     case SHARED_STRING_TYPE:
     case SHARED_ONE_BYTE_STRING_TYPE:
+    case SHARED_EXTERNAL_STRING_TYPE:
+    case SHARED_EXTERNAL_ONE_BYTE_STRING_TYPE:
+    case SHARED_UNCACHED_EXTERNAL_STRING_TYPE:
+    case SHARED_UNCACHED_EXTERNAL_ONE_BYTE_STRING_TYPE:
     case SHARED_THIN_STRING_TYPE:
     case SHARED_THIN_ONE_BYTE_STRING_TYPE:
     case JS_LAST_DUMMY_API_OBJECT_TYPE:
@@ -409,7 +413,7 @@ void PrintTypedArrayElements(std::ostream& os, const ElementType* data_ptr,
                              size_t length, bool is_on_heap) {
   if (length == 0) return;
   size_t previous_index = 0;
-  if (i::FLAG_mock_arraybuffer_allocator && !is_on_heap) {
+  if (i::v8_flags.mock_arraybuffer_allocator && !is_on_heap) {
     // Don't try to print data that's not actually allocated.
     os << "\n    0-" << length << ": <mocked array buffer bytes>";
     return;
@@ -847,7 +851,10 @@ void AccessorInfo::AccessorInfoPrint(std::ostream& os) {
      << SideEffectType2String(setter_side_effect_type());
   os << "\n - initial_attributes: " << initial_property_attributes();
   os << "\n - getter: " << reinterpret_cast<void*>(getter());
-  os << "\n - js_getter: " << reinterpret_cast<void*>(js_getter());
+  if (USE_SIMULATOR_BOOL) {
+    os << "\n - maybe_redirected_getter: "
+       << reinterpret_cast<void*>(maybe_redirected_getter());
+  }
   os << "\n - setter: " << reinterpret_cast<void*>(setter());
   os << '\n';
 }
@@ -1219,7 +1226,8 @@ void FeedbackVector::FeedbackVectorPrint(std::ostream& os) {
     os << "\n - no optimized code";
   }
   os << "\n - tiering state: " << tiering_state();
-  os << "\n - maybe has optimized code: " << maybe_has_optimized_code();
+  os << "\n - maybe has maglev code: " << maybe_has_maglev_code();
+  os << "\n - maybe has turbofan code: " << maybe_has_turbofan_code();
   os << "\n - invocation count: " << invocation_count();
   os << "\n - profiler ticks: " << profiler_ticks();
   os << "\n - closure feedback cell array: ";
@@ -1257,21 +1265,28 @@ void FeedbackNexus::Print(std::ostream& os) {
     case FeedbackSlotKind::kDefineKeyedOwn:
     case FeedbackSlotKind::kHasKeyed:
     case FeedbackSlotKind::kInstanceOf:
-    case FeedbackSlotKind::kLoadGlobalInsideTypeof:
-    case FeedbackSlotKind::kLoadGlobalNotInsideTypeof:
-    case FeedbackSlotKind::kLoadKeyed:
     case FeedbackSlotKind::kDefineKeyedOwnPropertyInLiteral:
     case FeedbackSlotKind::kStoreGlobalSloppy:
     case FeedbackSlotKind::kStoreGlobalStrict:
     case FeedbackSlotKind::kStoreInArrayLiteral:
-    case FeedbackSlotKind::kSetKeyedSloppy:
-    case FeedbackSlotKind::kSetKeyedStrict:
-    case FeedbackSlotKind::kSetNamedSloppy:
-    case FeedbackSlotKind::kSetNamedStrict:
     case FeedbackSlotKind::kDefineNamedOwn: {
       os << InlineCacheState2String(ic_state());
       break;
     }
+    case FeedbackSlotKind::kLoadGlobalInsideTypeof:
+    case FeedbackSlotKind::kLoadGlobalNotInsideTypeof: {
+      os << InlineCacheState2String(ic_state());
+      if (ic_state() == InlineCacheState::MONOMORPHIC) {
+        os << "\n   ";
+        if (GetFeedback().GetHeapObjectOrSmi().IsPropertyCell()) {
+          os << Brief(GetFeedback());
+        } else {
+          LoadHandler::PrintHandler(GetFeedback().GetHeapObjectOrSmi(), os);
+        }
+      }
+      break;
+    }
+    case FeedbackSlotKind::kLoadKeyed:
     case FeedbackSlotKind::kLoadProperty: {
       os << InlineCacheState2String(ic_state());
       if (ic_state() == InlineCacheState::MONOMORPHIC) {
@@ -1283,6 +1298,24 @@ void FeedbackNexus::Print(std::ostream& os) {
         for (int i = 0; i < array.length(); i += 2) {
           os << "\n   " << Brief(array.Get(i)) << ": ";
           LoadHandler::PrintHandler(array.Get(i + 1).GetHeapObjectOrSmi(), os);
+        }
+      }
+      break;
+    }
+    case FeedbackSlotKind::kSetNamedSloppy:
+    case FeedbackSlotKind::kSetNamedStrict:
+    case FeedbackSlotKind::kSetKeyedSloppy:
+    case FeedbackSlotKind::kSetKeyedStrict: {
+      os << InlineCacheState2String(ic_state());
+      if (ic_state() == InlineCacheState::MONOMORPHIC) {
+        os << "\n   " << Brief(GetFeedback()) << ": ";
+        StoreHandler::PrintHandler(GetFeedbackExtra().GetHeapObjectOrSmi(), os);
+      } else if (ic_state() == InlineCacheState::POLYMORPHIC) {
+        WeakFixedArray array =
+            WeakFixedArray::cast(GetFeedback().GetHeapObject());
+        for (int i = 0; i < array.length(); i += 2) {
+          os << "\n   " << Brief(array.Get(i)) << ": ";
+          StoreHandler::PrintHandler(array.Get(i + 1).GetHeapObjectOrSmi(), os);
         }
       }
       break;
@@ -1300,7 +1333,6 @@ void FeedbackNexus::Print(std::ostream& os) {
       break;
     }
     case FeedbackSlotKind::kLiteral:
-    case FeedbackSlotKind::kTypeProfile:
       break;
     case FeedbackSlotKind::kJumpLoop:
       os << "JumpLoop";
@@ -1525,7 +1557,7 @@ void JSArrayBuffer::JSArrayBufferPrint(std::ostream& os) {
   if (is_detachable()) os << "\n - detachable";
   if (was_detached()) os << "\n - detached";
   if (is_shared()) os << "\n - shared";
-  if (is_resizable()) os << "\n - resizable";
+  if (is_resizable_by_js()) os << "\n - resizable_by_js";
   JSObjectPrintBody(os, *this, !was_detached());
 }
 
@@ -1854,7 +1886,6 @@ void ArrayBoilerplateDescription::ArrayBoilerplateDescriptionPrint(
 void AsmWasmData::AsmWasmDataPrint(std::ostream& os) {
   PrintHeader(os, "AsmWasmData");
   os << "\n - native module: " << Brief(managed_native_module());
-  os << "\n - export_wrappers: " << Brief(export_wrappers());
   os << "\n - uses bitset: " << uses_bitset().value();
   os << "\n";
 }
@@ -1862,7 +1893,6 @@ void AsmWasmData::AsmWasmDataPrint(std::ostream& os) {
 void WasmTypeInfo::WasmTypeInfoPrint(std::ostream& os) {
   PrintHeader(os, "WasmTypeInfo");
   os << "\n - type address: " << reinterpret_cast<void*>(native_type());
-  // TODO(manoskouk): Print supertype info.
   os << "\n - supertypes: ";
   for (int i = 0; i < supertypes_length(); i++) {
     os << "\n  - " << Brief(supertypes(i));
@@ -1904,7 +1934,8 @@ void WasmStruct::WasmStructPrint(std::ostream& os) {
       case wasm::kRtt: {
         Tagged_t raw = base::ReadUnalignedValue<Tagged_t>(field_address);
 #if V8_COMPRESS_POINTERS
-        Address obj = DecompressTaggedPointer(address(), raw);
+        Address obj =
+            V8HeapCompressionScheme::DecompressTaggedPointer(address(), raw);
 #else
         Address obj = raw;
 #endif
@@ -1954,13 +1985,39 @@ void WasmArray::WasmArrayPrint(std::ostream& os) {
       PrintTypedArrayElements(os, reinterpret_cast<int16_t*>(data_ptr), len,
                               true);
       break;
-    case wasm::kS128:
     case wasm::kRef:
-    case wasm::kRefNull:
-    case wasm::kRtt:
-      os << "\n   Printing elements of this type is unimplemented, sorry";
-      // TODO(7748): Implement.
+    case wasm::kRefNull: {
+      os << "\n - elements:";
+      constexpr uint32_t kWasmArrayMaximumPrintedElements = 5;
+      for (uint32_t i = 0;
+           i < std::min(this->length(), kWasmArrayMaximumPrintedElements);
+           i++) {
+        os << "\n   " << static_cast<int>(i) << " - "
+           << Brief(TaggedField<Object>::load(*this, this->element_offset(i)));
+      }
+      if (this->length() > kWasmArrayMaximumPrintedElements) os << "\n   ...";
       break;
+    }
+    case wasm::kS128: {
+      os << "\n - elements:";
+      constexpr uint32_t kWasmArrayMaximumPrintedElements = 5;
+      for (uint32_t i = 0;
+           i < std::min(this->length(), kWasmArrayMaximumPrintedElements);
+           i++) {
+        os << "\n   " << static_cast<int>(i) << " - 0x" << std::hex;
+#ifdef V8_TARGET_BIG_ENDIAN
+        for (int j = 0; j < kSimd128Size; j++) {
+#else
+        for (int j = kSimd128Size - 1; j >= 0; j--) {
+#endif
+          os << reinterpret_cast<byte*>(this->ElementAddress(i))[j];
+        }
+        os << std::dec;
+      }
+      if (this->length() > kWasmArrayMaximumPrintedElements) os << "\n   ...";
+      break;
+    }
+    case wasm::kRtt:
     case wasm::kBottom:
     case wasm::kVoid:
       UNREACHABLE();
@@ -2007,7 +2064,6 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(indirect_function_tables, Brief);
   PRINT_WASM_INSTANCE_FIELD(imported_function_refs, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(indirect_function_table_refs, Brief);
-  PRINT_OPTIONAL_WASM_INSTANCE_FIELD(managed_native_allocations, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(tags_table, Brief);
   PRINT_OPTIONAL_WASM_INSTANCE_FIELD(wasm_internal_functions, Brief);
   PRINT_WASM_INSTANCE_FIELD(managed_object_maps, Brief);
@@ -2021,18 +2077,18 @@ void WasmInstanceObject::WasmInstanceObjectPrint(std::ostream& os) {
   PRINT_WASM_INSTANCE_FIELD(new_allocation_top_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(old_allocation_limit_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(old_allocation_top_address, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(imported_function_targets, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(imported_function_targets, Brief);
   PRINT_WASM_INSTANCE_FIELD(globals_start, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(imported_mutable_globals, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(imported_mutable_globals, Brief);
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_size, +);
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_sig_ids, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(indirect_function_table_targets, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(isorecursive_canonical_types,
                             reinterpret_cast<const uint32_t*>);
   PRINT_WASM_INSTANCE_FIELD(jump_table_start, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(data_segment_starts, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(data_segment_sizes, to_void_ptr);
-  PRINT_WASM_INSTANCE_FIELD(dropped_elem_segments, to_void_ptr);
+  PRINT_WASM_INSTANCE_FIELD(data_segment_starts, Brief);
+  PRINT_WASM_INSTANCE_FIELD(data_segment_sizes, Brief);
+  PRINT_WASM_INSTANCE_FIELD(dropped_elem_segments, Brief);
   PRINT_WASM_INSTANCE_FIELD(hook_on_function_call_address, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(tiering_budget_array, to_void_ptr);
   PRINT_WASM_INSTANCE_FIELD(break_on_entry, static_cast<int>);
@@ -2053,9 +2109,10 @@ void WasmFunctionData::WasmFunctionDataPrint(std::ostream& os) {
 void WasmExportedFunctionData::WasmExportedFunctionDataPrint(std::ostream& os) {
   PrintHeader(os, "WasmExportedFunctionData");
   WasmFunctionDataPrint(os);
+  Isolate* isolate = GetIsolateForSandbox(*this);
   os << "\n - instance: " << Brief(instance());
   os << "\n - function_index: " << function_index();
-  os << "\n - signature: " << Brief(signature());
+  os << "\n - signature: " << reinterpret_cast<void*>(sig(isolate));
   os << "\n - wrapper_budget: " << wrapper_budget();
   os << "\n";
 }
@@ -2111,7 +2168,6 @@ void WasmModuleObject::WasmModuleObjectPrint(std::ostream& os) {
   PrintHeader(os, "WasmModuleObject");
   os << "\n - module: " << module();
   os << "\n - native module: " << native_module();
-  os << "\n - export wrappers: " << Brief(export_wrappers());
   os << "\n - script: " << Brief(script());
   os << "\n";
 }
@@ -2191,7 +2247,10 @@ void StoreHandler::StoreHandlerPrint(std::ostream& os) {
 void CallHandlerInfo::CallHandlerInfoPrint(std::ostream& os) {
   PrintHeader(os, "CallHandlerInfo");
   os << "\n - callback: " << reinterpret_cast<void*>(callback());
-  os << "\n - js_callback: " << reinterpret_cast<void*>(js_callback());
+  if (USE_SIMULATOR_BOOL) {
+    os << "\n - maybe_redirected_callback: "
+       << reinterpret_cast<void*>(maybe_redirected_callback());
+  }
   os << "\n - data: " << Brief(data());
   os << "\n - side_effect_free: "
      << (IsSideEffectFreeCallHandlerInfo() ? "true" : "false");
@@ -2352,6 +2411,12 @@ void JSTemporalCalendar::JSTemporalCalendarPrint(std::ostream& os) {
   JSObjectPrintHeader(os, *this, "JSTemporalCalendar");
   JSObjectPrintBody(os, *this);
 }
+
+void JSRawJson::JSRawJsonPrint(std::ostream& os) {
+  JSObjectPrintHeader(os, *this, "JSRawJson");
+  JSObjectPrintBody(os, *this);
+}
+
 #ifdef V8_INTL_SUPPORT
 void JSV8BreakIterator::JSV8BreakIteratorPrint(std::ostream& os) {
   JSObjectPrintHeader(os, *this, "JSV8BreakIterator");
@@ -2389,6 +2454,15 @@ void JSDisplayNames::JSDisplayNamesPrint(std::ostream& os) {
   os << "\n - internal: " << Brief(internal());
   os << "\n - style: " << StyleAsString();
   os << "\n - fallback: " << FallbackAsString();
+  JSObjectPrintBody(os, *this);
+}
+
+void JSDurationFormat::JSDurationFormatPrint(std::ostream& os) {
+  JSObjectPrintHeader(os, *this, "JSDurationFormat");
+  os << "\n - style_flags: " << style_flags();
+  os << "\n - display_flags: " << display_flags();
+  os << "\n - icu locale: " << Brief(icu_locale());
+  os << "\n - icu number formatter: " << Brief(icu_number_formatter());
   JSObjectPrintBody(os, *this);
 }
 
@@ -2551,31 +2625,6 @@ void PreparseData::PreparseDataPrint(std::ostream& os) {
   os << "\n";
 }
 
-template <HeapObjectReferenceType kRefType, typename StorageType>
-void TaggedImpl<kRefType, StorageType>::Print() {
-  StdoutStream os;
-  this->Print(os);
-  os << std::flush;
-}
-
-template <HeapObjectReferenceType kRefType, typename StorageType>
-void TaggedImpl<kRefType, StorageType>::Print(std::ostream& os) {
-  Smi smi;
-  HeapObject heap_object;
-  if (ToSmi(&smi)) {
-    smi.SmiPrint(os);
-  } else if (IsCleared()) {
-    os << "[cleared]";
-  } else if (GetHeapObjectIfWeak(&heap_object)) {
-    os << "[weak] ";
-    heap_object.HeapObjectPrint(os);
-  } else if (GetHeapObjectIfStrong(&heap_object)) {
-    heap_object.HeapObjectPrint(os);
-  } else {
-    UNREACHABLE();
-  }
-}
-
 void HeapNumber::HeapNumberPrint(std::ostream& os) {
   HeapNumberShortPrint(os);
   os << "\n";
@@ -2687,7 +2736,8 @@ void Map::MapPrint(std::ostream& os) {
   } else {
     os << "\n - back pointer: " << Brief(GetBackPointer());
   }
-  os << "\n - prototype_validity cell: " << Brief(prototype_validity_cell());
+  os << "\n - prototype_validity cell: "
+     << Brief(prototype_validity_cell(kRelaxedLoad));
   os << "\n - instance descriptors " << (owns_descriptors() ? "(own) " : "")
      << "#" << NumberOfOwnDescriptors() << ": "
      << Brief(instance_descriptors());
@@ -2907,8 +2957,8 @@ inline i::Object GetObjectFromRaw(void* object) {
   if (RoundDown<i::kPtrComprCageBaseAlignment>(object_ptr) == i::kNullAddress) {
     // Try to decompress pointer.
     i::Isolate* isolate = i::Isolate::Current();
-    object_ptr =
-        i::DecompressTaggedAny(isolate, static_cast<i::Tagged_t>(object_ptr));
+    object_ptr = i::V8HeapCompressionScheme::DecompressTaggedAny(
+        isolate, static_cast<i::Tagged_t>(object_ptr));
   }
 #endif
   return i::Object(object_ptr);
@@ -2919,14 +2969,17 @@ inline i::Object GetObjectFromRaw(void* object) {
 //
 // The following functions are used by our gdb macros.
 //
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern i::Object _v8_internal_Get_Object(void* object) {
   return GetObjectFromRaw(object);
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_Object(void* object) {
   GetObjectFromRaw(object).Print();
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_LoadHandler(void* object) {
 #ifdef OBJECT_PRINT
   i::StdoutStream os;
@@ -2935,6 +2988,7 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_LoadHandler(void* object) {
 #endif
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_StoreHandler(void* object) {
 #ifdef OBJECT_PRINT
   i::StdoutStream os;
@@ -2943,6 +2997,7 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_StoreHandler(void* object) {
 #endif
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
   i::Address address = reinterpret_cast<i::Address>(object);
   i::Isolate* isolate = i::Isolate::Current();
@@ -2985,11 +3040,13 @@ V8_EXPORT_PRIVATE extern void _v8_internal_Print_Code(void* object) {
 #endif  // ENABLE_DISASSEMBLER
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_StackTrace() {
   i::Isolate* isolate = i::Isolate::Current();
   isolate->PrintStack(stdout);
 }
 
+V8_DONT_STRIP_SYMBOL
 V8_EXPORT_PRIVATE extern void _v8_internal_Print_TransitionTree(void* object) {
   i::Object o(GetObjectFromRaw(object));
   if (!o.IsMap()) {

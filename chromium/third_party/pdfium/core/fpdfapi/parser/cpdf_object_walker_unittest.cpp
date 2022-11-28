@@ -21,10 +21,10 @@
 
 namespace {
 
-std::string Walk(CPDF_Object* object) {
+std::string Walk(RetainPtr<CPDF_Object> object) {
   std::ostringstream result;
-  CPDF_ObjectWalker walker(object);
-  while (const CPDF_Object* obj = walker.GetNext()) {
+  CPDF_ObjectWalker walker(std::move(object));
+  while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     if (obj->IsDictionary())
       result << " Dict";
     else if (obj->IsArray())
@@ -54,13 +54,13 @@ std::string Walk(CPDF_Object* object) {
 }  // namespace
 
 TEST(ObjectWalkerTest, Simple) {
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Null>().Get()), "Null");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Dictionary>().Get()), "Dict");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Array>().Get()), "Arr");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_String>().Get()), "Str");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Boolean>().Get()), "Bool");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Stream>().Get()), "Stream");
-  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Reference>(nullptr, 0).Get()), "Ref");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Null>()), "Null");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Dictionary>()), "Dict");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Array>()), "Arr");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_String>()), "Str");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Boolean>()), "Bool");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Stream>()), "Stream");
+  EXPECT_EQ(Walk(pdfium::MakeRetain<CPDF_Reference>(nullptr, 0)), "Ref");
 }
 
 TEST(ObjectWalkerTest, CombinedObject) {
@@ -74,7 +74,7 @@ TEST(ObjectWalkerTest, CombinedObject) {
       nullptr, 0, pdfium::MakeRetain<CPDF_Dictionary>()));
   dict->SetFor("3", std::move(array));
   // The last number for stream length.
-  EXPECT_EQ(Walk(dict.Get()), "Dict Str Bool Arr Ref Null Stream Dict Num");
+  EXPECT_EQ(Walk(dict), "Dict Str Bool Arr Ref Null Stream Dict Num");
 }
 
 TEST(ObjectWalkerTest, GetParent) {
@@ -91,9 +91,9 @@ TEST(ObjectWalkerTest, GetParent) {
   // We have <</Array [ stream( << /Length 0 >>) ]>>
   // In this case each step will increase depth.
   // And on each step the prev object should be parent for current.
-  const CPDF_Object* cur_parent = nullptr;
-  CPDF_ObjectWalker walker(level_0.Get());
-  while (const CPDF_Object* obj = walker.GetNext()) {
+  RetainPtr<const CPDF_Object> cur_parent;
+  CPDF_ObjectWalker walker(level_0);
+  while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     EXPECT_EQ(cur_parent, walker.GetParent());
     cur_parent = obj;
   }
@@ -109,8 +109,8 @@ TEST(ObjectWalkerTest, SkipWalkIntoCurrentObject) {
   root_array->Append(root_array->Clone());
 
   int non_array_objects = 0;
-  CPDF_ObjectWalker walker(root_array.Get());
-  while (const CPDF_Object* obj = walker.GetNext()) {
+  CPDF_ObjectWalker walker(root_array);
+  while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     if (obj != root_array && obj->IsArray()) {
       // skip other array except root.
       walker.SkipWalkIntoCurrentObject();
@@ -130,8 +130,8 @@ TEST(ObjectWalkerTest, DictionaryKey) {
   dict->SetFor("4", pdfium::MakeRetain<CPDF_Null>());
   dict->SetFor("5", pdfium::MakeRetain<CPDF_Null>());
 
-  CPDF_ObjectWalker walker(dict.Get());
-  while (const CPDF_Object* obj = walker.GetNext()) {
+  CPDF_ObjectWalker walker(dict);
+  while (RetainPtr<const CPDF_Object> obj = walker.GetNext()) {
     if (dict == obj) {
       // Ignore root dictinary object
       continue;

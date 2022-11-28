@@ -157,6 +157,8 @@ enum ContextLookupFlags {
     intl_date_time_format_function)                                            \
   V(INTL_DISPLAY_NAMES_FUNCTION_INDEX, JSFunction,                             \
     intl_display_names_function)                                               \
+  V(INTL_DURATION_FORMAT_FUNCTION_INDEX, JSFunction,                           \
+    intl_duration_format_function)                                             \
   V(INTL_NUMBER_FORMAT_FUNCTION_INDEX, JSFunction,                             \
     intl_number_format_function)                                               \
   V(INTL_LOCALE_FUNCTION_INDEX, JSFunction, intl_locale_function)              \
@@ -178,11 +180,14 @@ enum ContextLookupFlags {
     js_array_packed_double_elements_map)                                       \
   V(JS_ARRAY_HOLEY_DOUBLE_ELEMENTS_MAP_INDEX, Map,                             \
     js_array_holey_double_elements_map)                                        \
+  V(JS_ARRAY_TEMPLATE_LITERAL_OBJECT_MAP, Map,                                 \
+    js_array_template_literal_object_map)                                      \
   V(JS_ATOMICS_CONDITION_MAP, Map, js_atomics_condition_map)                   \
   V(JS_ATOMICS_MUTEX_MAP, Map, js_atomics_mutex_map)                           \
   V(JS_MAP_FUN_INDEX, JSFunction, js_map_fun)                                  \
   V(JS_MAP_MAP_INDEX, Map, js_map_map)                                         \
   V(JS_MODULE_NAMESPACE_MAP, Map, js_module_namespace_map)                     \
+  V(JS_RAW_JSON_MAP, Map, js_raw_json_map)                                     \
   V(JS_SET_FUN_INDEX, JSFunction, js_set_fun)                                  \
   V(JS_SET_MAP_INDEX, Map, js_set_map)                                         \
   V(JS_WEAK_MAP_FUN_INDEX, JSFunction, js_weak_map_fun)                        \
@@ -209,6 +214,7 @@ enum ContextLookupFlags {
     temporal_time_zone_function)                                               \
   V(JS_TEMPORAL_ZONED_DATE_TIME_FUNCTION_INDEX, JSFunction,                    \
     temporal_zoned_date_time_function)                                         \
+  V(JSON_OBJECT, JSObject, json_object)                                        \
   V(TEMPORAL_INSTANT_FIXED_ARRAY_FROM_ITERABLE_FUNCTION_INDEX, JSFunction,     \
     temporal_instant_fixed_array_from_iterable)                                \
   V(STRING_FIXED_ARRAY_FROM_ITERABLE_FUNCTION_INDEX, JSFunction,               \
@@ -724,7 +730,7 @@ class NativeContext : public Context {
                      ReleaseStoreTag);
 
   // [microtask_queue]: pointer to the MicrotaskQueue object.
-  DECL_EXTERNAL_POINTER_ACCESSORS(microtask_queue, MicrotaskQueue*);
+  DECL_EXTERNAL_POINTER_ACCESSORS(microtask_queue, MicrotaskQueue*)
 
   inline void synchronized_set_script_context_table(
       ScriptContextTable script_context_table);
@@ -745,6 +751,8 @@ class NativeContext : public Context {
 
   inline Map TypedArrayElementsKindToRabGsabCtorMap(
       ElementsKind element_kind) const;
+
+  bool HasTemplateLiteralObject(JSArray array);
 
   // Dispatched behavior.
   DECL_PRINTER(NativeContext)
@@ -784,8 +792,10 @@ class NativeContext : public Context {
   void IncrementErrorsThrown();
   int GetErrorsThrown();
 
+#ifdef V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
   void RunPromiseHook(PromiseHookType type, Handle<JSPromise> promise,
                       Handle<Object> parent);
+#endif
 
  private:
   static_assert(OffsetOfElementAt(EMBEDDER_DATA_INDEX) ==

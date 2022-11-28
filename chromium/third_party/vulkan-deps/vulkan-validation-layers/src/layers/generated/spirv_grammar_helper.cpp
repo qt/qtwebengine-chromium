@@ -365,6 +365,8 @@ static const layer_data::unordered_map<uint32_t, InstructionInfo> kInstructionTa
     {spv::OpFragmentFetchAMD, {"OpFragmentFetchAMD", true, true, 0, 0, 0}},
     {spv::OpReadClockKHR, {"OpReadClockKHR", true, true, 0, 3, 0}},
     {spv::OpImageSampleFootprintNV, {"OpImageSampleFootprintNV", true, true, 0, 0, 7}},
+    {spv::OpEmitMeshTasksEXT, {"OpEmitMeshTasksEXT", false, false, 0, 0, 0}},
+    {spv::OpSetMeshOutputsEXT, {"OpSetMeshOutputsEXT", false, false, 0, 0, 0}},
     {spv::OpGroupNonUniformPartitionNV, {"OpGroupNonUniformPartitionNV", true, true, 0, 0, 0}},
     {spv::OpWritePackedPrimitiveIndices4x8NV, {"OpWritePackedPrimitiveIndices4x8NV", false, false, 0, 0, 0}},
     {spv::OpReportIntersectionKHR, {"OpReportIntersectionKHR", true, true, 0, 0, 0}},
@@ -702,3 +704,100 @@ const char* string_SpvOpcode(uint32_t opcode) {
         return "Unhandled Opcode";
     }
 };
+
+const char* string_SpvStorageClass(uint32_t storage_class) {
+    switch(storage_class) {
+        case spv::StorageClassUniformConstant:
+            return "UniformConstant";
+        case spv::StorageClassInput:
+            return "Input";
+        case spv::StorageClassUniform:
+            return "Uniform";
+        case spv::StorageClassOutput:
+            return "Output";
+        case spv::StorageClassWorkgroup:
+            return "Workgroup";
+        case spv::StorageClassCrossWorkgroup:
+            return "CrossWorkgroup";
+        case spv::StorageClassPrivate:
+            return "Private";
+        case spv::StorageClassFunction:
+            return "Function";
+        case spv::StorageClassGeneric:
+            return "Generic";
+        case spv::StorageClassPushConstant:
+            return "PushConstant";
+        case spv::StorageClassAtomicCounter:
+            return "AtomicCounter";
+        case spv::StorageClassImage:
+            return "Image";
+        case spv::StorageClassStorageBuffer:
+            return "StorageBuffer";
+        case spv::StorageClassCallableDataNV:
+            return "CallableDataNV";
+        case spv::StorageClassIncomingCallableDataNV:
+            return "IncomingCallableDataNV";
+        case spv::StorageClassRayPayloadNV:
+            return "RayPayloadNV";
+        case spv::StorageClassHitAttributeNV:
+            return "HitAttributeNV";
+        case spv::StorageClassIncomingRayPayloadNV:
+            return "IncomingRayPayloadNV";
+        case spv::StorageClassShaderRecordBufferNV:
+            return "ShaderRecordBufferNV";
+        case spv::StorageClassPhysicalStorageBuffer:
+            return "PhysicalStorageBuffer";
+        case spv::StorageClassTaskPayloadWorkgroupEXT:
+            return "TaskPayloadWorkgroupEXT";
+        case spv::StorageClassCodeSectionINTEL:
+            return "CodeSectionINTEL";
+        case spv::StorageClassDeviceOnlyINTEL:
+            return "DeviceOnlyINTEL";
+        case spv::StorageClassHostOnlyINTEL:
+            return "HostOnlyINTEL";
+        default:
+            return "unknown";
+    }
+};
+
+const char* string_SpvExecutionModel(uint32_t execution_model) {
+    switch(execution_model) {
+        case spv::ExecutionModelVertex:
+            return "Vertex";
+        case spv::ExecutionModelTessellationControl:
+            return "TessellationControl";
+        case spv::ExecutionModelTessellationEvaluation:
+            return "TessellationEvaluation";
+        case spv::ExecutionModelGeometry:
+            return "Geometry";
+        case spv::ExecutionModelFragment:
+            return "Fragment";
+        case spv::ExecutionModelGLCompute:
+            return "GLCompute";
+        case spv::ExecutionModelKernel:
+            return "Kernel";
+        case spv::ExecutionModelTaskNV:
+            return "TaskNV";
+        case spv::ExecutionModelMeshNV:
+            return "MeshNV";
+        case spv::ExecutionModelRayGenerationNV:
+            return "RayGenerationNV";
+        case spv::ExecutionModelIntersectionNV:
+            return "IntersectionNV";
+        case spv::ExecutionModelAnyHitNV:
+            return "AnyHitNV";
+        case spv::ExecutionModelClosestHitNV:
+            return "ClosestHitNV";
+        case spv::ExecutionModelMissNV:
+            return "MissNV";
+        case spv::ExecutionModelCallableNV:
+            return "CallableNV";
+        case spv::ExecutionModelTaskEXT:
+            return "TaskEXT";
+        case spv::ExecutionModelMeshEXT:
+            return "MeshEXT";
+        default:
+            return "unknown";
+    }
+};
+

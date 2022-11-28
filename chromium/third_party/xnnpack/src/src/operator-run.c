@@ -159,13 +159,15 @@ void xnn_compute_transposev_2d(
   const size_t ld_output = context->output_stride[0];
   const void* x = (const void*) ((uintptr_t) context->x +
                                  i * context->input_stride[0] + j * ld_input);
-  void* y = (void*) ((uintptr_t) context->y + element_size * j + i * context->output_stride[0]);
+  void* y = (void*) ((uintptr_t) context->y + context->output_stride[1] * j + i * context->output_stride[0]);
 
   context->variable_size_ukernel(
       x,
       y,
       ld_input,
       ld_output,
+      context->input_stride[0],
+      context->output_stride[1],
       element_size,
       tile_i,
       tile_j);
@@ -185,13 +187,15 @@ void xnn_compute_transposev_3d(
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * ld_input);
   void* y = (void*)((uintptr_t)context->y + i * context->output_stride[0] + j * context->output_stride[1] +
-                     k * element_size);
+                     k * context->output_stride[2]);
 
   context->variable_size_ukernel(
       x,
       y,
       ld_input,
       ld_output,
+      context->input_stride[1],
+      context->output_stride[2],
       element_size,
       tile_j,
       tile_k);
@@ -211,7 +215,7 @@ void xnn_compute_transposev_4d(
   const size_t ld_output = context->output_stride[2];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * context->input_stride[2] + l * ld_input);
-  void* y = (void*)((uintptr_t)context->y + element_size * l + i * context->output_stride[0] +
+  void* y = (void*)((uintptr_t)context->y + context->output_stride[3] * l + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2]);
 
   context->variable_size_ukernel(
@@ -219,6 +223,8 @@ void xnn_compute_transposev_4d(
       y,
       ld_input,
       ld_output,
+      context->input_stride[2],
+      context->output_stride[3],
       element_size,
       tile_k,
       tile_l);
@@ -239,7 +245,7 @@ void xnn_compute_transposev_5d(
   const size_t ld_output = context->output_stride[3];
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * context->input_stride[2] + l * context->input_stride[3] + m * ld_input);
-  void* y = (void*)((uintptr_t)context->y + element_size * m + i * context->output_stride[0] +
+  void* y = (void*)((uintptr_t)context->y + context->output_stride[4] * m + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2] + l * context->output_stride[3]);
 
   context->variable_size_ukernel(
@@ -247,6 +253,8 @@ void xnn_compute_transposev_5d(
       y,
       ld_input,
       ld_output,
+      context->input_stride[3],
+      context->output_stride[4],
       element_size,
       tile_l,
       tile_m);
@@ -269,7 +277,7 @@ void xnn_compute_transposev_6d(
   const void* x = (const void*)((uintptr_t)context->x + i * context->input_stride[0] + j * context->input_stride[1] +
                                  k * context->input_stride[2] + l * context->input_stride[3] +
                                  m * context->input_stride[4] + n * ld_input);
-  void* y = (void*)((uintptr_t)context->y + element_size * n + i * context->output_stride[0] +
+  void* y = (void*)((uintptr_t)context->y + context->output_stride[5] * n + i * context->output_stride[0] +
                      j * context->output_stride[1] + k * context->output_stride[2] + l * context->output_stride[3] +
                      m * context->output_stride[4]);
 
@@ -278,6 +286,8 @@ void xnn_compute_transposev_6d(
       y,
       ld_input,
       ld_output,
+      context->input_stride[4],
+      context->output_stride[5],
       element_size,
       tile_m,
       tile_n);
@@ -328,7 +338,7 @@ void xnn_compute_gemm(
       (void*) ((uintptr_t) context->c + mr_block_start * cm_stride + (nr_block_start << context->log2_csize)),
       cm_stride,
       context->cn_stride,
-      &context->params);
+      context->fused_params);
 }
 
 void xnn_compute_spmm(
@@ -662,62 +672,6 @@ void xnn_compute_dwconv2d_chw(
     &context->params);
 }
 
-void xnn_compute_depthtospace2d_hwc_contiguous(
-    const struct depthtospace2d_hwc_context* context,
-    size_t batch_input_y,
-    size_t input_x,
-    size_t block_y)
-{
-  const size_t input_width = context->input_width;
-  const size_t elements = context->elements;
-  const void* input = (const void*) ((uintptr_t) context->input +
-    (batch_input_y * input_width + input_x) * context->input_width_stride + block_y * elements);
-  void* output = (void*) ((uintptr_t) context->output +
-    ((batch_input_y * context->block_size + block_y) * input_width + input_x) * elements);
-
-  context->ukernel(
-    elements,
-    input,
-    output,
-    NULL);
-}
-
-void xnn_compute_depthtospace2d_hwc_strided(
-    const struct depthtospace2d_hwc_context* context,
-    size_t batch_input_y,
-    size_t input_x,
-    size_t block_y,
-    size_t block_x)
-{
-  const size_t block_size = context->block_size;
-  const size_t elements = context->elements;
-  const void* input = (const void*) ((uintptr_t) context->input +
-    batch_input_y * context->input_height_stride + input_x * context->input_width_stride + (block_y * block_size + block_x) * elements);
-  void* output = (void*) ((uintptr_t) context->output +
-    (batch_input_y * block_size + block_y) * context->output_height_stride +
-    (input_x * block_size + block_x) * context->output_width_stride);
-
-  context->ukernel(
-    elements,
-    input,
-    output,
-    NULL);
-}
-
-void xnn_compute_depthtospace2d_chw2hwc(
-    const struct depthtospace2d_chw2hwc_context* context,
-    size_t batch_index)
-{
-  context->ukernel(
-    context->output_channels,
-    context->input_height,
-    context->input_width,
-    context->block_size,
-    (const void*) ((uintptr_t) context->input + batch_index * context->input_batch_stride),
-    (void*) ((uintptr_t) context->output + batch_index * context->output_batch_stride),
-    context->output_channel_stride);
-}
-
 void xnn_compute_argmax_pooling_unipass(
     const struct argmax_pooling_context context[restrict XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
@@ -1025,6 +979,52 @@ void xnn_compute_pad_5d(
   }
 }
 
+void xnn_compute_elementwise_binary_1d(
+    const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t i)
+{
+  const void* a = (const void*) ((uintptr_t) context->a + i * context->a_stride[4]);
+  const void* b = (const void*) ((uintptr_t) context->b + i * context->b_stride[4]);
+  void* y = (void*) ((uintptr_t) context->y + i * context->y_stride[4]);
+  context->ukernel(context->elements, a, b, y, &context->params);
+}
+
+void xnn_compute_elementwise_binary_2d(
+    const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t i, size_t j)
+{
+  const void* a = (const void*) ((uintptr_t) context->a + i * context->a_stride[3] + j * context->a_stride[4]);
+  const void* b = (const void*) ((uintptr_t) context->b + i * context->b_stride[3] + j * context->b_stride[4]);
+  void* y = (void*) ((uintptr_t) context->y + i * context->y_stride[3] + j * context->y_stride[4]);
+  context->ukernel(context->elements, a, b, y, &context->params);
+}
+
+void xnn_compute_elementwise_binary_3d(
+    const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t i, size_t j, size_t k)
+{
+  const void* a = (const void*) ((uintptr_t) context->a +
+    i * context->a_stride[2] + j * context->a_stride[3] + k * context->a_stride[4]);
+  const void* b = (const void*) ((uintptr_t) context->b +
+    i * context->b_stride[2] + j * context->b_stride[3] + k * context->b_stride[4]);
+  void* y = (void*) ((uintptr_t) context->y +
+    i * context->y_stride[2] + j * context->y_stride[3] + k * context->y_stride[4]);
+  context->ukernel(context->elements, a, b, y, &context->params);
+}
+
+void xnn_compute_elementwise_binary_4d(
+    const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
+    size_t i, size_t j, size_t k, size_t l)
+{
+  const void* a = (const void*) ((uintptr_t) context->a +
+    i * context->a_stride[1] + j * context->a_stride[2] + k * context->a_stride[3] + l * context->a_stride[4]);
+  const void* b = (const void*) ((uintptr_t) context->b +
+    i * context->b_stride[1] + j * context->b_stride[2] + k * context->b_stride[3] + l * context->b_stride[4]);
+  void* y = (void*) ((uintptr_t) context->y +
+    i * context->y_stride[1] + j * context->y_stride[2] + k * context->y_stride[3] + l * context->y_stride[4]);
+  context->ukernel(context->elements, a, b, y, &context->params);
+}
+
 void xnn_compute_elementwise_binary_5d(
     const struct elementwise_binary_context context[restrict XNN_MIN_ELEMENTS(1)],
     size_t i, size_t j, size_t k, size_t l, size_t m)
@@ -1222,7 +1222,7 @@ void xnn_compute_vmulcaddc(
         (void*) ((uintptr_t) context->c + mr_block_start * cm_stride + (nr_block_start << context->log2_csize)),
         cm_stride,
         context->cn_stride,
-        &context->params);
+        context->fused_params);
   }
 
   void xnn_compute_hmp_grouped_batch_igemm(

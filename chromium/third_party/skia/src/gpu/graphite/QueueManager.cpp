@@ -48,7 +48,16 @@ void QueueManager::addRecording(const InsertRecordingInfo& info,
     }
 
     if (!fCurrentCommandBuffer) {
-        fCurrentCommandBuffer = this->getNewCommandBuffer();
+        if (fAvailableCommandBuffers.size()) {
+            fCurrentCommandBuffer = std::move(fAvailableCommandBuffers.back());
+            fAvailableCommandBuffers.pop_back();
+            if (!fCurrentCommandBuffer->setNewCommandBufferResources()) {
+                fCurrentCommandBuffer.reset();
+            }
+        }
+    }
+    if (!fCurrentCommandBuffer) {
+        fCurrentCommandBuffer = this->getNewCommandBuffer(resourceProvider);
     }
     if (!fCurrentCommandBuffer) {
         if (callback) {
@@ -95,7 +104,7 @@ void QueueManager::checkForFinishedWork(SyncToCpu sync) {
         // wait for the last submission to finish
         OutstandingSubmission* back = (OutstandingSubmission*)fOutstandingSubmissions.back();
         if (back) {
-            (*back)->waitUntilFinished(fSharedContext);
+            (*back)->waitUntilFinished();
         }
     }
 
@@ -114,6 +123,10 @@ void QueueManager::checkForFinishedWork(SyncToCpu sync) {
         front = (OutstandingSubmission*)fOutstandingSubmissions.front();
     }
     SkASSERT(sync == SyncToCpu::kNo || fOutstandingSubmissions.empty());
+}
+
+void QueueManager::returnCommandBuffer(std::unique_ptr<CommandBuffer> commandBuffer) {
+    fAvailableCommandBuffers.push_back(std::move(commandBuffer));
 }
 
 } // namespace skgpu::graphite

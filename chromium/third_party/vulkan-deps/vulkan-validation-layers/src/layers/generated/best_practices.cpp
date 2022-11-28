@@ -1312,7 +1312,7 @@ void BestPractices::PostCallRecordCreateWin32SurfaceKHR(
 
 void BestPractices::PostCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(
     VkPhysicalDevice                            physicalDevice,
-    const VkVideoProfileKHR*                    pVideoProfile,
+    const VkVideoProfileInfoKHR*                pVideoProfile,
     VkVideoCapabilitiesKHR*                     pCapabilities,
     VkResult                                    result) {
     ValidationStateTracker::PostCallRecordGetPhysicalDeviceVideoCapabilitiesKHR(physicalDevice, pVideoProfile, pCapabilities, result);
@@ -1366,10 +1366,10 @@ void BestPractices::PostCallRecordCreateVideoSessionKHR(
 void BestPractices::PostCallRecordGetVideoSessionMemoryRequirementsKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t*                                   pVideoSessionMemoryRequirementsCount,
-    VkVideoGetMemoryPropertiesKHR*              pVideoSessionMemoryRequirements,
+    uint32_t*                                   pMemoryRequirementsCount,
+    VkVideoSessionMemoryRequirementsKHR*        pMemoryRequirements,
     VkResult                                    result) {
-    ValidationStateTracker::PostCallRecordGetVideoSessionMemoryRequirementsKHR(device, videoSession, pVideoSessionMemoryRequirementsCount, pVideoSessionMemoryRequirements, result);
+    ValidationStateTracker::PostCallRecordGetVideoSessionMemoryRequirementsKHR(device, videoSession, pMemoryRequirementsCount, pMemoryRequirements, result);
     if (result != VK_SUCCESS) {
         static const std::vector<VkResult> error_codes = {VK_ERROR_INITIALIZATION_FAILED};
         static const std::vector<VkResult> success_codes = {VK_INCOMPLETE};
@@ -1384,10 +1384,10 @@ void BestPractices::PostCallRecordGetVideoSessionMemoryRequirementsKHR(
 void BestPractices::PostCallRecordBindVideoSessionMemoryKHR(
     VkDevice                                    device,
     VkVideoSessionKHR                           videoSession,
-    uint32_t                                    videoSessionBindMemoryCount,
-    const VkVideoBindMemoryKHR*                 pVideoSessionBindMemories,
+    uint32_t                                    bindSessionMemoryInfoCount,
+    const VkBindVideoSessionMemoryInfoKHR*      pBindSessionMemoryInfos,
     VkResult                                    result) {
-    ValidationStateTracker::PostCallRecordBindVideoSessionMemoryKHR(device, videoSession, videoSessionBindMemoryCount, pVideoSessionBindMemories, result);
+    ValidationStateTracker::PostCallRecordBindVideoSessionMemoryKHR(device, videoSession, bindSessionMemoryInfoCount, pBindSessionMemoryInfos, result);
     if (result != VK_SUCCESS) {
         static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY,VK_ERROR_INITIALIZATION_FAILED};
         static const std::vector<VkResult> success_codes = {};
@@ -2880,6 +2880,19 @@ void BestPractices::PostCallRecordSetPrivateDataEXT(
     }
 }
 
+void BestPractices::PostCallRecordGetDeviceFaultInfoEXT(
+    VkDevice                                    device,
+    VkDeviceFaultCountsEXT*                     pFaultCounts,
+    VkDeviceFaultInfoEXT*                       pFaultInfo,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordGetDeviceFaultInfoEXT(device, pFaultCounts, pFaultInfo, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY};
+        static const std::vector<VkResult> success_codes = {VK_INCOMPLETE};
+        ValidateReturnCodes("vkGetDeviceFaultInfoEXT", result, error_codes, success_codes);
+    }
+}
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 
 void BestPractices::PostCallRecordAcquireWinrtDisplayNV(
@@ -3124,6 +3137,133 @@ void BestPractices::PostCallRecordCreateScreenSurfaceQNX(
 }
 
 #endif // VK_USE_PLATFORM_SCREEN_QNX
+
+void BestPractices::PostCallRecordCreateMicromapEXT(
+    VkDevice                                    device,
+    const VkMicromapCreateInfoEXT*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkMicromapEXT*                              pMicromap,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordCreateMicromapEXT(device, pCreateInfo, pAllocator, pMicromap, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR};
+        static const std::vector<VkResult> success_codes = {};
+        ValidateReturnCodes("vkCreateMicromapEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordBuildMicromapsEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    uint32_t                                    infoCount,
+    const VkMicromapBuildInfoEXT*               pInfos,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordBuildMicromapsEXT(device, deferredOperation, infoCount, pInfos, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY};
+        static const std::vector<VkResult> success_codes = {VK_OPERATION_DEFERRED_KHR,VK_OPERATION_NOT_DEFERRED_KHR};
+        ValidateReturnCodes("vkBuildMicromapsEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordCopyMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapInfoEXT*                pInfo,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordCopyMicromapEXT(device, deferredOperation, pInfo, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY};
+        static const std::vector<VkResult> success_codes = {VK_OPERATION_DEFERRED_KHR,VK_OPERATION_NOT_DEFERRED_KHR};
+        ValidateReturnCodes("vkCopyMicromapEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordCopyMicromapToMemoryEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMicromapToMemoryInfoEXT*        pInfo,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordCopyMicromapToMemoryEXT(device, deferredOperation, pInfo, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY};
+        static const std::vector<VkResult> success_codes = {VK_OPERATION_DEFERRED_KHR,VK_OPERATION_NOT_DEFERRED_KHR};
+        ValidateReturnCodes("vkCopyMicromapToMemoryEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordCopyMemoryToMicromapEXT(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    const VkCopyMemoryToMicromapInfoEXT*        pInfo,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordCopyMemoryToMicromapEXT(device, deferredOperation, pInfo, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY};
+        static const std::vector<VkResult> success_codes = {VK_OPERATION_DEFERRED_KHR,VK_OPERATION_NOT_DEFERRED_KHR};
+        ValidateReturnCodes("vkCopyMemoryToMicromapEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordWriteMicromapsPropertiesEXT(
+    VkDevice                                    device,
+    uint32_t                                    micromapCount,
+    const VkMicromapEXT*                        pMicromaps,
+    VkQueryType                                 queryType,
+    size_t                                      dataSize,
+    void*                                       pData,
+    size_t                                      stride,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordWriteMicromapsPropertiesEXT(device, micromapCount, pMicromaps, queryType, dataSize, pData, stride, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_OUT_OF_DEVICE_MEMORY};
+        static const std::vector<VkResult> success_codes = {};
+        ValidateReturnCodes("vkWriteMicromapsPropertiesEXT", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordGetPhysicalDeviceOpticalFlowImageFormatsNV(
+    VkPhysicalDevice                            physicalDevice,
+    const VkOpticalFlowImageFormatInfoNV*       pOpticalFlowImageFormatInfo,
+    uint32_t*                                   pFormatCount,
+    VkOpticalFlowImageFormatPropertiesNV*       pImageFormatProperties,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordGetPhysicalDeviceOpticalFlowImageFormatsNV(physicalDevice, pOpticalFlowImageFormatInfo, pFormatCount, pImageFormatProperties, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_EXTENSION_NOT_PRESENT,VK_ERROR_INITIALIZATION_FAILED,VK_ERROR_FORMAT_NOT_SUPPORTED};
+        static const std::vector<VkResult> success_codes = {VK_INCOMPLETE};
+        ValidateReturnCodes("vkGetPhysicalDeviceOpticalFlowImageFormatsNV", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordCreateOpticalFlowSessionNV(
+    VkDevice                                    device,
+    const VkOpticalFlowSessionCreateInfoNV*     pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkOpticalFlowSessionNV*                     pSession,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordCreateOpticalFlowSessionNV(device, pCreateInfo, pAllocator, pSession, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INITIALIZATION_FAILED};
+        static const std::vector<VkResult> success_codes = {};
+        ValidateReturnCodes("vkCreateOpticalFlowSessionNV", result, error_codes, success_codes);
+    }
+}
+
+void BestPractices::PostCallRecordBindOpticalFlowSessionImageNV(
+    VkDevice                                    device,
+    VkOpticalFlowSessionNV                      session,
+    VkOpticalFlowSessionBindingPointNV          bindingPoint,
+    VkImageView                                 view,
+    VkImageLayout                               layout,
+    VkResult                                    result) {
+    ValidationStateTracker::PostCallRecordBindOpticalFlowSessionImageNV(device, session, bindingPoint, view, layout, result);
+    if (result != VK_SUCCESS) {
+        static const std::vector<VkResult> error_codes = {VK_ERROR_OUT_OF_HOST_MEMORY,VK_ERROR_INITIALIZATION_FAILED};
+        static const std::vector<VkResult> success_codes = {};
+        ValidateReturnCodes("vkBindOpticalFlowSessionImageNV", result, error_codes, success_codes);
+    }
+}
 
 void BestPractices::PostCallRecordGetFramebufferTilePropertiesQCOM(
     VkDevice                                    device,

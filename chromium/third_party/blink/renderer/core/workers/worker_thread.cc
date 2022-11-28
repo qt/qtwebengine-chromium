@@ -55,7 +55,6 @@
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_reporting_proxy.h"
-#include "third_party/blink/renderer/platform/bindings/microtask.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object_snapshot.h"
 #include "third_party/blink/renderer/platform/loader/fetch/worker_resource_timing_notifier.h"
@@ -160,7 +159,7 @@ WorkerThread::~WorkerThread() {
   InitializingWorkerThreads().erase(this);
   WorkerThreads().erase(this);
 
-  DCHECK(child_threads_.IsEmpty());
+  DCHECK(child_threads_.empty());
   DCHECK_NE(ExitCode::kNotTerminated, exit_code_);
   base::UmaHistogramEnumeration("WorkerThread.ExitCode", exit_code_);
 }
@@ -323,10 +322,11 @@ void WorkerThread::DidProcessTask(const base::PendingTask& pending_task) {
   // metrics for microtasks are counted as a part of the preceding task.
   GlobalScope()->GetAgent()->event_loop()->PerformMicrotaskCheckpoint();
 
-  // Microtask::PerformCheckpoint() runs microtasks and its completion hooks for
-  // the default microtask queue. The default queue may contain the microtasks
-  // queued by V8 itself, and legacy blink::MicrotaskQueue::EnqueueMicrotask.
-  // The completion hook contains IndexedDB clean-up task, as described at
+  // EventLoop::PerformIsolateGlobalMicrotasksCheckpoint() runs microtasks and
+  // its completion hooks for the default microtask queue. The default queue may
+  // contain the microtasks queued by V8 itself, and legacy
+  // blink::MicrotaskQueue::EnqueueMicrotask. The completion hook contains
+  // IndexedDB clean-up task, as described at
   // https://html.spec.whatwg.org/C#perform-a-microtask-checkpoint
   // TODO(tzik): Move rejected promise handling to EventLoop.
 
@@ -448,7 +448,7 @@ void WorkerThread::ChildThreadStartedOnWorkerThread(WorkerThread* child) {
 void WorkerThread::ChildThreadTerminatedOnWorkerThread(WorkerThread* child) {
   DCHECK(IsCurrentThread());
   child_threads_.erase(child);
-  if (child_threads_.IsEmpty() && CheckRequestedToTerminate())
+  if (child_threads_.empty() && CheckRequestedToTerminate())
     PerformShutdownOnWorkerThread();
 }
 
@@ -479,8 +479,8 @@ void WorkerThread::ScheduleToTerminateScriptExecution() {
   // class on the parent thread.
   forcible_termination_task_handle_ = PostDelayedCancellableTask(
       *parent_thread_default_task_runner_, FROM_HERE,
-      WTF::Bind(&WorkerThread::EnsureScriptExecutionTerminates,
-                WTF::Unretained(this), ExitCode::kAsyncForciblyTerminated),
+      WTF::BindOnce(&WorkerThread::EnsureScriptExecutionTerminates,
+                    WTF::Unretained(this), ExitCode::kAsyncForciblyTerminated),
       forcible_termination_delay_);
 }
 
@@ -549,7 +549,7 @@ void WorkerThread::InitializeSchedulerOnWorkerThread(
   // worker thread. See also comments on GetTaskRunner().
   // We only capture task types that are actually used. When you want to use a
   // new task type, add it here.
-  Vector<TaskType> available_task_types = {
+  static constexpr TaskType kAvailableTaskTypes[] = {
       TaskType::kBackgroundFetch,
       TaskType::kCanvasBlobSerialization,
       TaskType::kDatabaseAccess,
@@ -582,7 +582,8 @@ void WorkerThread::InitializeSchedulerOnWorkerThread(
       TaskType::kWebLocks,
       TaskType::kWebSocket,
       TaskType::kWorkerAnimation};
-  for (auto type : available_task_types) {
+  worker_task_runners_.ReserveCapacityForSize(std::size(kAvailableTaskTypes));
+  for (auto type : kAvailableTaskTypes) {
     auto task_runner = worker_scheduler_->GetTaskRunner(type);
     auto result = worker_task_runners_.insert(type, std::move(task_runner));
     DCHECK(result.is_new_entry);
@@ -779,7 +780,7 @@ void WorkerThread::PerformShutdownOnWorkerThread() {
   // down this thread. ChildThreadTerminatedOnWorkerThread() is responsible
   // for completing shutdown on the worker thread after the last child shuts
   // down.
-  if (!child_threads_.IsEmpty())
+  if (!child_threads_.empty())
     return;
 
   inspector_task_runner_->Dispose();
@@ -878,6 +879,13 @@ void WorkerThread::PauseOrFreezeOnWorkerThread(
          state == mojom::blink::FrameLifecycleState::kPaused);
   DCHECK(!is_in_back_forward_cache ||
          state == mojom::blink::FrameLifecycleState::kFrozen);
+
+  // Ensure we aren't trying to pause a worker that should be terminating.
+  {
+    base::AutoLock locker(lock_);
+    if (thread_state_ != ThreadState::kRunning)
+      return;
+  }
 
   pause_or_freeze_count_++;
   GlobalScope()->SetIsInBackForwardCache(is_in_back_forward_cache);

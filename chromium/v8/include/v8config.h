@@ -308,6 +308,7 @@ path. Add it with -I<path> to the command line
 //  V8_HAS_BUILTIN_SADD_OVERFLOW        - __builtin_sadd_overflow() supported
 //  V8_HAS_BUILTIN_SSUB_OVERFLOW        - __builtin_ssub_overflow() supported
 //  V8_HAS_BUILTIN_UADD_OVERFLOW        - __builtin_uadd_overflow() supported
+//  V8_HAS_BUILTIN_SMUL_OVERFLOW        - __builtin_smul_overflow() supported
 //  V8_HAS_COMPUTED_GOTO                - computed goto/labels as values
 //                                        supported
 //  V8_HAS_DECLSPEC_NOINLINE            - __declspec(noinline) supported
@@ -357,6 +358,7 @@ path. Add it with -I<path> to the command line
 # define V8_HAS_BUILTIN_SADD_OVERFLOW (__has_builtin(__builtin_sadd_overflow))
 # define V8_HAS_BUILTIN_SSUB_OVERFLOW (__has_builtin(__builtin_ssub_overflow))
 # define V8_HAS_BUILTIN_UADD_OVERFLOW (__has_builtin(__builtin_uadd_overflow))
+# define V8_HAS_BUILTIN_SMUL_OVERFLOW (__has_builtin(__builtin_smul_overflow))
 # define V8_HAS_BUILTIN_UNREACHABLE (__has_builtin(__builtin_unreachable))
 
 // Clang has no __has_feature for computed gotos.
@@ -577,6 +579,37 @@ path. Add it with -I<path> to the command line
 #define V8_NO_UNIQUE_ADDRESS /* NOT SUPPORTED */
 #endif
 
+// Marks a type as being eligible for the "trivial" ABI despite having a
+// non-trivial destructor or copy/move constructor. Such types can be relocated
+// after construction by simply copying their memory, which makes them eligible
+// to be passed in registers. The canonical example is std::unique_ptr.
+//
+// Use with caution; this has some subtle effects on constructor/destructor
+// ordering and will be very incorrect if the type relies on its address
+// remaining constant. When used as a function argument (by value), the value
+// may be constructed in the caller's stack frame, passed in a register, and
+// then used and destructed in the callee's stack frame. A similar thing can
+// occur when values are returned.
+//
+// TRIVIAL_ABI is not needed for types which have a trivial destructor and
+// copy/move constructors, since those are automatically trivial by the ABI
+// spec.
+//
+// It is also not likely to be effective on types too large to be passed in one
+// or two registers on typical target ABIs.
+//
+// See also:
+//   https://clang.llvm.org/docs/AttributeReference.html#trivial-abi
+//   https://libcxx.llvm.org/docs/DesignDocs/UniquePtrTrivialAbi.html
+#if defined(__clang__) && defined(__has_attribute)
+#if __has_attribute(trivial_abi)
+#define V8_TRIVIAL_ABI [[clang::trivial_abi]]
+#endif // __has_attribute(trivial_abi)
+#endif // defined(__clang__) && defined(__has_attribute)
+#if !defined(V8_TRIVIAL_ABI)
+#define V8_TRIVIAL_ABI
+#endif //!defined(V8_TRIVIAL_ABI)
+
 // Helper macro to define no_sanitize attributes only with clang.
 #if defined(__clang__) && defined(__has_attribute)
 #if __has_attribute(no_sanitize)
@@ -651,9 +684,6 @@ V8 shared library set USING_V8_SHARED.
 #elif defined(__mips64)
 #define V8_HOST_ARCH_MIPS64 1
 #define V8_HOST_ARCH_64_BIT 1
-#elif defined(__MIPSEB__) || defined(__MIPSEL__)
-#define V8_HOST_ARCH_MIPS 1
-#define V8_HOST_ARCH_32_BIT 1
 #elif defined(__loongarch64)
 #define V8_HOST_ARCH_LOONG64 1
 #define V8_HOST_ARCH_64_BIT 1
@@ -689,10 +719,10 @@ V8 shared library set USING_V8_SHARED.
 // The macros may be set externally. If not, detect in the same way as the host
 // architecture, that is, target the native environment as presented by the
 // compiler.
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM &&      \
-    !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS && !V8_TARGET_ARCH_MIPS64 && \
-    !V8_TARGET_ARCH_PPC && !V8_TARGET_ARCH_PPC64 && !V8_TARGET_ARCH_S390 &&    \
-    !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64 &&                      \
+#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM &&     \
+    !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_PPC && \
+    !V8_TARGET_ARCH_PPC64 && !V8_TARGET_ARCH_S390 &&                          \
+    !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64 &&                     \
     !V8_TARGET_ARCH_RISCV32
 #if defined(_M_X64) || defined(__x86_64__)
 #define V8_TARGET_ARCH_X64 1
@@ -704,8 +734,8 @@ V8 shared library set USING_V8_SHARED.
 #define V8_TARGET_ARCH_ARM 1
 #elif defined(__mips64)
 #define V8_TARGET_ARCH_MIPS64 1
-#elif defined(__MIPSEB__) || defined(__MIPSEL__)
-#define V8_TARGET_ARCH_MIPS 1
+#elif defined(__loongarch64)
+#define V8_TARGET_ARCH_LOONG64 1
 #elif defined(_ARCH_PPC64)
 #define V8_TARGET_ARCH_PPC64 1
 #elif defined(_ARCH_PPC)
@@ -783,9 +813,6 @@ V8 shared library set USING_V8_SHARED.
 #if (V8_TARGET_ARCH_ARM64 && !(V8_HOST_ARCH_X64 || V8_HOST_ARCH_ARM64))
 #error Target architecture arm64 is only supported on arm64 and x64 host
 #endif
-#if (V8_TARGET_ARCH_MIPS && !(V8_HOST_ARCH_IA32 || V8_HOST_ARCH_MIPS))
-#error Target architecture mips is only supported on mips and ia32 host
-#endif
 #if (V8_TARGET_ARCH_MIPS64 && !(V8_HOST_ARCH_X64 || V8_HOST_ARCH_MIPS64))
 #error Target architecture mips64 is only supported on mips64 and x64 host
 #endif
@@ -810,12 +837,6 @@ V8 shared library set USING_V8_SHARED.
 #define V8_TARGET_LITTLE_ENDIAN 1
 #elif V8_TARGET_ARCH_LOONG64
 #define V8_TARGET_LITTLE_ENDIAN 1
-#elif V8_TARGET_ARCH_MIPS
-#if defined(__MIPSEB__)
-#define V8_TARGET_BIG_ENDIAN 1
-#else
-#define V8_TARGET_LITTLE_ENDIAN 1
-#endif
 #elif V8_TARGET_ARCH_MIPS64
 #if defined(__MIPSEB__) || defined(V8_TARGET_ARCH_MIPS64_BE)
 #define V8_TARGET_BIG_ENDIAN 1

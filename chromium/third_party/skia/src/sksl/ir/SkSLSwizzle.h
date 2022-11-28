@@ -10,11 +10,11 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/SkTArray.h"
 #include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,6 +23,7 @@
 namespace SkSL {
 
 class Context;
+enum class OperatorPrecedence : uint8_t;
 
 /**
  * Represents a vector swizzle operation such as 'float3(1, 2, 3).zyx'.
@@ -73,22 +74,12 @@ struct Swizzle final : public Expression {
         return fComponents;
     }
 
-    bool hasProperty(Property property) const override {
-        return this->base()->hasProperty(property);
-    }
-
     std::unique_ptr<Expression> clone(Position pos) const override {
         return std::unique_ptr<Expression>(new Swizzle(pos, &this->type(), this->base()->clone(),
                                                        this->components()));
     }
 
-    std::string description() const override {
-        std::string result = this->base()->description() + ".";
-        for (int x : this->components()) {
-            result += "xyzw"[x];
-        }
-        return result;
-    }
+    std::string description(OperatorPrecedence) const override;
 
 private:
     Swizzle(Position pos, const Type* type, std::unique_ptr<Expression> base,

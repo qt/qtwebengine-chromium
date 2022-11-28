@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium OS Authors. All rights reserved.
+// Copyright 2017 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -156,12 +156,18 @@ message SharePathRequest {
     ARCHIVE = 9;
     // SmbFs mount.
     SMBFS = 10;
+    // A GuestOS share from one of the user's VMs at
+    // /media/fuse/guestos+<owner_id>+<vm_name>+<container_name>
+    GUEST_OS_FILES = 13;
+    // The user's PlayFiles/ directory under virtio-blk
+    // /media/fuse/android_files.
+    PLAY_FILES_GUEST_OS = 14;
   }
   StorageLocation storage_location = 3;
 
   // The user's cryptohome.  This is the <hash> part of /home/user/<hash>.
-  // This field is required when storage_location is DOWNLOADS, MY_FILES, or
-  // LINUX_FILES.
+  // This field is required when storage_location is DOWNLOADS, MY_FILES,
+  // LINUX_FILES or GUEST_OS_FILES.
   string owner_id = 4;
 
   // DriveFS mount name.  This is the directory name mounted at /media/fuse with
@@ -173,6 +179,11 @@ message SharePathRequest {
   // format 'smbfs-<share-hash>'.
   // This field is required when storage_location=SMBFS.
   string smbfs_mount_name = 6;
+
+  // GuestOs mount name. This is the directory name mounted at /media/fuse with
+  // format guestos+<owner_id>+<vm_name>+<container_name>.
+  // This field is required when storage_location=GUEST_OS_FILES.
+  string guest_os_mount_name = 7;
 }
 
 // Information sent back by seneschal when it receives a SharePath request.

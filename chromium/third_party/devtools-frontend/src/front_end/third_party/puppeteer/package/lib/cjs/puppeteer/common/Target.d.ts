@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { Page } from './Page.js';
+import { Page } from '../api/Page.js';
 import { WebWorker } from './WebWorker.js';
 import { CDPSession } from './Connection.js';
-import { Browser, BrowserContext, IsPageTargetCallback } from './Browser.js';
+import type { Browser, BrowserContext, IsPageTargetCallback } from '../api/Browser.js';
 import { Viewport } from './PuppeteerViewport.js';
 import { Protocol } from 'devtools-protocol';
 import { TaskQueue } from './TaskQueue.js';
@@ -57,7 +57,7 @@ export declare class Target {
     /**
      * @internal
      */
-    constructor(targetInfo: Protocol.Target.TargetInfo, session: CDPSession | undefined, browserContext: BrowserContext, targetManager: TargetManager, sessionFactory: () => Promise<CDPSession>, ignoreHTTPSErrors: boolean, defaultViewport: Viewport | null, screenshotTaskQueue: TaskQueue, isPageTargetCallback: IsPageTargetCallback);
+    constructor(targetInfo: Protocol.Target.TargetInfo, session: CDPSession | undefined, browserContext: BrowserContext, targetManager: TargetManager, sessionFactory: (isAutoAttachEmulated: boolean) => Promise<CDPSession>, ignoreHTTPSErrors: boolean, defaultViewport: Viewport | null, screenshotTaskQueue: TaskQueue, isPageTargetCallback: IsPageTargetCallback);
     /**
      * @internal
      */

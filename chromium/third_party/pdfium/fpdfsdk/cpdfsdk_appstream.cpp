@@ -137,10 +137,7 @@ void WriteBezierCurve(fxcrt::ostringstream& stream,
 }
 
 void WriteAppendRect(fxcrt::ostringstream& stream, const CFX_FloatRect& rect) {
-  WriteFloat(stream, rect.left) << " ";
-  WriteFloat(stream, rect.bottom) << " ";
-  WriteFloat(stream, rect.Width()) << " ";
-  WriteFloat(stream, rect.Height()) << " " << kAppendRectOperator << "\n";
+  WriteRect(stream, rect) << " " << kAppendRectOperator << "\n";
 }
 
 ByteString GetStrokeColorAppStream(const CFX_Color& color) {
@@ -706,7 +703,7 @@ ByteString GetEditAppStream(CPWL_EditImpl* pEdit,
 }
 
 ByteString GenerateIconAppStream(CPDF_IconFit& fit,
-                                 CPDF_Stream* pIconStream,
+                                 RetainPtr<CPDF_Stream> pIconStream,
                                  const CFX_FloatRect& rcIcon) {
   if (rcIcon.IsEmpty() || !pIconStream)
     return ByteString();
@@ -718,7 +715,7 @@ ByteString GenerateIconAppStream(CPDF_IconFit& fit,
   if (!pWnd->Move(rcIcon, false, false))
     return ByteString();
 
-  auto pPDFIcon = std::make_unique<CPDF_Icon>(pIconStream);
+  auto pPDFIcon = std::make_unique<CPDF_Icon>(std::move(pIconStream));
   ByteString sAlias = pPDFIcon->GetImageAlias();
   if (sAlias.GetLength() <= 0)
     return ByteString();
@@ -751,7 +748,7 @@ ByteString GenerateIconAppStream(CPDF_IconFit& fit,
 
 ByteString GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
                                   IPVT_FontMap* pFontMap,
-                                  CPDF_Stream* pIconStream,
+                                  RetainPtr<CPDF_Stream> pIconStream,
                                   CPDF_IconFit& IconFit,
                                   const WideString& sLabel,
                                   const CFX_Color& crText,
@@ -913,7 +910,7 @@ ByteString GetPushButtonAppStream(const CFX_FloatRect& rcBBox,
   }
 
   fxcrt::ostringstream sTemp;
-  sTemp << GenerateIconAppStream(IconFit, pIconStream, rcIcon);
+  sTemp << GenerateIconAppStream(IconFit, std::move(pIconStream), rcIcon);
 
   if (!rcLabel.IsEmpty()) {
     pEdit->SetPlateRect(rcLabel);
@@ -1245,8 +1242,8 @@ void CPDFSDK_AppStream::SetAsPushButton() {
         GetBorderAppStreamInternal(rcWindow, fBorderWidth, crBorder, crLeftTop,
                                    crRightBottom, nBorderStyle, dsBorder) +
         GetPushButtonAppStream(iconFit.GetFittingBounds() ? rcWindow : rcClient,
-                               &font_map, pNormalIcon.Get(), iconFit,
-                               csNormalCaption, crText, fFontSize, nLayout);
+                               &font_map, pNormalIcon, iconFit, csNormalCaption,
+                               crText, fFontSize, nLayout);
 
     Write("N", csAP, ByteString());
     if (pNormalIcon)
@@ -1272,7 +1269,7 @@ void CPDFSDK_AppStream::SetAsPushButton() {
         GetBorderAppStreamInternal(rcWindow, fBorderWidth, crBorder, crLeftTop,
                                    crRightBottom, nBorderStyle, dsBorder) +
         GetPushButtonAppStream(iconFit.GetFittingBounds() ? rcWindow : rcClient,
-                               &font_map, pRolloverIcon.Get(), iconFit,
+                               &font_map, pRolloverIcon, iconFit,
                                csRolloverCaption, crText, fFontSize, nLayout);
 
     Write("R", csAP, ByteString());
@@ -1308,8 +1305,8 @@ void CPDFSDK_AppStream::SetAsPushButton() {
         GetBorderAppStreamInternal(rcWindow, fBorderWidth, crBorder, crLeftTop,
                                    crRightBottom, nBorderStyle, dsBorder) +
         GetPushButtonAppStream(iconFit.GetFittingBounds() ? rcWindow : rcClient,
-                               &font_map, pDownIcon.Get(), iconFit,
-                               csDownCaption, crText, fFontSize, nLayout);
+                               &font_map, pDownIcon, iconFit, csDownCaption,
+                               crText, fFontSize, nLayout);
 
     Write("D", csAP, ByteString());
     if (pDownIcon)
@@ -1813,14 +1810,13 @@ void CPDFSDK_AppStream::AddImage(const ByteString& sAPType,
   RetainPtr<CPDF_Dictionary> pStreamDict = pStream->GetMutableDict();
   ByteString sImageAlias = "IMG";
 
-  const CPDF_Dictionary* pImageDict = pImage->GetDict();
+  RetainPtr<const CPDF_Dictionary> pImageDict = pImage->GetDict();
   if (pImageDict)
-    sImageAlias = pImageDict->GetStringFor("Name");
+    sImageAlias = pImageDict->GetByteStringFor("Name");
 
   RetainPtr<CPDF_Dictionary> pStreamResList =
       pStreamDict->GetOrCreateDictFor("Resources");
-  CPDF_Dictionary* pXObject =
-      pStreamResList->SetNewFor<CPDF_Dictionary>("XObject");
+  auto pXObject = pStreamResList->SetNewFor<CPDF_Dictionary>("XObject");
   pXObject->SetNewFor<CPDF_Reference>(sImageAlias,
                                       widget_->GetPageView()->GetPDFDocument(),
                                       pImage->GetObjNum());
@@ -1832,7 +1828,7 @@ void CPDFSDK_AppStream::Write(const ByteString& sAPType,
   RetainPtr<CPDF_Dictionary> pParentDict;
   ByteString key;
   if (sAPState.IsEmpty()) {
-    pParentDict = dict_.Get();
+    pParentDict = dict_;
     key = sAPType;
   } else {
     pParentDict = dict_->GetOrCreateDictFor(sAPType);
@@ -1848,27 +1844,25 @@ void CPDFSDK_AppStream::Write(const ByteString& sAPType,
   if (!doc->IsModifiedAPStream(pStream.Get())) {
     if (pStream)
       pOrigStreamDict = pStream->GetMutableDict();
-    pStream = doc->CreateModifiedAPStream();
+    pStream.Reset(doc->CreateModifiedAPStream());
     pParentDict->SetNewFor<CPDF_Reference>(key, doc, pStream->GetObjNum());
   }
 
   RetainPtr<CPDF_Dictionary> pStreamDict = pStream->GetMutableDict();
   if (!pStreamDict) {
-    auto pNewDict =
-        widget_->GetPDFAnnot()->GetDocument()->New<CPDF_Dictionary>();
-    pStreamDict = pNewDict.Get();
+    pStreamDict = doc->New<CPDF_Dictionary>();
     pStreamDict->SetNewFor<CPDF_Name>("Type", "XObject");
     pStreamDict->SetNewFor<CPDF_Name>("Subtype", "Form");
     pStreamDict->SetNewFor<CPDF_Number>("FormType", 1);
 
     if (pOrigStreamDict) {
-      const CPDF_Dictionary* pResources =
+      RetainPtr<const CPDF_Dictionary> pResources =
           pOrigStreamDict->GetDictFor("Resources");
       if (pResources)
         pStreamDict->SetFor("Resources", pResources->Clone());
     }
 
-    pStream->InitStream({}, std::move(pNewDict));
+    pStream->InitStream({}, pStreamDict);
   }
   pStreamDict->SetMatrixFor("Matrix", widget_->GetMatrix());
   pStreamDict->SetRectFor("BBox", widget_->GetRotatedRect());

@@ -21,6 +21,7 @@
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
 #include <xnnpack/memory-planner.h>
+#include <xnnpack/node-type.h>
 #include <xnnpack/operator.h>
 #include <xnnpack/params.h>
 #include <xnnpack/subgraph.h>
@@ -178,6 +179,7 @@ static enum xnn_status initialize_workspace_blobs(
     }
     runtime->workspace->data = new_workspace_data;
     runtime->workspace->size = mem_arena_size;
+    xnn_log_debug("created workspace of size %zu", mem_arena_size);
     // Keep track of how much the workspace data moved.
     if (old_workspace_data != NULL) {
       workspace_data_delta = (uintptr_t) new_workspace_data - (uintptr_t) old_workspace_data;
@@ -216,6 +218,63 @@ static enum xnn_status initialize_workspace_blobs(
   }
 
   return xnn_status_success;
+}
+
+// An in-place operation reuses the input tensor's memory for its output. Examples are element-wise unary operations
+// like activation functions. Usually, an output tensor is allocated space. For an in-place operation, we want the
+// output tensor to share the input tensor's memory. We do this by calling xnn_mark_tensor_as_reuse, which:
+// - sets the tensor_size of output tensor's usage record to 0
+// - mark this usage record as reusing another tensor's memory
+// - remember the id of the tensor which we will reuse the alloc_offset to set onto the output tensor
+static void optimize_tensor_allocation_for_in_place_operations(
+  struct xnn_value_allocation_tracker* tracker,
+  xnn_subgraph_t subgraph)
+{
+  xnn_subgraph_analyze_consumers_and_producers(subgraph);
+  for (uint32_t n = 0; n < subgraph->num_nodes; n++) {
+    struct xnn_node* node = &subgraph->nodes[n];
+    switch (node->type) {
+      case xnn_node_type_abs:
+      case xnn_node_type_bankers_rounding:
+      case xnn_node_type_ceiling:
+      case xnn_node_type_clamp:
+      case xnn_node_type_elu:
+      case xnn_node_type_floor:
+      case xnn_node_type_hardswish:
+      case xnn_node_type_leaky_relu:
+      case xnn_node_type_negate:
+      case xnn_node_type_prelu:
+      case xnn_node_type_sigmoid:
+      case xnn_node_type_softmax:
+      case xnn_node_type_square:
+      case xnn_node_type_square_root:
+      case xnn_node_type_static_reshape:
+        // Valid operation types that can be optimized.
+        break;
+      default:
+        continue;
+    }
+    struct xnn_value* output = &subgraph->values[node->outputs[0]];
+    const uint32_t input_id = node->inputs[0];
+    const struct xnn_value* input = &subgraph->values[input_id];
+    if (xnn_value_is_external_input(input) || input->num_consumers > 1) {
+      // External inputs cannot be overwritten.
+      return;
+    }
+    if (output->num_consumers == 1) {
+      uint32_t reuse_id = input_id;
+      // If the tensor we are reusing is itself reused, find the "root tensor" to be reused.
+      while (tracker->usage[reuse_id].reuse_value_id != XNN_INVALID_VALUE_ID) {
+        reuse_id = tracker->usage[reuse_id].reuse_value_id;
+      }
+      // We only support when output has a single consumer because we cannot easily find all consumer nodes
+      // without traversing the entire graph. This will require tracking output->last_consumer in the future.
+      assert(tracker->usage[reuse_id].last_node < output->first_consumer);
+      xnn_log_debug("reusing tensor id #%" PRIu32 " memory for tensor id #%" PRIu32 " Node #%" PRIu32 " %s",
+                    reuse_id, output->id, node->id, xnn_node_type_to_string(node->type));
+      xnn_mark_tensor_as_reuse(tracker, output->id, reuse_id, output->first_consumer);
+    }
+  }
 }
 
 enum xnn_status xnn_create_runtime_v4(
@@ -327,19 +386,20 @@ enum xnn_status xnn_create_runtime_v4(
       blob->size = xnn_tensor_get_size(subgraph, i);
       blob->data = (void*) (uintptr_t) value->data;
       if (blob->data == NULL) {
-        if ((value->flags & (XNN_VALUE_FLAG_EXTERNAL_INPUT | XNN_VALUE_FLAG_EXTERNAL_OUTPUT)) == 0) {
+        if (xnn_value_is_external(value)) {
+          // Value is non-static and external to the runtime: must be specified via a call to xnn_setup_runtime.
+          blob->allocation_type = xnn_allocation_type_external;
+        } else {
           // Value is purely internal to the runtime, and must be allocated in its workspace.
           xnn_add_value_allocation_tracker(&mem_alloc_tracker, i, round_up_po2(blob->size, XNN_EXTRA_BYTES));
           blob->allocation_type = xnn_allocation_type_workspace;
-        } else {
-          // Value is non-static and external to the runtime: must be specified via a call to xnn_setup_runtime.
-          blob->allocation_type = xnn_allocation_type_external;
         }
       } else {
         blob->allocation_type = xnn_allocation_type_static;
       }
     }
   }
+  optimize_tensor_allocation_for_in_place_operations(&mem_alloc_tracker, subgraph);
   xnn_plan_value_allocation_tracker(&mem_alloc_tracker);
 
   xnn_retain_workspace(workspace);

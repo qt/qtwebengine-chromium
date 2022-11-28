@@ -56,6 +56,8 @@ Reduction WasmGCLowering::Reduce(Node* node) {
       return ReduceTypeGuard(node);
     case IrOpcode::kWasmExternInternalize:
       return ReduceWasmExternInternalize(node);
+    case IrOpcode::kWasmExternExternalize:
+      return ReduceWasmExternExternalize(node);
     default:
       return NoChange();
   }
@@ -90,9 +92,14 @@ Reduction WasmGCLowering::ReduceWasmTypeCheck(Node* node) {
   auto end_label = gasm_.MakeLabel(MachineRepresentation::kWord32);
 
   if (object_can_be_null) {
+    const int kResult = config.null_succeeds ? 1 : 0;
     gasm_.GotoIf(gasm_.TaggedEqual(object, Null()), &end_label,
-                 BranchHint::kFalse, gasm_.Int32Constant(0));
+                 BranchHint::kFalse, gasm_.Int32Constant(kResult));
   }
+
+  // TODO(7748): In some cases the Smi check is redundant. If we had information
+  // about the source type, we could skip it in those cases.
+  gasm_.GotoIf(gasm_.IsI31(object), &end_label, gasm_.Int32Constant(0));
 
   Node* map = gasm_.LoadMap(object);
 
@@ -247,7 +254,7 @@ Reduction WasmGCLowering::ReduceWasmExternInternalize(Node* node) {
   gasm_.InitializeEffectControl(effect, control);
   auto end = gasm_.MakeLabel(MachineRepresentation::kTaggedPointer);
 
-  if (!FLAG_wasm_gc_js_interop) {
+  if (!v8_flags.wasm_gc_js_interop) {
     Node* context = gasm_.LoadImmutable(
         MachineType::TaggedPointer(), instance_node_,
         WasmInstanceObject::kNativeContextOffset - kHeapObjectTag);
@@ -263,6 +270,39 @@ Reduction WasmGCLowering::ReduceWasmExternInternalize(Node* node) {
   } else {
     gasm_.Goto(&end, object);
   }
+  gasm_.Bind(&end);
+  Node* replacement = end.PhiAt(0);
+  ReplaceWithValue(node, replacement, gasm_.effect(), gasm_.control());
+  node->Kill();
+  return Replace(replacement);
+}
+
+Reduction WasmGCLowering::ReduceWasmExternExternalize(Node* node) {
+  DCHECK_EQ(node->opcode(), IrOpcode::kWasmExternExternalize);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  Node* object = NodeProperties::GetValueInput(node, 0);
+  gasm_.InitializeEffectControl(effect, control);
+
+  auto end = gasm_.MakeLabel(MachineRepresentation::kTaggedPointer);
+  if (!v8_flags.wasm_gc_js_interop) {
+    auto wrap = gasm_.MakeLabel();
+    gasm_.GotoIf(gasm_.IsI31(object), &end, object);
+    gasm_.GotoIf(gasm_.IsDataRefMap(gasm_.LoadMap(object)), &wrap);
+    // This includes the case where {node == null}.
+    gasm_.Goto(&end, object);
+
+    gasm_.Bind(&wrap);
+    Node* context = gasm_.LoadImmutable(
+        MachineType::TaggedPointer(), instance_node_,
+        WasmInstanceObject::kNativeContextOffset - kHeapObjectTag);
+    Node* wrapped = gasm_.CallBuiltin(Builtin::kWasmAllocateObjectWrapper,
+                                      Operator::kEliminatable, object, context);
+    gasm_.Goto(&end, wrapped);
+  } else {
+    gasm_.Goto(&end, object);
+  }
+
   gasm_.Bind(&end);
   Node* replacement = end.PhiAt(0);
   ReplaceWithValue(node, replacement, gasm_.effect(), gasm_.control());

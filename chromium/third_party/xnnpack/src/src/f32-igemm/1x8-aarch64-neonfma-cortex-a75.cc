@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <limits>
 
+#include <xnnpack.h>
 #include <xnnpack/aarch64-assembler.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/igemm.h>
@@ -292,7 +293,7 @@ void Generator::generate(bool prefetch, size_t max_mr, size_t nc_mod_nr, size_t 
 } // namespace aarch64
 } // namespace xnnpack
 
-xnn_status xnn_generate_f32_igemm_ukernel_1x8__aarch64_neonfma_cortex_a75(
+xnn_status_t xnn_generate_f32_igemm_ukernel_1x8__aarch64_neonfma_cortex_a75(
     xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, size_t ks, const void* params)
 {
   using namespace xnnpack::aarch64;
@@ -307,7 +308,7 @@ xnn_status xnn_generate_f32_igemm_ukernel_1x8__aarch64_neonfma_cortex_a75(
   return xnn_status_success;
 }
 
-xnn_status xnn_generate_f32_igemm_ukernel_1x8__aarch64_neonfma_prfm_cortex_a75(
+xnn_status_t xnn_generate_f32_igemm_ukernel_1x8__aarch64_neonfma_prfm_cortex_a75(
     xnn_code_buffer* code, size_t max_mr, size_t nc_mod_nr, size_t kc, size_t ks, const void* params)
 {
   using namespace xnnpack::aarch64;

@@ -104,12 +104,12 @@ public:
 	static void WriteDescriptorSet(Device *device, const VkWriteDescriptorSet &descriptorWrites);
 	static void CopyDescriptorSet(const VkCopyDescriptorSet &descriptorCopies);
 
-	static void WriteDescriptorSet(Device *device, DescriptorSet *dstSet, VkDescriptorUpdateTemplateEntry const &entry, char const *src);
+	static void WriteDescriptorSet(Device *device, DescriptorSet *dstSet, const VkDescriptorUpdateTemplateEntry &entry, const char *src);
 
-	void initialize(DescriptorSet *descriptorSet);
+	void initialize(DescriptorSet *descriptorSet, uint32_t variableDescriptorCount);
 
 	// Returns the total size of the descriptor set in bytes.
-	size_t getDescriptorSetAllocationSize() const;
+	size_t getDescriptorSetAllocationSize(uint32_t variableDescriptorCount) const;
 
 	// Returns the byte offset from the base address of the descriptor set for
 	// the given binding number.
@@ -136,7 +136,7 @@ public:
 
 private:
 	uint8_t *getDescriptorPointer(DescriptorSet *descriptorSet, uint32_t bindingNumber, uint32_t arrayElement, uint32_t count, size_t *typeSize) const;
-	size_t getDescriptorSetDataSize() const;
+	size_t getDescriptorSetDataSize(uint32_t variableDescriptorCount) const;
 	static bool isDynamic(VkDescriptorType type);
 
 	const VkDescriptorSetLayoutCreateFlags flags;

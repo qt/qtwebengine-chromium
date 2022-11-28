@@ -27,9 +27,9 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec_custom.h"
-#ifdef BENCHMARK_JPEG
+#ifdef JPEGXL_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
-#endif  // BENCHMARK_JPEG
+#endif  // JPEG_ENABLE_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
@@ -55,9 +55,7 @@ void ImageCodec::ParseParameters(const std::string& parameters) {
 }
 
 Status ImageCodec::ParseParam(const std::string& param) {
-  if (param[0] ==
-      'q') {  // libjpeg-style quality, [0,100]  (or in case of
-              // modular, below 0 is also allowed if you like cubism)
+  if (param[0] == 'q') {  // libjpeg-style quality, [0,100]
     const std::string quality_param = param.substr(1);
     char* end;
     const float q_target = strtof(quality_param.c_str(), &end);
@@ -96,7 +94,6 @@ Status ImageCodec::ParseParam(const std::string& param) {
     }
     return true;
   } else if (param[0] == 'r') {
-    butteraugli_target_ = -1.0;
     ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     bitrate_target_ = strtof(param.substr(1).c_str(), nullptr);
     return true;
@@ -111,7 +108,7 @@ class NoneCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPoolInternal* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, std::vector<uint8_t>* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     PROFILER_ZONE("NoneCompress");
     const double start = Now();
@@ -165,12 +162,14 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
 #endif
-#ifdef BENCHMARK_JPEG
+#ifdef JPEGXL_ENABLE_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
 #endif  // BENCHMARK_JPEG
+#if JPEGXL_ENABLE_APNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
+#endif
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP

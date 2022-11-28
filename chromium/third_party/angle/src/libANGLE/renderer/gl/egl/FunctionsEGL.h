@@ -108,7 +108,7 @@ class FunctionsEGL
   private:
     // So as to isolate from angle we do not include angleutils.h and cannot
     // use angle::NonCopyable so we replicated it here instead.
-    FunctionsEGL(const FunctionsEGL &) = delete;
+    FunctionsEGL(const FunctionsEGL &)   = delete;
     void operator=(const FunctionsEGL &) = delete;
 
     // Fallback mechanism for creating a display from a native device object.

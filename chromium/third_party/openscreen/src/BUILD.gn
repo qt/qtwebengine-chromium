@@ -43,10 +43,6 @@ group("gn_all") {
       "third_party/protobuf:protoc($host_toolchain)",
       "third_party/zlib",
     ]
-  } else {
-    if (!is_mac) {
-      deps += [ "cast/cast_core/api" ]
-    }
   }
 }
 

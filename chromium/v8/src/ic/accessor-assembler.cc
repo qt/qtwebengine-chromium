@@ -69,7 +69,7 @@ TNode<MaybeObject> AccessorAssembler::LoadHandlerDataField(
   return LoadMaybeWeakObjectField(handler, offset);
 }
 
-TNode<MaybeObject> AccessorAssembler::TryMonomorphicCase(
+TNode<HeapObjectReference> AccessorAssembler::TryMonomorphicCase(
     TNode<TaggedIndex> slot, TNode<FeedbackVector> vector,
     TNode<Map> lookup_start_object_map, Label* if_handler,
     TVariable<MaybeObject>* var_handler, Label* if_miss) {
@@ -84,9 +84,8 @@ TNode<MaybeObject> AccessorAssembler::TryMonomorphicCase(
   // into ElementOffsetFromIndex() allows it to be folded into a single
   // [base, index, offset] indirect memory access on x64.
   TNode<IntPtrT> offset = ElementOffsetFromIndex(slot, HOLEY_ELEMENTS);
-  TNode<MaybeObject> feedback = ReinterpretCast<MaybeObject>(
-      Load(MachineType::AnyTagged(), vector,
-           IntPtrAdd(offset, IntPtrConstant(header_size))));
+  TNode<HeapObjectReference> feedback = CAST(Load<MaybeObject>(
+      vector, IntPtrAdd(offset, IntPtrConstant(header_size))));
 
   // Try to quickly handle the monomorphic case without knowing for sure
   // if we have a weak reference in feedback.
@@ -192,23 +191,25 @@ void AccessorAssembler::TryMegaDOMCase(TNode<Object> lookup_start_object,
 }
 
 void AccessorAssembler::HandleLoadICHandlerCase(
-    const LazyLoadICParameters* p, TNode<Object> handler, Label* miss,
+    const LazyLoadICParameters* p, TNode<MaybeObject> handler, Label* miss,
     ExitPoint* exit_point, ICMode ic_mode, OnNonExistent on_nonexistent,
     ElementSupport support_elements, LoadAccessMode access_mode) {
   Comment("have_handler");
 
   TVARIABLE(Object, var_holder, p->lookup_start_object());
-  TVARIABLE(Object, var_smi_handler, handler);
+  TVARIABLE(MaybeObject, var_smi_handler, handler);
 
   Label if_smi_handler(this, {&var_holder, &var_smi_handler});
   Label try_proto_handler(this, Label::kDeferred),
-      call_handler(this, Label::kDeferred);
+      call_code_handler(this, Label::kDeferred),
+      call_getter(this, Label::kDeferred);
 
   Branch(TaggedIsSmi(handler), &if_smi_handler, &try_proto_handler);
 
   BIND(&try_proto_handler);
   {
-    GotoIf(IsCodeT(CAST(handler)), &call_handler);
+    GotoIf(IsWeakOrCleared(handler), &call_getter);
+    GotoIf(IsCodeT(CAST(handler)), &call_code_handler);
     HandleLoadICProtoHandler(p, CAST(handler), &var_holder, &var_smi_handler,
                              &if_smi_handler, miss, exit_point, ic_mode,
                              access_mode);
@@ -223,7 +224,18 @@ void AccessorAssembler::HandleLoadICHandlerCase(
         exit_point, ic_mode, on_nonexistent, support_elements, access_mode);
   }
 
-  BIND(&call_handler);
+  BIND(&call_getter);
+  {
+    if (access_mode == LoadAccessMode::kHas) {
+      exit_point->Return(TrueConstant());
+    } else {
+      TNode<HeapObject> strong_handler = GetHeapObjectAssumeWeak(handler, miss);
+      TNode<Object> getter = LoadAccessorPairGetter(CAST(strong_handler));
+      exit_point->Return(Call(p->context(), getter, p->receiver()));
+    }
+  }
+
+  BIND(&call_code_handler);
   {
     TNode<CodeT> code_handler = CAST(handler);
     exit_point->ReturnCallStub(LoadWithVectorDescriptor{}, code_handler,
@@ -458,9 +470,9 @@ TNode<MaybeObject> AccessorAssembler::LoadDescriptorValueOrFieldType(
 
 void AccessorAssembler::HandleLoadICSmiHandlerCase(
     const LazyLoadICParameters* p, TNode<Object> holder, TNode<Smi> smi_handler,
-    TNode<Object> handler, Label* miss, ExitPoint* exit_point, ICMode ic_mode,
-    OnNonExistent on_nonexistent, ElementSupport support_elements,
-    LoadAccessMode access_mode) {
+    TNode<MaybeObject> handler, Label* miss, ExitPoint* exit_point,
+    ICMode ic_mode, OnNonExistent on_nonexistent,
+    ElementSupport support_elements, LoadAccessMode access_mode) {
   TVARIABLE(Float64T, var_double_value);
   Label rebox_double(this, &var_double_value);
 
@@ -632,8 +644,9 @@ void AccessorAssembler::HandleLoadICSmiHandlerLoadNamedCase(
     const LazyLoadICParameters* p, TNode<Object> holder,
     TNode<Uint32T> handler_kind, TNode<Word32T> handler_word,
     Label* rebox_double, TVariable<Float64T>* var_double_value,
-    TNode<Object> handler, Label* miss, ExitPoint* exit_point, ICMode ic_mode,
-    OnNonExistent on_nonexistent, ElementSupport support_elements) {
+    TNode<MaybeObject> handler, Label* miss, ExitPoint* exit_point,
+    ICMode ic_mode, OnNonExistent on_nonexistent,
+    ElementSupport support_elements) {
   Label constant(this), field(this), normal(this, Label::kDeferred),
       slow(this, Label::kDeferred), interceptor(this, Label::kDeferred),
       nonexistent(this), accessor(this, Label::kDeferred),
@@ -651,7 +664,8 @@ void AccessorAssembler::HandleLoadICSmiHandlerLoadNamedCase(
 
   GotoIf(Word32Equal(handler_kind, LOAD_KIND(kNormal)), &normal);
 
-  GotoIf(Word32Equal(handler_kind, LOAD_KIND(kAccessor)), &accessor);
+  GotoIf(Word32Equal(handler_kind, LOAD_KIND(kAccessorFromPrototype)),
+         &accessor);
 
   GotoIf(Word32Equal(handler_kind, LOAD_KIND(kNativeDataProperty)),
          &native_data_property);
@@ -732,13 +746,10 @@ void AccessorAssembler::HandleLoadICSmiHandlerLoadNamedCase(
   BIND(&accessor);
   {
     Comment("accessor_load");
-    TNode<IntPtrT> descriptor =
-        Signed(DecodeWordFromWord32<LoadHandler::DescriptorBits>(handler_word));
-    TNode<AccessorPair> accessor_pair =
-        CAST(LoadDescriptorValue(LoadMap(CAST(holder)), descriptor));
-    TNode<Object> getter =
-        LoadObjectField(accessor_pair, AccessorPair::kGetterOffset);
-    CSA_DCHECK(this, Word32BinaryNot(IsTheHole(getter)));
+    // The "holder" slot (data1) in the from-prototype LoadHandler is instead
+    // directly the getter function.
+    TNode<HeapObject> getter = CAST(holder);
+    CSA_DCHECK(this, IsCallable(getter));
 
     exit_point->Return(Call(p->context(), getter, p->receiver()));
   }
@@ -889,7 +900,8 @@ void AccessorAssembler::HandleLoadICSmiHandlerHasNamedCase(
 
   GotoIf(Word32Equal(handler_kind, LOAD_KIND(kNormal)), &normal);
 
-  GotoIf(Word32Equal(handler_kind, LOAD_KIND(kAccessor)), &return_true);
+  GotoIf(Word32Equal(handler_kind, LOAD_KIND(kAccessorFromPrototype)),
+         &return_true);
 
   GotoIf(Word32Equal(handler_kind, LOAD_KIND(kNativeDataProperty)),
          &return_true);
@@ -1078,7 +1090,7 @@ TNode<Object> AccessorAssembler::HandleProtoHandler(
 
 void AccessorAssembler::HandleLoadICProtoHandler(
     const LazyLoadICParameters* p, TNode<DataHandler> handler,
-    TVariable<Object>* var_holder, TVariable<Object>* var_smi_handler,
+    TVariable<Object>* var_holder, TVariable<MaybeObject>* var_smi_handler,
     Label* if_smi_handler, Label* miss, ExitPoint* exit_point, ICMode ic_mode,
     LoadAccessMode access_mode) {
   TNode<Smi> smi_handler = CAST(HandleProtoHandler<LoadHandler>(
@@ -1268,10 +1280,14 @@ void AccessorAssembler::HandleStoreICHandlerCase(
 
     TVARIABLE(IntPtrT, var_name_index);
     Label dictionary_found(this, &var_name_index);
-    NameDictionaryLookup<PropertyDictionary>(
-        properties, CAST(p->name()),
-        p->IsAnyDefineOwn() ? &if_slow : &dictionary_found, &var_name_index,
-        miss);
+    if (p->IsAnyDefineOwn()) {
+      NameDictionaryLookup<PropertyDictionary>(properties, CAST(p->name()),
+                                               &if_slow, nullptr, miss);
+    } else {
+      NameDictionaryLookup<PropertyDictionary>(properties, CAST(p->name()),
+                                               &dictionary_found,
+                                               &var_name_index, miss);
+    }
 
     // When dealing with class fields defined with DefineKeyedOwnIC or
     // DefineNamedOwnIC, use the slow path to check the existing property.
@@ -1370,7 +1386,8 @@ void AccessorAssembler::HandleStoreICHandlerCase(
 
   BIND(&if_nonsmi_handler);
   {
-    GotoIf(IsWeakOrCleared(handler), &store_transition_or_global);
+    TNode<HeapObjectReference> ref_handler = CAST(handler);
+    GotoIf(IsWeakOrCleared(ref_handler), &store_transition_or_global);
     TNode<HeapObject> strong_handler = CAST(handler);
     TNode<Map> handler_map = LoadMap(strong_handler);
     Branch(IsCodeTMap(handler_map), &call_handler, &if_proto_handler);
@@ -2746,8 +2763,8 @@ void AccessorAssembler::GenericPropertyLoad(
       BIND(&found_handler);
       {
         LazyLoadICParameters lazy_p(p);
-        HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()),
-                                &stub_cache_miss, &direct_exit);
+        HandleLoadICHandlerCase(&lazy_p, var_handler.value(), &stub_cache_miss,
+                                &direct_exit);
       }
 
       BIND(&stub_cache_miss);
@@ -2874,7 +2891,7 @@ enum AccessorAssembler::StubCacheTable : int {
 TNode<IntPtrT> AccessorAssembler::StubCachePrimaryOffset(TNode<Name> name,
                                                          TNode<Map> map) {
   // Compute the hash of the name (use entire hash field).
-  TNode<Uint32T> raw_hash_field = LoadNameRawHashField(name);
+  TNode<Uint32T> raw_hash_field = LoadNameRawHash(name);
   CSA_DCHECK(this,
              Word32Equal(Word32And(raw_hash_field,
                                    Int32Constant(Name::kHashNotComputedMask)),
@@ -3034,12 +3051,12 @@ void AccessorAssembler::LoadIC_BytecodeHandler(const LazyLoadICParameters* p,
     TVARIABLE(MaybeObject, var_handler);
     Label try_polymorphic(this), if_handler(this, &var_handler);
 
-    TNode<MaybeObject> feedback = TryMonomorphicCase(
+    TNode<HeapObjectReference> feedback = TryMonomorphicCase(
         p->slot(), CAST(p->vector()), lookup_start_object_map, &if_handler,
         &var_handler, &try_polymorphic);
 
     BIND(&if_handler);
-    HandleLoadICHandlerCase(p, CAST(var_handler.value()), &miss, exit_point);
+    HandleLoadICHandlerCase(p, var_handler.value(), &miss, exit_point);
 
     BIND(&try_polymorphic);
     {
@@ -3100,14 +3117,13 @@ void AccessorAssembler::LoadIC(const LoadICParameters* p) {
   GotoIf(IsUndefined(p->vector()), &no_feedback);
 
   // Check monomorphic case.
-  TNode<MaybeObject> feedback =
+  TNode<HeapObjectReference> feedback =
       TryMonomorphicCase(p->slot(), CAST(p->vector()), lookup_start_object_map,
                          &if_handler, &var_handler, &try_polymorphic);
   BIND(&if_handler);
   {
     LazyLoadICParameters lazy_p(p);
-    HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()), &miss,
-                            &direct_exit);
+    HandleLoadICHandlerCase(&lazy_p, var_handler.value(), &miss, &direct_exit);
   }
 
   BIND(&try_polymorphic);
@@ -3157,15 +3173,14 @@ void AccessorAssembler::LoadSuperIC(const LoadICParameters* p) {
   TNode<Map> lookup_start_object_map = LoadMap(CAST(p->lookup_start_object()));
   GotoIf(IsDeprecatedMap(lookup_start_object_map), &miss);
 
-  TNode<MaybeObject> feedback =
+  TNode<HeapObjectReference> feedback =
       TryMonomorphicCase(p->slot(), CAST(p->vector()), lookup_start_object_map,
                          &if_handler, &var_handler, &try_polymorphic);
 
   BIND(&if_handler);
   {
     LazyLoadICParameters lazy_p(p);
-    HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()), &miss,
-                            &direct_exit);
+    HandleLoadICHandlerCase(&lazy_p, var_handler.value(), &miss, &direct_exit);
   }
 
   BIND(&no_feedback);
@@ -3469,16 +3484,15 @@ void AccessorAssembler::KeyedLoadIC(const LoadICParameters* p,
   GotoIf(IsUndefined(p->vector()), &generic);
 
   // Check monomorphic case.
-  TNode<MaybeObject> feedback =
+  TNode<HeapObjectReference> feedback =
       TryMonomorphicCase(p->slot(), CAST(p->vector()), lookup_start_object_map,
                          &if_handler, &var_handler, &try_polymorphic);
   BIND(&if_handler);
   {
     LazyLoadICParameters lazy_p(p);
-    HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()), &miss,
-                            &direct_exit, ICMode::kNonGlobalIC,
-                            OnNonExistent::kReturnUndefined, kSupportElements,
-                            access_mode);
+    HandleLoadICHandlerCase(
+        &lazy_p, var_handler.value(), &miss, &direct_exit, ICMode::kNonGlobalIC,
+        OnNonExistent::kReturnUndefined, kSupportElements, access_mode);
   }
 
   BIND(&try_polymorphic);
@@ -3612,7 +3626,7 @@ void AccessorAssembler::KeyedLoadICGeneric(const LoadICParameters* p) {
 
     BIND(&if_notunique);
     {
-      if (FLAG_internalize_on_the_fly) {
+      if (v8_flags.internalize_on_the_fly) {
         // Ideally we could return undefined directly here if the name is not
         // found in the string table, i.e. it was never internalized, but that
         // invariant doesn't hold with named property interceptors (at this
@@ -3690,10 +3704,9 @@ void AccessorAssembler::KeyedLoadICPolymorphicName(const LoadICParameters* p,
   {
     ExitPoint direct_exit(this);
     LazyLoadICParameters lazy_p(p);
-    HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()), &miss,
-                            &direct_exit, ICMode::kNonGlobalIC,
-                            OnNonExistent::kReturnUndefined, kOnlyProperties,
-                            access_mode);
+    HandleLoadICHandlerCase(
+        &lazy_p, var_handler.value(), &miss, &direct_exit, ICMode::kNonGlobalIC,
+        OnNonExistent::kReturnUndefined, kOnlyProperties, access_mode);
   }
 
   BIND(&miss);
@@ -3722,7 +3735,7 @@ void AccessorAssembler::StoreIC(const StoreICParameters* p) {
   GotoIf(IsUndefined(p->vector()), &no_feedback);
 
   // Check monomorphic case.
-  TNode<MaybeObject> feedback =
+  TNode<HeapObjectReference> feedback =
       TryMonomorphicCase(p->slot(), CAST(p->vector()), receiver_map,
                          &if_handler, &var_handler, &try_polymorphic);
   BIND(&if_handler);
@@ -3920,7 +3933,7 @@ void AccessorAssembler::KeyedStoreIC(const StoreICParameters* p) {
     GotoIf(IsUndefined(p->vector()), &no_feedback);
 
     // Check monomorphic case.
-    TNode<MaybeObject> feedback =
+    TNode<HeapObjectReference> feedback =
         TryMonomorphicCase(p->slot(), CAST(p->vector()), receiver_map,
                            &if_handler, &var_handler, &try_polymorphic);
     BIND(&if_handler);
@@ -3994,7 +4007,7 @@ void AccessorAssembler::DefineKeyedOwnIC(const StoreICParameters* p) {
     GotoIf(IsUndefined(p->vector()), &no_feedback);
 
     // Check monomorphic case.
-    TNode<MaybeObject> feedback =
+    TNode<HeapObjectReference> feedback =
         TryMonomorphicCase(p->slot(), CAST(p->vector()), receiver_map,
                            &if_handler, &var_handler, &try_polymorphic);
     BIND(&if_handler);
@@ -4065,7 +4078,7 @@ void AccessorAssembler::StoreInArrayLiteralIC(const StoreICParameters* p) {
 
     GotoIf(IsUndefined(p->vector()), &no_feedback);
 
-    TNode<MaybeObject> feedback =
+    TNode<HeapObjectReference> feedback =
         TryMonomorphicCase(p->slot(), CAST(p->vector()), array_map, &if_handler,
                            &var_handler, &try_polymorphic);
 
@@ -4202,7 +4215,7 @@ void AccessorAssembler::GenerateLoadIC_Megamorphic() {
       [=] { return name; },
       // lazy_slot
       [=] { return slot; }, vector);
-  HandleLoadICHandlerCase(&p, CAST(var_handler.value()), &miss, &direct_exit);
+  HandleLoadICHandlerCase(&p, var_handler.value(), &miss, &direct_exit);
 
   BIND(&miss);
   direct_exit.ReturnCallRuntime(Runtime::kLoadIC_Miss, context, receiver, name,
@@ -4233,8 +4246,7 @@ void AccessorAssembler::GenerateLoadIC_Noninlined() {
   BIND(&if_handler);
   {
     LazyLoadICParameters lazy_p(&p);
-    HandleLoadICHandlerCase(&lazy_p, CAST(var_handler.value()), &miss,
-                            &direct_exit);
+    HandleLoadICHandlerCase(&lazy_p, var_handler.value(), &miss, &direct_exit);
   }
 
   BIND(&miss);
@@ -4377,11 +4389,11 @@ void AccessorAssembler::GenerateLoadGlobalICBaseline(TypeofMode typeof_mode) {
   TailCallStub(callable, context, name, slot, vector);
 }
 
-void AccessorAssembler::GenerateLookupContextBaseline(TypeofMode typeof_mode) {
-  using Descriptor = LookupBaselineDescriptor;
-  auto depth = Parameter<TaggedIndex>(Descriptor::kDepth);
-  TNode<Context> context = LoadContextFromBaseline();
-
+void AccessorAssembler::LookupContext(LazyNode<Object> lazy_name,
+                                      TNode<TaggedIndex> depth,
+                                      LazyNode<TaggedIndex> lazy_slot,
+                                      TNode<Context> context,
+                                      TypeofMode typeof_mode) {
   Label slowpath(this, Label::kDeferred);
 
   // Check for context extensions to allow the fast path.
@@ -4391,14 +4403,14 @@ void AccessorAssembler::GenerateLookupContextBaseline(TypeofMode typeof_mode) {
 
   // Fast path does a normal load context.
   {
-    auto slot = Parameter<TaggedIndex>(Descriptor::kSlot);
+    auto slot = lazy_slot();
     Return(LoadContextElement(slot_context, TaggedIndexToIntPtr(slot)));
   }
 
   // Slow path when we have to call out to the runtime.
   BIND(&slowpath);
   {
-    auto name = Parameter<Object>(Descriptor::kName);
+    auto name = lazy_name();
     Runtime::FunctionId function_id = typeof_mode == TypeofMode::kInside
                                           ? Runtime::kLoadLookupSlotInsideTypeof
                                           : Runtime::kLoadLookupSlot;
@@ -4406,14 +4418,27 @@ void AccessorAssembler::GenerateLookupContextBaseline(TypeofMode typeof_mode) {
   }
 }
 
-void AccessorAssembler::GenerateLookupGlobalICBaseline(TypeofMode typeof_mode) {
+void AccessorAssembler::GenerateLookupContextTrampoline(
+    TypeofMode typeof_mode) {
+  using Descriptor = LookupTrampolineDescriptor;
+  LookupContext([&] { return Parameter<Object>(Descriptor::kName); },
+                Parameter<TaggedIndex>(Descriptor::kDepth),
+                [&] { return Parameter<TaggedIndex>(Descriptor::kSlot); },
+                Parameter<Context>(Descriptor::kContext), typeof_mode);
+}
+
+void AccessorAssembler::GenerateLookupContextBaseline(TypeofMode typeof_mode) {
   using Descriptor = LookupBaselineDescriptor;
+  LookupContext([&] { return Parameter<Object>(Descriptor::kName); },
+                Parameter<TaggedIndex>(Descriptor::kDepth),
+                [&] { return Parameter<TaggedIndex>(Descriptor::kSlot); },
+                LoadContextFromBaseline(), typeof_mode);
+}
 
-  auto name = Parameter<Object>(Descriptor::kName);
-  auto depth = Parameter<TaggedIndex>(Descriptor::kDepth);
-  auto slot = Parameter<TaggedIndex>(Descriptor::kSlot);
-  TNode<Context> context = LoadContextFromBaseline();
-
+void AccessorAssembler::LookupGlobalIC(
+    LazyNode<Object> lazy_name, TNode<TaggedIndex> depth,
+    LazyNode<TaggedIndex> lazy_slot, TNode<Context> context,
+    LazyNode<FeedbackVector> lazy_feedback_vector, TypeofMode typeof_mode) {
   Label slowpath(this, Label::kDeferred);
 
   // Check for context extensions to allow the fast path
@@ -4425,8 +4450,8 @@ void AccessorAssembler::GenerateLookupGlobalICBaseline(TypeofMode typeof_mode) {
   {
     Callable callable =
         CodeFactory::LoadGlobalICInOptimizedCode(isolate(), typeof_mode);
-    TNode<FeedbackVector> vector = LoadFeedbackVectorFromBaseline();
-    TailCallStub(callable, context, name, slot, vector);
+    TailCallStub(callable, context, lazy_name(), lazy_slot(),
+                 lazy_feedback_vector());
   }
 
   // Slow path when we have to call out to the runtime
@@ -4434,7 +4459,26 @@ void AccessorAssembler::GenerateLookupGlobalICBaseline(TypeofMode typeof_mode) {
   Runtime::FunctionId function_id = typeof_mode == TypeofMode::kInside
                                         ? Runtime::kLoadLookupSlotInsideTypeof
                                         : Runtime::kLoadLookupSlot;
-  TailCallRuntime(function_id, context, name);
+  TailCallRuntime(function_id, context, lazy_name());
+}
+
+void AccessorAssembler::GenerateLookupGlobalICTrampoline(
+    TypeofMode typeof_mode) {
+  using Descriptor = LookupTrampolineDescriptor;
+  LookupGlobalIC([&] { return Parameter<Object>(Descriptor::kName); },
+                 Parameter<TaggedIndex>(Descriptor::kDepth),
+                 [&] { return Parameter<TaggedIndex>(Descriptor::kSlot); },
+                 Parameter<Context>(Descriptor::kContext),
+                 [&] { return LoadFeedbackVectorForStub(); }, typeof_mode);
+}
+
+void AccessorAssembler::GenerateLookupGlobalICBaseline(TypeofMode typeof_mode) {
+  using Descriptor = LookupBaselineDescriptor;
+  LookupGlobalIC([&] { return Parameter<Object>(Descriptor::kName); },
+                 Parameter<TaggedIndex>(Descriptor::kDepth),
+                 [&] { return Parameter<TaggedIndex>(Descriptor::kSlot); },
+                 LoadContextFromBaseline(),
+                 [&] { return LoadFeedbackVectorFromBaseline(); }, typeof_mode);
 }
 
 void AccessorAssembler::GenerateKeyedLoadIC() {
@@ -4839,7 +4883,7 @@ void AccessorAssembler::GenerateCloneObjectIC() {
 
   GotoIf(IsUndefined(maybe_vector), &slow);
 
-  TNode<MaybeObject> feedback =
+  TNode<HeapObjectReference> feedback =
       TryMonomorphicCase(slot, CAST(maybe_vector), source_map, &if_handler,
                          &var_handler, &try_polymorphic);
 

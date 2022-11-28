@@ -16,12 +16,18 @@
 
 
 void xnn_qs8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_x32(
-    size_t n,
+    size_t batch,
     const int8_t* input_a,
     const int8_t* input_b,
     int8_t* output,
     const union xnn_qs8_add_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
+  assert(batch != 0);
+  assert(batch % sizeof(int8_t) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
   const __m512i va_multiplier = _mm512_load_si512(params->avx512.a_multiplier);
   const __m128i vshift = _mm_load_si128((const __m128i*) params->avx512.shift);
   const __m512i voutput_zero_point = _mm512_load_si512(params->avx512.output_zero_point);
@@ -31,7 +37,7 @@ void xnn_qs8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_x32(
   const __m512i vbias = _mm512_add_epi32(
     _mm512_broadcastd_epi32(_mm_cvtsi32_si128(params->avx512.b_multiplier[0] * (int32_t) *input_b)),
     _mm512_load_si512(params->avx512.bias));
-  for (; n >= 32 * sizeof(int8_t); n -= 32 * sizeof(int8_t)) {
+  for (; batch >= 32 * sizeof(int8_t); batch -= 32 * sizeof(int8_t)) {
     const __m512i va0123456789ABCDEF = _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) input_a));
     const __m512i vaGHIJKLMNOPQRSTUV = _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) (input_a + 16)));
     input_a += 32;
@@ -53,7 +59,7 @@ void xnn_qs8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_x32(
     _mm256_storeu_si256((__m256i*) output, vout0123456789ABCDEFGHIJKLMNOPQRSTUV);
     output += 32;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     do {
       const __m512i va0123456789ABCDEF = _mm512_cvtepi8_epi32(_mm_loadu_si128((const __m128i*) input_a));
       input_a += 16;
@@ -67,15 +73,15 @@ void xnn_qs8_vaddc_minmax_ukernel__avx512skx_mul32_ld128_x32(
       vout0123456789ABCDEF = _mm_max_epi8(vout0123456789ABCDEF, _mm256_castsi256_si128(voutput_min));
       vout0123456789ABCDEF = _mm_min_epi8(vout0123456789ABCDEF, _mm256_castsi256_si128(voutput_max));
 
-      if XNN_LIKELY(n >= (16 * sizeof(int8_t))) {
+      if XNN_LIKELY(batch >= (16 * sizeof(int8_t))) {
         _mm_storeu_si128((__m128i*) output, vout0123456789ABCDEF);
         output += 16;
-        n -= 16 * sizeof(int8_t);
+        batch -= 16 * sizeof(int8_t);
       } else {
-        const __mmask16 vmask = _cvtu32_mask16((uint32_t) ((UINT32_C(1) << n) - UINT32_C(1)));
+        const __mmask16 vmask = _cvtu32_mask16((uint32_t) ((UINT32_C(1) << batch) - UINT32_C(1)));
         _mm_mask_storeu_epi8(output, vmask, vout0123456789ABCDEF);
-        n = 0;
+        batch = 0;
       }
-    } while (n != 0);
+    } while (batch != 0);
   }
 }

@@ -43,6 +43,11 @@
 #include "src/image/SkImage_Gpu.h"
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Image_Graphite.h"
+#include "src/gpu/graphite/Log.h"
+#endif
+
 SkImage::SkImage(const SkImageInfo& info, uint32_t uniqueID)
         : fInfo(info)
         , fUniqueID(kNeedNewImageUniqueID == uniqueID ? SkNextID::ImageID() : uniqueID) {
@@ -71,13 +76,26 @@ bool SkImage::readPixels(const SkImageInfo& dstInfo, void* dstPixels,
 }
 #endif
 
+void SkImage::asyncReadPixels(const SkImageInfo& info,
+                              const SkIRect& srcRect,
+                              ReadPixelsCallback callback,
+                              ReadPixelsContext context) const {
+    if (!SkIRect::MakeSize(this->dimensions()).contains(srcRect) ||
+        !SkImageInfoIsValid(info)) {
+        callback(context, nullptr);
+        return;
+    }
+    as_IB(this)->onAsyncReadPixels(
+            info, srcRect, callback, context);
+}
+
 void SkImage::asyncRescaleAndReadPixels(const SkImageInfo& info,
                                         const SkIRect& srcRect,
                                         RescaleGamma rescaleGamma,
                                         RescaleMode rescaleMode,
                                         ReadPixelsCallback callback,
                                         ReadPixelsContext context) const {
-    if (!SkIRect::MakeWH(this->width(), this->height()).contains(srcRect) ||
+    if (!SkIRect::MakeSize(this->dimensions()).contains(srcRect) ||
         !SkImageInfoIsValid(info)) {
         callback(context, nullptr);
         return;
@@ -94,7 +112,7 @@ void SkImage::asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
                                               RescaleMode rescaleMode,
                                               ReadPixelsCallback callback,
                                               ReadPixelsContext context) const {
-    if (!SkIRect::MakeWH(this->width(), this->height()).contains(srcRect) || dstSize.isZero() ||
+    if (!SkIRect::MakeSize(this->dimensions()).contains(srcRect) || dstSize.isZero() ||
         (dstSize.width() & 0b1) || (dstSize.height() & 0b1)) {
         callback(context, nullptr);
         return;
@@ -270,7 +288,7 @@ SkImage_Base::~SkImage_Base() {
 }
 
 void SkImage_Base::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
-                                               const SkIRect& origSrcRect,
+                                               SkIRect origSrcRect,
                                                RescaleGamma rescaleGamma,
                                                RescaleMode rescaleMode,
                                                ReadPixelsCallback callback,
@@ -297,8 +315,8 @@ void SkImage_Base::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 
 void SkImage_Base::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
                                                      sk_sp<SkColorSpace> dstColorSpace,
-                                                     const SkIRect& srcRect,
-                                                     const SkISize& dstSize,
+                                                     SkIRect srcRect,
+                                                     SkISize dstSize,
                                                      RescaleGamma,
                                                      RescaleMode,
                                                      ReadPixelsCallback callback,
@@ -468,14 +486,30 @@ GrBackendTexture SkImage_Base::onGetBackendTexture(bool flushPendingGrContextIO,
 
 #ifdef SK_GRAPHITE_ENABLED
 std::tuple<skgpu::graphite::TextureProxyView, SkColorType> SkImage_Base::asView(
-        skgpu::graphite::Recorder* recorder, skgpu::graphite::Mipmapped mipmapped) const {
+        skgpu::graphite::Recorder* recorder,
+        skgpu::graphite::Mipmapped mipmapped) const {
     if (!recorder) {
         return {};
     }
+
+    if (!as_IB(this)->isGraphiteBacked()) {
+        return {};
+    }
+
+    auto image = reinterpret_cast<const skgpu::graphite::Image*>(this);
+
     if (this->dimensions().area() <= 1) {
         mipmapped = skgpu::graphite::Mipmapped::kNo;
     }
-    return this->onAsView(recorder, mipmapped);
+
+    if (mipmapped == skgpu::graphite::Mipmapped::kYes &&
+        image->textureProxyView().proxy()->mipmapped() != skgpu::graphite::Mipmapped::kYes) {
+        SKGPU_LOG_W("Graphite does not auto-generate mipmap levels");
+        return {};
+    }
+
+    SkColorType ct = this->colorType();
+    return { image->textureProxyView(), ct };
 }
 #endif // SK_GRAPHITE_ENABLED
 

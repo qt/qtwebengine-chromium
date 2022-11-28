@@ -10,6 +10,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "third_party/base/compiler_specific.h"
+
 // UnownedPtr is a smart pointer class that behaves very much like a
 // standard C-style pointer. The advantages of using it over raw
 // pointers are:
@@ -45,20 +47,85 @@ class span;
 namespace fxcrt {
 
 template <class T>
-class UnownedPtr {
+class TRIVIAL_ABI GSL_POINTER UnownedPtr {
  public:
   constexpr UnownedPtr() noexcept = default;
-  constexpr UnownedPtr(const UnownedPtr& that) noexcept = default;
-
-  // Move-construct an UnownedPtr. After construction, |that| will be NULL.
-  constexpr UnownedPtr(UnownedPtr&& that) noexcept : m_pObj(that.Release()) {}
-
-  template <typename U>
-  explicit constexpr UnownedPtr(U* pObj) noexcept : m_pObj(pObj) {}
 
   // Deliberately implicit to allow returning nullptrs.
   // NOLINTNEXTLINE(runtime/explicit)
-  constexpr UnownedPtr(std::nullptr_t ptr) noexcept {}
+  constexpr UnownedPtr(std::nullptr_t ptr) {}
+
+  explicit constexpr UnownedPtr(T* pObj) noexcept : m_pObj(pObj) {}
+
+  // Copy-construct an UnownedPtr.
+  // Required in addition to copy conversion constructor below.
+  constexpr UnownedPtr(const UnownedPtr& that) noexcept : m_pObj(that.Get()) {}
+
+  // Move-construct an UnownedPtr. After construction, |that| will be NULL.
+  // Required in addition to move conversion constructor below.
+  constexpr UnownedPtr(UnownedPtr&& that) noexcept : m_pObj(that.Release()) {}
+
+  // Copy-conversion constructor.
+  template <class U,
+            typename = typename std::enable_if<
+                std::is_convertible<U*, T*>::value>::type>
+  UnownedPtr(const UnownedPtr<U>& that) : UnownedPtr(that.Get()) {}
+
+  // Move-conversion constructor.
+  template <class U,
+            typename = typename std::enable_if<
+                std::is_convertible<U*, T*>::value>::type>
+  UnownedPtr(UnownedPtr<U>&& that) noexcept {
+    Reset(that.Release());
+  }
+
+  // Assign an UnownedPtr from nullptr.
+  UnownedPtr& operator=(std::nullptr_t) noexcept {
+    Reset();
+    return *this;
+  }
+
+  // Assign an UnownedPtr from a raw ptr.
+  UnownedPtr& operator=(T* that) noexcept {
+    Reset(that);
+    return *this;
+  }
+
+  // Copy-assign an UnownedPtr.
+  // Required in addition to copy conversion assignment below.
+  UnownedPtr& operator=(const UnownedPtr& that) noexcept {
+    if (*this != that)
+      Reset(that.Get());
+    return *this;
+  }
+
+  // Move-assign an UnownedPtr. After assignment, |that| will be NULL.
+  // Required in addition to move conversion assignment below.
+  UnownedPtr& operator=(UnownedPtr&& that) noexcept {
+    if (*this != that)
+      Reset(that.Release());
+    return *this;
+  }
+
+  // Copy-convert assignment.
+  template <class U,
+            typename = typename std::enable_if<
+                std::is_convertible<U*, T*>::value>::type>
+  UnownedPtr& operator=(const UnownedPtr<U>& that) noexcept {
+    if (*this != that)
+      Reset(that.Get());
+    return *this;
+  }
+
+  // Move-convert assignment. After assignment, |that| will be NULL.
+  template <class U,
+            typename = typename std::enable_if<
+                std::is_convertible<U*, T*>::value>::type>
+  UnownedPtr& operator=(UnownedPtr<U>&& that) noexcept {
+    if (*this != that)
+      Reset(that.Release());
+    return *this;
+  }
 
   ~UnownedPtr() {
     ProbeForLowSeverityLifetimeIssue();
@@ -68,24 +135,6 @@ class UnownedPtr {
   void Reset(T* obj = nullptr) {
     ProbeForLowSeverityLifetimeIssue();
     m_pObj = obj;
-  }
-
-  UnownedPtr& operator=(T* that) noexcept {
-    Reset(that);
-    return *this;
-  }
-
-  UnownedPtr& operator=(const UnownedPtr& that) noexcept {
-    if (*this != that)
-      Reset(that.Get());
-    return *this;
-  }
-
-  // Move-assign an UnownedPtr. After assignment, |that| will be NULL.
-  UnownedPtr& operator=(UnownedPtr&& that) noexcept {
-    if (*this != that)
-      Reset(that.Release());
-    return *this;
   }
 
   bool operator==(std::nullptr_t ptr) const { return Get() == nullptr; }
@@ -130,5 +179,16 @@ class UnownedPtr {
 }  // namespace fxcrt
 
 using fxcrt::UnownedPtr;
+
+namespace pdfium {
+
+// Type-deducing wrapper to make an UnownedPtr from an ordinary pointer,
+// since equivalent constructor is explicit.
+template <typename T>
+UnownedPtr<T> WrapUnowned(T* that) {
+  return UnownedPtr<T>(that);
+}
+
+}  // namespace pdfium
 
 #endif  // CORE_FXCRT_UNOWNED_PTR_H_

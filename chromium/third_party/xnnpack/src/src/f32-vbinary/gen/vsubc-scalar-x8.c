@@ -15,58 +15,58 @@
 
 
 void xnn_f32_vsubc_ukernel__scalar_x8(
-    size_t n,
-    const float* a,
-    const float* b,
-    float* y,
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
     const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
-  assert(a != NULL);
-  assert(b != NULL);
-  assert(y != NULL);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
+  const float vb = *input_b;
+
+  for (; batch >= 8 * sizeof(float); batch -= 8 * sizeof(float)) {
+    const float va0 = input_a[0];
+    const float va1 = input_a[1];
+    const float va2 = input_a[2];
+    const float va3 = input_a[3];
+    const float va4 = input_a[4];
+    const float va5 = input_a[5];
+    const float va6 = input_a[6];
+    const float va7 = input_a[7];
+    input_a += 8;
+
+    float vacc0 = va0 - vb;
+    float vacc1 = va1 - vb;
+    float vacc2 = va2 - vb;
+    float vacc3 = va3 - vb;
+    float vacc4 = va4 - vb;
+    float vacc5 = va5 - vb;
+    float vacc6 = va6 - vb;
+    float vacc7 = va7 - vb;
 
 
-  const float vb = *b;
-  for (; n >= 8 * sizeof(float); n -= 8 * sizeof(float)) {
-    const float va0 = a[0];
-    const float va1 = a[1];
-    const float va2 = a[2];
-    const float va3 = a[3];
-    const float va4 = a[4];
-    const float va5 = a[5];
-    const float va6 = a[6];
-    const float va7 = a[7];
-    a += 8;
 
-    float vy0 = va0 - vb;
-    float vy1 = va1 - vb;
-    float vy2 = va2 - vb;
-    float vy3 = va3 - vb;
-    float vy4 = va4 - vb;
-    float vy5 = va5 - vb;
-    float vy6 = va6 - vb;
-    float vy7 = va7 - vb;
-
-
-
-    y[0] = vy0;
-    y[1] = vy1;
-    y[2] = vy2;
-    y[3] = vy3;
-    y[4] = vy4;
-    y[5] = vy5;
-    y[6] = vy6;
-    y[7] = vy7;
-    y += 8;
+    output[0] = vacc0;
+    output[1] = vacc1;
+    output[2] = vacc2;
+    output[3] = vacc3;
+    output[4] = vacc4;
+    output[5] = vacc5;
+    output[6] = vacc6;
+    output[7] = vacc7;
+    output += 8;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     do {
-      const float va = *a++;
-      float vy = va - vb;
-      *y++ = vy;
-      n -= sizeof(float);
-    } while (n != 0);
+      const float va = *input_a++;
+      float vacc = va - vb;
+      *output++ = vacc;
+      batch -= sizeof(float);
+    } while (batch != 0);
   }
 }

@@ -7,7 +7,6 @@
 #include <limits>
 
 #include "src/base/iterator.h"
-#include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/tick-counter.h"
@@ -15,12 +14,9 @@
 #include "src/compiler/backend/instruction-selector-impl.h"
 #include "src/compiler/compiler-source-position-table.h"
 #include "src/compiler/js-heap-broker.h"
-#include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
-#include "src/compiler/pipeline.h"
 #include "src/compiler/schedule.h"
 #include "src/compiler/state-values-utils.h"
-#include "src/deoptimizer/deoptimizer.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/simd-shuffle.h"
@@ -497,7 +493,6 @@ InstructionOperand OperandForDeopt(Isolate* isolate, OperandGenerator* g,
     case IrOpcode::kInt64Constant:
     case IrOpcode::kFloat32Constant:
     case IrOpcode::kFloat64Constant:
-    case IrOpcode::kDelayedStringConstant:
       return g->UseImmediate(input);
     case IrOpcode::kNumberConstant:
       if (rep == MachineRepresentation::kWord32) {
@@ -1431,8 +1426,6 @@ void InstructionSelector::VisitNode(Node* node) {
       if (!IsSmiDouble(value)) MarkAsTagged(node);
       return VisitConstant(node);
     }
-    case IrOpcode::kDelayedStringConstant:
-      return MarkAsTagged(node), VisitConstant(node);
     case IrOpcode::kCall:
       return VisitCall(node);
     case IrOpcode::kDeoptimizeIf:
@@ -1570,6 +1563,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitInt32MulWithOverflow(node);
     case IrOpcode::kInt32MulHigh:
       return VisitInt32MulHigh(node);
+    case IrOpcode::kInt64MulHigh:
+      return VisitInt64MulHigh(node);
     case IrOpcode::kInt32Div:
       return MarkAsWord32(node), VisitInt32Div(node);
     case IrOpcode::kInt32Mod:
@@ -1588,6 +1583,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord32(node), VisitUint32Mod(node);
     case IrOpcode::kUint32MulHigh:
       return VisitUint32MulHigh(node);
+    case IrOpcode::kUint64MulHigh:
+      return VisitUint64MulHigh(node);
     case IrOpcode::kInt64Add:
       return MarkAsWord64(node), VisitInt64Add(node);
     case IrOpcode::kInt64AddWithOverflow:
@@ -1598,6 +1595,8 @@ void InstructionSelector::VisitNode(Node* node) {
       return MarkAsWord64(node), VisitInt64SubWithOverflow(node);
     case IrOpcode::kInt64Mul:
       return MarkAsWord64(node), VisitInt64Mul(node);
+    case IrOpcode::kInt64MulWithOverflow:
+      return MarkAsWord64(node), VisitInt64MulWithOverflow(node);
     case IrOpcode::kInt64Div:
       return MarkAsWord64(node), VisitInt64Div(node);
     case IrOpcode::kInt64Mod:
@@ -2574,6 +2573,14 @@ void InstructionSelector::VisitInt64SubWithOverflow(Node* node) {
 
 void InstructionSelector::VisitInt64Mul(Node* node) { UNIMPLEMENTED(); }
 
+void InstructionSelector::VisitInt64MulHigh(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitUint64MulHigh(Node* node) { UNIMPLEMENTED(); }
+
+void InstructionSelector::VisitInt64MulWithOverflow(Node* node) {
+  UNIMPLEMENTED();
+}
+
 void InstructionSelector::VisitInt64Div(Node* node) { UNIMPLEMENTED(); }
 
 void InstructionSelector::VisitInt64LessThan(Node* node) { UNIMPLEMENTED(); }
@@ -2702,8 +2709,7 @@ void InstructionSelector::VisitWord32PairShr(Node* node) { UNIMPLEMENTED(); }
 void InstructionSelector::VisitWord32PairSar(Node* node) { UNIMPLEMENTED(); }
 #endif  // V8_TARGET_ARCH_64_BIT
 
-#if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS && \
-    !V8_TARGET_ARCH_RISCV32
+#if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_RISCV32
 void InstructionSelector::VisitWord32AtomicPairLoad(Node* node) {
   UNIMPLEMENTED();
 }
@@ -2739,7 +2745,7 @@ void InstructionSelector::VisitWord32AtomicPairExchange(Node* node) {
 void InstructionSelector::VisitWord32AtomicPairCompareExchange(Node* node) {
   UNIMPLEMENTED();
 }
-#endif  // !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_MIPS
+#endif  // !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM
         // && !V8_TARGET_ARCH_RISCV32
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS64 && \
@@ -2805,51 +2811,13 @@ void InstructionSelector::VisitF32x4Qfms(Node* node) { UNIMPLEMENTED(); }
         // && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_IA32 &&
         // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_RISCV32
 
-#if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64 && \
-    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_ARM
-void InstructionSelector::VisitI8x16RelaxedLaneSelect(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI16x8RelaxedLaneSelect(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4RelaxedLaneSelect(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI64x2RelaxedLaneSelect(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitF32x4RelaxedMin(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitF32x4RelaxedMax(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitF64x2RelaxedMin(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitF64x2RelaxedMax(Node* node) { UNIMPLEMENTED(); }
-void InstructionSelector::VisitI32x4RelaxedTruncF64x2SZero(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4RelaxedTruncF64x2UZero(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4RelaxedTruncF32x4S(Node* node) {
-  UNIMPLEMENTED();
-}
-void InstructionSelector::VisitI32x4RelaxedTruncF32x4U(Node* node) {
-  UNIMPLEMENTED();
-}
-#endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM64
-        // && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARM &&
-        // !V8_TARGET_ARCH_RISCV32
-
-#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_ARM
-void InstructionSelector::VisitI16x8RelaxedQ15MulRS(Node* node) {
-  UNIMPLEMENTED();
-}
-#endif  // !V8_TARGET_ARCH_ARM6 && !V8_TARGET_ARCH_ARM
-
-#if !V8_TARGET_ARCH_ARM64
+#if !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
 void InstructionSelector::VisitI16x8DotI8x16I7x16S(Node* node) {
   UNIMPLEMENTED();
 }
+#endif  // !V8_TARGET_ARCH_ARM6 && !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_IA32
 
+#if !V8_TARGET_ARCH_ARM64
 void InstructionSelector::VisitI32x4DotI8x16I7x16AddS(Node* node) {
   UNIMPLEMENTED();
 }
@@ -2930,6 +2898,7 @@ void InstructionSelector::VisitProjection(Node* node) {
     case IrOpcode::kInt32MulWithOverflow:
     case IrOpcode::kInt64AddWithOverflow:
     case IrOpcode::kInt64SubWithOverflow:
+    case IrOpcode::kInt64MulWithOverflow:
     case IrOpcode::kTryTruncateFloat32ToInt64:
     case IrOpcode::kTryTruncateFloat64ToInt64:
     case IrOpcode::kTryTruncateFloat32ToUint64:
@@ -3180,14 +3149,12 @@ void InstructionSelector::VisitSelect(Node* node) {
 }
 
 void InstructionSelector::VisitTrapIf(Node* node, TrapId trap_id) {
-  FlagsContinuation cont =
-      FlagsContinuation::ForTrap(kNotEqual, trap_id, node->InputAt(1));
+  FlagsContinuation cont = FlagsContinuation::ForTrap(kNotEqual, trap_id);
   VisitWordCompareZero(node, node->InputAt(0), &cont);
 }
 
 void InstructionSelector::VisitTrapUnless(Node* node, TrapId trap_id) {
-  FlagsContinuation cont =
-      FlagsContinuation::ForTrap(kEqual, trap_id, node->InputAt(1));
+  FlagsContinuation cont = FlagsContinuation::ForTrap(kEqual, trap_id);
   VisitWordCompareZero(node, node->InputAt(0), &cont);
 }
 

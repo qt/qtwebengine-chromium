@@ -229,6 +229,63 @@ struct imag_ref_retval
   typedef typename NumTraits<Scalar>::Real & type;
 };
 
+
+/****************************************************************************
+* Implementation of sign                                                 *
+****************************************************************************/
+template<typename Scalar, bool IsComplex = (NumTraits<Scalar>::IsComplex!=0),
+    bool IsInteger = (NumTraits<Scalar>::IsInteger!=0)>
+struct sign_impl
+{
+  EIGEN_DEVICE_FUNC
+  static inline Scalar run(const Scalar& a)
+  {
+    return Scalar( (a>Scalar(0)) - (a<Scalar(0)) );
+  }
+};
+
+template<typename Scalar>
+struct sign_impl<Scalar, false, false>
+{
+  EIGEN_DEVICE_FUNC
+  static inline Scalar run(const Scalar& a)
+  {
+    return (std::isnan)(a) ? a : Scalar( (a>Scalar(0)) - (a<Scalar(0)) );
+  }
+};
+
+template<typename Scalar, bool IsInteger>
+struct sign_impl<Scalar, true, IsInteger>
+{
+  EIGEN_DEVICE_FUNC
+  static inline Scalar run(const Scalar& a)
+  {
+    using real_type = typename NumTraits<Scalar>::Real;
+    real_type aa = std::abs(a);
+    if (aa==real_type(0))
+      return Scalar(0);
+    aa = real_type(1)/aa;
+    return Scalar(a.real()*aa, a.imag()*aa );
+  }
+};
+
+// The sign function for bool is the identity.
+template<>
+struct sign_impl<bool, false, true>
+{
+  EIGEN_DEVICE_FUNC
+  static inline bool run(const bool& a)
+  {
+    return a;
+  }
+};
+
+template<typename Scalar>
+struct sign_retval
+{
+  typedef Scalar type;
+};
+
 /****************************************************************************
 * Implementation of conj                                                 *
 ****************************************************************************/
@@ -1277,6 +1334,13 @@ EIGEN_DEVICE_FUNC
 inline EIGEN_MATHFUNC_RETVAL(conj, Scalar) conj(const Scalar& x)
 {
   return EIGEN_MATHFUNC_IMPL(conj, Scalar)::run(x);
+}
+
+template<typename Scalar>
+EIGEN_DEVICE_FUNC
+inline EIGEN_MATHFUNC_RETVAL(sign, Scalar) sign(const Scalar& x)
+{
+  return EIGEN_MATHFUNC_IMPL(sign, Scalar)::run(x);
 }
 
 template<typename Scalar>

@@ -558,19 +558,19 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
 
-    const longhandProperties = this.style.longhandProperties(this.name);
+    const longhandProperties = this.property.getLonghandProperties();
     const leadingProperties = this.style.leadingProperties();
 
-    for (let i = 0; i < longhandProperties.length; ++i) {
-      const name = longhandProperties[i].name;
+    for (const property of longhandProperties) {
+      const name = property.name;
       let inherited = false;
       let overloaded = false;
 
       const section = this.section();
       if (section) {
         inherited = section.isPropertyInherited(name);
-        overloaded = this.matchedStylesInternal.propertyState(longhandProperties[i]) ===
-            SDK.CSSMatchedStyles.PropertyState.Overloaded;
+        overloaded =
+            this.matchedStylesInternal.propertyState(property) === SDK.CSSMatchedStyles.PropertyState.Overloaded;
       }
 
       const leadingProperty = leadingProperties.find(property => property.name === name && property.activeInStyle());
@@ -579,8 +579,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       }
 
       const item = new StylePropertyTreeElement(
-          this.parentPaneInternal, this.matchedStylesInternal, longhandProperties[i], false, inherited, overloaded,
-          false);
+          this.parentPaneInternal, this.matchedStylesInternal, property, false, inherited, overloaded, false);
       item.setComputedStyles(this.computedStyles);
       item.setParentsComputedStyles(this.parentsComputedStyles);
       this.appendChild(item);
@@ -762,6 +761,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   updateAuthoringHint(): void {
+    this.listItemElement.classList.remove('inactive-property');
     if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS)) {
       return;
     }
@@ -785,6 +785,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         const hintIcon = UI.Icon.Icon.create('mediumicon-info', 'hint');
         activeHints.set(hintIcon, hint);
         this.listItemElement.append(hintIcon);
+        this.listItemElement.classList.add('inactive-property');
         break;
       }
     }
@@ -1175,7 +1176,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     const keyboardEvent = (event as KeyboardEvent);
     const target = (keyboardEvent.target as HTMLElement);
     let result;
-    if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
+    if ((keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) ||
+        (context.isEditingName && keyboardEvent.key === ' ')) {
       result = 'forward';
     } else if (
         keyboardEvent.keyCode === UI.KeyboardShortcut.Keys.Esc.code ||

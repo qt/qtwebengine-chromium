@@ -168,6 +168,9 @@ struct packet_traits<float> : default_packet_traits {
     HasAbs = 1,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasACos = 1,
+    HasASin = 1,
+    HasATan = 1,
     HasLog = 1,
     HasExp = 1,
 #ifdef __VSX__
@@ -177,16 +180,19 @@ struct packet_traits<float> : default_packet_traits {
 #else
     HasRsqrt = 0,
 #endif
+    HasTanh = EIGEN_FAST_MATH,
+    HasErf = EIGEN_FAST_MATH,
+    HasRint = 1,
 #else
     HasSqrt = 0,
     HasRsqrt = 0,
+    HasTanh = 0,
+    HasErf = 0,
+    HasRint = 0,
 #endif
-    HasTanh = EIGEN_FAST_MATH,
-    HasErf = EIGEN_FAST_MATH,
     HasRound = 1,
     HasFloor = 1,
     HasCeil = 1,
-    HasRint = 1,
     HasNegate = 1,
     HasBlend = 1
   };
@@ -219,16 +225,17 @@ struct packet_traits<bfloat16> : default_packet_traits {
 #else
     HasRsqrt = 0,
 #endif
+    HasRint = 1,
 #else
     HasSqrt = 0,
     HasRsqrt = 0,
-    HasTanh = EIGEN_FAST_MATH,
-    HasErf = EIGEN_FAST_MATH,
+    HasRint = 0,
 #endif
+    HasTanh = 0,
+    HasErf = 0,
     HasRound = 1,
     HasFloor = 1,
     HasCeil = 1,
-    HasRint = 1,
     HasNegate = 1,
     HasBlend = 1
   };
@@ -249,7 +256,8 @@ struct packet_traits<int> : default_packet_traits {
     HasShift = 1,
     HasMul   = 1,
     HasDiv   = 0,
-    HasBlend = 1
+    HasBlend = 1,
+    HasCmp = 1
   };
 };
 
@@ -267,7 +275,8 @@ struct packet_traits<short int> : default_packet_traits {
     HasSub  = 1,
     HasMul  = 1,
     HasDiv  = 0,
-    HasBlend = 1
+    HasBlend = 1,
+    HasCmp = 1
   };
 };
 
@@ -285,7 +294,8 @@ struct packet_traits<unsigned short int> : default_packet_traits {
     HasSub  = 1,
     HasMul  = 1,
     HasDiv  = 0,
-    HasBlend = 1
+    HasBlend = 1,
+    HasCmp = 1
   };
 };
 
@@ -303,7 +313,8 @@ struct packet_traits<signed char> : default_packet_traits {
     HasSub  = 1,
     HasMul  = 1,
     HasDiv  = 0,
-    HasBlend = 1
+    HasBlend = 1,
+    HasCmp = 1
   };
 };
 
@@ -321,7 +332,8 @@ struct packet_traits<unsigned char> : default_packet_traits {
     HasSub  = 1,
     HasMul  = 1,
     HasDiv  = 0,
-    HasBlend = 1
+    HasBlend = 1,
+    HasCmp = 1
   };
 };
 
@@ -513,6 +525,7 @@ EIGEN_ALWAYS_INLINE Packet pload_partial_common(const __UNPACK_TYPE__(Packet)* f
   eigen_assert(n + offset <= packet_size && "number of elements plus offset will read past end of packet");
   const Index size = sizeof(__UNPACK_TYPE__(Packet));
 #ifdef _ARCH_PWR9
+  EIGEN_UNUSED_VARIABLE(packet_size);
   EIGEN_DEBUG_ALIGNED_LOAD
   EIGEN_UNUSED_VARIABLE(from);
   Packet load = vec_xl_len(const_cast<__UNPACK_TYPE__(Packet)*>(from), n * size);
@@ -645,6 +658,7 @@ template<typename Packet> EIGEN_ALWAYS_INLINE void pstore_partial_common(__UNPAC
   eigen_assert(n + offset <= packet_size && "number of elements plus offset will write past end of packet");
   const Index size = sizeof(__UNPACK_TYPE__(Packet));
 #ifdef _ARCH_PWR9
+  EIGEN_UNUSED_VARIABLE(packet_size);
   EIGEN_UNUSED_VARIABLE(to);
   EIGEN_DEBUG_ALIGNED_STORE
   Packet store = from;
@@ -1040,9 +1054,11 @@ template<> EIGEN_STRONG_INLINE Packet4i pmadd(const Packet4i& a, const Packet4i&
 template<> EIGEN_STRONG_INLINE Packet8s pmadd(const Packet8s& a, const Packet8s& b, const Packet8s& c) { return vec_madd(a,b,c); }
 template<> EIGEN_STRONG_INLINE Packet8us pmadd(const Packet8us& a, const Packet8us& b, const Packet8us& c) { return vec_madd(a,b,c); }
 
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet4f pmsub(const Packet4f& a, const Packet4f& b, const Packet4f& c) { return vec_msub(a,b,c); }
 template<> EIGEN_STRONG_INLINE Packet4f pnmadd(const Packet4f& a, const Packet4f& b, const Packet4f& c) { return vec_nmsub(a,b,c); }
 template<> EIGEN_STRONG_INLINE Packet4f pnmsub(const Packet4f& a, const Packet4f& b, const Packet4f& c) { return vec_nmadd(a,b,c); }
+#endif
 
 template<> EIGEN_STRONG_INLINE Packet4f pmin<Packet4f>(const Packet4f& a, const Packet4f& b)
 {
@@ -1087,19 +1103,29 @@ template<> EIGEN_STRONG_INLINE Packet4f pcmp_lt_or_nan(const Packet4f& a, const 
   return vec_nor(c,c);
 }
 
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet4i pcmp_le(const Packet4i& a, const Packet4i& b) { return reinterpret_cast<Packet4i>(vec_cmple(a,b)); }
+#endif
 template<> EIGEN_STRONG_INLINE Packet4i pcmp_lt(const Packet4i& a, const Packet4i& b) { return reinterpret_cast<Packet4i>(vec_cmplt(a,b)); }
 template<> EIGEN_STRONG_INLINE Packet4i pcmp_eq(const Packet4i& a, const Packet4i& b) { return reinterpret_cast<Packet4i>(vec_cmpeq(a,b)); }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet8s pcmp_le(const Packet8s& a, const Packet8s& b) { return reinterpret_cast<Packet8s>(vec_cmple(a,b)); }
+#endif
 template<> EIGEN_STRONG_INLINE Packet8s pcmp_lt(const Packet8s& a, const Packet8s& b) { return reinterpret_cast<Packet8s>(vec_cmplt(a,b)); }
 template<> EIGEN_STRONG_INLINE Packet8s pcmp_eq(const Packet8s& a, const Packet8s& b) { return reinterpret_cast<Packet8s>(vec_cmpeq(a,b)); }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet8us pcmp_le(const Packet8us& a, const Packet8us& b) { return reinterpret_cast<Packet8us>(vec_cmple(a,b)); }
+#endif
 template<> EIGEN_STRONG_INLINE Packet8us pcmp_lt(const Packet8us& a, const Packet8us& b) { return reinterpret_cast<Packet8us>(vec_cmplt(a,b)); }
 template<> EIGEN_STRONG_INLINE Packet8us pcmp_eq(const Packet8us& a, const Packet8us& b) { return reinterpret_cast<Packet8us>(vec_cmpeq(a,b)); }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet16c pcmp_le(const Packet16c& a, const Packet16c& b) { return reinterpret_cast<Packet16c>(vec_cmple(a,b)); }
+#endif
 template<> EIGEN_STRONG_INLINE Packet16c pcmp_lt(const Packet16c& a, const Packet16c& b) { return reinterpret_cast<Packet16c>(vec_cmplt(a,b)); }
 template<> EIGEN_STRONG_INLINE Packet16c pcmp_eq(const Packet16c& a, const Packet16c& b) { return reinterpret_cast<Packet16c>(vec_cmpeq(a,b)); }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet16uc pcmp_le(const Packet16uc& a, const Packet16uc& b) { return reinterpret_cast<Packet16uc>(vec_cmple(a,b)); }
+#endif
 template<> EIGEN_STRONG_INLINE Packet16uc pcmp_lt(const Packet16uc& a, const Packet16uc& b) { return reinterpret_cast<Packet16uc>(vec_cmplt(a,b)); }
 template<> EIGEN_STRONG_INLINE Packet16uc pcmp_eq(const Packet16uc& a, const Packet16uc& b) { return reinterpret_cast<Packet16uc>(vec_cmpeq(a,b)); }
 
@@ -1152,6 +1178,7 @@ template<> EIGEN_STRONG_INLINE Packet4f pround<Packet4f>(const Packet4f& a)
 }
 template<> EIGEN_STRONG_INLINE Packet4f pceil<Packet4f>(const  Packet4f& a) { return vec_ceil(a); }
 template<> EIGEN_STRONG_INLINE Packet4f pfloor<Packet4f>(const Packet4f& a) { return vec_floor(a); }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet4f print<Packet4f>(const Packet4f& a)
 {
     Packet4f res;
@@ -1162,6 +1189,7 @@ template<> EIGEN_STRONG_INLINE Packet4f print<Packet4f>(const Packet4f& a)
 
     return res;
 }
+#endif
 
 template<typename Packet> EIGEN_STRONG_INLINE Packet ploadu_common(const __UNPACK_TYPE__(Packet)* from)
 {
@@ -1215,6 +1243,7 @@ template<typename Packet> EIGEN_ALWAYS_INLINE Packet ploadu_partial_common(const
   eigen_assert(n <= packet_size && "number of elements will read past end of packet");
   const Index size = sizeof(__UNPACK_TYPE__(Packet));
 #ifdef _ARCH_PWR9
+  EIGEN_UNUSED_VARIABLE(packet_size);
   EIGEN_DEBUG_ALIGNED_LOAD
   EIGEN_DEBUG_UNALIGNED_LOAD
   return vec_xl_len(const_cast<__UNPACK_TYPE__(Packet)*>(from), n * size);
@@ -1402,6 +1431,7 @@ template<typename Packet> EIGEN_ALWAYS_INLINE void pstoreu_partial_common(__UNPA
   eigen_assert(n <= packet_size && "number of elements will write past end of packet");
   const Index size = sizeof(__UNPACK_TYPE__(Packet));
 #ifdef _ARCH_PWR9
+  EIGEN_UNUSED_VARIABLE(packet_size);
   EIGEN_DEBUG_UNALIGNED_STORE
   vec_xst_len(from, to, n * size);
 #else
@@ -1702,12 +1732,6 @@ template<> EIGEN_STRONG_INLINE Packet8bf psub<Packet8bf>(const Packet8bf& a, con
   BF16_TO_F32_BINARY_OP_WRAPPER(psub<Packet4f>, a, b);
 }
 
-template<> EIGEN_STRONG_INLINE Packet8bf psqrt<Packet8bf> (const Packet8bf& a){
-  BF16_TO_F32_UNARY_OP_WRAPPER(vec_sqrt, a);
-}
-template<> EIGEN_STRONG_INLINE Packet8bf prsqrt<Packet8bf> (const Packet8bf& a){
-  BF16_TO_F32_UNARY_OP_WRAPPER(prsqrt<Packet4f>, a);
-}
 template<> EIGEN_STRONG_INLINE Packet8bf pexp<Packet8bf> (const Packet8bf& a){
   BF16_TO_F32_UNARY_OP_WRAPPER(pexp_float, a);
 }
@@ -1751,9 +1775,11 @@ template<> EIGEN_STRONG_INLINE Packet8bf pceil<Packet8bf> (const Packet8bf& a){
 template<> EIGEN_STRONG_INLINE Packet8bf pround<Packet8bf> (const Packet8bf& a){
   BF16_TO_F32_UNARY_OP_WRAPPER(pround<Packet4f>, a);
 }
+#ifdef __VSX__
 template<> EIGEN_STRONG_INLINE Packet8bf print<Packet8bf> (const Packet8bf& a){
   BF16_TO_F32_UNARY_OP_WRAPPER(print<Packet4f>, a);
 }
+#endif
 template<> EIGEN_STRONG_INLINE Packet8bf pmadd(const Packet8bf& a, const Packet8bf& b, const Packet8bf& c) {
   Packet4f a_even = Bf16ToF32Even(a);
   Packet4f a_odd = Bf16ToF32Odd(a);

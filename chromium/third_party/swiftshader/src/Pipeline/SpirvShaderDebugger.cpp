@@ -1169,7 +1169,7 @@ public:
 	// Data shared across all nodes in the LocalVariableValue.
 	struct Shared
 	{
-		Shared(debug::LocalVariable const *const variable, State const *const state, int const lane)
+		Shared(const debug::LocalVariable *const variable, const State *const state, int const lane)
 		    : variable(variable)
 		    , state(state)
 		    , lane(lane)
@@ -1177,17 +1177,17 @@ public:
 			ASSERT(variable->definition == debug::LocalVariable::Definition::Values);
 		}
 
-		debug::LocalVariable const *const variable;
-		State const *const state;
+		const debug::LocalVariable *const variable;
+		const State *const state;
 		int const lane;
 	};
 
-	LocalVariableValue(debug::LocalVariable *variable, State const *const state, int lane);
+	LocalVariableValue(debug::LocalVariable *variable, const State *const state, int lane);
 
 	LocalVariableValue(
-	    std::shared_ptr<const Shared> const &shared,
-	    debug::Type const *ty,
-	    debug::LocalVariable::ValueNode const *node);
+	    const std::shared_ptr<const Shared> &shared,
+	    const debug::Type *ty,
+	    const debug::LocalVariable::ValueNode *node);
 
 private:
 	// vk::dbg::Value
@@ -1197,8 +1197,8 @@ private:
 
 	void updateValue();
 	std::shared_ptr<const Shared> const shared;
-	debug::Type const *const ty;
-	debug::LocalVariable::ValueNode const *const node;
+	const debug::Type *const ty;
+	const debug::LocalVariable::ValueNode *const node;
 	debug::Value *activeValue = nullptr;
 	std::shared_ptr<vk::dbg::Value> value;
 };
@@ -1348,7 +1348,7 @@ private:
 
 		// getOrCreateLocals() creates and returns the per-lane local variables
 		// from those in the lexical block.
-		PerLaneVariables getOrCreateLocals(State *state, debug::LexicalBlock const *block);
+		PerLaneVariables getOrCreateLocals(State *state, const debug::LexicalBlock *block);
 
 		// buildGlobal() creates and adds to globals global variable with the
 		// given name and value. The value is copied instead of holding a
@@ -1373,7 +1373,7 @@ private:
 		GlobalVariables globals;
 		std::shared_ptr<vk::dbg::Thread> thread;
 		std::vector<StackEntry> stack;
-		std::unordered_map<debug::LexicalBlock const *, PerLaneVariables> locals;
+		std::unordered_map<const debug::LexicalBlock *, PerLaneVariables> locals;
 	};
 
 	State(const Debugger *debugger);
@@ -2014,15 +2014,15 @@ SpirvShader::Impl::Debugger::Shadow::Memory::dref(int lane) const
 ////////////////////////////////////////////////////////////////////////////////
 sw::SpirvShader::Impl::Debugger::LocalVariableValue::LocalVariableValue(
     debug::LocalVariable *variable,
-    State const *const state,
+    const State *state,
     int lane)
     : LocalVariableValue(std::make_shared<Shared>(variable, state, lane), variable->type, &variable->values)
 {}
 
 sw::SpirvShader::Impl::Debugger::LocalVariableValue::LocalVariableValue(
-    std::shared_ptr<const Shared> const &shared,
-    debug::Type const *ty,
-    debug::LocalVariable::ValueNode const *node)
+    const std::shared_ptr<const Shared> &shared,
+    const debug::Type *ty,
+    const debug::LocalVariable::ValueNode *node)
     : shared(shared)
     , ty(ty)
     , node(node)
@@ -2198,7 +2198,7 @@ void SpirvShader::Impl::Debugger::State::Data::trap(int index, State *state)
 	auto debugger = state->debugger;
 
 	// Update the thread frames from the stack of scopes
-	auto const &locationAndScope = debugger->traps.byIndex[index];
+	const auto &locationAndScope = debugger->traps.byIndex[index];
 
 	if(locationAndScope.scope)
 	{
@@ -2338,7 +2338,7 @@ void SpirvShader::Impl::Debugger::State::Data::updateFrameLocals(State *state, v
 }
 
 SpirvShader::Impl::Debugger::State::Data::PerLaneVariables
-SpirvShader::Impl::Debugger::State::Data::getOrCreateLocals(State *state, debug::LexicalBlock const *block)
+SpirvShader::Impl::Debugger::State::Data::getOrCreateLocals(State *state, const debug::LexicalBlock *block)
 {
 	return getOrCreate(locals, block, [&] {
 		PerLaneVariables locals;
@@ -2800,36 +2800,6 @@ SpirvShader::EmitResult SpirvShader::EmitOpenCLDebugInfo100(InsnIterator insn, E
 	{
 		dbg->process(insn, state, Impl::Debugger::Pass::Emit);
 	}
-	return EmitResult::Continue;
-}
-
-}  // namespace sw
-
-#else  // ENABLE_VK_DEBUGGER
-
-// Stub implementations of the dbgXXX functions.
-namespace sw {
-
-void SpirvShader::dbgInit(const std::shared_ptr<vk::dbg::Context> &dbgctx) {}
-void SpirvShader::dbgTerm() {}
-void SpirvShader::dbgCreateFile() {}
-void SpirvShader::dbgBeginEmit(EmitState *state) const {}
-void SpirvShader::dbgEndEmit(EmitState *state) const {}
-void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) const {}
-void SpirvShader::dbgEndEmitInstruction(InsnIterator insn, EmitState *state) const {}
-void SpirvShader::dbgExposeIntermediate(Object::ID id, EmitState *state) const {}
-void SpirvShader::dbgUpdateActiveLaneMask(RValue<SIMD::Int> mask, EmitState *state) const {}
-void SpirvShader::dbgDeclareResult(const InsnIterator &insn, Object::ID resultId) const {}
-
-void SpirvShader::DefineOpenCLDebugInfo100(const InsnIterator &insn) {}
-
-SpirvShader::EmitResult SpirvShader::EmitOpenCLDebugInfo100(InsnIterator insn, EmitState *state) const
-{
-	return EmitResult::Continue;
-}
-
-SpirvShader::EmitResult SpirvShader::EmitLine(InsnIterator insn, EmitState *state) const
-{
 	return EmitResult::Continue;
 }
 

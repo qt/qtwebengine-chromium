@@ -5,6 +5,7 @@
 #ifndef QUICHE_QUIC_LOAD_BALANCER_LOAD_BALANCER_ENCODER_H_
 #define QUICHE_QUIC_LOAD_BALANCER_LOAD_BALANCER_ENCODER_H_
 
+#include "quiche/quic/core/connection_id_generator.h"
 #include "quiche/quic/core/crypto/quic_random.h"
 #include "quiche/quic/load_balancer/load_balancer_config.h"
 #include "quiche/quic/load_balancer/load_balancer_server_id.h"
@@ -17,6 +18,18 @@ class LoadBalancerEncoderPeer;
 
 // Default length of a 4-tuple connection ID.
 inline constexpr uint8_t kLoadBalancerUnroutableLen = 8;
+// When the encoder is self-encoding the connection ID length, these are the
+// bits of the first byte that do so.
+constexpr uint8_t kLoadBalancerLengthMask = 0x3f;
+// The bits of the connection ID first byte that encode the config ID.
+constexpr uint8_t kLoadBalancerConfigIdMask = 0xc0;
+// The config ID that means the connection ID does not contain routing
+// information.
+constexpr uint8_t kLoadBalancerUnroutableConfigId = kNumLoadBalancerConfigs;
+// The bits of the connection ID first byte that correspond to a connection ID
+// that does not contain routing information.
+constexpr uint8_t kLoadBalancerUnroutablePrefix =
+    kLoadBalancerUnroutableConfigId << 6;
 
 // Interface which receives notifications when the current config is updated.
 class QUIC_EXPORT_PRIVATE LoadBalancerEncoderVisitorInterface {
@@ -50,8 +63,16 @@ class QUIC_EXPORT_PRIVATE LoadBalancerEncoderVisitorInterface {
 
 // Manages QUIC-LB configurations to properly encode a given server ID in a
 // QUIC Connection ID.
-class QUIC_EXPORT_PRIVATE LoadBalancerEncoder {
+class QUIC_EXPORT_PRIVATE LoadBalancerEncoder
+    : public ConnectionIdGeneratorInterface {
  public:
+  LoadBalancerEncoder(QuicRandom& random,
+                      LoadBalancerEncoderVisitorInterface* const visitor,
+                      const bool len_self_encoded)
+      : LoadBalancerEncoder(random, visitor, len_self_encoded,
+                            kLoadBalancerUnroutableLen) {}
+  ~LoadBalancerEncoder() override {}
+
   // Returns a newly created encoder with no active config, if
   // |unroutable_connection_id_length| is valid. |visitor| specifies an optional
   // interface to receive callbacks when config status changes.
@@ -82,40 +103,52 @@ class QUIC_EXPORT_PRIVATE LoadBalancerEncoder {
   // the current config, or 0 if there is no current config.
   absl::uint128 num_nonces_left() const { return num_nonces_left_; }
 
+  // Functions below are declared virtual to enable mocking.
   // Returns true if there is an active configuration.
-  bool IsEncoding() const { return config_.has_value(); }
+  virtual bool IsEncoding() const { return config_.has_value(); }
   // Returns true if there is an active configuration that uses encryption.
-  bool IsEncrypted() const {
+  virtual bool IsEncrypted() const {
     return config_.has_value() && config_->IsEncrypted();
   }
+  virtual bool len_self_encoded() const { return len_self_encoded_; }
 
   // If there's an active config, generates a connection ID using it. If not,
   // generates an unroutable connection_id. If there's an error, returns a zero-
   // length Connection ID.
   QuicConnectionId GenerateConnectionId();
 
- private:
-  friend class test::LoadBalancerEncoderPeer;
+  // Functions from ConnectionIdGeneratorInterface
+  absl::optional<QuicConnectionId> GenerateNextConnectionId(
+      const QuicConnectionId& original) override;
+  absl::optional<QuicConnectionId> MaybeReplaceConnectionId(
+      const QuicConnectionId& original,
+      const ParsedQuicVersion& version) override;
+  uint8_t ConnectionIdLength(uint8_t first_byte) const override;
 
+ protected:
   LoadBalancerEncoder(QuicRandom& random,
                       LoadBalancerEncoderVisitorInterface* const visitor,
                       const bool len_self_encoded,
                       const uint8_t unroutable_connection_id_len)
       : random_(random),
         len_self_encoded_(len_self_encoded),
-        visitor_(visitor),
-        unroutable_connection_id_len_(unroutable_connection_id_len) {}
+        visitor_(visitor) {
+    std::fill_n(connection_id_lengths_, 4, unroutable_connection_id_len);
+  }
+
+ private:
+  friend class test::LoadBalancerEncoderPeer;
 
   QuicConnectionId MakeUnroutableConnectionId(uint8_t first_byte);
 
   QuicRandom& random_;
   const bool len_self_encoded_;
   LoadBalancerEncoderVisitorInterface* const visitor_;
-  const uint8_t unroutable_connection_id_len_;
 
   absl::optional<LoadBalancerConfig> config_;
   absl::uint128 seed_, num_nonces_left_ = 0;
   absl::optional<LoadBalancerServerId> server_id_;
+  uint8_t connection_id_lengths_[kNumLoadBalancerConfigs + 1];
 };
 
 }  // namespace quic

@@ -48,7 +48,7 @@ g.test('f32')
   .fn(async t => {
     const makeCase = (e1: number, e2: number): Case => {
       // Due to the heterogeneous types of the params to ldexp (f32 & i32),
-      // makeBinaryF32IntervalCase cannot be used here.
+      // makeBinaryToF32IntervalCase cannot be used here.
       e1 = quantizeToF32(e1);
       e2 = quantizeToI32(e2);
       const expected = ldexpInterval(e1, e2);
@@ -61,7 +61,7 @@ g.test('f32')
         cases.push(makeCase(e1, e2));
       });
     });
-    run(t, builtin('ldexp'), [TypeF32, TypeI32], TypeF32, t.params, cases);
+    await run(t, builtin('ldexp'), [TypeF32, TypeI32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

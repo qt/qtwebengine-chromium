@@ -210,6 +210,21 @@ template<typename MatrixType_> class FullPivHouseholderQR
       return m_rows_transpositions;
     }
 
+    /** \returns the determinant of the matrix of which
+      * *this is the QR decomposition. It has only linear complexity
+      * (that is, O(n) where n is the dimension of the square matrix)
+      * as the QR decomposition has already been computed.
+      *
+      * \note This is only for square matrices.
+      *
+      * \warning a determinant can be very big or small, so for matrices
+      * of large enough dimension, there is a risk of overflow/underflow.
+      * One way to work around that is to use logAbsDeterminant() instead.
+      *
+      * \sa absDeterminant(), logAbsDeterminant(), MatrixBase::determinant()
+      */
+    typename MatrixType::Scalar determinant() const;
+
     /** \returns the absolute value of the determinant of the matrix of which
       * *this is the QR decomposition. It has only linear complexity
       * (that is, O(n) where n is the dimension of the square matrix)
@@ -221,7 +236,7 @@ template<typename MatrixType_> class FullPivHouseholderQR
       * of large enough dimension, there is a risk of overflow/underflow.
       * One way to work around that is to use logAbsDeterminant() instead.
       *
-      * \sa logAbsDeterminant(), MatrixBase::determinant()
+      * \sa determinant(), logAbsDeterminant(), MatrixBase::determinant()
       */
     typename MatrixType::RealScalar absDeterminant() const;
 
@@ -235,7 +250,7 @@ template<typename MatrixType_> class FullPivHouseholderQR
       * \note This method is useful to work around the risk of overflow/underflow that's inherent
       * to determinant computation.
       *
-      * \sa absDeterminant(), MatrixBase::determinant()
+      * \sa determinant(), absDeterminant(), MatrixBase::determinant()
       */
     typename MatrixType::RealScalar logAbsDeterminant() const;
 
@@ -419,8 +434,18 @@ template<typename MatrixType_> class FullPivHouseholderQR
     RealScalar m_prescribedThreshold, m_maxpivot;
     Index m_nonzero_pivots;
     RealScalar m_precision;
-    Index m_det_pq;
+    Index m_det_p;
 };
+
+template<typename MatrixType>
+typename MatrixType::Scalar FullPivHouseholderQR<MatrixType>::determinant() const
+{
+  eigen_assert(m_isInitialized && "HouseholderQR is not initialized.");
+  eigen_assert(m_qr.rows() == m_qr.cols() && "You can't take the determinant of a non-square matrix!");
+  Scalar detQ;
+  internal::householder_determinant<HCoeffsType, Scalar, NumTraits<Scalar>::IsComplex>::run(m_hCoeffs, detQ);
+  return m_qr.diagonal().prod() * detQ * Scalar(m_det_p);
+}
 
 template<typename MatrixType>
 typename MatrixType::RealScalar FullPivHouseholderQR<MatrixType>::absDeterminant() const
@@ -531,7 +556,7 @@ void FullPivHouseholderQR<MatrixType>::computeInPlace()
   for(Index k = 0; k < size; ++k)
     m_cols_permutation.applyTranspositionOnTheRight(k, m_cols_transpositions.coeff(k));
 
-  m_det_pq = (number_of_transpositions%2) ? -1 : 1;
+  m_det_p = (number_of_transpositions%2) ? -1 : 1;
   m_isInitialized = true;
 }
 

@@ -14,6 +14,7 @@
 #include "absl/base/attributes.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/crypto_handshake.h"
+#include "quiche/quic/core/deterministic_connection_id_generator.h"
 #include "quiche/quic/core/http/quic_client_push_promise_index.h"
 #include "quiche/quic/core/http/quic_spdy_client_session.h"
 #include "quiche/quic/core/http/quic_spdy_client_stream.h"
@@ -25,6 +26,24 @@ namespace quic {
 class ProofVerifier;
 class QuicServerId;
 class SessionCache;
+
+// A path context which owns the writer.
+class QUIC_EXPORT_PRIVATE PathMigrationContext
+    : public QuicPathValidationContext {
+ public:
+  PathMigrationContext(std::unique_ptr<QuicPacketWriter> writer,
+                       const QuicSocketAddress& self_address,
+                       const QuicSocketAddress& peer_address)
+      : QuicPathValidationContext(self_address, peer_address),
+        alternative_writer_(std::move(writer)) {}
+
+  QuicPacketWriter* WriterToUse() override { return alternative_writer_.get(); }
+
+  QuicPacketWriter* ReleaseWriter() { return alternative_writer_.release(); }
+
+ private:
+  std::unique_ptr<QuicPacketWriter> alternative_writer_;
+};
 
 // QuicClientBase handles establishing a connection to the passed in
 // server id, including ensuring that it supports the passed in versions
@@ -330,6 +349,9 @@ class QuicClientBase {
   // Returns true if the corresponding of this client has active requests.
   virtual bool HasActiveRequests() = 0;
 
+  // Allows derived classes to access this when creating connections.
+  ConnectionIdGeneratorInterface& connection_id_generator();
+
  private:
   // Returns true and set |version| if client can reconnect with a different
   // version.
@@ -416,6 +438,9 @@ class QuicClientBase {
   // Stores the interface name to bind. If empty, will not attempt to bind the
   // socket to that interface. Defaults to empty string.
   std::string interface_name_;
+
+  DeterministicConnectionIdGenerator connection_id_generator_{
+      kQuicDefaultConnectionIdLength};
 };
 
 }  // namespace quic

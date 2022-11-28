@@ -14,6 +14,7 @@
 #include "quiche/quic/core/crypto/client_proof_source.h"
 #include "quiche/quic/core/crypto/proof_source.h"
 #include "quiche/quic/core/crypto/quic_random.h"
+#include "quiche/quic/core/quic_connection_id.h"
 #include "quiche/quic/core/quic_crypto_client_stream.h"
 #include "quiche/quic/core/quic_session.h"
 #include "quiche/quic/core/quic_types.h"
@@ -169,7 +170,7 @@ class TlsServerHandshakerTest : public QuicTestWithParam<TestParams> {
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize),
         server_id_(kServerHostname, kServerPort, false),
         supported_versions_({GetParam().version}) {
-    SetQuicFlag(FLAGS_quic_disable_server_tls_resumption,
+    SetQuicFlag(quic_disable_server_tls_resumption,
                 GetParam().disable_resumption);
     client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         crypto_test_utils::ProofVerifierForTesting(),
@@ -598,6 +599,23 @@ TEST_P(TlsServerHandshakerTest, ExtractSNI) {
 
   EXPECT_EQ(server_stream()->crypto_negotiated_params().sni,
             "test.example.com");
+}
+
+TEST_P(TlsServerHandshakerTest, ServerConnectionIdPassedToSelectCert) {
+  InitializeServerWithFakeProofSourceHandle();
+
+  // Disable early data.
+  server_session_->set_early_data_enabled(false);
+
+  server_handshaker_->SetupProofSourceHandle(
+      /*select_cert_action=*/FakeProofSourceHandle::Action::DELEGATE_SYNC,
+      /*compute_signature_action=*/FakeProofSourceHandle::Action::
+          DELEGATE_SYNC);
+  InitializeFakeClient();
+  CompleteCryptoHandshake();
+  ExpectHandshakeSuccessful();
+
+  EXPECT_EQ(last_select_cert_args().original_connection_id, TestConnectionId());
 }
 
 TEST_P(TlsServerHandshakerTest, HostnameForCertSelectionAndComputeSignature) {

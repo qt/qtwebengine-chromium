@@ -131,6 +131,7 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_EmptyDescriptorPool =
 static const char DECORATE_UNUSED *kVUID_BestPractices_ClearValueWithoutLoadOpClear = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-ClearValueWithoutLoadOpClear";
 static const char DECORATE_UNUSED *kVUID_BestPractices_ClearValueCountHigherThanAttachmentCount = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-ClearValueCountHigherThanAttachmentCount";
 static const char DECORATE_UNUSED *kVUID_BestPractices_StoreOpDontCareThenLoadOpLoad = "UNASSIGNED-BestPractices-vkCmdBeginRenderPass-StoreOpDontCareThenLoadOpLoad";
+static const char DECORATE_UNUSED *kVUID_BestPractices_ConcurrentUsageOfExclusiveImage = "UNASSIGNED-BestPractices-ConcurrentUsageOfExclusiveImage";
 
 // Arm-specific best practice
 static const char DECORATE_UNUSED *kVUID_BestPractices_AllocateDescriptorSets_SuboptimalReuse =
@@ -261,6 +262,34 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_DynamicRendering_NotSuppo
 // Imagination Technologies best practices
 static const char DECORATE_UNUSED *kVUID_BestPractices_Texture_Format_PVRTC_Outdated =
     "UNASSIGNED-BestPractices-Texture-Format-PVRTC-Outdated";
+
+// NVIDIA-specific best practices
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_PageableDeviceLocalMemory =
+    "UNASSIGNED-BestPractices-CreateDevice-PageableDeviceLocalMemory";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateImage_TilingLinear =
+    "UNASSIGNED-BestPractices-CreateImage-TilingLinear";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateImage_Depth32Format =
+    "UNASSIGNED-BestPractices-CreateImage-Depth32Format";
+static const char DECORATE_UNUSED *kVUID_BestPractices_QueueBindSparse_NotAsync =
+    "UNASSIGNED-BestPractices-QueueBindSparse-NotAsync";
+static const char DECORATE_UNUSED *kVUID_BestPractices_AccelerationStructure_NotAsync =
+    "UNASSIGNED-BestPractices-AccelerationStructure-NotAsync";
+static const char DECORATE_UNUSED *kVUID_BestPractices_AllocateMemory_SetPriority =
+    "UNASSIGNED-BestPractices-AllocateMemory-SetPriority";
+static const char DECORATE_UNUSED *kVUID_BestPractices_AllocateMemory_ReuseAllocations =
+    "UNASSIGNED-BestPractices-AllocateMemory-ReuseAllocations";
+static const char DECORATE_UNUSED *kVUID_BestPractices_BindMemory_NoPriority =
+    "UNASSIGNED-BestPractices-BindMemory-NoPriority";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreatePipelineLayout_SeparateSampler =
+    "UNASSIGNED-BestPractices-CreatePipelineLayout-SeparateSampler";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreatePipelinesLayout_LargePipelineLayout =
+    "UNASSIGNED-BestPractices-CreatePipelineLayout-LargePipelineLayout";
+static const char DECORATE_UNUSED *kVUID_BestPractices_BindPipeline_SwitchTessGeometryMesh =
+    "UNASSIGNED-BestPractices-BindPipeline-SwitchTessGeometryMesh";
+static const char DECORATE_UNUSED *kVUID_BestPractices_Zcull_LessGreaterRatio =
+    "UNASSIGNED-BestPractices-Zcull-LessGreaterRatio";
+static const char DECORATE_UNUSED *kVUID_BestPractices_ClearColor_NotCompressed =
+    "UNASSIGNED-BestPractices-ClearColor-NotCompressed";
 
 // clang-format on
 

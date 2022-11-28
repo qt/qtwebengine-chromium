@@ -9,16 +9,15 @@
 #include "include/v8-internal.h"
 #include "include/v8-platform.h"
 #include "src/base/logging.h"
-#include "src/base/macros.h"
 #include "src/common/globals.h"
 #include "src/common/ptr-compr-inl.h"
 #include "src/execution/isolate.h"
 #include "src/heap/allocation-stats.h"
 #include "src/heap/basic-memory-chunk.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/marking-state-inl.h"
 #include "src/heap/memory-allocator.h"
 #include "src/heap/read-only-heap.h"
-#include "src/objects/heap-object.h"
 #include "src/objects/objects-inl.h"
 #include "src/snapshot/snapshot-data.h"
 #include "src/snapshot/snapshot-utils.h"
@@ -55,7 +54,7 @@ void ReadOnlyArtifacts::VerifyChecksum(SnapshotData* read_only_snapshot_data,
     CHECK_WITH_MSG(snapshot_checksum,
                    "Attempt to create the read-only heap after already "
                    "creating from a snapshot.");
-    if (!FLAG_stress_snapshot) {
+    if (!v8_flags.stress_snapshot) {
       // --stress-snapshot is only intended to check how well the
       // serializer/deserializer copes with unexpected objects, and is not
       // intended to test whether the newly deserialized Isolate would actually
@@ -187,7 +186,9 @@ ReadOnlyHeap* PointerCompressedReadOnlyArtifacts::GetReadOnlyHeapForIsolate(
   Address isolate_root = isolate->isolate_root();
   for (Object original_object : original_cache) {
     Address original_address = original_object.ptr();
-    Address new_address = isolate_root + CompressTagged(original_address);
+    Address new_address =
+        isolate_root +
+        V8HeapCompressionScheme::CompressTagged(original_address);
     Object new_object = Object(new_address);
     cache.push_back(new_object);
   }
@@ -237,7 +238,8 @@ void PointerCompressedReadOnlyArtifacts::Initialize(
     pages_.push_back(new_page);
     shared_memory_.push_back(std::move(shared_memory));
     // This is just CompressTagged but inlined so it will always compile.
-    Tagged_t compressed_address = CompressTagged(page->address());
+    Tagged_t compressed_address =
+        V8HeapCompressionScheme::CompressTagged(page->address());
     page_offsets_.push_back(compressed_address);
 
     // 3. Update the accounting stats so the allocated bytes are for the new
@@ -334,10 +336,7 @@ ReadOnlyPage::ReadOnlyPage(Heap* heap, BaseSpace* space, size_t chunk_size,
                        std::move(reservation)) {
   allocated_bytes_ = 0;
   SetFlags(Flag::NEVER_EVACUATE | Flag::READ_ONLY_HEAP);
-  heap->incremental_marking()
-      ->non_atomic_marking_state()
-      ->bitmap(this)
-      ->MarkAllBits();
+  heap->non_atomic_marking_state()->bitmap(this)->MarkAllBits();
 }
 
 void ReadOnlyPage::MakeHeaderRelocatable() {
@@ -437,18 +436,8 @@ class ReadOnlySpaceObjectIterator : public ObjectIterator {
         continue;
       }
       HeapObject obj = HeapObject::FromAddress(cur_addr_);
-      // TODO(teodutu): Simplify checking for one pointer fillers. We cannot
-      // verifiy them directly because some of the objects here are initialised
-      // before the one pointer filler map, which leads to the wrong map being
-      // written instead.
-      if (V8_COMPRESS_POINTERS_8GB_BOOL &&
-          !IsAligned(cur_addr_, kObjectAlignment8GbHeap) &&
-          !obj.IsFreeSpace()) {
-        cur_addr_ = RoundUp<kObjectAlignment8GbHeap>(cur_addr_);
-        continue;
-      }
       const int obj_size = obj.Size();
-      cur_addr_ += obj_size;
+      cur_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(obj_size);
       DCHECK_LE(cur_addr_, cur_end_);
       if (!obj.IsFreeSpaceOrFiller()) {
         if (obj.IsCode()) {
@@ -587,7 +576,7 @@ void ReadOnlySpace::FreeLinearAllocationArea() {
 
   // Clear the bits in the unused black area.
   ReadOnlyPage* page = pages_.back();
-  heap()->incremental_marking()->marking_state()->bitmap(page)->ClearRange(
+  heap()->marking_state()->bitmap(page)->ClearRange(
       page->AddressToMarkbitIndex(top_), page->AddressToMarkbitIndex(limit_));
 
   heap()->CreateFillerObjectAt(top_, static_cast<int>(limit_ - top_));
@@ -626,6 +615,7 @@ void ReadOnlySpace::EnsureSpaceForAllocation(int size_in_bytes) {
 
 HeapObject ReadOnlySpace::TryAllocateLinearlyAligned(
     int size_in_bytes, AllocationAlignment alignment) {
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   Address current_top = top_;
   int filler_size = Heap::GetFillToAlign(current_top, alignment);
 
@@ -649,8 +639,9 @@ HeapObject ReadOnlySpace::TryAllocateLinearlyAligned(
 
 AllocationResult ReadOnlySpace::AllocateRawAligned(
     int size_in_bytes, AllocationAlignment alignment) {
-  DCHECK(!FLAG_enable_third_party_heap);
+  DCHECK(!v8_flags.enable_third_party_heap);
   DCHECK(!IsDetached());
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   int allocation_size = size_in_bytes;
 
   HeapObject object = TryAllocateLinearlyAligned(allocation_size, alignment);
@@ -670,6 +661,7 @@ AllocationResult ReadOnlySpace::AllocateRawAligned(
 
 AllocationResult ReadOnlySpace::AllocateRawUnaligned(int size_in_bytes) {
   DCHECK(!IsDetached());
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
   EnsureSpaceForAllocation(size_in_bytes);
   Address current_top = top_;
   Address new_top = current_top + size_in_bytes;
@@ -691,13 +683,12 @@ AllocationResult ReadOnlySpace::AllocateRawUnaligned(int size_in_bytes) {
 AllocationResult ReadOnlySpace::AllocateRaw(int size_in_bytes,
                                             AllocationAlignment alignment) {
   AllocationResult result =
-      V8_COMPRESS_POINTERS_8GB_BOOL ||
-              (USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned)
+      USE_ALLOCATION_ALIGNMENT_BOOL && alignment != kTaggedAligned
           ? AllocateRawAligned(size_in_bytes, alignment)
           : AllocateRawUnaligned(size_in_bytes);
   HeapObject heap_obj;
   if (result.To(&heap_obj)) {
-    DCHECK(heap()->incremental_marking()->marking_state()->IsBlack(heap_obj));
+    DCHECK(heap()->marking_state()->IsBlack(heap_obj));
   }
   return result;
 }
@@ -714,7 +705,7 @@ size_t ReadOnlyPage::ShrinkToHighWaterMark() {
                             MemoryAllocator::GetCommitPageSize());
   if (unused > 0) {
     DCHECK_EQ(0u, unused % MemoryAllocator::GetCommitPageSize());
-    if (FLAG_trace_gc_verbose) {
+    if (v8_flags.trace_gc_verbose) {
       PrintIsolate(heap()->isolate(), "Shrinking page %p: end %p -> %p\n",
                    reinterpret_cast<void*>(this),
                    reinterpret_cast<void*>(area_end()),

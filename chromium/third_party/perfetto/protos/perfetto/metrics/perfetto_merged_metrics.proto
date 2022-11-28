@@ -298,6 +298,14 @@ message AndroidDisplayMetrics {
 
   // The statistics for each refresh rate value
   repeated RefreshRateStat refresh_rate_stats = 5;
+
+  // Stats to measure the runtime of updating the power state in
+  // DisplayPowerController
+  message UpdatePowerState {
+    optional uint32 avg_runtime_ms = 1;
+  }
+
+  optional UpdatePowerState update_power_state = 6;
 }
 
 // End of protos/perfetto/metrics/android/display_metrics.proto
@@ -1331,6 +1339,8 @@ message AndroidStartupMetric {
     optional int64 runnable_dur_ns = 2;
     optional int64 uninterruptible_sleep_dur_ns = 3;
     optional int64 interruptible_sleep_dur_ns = 4;
+    optional int64 uninterruptible_io_sleep_dur_ns = 5;
+    optional int64 uninterruptible_non_io_sleep_dur_ns = 6;
   }
 
   message McyclesByCoreType {

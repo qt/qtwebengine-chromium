@@ -139,6 +139,12 @@ void UtilDescriptorSetManager::PutBackDescriptorSet(VkDescriptorPool desc_pool, 
 }
 
 // Trampolines to make VMA call Dispatch for Vulkan calls
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL gpuVkGetInstanceProcAddr(VkInstance inst, const char *name) {
+    return DispatchGetInstanceProcAddr(inst, name);
+}
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL gpuVkGetDeviceProcAddr(VkDevice dev, const char *name) {
+    return DispatchGetDeviceProcAddr(dev, name);
+}
 static VKAPI_ATTR void VKAPI_CALL gpuVkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
                                                                    VkPhysicalDeviceProperties *pProperties) {
     DispatchGetPhysicalDeviceProperties(physicalDevice, pProperties);
@@ -202,12 +208,15 @@ static VKAPI_ATTR void VKAPI_CALL gpuVkCmdCopyBuffer(VkCommandBuffer commandBuff
     DispatchCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, regionCount, pRegions);
 }
 
-VkResult UtilInitializeVma(VkPhysicalDevice physical_device, VkDevice device, VmaAllocator *pAllocator) {
+VkResult UtilInitializeVma(VkInstance instance, VkPhysicalDevice physical_device, VkDevice device, VmaAllocator *pAllocator) {
     VmaVulkanFunctions functions;
     VmaAllocatorCreateInfo allocator_info = {};
+    allocator_info.instance = instance;
     allocator_info.device = device;
     allocator_info.physicalDevice = physical_device;
 
+    functions.vkGetInstanceProcAddr = static_cast<PFN_vkGetInstanceProcAddr>(gpuVkGetInstanceProcAddr);
+    functions.vkGetDeviceProcAddr = static_cast<PFN_vkGetDeviceProcAddr>(gpuVkGetDeviceProcAddr);
     functions.vkGetPhysicalDeviceProperties = static_cast<PFN_vkGetPhysicalDeviceProperties>(gpuVkGetPhysicalDeviceProperties);
     functions.vkGetPhysicalDeviceMemoryProperties =
         static_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(gpuVkGetPhysicalDeviceMemoryProperties);
@@ -314,7 +323,7 @@ void GpuAssistedBase::CreateDevice(const VkDeviceCreateInfo *pCreateInfo) {
     }
     desc_set_bind_index = adjusted_max_desc_sets - 1;
 
-    VkResult result1 = UtilInitializeVma(physical_device, device, &vmaAllocator);
+    VkResult result1 = UtilInitializeVma(instance, physical_device, device, &vmaAllocator);
     assert(result1 == VK_SUCCESS);
     desc_set_manager = layer_data::make_unique<UtilDescriptorSetManager>(device, static_cast<uint32_t>(bindings_.size()));
 
@@ -362,8 +371,8 @@ void GpuAssistedBase::PreCallRecordDestroyDevice(VkDevice device, const VkAlloca
     desc_set_manager.reset();
 }
 
-gpu_utils_state::Queue::Queue(GpuAssistedBase &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags)
-    : QUEUE_STATE(q, index, flags), state_(state) {}
+gpu_utils_state::Queue::Queue(GpuAssistedBase &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags, const VkQueueFamilyProperties &queueFamilyProperties)
+    : QUEUE_STATE(state, q, index, flags, queueFamilyProperties), state_(state) {}
 
 gpu_utils_state::Queue::~Queue() {
     if (barrier_command_buffer_) {

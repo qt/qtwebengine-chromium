@@ -14,7 +14,7 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fxcrt/cfx_readonlymemorystream.h"
+#include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/check.h"
 #include "third_party/base/ptr_util.h"
@@ -27,12 +27,12 @@ bool IsObjectStream(const CPDF_Object* object) {
     return false;
 
   // See ISO 32000-1:2008 spec, table 16.
-  const CPDF_Dictionary* stream_dict = stream->GetDict();
-  if (!ValidateDictType(stream_dict, "ObjStm"))
+  RetainPtr<const CPDF_Dictionary> stream_dict = stream->GetDict();
+  if (!ValidateDictType(stream_dict.Get(), "ObjStm"))
     return false;
 
-  const CPDF_Number* number_of_objects =
-      ToNumber(stream_dict->GetObjectFor("N"));
+  RetainPtr<const CPDF_Number> number_of_objects =
+      stream_dict->GetNumberFor("N");
   if (!number_of_objects || !number_of_objects->IsInteger() ||
       number_of_objects->GetInteger() < 0 ||
       number_of_objects->GetInteger() >=
@@ -40,8 +40,8 @@ bool IsObjectStream(const CPDF_Object* object) {
     return false;
   }
 
-  const CPDF_Number* first_object_offset =
-      ToNumber(stream_dict->GetObjectFor("First"));
+  RetainPtr<const CPDF_Number> first_object_offset =
+      stream_dict->GetNumberFor("First");
   if (!first_object_offset || !first_object_offset->IsInteger() ||
       first_object_offset->GetInteger() < 0) {
     return false;
@@ -63,7 +63,9 @@ std::unique_ptr<CPDF_ObjectStream> CPDF_ObjectStream::Create(
 }
 
 CPDF_ObjectStream::CPDF_ObjectStream(const CPDF_Stream* obj_stream)
-    : first_object_offset_(obj_stream->GetDict()->GetIntegerFor("First")) {
+    : stream_acc_(
+          pdfium::MakeRetain<CPDF_StreamAcc>(pdfium::WrapRetain(obj_stream))),
+      first_object_offset_(obj_stream->GetDict()->GetIntegerFor("First")) {
   DCHECK(IsObjectStream(obj_stream));
   Init(obj_stream);
 }
@@ -89,13 +91,9 @@ RetainPtr<CPDF_Object> CPDF_ObjectStream::ParseObject(
 }
 
 void CPDF_ObjectStream::Init(const CPDF_Stream* stream) {
-  {
-    auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(stream);
-    stream_acc->LoadAllDataFiltered();
-    const uint32_t data_size = stream_acc->GetSize();
-    data_stream_ = pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(
-        stream_acc->DetachData(), data_size);
-  }
+  stream_acc_->LoadAllDataFiltered();
+  data_stream_ =
+      pdfium::MakeRetain<CFX_ReadOnlySpanStream>(stream_acc_->GetSpan());
 
   CPDF_SyntaxParser syntax(data_stream_);
   const int object_count = stream->GetDict()->GetIntegerFor("N");

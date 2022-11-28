@@ -13,7 +13,6 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinMap.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLParsedModule.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -27,12 +26,11 @@
 
 #include <functional>
 #include <memory>
-#include <string>
-#include <type_traits>
 #include <vector>
 
 namespace SkSL {
 
+class Symbol;
 struct Program;
 
 namespace {
@@ -61,8 +59,8 @@ public:
             // Add all declared variables to the usage map (even if never otherwise accessed).
             const VarDeclaration& vd = s.as<VarDeclaration>();
             ProgramUsage::VariableCounts& counts = fUsage->fVariableCounts[&vd.var()];
-            counts.fDeclared += fDelta;
-            SkASSERT(counts.fDeclared >= 0);
+            counts.fVarExists += fDelta;
+            SkASSERT(counts.fVarExists >= 0 && counts.fVarExists <= 1);
             if (vd.value()) {
                 // The initial-value expression, when present, counts as a write.
                 counts.fWrite += fDelta;
@@ -115,14 +113,14 @@ std::unique_ptr<ProgramUsage> Analysis::GetUsage(const Program& program) {
 }
 
 std::unique_ptr<ProgramUsage> Analysis::GetUsage(const LoadedModule& module,
-                                                 const ParsedModule& base) {
+                                                 const BuiltinMap* base) {
     auto usage = std::make_unique<ProgramUsage>();
     ProgramUsageVisitor addRefs(usage.get(), /*delta=*/+1);
     for (const std::unique_ptr<ProgramElement>& element : module.fElements) {
         addRefs.visitProgramElement(*element);
     }
-    if (base.fElements) {
-        base.fElements->foreach([&](const std::string&, const ProgramElement& element) {
+    if (base) {
+        base->foreach([&](const Symbol*, const ProgramElement& element) {
             addRefs.visitProgramElement(element);
         });
     }

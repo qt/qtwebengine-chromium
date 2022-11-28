@@ -17,6 +17,7 @@
 #include "Vulkan/VkBuffer.hpp"
 #include "Vulkan/VkDevice.hpp"
 #include "Vulkan/VkImageView.hpp"
+#include "Vulkan/VkPipeline.hpp"
 #include "Vulkan/VkRenderPass.hpp"
 #include "Vulkan/VkStringify.hpp"
 
@@ -90,6 +91,113 @@ void ProcessPrimitiveRestart(T *indexBuffer,
 	}
 }
 
+vk::DynamicStateFlags ParseDynamicStateFlags(const VkPipelineDynamicStateCreateInfo *dynamicStateCreateInfo)
+{
+	vk::DynamicStateFlags dynamicStateFlags = {};
+
+	if(dynamicStateCreateInfo == nullptr)
+	{
+		return dynamicStateFlags;
+	}
+
+	if(dynamicStateCreateInfo->flags != 0)
+	{
+		// Vulkan 1.3: "flags is reserved for future use." "flags must be 0"
+		UNSUPPORTED("dynamicStateCreateInfo->flags 0x%08X", int(dynamicStateCreateInfo->flags));
+	}
+
+	for(uint32_t i = 0; i < dynamicStateCreateInfo->dynamicStateCount; i++)
+	{
+		VkDynamicState dynamicState = dynamicStateCreateInfo->pDynamicStates[i];
+		switch(dynamicState)
+		{
+		// Vertex input interface:
+		case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE:
+			dynamicStateFlags.vertexInputInterface.dynamicPrimitiveRestartEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY:
+			dynamicStateFlags.vertexInputInterface.dynamicPrimitiveTopology = true;
+			break;
+		case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
+			dynamicStateFlags.vertexInputInterface.dynamicVertexInputBindingStride = true;
+			break;
+
+		// Pre-rasterization:
+		case VK_DYNAMIC_STATE_LINE_WIDTH:
+			dynamicStateFlags.preRasterization.dynamicLineWidth = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_BIAS:
+			dynamicStateFlags.preRasterization.dynamicDepthBias = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
+			dynamicStateFlags.preRasterization.dynamicDepthBiasEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_CULL_MODE:
+			dynamicStateFlags.preRasterization.dynamicCullMode = true;
+			break;
+		case VK_DYNAMIC_STATE_FRONT_FACE:
+			dynamicStateFlags.preRasterization.dynamicFrontFace = true;
+			break;
+		case VK_DYNAMIC_STATE_VIEWPORT:
+			dynamicStateFlags.preRasterization.dynamicViewport = true;
+			break;
+		case VK_DYNAMIC_STATE_SCISSOR:
+			dynamicStateFlags.preRasterization.dynamicScissor = true;
+			break;
+		case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:
+			dynamicStateFlags.preRasterization.dynamicViewportWithCount = true;
+			break;
+		case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
+			dynamicStateFlags.preRasterization.dynamicScissorWithCount = true;
+			break;
+		case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE:
+			dynamicStateFlags.preRasterization.dynamicRasterizerDiscardEnable = true;
+			break;
+
+		// Fragment:
+		case VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE:
+			dynamicStateFlags.fragment.dynamicDepthTestEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE:
+			dynamicStateFlags.fragment.dynamicDepthWriteEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE:
+			dynamicStateFlags.fragment.dynamicDepthBoundsTestEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
+			dynamicStateFlags.fragment.dynamicDepthBounds = true;
+			break;
+		case VK_DYNAMIC_STATE_DEPTH_COMPARE_OP:
+			dynamicStateFlags.fragment.dynamicDepthCompareOp = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE:
+			dynamicStateFlags.fragment.dynamicStencilTestEnable = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_OP:
+			dynamicStateFlags.fragment.dynamicStencilOp = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
+			dynamicStateFlags.fragment.dynamicStencilCompareMask = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
+			dynamicStateFlags.fragment.dynamicStencilWriteMask = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
+			dynamicStateFlags.fragment.dynamicStencilReference = true;
+			break;
+
+		// Fragment output interface:
+		case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
+			dynamicStateFlags.fragmentOutputInterface.dynamicBlendConstants = true;
+			break;
+
+		default:
+			UNSUPPORTED("VkDynamicState %d", int(dynamicState));
+		}
+	}
+
+	return dynamicStateFlags;
+}
 }  // namespace
 
 namespace vk {
@@ -161,7 +269,7 @@ VkFormat Attachments::depthFormat() const
 	}
 }
 
-Inputs::Inputs(const VkPipelineVertexInputStateCreateInfo *vertexInputState)
+void Inputs::initialize(const VkPipelineVertexInputStateCreateInfo *vertexInputState)
 {
 	if(vertexInputState->flags != 0)
 	{
@@ -176,7 +284,7 @@ Inputs::Inputs(const VkPipelineVertexInputStateCreateInfo *vertexInputState)
 	VkVertexInputRate inputRates[MAX_VERTEX_INPUT_BINDINGS];
 	for(uint32_t i = 0; i < vertexInputState->vertexBindingDescriptionCount; i++)
 	{
-		auto const &desc = vertexInputState->pVertexBindingDescriptions[i];
+		const auto &desc = vertexInputState->pVertexBindingDescriptions[i];
 		inputRates[desc.binding] = desc.inputRate;
 		vertexStrides[desc.binding] = desc.inputRate == VK_VERTEX_INPUT_RATE_VERTEX ? desc.stride : 0;
 		instanceStrides[desc.binding] = desc.inputRate == VK_VERTEX_INPUT_RATE_INSTANCE ? desc.stride : 0;
@@ -184,7 +292,7 @@ Inputs::Inputs(const VkPipelineVertexInputStateCreateInfo *vertexInputState)
 
 	for(uint32_t i = 0; i < vertexInputState->vertexAttributeDescriptionCount; i++)
 	{
-		auto const &desc = vertexInputState->pVertexAttributeDescriptions[i];
+		const auto &desc = vertexInputState->pVertexAttributeDescriptions[i];
 		sw::Stream &input = stream[desc.location];
 		input.format = desc.format;
 		input.offset = desc.offset;
@@ -241,108 +349,10 @@ void Inputs::advanceInstanceAttributes(bool dynamicInstanceStride)
 		if((attrib.format != VK_FORMAT_UNDEFINED) && instanceStride && (instanceStride < attrib.robustnessSize))
 		{
 			// Under the casts: attrib.buffer += instanceStride
-			attrib.buffer = (void const *)((uintptr_t)attrib.buffer + instanceStride);
+			attrib.buffer = (const void *)((uintptr_t)attrib.buffer + instanceStride);
 			attrib.robustnessSize -= instanceStride;
 		}
 	}
-}
-
-GraphicsState::DynamicStateFlags GraphicsState::ParseDynamicStateFlags(const VkPipelineDynamicStateCreateInfo *dynamicStateCreateInfo)
-{
-	GraphicsState::DynamicStateFlags dynamicStateFlags = {};
-
-	if(dynamicStateCreateInfo)
-	{
-		if(dynamicStateCreateInfo->flags != 0)
-		{
-			// Vulkan 1.3: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("dynamicStateCreateInfo->flags %d", int(dynamicStateCreateInfo->flags));
-		}
-
-		for(uint32_t i = 0; i < dynamicStateCreateInfo->dynamicStateCount; i++)
-		{
-			VkDynamicState dynamicState = dynamicStateCreateInfo->pDynamicStates[i];
-			switch(dynamicState)
-			{
-			case VK_DYNAMIC_STATE_VIEWPORT:
-				dynamicStateFlags.dynamicViewport = true;
-				break;
-			case VK_DYNAMIC_STATE_SCISSOR:
-				dynamicStateFlags.dynamicScissor = true;
-				break;
-			case VK_DYNAMIC_STATE_LINE_WIDTH:
-				dynamicStateFlags.dynamicLineWidth = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_BIAS:
-				dynamicStateFlags.dynamicDepthBias = true;
-				break;
-			case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
-				dynamicStateFlags.dynamicBlendConstants = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
-				dynamicStateFlags.dynamicDepthBounds = true;
-				break;
-			case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
-				dynamicStateFlags.dynamicStencilCompareMask = true;
-				break;
-			case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
-				dynamicStateFlags.dynamicStencilWriteMask = true;
-				break;
-			case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
-				dynamicStateFlags.dynamicStencilReference = true;
-				break;
-			case VK_DYNAMIC_STATE_CULL_MODE:
-				dynamicStateFlags.dynamicCullMode = true;
-				break;
-			case VK_DYNAMIC_STATE_FRONT_FACE:
-				dynamicStateFlags.dynamicFrontFace = true;
-				break;
-			case VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY:
-				dynamicStateFlags.dynamicPrimitiveTopology = true;
-				break;
-			case VK_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:
-				dynamicStateFlags.dynamicViewportWithCount = true;
-				break;
-			case VK_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
-				dynamicStateFlags.dynamicScissorWithCount = true;
-				break;
-			case VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
-				dynamicStateFlags.dynamicVertexInputBindingStride = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_TEST_ENABLE:
-				dynamicStateFlags.dynamicDepthTestEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE:
-				dynamicStateFlags.dynamicDepthWriteEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_COMPARE_OP:
-				dynamicStateFlags.dynamicDepthCompareOp = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE:
-				dynamicStateFlags.dynamicDepthBoundsTestEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE:
-				dynamicStateFlags.dynamicStencilTestEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_STENCIL_OP:
-				dynamicStateFlags.dynamicStencilOp = true;
-				break;
-			case VK_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE:
-				dynamicStateFlags.dynamicRasterizerDiscardEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
-				dynamicStateFlags.dynamicDepthBiasEnable = true;
-				break;
-			case VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE:
-				dynamicStateFlags.dynamicPrimitiveRestartEnable = true;
-				break;
-			default:
-				UNSUPPORTED("VkDynamicState %d", int(dynamicState));
-			}
-		}
-	}
-
-	return dynamicStateFlags;
 }
 
 VkDeviceSize Inputs::getVertexStride(uint32_t i, bool dynamicVertexStride) const
@@ -381,23 +391,56 @@ VkDeviceSize Inputs::getInstanceStride(uint32_t i, bool dynamicInstanceStride) c
 	return 0;
 }
 
-GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreateInfo *pCreateInfo,
-                             const PipelineLayout *layout, bool robustBufferAccess)
-    : pipelineLayout(layout)
-    , robustBufferAccess(robustBufferAccess)
-    , dynamicStateFlags(ParseDynamicStateFlags(pCreateInfo->pDynamicState))
+void MultisampleState::set(const VkPipelineMultisampleStateCreateInfo *multisampleState)
 {
-	if((pCreateInfo->flags &
-	    ~(VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT |
-	      VK_PIPELINE_CREATE_DERIVATIVE_BIT |
-	      VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT |
-	      VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT |
-	      VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT)) != 0)
+	if(multisampleState->flags != 0)
 	{
-		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));
+		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+		UNSUPPORTED("pCreateInfo->pMultisampleState->flags 0x%08X", int(multisampleState->flags));
 	}
 
-	const VkPipelineVertexInputStateCreateInfo *vertexInputState = pCreateInfo->pVertexInputState;
+	sampleShadingEnable = (multisampleState->sampleShadingEnable != VK_FALSE);
+	if(sampleShadingEnable)
+	{
+		minSampleShading = multisampleState->minSampleShading;
+	}
+
+	if(multisampleState->alphaToOneEnable != VK_FALSE)
+	{
+		UNSUPPORTED("VkPhysicalDeviceFeatures::alphaToOne");
+	}
+
+	switch(multisampleState->rasterizationSamples)
+	{
+	case VK_SAMPLE_COUNT_1_BIT:
+		sampleCount = 1;
+		break;
+	case VK_SAMPLE_COUNT_4_BIT:
+		sampleCount = 4;
+		break;
+	default:
+		UNSUPPORTED("Unsupported sample count");
+	}
+
+	VkSampleMask sampleMask;
+	if(multisampleState->pSampleMask)
+	{
+		sampleMask = multisampleState->pSampleMask[0];
+	}
+	else  // "If pSampleMask is NULL, it is treated as if the mask has all bits set to 1."
+	{
+		sampleMask = ~0;
+	}
+
+	alphaToCoverage = (multisampleState->alphaToCoverageEnable != VK_FALSE);
+	multiSampleMask = sampleMask & ((unsigned)0xFFFFFFFF >> (32 - sampleCount));
+}
+
+void VertexInputInterfaceState::initialize(const VkPipelineVertexInputStateCreateInfo *vertexInputState,
+                                           const VkPipelineInputAssemblyStateCreateInfo *inputAssemblyState,
+                                           const DynamicStateFlags &allDynamicStateFlags)
+{
+	dynamicStateFlags = allDynamicStateFlags.vertexInputInterface;
 
 	if(vertexInputState->flags != 0)
 	{
@@ -405,26 +448,103 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 		UNSUPPORTED("vertexInputState->flags");
 	}
 
-	const VkPipelineInputAssemblyStateCreateInfo *inputAssemblyState = pCreateInfo->pInputAssemblyState;
-
 	if(inputAssemblyState->flags != 0)
 	{
 		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-		UNSUPPORTED("pCreateInfo->pInputAssemblyState->flags %d", int(pCreateInfo->pInputAssemblyState->flags));
+		UNSUPPORTED("pCreateInfo->pInputAssemblyState->flags 0x%08X", int(inputAssemblyState->flags));
 	}
 
 	primitiveRestartEnable = (inputAssemblyState->primitiveRestartEnable != VK_FALSE);
 	topology = inputAssemblyState->topology;
+}
 
-	const VkPipelineRasterizationStateCreateInfo *rasterizationState = pCreateInfo->pRasterizationState;
+void VertexInputInterfaceState::applyState(const DynamicState &dynamicState)
+{
+	if(dynamicStateFlags.dynamicPrimitiveRestartEnable)
+	{
+		primitiveRestartEnable = dynamicState.primitiveRestartEnable;
+	}
+
+	if(dynamicStateFlags.dynamicPrimitiveTopology)
+	{
+		topology = dynamicState.primitiveTopology;
+	}
+}
+
+bool VertexInputInterfaceState::isDrawPoint(bool polygonModeAware, VkPolygonMode polygonMode) const
+{
+	switch(topology)
+	{
+	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+		return true;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+		return false;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_POINT) : false;
+	default:
+		UNSUPPORTED("topology %d", int(topology));
+	}
+	return false;
+}
+
+bool VertexInputInterfaceState::isDrawLine(bool polygonModeAware, VkPolygonMode polygonMode) const
+{
+	switch(topology)
+	{
+	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+		return false;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+		return true;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_LINE) : false;
+	default:
+		UNSUPPORTED("topology %d", int(topology));
+	}
+	return false;
+}
+
+bool VertexInputInterfaceState::isDrawTriangle(bool polygonModeAware, VkPolygonMode polygonMode) const
+{
+	switch(topology)
+	{
+	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+		return false;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_FILL) : true;
+	default:
+		UNSUPPORTED("topology %d", int(topology));
+	}
+	return false;
+}
+
+void PreRasterizationState::initialize(const vk::Device *device,
+                                       const PipelineLayout *layout,
+                                       const VkPipelineViewportStateCreateInfo *viewportState,
+                                       const VkPipelineRasterizationStateCreateInfo *rasterizationState,
+                                       const vk::RenderPass *renderPass, uint32_t subpassIndex,
+                                       const VkPipelineRenderingCreateInfo *rendering,
+                                       const DynamicStateFlags &allDynamicStateFlags)
+{
+	pipelineLayout = layout;
+	dynamicStateFlags = allDynamicStateFlags.preRasterization;
 
 	if(rasterizationState->flags != 0)
 	{
 		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-		UNSUPPORTED("pCreateInfo->pRasterizationState->flags %d", int(pCreateInfo->pRasterizationState->flags));
+		UNSUPPORTED("pCreateInfo->pRasterizationState->flags 0x%08X", int(rasterizationState->flags));
 	}
 
-	rasterizerDiscard = (rasterizationState->rasterizerDiscardEnable != VK_FALSE);
+	rasterizerDiscard = rasterizationState->rasterizerDiscardEnable != VK_FALSE;
 	cullMode = rasterizationState->cullMode;
 	frontFace = rasterizationState->frontFace;
 	polygonMode = rasterizationState->polygonMode;
@@ -449,7 +569,7 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 		depthBiasClamp = 0.0f;
 	}
 
-	if (!dynamicStateFlags.dynamicLineWidth)
+	if(!dynamicStateFlags.dynamicLineWidth)
 	{
 		lineWidth = rasterizationState->lineWidth;
 	}
@@ -494,22 +614,33 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 		extensionCreateInfo = extensionCreateInfo->pNext;
 	}
 
-	// The sample count affects the batch size, so it needs initialization even if rasterization is disabled.
-	// TODO(b/147812380): Eliminate the dependency between multisampling and batch size.
-	sampleCount = 1;
-
-	// Only access rasterization state if rasterization is not disabled.
-	if(rasterizationState->rasterizerDiscardEnable == VK_FALSE)
+	if(!rasterizerDiscard || dynamicStateFlags.dynamicRasterizerDiscardEnable)
 	{
-		const VkPipelineViewportStateCreateInfo *viewportState = pCreateInfo->pViewportState;
-		const VkPipelineMultisampleStateCreateInfo *multisampleState = pCreateInfo->pMultisampleState;
-		const VkPipelineDepthStencilStateCreateInfo *depthStencilState = pCreateInfo->pDepthStencilState;
-		const VkPipelineColorBlendStateCreateInfo *colorBlendState = pCreateInfo->pColorBlendState;
+		extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(viewportState->pNext);
+		while(extensionCreateInfo != nullptr)
+		{
+			switch(extensionCreateInfo->sType)
+			{
+			case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT:
+				{
+					const auto *depthClipControl = reinterpret_cast<const VkPipelineViewportDepthClipControlCreateInfoEXT *>(extensionCreateInfo);
+					depthClipNegativeOneToOne = depthClipControl->negativeOneToOne != VK_FALSE;
+				}
+				break;
+			case VK_STRUCTURE_TYPE_MAX_ENUM:
+				// dEQP passes this value expecting the driver to ignore it.
+				break;
+			default:
+				UNSUPPORTED("pCreateInfo->pViewportState->pNext sType = %s", vk::Stringify(extensionCreateInfo->sType).c_str());
+				break;
+			}
+			extensionCreateInfo = extensionCreateInfo->pNext;
+		}
 
 		if(viewportState->flags != 0)
 		{
 			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("pCreateInfo->pViewportState->flags %d", int(pCreateInfo->pViewportState->flags));
+			UNSUPPORTED("pCreateInfo->pViewportState->flags 0x%08X", int(viewportState->flags));
 		}
 
 		if((viewportState->viewportCount > 1) ||
@@ -527,128 +658,215 @@ GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreat
 		{
 			viewport = viewportState->pViewports[0];
 		}
+	}
+}
 
-		if(multisampleState->flags != 0)
+void PreRasterizationState::applyState(const DynamicState &dynamicState)
+{
+	if(dynamicStateFlags.dynamicLineWidth)
+	{
+		lineWidth = dynamicState.lineWidth;
+	}
+
+	if(dynamicStateFlags.dynamicDepthBias)
+	{
+		constantDepthBias = dynamicState.depthBiasConstantFactor;
+		slopeDepthBias = dynamicState.depthBiasSlopeFactor;
+		depthBiasClamp = dynamicState.depthBiasClamp;
+	}
+
+	if(dynamicStateFlags.dynamicDepthBiasEnable)
+	{
+		depthBiasEnable = dynamicState.depthBiasEnable;
+	}
+
+	if(dynamicStateFlags.dynamicCullMode)
+	{
+		cullMode = dynamicState.cullMode;
+	}
+
+	if(dynamicStateFlags.dynamicFrontFace)
+	{
+		frontFace = dynamicState.frontFace;
+	}
+
+	if(dynamicStateFlags.dynamicViewport)
+	{
+		viewport = dynamicState.viewport;
+	}
+
+	if(dynamicStateFlags.dynamicScissor)
+	{
+		scissor = dynamicState.scissor;
+	}
+
+	if(dynamicStateFlags.dynamicViewportWithCount && dynamicState.viewportCount > 0)
+	{
+		viewport.width = static_cast<float>(dynamicState.viewports[0].extent.width);
+		viewport.height = static_cast<float>(dynamicState.viewports[0].extent.height);
+		viewport.x = static_cast<float>(dynamicState.viewports[0].offset.x);
+		viewport.y = static_cast<float>(dynamicState.viewports[0].offset.y);
+	}
+
+	if(dynamicStateFlags.dynamicScissorWithCount && dynamicState.scissorCount > 0)
+	{
+		scissor = dynamicState.scissors[0];
+	}
+
+	if(dynamicStateFlags.dynamicRasterizerDiscardEnable)
+	{
+		rasterizerDiscard = dynamicState.rasterizerDiscardEnable;
+	}
+}
+
+void FragmentState::initialize(
+    const PipelineLayout *layout,
+    const VkPipelineDepthStencilStateCreateInfo *depthStencilState,
+    const vk::RenderPass *renderPass, uint32_t subpassIndex,
+    const VkPipelineRenderingCreateInfo *rendering,
+    const DynamicStateFlags &allDynamicStateFlags)
+{
+	pipelineLayout = layout;
+	dynamicStateFlags = allDynamicStateFlags.fragment;
+
+	if(renderPass)
+	{
+		const VkSubpassDescription &subpass = renderPass->getSubpass(subpassIndex);
+
+		// Ignore pDepthStencilState when "the subpass of the render pass the pipeline
+		// is created against does not use a depth/stencil attachment"
+		if(subpass.pDepthStencilAttachment &&
+		   subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED)
 		{
-			// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-			UNSUPPORTED("pCreateInfo->pMultisampleState->flags %d", int(pCreateInfo->pMultisampleState->flags));
+			setDepthStencilState(depthStencilState);
 		}
+	}
+	else  // No render pass
+	{
+		// When a pipeline is created without a VkRenderPass, if the VkPipelineRenderingCreateInfo structure
+		// is present in the pNext chain of VkGraphicsPipelineCreateInfo, it specifies the view mask and
+		// format of attachments used for rendering. If this structure is not specified, and the pipeline
+		// does not include a VkRenderPass, viewMask and colorAttachmentCount are 0, and
+		// depthAttachmentFormat and stencilAttachmentFormat are VK_FORMAT_UNDEFINED. If a graphics pipeline
+		// is created with a valid VkRenderPass, parameters of this structure are ignored.
 
-		sampleShadingEnable = (multisampleState->sampleShadingEnable != VK_FALSE);
-		if(sampleShadingEnable)
+		if(rendering)
 		{
-			minSampleShading = multisampleState->minSampleShading;
-		}
-
-		if(multisampleState->alphaToOneEnable != VK_FALSE)
-		{
-			UNSUPPORTED("VkPhysicalDeviceFeatures::alphaToOne");
-		}
-
-		switch(multisampleState->rasterizationSamples)
-		{
-		case VK_SAMPLE_COUNT_1_BIT:
-			sampleCount = 1;
-			break;
-		case VK_SAMPLE_COUNT_4_BIT:
-			sampleCount = 4;
-			break;
-		default:
-			UNSUPPORTED("Unsupported sample count");
-		}
-
-		VkSampleMask sampleMask;
-		if(multisampleState->pSampleMask)
-		{
-			sampleMask = multisampleState->pSampleMask[0];
-		}
-		else  // "If pSampleMask is NULL, it is treated as if the mask has all bits set to 1."
-		{
-			sampleMask = ~0;
-		}
-
-		alphaToCoverage = (multisampleState->alphaToCoverageEnable != VK_FALSE);
-		multiSampleMask = sampleMask & ((unsigned)0xFFFFFFFF >> (32 - sampleCount));
-
-		const vk::RenderPass *renderPass = vk::Cast(pCreateInfo->renderPass);
-		if(renderPass)
-		{
-			const VkSubpassDescription &subpass = renderPass->getSubpass(pCreateInfo->subpass);
-
-			// Ignore pDepthStencilState when "the subpass of the render pass the pipeline
-			// is created against does not use a depth/stencil attachment"
-			if(subpass.pDepthStencilAttachment &&
-			   subpass.pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED)
+			if((rendering->depthAttachmentFormat != VK_FORMAT_UNDEFINED) ||
+			   (rendering->stencilAttachmentFormat != VK_FORMAT_UNDEFINED))
 			{
+				// If renderPass is VK_NULL_HANDLE, the pipeline is being created with fragment
+				// shader state, and either of VkPipelineRenderingCreateInfo::depthAttachmentFormat
+				// or VkPipelineRenderingCreateInfo::stencilAttachmentFormat are not
+				// VK_FORMAT_UNDEFINED, pDepthStencilState must be a valid pointer to a valid
+				// VkPipelineDepthStencilStateCreateInfo structure
+				ASSERT(depthStencilState);
+
 				setDepthStencilState(depthStencilState);
-			}
-
-			// Ignore pColorBlendState when "the subpass of the render pass the pipeline
-			// is created against does not use any color attachments"
-			for(uint32_t i = 0; i < subpass.colorAttachmentCount; i++)
-			{
-				if(subpass.pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED)
-				{
-					setColorBlendState(colorBlendState);
-					break;
-				}
-			}
-		}
-		else  // No render pass
-		{
-			// When a pipeline is created without a VkRenderPass, if the VkPipelineRenderingCreateInfo structure
-			// is present in the pNext chain of VkGraphicsPipelineCreateInfo, it specifies the view mask and
-			// format of attachments used for rendering. If this structure is not specified, and the pipeline
-			// does not include a VkRenderPass, viewMask and colorAttachmentCount are 0, and
-			// depthAttachmentFormat and stencilAttachmentFormat are VK_FORMAT_UNDEFINED. If a graphics pipeline
-			// is created with a valid VkRenderPass, parameters of this structure are ignored.
-
-			const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
-			while(extensionCreateInfo)
-			{
-				if(extensionCreateInfo->sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO)
-				{
-					const VkPipelineRenderingCreateInfo *renderingCreateInfo = reinterpret_cast<const VkPipelineRenderingCreateInfo *>(extensionCreateInfo);
-
-					if((renderingCreateInfo->depthAttachmentFormat != VK_FORMAT_UNDEFINED) ||
-					   (renderingCreateInfo->stencilAttachmentFormat != VK_FORMAT_UNDEFINED))
-					{
-						// If renderPass is VK_NULL_HANDLE, the pipeline is being created with fragment
-						// shader state, and either of VkPipelineRenderingCreateInfo::depthAttachmentFormat
-						// or VkPipelineRenderingCreateInfo::stencilAttachmentFormat are not
-						// VK_FORMAT_UNDEFINED, pDepthStencilState must be a valid pointer to a valid
-						// VkPipelineDepthStencilStateCreateInfo structure
-						ASSERT(depthStencilState);
-
-						setDepthStencilState(depthStencilState);
-					}
-
-					if(renderingCreateInfo->colorAttachmentCount > 0)
-					{
-						// If renderPass is VK_NULL_HANDLE, the pipeline is being created with fragment
-						// output interface state, and VkPipelineRenderingCreateInfo::colorAttachmentCount
-						// is not equal to 0, pColorBlendState must be a valid pointer to a valid
-						// VkPipelineColorBlendStateCreateInfo structure
-						ASSERT(colorBlendState);
-
-						setColorBlendState(colorBlendState);
-					}
-
-					break;
-				}
-
-				extensionCreateInfo = extensionCreateInfo->pNext;
 			}
 		}
 	}
 }
 
-void GraphicsState::setDepthStencilState(const VkPipelineDepthStencilStateCreateInfo *depthStencilState)
+void FragmentState::applyState(const DynamicState &dynamicState)
 {
-	if(depthStencilState->flags != 0)
+	if(dynamicStateFlags.dynamicDepthTestEnable)
 	{
-		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-		UNSUPPORTED("depthStencilState->flags %d", int(depthStencilState->flags));
+		depthTestEnable = dynamicState.depthTestEnable;
+	}
+
+	if(dynamicStateFlags.dynamicDepthWriteEnable)
+	{
+		depthWriteEnable = dynamicState.depthWriteEnable;
+	}
+
+	if(dynamicStateFlags.dynamicDepthBoundsTestEnable)
+	{
+		depthBoundsTestEnable = dynamicState.depthBoundsTestEnable;
+	}
+
+	if(dynamicStateFlags.dynamicDepthBounds && depthBoundsTestEnable)
+	{
+		minDepthBounds = dynamicState.minDepthBounds;
+		maxDepthBounds = dynamicState.maxDepthBounds;
+	}
+
+	if(dynamicStateFlags.dynamicDepthCompareOp)
+	{
+		depthCompareMode = dynamicState.depthCompareOp;
+	}
+
+	if(dynamicStateFlags.dynamicStencilTestEnable)
+	{
+		stencilEnable = dynamicState.stencilTestEnable;
+	}
+
+	if(dynamicStateFlags.dynamicStencilOp && stencilEnable)
+	{
+		if(dynamicState.faceMask & VK_STENCIL_FACE_FRONT_BIT)
+		{
+			frontStencil.compareOp = dynamicState.frontStencil.compareOp;
+			frontStencil.depthFailOp = dynamicState.frontStencil.depthFailOp;
+			frontStencil.failOp = dynamicState.frontStencil.failOp;
+			frontStencil.passOp = dynamicState.frontStencil.passOp;
+		}
+
+		if(dynamicState.faceMask & VK_STENCIL_FACE_BACK_BIT)
+		{
+			backStencil.compareOp = dynamicState.backStencil.compareOp;
+			backStencil.depthFailOp = dynamicState.backStencil.depthFailOp;
+			backStencil.failOp = dynamicState.backStencil.failOp;
+			backStencil.passOp = dynamicState.backStencil.passOp;
+		}
+	}
+
+	if(dynamicStateFlags.dynamicStencilCompareMask && stencilEnable)
+	{
+		frontStencil.compareMask = dynamicState.frontStencil.compareMask;
+		backStencil.compareMask = dynamicState.backStencil.compareMask;
+	}
+
+	if(dynamicStateFlags.dynamicStencilWriteMask && stencilEnable)
+	{
+		frontStencil.writeMask = dynamicState.frontStencil.writeMask;
+		backStencil.writeMask = dynamicState.backStencil.writeMask;
+	}
+
+	if(dynamicStateFlags.dynamicStencilReference && stencilEnable)
+	{
+		frontStencil.reference = dynamicState.frontStencil.reference;
+		backStencil.reference = dynamicState.backStencil.reference;
+	}
+}
+
+bool FragmentState::depthWriteActive(const Attachments &attachments) const
+{
+	// "Depth writes are always disabled when depthTestEnable is VK_FALSE."
+	return depthTestActive(attachments) && depthWriteEnable;
+}
+
+bool FragmentState::depthTestActive(const Attachments &attachments) const
+{
+	return attachments.depthBuffer && depthTestEnable;
+}
+
+bool FragmentState::stencilActive(const Attachments &attachments) const
+{
+	return attachments.stencilBuffer && stencilEnable;
+}
+
+bool FragmentState::depthBoundsTestActive(const Attachments &attachments) const
+{
+	return attachments.depthBuffer && depthBoundsTestEnable;
+}
+
+void FragmentState::setDepthStencilState(const VkPipelineDepthStencilStateCreateInfo *depthStencilState)
+{
+	if((depthStencilState->flags &
+	    ~(VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_DEPTH_ACCESS_BIT_EXT |
+	      VK_PIPELINE_DEPTH_STENCIL_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_STENCIL_ACCESS_BIT_EXT)) != 0)
+	{
+		UNSUPPORTED("depthStencilState->flags 0x%08X", int(depthStencilState->flags));
 	}
 
 	depthBoundsTestEnable = (depthStencilState->depthBoundsTestEnable != VK_FALSE);
@@ -667,12 +885,70 @@ void GraphicsState::setDepthStencilState(const VkPipelineDepthStencilStateCreate
 	}
 }
 
-void GraphicsState::setColorBlendState(const VkPipelineColorBlendStateCreateInfo *colorBlendState)
+void FragmentOutputInterfaceState::initialize(const VkPipelineColorBlendStateCreateInfo *colorBlendState,
+                                              const VkPipelineMultisampleStateCreateInfo *multisampleState,
+                                              const vk::RenderPass *renderPass, uint32_t subpassIndex,
+                                              const VkPipelineRenderingCreateInfo *rendering,
+                                              const DynamicStateFlags &allDynamicStateFlags)
 {
-	if(colorBlendState->flags != 0)
+	dynamicStateFlags = allDynamicStateFlags.fragmentOutputInterface;
+
+	multisample.set(multisampleState);
+
+	if(renderPass)
 	{
-		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
-		UNSUPPORTED("colorBlendState->flags %d", int(colorBlendState->flags));
+		const VkSubpassDescription &subpass = renderPass->getSubpass(subpassIndex);
+
+		// Ignore pColorBlendState when "the subpass of the render pass the pipeline
+		// is created against does not use any color attachments"
+		for(uint32_t i = 0; i < subpass.colorAttachmentCount; i++)
+		{
+			if(subpass.pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED)
+			{
+				setColorBlendState(colorBlendState);
+				break;
+			}
+		}
+	}
+	else  // No render pass
+	{
+		// When a pipeline is created without a VkRenderPass, if the VkPipelineRenderingCreateInfo structure
+		// is present in the pNext chain of VkGraphicsPipelineCreateInfo, it specifies the view mask and
+		// format of attachments used for rendering. If this structure is not specified, and the pipeline
+		// does not include a VkRenderPass, viewMask and colorAttachmentCount are 0, and
+		// depthAttachmentFormat and stencilAttachmentFormat are VK_FORMAT_UNDEFINED. If a graphics pipeline
+		// is created with a valid VkRenderPass, parameters of this structure are ignored.
+
+		if(rendering)
+		{
+			if(rendering->colorAttachmentCount > 0)
+			{
+				// If renderPass is VK_NULL_HANDLE, the pipeline is being created with fragment
+				// output interface state, and VkPipelineRenderingCreateInfo::colorAttachmentCount
+				// is not equal to 0, pColorBlendState must be a valid pointer to a valid
+				// VkPipelineColorBlendStateCreateInfo structure
+				ASSERT(colorBlendState);
+
+				setColorBlendState(colorBlendState);
+			}
+		}
+	}
+}
+
+void FragmentOutputInterfaceState::applyState(const DynamicState &dynamicState)
+{
+	if(dynamicStateFlags.dynamicBlendConstants)
+	{
+		blendConstants = dynamicState.blendConstants;
+	}
+}
+
+void FragmentOutputInterfaceState::setColorBlendState(const VkPipelineColorBlendStateCreateInfo *colorBlendState)
+{
+	if(colorBlendState->flags != 0 &&
+	   colorBlendState->flags != VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT)
+	{
+		UNSUPPORTED("colorBlendState->flags 0x%08X", int(colorBlendState->flags));
 	}
 
 	if(colorBlendState->logicOpEnable != VK_FALSE)
@@ -723,230 +999,7 @@ void GraphicsState::setColorBlendState(const VkPipelineColorBlendStateCreateInfo
 	}
 }
 
-bool GraphicsState::isDrawPoint(bool polygonModeAware) const
-{
-	switch(topology)
-	{
-	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
-		return true;
-	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
-		return false;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
-		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_POINT) : false;
-	default:
-		UNSUPPORTED("topology %d", int(topology));
-	}
-	return false;
-}
-
-bool GraphicsState::isDrawLine(bool polygonModeAware) const
-{
-	switch(topology)
-	{
-	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
-		return false;
-	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
-		return true;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
-		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_LINE) : false;
-	default:
-		UNSUPPORTED("topology %d", int(topology));
-	}
-	return false;
-}
-
-bool GraphicsState::isDrawTriangle(bool polygonModeAware) const
-{
-	switch(topology)
-	{
-	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
-		return false;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
-		return polygonModeAware ? (polygonMode == VK_POLYGON_MODE_FILL) : true;
-	default:
-		UNSUPPORTED("topology %d", int(topology));
-	}
-	return false;
-}
-
-bool GraphicsState::depthWriteActive(const Attachments &attachments) const
-{
-	// "Depth writes are always disabled when depthTestEnable is VK_FALSE."
-	return depthTestActive(attachments) && depthWriteEnable;
-}
-
-bool GraphicsState::depthTestActive(const Attachments &attachments) const
-{
-	return attachments.depthBuffer && depthTestEnable;
-}
-
-bool GraphicsState::stencilActive(const Attachments &attachments) const
-{
-	return attachments.stencilBuffer && stencilEnable;
-}
-
-bool GraphicsState::depthBoundsTestActive(const Attachments &attachments) const
-{
-	return attachments.depthBuffer && depthBoundsTestEnable;
-}
-
-const GraphicsState GraphicsState::combineStates(const DynamicState &dynamicState) const
-{
-	GraphicsState combinedState = *this;
-
-	// Apply either pipeline state or dynamic state
-	if(dynamicStateFlags.dynamicDepthTestEnable)
-	{
-		combinedState.depthTestEnable = dynamicState.depthTestEnable;
-	}
-
-	if(dynamicStateFlags.dynamicDepthWriteEnable)
-	{
-		combinedState.depthWriteEnable = dynamicState.depthWriteEnable;
-	}
-
-	if(dynamicStateFlags.dynamicDepthCompareOp)
-	{
-		combinedState.depthCompareMode = dynamicState.depthCompareOp;
-	}
-
-	if(dynamicStateFlags.dynamicDepthBoundsTestEnable)
-	{
-		combinedState.depthBoundsTestEnable = dynamicState.depthBoundsTestEnable;
-	}
-
-	if(dynamicStateFlags.dynamicStencilTestEnable)
-	{
-		combinedState.stencilEnable = dynamicState.stencilTestEnable;
-	}
-
-	if(dynamicStateFlags.dynamicRasterizerDiscardEnable)
-	{
-		combinedState.rasterizerDiscard = dynamicState.rasterizerDiscardEnable;
-	}
-
-	if(dynamicStateFlags.dynamicDepthBiasEnable)
-	{
-		combinedState.depthBiasEnable = dynamicState.depthBiasEnable;
-	}
-
-	if(dynamicStateFlags.dynamicPrimitiveRestartEnable)
-	{
-		combinedState.primitiveRestartEnable = dynamicState.primitiveRestartEnable;
-	}
-
-	if(dynamicStateFlags.dynamicScissor)
-	{
-		combinedState.scissor = dynamicState.scissor;
-	}
-
-	if(dynamicStateFlags.dynamicViewport)
-	{
-		combinedState.viewport = dynamicState.viewport;
-	}
-
-	if(dynamicStateFlags.dynamicLineWidth)
-	{
-		combinedState.lineWidth = dynamicState.lineWidth;
-	}
-
-	if(dynamicStateFlags.dynamicBlendConstants)
-	{
-		combinedState.blendConstants = dynamicState.blendConstants;
-	}
-
-	if(dynamicStateFlags.dynamicDepthBias)
-	{
-		combinedState.constantDepthBias = dynamicState.depthBiasConstantFactor;
-		combinedState.slopeDepthBias = dynamicState.depthBiasSlopeFactor;
-		combinedState.depthBiasClamp = dynamicState.depthBiasClamp;
-	}
-
-	if(dynamicStateFlags.dynamicDepthBounds && combinedState.depthBoundsTestEnable)
-	{
-		combinedState.minDepthBounds = dynamicState.minDepthBounds;
-		combinedState.maxDepthBounds = dynamicState.maxDepthBounds;
-	}
-
-	if(dynamicStateFlags.dynamicStencilCompareMask && combinedState.stencilEnable)
-	{
-		combinedState.frontStencil.compareMask = dynamicState.frontStencil.compareMask;
-		combinedState.backStencil.compareMask = dynamicState.backStencil.compareMask;
-	}
-
-	if(dynamicStateFlags.dynamicStencilWriteMask && combinedState.stencilEnable)
-	{
-		combinedState.frontStencil.writeMask = dynamicState.frontStencil.writeMask;
-		combinedState.backStencil.writeMask = dynamicState.backStencil.writeMask;
-	}
-
-	if(dynamicStateFlags.dynamicStencilReference && combinedState.stencilEnable)
-	{
-		combinedState.frontStencil.reference = dynamicState.frontStencil.reference;
-		combinedState.backStencil.reference = dynamicState.backStencil.reference;
-	}
-
-	if(dynamicStateFlags.dynamicStencilOp && combinedState.stencilEnable)
-	{
-		if(dynamicState.faceMask & VK_STENCIL_FACE_FRONT_BIT)
-		{
-			combinedState.frontStencil.compareOp = dynamicState.frontStencil.compareOp;
-			combinedState.frontStencil.depthFailOp = dynamicState.frontStencil.depthFailOp;
-			combinedState.frontStencil.failOp = dynamicState.frontStencil.failOp;
-			combinedState.frontStencil.passOp = dynamicState.frontStencil.passOp;
-		}
-
-		if(dynamicState.faceMask & VK_STENCIL_FACE_BACK_BIT)
-		{
-			combinedState.backStencil.compareOp = dynamicState.backStencil.compareOp;
-			combinedState.backStencil.depthFailOp = dynamicState.backStencil.depthFailOp;
-			combinedState.backStencil.failOp = dynamicState.backStencil.failOp;
-			combinedState.backStencil.passOp = dynamicState.backStencil.passOp;
-		}
-	}
-
-	if(dynamicStateFlags.dynamicCullMode)
-	{
-		combinedState.cullMode = dynamicState.cullMode;
-	}
-
-	if(dynamicStateFlags.dynamicFrontFace)
-	{
-		combinedState.frontFace = dynamicState.frontFace;
-	}
-
-	if(dynamicStateFlags.dynamicPrimitiveTopology)
-	{
-		combinedState.topology = dynamicState.primitiveTopology;
-	}
-
-	if(dynamicStateFlags.dynamicViewportWithCount && (dynamicState.viewportCount > 0))
-	{
-		combinedState.viewport.width = static_cast<float>(dynamicState.viewports[0].extent.width);
-		combinedState.viewport.height = static_cast<float>(dynamicState.viewports[0].extent.height);
-		combinedState.viewport.x = static_cast<float>(dynamicState.viewports[0].offset.x);
-		combinedState.viewport.y = static_cast<float>(dynamicState.viewports[0].offset.y);
-	}
-
-	if(dynamicStateFlags.dynamicScissorWithCount && (dynamicState.scissorCount > 0))
-	{
-		combinedState.scissor = dynamicState.scissors[0];
-	}
-
-	return combinedState;
-}
-
-BlendState GraphicsState::getBlendState(int index, const Attachments &attachments, bool fragmentContainsKill) const
+BlendState FragmentOutputInterfaceState::getBlendState(int index, const Attachments &attachments, bool fragmentContainsKill) const
 {
 	ASSERT((index >= 0) && (index < sw::MAX_COLOR_BUFFERS));
 	auto &state = blendState[index];
@@ -969,7 +1022,7 @@ BlendState GraphicsState::getBlendState(int index, const Attachments &attachment
 	return activeBlendState;
 }
 
-bool GraphicsState::alphaBlendActive(int index, const Attachments &attachments, bool fragmentContainsKill) const
+bool FragmentOutputInterfaceState::alphaBlendActive(int index, const Attachments &attachments, bool fragmentContainsKill) const
 {
 	ASSERT((index >= 0) && (index < sw::MAX_COLOR_BUFFERS));
 	auto &state = blendState[index];
@@ -991,7 +1044,7 @@ bool GraphicsState::alphaBlendActive(int index, const Attachments &attachments, 
 	return colorBlend || alphaBlend;
 }
 
-VkBlendFactor GraphicsState::blendFactor(VkBlendOp blendOperation, VkBlendFactor blendFactor) const
+VkBlendFactor FragmentOutputInterfaceState::blendFactor(VkBlendOp blendOperation, VkBlendFactor blendFactor) const
 {
 	switch(blendOperation)
 	{
@@ -1023,7 +1076,7 @@ VkBlendFactor GraphicsState::blendFactor(VkBlendOp blendOperation, VkBlendFactor
 	}
 }
 
-VkBlendOp GraphicsState::blendOperation(VkBlendOp blendOperation, VkBlendFactor sourceBlendFactor, VkBlendFactor destBlendFactor, vk::Format format) const
+VkBlendOp FragmentOutputInterfaceState::blendOperation(VkBlendOp blendOperation, VkBlendFactor sourceBlendFactor, VkBlendFactor destBlendFactor, vk::Format format) const
 {
 	switch(blendOperation)
 	{
@@ -1114,7 +1167,7 @@ VkBlendOp GraphicsState::blendOperation(VkBlendOp blendOperation, VkBlendFactor 
 	return blendOperation;
 }
 
-bool GraphicsState::colorWriteActive(const Attachments &attachments) const
+bool FragmentOutputInterfaceState::colorWriteActive(const Attachments &attachments) const
 {
 	for(int i = 0; i < sw::MAX_COLOR_BUFFERS; i++)
 	{
@@ -1127,7 +1180,7 @@ bool GraphicsState::colorWriteActive(const Attachments &attachments) const
 	return false;
 }
 
-int GraphicsState::colorWriteActive(int index, const Attachments &attachments) const
+int FragmentOutputInterfaceState::colorWriteActive(int index, const Attachments &attachments) const
 {
 	ASSERT((index >= 0) && (index < sw::MAX_COLOR_BUFFERS));
 	auto &state = blendState[index];
@@ -1146,6 +1199,129 @@ int GraphicsState::colorWriteActive(int index, const Attachments &attachments) c
 	}
 
 	return colorWriteMask[index];
+}
+
+GraphicsState::GraphicsState(const Device *device, const VkGraphicsPipelineCreateInfo *pCreateInfo,
+                             const PipelineLayout *layout)
+{
+	if((pCreateInfo->flags &
+	    ~(VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT |
+	      VK_PIPELINE_CREATE_DERIVATIVE_BIT |
+	      VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT |
+	      VK_PIPELINE_CREATE_EARLY_RETURN_ON_FAILURE_BIT_EXT |
+	      VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_EXT |
+	      VK_PIPELINE_CREATE_LIBRARY_BIT_KHR |
+	      VK_PIPELINE_CREATE_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT |
+	      VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT)) != 0)
+	{
+		UNSUPPORTED("pCreateInfo->flags 0x%08X", int(pCreateInfo->flags));
+	}
+
+	DynamicStateFlags dynamicStateFlags = ParseDynamicStateFlags(pCreateInfo->pDynamicState);
+	const auto *rendering = GetExtendedStruct<VkPipelineRenderingCreateInfo>(pCreateInfo, VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO);
+
+	// First, get the subset of state specified in pCreateInfo itself.
+	validSubset = GraphicsPipeline::GetGraphicsPipelineSubset(pCreateInfo);
+
+	// If rasterizer discard is enabled (and not dynamically overridable), ignore the fragment
+	// and fragment output subsets, as they will not be used.
+	if((validSubset & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) != 0 &&
+	   pCreateInfo->pRasterizationState->rasterizerDiscardEnable &&
+	   !dynamicStateFlags.preRasterization.dynamicRasterizerDiscardEnable)
+	{
+		validSubset &= ~(VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT | VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
+	}
+
+	if((validSubset & VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) != 0)
+	{
+		vertexInputInterfaceState.initialize(pCreateInfo->pVertexInputState,
+		                                     pCreateInfo->pInputAssemblyState,
+		                                     dynamicStateFlags);
+	}
+	if((validSubset & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) != 0)
+	{
+		preRasterizationState.initialize(device,
+		                                 layout,
+		                                 pCreateInfo->pViewportState,
+		                                 pCreateInfo->pRasterizationState,
+		                                 vk::Cast(pCreateInfo->renderPass),
+		                                 pCreateInfo->subpass,
+		                                 rendering,
+		                                 dynamicStateFlags);
+	}
+	if((validSubset & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) != 0)
+	{
+		fragmentState.initialize(layout,
+		                         pCreateInfo->pDepthStencilState,
+		                         vk::Cast(pCreateInfo->renderPass),
+		                         pCreateInfo->subpass,
+		                         rendering,
+		                         dynamicStateFlags);
+	}
+	if((validSubset & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) != 0)
+	{
+		fragmentOutputInterfaceState.initialize(pCreateInfo->pColorBlendState,
+		                                        pCreateInfo->pMultisampleState,
+		                                        vk::Cast(pCreateInfo->renderPass),
+		                                        pCreateInfo->subpass,
+		                                        rendering,
+		                                        dynamicStateFlags);
+	}
+
+	// Then, apply state coming from pipeline libraries.
+	const auto *libraryCreateInfo = vk::GetExtendedStruct<VkPipelineLibraryCreateInfoKHR>(pCreateInfo->pNext, VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR);
+	if(libraryCreateInfo)
+	{
+		for(uint32_t i = 0; i < libraryCreateInfo->libraryCount; ++i)
+		{
+			const auto *library = static_cast<const GraphicsPipeline *>(vk::Cast(libraryCreateInfo->pLibraries[i]));
+			const GraphicsState &libraryState = library->getState();
+			const VkGraphicsPipelineLibraryFlagsEXT librarySubset = libraryState.validSubset;
+
+			// The library subsets should be disjoint
+			ASSERT((libraryState.validSubset & validSubset) == 0);
+
+			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) != 0)
+			{
+				vertexInputInterfaceState = libraryState.vertexInputInterfaceState;
+			}
+			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) != 0)
+			{
+				preRasterizationState = libraryState.preRasterizationState;
+				if(layout)
+				{
+					preRasterizationState.overridePipelineLayout(layout);
+				}
+			}
+			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) != 0)
+			{
+				fragmentState = libraryState.fragmentState;
+				if(layout)
+				{
+					fragmentState.overridePipelineLayout(layout);
+				}
+			}
+			if((librarySubset & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) != 0)
+			{
+				fragmentOutputInterfaceState = libraryState.fragmentOutputInterfaceState;
+			}
+
+			validSubset |= libraryState.validSubset;
+		}
+	}
+}
+
+GraphicsState GraphicsState::combineStates(const DynamicState &dynamicState) const
+{
+	GraphicsState combinedState = *this;
+
+	// Make a copy of the states for modification, then either keep the pipeline state or apply the dynamic state.
+	combinedState.vertexInputInterfaceState.applyState(dynamicState);
+	combinedState.preRasterizationState.applyState(dynamicState);
+	combinedState.fragmentState.applyState(dynamicState);
+	combinedState.fragmentOutputInterfaceState.applyState(dynamicState);
+
+	return combinedState;
 }
 
 }  // namespace vk

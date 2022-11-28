@@ -11,21 +11,19 @@
 #include "src/codegen/compilation-cache.h"
 #include "src/codegen/compiler.h"
 #include "src/codegen/pending-optimization-table.h"
+#include "src/common/globals.h"
 #include "src/diagnostics/code-tracer.h"
 #include "src/execution/execution.h"
 #include "src/execution/frames-inl.h"
 #include "src/handles/global-handles.h"
 #include "src/init/bootstrapper.h"
 #include "src/interpreter/interpreter.h"
+#include "src/objects/code-kind.h"
 #include "src/objects/code.h"
 #include "src/tracing/trace-event.h"
 
 namespace v8 {
 namespace internal {
-
-// Maximum size in bytes of generate code for a function to allow OSR.
-static const int kOSRBytecodeSizeAllowanceBase = 119;
-static const int kOSRBytecodeSizeAllowancePerTick = 44;
 
 #define OPTIMIZATION_REASON_LIST(V)   \
   V(DoNotOptimize, "do not optimize") \
@@ -99,14 +97,14 @@ static_assert(sizeof(OptimizationDecision) <= kInt32Size);
 namespace {
 
 void TraceInOptimizationQueue(JSFunction function) {
-  if (FLAG_trace_opt_verbose) {
+  if (v8_flags.trace_opt_verbose) {
     PrintF("[not marking function %s for optimization: already queued]\n",
            function.DebugNameCStr().get());
   }
 }
 
 void TraceHeuristicOptimizationDisallowed(JSFunction function) {
-  if (FLAG_trace_opt_verbose) {
+  if (v8_flags.trace_opt_verbose) {
     PrintF(
         "[not marking function %s for optimization: marked with "
         "%%PrepareFunctionForOptimization for manual optimization]\n",
@@ -116,7 +114,7 @@ void TraceHeuristicOptimizationDisallowed(JSFunction function) {
 
 void TraceRecompile(Isolate* isolate, JSFunction function,
                     OptimizationDecision d) {
-  if (FLAG_trace_opt) {
+  if (v8_flags.trace_opt) {
     CodeTracer::Scope scope(isolate->GetCodeTracer());
     PrintF(scope.file(), "[marking ");
     function.ShortPrint(scope.file());
@@ -131,7 +129,7 @@ void TraceRecompile(Isolate* isolate, JSFunction function,
 
 void TraceManualRecompile(JSFunction function, CodeKind code_kind,
                           ConcurrencyMode concurrency_mode) {
-  if (FLAG_trace_opt) {
+  if (v8_flags.trace_opt) {
     PrintF("[manually marking ");
     function.ShortPrint();
     PrintF(" for optimization to %s, %s]\n", CodeKindToString(code_kind),
@@ -149,11 +147,17 @@ namespace {
 
 bool TiersUpToMaglev(CodeKind code_kind) {
   // TODO(v8:7700): Flip the UNLIKELY when appropriate.
-  return V8_UNLIKELY(FLAG_maglev) && CodeKindIsUnoptimizedJSFunction(code_kind);
+  return V8_UNLIKELY(v8_flags.maglev) &&
+         CodeKindIsUnoptimizedJSFunction(code_kind);
 }
 
 bool TiersUpToMaglev(base::Optional<CodeKind> code_kind) {
   return code_kind.has_value() && TiersUpToMaglev(code_kind.value());
+}
+
+int InterruptBudgetFor(base::Optional<CodeKind> code_kind) {
+  return TiersUpToMaglev(code_kind) ? v8_flags.interrupt_budget_for_maglev
+                                    : v8_flags.interrupt_budget;
 }
 
 }  // namespace
@@ -161,31 +165,56 @@ bool TiersUpToMaglev(base::Optional<CodeKind> code_kind) {
 // static
 int TieringManager::InterruptBudgetFor(Isolate* isolate, JSFunction function) {
   if (function.has_feedback_vector()) {
-    return TiersUpToMaglev(function.GetActiveTier())
-               ? FLAG_interrupt_budget_for_maglev
-               : FLAG_interrupt_budget;
+    return ::i::InterruptBudgetFor(function.GetActiveTier());
   }
 
   DCHECK(!function.has_feedback_vector());
   DCHECK(function.shared().is_compiled());
   return function.shared().GetBytecodeArray(isolate).length() *
-         FLAG_interrupt_budget_factor_for_feedback_allocation;
+         v8_flags.interrupt_budget_factor_for_feedback_allocation;
 }
 
 // static
 int TieringManager::InitialInterruptBudget() {
-  return V8_LIKELY(FLAG_lazy_feedback_allocation)
-             ? FLAG_interrupt_budget_for_feedback_allocation
-             : FLAG_interrupt_budget;
+  return V8_LIKELY(v8_flags.lazy_feedback_allocation)
+             ? v8_flags.interrupt_budget_for_feedback_allocation
+             : v8_flags.interrupt_budget;
 }
 
 namespace {
 
-bool SmallEnoughForOSR(Isolate* isolate, JSFunction function) {
-  return function.shared().GetBytecodeArray(isolate).length() <=
-         kOSRBytecodeSizeAllowanceBase +
-             function.feedback_vector().profiler_ticks() *
-                 kOSRBytecodeSizeAllowancePerTick;
+bool SmallEnoughForOSR(Isolate* isolate, JSFunction function,
+                       CodeKind code_kind) {
+  // "The answer to life the universe and everything.. 42? Or was it 44?"
+  //
+  // Note the OSR allowance's origin is somewhat accidental - with the advent
+  // of Ignition it started at 48 and through several rounds of micro-tuning
+  // ended up at 42. See
+  // https://chromium-review.googlesource.com/649149.
+  //
+  // The allowance was originally chosen based on the Ignition-to-Turbofan
+  // interrupt budget. In the presence of multiple tiers and multiple budgets
+  // (which control how often ticks are incremented), it must be scaled to the
+  // currently active budget to somewhat preserve old behavior.
+  //
+  // TODO(all): Since the origins of this constant are so arbitrary, this is
+  // worth another re-evaluation. For now, we stick with 44 to preserve
+  // behavior for comparability, but feel free to change this in the future.
+  static const int kOSRBytecodeSizeAllowanceBase = 119;
+  static const int kOSRBytecodeSizeAllowancePerTick = 44;
+  const double scale_factor_for_active_tier =
+      InterruptBudgetFor(code_kind) /
+      static_cast<double>(v8_flags.interrupt_budget);
+
+  const double raw_limit = kOSRBytecodeSizeAllowanceBase +
+                           scale_factor_for_active_tier *
+                               kOSRBytecodeSizeAllowancePerTick *
+                               function.feedback_vector().profiler_ticks();
+  const int limit = raw_limit < BytecodeArray::kMaxLength
+                        ? static_cast<int>(raw_limit)
+                        : BytecodeArray::kMaxLength;
+  DCHECK_GT(limit, 0);
+  return function.shared().GetBytecodeArray(isolate).length() <= limit;
 }
 
 void TrySetOsrUrgency(Isolate* isolate, JSFunction function, int osr_urgency) {
@@ -193,13 +222,13 @@ void TrySetOsrUrgency(Isolate* isolate, JSFunction function, int osr_urgency) {
   // Guaranteed since we've got a feedback vector.
   DCHECK(shared.IsUserJavaScript());
 
-  if (V8_UNLIKELY(!FLAG_use_osr)) return;
+  if (V8_UNLIKELY(!v8_flags.use_osr)) return;
   if (V8_UNLIKELY(shared.optimization_disabled())) return;
 
   // We've passed all checks - bump the OSR urgency.
 
   FeedbackVector fv = function.feedback_vector();
-  if (V8_UNLIKELY(FLAG_trace_osr)) {
+  if (V8_UNLIKELY(v8_flags.trace_osr)) {
     CodeTracer::Scope scope(isolate->GetCodeTracer());
     PrintF(scope.file(),
            "[OSR - setting osr urgency. function: %s, old urgency: %d, new "
@@ -223,7 +252,7 @@ void TryRequestOsrAtNextOpportunity(Isolate* isolate, JSFunction function) {
 
 bool ShouldOptimizeAsSmallFunction(int bytecode_size, bool any_ic_changed) {
   return !any_ic_changed &&
-         bytecode_size < FLAG_max_bytecode_size_for_early_opt;
+         bytecode_size < v8_flags.max_bytecode_size_for_early_opt;
 }
 
 }  // namespace
@@ -234,7 +263,7 @@ void TieringManager::RequestOsrAtNextOpportunity(JSFunction function) {
 }
 
 void TieringManager::MaybeOptimizeFrame(JSFunction function,
-                                        CodeKind code_kind) {
+                                        CodeKind calling_code_kind) {
   const TieringState tiering_state = function.feedback_vector().tiering_state();
   const TieringState osr_tiering_state =
       function.feedback_vector().osr_tiering_state();
@@ -246,7 +275,7 @@ void TieringManager::MaybeOptimizeFrame(JSFunction function,
     return;
   }
 
-  if (V8_UNLIKELY(FLAG_testing_d8_test_runner) &&
+  if (V8_UNLIKELY(v8_flags.testing_d8_test_runner) &&
       !PendingOptimizationTable::IsHeuristicOptimizationAllowed(isolate_,
                                                                 function)) {
     TraceHeuristicOptimizationDisallowed(function);
@@ -256,20 +285,20 @@ void TieringManager::MaybeOptimizeFrame(JSFunction function,
   // TODO(v8:7700): Consider splitting this up for Maglev/Turbofan.
   if (V8_UNLIKELY(function.shared().optimization_disabled())) return;
 
-  if (V8_UNLIKELY(FLAG_always_osr)) {
+  if (V8_UNLIKELY(v8_flags.always_osr)) {
     TryRequestOsrAtNextOpportunity(isolate_, function);
     // Continue below and do a normal optimized compile as well.
   }
 
-  const bool is_marked_for_any_optimization =
-      (static_cast<uint32_t>(tiering_state) & kNoneOrInProgressMask) != 0;
+  // Baseline OSR uses a separate mechanism and must not be considered here,
+  // therefore we limit to kOptimizedJSFunctionCodeKindsMask.
   // TODO(v8:7700): Change the condition below for Maglev OSR once it is
   // implemented.
-  if (is_marked_for_any_optimization ||
+  if (IsRequestTurbofan(tiering_state) ||
       function.HasAvailableCodeKind(CodeKind::TURBOFAN)) {
     // OSR kicks in only once we've previously decided to tier up, but we are
-    // still in the unoptimized frame (this implies a long-running loop).
-    if (SmallEnoughForOSR(isolate_, function)) {
+    // still in a lower-tier frame (this implies a long-running loop).
+    if (SmallEnoughForOSR(isolate_, function, calling_code_kind)) {
       TryIncrementOsrUrgency(isolate_, function);
     }
 
@@ -278,34 +307,47 @@ void TieringManager::MaybeOptimizeFrame(JSFunction function,
     return;
   }
 
-  DCHECK(!is_marked_for_any_optimization &&
-         !function.HasAvailableCodeKind(CodeKind::TURBOFAN));
-  OptimizationDecision d = ShouldOptimize(function, code_kind);
+  DCHECK(!IsRequestTurbofan(tiering_state));
+  DCHECK(!function.HasAvailableCodeKind(CodeKind::TURBOFAN));
+  OptimizationDecision d = ShouldOptimize(function, calling_code_kind);
+  // We might be stuck in a baseline frame that wants to tier up to Maglev, but
+  // is in a loop, and can't OSR, because Maglev doesn't have OSR. Allow it to
+  // skip over Maglev by re-checking ShouldOptimize as if we were in Maglev.
+  // TODO(v8:7700): Remove this when Maglev can OSR.
+  static_assert(!CodeKindCanOSR(CodeKind::MAGLEV));
+  if (d.should_optimize() && d.code_kind == CodeKind::MAGLEV) {
+    bool is_marked_for_maglev_optimization =
+        IsRequestMaglev(tiering_state) ||
+        function.HasAvailableCodeKind(CodeKind::MAGLEV);
+    if (is_marked_for_maglev_optimization) {
+      d = ShouldOptimize(function, CodeKind::MAGLEV);
+    }
+  }
+
   if (d.should_optimize()) Optimize(function, d);
 }
 
-OptimizationDecision TieringManager::ShouldOptimize(JSFunction function,
-                                                    CodeKind code_kind) {
-  DCHECK_EQ(code_kind, function.GetActiveTier().value());
-
-  if (TiersUpToMaglev(code_kind) &&
-      function.shared().PassesFilter(FLAG_maglev_filter) &&
+OptimizationDecision TieringManager::ShouldOptimize(
+    JSFunction function, CodeKind calling_code_kind) {
+  if (TiersUpToMaglev(calling_code_kind) &&
+      function.shared().PassesFilter(v8_flags.maglev_filter) &&
       !function.shared(isolate_).maglev_compilation_failed()) {
     return OptimizationDecision::Maglev();
-  } else if (code_kind == CodeKind::TURBOFAN) {
+  } else if (calling_code_kind == CodeKind::TURBOFAN) {
     // Already in the top tier.
     return OptimizationDecision::DoNotOptimize();
   }
 
-  if (!FLAG_turbofan || !function.shared().PassesFilter(FLAG_turbo_filter)) {
+  if (!v8_flags.turbofan ||
+      !function.shared().PassesFilter(v8_flags.turbo_filter)) {
     return OptimizationDecision::DoNotOptimize();
   }
 
   BytecodeArray bytecode = function.shared().GetBytecodeArray(isolate_);
   const int ticks = function.feedback_vector().profiler_ticks();
   const int ticks_for_optimization =
-      FLAG_ticks_before_optimization +
-      (bytecode.length() / FLAG_bytecode_size_allowance_per_tick);
+      v8_flags.ticks_before_optimization +
+      (bytecode.length() / v8_flags.bytecode_size_allowance_per_tick);
   if (ticks >= ticks_for_optimization) {
     return OptimizationDecision::TurbofanHotAndStable();
   } else if (ShouldOptimizeAsSmallFunction(bytecode.length(),
@@ -313,14 +355,15 @@ OptimizationDecision TieringManager::ShouldOptimize(JSFunction function,
     // If no IC was patched since the last tick and this function is very
     // small, optimistically optimize it now.
     return OptimizationDecision::TurbofanSmallFunction();
-  } else if (FLAG_trace_opt_verbose) {
+  } else if (v8_flags.trace_opt_verbose) {
     PrintF("[not yet optimizing %s, not enough ticks: %d/%d and ",
            function.DebugNameCStr().get(), ticks, ticks_for_optimization);
     if (any_ic_changed_) {
       PrintF("ICs changed]\n");
     } else {
       PrintF(" too large for small function optimization: %d/%d]\n",
-             bytecode.length(), FLAG_max_bytecode_size_for_early_opt.value());
+             bytecode.length(),
+             v8_flags.max_bytecode_size_for_early_opt.value());
     }
   }
 
@@ -338,7 +381,8 @@ TieringManager::OnInterruptTickScope::~OnInterruptTickScope() {
   profiler_->any_ic_changed_ = false;
 }
 
-void TieringManager::OnInterruptTick(Handle<JSFunction> function) {
+void TieringManager::OnInterruptTick(Handle<JSFunction> function,
+                                     CodeKind code_kind) {
   IsCompiledScope is_compiled_scope(
       function->shared().is_compiled_scope(isolate_));
 
@@ -376,7 +420,7 @@ void TieringManager::OnInterruptTick(Handle<JSFunction> function) {
   // tiering.
   if (CanCompileWithBaseline(isolate_, function->shared()) &&
       function->ActiveTierIsIgnition()) {
-    if (FLAG_baseline_batch_compilation) {
+    if (v8_flags.baseline_batch_compilation) {
       isolate_->baseline_batch_compiler()->EnqueueFunction(function);
     } else {
       IsCompiledScope is_compiled_scope(
@@ -402,7 +446,6 @@ void TieringManager::OnInterruptTick(Handle<JSFunction> function) {
 
   function_obj.feedback_vector().SaturatingIncrementProfilerTicks();
 
-  const CodeKind code_kind = function_obj.GetActiveTier().value();
   MaybeOptimizeFrame(function_obj, code_kind);
 }
 

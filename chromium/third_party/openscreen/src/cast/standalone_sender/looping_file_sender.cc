@@ -27,11 +27,11 @@ LoopingFileSender::LoopingFileSender(Environment* environment,
       shutdown_callback_(std::move(shutdown_callback)),
       audio_encoder_(senders.audio_sender->config().channels,
                      StreamingOpusEncoder::kDefaultCastAudioFramesPerSecond,
-                     senders.audio_sender),
+                     std::move(senders.audio_sender)),
       video_encoder_(CreateVideoEncoder(
           StreamingVideoEncoder::Parameters{.codec = settings.codec},
           env_->task_runner(),
-          senders.video_sender)),
+          std::move(senders.video_sender))),
       next_task_(env_->now_function(), env_->task_runner()),
       console_update_task_(env_->now_function(), env_->task_runner()) {
   // Opus and Vp8 are the default values for the config, and if these are set
@@ -207,14 +207,16 @@ const char* LoopingFileSender::ToTrackName(SimulatedCapturer* capturer) const {
 std::unique_ptr<StreamingVideoEncoder> LoopingFileSender::CreateVideoEncoder(
     const StreamingVideoEncoder::Parameters& params,
     TaskRunner* task_runner,
-    Sender* sender) {
+    std::unique_ptr<Sender> sender) {
   switch (params.codec) {
     case VideoCodec::kVp8:
     case VideoCodec::kVp9:
-      return std::make_unique<StreamingVpxEncoder>(params, task_runner, sender);
+      return std::make_unique<StreamingVpxEncoder>(params, task_runner,
+                                                   std::move(sender));
     case VideoCodec::kAv1:
 #if defined(CAST_STANDALONE_SENDER_HAVE_LIBAOM)
-      return std::make_unique<StreamingAv1Encoder>(params, task_runner, sender);
+      return std::make_unique<StreamingAv1Encoder>(params, task_runner,
+                                                   std::move(sender));
 #else
       OSP_LOG_FATAL << "AV1 codec selected, but could not be used because "
                        "LibAOM not installed.";

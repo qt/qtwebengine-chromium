@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -71,9 +72,10 @@ class CPDF_InteractiveForm {
   int FindFieldInCalculationOrder(const CPDF_FormField* pField);
 
   RetainPtr<CPDF_Font> GetFormFont(ByteString csNameTag) const;
+  RetainPtr<CPDF_Font> GetFontForElement(
+      RetainPtr<CPDF_Dictionary> pElement) const;
   CPDF_DefaultAppearance GetDefaultAppearance() const;
   int GetFormAlignment() const;
-
   bool CheckRequiredFields(const std::vector<CPDF_FormField*>* fields,
                            bool bIncludeOrExclude) const;
 
@@ -89,10 +91,14 @@ class CPDF_InteractiveForm {
   void SetNotifierIface(NotifierIface* pNotify);
   void FixPageFields(CPDF_Page* pPage);
 
-  NotifierIface* GetFormNotify() const { return m_pFormNotify.Get(); }
-  CPDF_Document* GetDocument() const { return m_pDocument.Get(); }
-  const CPDF_Dictionary* GetFormDict() const { return m_pFormDict.Get(); }
-  RetainPtr<CPDF_Dictionary> GetMutableFormDict() { return m_pFormDict; }
+  // Wrap callbacks thru NotifierIface.
+  bool NotifyBeforeValueChange(CPDF_FormField* pField,
+                               const WideString& csValue);
+  void NotifyAfterValueChange(CPDF_FormField* pField);
+  bool NotifyBeforeSelectionChange(CPDF_FormField* pField,
+                                   const WideString& csValue);
+  void NotifyAfterSelectionChange(CPDF_FormField* pField);
+  void NotifyAfterCheckedStatusChange(CPDF_FormField* pField);
 
   const std::vector<UnownedPtr<CPDF_FormControl>>& GetControlsForField(
       const CPDF_FormField* pField);
@@ -109,10 +115,14 @@ class CPDF_InteractiveForm {
   UnownedPtr<CPDF_Document> const m_pDocument;
   RetainPtr<CPDF_Dictionary> m_pFormDict;
   std::unique_ptr<CFieldTree> m_pFieldTree;
-  std::map<const CPDF_Dictionary*, std::unique_ptr<CPDF_FormControl>>
+  std::map<RetainPtr<const CPDF_Dictionary>,
+           std::unique_ptr<CPDF_FormControl>,
+           std::less<>>
       m_ControlMap;
   // Points into |m_ControlMap|.
-  std::map<const CPDF_FormField*, std::vector<UnownedPtr<CPDF_FormControl>>>
+  std::map<UnownedPtr<const CPDF_FormField>,
+           std::vector<UnownedPtr<CPDF_FormControl>>,
+           std::less<>>
       m_ControlLists;
   UnownedPtr<NotifierIface> m_pFormNotify;
 };

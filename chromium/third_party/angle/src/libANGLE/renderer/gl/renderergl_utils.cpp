@@ -1573,15 +1573,59 @@ void GenerateCaps(const FunctionsGL *functions,
          functions->hasGLESExtension("GL_KHR_robust_buffer_access_behavior"));
 
     // ANGLE_shader_pixel_local_storage.
-    extensions->shaderPixelLocalStorageANGLE =
-        functions->isAtLeastGL(gl::Version(4, 2)) || functions->isAtLeastGLES(gl::Version(3, 1)) ||
-        functions->hasGLExtension("GL_ARB_shader_image_load_store");
-    if (extensions->shaderPixelLocalStorageANGLE)
+    if (features.supportsShaderFramebufferFetchEXT.enabled)
     {
-        extensions->shaderPixelLocalStorageCoherentANGLE =
-            features.supportsFragmentShaderInterlockNV.enabled ||
-            features.supportsFragmentShaderOrderingINTEL.enabled ||
-            features.supportsFragmentShaderInterlockARB.enabled;
+        // We can support PLS natively, probably in tiled memory.
+        extensions->shaderPixelLocalStorageANGLE         = true;
+        extensions->shaderPixelLocalStorageCoherentANGLE = true;
+    }
+    else
+    {
+        bool hasFragmentShaderImageLoadStore = false;
+        if (functions->isAtLeastGL(gl::Version(4, 2)) ||
+            functions->hasGLExtension("GL_ARB_shader_image_load_store"))
+        {
+            // [ANGLE_shader_pixel_local_storage] "New Implementation Dependent State":
+            // MAX_PIXEL_LOCAL_STORAGE_PLANES_ANGLE must be at least 4.
+            //
+            // MAX_FRAGMENT_IMAGE_UNIFORMS is at least 8 on Desktop Core and ARB.
+            hasFragmentShaderImageLoadStore = true;
+        }
+        else if (functions->isAtLeastGLES(gl::Version(3, 1)))
+        {
+            // [ANGLE_shader_pixel_local_storage] "New Implementation Dependent State":
+            // MAX_PIXEL_LOCAL_STORAGE_PLANES_ANGLE must be at least 4.
+            //
+            // ES 3.1, Table 20.44: MAX_FRAGMENT_IMAGE_UNIFORMS can be 0.
+            hasFragmentShaderImageLoadStore =
+                caps->maxShaderImageUniforms[gl::ShaderType::Fragment] >= 4;
+        }
+
+        extensions->shaderPixelLocalStorageANGLE =
+            hasFragmentShaderImageLoadStore ||
+            features.supportsShaderFramebufferFetchNonCoherentEXT.enabled;
+
+        if (hasFragmentShaderImageLoadStore)
+        {
+            // Check if shader image load/store can be coherent. If so, we will always prefer it
+            // over EXT_shader_framebuffer_fetch_non_coherent.
+            extensions->shaderPixelLocalStorageCoherentANGLE =
+                features.supportsFragmentShaderInterlockNV.enabled ||
+                features.supportsFragmentShaderOrderingINTEL.enabled ||
+                features.supportsFragmentShaderInterlockARB.enabled;
+        }
+    }
+
+    // EXT_shader_framebuffer_fetch.
+    if (features.supportsShaderFramebufferFetchEXT.enabled)
+    {
+        extensions->shaderFramebufferFetchEXT = true;
+    }
+
+    // EXT_shader_framebuffer_fetch_non_coherent.
+    if (features.supportsShaderFramebufferFetchNonCoherentEXT.enabled)
+    {
+        extensions->shaderFramebufferFetchNonCoherentEXT = true;
     }
 
     extensions->copyTextureCHROMIUM = true;
@@ -1884,6 +1928,9 @@ void GenerateCaps(const FunctionsGL *functions,
 
     // GL_KHR_parallel_shader_compile
     extensions->parallelShaderCompileKHR = true;
+
+    // GL_ANGLE_logic_op
+    extensions->logicOpANGLE = functions->isAtLeastGL(gl::Version(2, 0));
 
     // PVRTC1 textures must be squares on Apple platforms.
     if (IsApple())
@@ -2335,6 +2382,15 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     ANGLE_FEATURE_CONDITION(features, supportsFragmentShaderInterlockARB,
                             functions->isAtLeastGL(gl::Version(4, 5)) &&
                                 functions->hasGLExtension("GL_ARB_fragment_shader_interlock"));
+
+    // EXT_shader_framebuffer_fetch
+    ANGLE_FEATURE_CONDITION(features, supportsShaderFramebufferFetchEXT,
+                            functions->hasGLESExtension("GL_EXT_shader_framebuffer_fetch"));
+
+    // EXT_shader_framebuffer_fetch_non_coherent
+    ANGLE_FEATURE_CONDITION(
+        features, supportsShaderFramebufferFetchNonCoherentEXT,
+        functions->hasGLESExtension("EXT_shader_framebuffer_fetch_non_coherent"));
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)

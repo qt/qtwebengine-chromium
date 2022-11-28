@@ -77,7 +77,7 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
     return nullptr;
 
   // Set up the basic entries in the filespec dictionary.
-  CPDF_Dictionary* pFile = pDoc->NewIndirect<CPDF_Dictionary>();
+  auto pFile = pDoc->NewIndirect<CPDF_Dictionary>();
   pFile->SetNewFor<CPDF_Name>("Type", "Filespec");
   pFile->SetNewFor<CPDF_String>("UF", wsName.AsStringView());
   pFile->SetNewFor<CPDF_String>(pdfium::stream::kF, wsName.AsStringView());
@@ -86,7 +86,7 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
   if (!name_tree->AddValueAndName(pFile->MakeReference(pDoc), wsName))
     return nullptr;
 
-  return FPDFAttachmentFromCPDFObject(pFile);
+  return FPDFAttachmentFromCPDFObject(pFile.Get());
 }
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
@@ -101,7 +101,7 @@ FPDFDoc_GetAttachment(FPDF_DOCUMENT document, int index) {
 
   WideString csName;
   return FPDFAttachmentFromCPDFObject(
-      name_tree->LookupValueAndName(index, &csName));
+      name_tree->LookupValueAndName(index, &csName).Get());
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -125,8 +125,9 @@ FPDFAttachment_GetName(FPDF_ATTACHMENT attachment,
   if (!pFile)
     return 0;
 
-  return Utf16EncodeMaybeCopyAndReturnLength(CPDF_FileSpec(pFile).GetFileName(),
-                                             buffer, buflen);
+  CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
+  return Utf16EncodeMaybeCopyAndReturnLength(spec.GetFileName(), buffer,
+                                             buflen);
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -135,7 +136,8 @@ FPDFAttachment_HasKey(FPDF_ATTACHMENT attachment, FPDF_BYTESTRING key) {
   if (!pFile)
     return 0;
 
-  CPDF_Dictionary* pParamsDict = CPDF_FileSpec(pFile).GetParamsDict();
+  CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
+  RetainPtr<const CPDF_Dictionary> pParamsDict = spec.GetParamsDict();
   return pParamsDict ? pParamsDict->KeyExist(key) : 0;
 }
 
@@ -144,8 +146,9 @@ FPDFAttachment_GetValueType(FPDF_ATTACHMENT attachment, FPDF_BYTESTRING key) {
   if (!FPDFAttachment_HasKey(attachment, key))
     return FPDF_OBJECT_UNKNOWN;
 
-  CPDF_FileSpec spec(CPDFObjectFromFPDFAttachment(attachment));
-  const CPDF_Object* pObj = spec.GetParamsDict()->GetObjectFor(key);
+  CPDF_FileSpec spec(
+      pdfium::WrapRetain(CPDFObjectFromFPDFAttachment(attachment)));
+  RetainPtr<const CPDF_Object> pObj = spec.GetParamsDict()->GetObjectFor(key);
   return pObj ? pObj->GetType() : FPDF_OBJECT_UNKNOWN;
 }
 
@@ -157,7 +160,8 @@ FPDFAttachment_SetStringValue(FPDF_ATTACHMENT attachment,
   if (!pFile)
     return false;
 
-  CPDF_Dictionary* pParamsDict = CPDF_FileSpec(pFile).GetParamsDict();
+  CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
+  RetainPtr<CPDF_Dictionary> pParamsDict = spec.GetMutableParamsDict();
   if (!pParamsDict)
     return false;
 
@@ -180,7 +184,8 @@ FPDFAttachment_GetStringValue(FPDF_ATTACHMENT attachment,
   if (!pFile)
     return 0;
 
-  CPDF_Dictionary* pParamsDict = CPDF_FileSpec(pFile).GetParamsDict();
+  CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
+  RetainPtr<const CPDF_Dictionary> pParamsDict = spec.GetParamsDict();
   if (!pParamsDict)
     return 0;
 
@@ -216,8 +221,7 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
 
   // Create a dictionary for the new embedded file stream.
   auto pFileStreamDict = pdfium::MakeRetain<CPDF_Dictionary>();
-  CPDF_Dictionary* pParamsDict =
-      pFileStreamDict->SetNewFor<CPDF_Dictionary>("Params");
+  auto pParamsDict = pFileStreamDict->SetNewFor<CPDF_Dictionary>("Params");
 
   // Set the size of the new file in the dictionary.
   pFileStreamDict->SetNewFor<CPDF_Number>(pdfium::stream::kDL,
@@ -242,10 +246,9 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
   // Create the file stream and have the filespec dictionary link to it.
   std::unique_ptr<uint8_t, FxFreeDeleter> stream(FX_AllocUninit(uint8_t, len));
   memcpy(stream.get(), contents, len);
-  CPDF_Stream* pFileStream = pDoc->NewIndirect<CPDF_Stream>(
-      std::move(stream), len, std::move(pFileStreamDict));
-  CPDF_Dictionary* pEFDict =
-      pFile->AsDictionary()->SetNewFor<CPDF_Dictionary>("EF");
+  auto pFileStream = pDoc->NewIndirect<CPDF_Stream>(std::move(stream), len,
+                                                    std::move(pFileStreamDict));
+  auto pEFDict = pFile->AsMutableDictionary()->SetNewFor<CPDF_Dictionary>("EF");
   pEFDict->SetNewFor<CPDF_Reference>("F", pDoc, pFileStream->GetObjNum());
   return true;
 }
@@ -262,11 +265,12 @@ FPDFAttachment_GetFile(FPDF_ATTACHMENT attachment,
   if (!pFile)
     return false;
 
-  CPDF_Stream* pFileStream = CPDF_FileSpec(pFile).GetFileStream();
+  CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
+  RetainPtr<const CPDF_Stream> pFileStream = spec.GetFileStream();
   if (!pFileStream)
     return false;
 
   *out_buflen =
-      DecodeStreamMaybeCopyAndReturnLength(pFileStream, buffer, buflen);
+      DecodeStreamMaybeCopyAndReturnLength(pFileStream.Get(), buffer, buflen);
   return true;
 }

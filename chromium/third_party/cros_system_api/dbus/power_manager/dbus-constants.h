@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,6 +57,7 @@ const char kHasAmbientColorDeviceMethod[] = "HasAmbientColorDevice";
 const char kChangeWifiRegDomainMethod[] = "ChangeWifiRegDomain";
 const char kChargeNowForAdaptiveChargingMethod[] =
     "ChargeNowForAdaptiveCharging";
+const char kGetChargeHistoryMethod[] = "GetChargeHistory";
 // TODO(b/166543531): Remove after migrating to BlueZ Battery Provider API.
 const char kRefreshBluetoothBatteryMethod[] = "RefreshBluetoothBattery";
 const char kRefreshAllPeripheralBatteryMethod[] = "RefreshAllPeripheralBattery";

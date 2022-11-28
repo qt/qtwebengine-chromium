@@ -10,10 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <memory>
-
 #include "core/fxcrt/bytestring.h"
-#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/data_vector.h"
 #include "third_party/base/span.h"
 
 namespace fxcrt {
@@ -30,7 +28,7 @@ class BinaryBuffer {
 
   BinaryBuffer& operator=(const BinaryBuffer& that) = delete;
 
-  pdfium::span<uint8_t> GetSpan();
+  pdfium::span<uint8_t> GetMutableSpan();
   pdfium::span<const uint8_t> GetSpan() const;
   bool IsEmpty() const { return GetLength() == 0; }
   size_t GetSize() const { return m_DataSize; }  // In bytes.
@@ -44,17 +42,16 @@ class BinaryBuffer {
   void AppendString(const ByteString& str);
   void AppendByte(uint8_t byte);
 
-  // Releases ownership of |m_pBuffer| and returns it.
-  std::unique_ptr<uint8_t, FxFreeDeleter> DetachBuffer();
+  // Releases ownership of `m_pBuffer` and returns it.
+  DataVector<uint8_t> DetachBuffer();
 
  protected:
   void ExpandBuf(size_t size);
   void DeleteBuf(size_t start_index, size_t count);
 
   size_t m_AllocStep = 0;
-  size_t m_AllocSize = 0;
   size_t m_DataSize = 0;
-  std::unique_ptr<uint8_t, FxFreeDeleter> m_pBuffer;
+  DataVector<uint8_t> m_buffer;
 };
 
 }  // namespace fxcrt

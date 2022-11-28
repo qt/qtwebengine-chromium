@@ -46,17 +46,12 @@ public:
         this->init(modifiers, returnType, name, std::move(parameterArray), Position());
     }
 
-    DSLFunction(const DSLType& returnType, std::string_view name,
-                SkTArray<DSLParameter*> parameters, Position pos = {}) {
-        this->init(DSLModifiers(), returnType, name, std::move(parameters), pos);
-    }
-
-    DSLFunction(const DSLModifiers& modifiers, const DSLType& returnType, std::string_view name,
+    DSLFunction(std::string_view name, const DSLModifiers& modifiers, const DSLType& returnType,
                 SkTArray<DSLParameter*> parameters, Position pos = {}) {
         this->init(modifiers, returnType, name, std::move(parameters), pos);
     }
 
-    DSLFunction(const SkSL::FunctionDeclaration* decl)
+    DSLFunction(SkSL::FunctionDeclaration* decl)
         : fDecl(decl) {}
 
     virtual ~DSLFunction() = default;
@@ -68,6 +63,8 @@ public:
     }
 
     void define(DSLBlock block, Position pos = {});
+
+    void prototype();
 
     /**
      * Invokes the function with the given arguments.
@@ -105,7 +102,7 @@ private:
     void init(DSLModifiers modifiers, const DSLType& returnType, std::string_view name,
               SkTArray<DSLParameter*> params, Position pos);
 
-    const SkSL::FunctionDeclaration* fDecl = nullptr;
+    SkSL::FunctionDeclaration* fDecl = nullptr;
     SkSL::Position fPosition;
 };
 

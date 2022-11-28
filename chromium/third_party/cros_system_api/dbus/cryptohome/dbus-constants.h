@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,99 +8,113 @@
 namespace user_data_auth {
 
 // Interface exposed by the cryptohome daemon.
-const char kUserDataAuthServiceName[] = "org.chromium.UserDataAuth";
-const char kUserDataAuthServicePath[] = "/org/chromium/UserDataAuth";
+inline constexpr char kUserDataAuthServiceName[] = "org.chromium.UserDataAuth";
+inline constexpr char kUserDataAuthServicePath[] = "/org/chromium/UserDataAuth";
 
-const char kUserDataAuthInterface[] = "org.chromium.UserDataAuthInterface";
-const char kArcQuotaInterface[] = "org.chromium.ArcQuota";
-const char kCryptohomePkcs11Interface[] =
+inline constexpr char kUserDataAuthInterface[] =
+    "org.chromium.UserDataAuthInterface";
+inline constexpr char kArcQuotaInterface[] = "org.chromium.ArcQuota";
+inline constexpr char kCryptohomePkcs11Interface[] =
     "org.chromium.CryptohomePkcs11Interface";
-const char kInstallAttributesInterface[] =
+inline constexpr char kInstallAttributesInterface[] =
     "org.chromium.InstallAttributesInterface";
-const char kCryptohomeMiscInterface[] = "org.chromium.CryptohomeMiscInterface";
+inline constexpr char kCryptohomeMiscInterface[] =
+    "org.chromium.CryptohomeMiscInterface";
 
 // 5 minutes timeout for all cryptohome calls.
 // This is a bit on the long side, but we want to be cautious.
-constexpr int kUserDataAuthServiceTimeoutInMs = 5 * 60 * 1000;
+inline constexpr int kUserDataAuthServiceTimeoutInMs = 5 * 60 * 1000;
 
 // Methods of the |kUserDataAuthInterface| interface:
-const char kIsMounted[] = "IsMounted";
-const char kUnmount[] = "Unmount";
-const char kMount[] = "Mount";
-const char kRemove[] = "Remove";
-const char kListKeys[] = "ListKeys";
-const char kGetKeyData[] = "GetKeyData";
-const char kCheckKey[] = "CheckKey";
-const char kAddKey[] = "AddKey";
-const char kRemoveKey[] = "RemoveKey";
-const char kMassRemoveKeys[] = "MassRemoveKeys";
-const char kMigrateKey[] = "MigrateKey";
-const char kStartFingerprintAuthSession[] = "StartFingerprintAuthSession";
-const char kEndFingerprintAuthSession[] = "EndFingerprintAuthSession";
-const char kGetWebAuthnSecret[] = "GetWebAuthnSecret";
-const char kGetHibernateSecret[] = "GetHibernateSecret";
-const char kStartMigrateToDircrypto[] = "StartMigrateToDircrypto";
-const char kNeedsDircryptoMigration[] = "NeedsDircryptoMigration";
-const char kGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
-const char kGetAccountDiskUsage[] = "GetAccountDiskUsage";
-const char kStartAuthSession[] = "StartAuthSession";
-const char kAddCredentials[] = "AddCredentials";
-const char kUpdateCredential[] = "UpdateCredential";
-const char kAuthenticateAuthSession[] = "AuthenticateAuthSession";
-const char kInvalidateAuthSession[] = "InvalidateAuthSession";
-const char kExtendAuthSession[] = "ExtendAuthSession";
-const char kCreatePersistentUser[] = "CreatePersistentUser";
-const char kPrepareGuestVault[] = "PrepareGuestVault";
-const char kPrepareEphemeralVault[] = "PrepareEphemeralVault";
-const char kPreparePersistentVault[] = "PreparePersistentVault";
-const char kPrepareVaultForMigration[] = "PrepareVaultForMigration";
-const char kAddAuthFactor[] = "AddAuthFactor";
-const char kAuthenticateAuthFactor[] = "AuthenticateAuthFactor";
-const char kUpdateAuthFactor[] = "UpdateAuthFactor";
-const char kRemoveAuthFactor[] = "RemoveAuthFactor";
-const char kGetAuthSessionStatus[] = "GetAuthSessionStatus";
-const char kGetRecoveryRequest[] = "GetRecoveryRequest";
+inline constexpr char kIsMounted[] = "IsMounted";
+inline constexpr char kUnmount[] = "Unmount";
+inline constexpr char kMount[] = "Mount";
+inline constexpr char kRemove[] = "Remove";
+inline constexpr char kListKeys[] = "ListKeys";
+inline constexpr char kGetKeyData[] = "GetKeyData";
+inline constexpr char kCheckKey[] = "CheckKey";
+inline constexpr char kAddKey[] = "AddKey";
+inline constexpr char kRemoveKey[] = "RemoveKey";
+inline constexpr char kMassRemoveKeys[] = "MassRemoveKeys";
+inline constexpr char kMigrateKey[] = "MigrateKey";
+inline constexpr char kStartFingerprintAuthSession[] =
+    "StartFingerprintAuthSession";
+inline constexpr char kEndFingerprintAuthSession[] =
+    "EndFingerprintAuthSession";
+inline constexpr char kGetWebAuthnSecret[] = "GetWebAuthnSecret";
+inline constexpr char kGetHibernateSecret[] = "GetHibernateSecret";
+inline constexpr char kStartMigrateToDircrypto[] = "StartMigrateToDircrypto";
+inline constexpr char kNeedsDircryptoMigration[] = "NeedsDircryptoMigration";
+inline constexpr char kGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
+inline constexpr char kGetAccountDiskUsage[] = "GetAccountDiskUsage";
+inline constexpr char kStartAuthSession[] = "StartAuthSession";
+inline constexpr char kAddCredentials[] = "AddCredentials";
+inline constexpr char kUpdateCredential[] = "UpdateCredential";
+inline constexpr char kAuthenticateAuthSession[] = "AuthenticateAuthSession";
+inline constexpr char kInvalidateAuthSession[] = "InvalidateAuthSession";
+inline constexpr char kExtendAuthSession[] = "ExtendAuthSession";
+inline constexpr char kCreatePersistentUser[] = "CreatePersistentUser";
+inline constexpr char kPrepareGuestVault[] = "PrepareGuestVault";
+inline constexpr char kPrepareEphemeralVault[] = "PrepareEphemeralVault";
+inline constexpr char kPreparePersistentVault[] = "PreparePersistentVault";
+inline constexpr char kPrepareVaultForMigration[] = "PrepareVaultForMigration";
+inline constexpr char kPrepareAuthFactor[] = "PrepareAuthFactor";
+inline constexpr char kTerminateAuthFactor[] = "TerminateAuthFactor";
+inline constexpr char kAddAuthFactor[] = "AddAuthFactor";
+inline constexpr char kAuthenticateAuthFactor[] = "AuthenticateAuthFactor";
+inline constexpr char kUpdateAuthFactor[] = "UpdateAuthFactor";
+inline constexpr char kRemoveAuthFactor[] = "RemoveAuthFactor";
+inline constexpr char kListAuthFactors[] = "ListAuthFactors";
+inline constexpr char kGetAuthSessionStatus[] = "GetAuthSessionStatus";
+inline constexpr char kGetRecoveryRequest[] = "GetRecoveryRequest";
 
 // Methods of the |kArcQuotaInterface| interface:
-const char kGetArcDiskFeatures[] = "GetArcDiskFeatures";
-const char kGetCurrentSpaceForArcUid[] = "GetCurrentSpaceForArcUid";
-const char kGetCurrentSpaceForArcGid[] = "GetCurrentSpaceForArcGid";
-const char kGetCurrentSpaceForArcProjectId[] = "GetCurrentSpaceForArcProjectId";
-const char kSetProjectId[] = "SetProjectId";
+inline constexpr char kGetArcDiskFeatures[] = "GetArcDiskFeatures";
+inline constexpr char kGetCurrentSpaceForArcUid[] = "GetCurrentSpaceForArcUid";
+inline constexpr char kGetCurrentSpaceForArcGid[] = "GetCurrentSpaceForArcGid";
+inline constexpr char kGetCurrentSpaceForArcProjectId[] =
+    "GetCurrentSpaceForArcProjectId";
+inline constexpr char kSetProjectId[] = "SetProjectId";
 
 // Methods of the |kCryptohomePkcs11Interface| interface:
-const char kPkcs11IsTpmTokenReady[] = "Pkcs11IsTpmTokenReady";
-const char kPkcs11GetTpmTokenInfo[] = "Pkcs11GetTpmTokenInfo";
-const char kPkcs11Terminate[] = "Pkcs11Terminate";
-const char kPkcs11RestoreTpmTokens[] = "Pkcs11RestoreTpmTokens";
+inline constexpr char kPkcs11IsTpmTokenReady[] = "Pkcs11IsTpmTokenReady";
+inline constexpr char kPkcs11GetTpmTokenInfo[] = "Pkcs11GetTpmTokenInfo";
+inline constexpr char kPkcs11Terminate[] = "Pkcs11Terminate";
+inline constexpr char kPkcs11RestoreTpmTokens[] = "Pkcs11RestoreTpmTokens";
 
 // Methods of the |kInstallAttributesInterface| interface:
-const char kInstallAttributesGet[] = "InstallAttributesGet";
-const char kInstallAttributesSet[] = "InstallAttributesSet";
-const char kInstallAttributesFinalize[] = "InstallAttributesFinalize";
-const char kInstallAttributesGetStatus[] = "InstallAttributesGetStatus";
-const char kGetFirmwareManagementParameters[] =
+inline constexpr char kInstallAttributesGet[] = "InstallAttributesGet";
+inline constexpr char kInstallAttributesSet[] = "InstallAttributesSet";
+inline constexpr char kInstallAttributesFinalize[] =
+    "InstallAttributesFinalize";
+inline constexpr char kInstallAttributesGetStatus[] =
+    "InstallAttributesGetStatus";
+inline constexpr char kGetFirmwareManagementParameters[] =
     "GetFirmwareManagementParameters";
-const char kRemoveFirmwareManagementParameters[] =
+inline constexpr char kRemoveFirmwareManagementParameters[] =
     "RemoveFirmwareManagementParameters";
-const char kSetFirmwareManagementParameters[] =
+inline constexpr char kSetFirmwareManagementParameters[] =
     "SetFirmwareManagementParameters";
 
 // Methods of the |kCryptohomeMiscInterface| interface:
-const char kGetSystemSalt[] = "GetSystemSalt";
-const char kUpdateCurrentUserActivityTimestamp[] =
+inline constexpr char kGetSystemSalt[] = "GetSystemSalt";
+inline constexpr char kUpdateCurrentUserActivityTimestamp[] =
     "UpdateCurrentUserActivityTimestamp";
-const char kGetSanitizedUsername[] = "GetSanitizedUsername";
-const char kGetLoginStatus[] = "GetLoginStatus";
-const char kGetStatusString[] = "GetStatusString";
-const char kLockToSingleUserMountUntilReboot[] =
+inline constexpr char kGetSanitizedUsername[] = "GetSanitizedUsername";
+inline constexpr char kGetLoginStatus[] = "GetLoginStatus";
+inline constexpr char kGetStatusString[] = "GetStatusString";
+inline constexpr char kLockToSingleUserMountUntilReboot[] =
     "LockToSingleUserMountUntilReboot";
-const char kGetRsuDeviceId[] = "GetRsuDeviceId";
-const char kCheckHealth[] = "CheckHealth";
+inline constexpr char kGetRsuDeviceId[] = "GetRsuDeviceId";
+inline constexpr char kCheckHealth[] = "CheckHealth";
 
 // Signals of the |kUserDataAuthInterface| interface:
-const char kDircryptoMigrationProgress[] = "DircryptoMigrationProgress";
-const char kLowDiskSpace[] = "LowDiskSpace";
+inline constexpr char kDircryptoMigrationProgress[] =
+    "DircryptoMigrationProgress";
+inline constexpr char kLowDiskSpace[] = "LowDiskSpace";
+inline constexpr char kAuthScanResultSignal[] = "AuthScanResult";
+inline constexpr char kAuthEnrollmentProgressSignal[] =
+    "AuthEnrollmentProgress";
 
 }  // namespace user_data_auth
 
@@ -166,11 +180,11 @@ enum SetProjectIdAllowedPathType {
 
 // Interface for key delegate service to be used by the cryptohome daemon.
 
-const char kCryptohomeKeyDelegateInterface[] =
+inline constexpr char kCryptohomeKeyDelegateInterface[] =
     "org.chromium.CryptohomeKeyDelegateInterface";
 
 // Methods of the |kCryptohomeKeyDelegateInterface| interface:
-const char kCryptohomeKeyDelegateChallengeKey[] = "ChallengeKey";
+inline constexpr char kCryptohomeKeyDelegateChallengeKey[] = "ChallengeKey";
 
 }  // namespace cryptohome
 

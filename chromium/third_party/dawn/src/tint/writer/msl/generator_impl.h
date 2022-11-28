@@ -319,11 +319,11 @@ class GeneratorImpl : public TextGenerator {
     /// @param name the name to emit
     /// @returns true if the type is emitted
     bool EmitTypeAndName(std::ostream& out, const sem::Type* type, const std::string& name);
-    /// Handles generating a storage class
+    /// Handles generating a address space
     /// @param out the output of the type stream
-    /// @param sc the storage class to generate
-    /// @returns true if the storage class is emitted
-    bool EmitStorageClass(std::ostream& out, ast::StorageClass sc);
+    /// @param sc the address space to generate
+    /// @returns true if the address space is emitted
+    bool EmitAddressSpace(std::ostream& out, ast::AddressSpace sc);
     /// Handles generating an MSL-packed storage type.
     /// If the type does not have a packed form, the standard non-packed form is
     /// emitted.
@@ -356,10 +356,6 @@ class GeneratorImpl : public TextGenerator {
     /// @param let the variable to generate
     /// @returns true if the variable was emitted
     bool EmitLet(const ast::Let* let);
-    /// Handles generating a module-scope 'override' declaration
-    /// @param override the 'override' to emit
-    /// @returns true if the variable was emitted
-    bool EmitOverride(const ast::Override* override);
     /// Emits the zero value for the given type
     /// @param out the output of the expression stream
     /// @param type the type to emit the value for
@@ -424,7 +420,7 @@ class GeneratorImpl : public TextGenerator {
     /// Name of atomicCompareExchangeWeak() helper for the given pointer storage
     /// class and struct return type
     using ACEWKeyType =
-        utils::UnorderedKeyWrapper<std::tuple<ast::StorageClass, const sem::Struct*>>;
+        utils::UnorderedKeyWrapper<std::tuple<ast::AddressSpace, const sem::Struct*>>;
     std::unordered_map<ACEWKeyType, std::string> atomicCompareExchangeWeak_;
 
     /// Unique name of the 'TINT_INVARIANT' preprocessor define.

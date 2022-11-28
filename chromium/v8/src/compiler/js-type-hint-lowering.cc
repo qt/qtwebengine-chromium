@@ -6,6 +6,7 @@
 
 #include "src/compiler/js-graph.h"
 #include "src/compiler/js-heap-broker.h"
+#include "src/compiler/opcodes.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/objects/type-hints.h"
@@ -35,6 +36,7 @@ bool BinaryOperationHintToNumberOperationHint(
     case BinaryOperationHint::kNone:
     case BinaryOperationHint::kString:
     case BinaryOperationHint::kBigInt:
+    case BinaryOperationHint::kBigInt64:
       break;
   }
   return false;
@@ -51,6 +53,9 @@ bool BinaryOperationHintToBigIntOperationHint(
     case BinaryOperationHint::kNone:
     case BinaryOperationHint::kString:
       return false;
+    case BinaryOperationHint::kBigInt64:
+      *bigint_hint = BigIntOperationHint::kBigInt64;
+      return true;
     case BinaryOperationHint::kBigInt:
       *bigint_hint = BigIntOperationHint::kBigInt;
       return true;
@@ -158,6 +163,10 @@ class JSSpeculativeBinopBuilder final {
         return simplified()->SpeculativeBigIntSubtract(hint);
       case IrOpcode::kJSMultiply:
         return simplified()->SpeculativeBigIntMultiply(hint);
+      case IrOpcode::kJSDivide:
+        return simplified()->SpeculativeBigIntDivide(hint);
+      case IrOpcode::kJSBitwiseAnd:
+        return simplified()->SpeculativeBigIntBitwiseAnd(hint);
       default:
         break;
     }
@@ -405,7 +414,9 @@ JSTypeHintLowering::LoweringResult JSTypeHintLowering::ReduceBinaryOperation(
       }
       if (op->opcode() == IrOpcode::kJSAdd ||
           op->opcode() == IrOpcode::kJSSubtract ||
-          op->opcode() == IrOpcode::kJSMultiply) {
+          op->opcode() == IrOpcode::kJSMultiply ||
+          op->opcode() == IrOpcode::kJSDivide ||
+          op->opcode() == IrOpcode::kJSBitwiseAnd) {
         if (Node* node = b.TryBuildBigIntBinop()) {
           return LoweringResult::SideEffectFree(node, node, control);
         }
@@ -491,11 +502,6 @@ JSTypeHintLowering::ReduceGetIteratorOperation(const Operator* op,
   if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
           load_slot, effect, control,
           DeoptimizeReason::kInsufficientTypeFeedbackForGenericNamedAccess)) {
-    return LoweringResult::Exit(node);
-  }
-  if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
-          call_slot, effect, control,
-          DeoptimizeReason::kInsufficientTypeFeedbackForCall)) {
     return LoweringResult::Exit(node);
   }
   return LoweringResult::NoChange();

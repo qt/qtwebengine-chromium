@@ -139,6 +139,9 @@ struct packet_traits<float> : default_packet_traits {
     HasReciprocal = EIGEN_FAST_MATH,
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
+    HasACos = 1,
+    HasASin = 1,
+    HasATan = 1,
     HasLog = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -155,7 +158,8 @@ struct packet_traits<float> : default_packet_traits {
 #ifdef EIGEN_VECTORIZE_SSE4_1
     HasRound = 1,
 #endif
-    HasRint = 1
+    HasRint = 1,
+    HasSign = 0   // The manually vectorized version is slightly slower for SSE.
   };
 };
 template <>
@@ -190,6 +194,8 @@ template<> struct packet_traits<int>    : default_packet_traits
   enum {
     Vectorizable = 1,
     AlignedOnScalar = 1,
+    HasCmp = 1,
+    HasDiv=1,
     size=4,
 
     HasShift = 1,
@@ -206,7 +212,7 @@ template<> struct packet_traits<bool> : default_packet_traits
     AlignedOnScalar = 1,
     HasHalfPacket = 0,
     size=16,
-
+    
     HasAdd       = 1,
     HasSub       = 1,
     HasShift     = 0,
@@ -217,7 +223,8 @@ template<> struct packet_traits<bool> : default_packet_traits
     HasMin       = 0,
     HasMax       = 0,
     HasConj      = 0,
-    HasSqrt      = 1
+    HasSqrt      = 1,
+    HasSign      = 0   // Don't try to vectorize psign<bool> = identity.
   };
 };
 
@@ -362,6 +369,22 @@ template<> EIGEN_STRONG_INLINE Packet16b pmul<Packet16b>(const Packet16b& a, con
 
 template<> EIGEN_STRONG_INLINE Packet4f pdiv<Packet4f>(const Packet4f& a, const Packet4f& b) { return _mm_div_ps(a,b); }
 template<> EIGEN_STRONG_INLINE Packet2d pdiv<Packet2d>(const Packet2d& a, const Packet2d& b) { return _mm_div_pd(a,b); }
+
+template <>
+EIGEN_STRONG_INLINE Packet4i pdiv<Packet4i>(const Packet4i& a,
+                                            const Packet4i& b) {
+#ifdef EIGEN_VECTORIZE_AVX
+  return _mm256_cvttpd_epi32(
+      _mm256_div_pd(_mm256_cvtepi32_pd(a), _mm256_cvtepi32_pd(b)));
+#else
+  __m128i q_lo = _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(a), _mm_cvtepi32_pd(b)));
+  __m128i q_hi =
+      _mm_cvttpd_epi32(_mm_div_pd(_mm_cvtepi32_pd(vec4i_swizzle1(a, 2, 3, 0, 1)),
+                                 _mm_cvtepi32_pd(vec4i_swizzle1(b, 2, 3, 0, 1))));
+  return vec4i_swizzle1(_mm_unpacklo_epi32(q_lo, q_hi), 0, 2, 1, 3);
+#endif
+}
+
 
 // for some weird raisons, it has to be overloaded for packet of integers
 template<> EIGEN_STRONG_INLINE Packet4i pmadd(const Packet4i& a, const Packet4i& b, const Packet4i& c) { return padd(pmul(a,b), c); }
@@ -1134,6 +1157,11 @@ template<> EIGEN_STRONG_INLINE int predux_max<Packet4i>(const Packet4i& a)
 template<> EIGEN_STRONG_INLINE bool predux_any(const Packet4f& x)
 {
   return _mm_movemask_ps(x) != 0x0;
+}
+
+template<> EIGEN_STRONG_INLINE bool predux_any(const Packet4i& x)
+{
+  return _mm_movemask_ps(_mm_castsi128_ps(x)) != 0x0;
 }
 
 EIGEN_DEVICE_FUNC inline void

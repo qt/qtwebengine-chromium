@@ -80,6 +80,8 @@ template<> EIGEN_STRONG_INLINE Packet8d preinterpret<Packet8d, Packet8d>(const P
   return a;
 }
 
+#ifndef EIGEN_VECTORIZE_AVX512FP16
+
 template <>
 struct type_casting_traits<half, float> {
   enum {
@@ -106,6 +108,8 @@ template<> EIGEN_STRONG_INLINE Packet16h pcast<Packet16f, Packet16h>(const Packe
   return float2half(a);
 }
 
+#endif
+
 template <>
 struct type_casting_traits<bfloat16, float> {
   enum {
@@ -131,6 +135,77 @@ struct type_casting_traits<float, bfloat16> {
 template<> EIGEN_STRONG_INLINE Packet16bf pcast<Packet16f, Packet16bf>(const Packet16f& a) {
   return F32ToBf16(a);
 }
+
+#ifdef EIGEN_VECTORIZE_AVX512FP16
+
+template <>
+struct type_casting_traits<half, float> {
+  enum {
+    VectorizedCast = 1,
+    SrcCoeffRatio = 1,
+    TgtCoeffRatio = 2
+  };
+};
+
+template <>
+struct type_casting_traits<float, half> {
+  enum {
+    VectorizedCast = 1,
+    SrcCoeffRatio = 2,
+    TgtCoeffRatio = 1
+  };
+};
+
+template <>
+EIGEN_STRONG_INLINE Packet16f pcast<Packet32h, Packet16f>(const Packet32h& a) {
+  // Discard second-half of input.
+  Packet16h low = _mm256_castpd_si256(_mm512_extractf64x4_pd(_mm512_castph_pd(a), 0));
+  return _mm512_cvtxph_ps(_mm256_castsi256_ph(low));
+}
+
+
+template <>
+EIGEN_STRONG_INLINE Packet32h pcast<Packet16f, Packet32h>(const Packet16f& a, const Packet16f& b) {
+  __m512d result = _mm512_undefined_pd();
+  result = _mm512_insertf64x4(result, _mm256_castsi256_pd(_mm512_cvtps_ph(a, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC)), 0);
+  result = _mm512_insertf64x4(result, _mm256_castsi256_pd(_mm512_cvtps_ph(b, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC)), 1);
+  return _mm512_castpd_ph(result);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet8f pcast<Packet16h, Packet8f>(const Packet16h& a) {
+  // Discard second-half of input.
+  Packet8h low = _mm_castps_si128(_mm256_extractf32x4_ps(_mm256_castsi256_ps(a), 0));
+  return _mm256_cvtxph_ps(_mm_castsi128_ph(low));
+}
+
+
+template <>
+EIGEN_STRONG_INLINE Packet16h pcast<Packet8f, Packet16h>(const Packet8f& a, const Packet8f& b) {
+  __m256d result = _mm256_undefined_pd();
+  result = _mm256_insertf64x2(result, _mm_castsi128_pd(_mm256_cvtps_ph(a, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC)), 0);
+  result = _mm256_insertf64x2(result, _mm_castsi128_pd(_mm256_cvtps_ph(b, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC)), 1);
+  return _mm256_castpd_si256(result);
+}
+
+template <>
+EIGEN_STRONG_INLINE Packet4f pcast<Packet8h, Packet4f>(const Packet8h& a) {
+  Packet8f full = _mm256_cvtxph_ps(_mm_castsi128_ph(a));
+  // Discard second-half of input.
+  return _mm256_extractf32x4_ps(full, 0);
+}
+
+
+template <>
+EIGEN_STRONG_INLINE Packet8h pcast<Packet4f, Packet8h>(const Packet4f& a, const Packet4f& b) {
+  __m256 result = _mm256_undefined_ps();
+  result = _mm256_insertf128_ps(result, a, 0);
+  result = _mm256_insertf128_ps(result, b, 1);
+  return _mm256_cvtps_ph(result, _MM_FROUND_TO_NEAREST_INT|_MM_FROUND_NO_EXC);
+}
+
+
+#endif
 
 } // end namespace internal
 

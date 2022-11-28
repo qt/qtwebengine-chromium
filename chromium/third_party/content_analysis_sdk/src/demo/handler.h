@@ -132,6 +132,12 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
     std::cout << "Ack: " << ack.request_token() << std::endl;
     std::cout << "  Final action: " << final_action << std::endl;
   }
+  void OnCancelRequests(
+      const content_analysis::sdk::ContentAnalysisCancelRequests& cancel)
+      override {
+    std::cout << "Cancel: " << std::endl;
+    std::cout << "  User action ID: " << cancel.user_action_id() << std::endl;
+  }
 
   void OnInternalError(
       const char* context,
@@ -182,7 +188,7 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
 
     std::string file_path =
         request.has_file_path()
-        ? request.file_path() : "None, bulk text entry";
+        ? request.file_path() : "None, bulk text entry or print";
 
     std::string machine_user =
         request.has_client_metadata() &&
@@ -196,7 +202,11 @@ class Handler : public content_analysis::sdk::AgentEventHandler {
 
     time_t t = request.expires_at();
 
+    std::string user_action_id = request.has_user_action_id()
+        ? request.user_action_id() : "<No user action id>";
+
     std::cout << "Request: " << request.request_token() << std::endl;
+    std::cout << "  User action ID: " << user_action_id << std::endl;
     std::cout << "  Expires at: " << ctime(&t);  // Returned string includes \n.
     std::cout << "  Connector: " << connector << std::endl;
     std::cout << "  URL: " << url << std::endl;

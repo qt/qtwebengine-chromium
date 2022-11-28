@@ -15,6 +15,7 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/strings/string_view.h"
+#include "quiche/quic/core/connection_id_generator.h"
 #include "quiche/quic/core/crypto/quic_compressed_certs_cache.h"
 #include "quiche/quic/core/crypto/quic_random.h"
 #include "quiche/quic/core/quic_blocked_writer_interface.h"
@@ -54,7 +55,8 @@ class QUIC_NO_EXPORT QuicDispatcher
       std::unique_ptr<QuicConnectionHelperInterface> helper,
       std::unique_ptr<QuicCryptoServerStreamBase::Helper> session_helper,
       std::unique_ptr<QuicAlarmFactory> alarm_factory,
-      uint8_t expected_server_connection_id_length);
+      uint8_t expected_server_connection_id_length,
+      ConnectionIdGeneratorInterface& connection_id_generator);
   QuicDispatcher(const QuicDispatcher&) = delete;
   QuicDispatcher& operator=(const QuicDispatcher&) = delete;
 
@@ -340,18 +342,19 @@ class QUIC_NO_EXPORT QuicDispatcher
   // element of the vector is returned.
   std::string SelectAlpn(const std::vector<std::string>& alpns);
 
-  // If the connection ID length is different from what the dispatcher expects,
-  // replace the connection ID with one of the right length.
-  // Note that this MUST produce a deterministic result (calling this method
-  // with two connection IDs that are equal must produce the same result).
-  QuicConnectionId MaybeReplaceServerConnectionId(
+  // Check if the client-generated server connection ID needs to be replaced.
+  absl::optional<QuicConnectionId> MaybeReplaceServerConnectionId(
       const QuicConnectionId& server_connection_id,
-      const ParsedQuicVersion& version) const;
+      const ParsedQuicVersion& version);
 
   // Sends public/stateless reset packets with no version and unknown
   // connection ID according to the packet's size.
   virtual void MaybeResetPacketsWithNoVersion(
       const quic::ReceivedPacketInfo& packet_info);
+
+  ConnectionIdGeneratorInterface& connection_id_generator() {
+    return connection_id_generator_;
+  }
 
  private:
   friend class test::QuicDispatcherPeer;
@@ -476,8 +479,7 @@ class QUIC_NO_EXPORT QuicDispatcher
   // destination connection ID length of all IETF long headers.
   bool should_update_expected_server_connection_id_length_;
 
-  const bool send_connection_close_for_tls_alerts_ =
-      GetQuicRestartFlag(quic_dispatcher_send_connection_close_for_tls_alerts);
+  ConnectionIdGeneratorInterface& connection_id_generator_;
 };
 
 }  // namespace quic

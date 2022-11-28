@@ -33,6 +33,7 @@
 #include "quiche/quic/test_tools/crypto_test_utils.h"
 #include "quiche/quic/test_tools/fake_proof_source.h"
 #include "quiche/quic/test_tools/first_flight.h"
+#include "quiche/quic/test_tools/mock_connection_id_generator.h"
 #include "quiche/quic/test_tools/mock_quic_time_wait_list_manager.h"
 #include "quiche/quic/test_tools/quic_buffered_packet_store_peer.h"
 #include "quiche/quic/test_tools/quic_connection_peer.h"
@@ -108,13 +109,14 @@ class TestDispatcher : public QuicDispatcher {
  public:
   TestDispatcher(const QuicConfig* config,
                  const QuicCryptoServerConfig* crypto_config,
-                 QuicVersionManager* version_manager, QuicRandom* random)
+                 QuicVersionManager* version_manager, QuicRandom* random,
+                 ConnectionIdGeneratorInterface& generator)
       : QuicDispatcher(config, crypto_config, version_manager,
                        std::make_unique<MockQuicConnectionHelper>(),
                        std::unique_ptr<QuicCryptoServerStreamBase::Helper>(
                            new QuicSimpleCryptoServerStreamHelper()),
                        std::make_unique<TestAlarmFactory>(),
-                       kQuicDefaultConnectionIdLength),
+                       kQuicDefaultConnectionIdLength, generator),
         random_(random) {}
 
   MOCK_METHOD(std::unique_ptr<QuicSession>, CreateQuicSession,
@@ -175,6 +177,11 @@ class MockServerConnection : public MockQuicConnection {
     active_connection_ids_.push_back(id);
   }
 
+  void UnconditionallyAddNewConnectionIdForTest(QuicConnectionId id) {
+    dispatcher_->TryAddNewConnectionId(active_connection_ids_.back(), id);
+    active_connection_ids_.push_back(id);
+  }
+
   void RetireConnectionId(QuicConnectionId id) {
     auto it = std::find(active_connection_ids_.begin(),
                         active_connection_ids_.end(), id);
@@ -184,9 +191,6 @@ class MockServerConnection : public MockQuicConnection {
   }
 
   std::vector<QuicConnectionId> GetActiveServerConnectionIds() const override {
-    if (!GetQuicRestartFlag(quic_map_original_connection_ids2)) {
-      return active_connection_ids_;
-    }
     std::vector<QuicConnectionId> result;
     for (const auto& cid : active_connection_ids_) {
       result.push_back(cid);
@@ -225,7 +229,7 @@ class QuicDispatcherTestBase : public QuicTestWithParam<ParsedQuicVersion> {
         server_address_(QuicIpAddress::Any4(), 5),
         dispatcher_(new NiceMock<TestDispatcher>(
             &config_, &crypto_config_, &version_manager_,
-            mock_helper_.GetRandomGenerator())),
+            mock_helper_.GetRandomGenerator(), connection_id_generator_)),
         time_wait_list_manager_(nullptr),
         session1_(nullptr),
         session2_(nullptr),
@@ -428,6 +432,15 @@ class QuicDispatcherTestBase : public QuicTestWithParam<ParsedQuicVersion> {
       const QuicConnectionId& server_connection_id,
       const QuicConnectionId& client_connection_id,
       std::unique_ptr<QuicCryptoClientConfig> client_crypto_config) {
+    if (expect_generator_is_called_ &&
+        GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+      // Can't replace the connection ID in early gQUIC versions!
+      ASSERT_TRUE(version.AllowsVariableLengthConnectionIds() ||
+                  generated_connection_id_ == absl::nullopt);
+      EXPECT_CALL(connection_id_generator_,
+                  MaybeReplaceConnectionId(server_connection_id, version))
+          .WillOnce(Return(generated_connection_id_));
+    }
     std::vector<std::unique_ptr<QuicReceivedPacket>> packets =
         GetFirstFlightOfPackets(version, DefaultQuicConfig(),
                                 server_connection_id, client_connection_id,
@@ -494,6 +507,7 @@ class QuicDispatcherTestBase : public QuicTestWithParam<ParsedQuicVersion> {
     EXPECT_CALL(*dispatcher_,
                 CreateQuicSession(connection_id, _, client_address, _, _, _))
         .Times(0);
+    expect_generator_is_called_ = false;
     ProcessFirstFlight(version, client_address, connection_id);
   }
 
@@ -516,6 +530,12 @@ class QuicDispatcherTestBase : public QuicTestWithParam<ParsedQuicVersion> {
   QuicVersionManager version_manager_;
   QuicCryptoServerConfig crypto_config_;
   QuicSocketAddress server_address_;
+  bool expect_generator_is_called_ = true;
+  absl::optional<QuicConnectionId> generated_connection_id_;
+  // Constant to set generated_connection_id to when needed.
+  QuicConnectionId return_connection_id_{
+      {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}};
+  MockConnectionIdGenerator connection_id_generator_;
   std::unique_ptr<NiceMock<TestDispatcher>> dispatcher_;
   MockTimeWaitListManager* time_wait_list_manager_;
   TestQuicSpdyServerSession* session1_;
@@ -574,13 +594,26 @@ void QuicDispatcherTestBase::TestTlsMultiPacketClientHello(
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   QuicConnectionId original_connection_id, new_connection_id;
   if (long_connection_id) {
-    original_connection_id = QuicConnectionId(
-        {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09});
-    new_connection_id =
-        QuicConnectionId({0x6c, 0x6b, 0x4b, 0xad, 0x8d, 0x00, 0x24, 0xd8});
+    if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+      original_connection_id = TestConnectionIdNineBytesLong(1);
+      new_connection_id = return_connection_id_;
+      EXPECT_CALL(connection_id_generator_,
+                  MaybeReplaceConnectionId(original_connection_id, version_))
+          .WillOnce(Return(new_connection_id));
+    } else {
+      original_connection_id = QuicConnectionId(
+          {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09});
+      new_connection_id =
+          QuicConnectionId({0x6c, 0x6b, 0x4b, 0xad, 0x8d, 0x00, 0x24, 0xd8});
+    }
   } else {
     original_connection_id = TestConnectionId();
     new_connection_id = original_connection_id;
+    if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+      EXPECT_CALL(connection_id_generator_,
+                  MaybeReplaceConnectionId(original_connection_id, version_))
+          .WillOnce(Return(absl::nullopt));
+    }
   }
   QuicConfig client_config = DefaultQuicConfig();
   // Add a 2000-byte custom parameter to increase the length of the CHLO.
@@ -788,6 +821,7 @@ TEST_P(QuicDispatcherTestOneVersion, StatelessVersionNegotiation) {
       *time_wait_list_manager_,
       SendVersionNegotiationPacket(TestConnectionId(1), _, _, _, _, _, _, _))
       .Times(1);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(QuicVersionReservedForNegotiation(), client_address,
                      TestConnectionId(1));
 }
@@ -802,6 +836,7 @@ TEST_P(QuicDispatcherTestOneVersion,
   EXPECT_CALL(*time_wait_list_manager_,
               SendVersionNegotiationPacket(connection_id, _, _, _, _, _, _, _))
       .Times(1);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(QuicVersionReservedForNegotiation(), client_address,
                      connection_id);
 }
@@ -816,6 +851,7 @@ TEST_P(QuicDispatcherTestOneVersion,
               SendVersionNegotiationPacket(
                   TestConnectionId(1), TestConnectionId(2), _, _, _, _, _, _))
       .Times(1);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(QuicVersionReservedForNegotiation(), client_address,
                      TestConnectionId(1), TestConnectionId(2));
 }
@@ -1012,9 +1048,9 @@ TEST_P(QuicDispatcherTestAllVersions, LimitResetsToSameClientAddress) {
 
 TEST_P(QuicDispatcherTestAllVersions,
        StopSendingResetOnTooManyRecentAddresses) {
-  SetQuicFlag(FLAGS_quic_max_recent_stateless_reset_addresses, 2);
+  SetQuicFlag(quic_max_recent_stateless_reset_addresses, 2);
   const size_t kTestLifeTimeMs = 10;
-  SetQuicFlag(FLAGS_quic_recent_stateless_reset_addresses_lifetime_ms,
+  SetQuicFlag(quic_recent_stateless_reset_addresses_lifetime_ms,
               kTestLifeTimeMs);
   CreateTimeWaitListManager();
 
@@ -1068,14 +1104,16 @@ TEST_P(QuicDispatcherTestAllVersions, LongConnectionIdLengthReplaced) {
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
 
   QuicConnectionId bad_connection_id = TestConnectionIdNineBytesLong(2);
-  QuicConnectionId fixed_connection_id =
-      QuicUtils::CreateReplacementConnectionId(bad_connection_id);
+  generated_connection_id_ =
+      (GetQuicRestartFlag(quic_abstract_connection_id_generator))
+          ? return_connection_id_
+          : QuicUtils::CreateReplacementConnectionId(bad_connection_id);
 
   EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(fixed_connection_id, _, client_address,
+              CreateQuicSession(*generated_connection_id_, _, client_address,
                                 Eq(ExpectedAlpn()), _, _))
       .WillOnce(Return(ByMove(CreateSession(
-          dispatcher_.get(), config_, fixed_connection_id, client_address,
+          dispatcher_.get(), config_, *generated_connection_id_, client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
           QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
   EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
@@ -1097,8 +1135,10 @@ TEST_P(QuicDispatcherTestAllVersions, InvalidShortConnectionIdLengthReplaced) {
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
 
   QuicConnectionId bad_connection_id = EmptyQuicConnectionId();
-  QuicConnectionId fixed_connection_id =
-      QuicUtils::CreateReplacementConnectionId(bad_connection_id);
+  generated_connection_id_ =
+      GetQuicRestartFlag(quic_abstract_connection_id_generator)
+          ? return_connection_id_
+          : QuicUtils::CreateReplacementConnectionId(bad_connection_id);
 
   // Disable validation of invalid short connection IDs.
   dispatcher_->SetAllowShortInitialServerConnectionIds(true);
@@ -1106,10 +1146,10 @@ TEST_P(QuicDispatcherTestAllVersions, InvalidShortConnectionIdLengthReplaced) {
   // validation is still enabled.
 
   EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(fixed_connection_id, _, client_address,
+              CreateQuicSession(*generated_connection_id_, _, client_address,
                                 Eq(ExpectedAlpn()), _, _))
       .WillOnce(Return(ByMove(CreateSession(
-          dispatcher_.get(), config_, fixed_connection_id, client_address,
+          dispatcher_.get(), config_, *generated_connection_id_, client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
           QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
   EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
@@ -1130,8 +1170,6 @@ TEST_P(QuicDispatcherTestAllVersions, MixGoodAndBadConnectionIdLengthPackets) {
 
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   QuicConnectionId bad_connection_id = TestConnectionIdNineBytesLong(2);
-  QuicConnectionId fixed_connection_id =
-      QuicUtils::CreateReplacementConnectionId(bad_connection_id);
 
   EXPECT_CALL(*dispatcher_,
               CreateQuicSession(TestConnectionId(1), _, client_address,
@@ -1147,11 +1185,15 @@ TEST_P(QuicDispatcherTestAllVersions, MixGoodAndBadConnectionIdLengthPackets) {
       })));
   ProcessFirstFlight(client_address, TestConnectionId(1));
 
+  generated_connection_id_ =
+      GetQuicRestartFlag(quic_abstract_connection_id_generator)
+          ? return_connection_id_
+          : QuicUtils::CreateReplacementConnectionId(bad_connection_id);
   EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(fixed_connection_id, _, client_address,
+              CreateQuicSession(*generated_connection_id_, _, client_address,
                                 Eq(ExpectedAlpn()), _, _))
       .WillOnce(Return(ByMove(CreateSession(
-          dispatcher_.get(), config_, fixed_connection_id, client_address,
+          dispatcher_.get(), config_, *generated_connection_id_, client_address,
           &mock_helper_, &mock_alarm_factory_, &crypto_config_,
           QuicDispatcherPeer::GetCache(dispatcher_.get()), &session2_))));
   EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session2_->connection()),
@@ -1239,6 +1281,7 @@ TEST_P(QuicDispatcherTestAllVersions,
       .Times(0);
   EXPECT_CALL(*time_wait_list_manager_, AddConnectionIdToTimeWait(_, _))
       .Times(0);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(client_address, EmptyQuicConnectionId());
 }
 
@@ -1281,6 +1324,7 @@ void QuicDispatcherTestBase::
                   /*ietf_quic=*/true,
                   /*use_length_prefix=*/true, _, _, client_address, _))
       .Times(1);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(ParsedQuicVersion::ReservedForNegotiation(),
                      client_address, server_connection_id,
                      client_connection_id);
@@ -1773,6 +1817,7 @@ TEST_P(QuicDispatcherTestAllVersions, StopAcceptingNewConnections) {
               CreateQuicSession(TestConnectionId(2), _, client_address,
                                 Eq(ExpectedAlpn()), _, _))
       .Times(0u);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(client_address, TestConnectionId(2));
 
   // Existing connections should be able to continue.
@@ -1794,6 +1839,7 @@ TEST_P(QuicDispatcherTestAllVersions, StartAcceptingNewConnections) {
               CreateQuicSession(TestConnectionId(2), _, client_address,
                                 Eq(ExpectedAlpn()), _, _))
       .Times(0u);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(client_address, TestConnectionId(2));
 
   dispatcher_->StartAcceptingNewConnections();
@@ -2158,7 +2204,7 @@ class QuicDispatcherSupportMultipleConnectionIdPerConnectionTest
       : QuicDispatcherTestBase(crypto_test_utils::ProofSourceForTesting()) {
     dispatcher_ = std::make_unique<NiceMock<TestDispatcher>>(
         &config_, &crypto_config_, &version_manager_,
-        mock_helper_.GetRandomGenerator());
+        mock_helper_.GetRandomGenerator(), connection_id_generator_);
   }
   void AddConnection1() {
     QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
@@ -2237,6 +2283,82 @@ TEST_P(QuicDispatcherSupportMultipleConnectionIdPerConnectionTest,
   EXPECT_CALL(*connection1(), CloseConnection(QUIC_PEER_GOING_AWAY, _, _));
   // Would timed out unless all sessions have been removed from the session map.
   dispatcher_->Shutdown();
+}
+
+TEST_P(QuicDispatcherSupportMultipleConnectionIdPerConnectionTest,
+       TryAddNewConnectionIdWithCollision) {
+  AddConnection1();
+  AddConnection2();
+  ASSERT_EQ(dispatcher_->NumSessions(), 2u);
+  ASSERT_THAT(session1_, testing::NotNull());
+  ASSERT_THAT(session2_, testing::NotNull());
+  MockServerConnection* mock_server_connection1 =
+      reinterpret_cast<MockServerConnection*>(connection1());
+  MockServerConnection* mock_server_connection2 =
+      reinterpret_cast<MockServerConnection*>(connection2());
+
+  {
+    // TestConnectionId(2) is already claimed by connection2 but connection1
+    // still thinks it owns it.
+    mock_server_connection1->UnconditionallyAddNewConnectionIdForTest(
+        TestConnectionId(2));
+    EXPECT_EQ(dispatcher_->NumSessions(), 2u);
+    auto* session =
+        QuicDispatcherPeer::FindSession(dispatcher_.get(), TestConnectionId(2));
+    ASSERT_EQ(session, session2_);
+    EXPECT_THAT(mock_server_connection1->GetActiveServerConnectionIds(),
+                testing::ElementsAre(TestConnectionId(1), TestConnectionId(2)));
+  }
+
+  {
+    mock_server_connection2->AddNewConnectionId(TestConnectionId(3));
+    EXPECT_EQ(dispatcher_->NumSessions(), 2u);
+    auto* session =
+        QuicDispatcherPeer::FindSession(dispatcher_.get(), TestConnectionId(3));
+    ASSERT_EQ(session, session2_);
+    EXPECT_THAT(mock_server_connection2->GetActiveServerConnectionIds(),
+                testing::ElementsAre(TestConnectionId(2), TestConnectionId(3)));
+  }
+
+  // Connection2 removes both TestConnectionId(2) & TestConnectionId(3) from the
+  // session map.
+  dispatcher_->OnConnectionClosed(TestConnectionId(2),
+                                  QuicErrorCode::QUIC_NO_ERROR, "detail",
+                                  quic::ConnectionCloseSource::FROM_SELF);
+    // QUICHE_BUG fires when connection1 tries to remove TestConnectionId(2)
+    // again from the session_map.
+    EXPECT_QUICHE_BUG(dispatcher_->OnConnectionClosed(
+                          TestConnectionId(1), QuicErrorCode::QUIC_NO_ERROR,
+                          "detail", quic::ConnectionCloseSource::FROM_SELF),
+                      "Missing session for cid");
+}
+
+TEST_P(QuicDispatcherSupportMultipleConnectionIdPerConnectionTest,
+       MismatchedSessionAfterAddingCollidedConnectionId) {
+  AddConnection1();
+  AddConnection2();
+  MockServerConnection* mock_server_connection1 =
+      reinterpret_cast<MockServerConnection*>(connection1());
+
+  {
+    // TestConnectionId(2) is already claimed by connection2 but connection1
+    // still thinks it owns it.
+    mock_server_connection1->UnconditionallyAddNewConnectionIdForTest(
+        TestConnectionId(2));
+    EXPECT_EQ(dispatcher_->NumSessions(), 2u);
+    auto* session =
+        QuicDispatcherPeer::FindSession(dispatcher_.get(), TestConnectionId(2));
+    ASSERT_EQ(session, session2_);
+    EXPECT_THAT(mock_server_connection1->GetActiveServerConnectionIds(),
+                testing::ElementsAre(TestConnectionId(1), TestConnectionId(2)));
+  }
+
+  // Connection1 tries to remove both Cid1 & Cid2, but they point to different
+  // sessions.
+  EXPECT_QUIC_BUG(dispatcher_->OnConnectionClosed(
+                      TestConnectionId(1), QuicErrorCode::QUIC_NO_ERROR,
+                      "detail", quic::ConnectionCloseSource::FROM_SELF),
+                  "Session is mismatched in the map");
 }
 
 TEST_P(QuicDispatcherSupportMultipleConnectionIdPerConnectionTest,
@@ -2397,6 +2519,11 @@ TEST_P(BufferedPacketStoreTest, ProcessNonChloPacketBeforeChlo) {
 
   // When CHLO arrives, a new session should be created, and all packets
   // buffered should be delivered to the session.
+  if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+    EXPECT_CALL(connection_id_generator_,
+                MaybeReplaceConnectionId(conn_id, version_))
+        .WillOnce(Return(absl::nullopt));
+  }
   EXPECT_CALL(*dispatcher_,
               CreateQuicSession(conn_id, _, client_addr_, Eq(ExpectedAlpn()), _,
                                 Eq(ParsedClientHelloForTest())))
@@ -2413,6 +2540,7 @@ TEST_P(BufferedPacketStoreTest, ProcessNonChloPacketBeforeChlo) {
               ValidatePacket(conn_id, packet);
             }
           })));
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(conn_id);
 }
 
@@ -2429,6 +2557,11 @@ TEST_P(BufferedPacketStoreTest, ProcessNonChloPacketsUptoLimitAndProcessChlo) {
   data_connection_map_[conn_id].pop_back();
   // When CHLO arrives, a new session should be created, and all packets
   // buffered should be delivered to the session.
+  if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+    EXPECT_CALL(connection_id_generator_,
+                MaybeReplaceConnectionId(conn_id, version_))
+        .WillOnce(Return(absl::nullopt));
+  }
   EXPECT_CALL(*dispatcher_, CreateQuicSession(conn_id, _, client_addr_,
                                               Eq(ExpectedAlpn()), _, _))
       .WillOnce(Return(ByMove(CreateSession(
@@ -2447,6 +2580,7 @@ TEST_P(BufferedPacketStoreTest, ProcessNonChloPacketsUptoLimitAndProcessChlo) {
               ValidatePacket(conn_id, packet);
             }
           })));
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(conn_id);
 }
 
@@ -2473,6 +2607,11 @@ TEST_P(BufferedPacketStoreTest,
   for (size_t i = 1; i <= kNumConnections; ++i) {
     QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 20000 + i);
     QuicConnectionId conn_id = TestConnectionId(i);
+    if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+      EXPECT_CALL(connection_id_generator_,
+                  MaybeReplaceConnectionId(conn_id, version_))
+          .WillOnce(Return(absl::nullopt));
+    }
     EXPECT_CALL(*dispatcher_, CreateQuicSession(conn_id, _, client_address,
                                                 Eq(ExpectedAlpn()), _, _))
         .WillOnce(Return(ByMove(CreateSession(
@@ -2491,7 +2630,7 @@ TEST_P(BufferedPacketStoreTest,
                 ValidatePacket(conn_id, packet);
               }
             })));
-
+    expect_generator_is_called_ = false;
     ProcessFirstFlight(client_address, conn_id);
   }
 }
@@ -2519,6 +2658,11 @@ TEST_P(BufferedPacketStoreTest, ReceiveRetransmittedCHLO) {
 
   // When CHLO arrives, a new session should be created, and all packets
   // buffered should be delivered to the session.
+  if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+    EXPECT_CALL(connection_id_generator_,
+                MaybeReplaceConnectionId(conn_id, version_))
+        .WillOnce(Return(absl::nullopt));
+  }
   EXPECT_CALL(*dispatcher_, CreateQuicSession(conn_id, _, client_addr_,
                                               Eq(ExpectedAlpn()), _, _))
       .Times(1)  // Only triggered by 1st CHLO.
@@ -2568,6 +2712,7 @@ TEST_P(BufferedPacketStoreTest, ReceiveCHLOAfterExpiration) {
   // list.
   ASSERT_TRUE(time_wait_list_manager_->IsConnectionIdInTimeWait(conn_id));
   EXPECT_CALL(*time_wait_list_manager_, ProcessPacket(_, _, conn_id, _, _, _));
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(conn_id);
 }
 
@@ -2583,6 +2728,12 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
       kMaxNumSessionsToCreate + kDefaultMaxConnectionsInStore + 1;
   for (uint64_t conn_id = 1; conn_id <= kNumCHLOs; ++conn_id) {
     if (conn_id <= kMaxNumSessionsToCreate) {
+      if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+        EXPECT_CALL(
+            connection_id_generator_,
+            MaybeReplaceConnectionId(TestConnectionId(conn_id), version_))
+            .WillOnce(Return(absl::nullopt));
+      }
       EXPECT_CALL(*dispatcher_,
                   CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
                                     Eq(ExpectedAlpn()), _,
@@ -2602,6 +2753,7 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
                 }
               })));
     }
+    expect_generator_is_called_ = false;
     ProcessFirstFlight(TestConnectionId(conn_id));
     if (conn_id <= kMaxNumSessionsToCreate + kDefaultMaxConnectionsInStore &&
         conn_id > kMaxNumSessionsToCreate) {
@@ -2619,6 +2771,11 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
   for (uint64_t conn_id = kMaxNumSessionsToCreate + 1;
        conn_id <= kMaxNumSessionsToCreate + kDefaultMaxConnectionsInStore;
        ++conn_id) {
+    if (GetQuicRestartFlag(quic_abstract_connection_id_generator)) {
+      EXPECT_CALL(connection_id_generator_,
+                  MaybeReplaceConnectionId(TestConnectionId(conn_id), version_))
+          .WillOnce(Return(absl::nullopt));
+    }
     EXPECT_CALL(*dispatcher_,
                 CreateQuicSession(TestConnectionId(conn_id), _, client_addr_,
                                   Eq(ExpectedAlpn()), _,
@@ -2636,6 +2793,9 @@ TEST_P(BufferedPacketStoreTest, ProcessCHLOsUptoLimitAndBufferTheRest) {
               }
             })));
   }
+  EXPECT_CALL(connection_id_generator_,
+              MaybeReplaceConnectionId(TestConnectionId(kNumCHLOs), version_))
+      .Times(0);
   EXPECT_CALL(*dispatcher_,
               CreateQuicSession(TestConnectionId(kNumCHLOs), _, client_addr_,
                                 Eq(ExpectedAlpn()), _, _))
@@ -2679,6 +2839,7 @@ TEST_P(BufferedPacketStoreTest, BufferDuplicatedCHLO) {
   // Retransmit CHLO on last connection should be dropped.
   QuicConnectionId last_connection =
       TestConnectionId(kMaxNumSessionsToCreate + 1);
+  expect_generator_is_called_ = false;
   ProcessFirstFlight(last_connection);
 
   size_t packets_buffered = 2;
@@ -2791,6 +2952,8 @@ TEST_P(BufferedPacketStoreTest, ReceiveCHLOForBufferedConnection) {
                   ValidatePacket(TestConnectionId(conn_id), packet);
                 }
               })));
+    } else {
+      expect_generator_is_called_ = false;
     }
     ProcessFirstFlight(TestConnectionId(conn_id));
   }

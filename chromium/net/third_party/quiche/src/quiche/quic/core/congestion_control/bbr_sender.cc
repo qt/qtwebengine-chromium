@@ -98,7 +98,7 @@ BbrSender::BbrSender(QuicTime now, const RttStats* rtt_stats,
       pacing_gain_(1),
       congestion_window_gain_(1),
       congestion_window_gain_constant_(
-          static_cast<float>(GetQuicFlag(FLAGS_quic_bbr_cwnd_gain))),
+          static_cast<float>(GetQuicFlag(quic_bbr_cwnd_gain))),
       num_startup_rtts_(kRoundTripsWithoutGrowthBeforeExitingStartup),
       cycle_current_offset_(0),
       last_cycle_start_(QuicTime::Zero()),
@@ -230,13 +230,7 @@ void BbrSender::SetFromConfig(const QuicConfig& config,
   if (config.HasClientRequestedIndependentOption(kBBQ1, perspective)) {
     set_high_gain(kDerivedHighGain);
     set_high_cwnd_gain(kDerivedHighGain);
-    if (GetQuicReloadableFlag(quic_bbr2_support_new_startup_pacing_gain)) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_support_new_startup_pacing_gain, 1,
-                                   2);
-      set_drain_gain(1.0 / kDerivedHighCWNDGain);
-    } else {
-      set_drain_gain(1.f / kDerivedHighGain);
-    }
+    set_drain_gain(1.0 / kDerivedHighCWNDGain);
   }
   if (config.HasClientRequestedIndependentOption(kBBQ3, perspective)) {
     enable_ack_aggregation_during_startup_ = true;
@@ -609,7 +603,7 @@ void BbrSender::OnExitStartup(QuicTime now) {
 bool BbrSender::ShouldExitStartupDueToLoss(
     const SendTimeState& last_packet_send_state) const {
   if (num_loss_events_in_round_ <
-          GetQuicFlag(FLAGS_quic_bbr2_default_startup_full_loss_count) ||
+          GetQuicFlag(quic_bbr2_default_startup_full_loss_count) ||
       !last_packet_send_state.is_valid) {
     return false;
   }
@@ -618,8 +612,7 @@ bool BbrSender::ShouldExitStartupDueToLoss(
 
   if (inflight_at_send > 0 && bytes_lost_in_round_ > 0) {
     if (bytes_lost_in_round_ >
-        inflight_at_send *
-            GetQuicFlag(FLAGS_quic_bbr2_default_loss_threshold)) {
+        inflight_at_send * GetQuicFlag(quic_bbr2_default_loss_threshold)) {
       stats_->bbr_exit_startup_due_to_loss = true;
       return true;
     }

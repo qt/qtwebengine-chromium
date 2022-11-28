@@ -38,7 +38,7 @@ class RemotingSender {
     virtual void OnPlaybackRateChange(double rate) = 0;
   };
 
-  RemotingSender(RpcMessenger* messenger,
+  RemotingSender(RpcMessenger& messenger,
                  AudioCodec audio_codec,
                  VideoCodec video_codec,
                  Client* client);
@@ -53,7 +53,7 @@ class RemotingSender {
   // The messenger is the only caller of OnInitializeMessage, so there are no
   // lifetime concerns. However, if this class outlives |messenger_|, it will
   // no longer receive initialization messages.
-  RpcMessenger* messenger_;
+  RpcMessenger& messenger_;
 
   // Unlike in Chrome, here we should know the video and audio codecs before any
   // of the remoting code gets set up, and for simplicity's sake we can only

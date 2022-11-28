@@ -24,7 +24,7 @@ namespace perfetto {
 namespace trace_processor {
 namespace {
 
-std::array<FtraceMessageDescriptor, 428> descriptors{{
+std::array<FtraceMessageDescriptor, 443> descriptors{{
     {nullptr, 0, {}},
     {nullptr, 0, {}},
     {nullptr, 0, {}},
@@ -4728,6 +4728,173 @@ std::array<FtraceMessageDescriptor, 428> descriptors{{
             {"timecode_userbits2", ProtoSchemaType::kUint32},
             {"timecode_userbits3", ProtoSchemaType::kUint32},
             {"timestamp", ProtoSchemaType::kInt64},
+        },
+    },
+    {
+        "dsi_cmd_fifo_status",
+        2,
+        {
+            {},
+            {"header", ProtoSchemaType::kUint32},
+            {"payload", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "dsi_rx",
+        2,
+        {
+            {},
+            {"cmd", ProtoSchemaType::kUint32},
+            {"rx_buf", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "dsi_tx",
+        3,
+        {
+            {},
+            {"last", ProtoSchemaType::kUint32},
+            {"tx_buf", ProtoSchemaType::kUint32},
+            {"type", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "android_fs_dataread_end",
+        3,
+        {
+            {},
+            {"bytes", ProtoSchemaType::kInt32},
+            {"ino", ProtoSchemaType::kUint64},
+            {"offset", ProtoSchemaType::kInt64},
+        },
+    },
+    {
+        "android_fs_dataread_start",
+        7,
+        {
+            {},
+            {"bytes", ProtoSchemaType::kInt32},
+            {"cmdline", ProtoSchemaType::kString},
+            {"i_size", ProtoSchemaType::kInt64},
+            {"ino", ProtoSchemaType::kUint64},
+            {"offset", ProtoSchemaType::kInt64},
+            {"pathbuf", ProtoSchemaType::kString},
+            {"pid", ProtoSchemaType::kInt32},
+        },
+    },
+    {
+        "android_fs_datawrite_end",
+        3,
+        {
+            {},
+            {"bytes", ProtoSchemaType::kInt32},
+            {"ino", ProtoSchemaType::kUint64},
+            {"offset", ProtoSchemaType::kInt64},
+        },
+    },
+    {
+        "android_fs_datawrite_start",
+        7,
+        {
+            {},
+            {"bytes", ProtoSchemaType::kInt32},
+            {"cmdline", ProtoSchemaType::kString},
+            {"i_size", ProtoSchemaType::kInt64},
+            {"ino", ProtoSchemaType::kUint64},
+            {"offset", ProtoSchemaType::kInt64},
+            {"pathbuf", ProtoSchemaType::kString},
+            {"pid", ProtoSchemaType::kInt32},
+        },
+    },
+    {
+        "android_fs_fsync_end",
+        3,
+        {
+            {},
+            {"bytes", ProtoSchemaType::kInt32},
+            {"ino", ProtoSchemaType::kUint64},
+            {"offset", ProtoSchemaType::kInt64},
+        },
+    },
+    {
+        "android_fs_fsync_start",
+        5,
+        {
+            {},
+            {"cmdline", ProtoSchemaType::kString},
+            {"i_size", ProtoSchemaType::kInt64},
+            {"ino", ProtoSchemaType::kUint64},
+            {"pathbuf", ProtoSchemaType::kString},
+            {"pid", ProtoSchemaType::kInt32},
+        },
+    },
+    {
+        "funcgraph_entry",
+        2,
+        {
+            {},
+            {"depth", ProtoSchemaType::kInt32},
+            {"func", ProtoSchemaType::kUint64},
+        },
+    },
+    {
+        "funcgraph_exit",
+        5,
+        {
+            {},
+            {"calltime", ProtoSchemaType::kUint64},
+            {"depth", ProtoSchemaType::kInt32},
+            {"func", ProtoSchemaType::kUint64},
+            {"overrun", ProtoSchemaType::kUint64},
+            {"rettime", ProtoSchemaType::kUint64},
+        },
+    },
+    {
+        "virtio_video_cmd",
+        2,
+        {
+            {},
+            {"stream_id", ProtoSchemaType::kUint32},
+            {"type", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "virtio_video_cmd_done",
+        2,
+        {
+            {},
+            {"stream_id", ProtoSchemaType::kUint32},
+            {"type", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "virtio_video_resource_queue",
+        8,
+        {
+            {},
+            {"data_size0", ProtoSchemaType::kUint32},
+            {"data_size1", ProtoSchemaType::kUint32},
+            {"data_size2", ProtoSchemaType::kUint32},
+            {"data_size3", ProtoSchemaType::kUint32},
+            {"queue_type", ProtoSchemaType::kUint32},
+            {"resource_id", ProtoSchemaType::kInt32},
+            {"stream_id", ProtoSchemaType::kInt32},
+            {"timestamp", ProtoSchemaType::kUint64},
+        },
+    },
+    {
+        "virtio_video_resource_queue_done",
+        8,
+        {
+            {},
+            {"data_size0", ProtoSchemaType::kUint32},
+            {"data_size1", ProtoSchemaType::kUint32},
+            {"data_size2", ProtoSchemaType::kUint32},
+            {"data_size3", ProtoSchemaType::kUint32},
+            {"queue_type", ProtoSchemaType::kUint32},
+            {"resource_id", ProtoSchemaType::kInt32},
+            {"stream_id", ProtoSchemaType::kInt32},
+            {"timestamp", ProtoSchemaType::kUint64},
         },
     },
 }};

@@ -68,7 +68,7 @@ class ErrorBuffer final : public BufferBase {
             }
             // Since error buffers in this case may allocate memory, we need to track them
             // for destruction on the device.
-            TrackInDevice();
+            GetObjectTrackingList()->Track(this);
         }
     }
 
@@ -152,7 +152,7 @@ BufferBase::BufferBase(DeviceBase* device, const BufferDescriptor* descriptor)
         mUsage |= kInternalStorageBuffer;
     }
 
-    TrackInDevice();
+    GetObjectTrackingList()->Track(this);
 }
 
 BufferBase::BufferBase(DeviceBase* device,
@@ -171,7 +171,7 @@ BufferBase::BufferBase(DeviceBase* device,
 
 BufferBase::BufferBase(DeviceBase* device, BufferState state)
     : ApiObjectBase(device, kLabelNotImplemented), mState(state) {
-    TrackInDevice();
+    GetObjectTrackingList()->Track(this);
 }
 
 BufferBase::~BufferBase() {
@@ -292,10 +292,10 @@ MaybeError BufferBase::ValidateCanUseOnQueueNow() const {
 
     switch (mState) {
         case BufferState::Destroyed:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s used in submit while destroyed.", this);
+            return DAWN_VALIDATION_ERROR("%s used in submit while destroyed.", this);
         case BufferState::Mapped:
         case BufferState::MappedAtCreation:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s used in submit while mapped.", this);
+            return DAWN_VALIDATION_ERROR("%s used in submit while mapped.", this);
         case BufferState::Unmapped:
             return {};
     }
@@ -463,9 +463,9 @@ MaybeError BufferBase::ValidateMapAsync(wgpu::MapMode mode,
     switch (mState) {
         case BufferState::Mapped:
         case BufferState::MappedAtCreation:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s is already mapped.", this);
+            return DAWN_VALIDATION_ERROR("%s is already mapped.", this);
         case BufferState::Destroyed:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s is destroyed.", this);
+            return DAWN_VALIDATION_ERROR("%s is destroyed.", this);
         case BufferState::Unmapped:
             break;
     }
@@ -540,9 +540,9 @@ MaybeError BufferBase::ValidateUnmap() const {
             // even if it did not have a mappable usage.
             return {};
         case BufferState::Unmapped:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s is unmapped.", this);
+            return DAWN_VALIDATION_ERROR("%s is unmapped.", this);
         case BufferState::Destroyed:
-            return DAWN_FORMAT_VALIDATION_ERROR("%s is destroyed.", this);
+            return DAWN_VALIDATION_ERROR("%s is destroyed.", this);
     }
     UNREACHABLE();
 }

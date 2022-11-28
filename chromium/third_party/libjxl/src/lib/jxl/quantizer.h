@@ -68,10 +68,19 @@ class Quantizer {
   explicit Quantizer(const DequantMatrices* dequant);
   Quantizer(const DequantMatrices* dequant, int quant_dc, int global_scale);
 
-  static constexpr int kQuantMax = 256;
+  static constexpr int32_t kQuantMax = 256;
 
-  static JXL_INLINE int ClampVal(float val) {
-    return static_cast<int>(std::max(1.0f, std::min<float>(val, kQuantMax)));
+  static JXL_INLINE int32_t ClampVal(float val) {
+    return static_cast<int32_t>(
+        std::max(1.0f, std::min<float>(val, kQuantMax)));
+  }
+
+  float ScaleGlobalScale(const float scale) {
+    int new_global_scale = static_cast<int>(global_scale_ * scale + 0.5f);
+    float scale_out = new_global_scale * 1.0f / global_scale_;
+    global_scale_ = new_global_scale;
+    RecomputeFromGlobalScale();
+    return scale_out;
   }
 
   // Recomputes other derived fields after global_scale_ has changed.
@@ -93,7 +102,7 @@ class Quantizer {
   JXL_INLINE float InvGlobalScale() const { return inv_global_scale_; }
 
   void SetQuantFieldRect(const ImageF& qf, const Rect& rect,
-                         ImageI* JXL_RESTRICT raw_quant_field);
+                         ImageI* JXL_RESTRICT raw_quant_field) const;
 
   void SetQuantField(float quant_dc, const ImageF& qf,
                      ImageI* JXL_RESTRICT raw_quant_field);
@@ -123,10 +132,6 @@ class Quantizer {
     return dequant_->InvMatrix(quant_kind, c);
   }
 
-  JXL_INLINE size_t DequantMatrixOffset(size_t quant_kind, size_t c) const {
-    return dequant_->MatrixOffset(quant_kind, c);
-  }
-
   // Calculates DC quantization step.
   JXL_INLINE float GetDcStep(size_t c) const {
     return inv_quant_dc_ * dequant_->DCQuant(c);
@@ -139,8 +144,8 @@ class Quantizer {
   JXL_INLINE const float* InvMulDC() const { return inv_mul_dc_; }
 
   JXL_INLINE void ClearDCMul() {
-    std::fill(mul_dc_, mul_dc_ + 4, 1);
-    std::fill(inv_mul_dc_, inv_mul_dc_ + 4, 1);
+    std::fill(mul_dc_, mul_dc_ + 4, 1.f);
+    std::fill(inv_mul_dc_, inv_mul_dc_ + 4, 1.f);
   }
 
   void ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
@@ -165,7 +170,7 @@ class Quantizer {
 
 struct QuantizerParams : public Fields {
   QuantizerParams() { Bundle::Init(this); }
-  const char* Name() const override { return "QuantizerParams"; }
+  JXL_FIELDS_NAME(QuantizerParams)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 

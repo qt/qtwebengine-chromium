@@ -66,16 +66,15 @@ typedef struct FlashSVContext {
     uint8_t         tmpblock[3 * 256 * 256];
 } FlashSVContext;
 
-static int copy_region_enc(uint8_t *sptr, uint8_t *dptr, int dx, int dy,
+static int copy_region_enc(const uint8_t *sptr, uint8_t *dptr, int dx, int dy,
                            int h, int w, int stride, uint8_t *pfptr)
 {
     int i, j;
-    uint8_t *nsptr;
     uint8_t *npfptr;
     int diff = 0;
 
     for (i = dx + h; i > dx; i--) {
-        nsptr  = sptr  + i * stride + dy * 3;
+        const uint8_t *nsptr = sptr + i * stride + dy * 3;
         npfptr = pfptr + i * stride + dy * 3;
         for (j = 0; j < w * 3; j++) {
             diff    |= npfptr[j] ^ nsptr[j];
@@ -259,9 +258,10 @@ static int flashsv_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 const FFCodec ff_flashsv_encoder = {
     .p.name         = "flashsv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Flash Screen Video"),
+    CODEC_LONG_NAME("Flash Screen Video"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_FLASHSV,
+    .p.capabilities = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(FlashSVContext),
     .init           = flashsv_encode_init,
     FF_CODEC_ENCODE_CB(flashsv_encode_frame),

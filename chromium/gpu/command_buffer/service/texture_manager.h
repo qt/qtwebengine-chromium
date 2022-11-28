@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -796,7 +796,7 @@ class GPU_GLES2_EXPORT TextureRef : public base::RefCounted<TextureRef> {
   void reset_client_id() { client_id_ = 0; }
 
   raw_ptr<TextureManager> manager_;
-  raw_ptr<Texture> texture_;
+  raw_ptr<Texture, DanglingUntriaged> texture_;
   GLuint client_id_;
   GLint num_observers_;
   bool force_context_lost_;

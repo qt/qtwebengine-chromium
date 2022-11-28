@@ -13,6 +13,7 @@
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 
 namespace skgpu::graphite {
+
 sk_sp<SharedContext> MtlTrampoline::MakeSharedContext(const MtlBackendContext& backendContext,
                                                       const ContextOptions& options) {
     return MtlSharedContext::Make(backendContext, options);
@@ -27,12 +28,9 @@ std::unique_ptr<QueueManager> MtlTrampoline::MakeQueueManager(
 }
 
 std::unique_ptr<ResourceProvider> MtlTrampoline::MakeResourceProvider(
-        const SharedContext* sharedContext,
-        sk_sp<GlobalCache> globalCache,
+        SharedContext* sharedContext,
         SingleOwner* singleOwner) {
-    return std::make_unique<MtlResourceProvider>(sharedContext,
-                                                 std::move(globalCache),
-                                                 singleOwner);
+    return std::make_unique<MtlResourceProvider>(sharedContext, singleOwner);
 }
 
 }  // namespace skgpu::graphite

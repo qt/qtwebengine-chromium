@@ -21,6 +21,7 @@ SkRasterPipeline::SkRasterPipeline(SkArenaAlloc* alloc) : fAlloc(alloc) {
     this->reset();
 }
 void SkRasterPipeline::reset() {
+    fRewindCtx = nullptr;
     fStages    = nullptr;
     fNumStages = 0;
 }
@@ -30,12 +31,13 @@ void SkRasterPipeline::append(StockStage stage, void* ctx) {
     SkASSERT(stage != unbounded_uniform_color);  // Please use append_constant_color().
     SkASSERT(stage !=                 set_rgb);  // Please use append_set_rgb().
     SkASSERT(stage !=       unbounded_set_rgb);  // Please use append_set_rgb().
-    SkASSERT(stage !=             clamp_gamut);  // Please use append_gamut_clamp_if_normalized().
     SkASSERT(stage !=              parametric);  // Please use append_transfer_function().
     SkASSERT(stage !=                  gamma_);  // Please use append_transfer_function().
     SkASSERT(stage !=                   PQish);  // Please use append_transfer_function().
     SkASSERT(stage !=                  HLGish);  // Please use append_transfer_function().
     SkASSERT(stage !=               HLGinvish);  // Please use append_transfer_function().
+    SkASSERT(stage !=        stack_checkpoint);  // Please use append_stack_rewind().
+    SkASSERT(stage !=            stack_rewind);  // Please use append_stack_rewind().
     this->unchecked_append(stage, ctx);
 }
 void SkRasterPipeline::unchecked_append(StockStage stage, void* ctx) {
@@ -75,7 +77,7 @@ void SkRasterPipeline::dump() const {
         const char* name = "";
         switch (st->stage) {
         #define M(x) case x: name = #x; break;
-            SK_RASTER_PIPELINE_STAGES(M)
+            SK_RASTER_PIPELINE_STAGES_ALL(M)
         #undef M
         }
         stages.push_back(name);
@@ -362,21 +364,33 @@ void SkRasterPipeline::append_gamut_clamp_if_normalized(const SkImageInfo& info)
     }
 }
 
+void SkRasterPipeline::append_stack_rewind() {
+    if (!fRewindCtx) {
+        fRewindCtx = fAlloc->make<SkRasterPipeline_RewindCtx>();
+    }
+    this->unchecked_append(SkRasterPipeline::stack_rewind, fRewindCtx);
+}
+
 SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(void** ip) const {
-    if (!gForceHighPrecisionRasterPipeline) {
+    // stack_checkpoint and stack_rewind are only implemented in highp. We only need these stages
+    // when generating long (or looping) pipelines from SkSL. The other stages used by the SkSL RP
+    // generator will only have highp implementations, because we can't execute SkSL code without
+    // floating point.
+    if (!gForceHighPrecisionRasterPipeline && !fRewindCtx) {
         // We'll try to build a lowp pipeline, but if that fails fallback to a highp float pipeline.
         void** reset_point = ip;
 
         // Stages are stored backwards in fStages, so we reverse here, back to front.
         *--ip = (void*)SkOpts::just_return_lowp;
         for (const StageList* st = fStages; st; st = st->prev) {
-            if (auto fn = SkOpts::stages_lowp[st->stage]) {
-                *--ip = st->ctx;
-                *--ip = (void*)fn;
-            } else {
+            // All of the stages with lowp implementations come first in the enumeration. Any stage
+            // with a larger value only has a highp implementation.
+            if (st->stage >= kNumLowpStages || !SkOpts::stages_lowp[st->stage]) {
                 ip = reset_point;
                 break;
             }
+            *--ip = st->ctx;
+            *--ip = (void*)SkOpts::stages_lowp[st->stage];
         }
         if (ip != reset_point) {
             return SkOpts::start_pipeline_lowp;
@@ -388,7 +402,19 @@ SkRasterPipeline::StartPipelineFn SkRasterPipeline::build_pipeline(void** ip) co
         *--ip = st->ctx;
         *--ip = (void*)SkOpts::stages_highp[st->stage];
     }
+    if (fRewindCtx) {
+        *--ip = fRewindCtx;
+        *--ip = (void*)SkOpts::stages_highp[stack_checkpoint];
+    }
     return SkOpts::start_pipeline_highp;
+}
+
+int SkRasterPipeline::slots_needed() const {
+    // If we have any stack_rewind stages, we will also need to inject a stack_checkpoint
+    int stagesWithContext = fNumStages + (fRewindCtx ? 1 : 0);
+
+    // just_return has no context, all other stages do
+    return 2 * stagesWithContext + 1;
 }
 
 void SkRasterPipeline::run(size_t x, size_t y, size_t w, size_t h) const {
@@ -396,7 +422,7 @@ void SkRasterPipeline::run(size_t x, size_t y, size_t w, size_t h) const {
         return;
     }
 
-    int slotsNeeded = 2 * fNumStages + 1;  // just_returns have no context
+    int slotsNeeded = this->slots_needed();
 
     // Best to not use fAlloc here... we can't bound how often run() will be called.
     SkAutoSTMalloc<64, void*> program(slotsNeeded);
@@ -410,7 +436,7 @@ std::function<void(size_t, size_t, size_t, size_t)> SkRasterPipeline::compile() 
         return [](size_t, size_t, size_t, size_t) {};
     }
 
-    int slotsNeeded = 2 * fNumStages + 1;  // just_returns have no context
+    int slotsNeeded = this->slots_needed();
 
     void** program = fAlloc->makeArray<void*>(slotsNeeded);
 

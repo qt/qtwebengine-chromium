@@ -16,6 +16,7 @@
 #include "core/fpdfapi/page/cpdf_pageobjectholder.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
 #include "core/fxcrt/widetext_buffer.h"
@@ -24,6 +25,13 @@
 class CPDF_FormObject;
 class CPDF_Page;
 class CPDF_TextObject;
+
+struct TextPageCharSegment {
+  int index;
+  int count;
+};
+
+FX_DATA_PARTITION_EXCEPTION(TextPageCharSegment);
 
 class CPDF_TextPage {
  public:
@@ -137,7 +145,7 @@ class CPDF_TextPage {
       const std::function<bool(const CharInfo&)>& predicate) const;
 
   UnownedPtr<const CPDF_Page> const m_pPage;
-  DataVector<uint16_t> m_CharIndices;
+  DataVector<TextPageCharSegment> m_CharIndices;
   std::deque<CharInfo> m_CharList;
   std::deque<CharInfo> m_TempCharList;
   WideTextBuffer m_TextBuf;

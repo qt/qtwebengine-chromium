@@ -13,7 +13,7 @@ import { GPUTest } from '../../../../../gpu_test.js';
 import { TypeF32 } from '../../../../../util/conversion.js';
 import { ceilInterval } from '../../../../../util/f32_interval.js';
 import { fullF32Range } from '../../../../../util/math.js';
-import { allInputSources, Case, makeUnaryF32IntervalCase, run } from '../../expression.js';
+import { allInputSources, Case, makeUnaryToF32IntervalCase, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -35,7 +35,7 @@ g.test('f32')
   )
   .fn(async t => {
     const makeCase = (x: number): Case => {
-      return makeUnaryF32IntervalCase(x, ceilInterval);
+      return makeUnaryToF32IntervalCase(x, ceilInterval);
     };
 
     const cases: Array<Case> = [
@@ -54,7 +54,7 @@ g.test('f32')
       ...fullF32Range(),
     ].map(x => makeCase(x));
 
-    run(t, builtin('ceil'), [TypeF32], TypeF32, t.params, cases);
+    await run(t, builtin('ceil'), [TypeF32], TypeF32, t.params, cases);
   });
 
 g.test('f16')

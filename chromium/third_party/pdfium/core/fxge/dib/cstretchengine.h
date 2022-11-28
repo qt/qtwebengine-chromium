@@ -39,6 +39,14 @@ class CStretchEngine {
     return static_cast<uint8_t>(fixed >> kFixedPointBits);
   }
 
+  // Indicates whether to manually set interpolate bilinear option to true to
+  // achieve a smoother rendering results.
+  static bool UseInterpolateBilinear(const FXDIB_ResampleOptions& options,
+                                     int dest_width,
+                                     int dest_height,
+                                     int src_width,
+                                     int src_height);
+
   struct PixelWeight {
     static size_t TotalBytesForWeightCount(size_t weight_count);
 
@@ -89,10 +97,7 @@ class CStretchEngine {
                           const FXDIB_ResampleOptions& options);
 
     const PixelWeight* GetPixelWeight(int pixel) const;
-    PixelWeight* GetPixelWeight(int pixel) {
-      return const_cast<PixelWeight*>(
-          static_cast<const WeightTable*>(this)->GetPixelWeight(pixel));
-    }
+    PixelWeight* GetPixelWeight(int pixel);
 
    private:
     int m_DestMin = 0;

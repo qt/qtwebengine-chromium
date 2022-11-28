@@ -9,6 +9,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/private/SkTArray.h"
+#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -18,26 +19,17 @@
 
 namespace SkSL {
 
-bool ChildCall::hasProperty(Property property) const {
-    for (const auto& arg : this->arguments()) {
-        if (arg->hasProperty(property)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 std::unique_ptr<Expression> ChildCall::clone(Position pos) const {
     return std::make_unique<ChildCall>(pos, &this->type(), &this->child(),
                                        this->arguments().clone());
 }
 
-std::string ChildCall::description() const {
+std::string ChildCall::description(OperatorPrecedence) const {
     std::string result = std::string(this->child().name()) + ".eval(";
     std::string separator;
     for (const std::unique_ptr<Expression>& arg : this->arguments()) {
         result += separator;
-        result += arg->description();
+        result += arg->description(OperatorPrecedence::kSequence);
         separator = ", ";
     }
     result += ")";

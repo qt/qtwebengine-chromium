@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium OS Authors. All rights reserved.
+// Copyright 2015 The ChromiumOS Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@ const char kCupsAddManuallyConfiguredPrinter[] =
     "CupsAddManuallyConfiguredPrinter";
 const char kCupsAddAutoConfiguredPrinter[] = "CupsAddAutoConfiguredPrinter";
 const char kCupsRemovePrinter[] = "CupsRemovePrinter";
+const char kCupsRetrievePpd[] = "CupsRetrievePpd";
 const char kDumpDebugLogs[] = "DumpDebugLogs";
 const char kGetInterfaces[] = "GetInterfaces";
 const char kGetNetworkStatus[] = "GetNetworkStatus";
@@ -31,6 +32,7 @@ const char kSystraceStatus[] = "SystraceStatus";
 const char kGetLog[] = "GetLog";
 const char kGetAllLogs[] = "GetAllLogs";
 const char kGetBigFeedbackLogs[] = "GetBigFeedbackLogs";
+const char kGetFeedbackLogsV2[] = "GetFeedbackLogsV2";
 const char kKstaledSetRatio[] = "KstaledSetRatio";
 const char kTestICMP[] = "TestICMP";
 const char kTestICMPWithOptions[] = "TestICMPWithOptions";
@@ -132,6 +134,21 @@ enum DRMTraceSizes {
 enum DRMSnapshotType {
   DRMSnapshotType_TRACE = 0,
   DRMSnapshotType_MODETEST = 1,
+};
+
+// FeedbackLogType contains the enum representation of different log categories
+// debugd/src/log_tool.h reads from.
+enum FeedbackLogType {
+  ARC_BUG_REPORT = 0,
+  CONNECTIVITY_REPORT = 1,
+  VERBOSE_COMMAND_LOGS = 2,
+  COMMAND_LOGS = 3,
+  FEEDBACK_LOGS = 4,
+  BLUETOOTH_BQR = 5,
+  LSB_RELEASE_INFO = 6,
+  PERF_DATA = 7,
+  OS_RELEASE_INFO = 8,
+  VAR_LOG_FILES = 9,
 };
 
 // Debug log keys which should be substituted in the system info dialog.

@@ -722,24 +722,22 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       return null;
     }
 
+    let screenshotMode;
+    if (clip) {
+      screenshotMode = SDK.ScreenCaptureModel.ScreenshotMode.FROM_CLIP;
+    } else if (fullSize) {
+      screenshotMode = SDK.ScreenCaptureModel.ScreenshotMode.FULLPAGE;
+    } else {
+      screenshotMode = SDK.ScreenCaptureModel.ScreenshotMode.FROM_VIEWPORT;
+    }
+
     const overlayModel = this.#emulationModel ? this.#emulationModel.overlayModel() : null;
     if (overlayModel) {
       overlayModel.setShowViewportSizeOnResize(false);
     }
 
-    // Define the right clipping area for fullsize screenshots.
-    if (fullSize) {
-      const metrics = await screenCaptureModel.fetchLayoutMetrics();
-      if (!metrics) {
-        return null;
-      }
-
-      // Cap the height to not hit the GPU limit.
-      const contentHeight = Math.min((1 << 14), metrics.contentHeight);
-      clip = {x: 0, y: 0, width: Math.floor(metrics.contentWidth), height: Math.floor(contentHeight), scale: 1};
-    }
-    const screenshot =
-        await screenCaptureModel.captureScreenshot(Protocol.Page.CaptureScreenshotRequestFormat.Png, 100, clip);
+    const screenshot = await screenCaptureModel.captureScreenshot(
+        Protocol.Page.CaptureScreenshotRequestFormat.Png, 100, screenshotMode, clip);
 
     const deviceMetrics: Protocol.Page.SetDeviceMetricsOverrideRequest = {
       width: 0,

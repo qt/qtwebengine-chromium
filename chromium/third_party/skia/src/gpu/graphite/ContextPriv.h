@@ -9,6 +9,8 @@
 #define skgpu_graphite_ContextPriv_DEFINED
 
 #include "include/gpu/graphite/Context.h"
+#include "src/gpu/graphite/QueueManager.h"
+#include "src/gpu/graphite/SharedContext.h"
 
 class SkShaderCodeDictionary;
 
@@ -24,10 +26,22 @@ class ResourceProvider;
 class ContextPriv {
 public:
 #if GRAPHITE_TEST_UTILS
-    const Caps* caps() const;
-#endif
+    const Caps* caps() const { return fContext->fSharedContext->caps(); }
 
-    SkShaderCodeDictionary* shaderCodeDictionary();
+    const SkShaderCodeDictionary* shaderCodeDictionary() const {
+        return fContext->fSharedContext->shaderCodeDictionary();
+    }
+    SkShaderCodeDictionary* shaderCodeDictionary() {
+        return fContext->fSharedContext->shaderCodeDictionary();
+    }
+
+    void startCapture() {
+        fContext->fQueueManager->startCapture();
+    }
+    void stopCapture() {
+        fContext->fQueueManager->stopCapture();
+    }
+#endif
 
 private:
     friend class Context; // to construct/copy this type.

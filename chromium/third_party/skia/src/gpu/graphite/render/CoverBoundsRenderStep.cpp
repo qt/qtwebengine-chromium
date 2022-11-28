@@ -9,7 +9,7 @@
 
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawWriter.h"
-#include "src/gpu/graphite/render/StencilAndCoverDSS.h"
+#include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 
 namespace skgpu::graphite {
 
@@ -42,13 +42,17 @@ const char* CoverBoundsRenderStep::vertexSkSL() const {
         if (bounds.L <= bounds.R && bounds.T <= bounds.B) {
             // A regular fill
             corner = (1.0 - corner) * bounds.LT + corner * bounds.RB;
-            float3 devCorner = matrix * float3(corner, 1.0);
+            float3 devCorner = matrix * corner.xy1;
             devPosition = float4(devCorner.xy, depth, devCorner.z);
+            stepLocalCoords = corner;
         } else {
             // An inverse fill
             corner = corner * bounds.LT + (1.0 - corner) * bounds.RB;
             devPosition = float4(corner, depth, 1.0);
-            // TODO: transform corner by matrix to get updated local coordinates
+            // TODO: Support float3 local coordinates if the matrix has perspective so that W
+            // is interpolated correctly to the fragment shader.
+            float3 localCoords = matrix * corner.xy1;
+            stepLocalCoords = localCoords.xy / localCoords.z;
         }
     )";
 }

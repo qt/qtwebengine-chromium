@@ -7,6 +7,7 @@ import("../../testing/test.gni")
 
 source_set("unowned_ptr") {
   sources = [ "unowned_ptr.h" ]
+  deps = [ "../../third_party:pdfium_compiler_specific" ]
   configs += [ "../../:pdfium_strict_config" ]
 }
 
@@ -23,8 +24,12 @@ source_set("fxcrt") {
     "cfx_bitstream.h",
     "cfx_datetime.cpp",
     "cfx_datetime.h",
-    "cfx_readonlymemorystream.cpp",
-    "cfx_readonlymemorystream.h",
+    "cfx_read_only_span_stream.cpp",
+    "cfx_read_only_span_stream.h",
+    "cfx_read_only_string_stream.cpp",
+    "cfx_read_only_string_stream.h",
+    "cfx_read_only_vector_stream.cpp",
+    "cfx_read_only_vector_stream.h",
     "cfx_seekablestreamproxy.cpp",
     "cfx_seekablestreamproxy.h",
     "cfx_timer.cpp",
@@ -35,6 +40,9 @@ source_set("fxcrt") {
     "cfx_utf8encoder.h",
     "data_vector.h",
     "fileaccess_iface.h",
+    "fixed_size_data_vector.h",
+    "fixed_uninit_data_vector.h",
+    "fixed_zeroed_data_vector.h",
     "fx_bidi.cpp",
     "fx_bidi.h",
     "fx_codepage.cpp",
@@ -126,7 +134,12 @@ source_set("fxcrt") {
     "../../third_party:pdfium_base",
     "//third_party/icu:icuuc",
   ]
-
+  if (pdf_use_partition_alloc) {
+    sources += [ "fx_memory_pa.cpp" ]
+    deps += [ "//base/allocator/partition_allocator:partition_alloc" ]
+  } else {
+    sources += [ "fx_memory_malloc.cpp" ]
+  }
   if (is_posix || is_fuchsia) {
     sources += [
       "cfx_fileaccess_posix.cpp",
@@ -160,6 +173,8 @@ pdfium_unittest_source_set("unittests") {
     "cfx_datetime_unittest.cpp",
     "cfx_seekablestreamproxy_unittest.cpp",
     "cfx_timer_unittest.cpp",
+    "fixed_uninit_data_vector_unittest.cpp",
+    "fixed_zeroed_data_vector_unittest.cpp",
     "fx_bidi_unittest.cpp",
     "fx_coordinates_unittest.cpp",
     "fx_extension_unittest.cpp",

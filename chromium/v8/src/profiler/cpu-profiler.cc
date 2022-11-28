@@ -48,6 +48,9 @@ class CpuSampler : public sampler::Sampler {
           ProfilerStats::Reason::kIsolateNotLocked);
       return;
     }
+#if V8_HEAP_USE_PKU_JIT_WRITE_PROTECT
+    i::RwxMemoryWriteScope::SetDefaultPermissionsForSignalHandler();
+#endif
     TickSample* sample = processor_->StartTickSample();
     if (sample == nullptr) {
       ProfilerStats::Instance()->AddReason(
@@ -87,7 +90,7 @@ ProfilingScope::ProfilingScope(Isolate* isolate, ProfilerListener* listener)
   // callbacks on the heap.
   DCHECK(isolate_->heap()->HasBeenSetUp());
 
-  if (!FLAG_prof_browser_mode) {
+  if (!v8_flags.prof_browser_mode) {
     logger->LogCodeObjects();
   }
   logger->LogCompiledFunctions();
@@ -335,7 +338,7 @@ void SamplingEventsProcessor::SetSamplingInterval(base::TimeDelta period) {
 }
 
 void* SamplingEventsProcessor::operator new(size_t size) {
-  return AlignedAlloc(size, alignof(SamplingEventsProcessor));
+  return AlignedAllocWithRetry(size, alignof(SamplingEventsProcessor));
 }
 
 void SamplingEventsProcessor::operator delete(void* ptr) { AlignedFree(ptr); }
@@ -508,7 +511,7 @@ CpuProfiler::CpuProfiler(Isolate* isolate, CpuProfilingNamingMode naming_mode,
       naming_mode_(naming_mode),
       logging_mode_(logging_mode),
       base_sampling_interval_(base::TimeDelta::FromMicroseconds(
-          FLAG_cpu_profiler_sampling_interval)),
+          v8_flags.cpu_profiler_sampling_interval)),
       code_observer_(test_code_observer),
       profiles_(test_profiles),
       symbolizer_(test_symbolizer),

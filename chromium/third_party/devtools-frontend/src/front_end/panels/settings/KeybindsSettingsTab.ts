@@ -381,7 +381,7 @@ export class ShortcutListItem {
         i18nString(UIStrings.discardChanges), 'largeicon-delete', 'keybinds-cancel-button',
         () => this.settingsTab.stopEditing(this.item)));
     this.element.addEventListener('keydown', event => {
-      if (isEscKey(event)) {
+      if (Platform.KeyboardUtilities.isEscKey(event)) {
         this.settingsTab.stopEditing(this.item);
         event.consume(true);
       }
@@ -461,6 +461,7 @@ export class ShortcutListItem {
   private createIconButton(label: string, iconName: string, className: string, listener: () => void):
       HTMLButtonElement {
     const button = document.createElement('button') as HTMLButtonElement;
+    button.setAttribute('title', label);
     button.appendChild(UI.Icon.Icon.create(iconName));
     button.addEventListener('click', listener);
     UI.ARIAUtils.setAccessibleName(button, label);

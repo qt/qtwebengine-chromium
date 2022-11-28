@@ -15,18 +15,21 @@
 #ifndef PLATFORM_IMPL_G3_BLE_V2_H_
 #define PLATFORM_IMPL_G3_BLE_V2_H_
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/synchronization/mutex.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/g3/bluetooth_adapter.h"
 #include "internal/platform/implementation/g3/pipe.h"
+#include "internal/platform/prng.h"
 #include "internal/platform/uuid.h"
-
 namespace location {
 namespace nearby {
 namespace g3 {
@@ -161,11 +164,19 @@ class BleV2Medium : public api::ble_v2::BleMedium {
       ABSL_LOCKS_EXCLUDED(mutex_);
   bool StopAdvertising() override ABSL_LOCKS_EXCLUDED(mutex_);
 
+  std::unique_ptr<AdvertisingSession> StartAdvertising(
+      const api::ble_v2::BleAdvertisementData& advertising_data,
+      api::ble_v2::AdvertiseParameters advertise_parameters,
+      AdvertisingCallback callback) override ABSL_LOCKS_EXCLUDED(mutex_);
+
   bool StartScanning(const Uuid& service_uuid,
                      api::ble_v2::TxPowerLevel tx_power_level,
                      ScanCallback callback) override
       ABSL_LOCKS_EXCLUDED(mutex_);
   bool StopScanning() override ABSL_LOCKS_EXCLUDED(mutex_);
+  std::unique_ptr<ScanningSession> StartScanning(
+      const Uuid& service_uuid, api::ble_v2::TxPowerLevel tx_power_level,
+      ScanningCallback callback) override ABSL_LOCKS_EXCLUDED(mutex_);
   std::unique_ptr<api::ble_v2::GattServer> StartGattServer(
       api::ble_v2::ServerGattConnectionCallback callback) override
       ABSL_LOCKS_EXCLUDED(mutex_);
@@ -245,6 +256,8 @@ class BleV2Medium : public api::ble_v2::BleMedium {
   BluetoothAdapter* adapter_;  // Our device adapter; read-only.
   absl::flat_hash_map<std::string, BleV2ServerSocket*> server_sockets_
       ABSL_GUARDED_BY(mutex_);
+  absl::flat_hash_set<std::pair<Uuid, std::uint32_t>>
+      scanning_internal_session_ids_ ABSL_GUARDED_BY(mutex_);
   // TODO(edwinwu): Adds extended advertisement for testing.
   bool is_support_extended_advertisement_ = false;
 };

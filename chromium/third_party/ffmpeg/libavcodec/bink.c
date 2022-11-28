@@ -32,10 +32,9 @@
 #include "binkdsp.h"
 #include "blockdsp.h"
 #include "codec_internal.h"
+#include "decode.h"
 #include "get_bits.h"
 #include "hpeldsp.h"
-#include "internal.h"
-#include "mathops.h"
 
 #define BINK_FLAG_ALPHA 0x00100000
 #define BINK_FLAG_GRAY  0x00020000
@@ -1088,7 +1087,7 @@ static int bink_decode_plane(BinkContext *c, AVFrame *frame, GetBitContext *gb,
         for (bx = 0; bx < bw; bx++, dst += 8, prev += 8) {
             blk = get_value(c, BINK_SRC_BLOCK_TYPES);
             // 16x16 block type on odd line means part of the already decoded block, so skip it
-            if ((by & 1) && blk == SCALED_BLOCK) {
+            if (((by & 1) || (bx & 1)) && blk == SCALED_BLOCK) {
                 bx++;
                 dst  += 8;
                 prev += 8;
@@ -1385,7 +1384,7 @@ static av_cold int decode_init(AVCodecContext *avctx)
     avctx->pix_fmt = c->has_alpha ? AV_PIX_FMT_YUVA420P : AV_PIX_FMT_YUV420P;
     avctx->color_range = c->version == 'k' ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
 
-    ff_blockdsp_init(&c->bdsp, avctx);
+    ff_blockdsp_init(&c->bdsp);
     ff_hpeldsp_init(&hdsp, avctx->flags);
     c->put_pixels_tab = hdsp.put_pixels_tab[1][0];
     ff_binkdsp_init(&c->binkdsp);
@@ -1421,7 +1420,7 @@ static void flush(AVCodecContext *avctx)
 
 const FFCodec ff_bink_decoder = {
     .p.name         = "binkvideo",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Bink video"),
+    CODEC_LONG_NAME("Bink video"),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_BINKVIDEO,
     .priv_data_size = sizeof(BinkContext),

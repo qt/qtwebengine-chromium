@@ -4,6 +4,8 @@
 
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 
+#include <utility>
+
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fxcrt/fx_stream.h"
@@ -15,8 +17,19 @@ TEST(StreamAccTest, ReadRawDataFailed) {
   stream->InitStreamFromFile(
       pdfium::MakeRetain<InvalidSeekableReadStream>(1024),
       pdfium::MakeRetain<CPDF_Dictionary>());
-  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(stream.Get());
+  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(stream));
   stream_acc->LoadAllDataRaw();
-  EXPECT_EQ(0u, stream_acc->GetSize());
-  EXPECT_FALSE(stream_acc->GetData());
+  EXPECT_TRUE(stream_acc->GetSpan().empty());
+}
+
+// Regression test for crbug.com/1361849. Should not trigger
+// ProbeForLowSeverityLifetimeIssue() failure.
+TEST(StreamAccTest, DataStreamLifeTime) {
+  constexpr uint8_t kData[] = {'a', 'b', 'c'};
+  auto stream = pdfium::MakeRetain<CPDF_Stream>();
+  stream->SetData(kData);
+  auto stream_acc = pdfium::MakeRetain<CPDF_StreamAcc>(stream);
+  stream_acc->LoadAllDataRaw();
+  stream.Reset();
+  EXPECT_EQ(pdfium::make_span(kData), stream_acc->GetSpan());
 }

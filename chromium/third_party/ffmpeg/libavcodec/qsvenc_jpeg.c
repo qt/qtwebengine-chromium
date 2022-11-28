@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#include <mfx/mfxvideo.h>
+#include <mfxvideo.h>
 
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -30,7 +30,6 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "qsv.h"
-#include "qsv_internal.h"
 #include "qsvenc.h"
 
 typedef struct QSVMJPEGEncContext {
@@ -81,7 +80,7 @@ static const FFCodecDefault qsv_enc_defaults[] = {
 
 const FFCodec ff_mjpeg_qsv_encoder = {
     .p.name         = "mjpeg_qsv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("MJPEG (Intel Quick Sync Video acceleration)"),
+    CODEC_LONG_NAME("MJPEG (Intel Quick Sync Video acceleration)"),
     .priv_data_size = sizeof(QSVMJPEGEncContext),
     .p.type         = AVMEDIA_TYPE_VIDEO,
     .p.id           = AV_CODEC_ID_MJPEG,

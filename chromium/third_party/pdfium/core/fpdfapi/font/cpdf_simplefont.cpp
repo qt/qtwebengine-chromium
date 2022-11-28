@@ -105,7 +105,7 @@ void CPDF_SimpleFont::LoadCharMetrics(int charcode) {
 }
 
 void CPDF_SimpleFont::LoadCharWidths(const CPDF_Dictionary* font_desc) {
-  const CPDF_Array* width_array = m_pFontDict->GetArrayFor("Widths");
+  RetainPtr<const CPDF_Array> width_array = m_pFontDict->GetArrayFor("Widths");
   m_bUseFontWidth = !width_array;
   if (!width_array)
     return;
@@ -129,14 +129,14 @@ void CPDF_SimpleFont::LoadCharWidths(const CPDF_Dictionary* font_desc) {
 }
 
 void CPDF_SimpleFont::LoadDifferences(const CPDF_Dictionary* encoding) {
-  const CPDF_Array* diffs = encoding->GetArrayFor("Differences");
+  RetainPtr<const CPDF_Array> diffs = encoding->GetArrayFor("Differences");
   if (!diffs)
     return;
 
   m_CharNames.resize(kInternalTableSize);
   uint32_t cur_code = 0;
   for (uint32_t i = 0; i < diffs->size(); i++) {
-    const CPDF_Object* element = diffs->GetDirectObjectAt(i);
+    RetainPtr<const CPDF_Object> element = diffs->GetDirectObjectAt(i);
     if (!element)
       continue;
 
@@ -152,7 +152,8 @@ void CPDF_SimpleFont::LoadDifferences(const CPDF_Dictionary* encoding) {
 }
 
 void CPDF_SimpleFont::LoadPDFEncoding(bool bEmbedded, bool bTrueType) {
-  const CPDF_Object* pEncoding = m_pFontDict->GetDirectObjectFor("Encoding");
+  RetainPtr<const CPDF_Object> pEncoding =
+      m_pFontDict->GetDirectObjectFor("Encoding");
   if (!pEncoding) {
     if (m_BaseFontName == "Symbol") {
       m_BaseEncoding =
@@ -185,7 +186,7 @@ void CPDF_SimpleFont::LoadPDFEncoding(bool bEmbedded, bool bTrueType) {
 
   if (m_BaseEncoding != FontEncoding::kAdobeSymbol &&
       m_BaseEncoding != FontEncoding::kZapfDingbats) {
-    ByteString bsEncoding = pDict->GetStringFor("BaseEncoding");
+    ByteString bsEncoding = pDict->GetByteStringFor("BaseEncoding");
     if (bTrueType && bsEncoding == pdfium::font_encodings::kMacExpertEncoding)
       bsEncoding = pdfium::font_encodings::kWinAnsiEncoding;
     GetPredefinedEncoding(bsEncoding, &m_BaseEncoding);
@@ -220,10 +221,11 @@ FX_RECT CPDF_SimpleFont::GetCharBBox(uint32_t charcode) {
 }
 
 bool CPDF_SimpleFont::LoadCommon() {
-  const CPDF_Dictionary* pFontDesc = m_pFontDict->GetDictFor("FontDescriptor");
+  RetainPtr<const CPDF_Dictionary> pFontDesc =
+      m_pFontDict->GetDictFor("FontDescriptor");
   if (pFontDesc)
-    LoadFontDescriptor(pFontDesc);
-  LoadCharWidths(pFontDesc);
+    LoadFontDescriptor(pFontDesc.Get());
+  LoadCharWidths(pFontDesc.Get());
   if (m_pFontFile) {
     if (m_BaseFontName.GetLength() > 8 && m_BaseFontName[7] == '+')
       m_BaseFontName = m_BaseFontName.Last(m_BaseFontName.GetLength() - 8);

@@ -6,46 +6,12 @@
 #ifndef LIB_JXL_SANITIZERS_H_
 #define LIB_JXL_SANITIZERS_H_
 
+#include <inttypes.h>
 #include <stddef.h>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/sanitizer_definitions.h"
 #include "lib/jxl/image.h"
-
-#ifdef MEMORY_SANITIZER
-#define JXL_MEMORY_SANITIZER 1
-#elif defined(__has_feature)
-#if __has_feature(memory_sanitizer)
-#define JXL_MEMORY_SANITIZER 1
-#else
-#define JXL_MEMORY_SANITIZER 0
-#endif
-#else
-#define JXL_MEMORY_SANITIZER 0
-#endif
-
-#ifdef ADDRESS_SANITIZER
-#define JXL_ADDRESS_SANITIZER 1
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer)
-#define JXL_ADDRESS_SANITIZER 1
-#else
-#define JXL_ADDRESS_SANITIZER 0
-#endif
-#else
-#define JXL_ADDRESS_SANITIZER 0
-#endif
-
-#ifdef THREAD_SANITIZER
-#define JXL_THREAD_SANITIZER 1
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer)
-#define JXL_THREAD_SANITIZER 1
-#else
-#define JXL_THREAD_SANITIZER 0
-#endif
-#else
-#define JXL_THREAD_SANITIZER 0
-#endif
 
 #if JXL_MEMORY_SANITIZER
 #include <stdio.h>
@@ -77,6 +43,17 @@ static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonMemory(const volatile void* m,
   __msan_unpoison(m, size);
 }
 
+static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonCStr(const char* c) {
+  do {
+    UnpoisonMemory(c, 1);
+  } while (*c++);
+}
+
+static JXL_INLINE JXL_MAYBE_UNUSED void MemoryIsInitialized(
+    const volatile void* m, size_t size) {
+  __msan_check_mem_is_initialized(m, size);
+}
+
 // Mark all the bytes of an image (including padding) as poisoned bytes.
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const PlaneBase& im) {
   PoisonMemory(im.bytes(), im.bytes_per_row() * im.ysize());
@@ -93,8 +70,9 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const Image3<T>& im) {
 template <typename T>
 static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
     const Plane<T>& im) {
-  fprintf(stderr, "Uninitialized regions for image of size %zux%zu:\n",
-          im.xsize(), im.ysize());
+  fprintf(stderr,
+          "Uninitialized regions for image of size %" PRIu64 "x%" PRIu64 ":\n",
+          static_cast<uint64_t>(im.xsize()), static_cast<uint64_t>(im.ysize()));
 
   // A segment of uninitialized pixels in a row, in the format [first, second).
   typedef std::pair<size_t, size_t> PixelSegment;
@@ -132,15 +110,18 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
         return;
       }
       if (end_y - start_y_ > 1) {
-        fprintf(stderr, " y=[%zd, %zu):", start_y_, end_y);
+        fprintf(stderr, " y=[%" PRId64 ", %" PRIu64 "):",
+                static_cast<int64_t>(start_y_), static_cast<uint64_t>(end_y));
       } else {
-        fprintf(stderr, " y=[%zd]:", start_y_);
+        fprintf(stderr, " y=[%" PRId64 "]:", static_cast<int64_t>(start_y_));
       }
       for (const auto& seg : segments_) {
         if (seg.first + 1 == seg.second) {
-          fprintf(stderr, " [%zd]", seg.first);
+          fprintf(stderr, " [%" PRId64 "]", static_cast<int64_t>(seg.first));
         } else {
-          fprintf(stderr, " [%zd, %zu)", seg.first, seg.second);
+          fprintf(stderr, " [%" PRId64 ", %" PRIu64 ")",
+                  static_cast<int64_t>(seg.first),
+                  static_cast<uint64_t>(seg.second));
         }
       }
       fprintf(stderr, "\n");
@@ -188,7 +169,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
 // (not poisoned). If any of the values is poisoned it will abort.
 template <typename T>
 static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
-    const Plane<T>& im, const Rect& r, const char* message) {
+    const Plane<T>& im, const Rect& r, size_t c, const char* message) {
   JXL_ASSERT(r.x0() <= im.xsize());
   JXL_ASSERT(r.x0() + r.xsize() <= im.xsize());
   JXL_ASSERT(r.y0() <= im.ysize());
@@ -197,13 +178,21 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
     const auto* row = im.Row(y);
     intptr_t ret = __msan_test_shadow(row + r.x0(), sizeof(*row) * r.xsize());
     if (ret != -1) {
-      JXL_DEBUG(1,
-                "Checking an image of %zu x %zu, rect x0=%zu, y0=%zu, "
-                "xsize=%zu, ysize=%zu",
-                im.xsize(), im.ysize(), r.x0(), r.y0(), r.xsize(), r.ysize());
+      JXL_DEBUG(
+          1,
+          "Checking an image of %" PRIu64 " x %" PRIu64 ", rect x0=%" PRIu64
+          ", y0=%" PRIu64
+          ", "
+          "xsize=%" PRIu64 ", ysize=%" PRIu64,
+          static_cast<uint64_t>(im.xsize()), static_cast<uint64_t>(im.ysize()),
+          static_cast<uint64_t>(r.x0()), static_cast<uint64_t>(r.y0()),
+          static_cast<uint64_t>(r.xsize()), static_cast<uint64_t>(r.ysize()));
       size_t x = ret / sizeof(*row);
-      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s",
-                r.x0() + x, y, message ? message : "");
+      JXL_DEBUG(1,
+                "CheckImageInitialized failed at x=%" PRIu64 ", y=%" PRIu64
+                ", c=%" PRIu64 ": %s",
+                static_cast<uint64_t>(r.x0() + x), static_cast<uint64_t>(y),
+                static_cast<uint64_t>(c), message ? message : "");
       PrintImageUninitialized(im);
     }
     // This will report an error if memory is not initialized.
@@ -217,12 +206,15 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
   for (size_t c = 0; c < 3; c++) {
     std::string str_message(message);
     str_message += " c=" + std::to_string(c);
-    CheckImageInitialized(im.Plane(c), r, str_message.c_str());
+    CheckImageInitialized(im.Plane(c), r, c, str_message.c_str());
   }
 }
 
 #define JXL_CHECK_IMAGE_INITIALIZED(im, r) \
   ::jxl::msan::CheckImageInitialized(im, r, "im=" #im ", r=" #r);
+
+#define JXL_CHECK_PLANE_INITIALIZED(im, r, c) \
+  ::jxl::msan::CheckImageInitialized(im, r, c, "im=" #im ", r=" #r ", c=" #c);
 
 #else  // JXL_MEMORY_SANITIZER
 
@@ -231,12 +223,16 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
 
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonMemory(const void*, size_t) {}
 static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonMemory(const void*, size_t) {}
+static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonCStr(const char*) {}
+static JXL_INLINE JXL_MAYBE_UNUSED void MemoryIsInitialized(const void*,
+                                                            size_t) {}
 
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const PlaneBase& im) {}
 template <typename T>
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const Plane<T>& im) {}
 
 #define JXL_CHECK_IMAGE_INITIALIZED(im, r)
+#define JXL_CHECK_PLANE_INITIALIZED(im, r, c)
 
 #endif
 

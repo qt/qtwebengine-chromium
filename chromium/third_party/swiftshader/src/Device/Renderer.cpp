@@ -182,7 +182,7 @@ void Renderer::operator delete(void *mem)
 
 void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState &dynamicState, unsigned int count, int baseVertex,
                     CountedEvent *events, int instanceID, int layer, void *indexBuffer, const VkRect2D &renderArea,
-                    vk::Pipeline::PushConstantStorage const &pushConstants, bool update)
+                    const vk::Pipeline::PushConstantStorage &pushConstants, bool update)
 {
 	if(count == 0) { return; }
 
@@ -196,8 +196,29 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	}
 	draw->id = id;
 
-	const vk::GraphicsState &pipelineState = pipeline->getState(dynamicState);
-	pixelProcessor.setBlendConstant(pipelineState.getBlendConstants());
+	const vk::GraphicsState &pipelineState = pipeline->getCombinedState(dynamicState);
+
+	// A graphics pipeline must always be "complete" before it can be used for drawing.  A
+	// complete graphics pipeline always includes the vertex input interface and
+	// pre-rasterization subsets, but only includes fragment and fragment output interface
+	// subsets if rasterizer discard is not enabled.
+	//
+	// Note that in the following, the setupPrimitives, setupRoutine and pixelRoutine functions
+	// are only called when rasterizer discard is not enabled.  If rasterizer discard is
+	// enabled, these functions and state for the latter two states are not set.
+	const vk::VertexInputInterfaceState &vertexInputInterfaceState = pipelineState.getVertexInputInterfaceState();
+	const vk::PreRasterizationState &preRasterizationState = pipelineState.getPreRasterizationState();
+	const vk::FragmentState *fragmentState = nullptr;
+	const vk::FragmentOutputInterfaceState *fragmentOutputInterfaceState = nullptr;
+
+	const bool hasRasterizerDiscard = preRasterizationState.hasRasterizerDiscard();
+	if(!hasRasterizerDiscard)
+	{
+		fragmentState = &pipelineState.getFragmentState();
+		fragmentOutputInterfaceState = &pipelineState.getFragmentOutputInterfaceState();
+
+		pixelProcessor.setBlendConstant(fragmentOutputInterfaceState->getBlendConstants());
+	}
 
 	const vk::Inputs &inputs = pipeline->getInputs();
 
@@ -211,48 +232,27 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		const vk::Attachments attachments = pipeline->getAttachments();
 
 		vertexState = vertexProcessor.update(pipelineState, vertexShader, inputs);
-		setupState = setupProcessor.update(pipelineState, fragmentShader, vertexShader, attachments);
-		pixelState = pixelProcessor.update(pipelineState, fragmentShader, vertexShader, attachments, hasOcclusionQuery());
+		vertexRoutine = vertexProcessor.routine(vertexState, preRasterizationState.getPipelineLayout(), vertexShader, inputs.getDescriptorSets());
 
-		vertexRoutine = vertexProcessor.routine(vertexState, pipelineState.getPipelineLayout(), vertexShader, inputs.getDescriptorSets());
-		setupRoutine = setupProcessor.routine(setupState);
-		pixelRoutine = pixelProcessor.routine(pixelState, pipelineState.getPipelineLayout(), fragmentShader, inputs.getDescriptorSets());
-	}
-
-	draw->containsImageWrite = pipeline->containsImageWrite();
-
-	DrawCall::SetupFunction setupPrimitives = nullptr;
-	int ms = pipelineState.getSampleCount();
-	unsigned int numPrimitivesPerBatch = MaxBatchSize / ms;
-
-	if(pipelineState.isDrawTriangle(false))
-	{
-		switch(pipelineState.getPolygonMode())
+		if(!hasRasterizerDiscard)
 		{
-		case VK_POLYGON_MODE_FILL:
-			setupPrimitives = &DrawCall::setupSolidTriangles;
-			break;
-		case VK_POLYGON_MODE_LINE:
-			setupPrimitives = &DrawCall::setupWireframeTriangles;
-			numPrimitivesPerBatch /= 3;
-			break;
-		case VK_POLYGON_MODE_POINT:
-			setupPrimitives = &DrawCall::setupPointTriangles;
-			numPrimitivesPerBatch /= 3;
-			break;
-		default:
-			UNSUPPORTED("polygon mode: %d", int(pipelineState.getPolygonMode()));
-			return;
+			setupState = setupProcessor.update(pipelineState, fragmentShader, vertexShader, attachments);
+			setupRoutine = setupProcessor.routine(setupState);
+
+			pixelState = pixelProcessor.update(pipelineState, fragmentShader, vertexShader, attachments, hasOcclusionQuery());
+			pixelRoutine = pixelProcessor.routine(pixelState, fragmentState->getPipelineLayout(), fragmentShader, inputs.getDescriptorSets());
 		}
 	}
-	else if(pipelineState.isDrawLine(false))
-	{
-		setupPrimitives = &DrawCall::setupLines;
-	}
-	else  // Point primitive topology
-	{
-		setupPrimitives = &DrawCall::setupPoints;
-	}
+
+	draw->preRasterizationContainsImageWrite = pipeline->preRasterizationContainsImageWrite();
+	draw->fragmentContainsImageWrite = pipeline->fragmentContainsImageWrite();
+
+	// The sample count affects the batch size even if rasterization is disabled.
+	// TODO(b/147812380): Eliminate the dependency between multisampling and batch size.
+	int ms = hasRasterizerDiscard ? 1 : fragmentOutputInterfaceState->getSampleCount();
+	ASSERT(ms > 0);
+
+	unsigned int numPrimitivesPerBatch = MaxBatchSize / ms;
 
 	DrawData *data = draw->data;
 	draw->occlusionQuery = occlusionQuery;
@@ -260,19 +260,16 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	draw->numPrimitives = count;
 	draw->numPrimitivesPerBatch = numPrimitivesPerBatch;
 	draw->numBatches = (count + draw->numPrimitivesPerBatch - 1) / draw->numPrimitivesPerBatch;
-	draw->topology = pipelineState.getTopology();
-	draw->provokingVertexMode = pipelineState.getProvokingVertexMode();
+	draw->topology = vertexInputInterfaceState.getTopology();
+	draw->provokingVertexMode = preRasterizationState.getProvokingVertexMode();
 	draw->indexType = pipeline->getIndexBuffer().getIndexType();
-	draw->lineRasterizationMode = pipelineState.getLineRasterizationMode();
+	draw->lineRasterizationMode = preRasterizationState.getLineRasterizationMode();
 	draw->descriptorSetObjects = inputs.getDescriptorSetObjects();
-	draw->pipelineLayout = pipelineState.getPipelineLayout();
-	draw->depthClipEnable = pipelineState.getDepthClipEnable();
-
-	draw->vertexRoutine = vertexRoutine;
-	draw->setupRoutine = setupRoutine;
-	draw->pixelRoutine = pixelRoutine;
-	draw->setupPrimitives = setupPrimitives;
-	draw->setupState = setupState;
+	draw->preRasterizationPipelineLayout = preRasterizationState.getPipelineLayout();
+	draw->depthClipEnable = preRasterizationState.getDepthClipEnable();
+	draw->depthClipNegativeOneToOne = preRasterizationState.getDepthClipNegativeOneToOne();
+	data->lineWidth = preRasterizationState.getLineWidth();
+	data->rasterizerDiscard = hasRasterizerDiscard;
 
 	data->descriptorSets = inputs.getDescriptorSets();
 	data->descriptorDynamicOffsets = inputs.getDescriptorDynamicOffsets();
@@ -282,7 +279,7 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		const sw::Stream &stream = inputs.getStream(i);
 		data->input[i] = stream.buffer;
 		data->robustnessSize[i] = stream.robustnessSize;
-		data->stride[i] = inputs.getVertexStride(i, pipelineState.hasDynamicVertexStride());
+		data->stride[i] = inputs.getVertexStride(i, vertexInputInterfaceState.hasDynamicVertexStride());
 	}
 
 	data->indices = indexBuffer;
@@ -290,49 +287,13 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 	data->instanceID = instanceID;
 	data->baseVertex = baseVertex;
 
-	if(pixelState.stencilActive)
-	{
-		data->stencil[0].set(pipelineState.getFrontStencil().reference, pipelineState.getFrontStencil().compareMask, pipelineState.getFrontStencil().writeMask);
-		data->stencil[1].set(pipelineState.getBackStencil().reference, pipelineState.getBackStencil().compareMask, pipelineState.getBackStencil().writeMask);
-	}
+	draw->vertexRoutine = vertexRoutine;
 
-	data->lineWidth = pipelineState.getLineWidth();
-
-	data->factor = pixelProcessor.factor;
-
-	if(pixelState.alphaToCoverage)
-	{
-		if(ms == 4)
-		{
-			data->a2c0 = 0.2f;
-			data->a2c1 = 0.4f;
-			data->a2c2 = 0.6f;
-			data->a2c3 = 0.8f;
-		}
-		else if(ms == 2)
-		{
-			data->a2c0 = 0.25f;
-			data->a2c1 = 0.75f;
-		}
-		else if(ms == 1)
-		{
-			data->a2c0 = 0.5f;
-		}
-		else
-			ASSERT(false);
-	}
-
-	if(pixelState.occlusionEnabled)
-	{
-		for(int cluster = 0; cluster < MaxClusterCount; cluster++)
-		{
-			data->occlusion[cluster] = 0;
-		}
-	}
+	vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->preRasterizationPipelineLayout, device);
 
 	// Viewport
 	{
-		const VkViewport &viewport = pipelineState.getViewport();
+		const VkViewport &viewport = preRasterizationState.getViewport();
 
 		float W = 0.5f * viewport.width;
 		float H = 0.5f * viewport.height;
@@ -352,67 +313,21 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		data->viewportHeight = abs(viewport.height);
 		data->depthRange = Z;
 		data->depthNear = N;
-		data->constantDepthBias = pipelineState.getConstantDepthBias();
-		data->slopeDepthBias = pipelineState.getSlopeDepthBias();
-		data->depthBiasClamp = pipelineState.getDepthBiasClamp();
-		data->depthClipEnable = pipelineState.getDepthClipEnable();
+		data->constantDepthBias = preRasterizationState.getConstantDepthBias();
+		data->slopeDepthBias = preRasterizationState.getSlopeDepthBias();
+		data->depthBiasClamp = preRasterizationState.getDepthBiasClamp();
 
-		const vk::Attachments attachments = pipeline->getAttachments();
-		if(attachments.depthBuffer)
+		// Adjust viewport transform based on the negativeOneToOne state.
+		if(preRasterizationState.getDepthClipNegativeOneToOne())
 		{
-			switch(attachments.depthBuffer->getFormat(VK_IMAGE_ASPECT_DEPTH_BIT))
-			{
-			case VK_FORMAT_D16_UNORM:
-				// Minimum is 1 unit, but account for potential floating-point rounding errors
-				data->minimumResolvableDepthDifference = 1.01f / 0xFFFF;
-				break;
-			case VK_FORMAT_D32_SFLOAT:
-				// The minimum resolvable depth difference is determined per-polygon for floating-point depth
-				// buffers. DrawData::minimumResolvableDepthDifference is unused.
-				break;
-			default:
-				UNSUPPORTED("Depth format: %d", int(attachments.depthBuffer->getFormat(VK_IMAGE_ASPECT_DEPTH_BIT)));
-			}
-		}
-	}
-
-	// Target
-	{
-		const vk::Attachments attachments = pipeline->getAttachments();
-
-		for(int index = 0; index < MAX_COLOR_BUFFERS; index++)
-		{
-			draw->colorBuffer[index] = attachments.colorBuffer[index];
-
-			if(draw->colorBuffer[index])
-			{
-				data->colorBuffer[index] = (unsigned int *)attachments.colorBuffer[index]->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_COLOR_BIT, 0, data->layer);
-				data->colorPitchB[index] = attachments.colorBuffer[index]->rowPitchBytes(VK_IMAGE_ASPECT_COLOR_BIT, 0);
-				data->colorSliceB[index] = attachments.colorBuffer[index]->slicePitchBytes(VK_IMAGE_ASPECT_COLOR_BIT, 0);
-			}
-		}
-
-		draw->depthBuffer = attachments.depthBuffer;
-		draw->stencilBuffer = attachments.stencilBuffer;
-
-		if(draw->depthBuffer)
-		{
-			data->depthBuffer = (float *)attachments.depthBuffer->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_DEPTH_BIT, 0, data->layer);
-			data->depthPitchB = attachments.depthBuffer->rowPitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT, 0);
-			data->depthSliceB = attachments.depthBuffer->slicePitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT, 0);
-		}
-
-		if(draw->stencilBuffer)
-		{
-			data->stencilBuffer = (unsigned char *)attachments.stencilBuffer->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_STENCIL_BIT, 0, data->layer);
-			data->stencilPitchB = attachments.stencilBuffer->rowPitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT, 0);
-			data->stencilSliceB = attachments.stencilBuffer->slicePitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT, 0);
+			data->depthRange = Z * 0.5f;
+			data->depthNear = (F + N) * 0.5f;
 		}
 	}
 
 	// Scissor
 	{
-		const VkRect2D &scissor = pipelineState.getScissor();
+		const VkRect2D &scissor = preRasterizationState.getScissor();
 
 		int x0 = renderArea.offset.x;
 		int y0 = renderArea.offset.y;
@@ -424,14 +339,151 @@ void Renderer::draw(const vk::GraphicsPipeline *pipeline, const vk::DynamicState
 		data->scissorY1 = clamp<int>(scissor.offset.y + scissor.extent.height, y0, y1);
 	}
 
+	if(!hasRasterizerDiscard)
+	{
+		const VkPolygonMode polygonMode = preRasterizationState.getPolygonMode();
+
+		DrawCall::SetupFunction setupPrimitives = nullptr;
+		if(vertexInputInterfaceState.isDrawTriangle(false, polygonMode))
+		{
+			switch(preRasterizationState.getPolygonMode())
+			{
+			case VK_POLYGON_MODE_FILL:
+				setupPrimitives = &DrawCall::setupSolidTriangles;
+				break;
+			case VK_POLYGON_MODE_LINE:
+				setupPrimitives = &DrawCall::setupWireframeTriangles;
+				numPrimitivesPerBatch /= 3;
+				break;
+			case VK_POLYGON_MODE_POINT:
+				setupPrimitives = &DrawCall::setupPointTriangles;
+				numPrimitivesPerBatch /= 3;
+				break;
+			default:
+				UNSUPPORTED("polygon mode: %d", int(preRasterizationState.getPolygonMode()));
+				return;
+			}
+		}
+		else if(vertexInputInterfaceState.isDrawLine(false, polygonMode))
+		{
+			setupPrimitives = &DrawCall::setupLines;
+		}
+		else  // Point primitive topology
+		{
+			setupPrimitives = &DrawCall::setupPoints;
+		}
+
+		draw->setupState = setupState;
+		draw->setupRoutine = setupRoutine;
+		draw->pixelRoutine = pixelRoutine;
+		draw->setupPrimitives = setupPrimitives;
+		draw->fragmentPipelineLayout = fragmentState->getPipelineLayout();
+
+		if(pixelState.stencilActive)
+		{
+			data->stencil[0].set(fragmentState->getFrontStencil().reference, fragmentState->getFrontStencil().compareMask, fragmentState->getFrontStencil().writeMask);
+			data->stencil[1].set(fragmentState->getBackStencil().reference, fragmentState->getBackStencil().compareMask, fragmentState->getBackStencil().writeMask);
+		}
+
+		data->factor = pixelProcessor.factor;
+
+		if(pixelState.alphaToCoverage)
+		{
+			if(ms == 4)
+			{
+				data->a2c0 = 0.2f;
+				data->a2c1 = 0.4f;
+				data->a2c2 = 0.6f;
+				data->a2c3 = 0.8f;
+			}
+			else if(ms == 2)
+			{
+				data->a2c0 = 0.25f;
+				data->a2c1 = 0.75f;
+			}
+			else if(ms == 1)
+			{
+				data->a2c0 = 0.5f;
+			}
+			else
+				ASSERT(false);
+		}
+
+		if(pixelState.occlusionEnabled)
+		{
+			for(int cluster = 0; cluster < MaxClusterCount; cluster++)
+			{
+				data->occlusion[cluster] = 0;
+			}
+		}
+
+		// Viewport
+		{
+			const vk::Attachments attachments = pipeline->getAttachments();
+			if(attachments.depthBuffer)
+			{
+				switch(attachments.depthBuffer->getFormat(VK_IMAGE_ASPECT_DEPTH_BIT))
+				{
+				case VK_FORMAT_D16_UNORM:
+					// Minimum is 1 unit, but account for potential floating-point rounding errors
+					data->minimumResolvableDepthDifference = 1.01f / 0xFFFF;
+					break;
+				case VK_FORMAT_D32_SFLOAT:
+					// The minimum resolvable depth difference is determined per-polygon for floating-point depth
+					// buffers. DrawData::minimumResolvableDepthDifference is unused.
+					break;
+				default:
+					UNSUPPORTED("Depth format: %d", int(attachments.depthBuffer->getFormat(VK_IMAGE_ASPECT_DEPTH_BIT)));
+				}
+			}
+		}
+
+		// Target
+		{
+			const vk::Attachments attachments = pipeline->getAttachments();
+
+			for(int index = 0; index < MAX_COLOR_BUFFERS; index++)
+			{
+				draw->colorBuffer[index] = attachments.colorBuffer[index];
+
+				if(draw->colorBuffer[index])
+				{
+					data->colorBuffer[index] = (unsigned int *)attachments.colorBuffer[index]->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_COLOR_BIT, 0, data->layer);
+					data->colorPitchB[index] = attachments.colorBuffer[index]->rowPitchBytes(VK_IMAGE_ASPECT_COLOR_BIT, 0);
+					data->colorSliceB[index] = attachments.colorBuffer[index]->slicePitchBytes(VK_IMAGE_ASPECT_COLOR_BIT, 0);
+				}
+			}
+
+			draw->depthBuffer = attachments.depthBuffer;
+			draw->stencilBuffer = attachments.stencilBuffer;
+
+			if(draw->depthBuffer)
+			{
+				data->depthBuffer = (float *)attachments.depthBuffer->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_DEPTH_BIT, 0, data->layer);
+				data->depthPitchB = attachments.depthBuffer->rowPitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT, 0);
+				data->depthSliceB = attachments.depthBuffer->slicePitchBytes(VK_IMAGE_ASPECT_DEPTH_BIT, 0);
+			}
+
+			if(draw->stencilBuffer)
+			{
+				data->stencilBuffer = (unsigned char *)attachments.stencilBuffer->getOffsetPointer({ 0, 0, 0 }, VK_IMAGE_ASPECT_STENCIL_BIT, 0, data->layer);
+				data->stencilPitchB = attachments.stencilBuffer->rowPitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT, 0);
+				data->stencilSliceB = attachments.stencilBuffer->slicePitchBytes(VK_IMAGE_ASPECT_STENCIL_BIT, 0);
+			}
+		}
+
+		if(draw->fragmentPipelineLayout != draw->preRasterizationPipelineLayout)
+		{
+			vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->fragmentPipelineLayout, device);
+		}
+	}
+
 	// Push constants
 	{
 		data->pushConstants = pushConstants;
 	}
 
 	draw->events = events;
-
-	vk::DescriptorSet::PrepareForSampling(draw->descriptorSetObjects, draw->pipelineLayout, device);
 
 	DrawCall::run(device, draw, &drawTickets, clusterQueues);
 }
@@ -457,30 +509,41 @@ void DrawCall::teardown(vk::Device *device)
 		events = nullptr;
 	}
 
-	if(occlusionQuery != nullptr)
-	{
-		for(int cluster = 0; cluster < MaxClusterCount; cluster++)
-		{
-			occlusionQuery->add(data->occlusion[cluster]);
-		}
-		occlusionQuery->finish();
-	}
-
 	vertexRoutine = {};
 	setupRoutine = {};
 	pixelRoutine = {};
 
-	for(auto *target : colorBuffer)
+	if(preRasterizationContainsImageWrite)
 	{
-		if(target)
-		{
-			target->contentsChanged(vk::Image::DIRECT_MEMORY_ACCESS);
-		}
+		vk::DescriptorSet::ContentsChanged(descriptorSetObjects, preRasterizationPipelineLayout, device);
 	}
 
-	if(containsImageWrite)
+	if(!data->rasterizerDiscard)
 	{
-		vk::DescriptorSet::ContentsChanged(descriptorSetObjects, pipelineLayout, device);
+		if(occlusionQuery != nullptr)
+		{
+			for(int cluster = 0; cluster < MaxClusterCount; cluster++)
+			{
+				occlusionQuery->add(data->occlusion[cluster]);
+			}
+			occlusionQuery->finish();
+		}
+
+		for(auto *target : colorBuffer)
+		{
+			if(target)
+			{
+				target->contentsChanged(vk::Image::DIRECT_MEMORY_ACCESS);
+			}
+		}
+
+		// If pre-rasterization and fragment use the same pipeline, and pre-rasterization
+		// also contains image writes, don't double-notify the descriptor set.
+		const bool descSetAlreadyNotified = preRasterizationContainsImageWrite && fragmentPipelineLayout == preRasterizationPipelineLayout;
+		if(fragmentContainsImageWrite && !descSetAlreadyNotified)
+		{
+			vk::DescriptorSet::ContentsChanged(descriptorSetObjects, fragmentPipelineLayout, device);
+		}
 	}
 }
 
@@ -488,9 +551,9 @@ void DrawCall::run(vk::Device *device, const marl::Loan<DrawCall> &draw, marl::T
 {
 	draw->setup();
 
-	auto const numPrimitives = draw->numPrimitives;
-	auto const numPrimitivesPerBatch = draw->numPrimitivesPerBatch;
-	auto const numBatches = draw->numBatches;
+	const auto numPrimitives = draw->numPrimitives;
+	const auto numPrimitivesPerBatch = draw->numPrimitivesPerBatch;
+	const auto numBatches = draw->numBatches;
 
 	auto ticket = tickets->take();
 	auto finally = marl::make_shared_finally([device, draw, ticket] {
@@ -514,7 +577,7 @@ void DrawCall::run(vk::Device *device, const marl::Loan<DrawCall> &draw, marl::T
 		marl::schedule([device, draw, batch, finally] {
 			processVertices(device, draw.get(), batch.get());
 
-			if(!draw->setupState.rasterizerDiscard)
+			if(!draw->data->rasterizerDiscard)
 			{
 				processPrimitives(device, draw.get(), batch.get());
 
@@ -849,12 +912,8 @@ int DrawCall::setupPoints(vk::Device *device, Triangle *triangles, Primitive *pr
 
 bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 {
-	const DrawData &data = *draw.data;
-
-	float lineWidth = data.lineWidth;
-
-	Vertex &v0 = triangle.v0;
-	Vertex &v1 = triangle.v1;
+	const Vertex &v0 = triangle.v0;
+	const Vertex &v1 = triangle.v1;
 
 	if((v0.cullMask | v1.cullMask) == 0)
 	{
@@ -869,6 +928,9 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		return false;
 	}
 
+	const DrawData &data = *draw.data;
+	const float lineWidth = data.lineWidth;
+	const int clipFlags = draw.depthClipEnable ? Clipper::CLIP_FRUSTUM : Clipper::CLIP_SIDES;
 	constexpr float subPixF = vk::SUBPIXEL_PRECISION_FACTOR;
 
 	const float W = data.WxF * (1.0f / subPixF);
@@ -887,7 +949,6 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		// Rectangle centered on the line segment
 
 		float4 P[4];
-		int C[4];
 
 		P[0] = P0;
 		P[1] = P1;
@@ -907,36 +968,24 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 
 		P[0].x += -dy0w;
 		P[0].y += +dx0h;
-		C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
 
 		P[1].x += -dy1w;
 		P[1].y += +dx1h;
-		C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
 
 		P[2].x += +dy1w;
 		P[2].y += -dx1h;
-		C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
 
 		P[3].x += +dy0w;
 		P[3].y += -dx0h;
-		C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
 
-		if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
+		Polygon polygon(P, 4);
+
+		if(!Clipper::Clip(polygon, clipFlags, draw))
 		{
-			Polygon polygon(P, 4);
-
-			int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+			return false;
 		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 	else if(false)  // TODO(b/80135519): Deprecate
 	{
@@ -946,7 +995,6 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		// The ideal algorithm requires half-open line rasterization (b/80135519).
 
 		float4 P[8];
-		int C[8];
 
 		P[0] = P0;
 		P[1] = P0;
@@ -964,90 +1012,67 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 		float dy1 = lineWidth * 0.5f * P1.w / H;
 
 		P[0].x += -dx0;
-		C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
-
 		P[1].y += +dy0;
-		C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
-
 		P[2].x += +dx0;
-		C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
-
 		P[3].y += -dy0;
-		C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
-
 		P[4].x += -dx1;
-		C[4] = Clipper::ComputeClipFlags(P[4], draw.depthClipEnable);
-
 		P[5].y += +dy1;
-		C[5] = Clipper::ComputeClipFlags(P[5], draw.depthClipEnable);
-
 		P[6].x += +dx1;
-		C[6] = Clipper::ComputeClipFlags(P[6], draw.depthClipEnable);
-
 		P[7].y += -dy1;
-		C[7] = Clipper::ComputeClipFlags(P[7], draw.depthClipEnable);
 
-		if((C[0] & C[1] & C[2] & C[3] & C[4] & C[5] & C[6] & C[7]) == Clipper::CLIP_FINITE)
+		float4 L[6];
+
+		if(dx > -dy)
 		{
-			float4 L[6];
-
-			if(dx > -dy)
+			if(dx > dy)  // Right
 			{
-				if(dx > dy)  // Right
-				{
-					L[0] = P[0];
-					L[1] = P[1];
-					L[2] = P[5];
-					L[3] = P[6];
-					L[4] = P[7];
-					L[5] = P[3];
-				}
-				else  // Down
-				{
-					L[0] = P[0];
-					L[1] = P[4];
-					L[2] = P[5];
-					L[3] = P[6];
-					L[4] = P[2];
-					L[5] = P[3];
-				}
+				L[0] = P[0];
+				L[1] = P[1];
+				L[2] = P[5];
+				L[3] = P[6];
+				L[4] = P[7];
+				L[5] = P[3];
 			}
-			else
+			else  // Down
 			{
-				if(dx > dy)  // Up
-				{
-					L[0] = P[0];
-					L[1] = P[1];
-					L[2] = P[2];
-					L[3] = P[6];
-					L[4] = P[7];
-					L[5] = P[4];
-				}
-				else  // Left
-				{
-					L[0] = P[1];
-					L[1] = P[2];
-					L[2] = P[3];
-					L[3] = P[7];
-					L[4] = P[4];
-					L[5] = P[5];
-				}
+				L[0] = P[0];
+				L[1] = P[4];
+				L[2] = P[5];
+				L[3] = P[6];
+				L[4] = P[2];
+				L[5] = P[3];
 			}
-
-			Polygon polygon(L, 6);
-
-			int clipFlagsOr = C[0] | C[1] | C[2] | C[3] | C[4] | C[5] | C[6] | C[7];
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 		}
+		else
+		{
+			if(dx > dy)  // Up
+			{
+				L[0] = P[0];
+				L[1] = P[1];
+				L[2] = P[2];
+				L[3] = P[6];
+				L[4] = P[7];
+				L[5] = P[4];
+			}
+			else  // Left
+			{
+				L[0] = P[1];
+				L[1] = P[2];
+				L[2] = P[3];
+				L[3] = P[7];
+				L[4] = P[4];
+				L[5] = P[5];
+			}
+		}
+
+		Polygon polygon(L, 6);
+
+		if(!Clipper::Clip(polygon, clipFlags, draw))
+		{
+			return false;
+		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 	else
 	{
@@ -1118,27 +1143,14 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 			}
 		}
 
-		int C0 = Clipper::ComputeClipFlags(L[0], draw.depthClipEnable);
-		int C1 = Clipper::ComputeClipFlags(L[1], draw.depthClipEnable);
-		int C2 = Clipper::ComputeClipFlags(L[2], draw.depthClipEnable);
-		int C3 = Clipper::ComputeClipFlags(L[3], draw.depthClipEnable);
+		Polygon polygon(L, 4);
 
-		if((C0 & C1 & C2 & C3) == Clipper::CLIP_FINITE)
+		if(!Clipper::Clip(polygon, clipFlags, draw))
 		{
-			Polygon polygon(L, 4);
-
-			int clipFlagsOr = C0 | C1 | C2 | C3;
-
-			if(clipFlagsOr != Clipper::CLIP_FINITE)
-			{
-				if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-				{
-					return false;
-				}
-			}
-
-			return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+			return false;
 		}
+
+		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 	}
 
 	return false;
@@ -1146,66 +1158,48 @@ bool DrawCall::setupLine(vk::Device *device, Primitive &primitive, Triangle &tri
 
 bool DrawCall::setupPoint(vk::Device *device, Primitive &primitive, Triangle &triangle, const DrawCall &draw)
 {
-	const DrawData &data = *draw.data;
-
-	Vertex &v = triangle.v0;
+	const Vertex &v = triangle.v0;
 
 	if(v.cullMask == 0)
 	{
 		return false;
 	}
 
-	float pSize = v.pointSize;
+	const DrawData &data = *draw.data;
+	const int clipFlags = draw.depthClipEnable ? Clipper::CLIP_FRUSTUM : Clipper::CLIP_SIDES;
 
-	pSize = clamp(pSize, 1.0f, static_cast<float>(vk::MAX_POINT_SIZE));
+	const float pSize = clamp(v.pointSize, 1.0f, static_cast<float>(vk::MAX_POINT_SIZE));
+	const float X = pSize * v.position.w * data.halfPixelX;
+	const float Y = pSize * v.position.w * data.halfPixelY;
 
 	float4 P[4];
-	int C[4];
 
 	P[0] = v.position;
-	P[1] = v.position;
-	P[2] = v.position;
-	P[3] = v.position;
-
-	const float X = pSize * P[0].w * data.halfPixelX;
-	const float Y = pSize * P[0].w * data.halfPixelY;
-
 	P[0].x -= X;
 	P[0].y += Y;
-	C[0] = Clipper::ComputeClipFlags(P[0], draw.depthClipEnable);
 
+	P[1] = v.position;
 	P[1].x += X;
 	P[1].y += Y;
-	C[1] = Clipper::ComputeClipFlags(P[1], draw.depthClipEnable);
 
+	P[2] = v.position;
 	P[2].x += X;
 	P[2].y -= Y;
-	C[2] = Clipper::ComputeClipFlags(P[2], draw.depthClipEnable);
 
+	P[3] = v.position;
 	P[3].x -= X;
 	P[3].y -= Y;
-	C[3] = Clipper::ComputeClipFlags(P[3], draw.depthClipEnable);
 
 	Polygon polygon(P, 4);
 
-	if((C[0] & C[1] & C[2] & C[3]) == Clipper::CLIP_FINITE)
+	if(!Clipper::Clip(polygon, clipFlags, draw))
 	{
-		int clipFlagsOr = C[0] | C[1] | C[2] | C[3];
-
-		if(clipFlagsOr != Clipper::CLIP_FINITE)
-		{
-			if(!Clipper::Clip(polygon, clipFlagsOr, draw))
-			{
-				return false;
-			}
-		}
-
-		primitive.pointSizeInv = 1.0f / pSize;
-
-		return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
+		return false;
 	}
 
-	return false;
+	primitive.pointSizeInv = 1.0f / pSize;
+
+	return draw.setupRoutine(device, &primitive, &triangle, &polygon, &data);
 }
 
 void Renderer::addQuery(vk::Query *query)

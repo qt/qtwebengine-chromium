@@ -25,25 +25,29 @@ class PaintParams;
 class Recorder;
 class RenderStep;
 
-std::tuple<SkUniquePaintParamsID, UniformDataCache::Index, TextureDataCache::Index>
+std::tuple<SkUniquePaintParamsID, const SkUniformDataBlock*, const SkTextureDataBlock*>
 ExtractPaintData(Recorder*,
                  SkPipelineDataGatherer* gatherer,
                  SkPaintParamsKeyBuilder* builder,
                  const SkM44& dev2local,
                  const PaintParams&);
 
-std::tuple<UniformDataCache::Index, TextureDataCache::Index>
-ExtractRenderStepData(UniformDataCache* geometryUniformDataCache,
+std::tuple<const SkUniformDataBlock*, const SkTextureDataBlock*>
+ExtractRenderStepData(UniformDataCache* uniformDataCache,
                       TextureDataCache* textureDataCache,
                       SkPipelineDataGatherer* gatherer,
                       const RenderStep* step,
                       const DrawParams& params);
 
-std::string GetSkSLVS(const GraphicsPipelineDesc& desc, bool defineLocalCoordsVarying);
+std::string GetSkSLVS(const RenderStep* step,
+                      bool defineShadingSsboIndexVarying,
+                      bool defineLocalCoordsVarying);
 
-std::string GetSkSLFS(SkShaderCodeDictionary* dict,
-                      SkRuntimeEffectDictionary* rteDict,
-                      const GraphicsPipelineDesc& desc,
+std::string GetSkSLFS(const SkShaderCodeDictionary*,
+                      const SkRuntimeEffectDictionary*,
+                      const RenderStep* renderStep,
+                      SkUniquePaintParamsID paintID,
+                      bool useStorageBuffers,
                       BlendInfo* blendInfo,
                       bool* requiresLocalCoordsVarying);
 
@@ -53,9 +57,20 @@ std::string EmitPaintParamsUniforms(int bufferID,
                                     bool needsDev2Local);
 std::string EmitRenderStepUniforms(int bufferID, const char* name,
                                    SkSpan<const SkUniform> uniforms);
+std::string EmitPaintParamsStorageBuffer(int bufferID,
+                                         const char* bufferTypePrefix,
+                                         const char* bufferNamePrefix,
+                                         const std::vector<SkPaintParamsKey::BlockReader>& readers,
+                                         bool needsLocalCoords);
+std::string EmitStorageBufferAccess(const char* bufferNamePrefix,
+                                    const char* ssboIndex,
+                                    const char* uniformName);
 std::string EmitTexturesAndSamplers(const std::vector<SkPaintParamsKey::BlockReader>&,
                                     int* binding);
-std::string EmitVaryings(const RenderStep*, const char* direction, bool emitLocalCoordsVarying);
+std::string EmitVaryings(const RenderStep* step,
+                         const char* direction,
+                         bool emitShadingSsboIndexVarying,
+                         bool emitLocalCoordsVarying);
 
 } // namespace skgpu::graphite
 

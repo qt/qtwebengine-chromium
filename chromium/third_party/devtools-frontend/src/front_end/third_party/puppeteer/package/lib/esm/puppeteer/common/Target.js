@@ -25,8 +25,8 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
 var _Target_browserContext, _Target_session, _Target_targetInfo, _Target_sessionFactory, _Target_ignoreHTTPSErrors, _Target_defaultViewport, _Target_pagePromise, _Target_workerPromise, _Target_screenshotTaskQueue, _Target_targetManager;
-import { Page } from './Page.js';
 import { WebWorker } from './WebWorker.js';
+import { CDPPage } from './Page.js';
 /**
  * @public
  */
@@ -93,7 +93,7 @@ export class Target {
      * Creates a Chrome Devtools Protocol session attached to the target.
      */
     createCDPSession() {
-        return __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this);
+        return __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this, false);
     }
     /**
      * @internal
@@ -113,9 +113,11 @@ export class Target {
     async page() {
         var _a;
         if (this._isPageTargetCallback(__classPrivateFieldGet(this, _Target_targetInfo, "f")) && !__classPrivateFieldGet(this, _Target_pagePromise, "f")) {
-            __classPrivateFieldSet(this, _Target_pagePromise, (__classPrivateFieldGet(this, _Target_session, "f") ? Promise.resolve(__classPrivateFieldGet(this, _Target_session, "f")) : __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this)).then(client => {
+            __classPrivateFieldSet(this, _Target_pagePromise, (__classPrivateFieldGet(this, _Target_session, "f")
+                ? Promise.resolve(__classPrivateFieldGet(this, _Target_session, "f"))
+                : __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this, true)).then(client => {
                 var _a;
-                return Page._create(client, this, __classPrivateFieldGet(this, _Target_ignoreHTTPSErrors, "f"), (_a = __classPrivateFieldGet(this, _Target_defaultViewport, "f")) !== null && _a !== void 0 ? _a : null, __classPrivateFieldGet(this, _Target_screenshotTaskQueue, "f"));
+                return CDPPage._create(client, this, __classPrivateFieldGet(this, _Target_ignoreHTTPSErrors, "f"), (_a = __classPrivateFieldGet(this, _Target_defaultViewport, "f")) !== null && _a !== void 0 ? _a : null, __classPrivateFieldGet(this, _Target_screenshotTaskQueue, "f"));
             }), "f");
         }
         return (_a = (await __classPrivateFieldGet(this, _Target_pagePromise, "f"))) !== null && _a !== void 0 ? _a : null;
@@ -130,7 +132,9 @@ export class Target {
         }
         if (!__classPrivateFieldGet(this, _Target_workerPromise, "f")) {
             // TODO(einbinder): Make workers send their console logs.
-            __classPrivateFieldSet(this, _Target_workerPromise, (__classPrivateFieldGet(this, _Target_session, "f") ? Promise.resolve(__classPrivateFieldGet(this, _Target_session, "f")) : __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this)).then(client => {
+            __classPrivateFieldSet(this, _Target_workerPromise, (__classPrivateFieldGet(this, _Target_session, "f")
+                ? Promise.resolve(__classPrivateFieldGet(this, _Target_session, "f"))
+                : __classPrivateFieldGet(this, _Target_sessionFactory, "f").call(this, false)).then(client => {
                 return new WebWorker(client, __classPrivateFieldGet(this, _Target_targetInfo, "f").url, () => { } /* consoleAPICalled */, () => { } /* exceptionThrown */);
             }), "f");
         }

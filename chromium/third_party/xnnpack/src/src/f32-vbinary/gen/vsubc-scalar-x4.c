@@ -15,46 +15,46 @@
 
 
 void xnn_f32_vsubc_ukernel__scalar_x4(
-    size_t n,
-    const float* a,
-    const float* b,
-    float* y,
+    size_t batch,
+    const float* input_a,
+    const float* input_b,
+    float* output,
     const union xnn_f32_default_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
-  assert(n != 0);
-  assert(n % sizeof(float) == 0);
-  assert(a != NULL);
-  assert(b != NULL);
-  assert(y != NULL);
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input_a != NULL);
+  assert(input_b != NULL);
+  assert(output != NULL);
+
+  const float vb = *input_b;
+
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const float va0 = input_a[0];
+    const float va1 = input_a[1];
+    const float va2 = input_a[2];
+    const float va3 = input_a[3];
+    input_a += 4;
+
+    float vacc0 = va0 - vb;
+    float vacc1 = va1 - vb;
+    float vacc2 = va2 - vb;
+    float vacc3 = va3 - vb;
 
 
-  const float vb = *b;
-  for (; n >= 4 * sizeof(float); n -= 4 * sizeof(float)) {
-    const float va0 = a[0];
-    const float va1 = a[1];
-    const float va2 = a[2];
-    const float va3 = a[3];
-    a += 4;
 
-    float vy0 = va0 - vb;
-    float vy1 = va1 - vb;
-    float vy2 = va2 - vb;
-    float vy3 = va3 - vb;
-
-
-
-    y[0] = vy0;
-    y[1] = vy1;
-    y[2] = vy2;
-    y[3] = vy3;
-    y += 4;
+    output[0] = vacc0;
+    output[1] = vacc1;
+    output[2] = vacc2;
+    output[3] = vacc3;
+    output += 4;
   }
-  if XNN_UNLIKELY(n != 0) {
+  if XNN_UNLIKELY(batch != 0) {
     do {
-      const float va = *a++;
-      float vy = va - vb;
-      *y++ = vy;
-      n -= sizeof(float);
-    } while (n != 0);
+      const float va = *input_a++;
+      float vacc = va - vb;
+      *output++ = vacc;
+      batch -= sizeof(float);
+    } while (batch != 0);
   }
 }

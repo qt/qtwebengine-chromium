@@ -63,9 +63,9 @@
 namespace v8 {
 namespace internal {
 
-#define DEBUG_PRINTF(...) \
-  if (FLAG_riscv_debug) { \
-    printf(__VA_ARGS__);  \
+#define DEBUG_PRINTF(...)     \
+  if (v8_flags.riscv_debug) { \
+    printf(__VA_ARGS__);      \
   }
 
 class SafepointTableBuilder;
@@ -580,9 +580,14 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase,
       }
     }
 
+    void clear() {
+      sew_ = kVsInvalid;
+      lmul_ = kVlInvalid;
+    }
+
    private:
-    VSew sew_ = E8;
-    Vlmul lmul_ = m1;
+    VSew sew_ = kVsInvalid;
+    Vlmul lmul_ = kVlInvalid;
     int32_t vl = 0;
     Assembler* assm_;
     FPURoundingMode mode_ = RNE;

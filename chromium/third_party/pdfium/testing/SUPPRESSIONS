@@ -26,7 +26,6 @@
 11.pdf * * * skia
 
 12.pdf mac * * *
-1_10_watermark.pdf * * * *
 1_1_textbox.pdf * * * *
 1_2_typewriter.pdf * * * *
 1_3_callout.pdf * * * *
@@ -50,12 +49,6 @@
 
 3_4_textbox.pdf * * * *
 
-# TODO(pdfium:1789): Remove after associated bug is fixed
-3_image_imagemask.pdf * * * skia
-
-# TODO(pdfium:1790): Remove after associated bug is fixed
-3_interpolate_image.pdf * * * skia
-
 3_interpolate_image.pdf mac * * *
 3bigpreview.pdf mac * * *
 
@@ -77,9 +70,6 @@ FRC_10_8.2.2__T8.3_original_file.pdf * * * *
 FRC_10_8.2.4_View_C.pdf * * * skia
 
 FRC_11_8.2.2__T8.3_first_last_exchange.pdf * * * *
-
-# TODO(pdfium:1857): Remove after associated bug is fixed
-FRC_11_8.2.4_View_edit.pdf * * * skia
 
 FRC_12_8.2.2__T8.3_first_outline_obj_ID.pdf * * * *
 FRC_13_8.2.2__T8.3_Count_edit300.pdf * * * *
@@ -128,12 +118,6 @@ FRC_8.4.1_Annotations_NM.pdf * * * *
 FRC_8.5_Page_C_SubmitForm.pdf * * * *
 FRC_8.5_Page_PI_ResetForm_Phantom.pdf * * * *
 
-# TODO(pdfium:1859): Remove after associated bug is fixed
-FRC_8.5_Screen_Img_D_Launch.pdf * * * skia
-
-# TODO(pdfium:1859): Remove after associated bug is fixed
-FRC_8.5_URI_IsMap.pdf * * * skia
-
 FRC_8.5_Widget_F.pdf * nov8 * *
 FRC_8_8.2.2__T8.3_Count_remove.pdf * * * *
 FRC_9_8.2.2__T8.3_remove_first_item.pdf * * * *
@@ -154,15 +138,9 @@ all_trigger_print.pdf * * * *
 all_trigger_run_js_lunchurl.pdf mac * * *
 all_trigger_run_js_maildoc.pdf mac * * *
 
-# TODO(pdfium:1802): Remove after associated bug is fixed
-annotation_circle_fill_opacity.pdf * * * skia
-
 annotation_highlight_author_content.pdf mac * * *
 annotation_highlight_long_content.pdf mac * * *
 annotation_highlight_no_author.pdf mac * * *
-
-# TODO(pdfium:1870): Remove after associated bug is fixed
-annotation_highlight_opacity.pdf * * * skiapaths
 
 # TODO(pdfium:1803): Remove after associated bug is fixed
 annotation_ink_dot.pdf * * * skia,skiapaths
@@ -170,17 +148,8 @@ annotation_ink_dot.pdf * * * skia,skiapaths
 # TODO(pdfium:1871): Remove after associated bug is fixed
 annotation_square_dash.pdf * * * skia,skiapaths
 
-# TODO(pdfium:1802): Remove after associated bug is fixed
-annotation_square_fill_opacity.pdf * * * skia
-
-# TODO(pdfium:1802): Remove after associated bug is fixed
-annotation_square_fill_opacity_dash.pdf * * * skia
-
 app_launchurl.pdf mac * * *
 appstoredescription3.1_en_updated.pdf mac * * *
-
-# TODO(pdfium:1859): Remove after associated bug is fixed
-bi.pdf * * * skia
 
 bookmark.pdf * * * *
 bookmarkgetcolor.pdf mac * * *
@@ -197,9 +166,6 @@ bug_691967.pdf * * * skia
 
 # TODO(pdfium:1869): Remove after associated bug is fixed
 bug_880920.pdf * * * skia
-
-# TODO(pdfium:1868): Remove after associated bug is fixed
-bug_898443.pdf * * * skia
 
 bug_white_space.pdf mac * * *
 calcorderindex_test.pdf * * * *
@@ -242,10 +208,6 @@ edit_transform.pdf mac * * *
 en_contact.pdf mac * * *
 en_diy.pdf mac * * *
 en_foxit.pdf mac * * *
-
-# TODO(pdfium:1810): Remove after associated bug is fixed
-en_fqa.pdf * * * skia
-
 en_fqa2.pdf mac * * *
 en_introduce.pdf mac * * *
 en_tem.pdf mac * * *
@@ -282,19 +244,11 @@ example_022.pdf mac * * *
 example_023.pdf mac * * *
 example_024.pdf mac * * *
 example_025.pdf mac * * *
-
-# TODO(pdfium:1807, pdfium:1808): Remove after associated bug is fixed
-example_025.pdf * * * skia,skiapaths
-
 example_026.pdf mac * * *
 example_027.pdf mac * * *
 example_028.pdf mac * * *
 example_029.pdf mac * * *
 example_030.pdf mac * * *
-
-# TODO(pdfium:1809): Remove after associated bug is fixed
-example_030.pdf * * * skia,skiapaths
-
 example_031.pdf mac * * *
 example_032.pdf mac * * *
 example_033.pdf mac * * *
@@ -327,6 +281,10 @@ example_059.pdf mac * * *
 example_060.pdf mac * * *
 example_061.pdf mac * * *
 example_062.pdf mac * * *
+
+# TODO(pdfium:1896): Remove after associated bug is fixed
+example_062.pdf * * * skia,skiapaths
+
 example_063.pdf mac * * *
 example_064.pdf mac * * *
 example_065.pdf mac * * *
@@ -370,17 +328,8 @@ format_text_color.pdf mac * * *
 formfeild.pdf * * * *
 getarray.pdf mac * * *
 
-# TODO(pdfium:1788): Remove after associated bug is fixed
-group_xobject.pdf * * * skia
-
-# TODO(pdfium:1862): Remove after associated bug is fixed
-image_8bit_devicergb_dctdecode.pdf * * * skia
-
 # TODO(pdfium:1856): Remove after associated bug is fixed
 image_bmp.pdf * * * skia
-
-# TODO(pdfium:1859): Remove after associated bug is fixed
-image_foxit.pdf * * * skia
 
 # TODO(pdfium:1856): Remove after associated bug is fixed
 image_gif.pdf * * * skia
@@ -402,9 +351,6 @@ jetman_std.pdf mac * * *
 jetman_std_fixed.pdf mac * * *
 js_calculate.pdf * * * *
 list_box.pdf * * * *
-
-# TODO(pdfium:1861): Remove after associated bug is fixed
-mask_array.pdf * * * skia
 
 negative.pdf mac * * *
 new_certify1.pdf mac * * *
@@ -478,9 +424,6 @@ time.pdf mac * * *
 transformation.pdf mac * * *
 transparent.pdf mac * * *
 
-# TODO(pdfium:1802): Remove after associated bug is fixed
-transparent1.pdf * * * skia
-
 whats_new_in_v3.0.pdf mac * * *
 widget_javascript.pdf mac * * *
 
@@ -546,6 +489,9 @@ bug_1258634.in * * * skia
 # TODO(pdfium:1331): Remove after associated bug is fixed
 bug_1331.in * * * *
 
+# TODO(chromium:1356149): Remove after associated bug is fixed
+bug_1356149.in mac * * agg
+
 # TODO(pdfium:1457): Remove after associated bug is fixed
 bug_1457.in * * * *
 
@@ -588,8 +534,8 @@ reset_button.in * * * *
 bug_997412.in win * * *
 # TODO(pdfium:1107): Remove after associated bug is fixed
 standard_symbols.pdf * * * *
-# TODO(pdfium:1168): Remove after associated bug is fixed
-xfa_bmp_image.in * * * *
+# TODO(pdfium:1902): Remove after associated bug is fixed
+xfa_bmp_image.in * * * skia,skiapaths
 # TODO(pdfium:1095): Remove after associated bug is fixed
 xfa_example.in win * * *
 # TODO(pdfium:1095): Remove after associated bug is fixed

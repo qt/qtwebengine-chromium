@@ -174,6 +174,8 @@ struct QRegister {
   // Encode code * 2.
   uint8_t d() const { return (code & 0x8) >> 3; }
   uint8_t vd() const { return (code & 0x7) << 1; }
+  DRegister low() const { return DRegister{uint8_t(code * 2)}; }
+  DRegister high() const { return DRegister{uint8_t(code * 2 + 1)}; }
 };
 
 static inline bool operator==(const QRegister lhs, const QRegister rhs) {
@@ -213,6 +215,31 @@ struct ConsecutiveRegisterList {
 
   RegType start;
   uint8_t length;
+};
+
+// Specific struct for VLD2 and VLD3 register list operand.
+struct VLoadStoreRegList {
+  VLoadStoreRegList(DRegister reg1, DRegister reg2)
+      : reg1(reg1), reg2(reg2) {
+    if (reg1.code == reg2.code - 2) {
+      double_spaced = true;
+    } else {
+      double_spaced = false;
+    }
+  }
+  VLoadStoreRegList(DRegister reg1, DRegister reg2, DRegister reg3)
+      : reg1(reg1), reg2(reg2), reg3(reg3) {
+    if (reg1.code == reg2.code - 2) {
+      double_spaced = true;
+    } else {
+      double_spaced = false;
+    }
+  }
+
+  DRegister reg1;
+  DRegister reg2;
+  DRegister reg3;
+  bool double_spaced;
 };
 
 using SRegisterList = ConsecutiveRegisterList<SRegister>;
@@ -378,6 +405,8 @@ class Assembler : public AssemblerBase {
   void tst(CoreRegister rn, uint8_t imm);
 
   // SIMD instructions.
+  void vabs_f32(QRegister qd, QRegister qm);
+  void vadd_f32(QRegister qd, QRegister qn, QRegister qm);
   void vcmpe_f32(SRegister sd, SRegister sm);
   void vcvt_f32_s32(QRegister qd, QRegister qm);
   void vcvt_s32_f32(QRegister qd, QRegister qm);
@@ -398,6 +427,8 @@ class Assembler : public AssemblerBase {
   // VLD1.32 <list>, [<Rn>]{!} (single element to all lanes).
   // We cannot differentiate the register list in C++ syntax, so use an instruction name similar to AArch64 LD1R.
   void vld1r_32(DRegisterList regs, MemOperand op);
+  void vld2r_32(VLoadStoreRegList regs, MemOperand op);
+  void vld3r_32(VLoadStoreRegList regs, MemOperand op);
   // VLDM <Rn>{!}, <list> (IA).
   void vldm(MemOperand rn, SRegisterList regs);
   void vldm(MemOperand rn, DRegisterList regs);
@@ -413,6 +444,8 @@ class Assembler : public AssemblerBase {
   void vmla_f32(QRegister qd, QRegister qn, DRegisterLane dm);
   // VMLAL.S16 <Qd>, <Dn>, <Dm[x]>
   void vmlal_s16(QRegister qd, DRegister dn, DRegisterLane dm);
+  // VMOV.F32 <Qd>, #<imm>; encoding A1
+  void vmov(QRegister qd, uint8_t imm);
   // VMOV.F32 <Sd>, <Sm>; encoding A2.
   void vmov(SRegister sd, SRegister sm);
   // VMOV <Dm>, <Rt>, <Rt2>; encoding A1.
@@ -431,6 +464,7 @@ class Assembler : public AssemblerBase {
   void vmovl_s8(QRegister qd, DRegister dm);
   void vmrs(CoreRegister rt, SpecialFPRegister spec_reg);
   void vmul_f32(QRegister qd, QRegister qn, QRegister qm);
+  void vneg_f32(QRegister qd, QRegister qm);
   void vpop(DRegisterList regs);
   void vpush(DRegisterList regs);
   void vpush(SRegisterList regs);

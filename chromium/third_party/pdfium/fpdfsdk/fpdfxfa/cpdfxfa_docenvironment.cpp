@@ -396,23 +396,31 @@ void CPDFXFA_DocEnvironment::SetCalculationsEnabled(CXFA_FFDoc* hDoc,
 }
 
 WideString CPDFXFA_DocEnvironment::GetTitle(const CXFA_FFDoc* hDoc) const {
-  if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetPDFDoc())
+  if (hDoc != m_pContext->GetXFADoc())
     return WideString();
 
-  const CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo();
+  CPDF_Document* pPDFDoc = m_pContext->GetPDFDoc();
+  if (!pPDFDoc)
+    return WideString();
+
+  RetainPtr<const CPDF_Dictionary> pInfoDict = pPDFDoc->GetInfo();
   if (!pInfoDict)
     return WideString();
 
-  ByteString csTitle = pInfoDict->GetStringFor("Title");
+  ByteString csTitle = pInfoDict->GetByteStringFor("Title");
   return WideString::FromDefANSI(csTitle.AsStringView());
 }
 
 void CPDFXFA_DocEnvironment::SetTitle(CXFA_FFDoc* hDoc,
                                       const WideString& wsTitle) {
-  if (hDoc != m_pContext->GetXFADoc() || !m_pContext->GetPDFDoc())
+  if (hDoc != m_pContext->GetXFADoc())
     return;
 
-  CPDF_Dictionary* pInfoDict = m_pContext->GetPDFDoc()->GetInfo();
+  CPDF_Document* pPDFDoc = m_pContext->GetPDFDoc();
+  if (!pPDFDoc)
+    return;
+
+  RetainPtr<CPDF_Dictionary> pInfoDict = pPDFDoc->GetInfo();
   if (pInfoDict)
     pInfoDict->SetNewFor<CPDF_String>("Title", wsTitle.AsStringView());
 }
@@ -460,23 +468,24 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
     if (!pRoot)
       return;
 
-    const CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+    RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
     if (!pAcroForm)
       return;
 
-    const CPDF_Array* pArray = ToArray(pAcroForm->GetObjectFor("XFA"));
+    RetainPtr<const CPDF_Array> pArray =
+        ToArray(pAcroForm->GetObjectFor("XFA"));
     if (!pArray)
       return;
 
     for (size_t i = 1; i < pArray->size(); i += 2) {
-      const CPDF_Object* pPDFObj = pArray->GetObjectAt(i);
-      const CPDF_Object* pPrePDFObj = pArray->GetObjectAt(i - 1);
+      RetainPtr<const CPDF_Object> pPDFObj = pArray->GetObjectAt(i);
+      RetainPtr<const CPDF_Object> pPrePDFObj = pArray->GetObjectAt(i - 1);
       if (!pPrePDFObj->IsString())
         continue;
       if (!pPDFObj->IsReference())
         continue;
 
-      const CPDF_Stream* pStream = ToStream(pPDFObj->GetDirect());
+      RetainPtr<const CPDF_Stream> pStream = ToStream(pPDFObj->GetDirect());
       if (!pStream)
         continue;
       if (pPrePDFObj->GetString() == "form") {
@@ -503,9 +512,9 @@ void CPDFXFA_DocEnvironment::ExportData(CXFA_FFDoc* hDoc,
         ByteString content = ByteString::Format(kFormat, bPath.c_str());
         fileWrite->WriteString(content.AsStringView());
       }
-      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pStream);
+      auto pAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pStream));
       pAcc->LoadAllDataFiltered();
-      fileWrite->WriteBlock(pAcc->GetData(), pAcc->GetSize());
+      fileWrite->WriteSpan(pAcc->GetSpan());
     }
   }
   fileWrite->Flush();
@@ -749,7 +758,7 @@ bool CPDFXFA_DocEnvironment::ExportSubmitFile(FPDF_FILEHANDLER* pFileHandler,
     return false;
   }
 
-  const CPDF_Dictionary* pAcroForm = pRoot->GetDictFor("AcroForm");
+  RetainPtr<const CPDF_Dictionary> pAcroForm = pRoot->GetDictFor("AcroForm");
   if (!pAcroForm) {
     fileStream->Flush();
     return false;

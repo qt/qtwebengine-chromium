@@ -9,6 +9,7 @@
 #define SkRefCnt_DEFINED
 
 #include "include/core/SkTypes.h"
+#include "include/private/SkTemplates.h"
 
 #include <atomic>       // std::atomic, std::memory_order_*
 #include <cstddef>      // std::nullptr_t
@@ -335,6 +336,8 @@ public:
         using std::swap;
         swap(fPtr, that.fPtr);
     }
+
+    using sk_is_trivially_relocatable = std::true_type;
 
 private:
     T*  fPtr;

@@ -104,19 +104,19 @@ static FFSRTabsInitOnce sr_tabs_init_once[] = {
     { TX_TAB(ff_tx_init_tab_131072), AV_ONCE_INIT },
 };
 
-static av_cold void TX_TAB(ff_tx_init_tab_53)(void)
+static void TX_TAB(ff_tx_init_tab_53)(void)
 {
     TX_TAB(ff_tx_tab_53)[0] = RESCALE(cos(2 * M_PI / 12));
     TX_TAB(ff_tx_tab_53)[1] = RESCALE(cos(2 * M_PI / 12));
     TX_TAB(ff_tx_tab_53)[2] = RESCALE(cos(2 * M_PI /  6));
-    TX_TAB(ff_tx_tab_53)[3] = RESCALE(cos(2 * M_PI /  6));
+    TX_TAB(ff_tx_tab_53)[3] = RESCALE(cos(8 * M_PI /  6));
     TX_TAB(ff_tx_tab_53)[4] = RESCALE(cos(2 * M_PI /  5));
-    TX_TAB(ff_tx_tab_53)[5] = RESCALE(sin(2 * M_PI /  5));
+    TX_TAB(ff_tx_tab_53)[5] = RESCALE(sin(8 * M_PI /  5));
     TX_TAB(ff_tx_tab_53)[6] = RESCALE(cos(2 * M_PI / 10));
-    TX_TAB(ff_tx_tab_53)[7] = RESCALE(sin(2 * M_PI / 10));
+    TX_TAB(ff_tx_tab_53)[7] = RESCALE(sin(6 * M_PI /  5));
 }
 
-static av_cold void TX_TAB(ff_tx_init_tab_7)(void)
+static void TX_TAB(ff_tx_init_tab_7)(void)
 {
     TX_TAB(ff_tx_tab_7)[0] = RESCALE(cos(2 * M_PI /  7));
     TX_TAB(ff_tx_tab_7)[1] = RESCALE(sin(2 * M_PI /  7));
@@ -126,7 +126,7 @@ static av_cold void TX_TAB(ff_tx_init_tab_7)(void)
     TX_TAB(ff_tx_tab_7)[5] = RESCALE(sin(2 * M_PI / 14));
 }
 
-static av_cold void TX_TAB(ff_tx_init_tab_9)(void)
+static void TX_TAB(ff_tx_init_tab_9)(void)
 {
     TX_TAB(ff_tx_tab_9)[0] = RESCALE(cos(2 * M_PI /  3));
     TX_TAB(ff_tx_tab_9)[1] = RESCALE(sin(2 * M_PI /  3));
@@ -226,8 +226,8 @@ static av_always_inline void NAME(TXComplex *out, TXComplex *in,    \
                                                                     \
     SMUL(t[4].re, t[0].re, tab[4], tab[6], t[2].re, t[0].re);       \
     SMUL(t[4].im, t[0].im, tab[4], tab[6], t[2].im, t[0].im);       \
-    CMUL(t[5].re, t[1].re, tab[5], tab[7], t[3].re, t[1].re);       \
-    CMUL(t[5].im, t[1].im, tab[5], tab[7], t[3].im, t[1].im);       \
+    CMUL(t[5].re, t[1].re, -tab[5], -tab[7], t[3].re, t[1].re);     \
+    CMUL(t[5].im, t[1].im, -tab[5], -tab[7], t[3].im, t[1].im);     \
                                                                     \
     BF(z0[0].re, z0[3].re, t[0].re, t[1].re);                       \
     BF(z0[0].im, z0[3].im, t[0].im, t[1].im);                       \
@@ -836,7 +836,7 @@ static const FFTXCodelet TX_NAME(ff_tx_fft_pfa_##N##xM_def) = {                \
     .name       = TX_NAME_STR("fft_pfa_" #N "xM"),                             \
     .function   = TX_NAME(ff_tx_fft_pfa_##N##xM),                              \
     .type       = TX_TYPE(FFT),                                                \
-    .flags      = AV_TX_UNALIGNED | FF_TX_OUT_OF_PLACE,                        \
+    .flags      = AV_TX_UNALIGNED | AV_TX_INPLACE | FF_TX_OUT_OF_PLACE,        \
     .factors    = { N, TX_FACTOR_ANY },                                        \
     .min_len    = N*2,                                                         \
     .max_len    = TX_LEN_UNLIMITED,                                            \
@@ -940,42 +940,64 @@ static const FFTXCodelet TX_NAME(ff_tx_mdct_naive_inv_def) = {
     .prio       = FF_TX_PRIO_MIN,
 };
 
-static av_cold int TX_NAME(ff_tx_mdct_sr_init)(AVTXContext *s,
-                                               const FFTXCodelet *cd,
-                                               uint64_t flags,
-                                               FFTXCodeletOptions *opts,
-                                               int len, int inv,
-                                               const void *scale)
+static av_cold int TX_NAME(ff_tx_mdct_init)(AVTXContext *s,
+                                            const FFTXCodelet *cd,
+                                            uint64_t flags,
+                                            FFTXCodeletOptions *opts,
+                                            int len, int inv,
+                                            const void *scale)
 {
     int ret;
-    FFTXCodeletOptions sub_opts = { .invert_lookup = 0 };
+    FFTXCodeletOptions sub_opts = { .invert_lookup = inv };
 
     s->scale_d = *((SCALE_TYPE *)scale);
     s->scale_f = s->scale_d;
 
     flags &= ~FF_TX_OUT_OF_PLACE; /* We want the subtransform to be */
     flags |=  AV_TX_INPLACE;      /* in-place */
-    flags |=  FF_TX_PRESHUFFLE;   /* This function handles the permute step */
+    flags |=  FF_TX_PRESHUFFLE;   /* First try with an in-place transform */
 
     if ((ret = ff_tx_init_subtx(s, TX_TYPE(FFT), flags, &sub_opts, len >> 1,
-                                inv, scale)))
+                                inv, scale))) {
+        flags &= ~FF_TX_PRESHUFFLE; /* Now try with a generic FFT */
+        if ((ret = ff_tx_init_subtx(s, TX_TYPE(FFT), flags, &sub_opts, len >> 1,
+                                    inv, scale)))
+            return ret;
+    }
+
+    /* If we need to preshuffle just steal the map from the subcontext */
+    if (s->sub[0].flags & FF_TX_PRESHUFFLE) {
+        s->map = s->sub[0].map;
+        s->sub[0].map = NULL;
+    } else {
+        s->map = av_malloc((len >> 1)*sizeof(*s->map));
+        if (!s->map)
+            return AVERROR(ENOMEM);
+
+        for (int i = 0; i < len >> 1; i++)
+            s->map[i] = i;
+    }
+
+    if ((ret = TX_TAB(ff_tx_mdct_gen_exp)(s, inv ? s->map : NULL)))
         return ret;
 
-    if ((ret = TX_TAB(ff_tx_mdct_gen_exp)(s)))
-        return ret;
+    /* Saves a multiply in a hot path. */
+    if (inv)
+        for (int i = 0; i < (s->len >> 1); i++)
+            s->map[i] <<= 1;
 
     return 0;
 }
 
-static void TX_NAME(ff_tx_mdct_sr_fwd)(AVTXContext *s, void *_dst, void *_src,
-                                       ptrdiff_t stride)
+static void TX_NAME(ff_tx_mdct_fwd)(AVTXContext *s, void *_dst, void *_src,
+                                    ptrdiff_t stride)
 {
     TXSample *src = _src, *dst = _dst;
     TXComplex *exp = s->exp, tmp, *z = _dst;
     const int len2 = s->len >> 1;
     const int len4 = s->len >> 2;
     const int len3 = len2 * 3;
-    const int *sub_map = s->sub->map;
+    const int *sub_map = s->map;
 
     stride /= sizeof(*dst);
 
@@ -1006,26 +1028,28 @@ static void TX_NAME(ff_tx_mdct_sr_fwd)(AVTXContext *s, void *_dst, void *_src,
     }
 }
 
-static void TX_NAME(ff_tx_mdct_sr_inv)(AVTXContext *s, void *_dst, void *_src,
-                                       ptrdiff_t stride)
+static void TX_NAME(ff_tx_mdct_inv)(AVTXContext *s, void *_dst, void *_src,
+                                    ptrdiff_t stride)
 {
     TXComplex *z = _dst, *exp = s->exp;
     const TXSample *src = _src, *in1, *in2;
     const int len2 = s->len >> 1;
     const int len4 = s->len >> 2;
-    const int *sub_map = s->sub->map;
+    const int *sub_map = s->map;
 
     stride /= sizeof(*src);
     in1 = src;
     in2 = src + ((len2*2) - 1) * stride;
 
     for (int i = 0; i < len2; i++) {
-        TXComplex tmp = { in2[-2*i*stride], in1[2*i*stride] };
-        CMUL3(z[sub_map[i]], tmp, exp[i]);
+        int k = sub_map[i];
+        TXComplex tmp = { in2[-k*stride], in1[k*stride] };
+        CMUL3(z[i], tmp, exp[i]);
     }
 
     s->fn[0](&s->sub[0], z, z, sizeof(TXComplex));
 
+    exp += len2;
     for (int i = 0; i < len4; i++) {
         const int i0 = len4 + i, i1 = len4 - i - 1;
         TXComplex src1 = { z[i1].im, z[i1].re };
@@ -1036,28 +1060,28 @@ static void TX_NAME(ff_tx_mdct_sr_inv)(AVTXContext *s, void *_dst, void *_src,
     }
 }
 
-static const FFTXCodelet TX_NAME(ff_tx_mdct_sr_fwd_def) = {
-    .name       = TX_NAME_STR("mdct_sr_fwd"),
-    .function   = TX_NAME(ff_tx_mdct_sr_fwd),
+static const FFTXCodelet TX_NAME(ff_tx_mdct_fwd_def) = {
+    .name       = TX_NAME_STR("mdct_fwd"),
+    .function   = TX_NAME(ff_tx_mdct_fwd),
     .type       = TX_TYPE(MDCT),
     .flags      = AV_TX_UNALIGNED | FF_TX_OUT_OF_PLACE | FF_TX_FORWARD_ONLY,
-    .factors[0] = 2,
+    .factors    = { 2, TX_FACTOR_ANY },
     .min_len    = 2,
     .max_len    = TX_LEN_UNLIMITED,
-    .init       = TX_NAME(ff_tx_mdct_sr_init),
+    .init       = TX_NAME(ff_tx_mdct_init),
     .cpu_flags  = FF_TX_CPU_FLAGS_ALL,
     .prio       = FF_TX_PRIO_BASE,
 };
 
-static const FFTXCodelet TX_NAME(ff_tx_mdct_sr_inv_def) = {
-    .name       = TX_NAME_STR("mdct_sr_inv"),
-    .function   = TX_NAME(ff_tx_mdct_sr_inv),
+static const FFTXCodelet TX_NAME(ff_tx_mdct_inv_def) = {
+    .name       = TX_NAME_STR("mdct_inv"),
+    .function   = TX_NAME(ff_tx_mdct_inv),
     .type       = TX_TYPE(MDCT),
     .flags      = AV_TX_UNALIGNED | FF_TX_OUT_OF_PLACE | FF_TX_INVERSE_ONLY,
-    .factors[0] = 2,
+    .factors    = { 2, TX_FACTOR_ANY },
     .min_len    = 2,
     .max_len    = TX_LEN_UNLIMITED,
-    .init       = TX_NAME(ff_tx_mdct_sr_init),
+    .init       = TX_NAME(ff_tx_mdct_init),
     .cpu_flags  = FF_TX_CPU_FLAGS_ALL,
     .prio       = FF_TX_PRIO_BASE,
 };
@@ -1141,8 +1165,12 @@ static av_cold int TX_NAME(ff_tx_mdct_pfa_init)(AVTXContext *s,
     if ((ret = ff_tx_gen_compound_mapping(s, cd->factors[0], sub_len)))
         return ret;
 
-    if ((ret = TX_TAB(ff_tx_mdct_gen_exp)(s)))
+    if ((ret = TX_TAB(ff_tx_mdct_gen_exp)(s, inv ? s->map : NULL)))
         return ret;
+
+    /* Saves multiplies in loops. */
+    for (int i = 0; i < len; i++)
+        s->map[i] <<= 1;
 
     if (!(s->tmp = av_malloc(len*sizeof(*s->tmp))))
         return AVERROR(ENOMEM);
@@ -1160,6 +1188,7 @@ static void TX_NAME(ff_tx_mdct_pfa_##N##xM_inv)(AVTXContext *s, void *_dst,    \
     TXComplex *z = _dst, *exp = s->exp;                                        \
     const TXSample *src = _src, *in1, *in2;                                    \
     const int len4 = s->len >> 2;                                              \
+    const int len2 = s->len >> 1;                                              \
     const int m = s->sub->len;                                                 \
     const int *in_map = s->map, *out_map = in_map + N*m;                       \
     const int *sub_map = s->sub->map;                                          \
@@ -1168,13 +1197,15 @@ static void TX_NAME(ff_tx_mdct_pfa_##N##xM_inv)(AVTXContext *s, void *_dst,    \
     in1 = src;                                                                 \
     in2 = src + ((N*m*2) - 1) * stride;                                        \
                                                                                \
-    for (int i = 0; i < m; i++) {                                              \
+    for (int i = 0; i < len2; i += N) {                                        \
         for (int j = 0; j < N; j++) {                                          \
-            const int k = in_map[i*N + j];                                     \
+            const int k = in_map[j];                                           \
             TXComplex tmp = { in2[-k*stride], in1[k*stride] };                 \
-            CMUL3(fft##N##in[j], tmp, exp[k >> 1]);                            \
+            CMUL3(fft##N##in[j], tmp, exp[j]);                                 \
         }                                                                      \
-        fft##N(s->tmp + sub_map[i], fft##N##in, m);                            \
+        fft##N(s->tmp + *(sub_map++), fft##N##in, m);                          \
+        exp += N;                                                              \
+        in_map += N;                                                           \
     }                                                                          \
                                                                                \
     for (int i = 0; i < N; i++)                                                \
@@ -1405,21 +1436,31 @@ static const FFTXCodelet TX_NAME(ff_tx_rdft_c2r_def) = {
     .prio       = FF_TX_PRIO_BASE,
 };
 
-int TX_TAB(ff_tx_mdct_gen_exp)(AVTXContext *s)
+int TX_TAB(ff_tx_mdct_gen_exp)(AVTXContext *s, int *pre_tab)
 {
+    int off = 0;
     int len4 = s->len >> 1;
     double scale = s->scale_d;
     const double theta = (scale < 0 ? len4 : 0) + 1.0/8.0;
+    size_t alloc = pre_tab ? 2*len4 : len4;
 
-    if (!(s->exp = av_malloc_array(len4, sizeof(*s->exp))))
+    if (!(s->exp = av_malloc_array(alloc, sizeof(*s->exp))))
         return AVERROR(ENOMEM);
 
     scale = sqrt(fabs(scale));
+
+    if (pre_tab)
+        off = len4;
+
     for (int i = 0; i < len4; i++) {
         const double alpha = M_PI_2 * (i + theta) / len4;
-        s->exp[i].re = RESCALE(cos(alpha) * scale);
-        s->exp[i].im = RESCALE(sin(alpha) * scale);
+        s->exp[off + i] = (TXComplex){ RESCALE(cos(alpha) * scale),
+                                       RESCALE(sin(alpha) * scale) };
     }
+
+    if (pre_tab)
+        for (int i = 0; i < len4; i++)
+            s->exp[i] = s->exp[len4 + pre_tab[i]];
 
     return 0;
 }
@@ -1453,8 +1494,8 @@ const FFTXCodelet * const TX_NAME(ff_tx_codelet_list)[] = {
     &TX_NAME(ff_tx_fft_pfa_9xM_def),
     &TX_NAME(ff_tx_fft_pfa_15xM_def),
     &TX_NAME(ff_tx_fft_naive_def),
-    &TX_NAME(ff_tx_mdct_sr_fwd_def),
-    &TX_NAME(ff_tx_mdct_sr_inv_def),
+    &TX_NAME(ff_tx_mdct_fwd_def),
+    &TX_NAME(ff_tx_mdct_inv_def),
     &TX_NAME(ff_tx_mdct_pfa_3xM_fwd_def),
     &TX_NAME(ff_tx_mdct_pfa_5xM_fwd_def),
     &TX_NAME(ff_tx_mdct_pfa_7xM_fwd_def),

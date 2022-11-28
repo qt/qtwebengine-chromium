@@ -82,10 +82,12 @@ if (perfetto_build_with_android) {
 }
 
 if (enable_perfetto_tools) {
-  all_targets += [
-    "src/tools",
-    "src/websocket_bridge",
-  ]
+  all_targets += [ "src/tools" ]
+
+  # Windows does not have an IPC implementation.
+  if (!is_win) {
+    all_targets += [ "src/websocket_bridge" ]
+  }
 }
 
 if (enable_perfetto_unittests) {
@@ -171,6 +173,7 @@ if (perfetto_build_standalone) {
 # catch refactoring breakages earlier without having to wait for treehugger.
 if (is_android && (perfetto_build_standalone || perfetto_build_with_android)) {
   all_targets += [ "test/cts:perfetto_cts_deps" ]
+  all_targets += [ "test/vts:perfetto_vts_deps" ]
 }
 
 group("all") {

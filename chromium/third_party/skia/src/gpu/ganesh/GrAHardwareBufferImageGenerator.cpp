@@ -40,7 +40,6 @@
 #include <GLES/glext.h>
 
 #ifdef SK_VULKAN
-#include "include/gpu/vk/GrVkExtensions.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #endif
 
@@ -176,7 +175,9 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::makeView(GrRecordingContext*
             },
             backendFormat, {width, height}, GrMipmapped::kNo, GrMipmapStatus::kNotAllocated,
             GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo,
-            GrProtected(fIsProtectedContent), GrSurfaceProxy::UseAllocator::kYes);
+            GrProtected(fIsProtectedContent),
+            GrSurfaceProxy::UseAllocator::kYes,
+            "AHardwareBufferImageGenerator_MakeView");
 
     skgpu::Swizzle readSwizzle = context->priv().caps()->getReadSwizzle(backendFormat, grColorType);
 
@@ -186,23 +187,21 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::makeView(GrRecordingContext*
 GrSurfaceProxyView GrAHardwareBufferImageGenerator::onGenerateTexture(
         GrRecordingContext* context,
         const SkImageInfo& info,
-        const SkIPoint& origin,
         GrMipmapped mipmapped,
         GrImageTexGenPolicy texGenPolicy) {
+
     GrSurfaceProxyView texProxyView = this->makeView(context);
     if (!texProxyView.proxy()) {
         return {};
     }
     SkASSERT(texProxyView.asTextureProxy());
 
-    if (texGenPolicy == GrImageTexGenPolicy::kDraw && origin.isZero() &&
-        info.dimensions() == this->getInfo().dimensions() && mipmapped == GrMipmapped::kNo) {
-        // If the caller wants the full non-MIP mapped texture we're done.
+    if (texGenPolicy == GrImageTexGenPolicy::kDraw && mipmapped == GrMipmapped::kNo) {
+        // If we have the correct mip support, we're done
         return texProxyView;
     }
-    // Otherwise, make a copy for the requested subset and/or MIP maps.
-    SkIRect subset = SkIRect::MakeXYWH(origin.fX, origin.fY, info.width(), info.height());
 
+    // Otherwise, make a copy for the requested MIP map setting.
     SkBudgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
                                   ? SkBudgeted::kNo
                                   : SkBudgeted::kYes;
@@ -210,7 +209,7 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::onGenerateTexture(
     return GrSurfaceProxyView::Copy(context,
                                     std::move(texProxyView),
                                     mipmapped,
-                                    subset,
+                                    SkIRect::MakeWH(info.width(), info.height()),
                                     SkBackingFit::kExact,
                                     budgeted,
                                     /*label=*/"AHardwareBufferImageGenerator_GenerateTexture");

@@ -309,11 +309,10 @@ bool RelocInfo::OffHeapTargetIsCodedSpecially() {
 #if defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_ARM64) || \
     defined(V8_TARGET_ARCH_X64)
   return false;
-#elif defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_MIPS) ||     \
-    defined(V8_TARGET_ARCH_MIPS64) || defined(V8_TARGET_ARCH_PPC) ||      \
-    defined(V8_TARGET_ARCH_PPC64) || defined(V8_TARGET_ARCH_S390) ||      \
-    defined(V8_TARGET_ARCH_RISCV64) || defined(V8_TARGET_ARCH_LOONG64) || \
-    defined(V8_TARGET_ARCH_RISCV32)
+#elif defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_MIPS64) || \
+    defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64) ||     \
+    defined(V8_TARGET_ARCH_S390) || defined(V8_TARGET_ARCH_RISCV64) ||  \
+    defined(V8_TARGET_ARCH_LOONG64) || defined(V8_TARGET_ARCH_RISCV32)
   return true;
 #endif
 }
@@ -345,12 +344,12 @@ void RelocInfo::set_wasm_stub_call_address(Address address,
 void RelocInfo::set_target_address(Address target,
                                    WriteBarrierMode write_barrier_mode,
                                    ICacheFlushMode icache_flush_mode) {
-  DCHECK(IsCodeTargetMode(rmode_) || IsRuntimeEntry(rmode_) ||
+  DCHECK(IsCodeTargetMode(rmode_) || IsNearBuiltinEntry(rmode_) ||
          IsWasmCall(rmode_));
   Assembler::set_target_address_at(pc_, constant_pool_, target,
                                    icache_flush_mode);
   if (!host().is_null() && IsCodeTargetMode(rmode_) &&
-      !FLAG_disable_write_barriers) {
+      !v8_flags.disable_write_barriers) {
     Code target_code = Code::GetCodeFromTargetAddress(target);
     WriteBarrierForCode(host(), this, target_code, write_barrier_mode);
   }
@@ -370,13 +369,13 @@ bool RelocInfo::HasTargetAddressAddress() const {
   static constexpr int kTargetAddressAddressModeMask =
       ModeMask(CODE_TARGET) | ModeMask(FULL_EMBEDDED_OBJECT) |
       ModeMask(COMPRESSED_EMBEDDED_OBJECT) | ModeMask(EXTERNAL_REFERENCE) |
-      ModeMask(OFF_HEAP_TARGET) | ModeMask(RUNTIME_ENTRY) |
-      ModeMask(WASM_CALL) | ModeMask(WASM_STUB_CALL);
+      ModeMask(OFF_HEAP_TARGET) | ModeMask(WASM_CALL) |
+      ModeMask(WASM_STUB_CALL);
 #else
   static constexpr int kTargetAddressAddressModeMask =
       ModeMask(CODE_TARGET) | ModeMask(RELATIVE_CODE_TARGET) |
       ModeMask(FULL_EMBEDDED_OBJECT) | ModeMask(EXTERNAL_REFERENCE) |
-      ModeMask(OFF_HEAP_TARGET) | ModeMask(RUNTIME_ENTRY) | ModeMask(WASM_CALL);
+      ModeMask(OFF_HEAP_TARGET) | ModeMask(WASM_CALL);
 #endif
   return (ModeMask(rmode_) & kTargetAddressAddressModeMask) != 0;
 }
@@ -400,14 +399,10 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "compressed embedded object";
     case FULL_EMBEDDED_OBJECT:
       return "full embedded object";
-    case DATA_EMBEDDED_OBJECT:
-      return "data embedded object";
     case CODE_TARGET:
       return "code target";
     case RELATIVE_CODE_TARGET:
       return "relative code target";
-    case RUNTIME_ENTRY:
-      return "runtime entry";
     case EXTERNAL_REFERENCE:
       return "external reference";
     case INTERNAL_REFERENCE:
@@ -416,6 +411,8 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "encoded internal reference";
     case OFF_HEAP_TARGET:
       return "off heap target";
+    case NEAR_BUILTIN_ENTRY:
+      return "near builtin entry";
     case DEOPT_SCRIPT_OFFSET:
       return "deopt script offset";
     case DEOPT_INLINING_ID:
@@ -472,13 +469,6 @@ void RelocInfo::Print(Isolate* isolate, std::ostream& os) {
       os << " " << Builtins::name(code.builtin_id());
     }
     os << ")  (" << reinterpret_cast<const void*>(target_address()) << ")";
-  } else if (IsRuntimeEntry(rmode_)) {
-    // Deoptimization bailouts are stored as runtime entries.
-    DeoptimizeKind type;
-    if (Deoptimizer::IsDeoptimizationEntry(isolate, target_address(), &type)) {
-      os << "  (" << Deoptimizer::MessageFor(type)
-         << " deoptimization bailout)";
-    }
   } else if (IsConstPool(rmode_)) {
     os << " (size " << static_cast<int>(data_) << ")";
   }
@@ -494,7 +484,6 @@ void RelocInfo::Verify(Isolate* isolate) {
       Object::VerifyPointer(isolate, target_object(isolate));
       break;
     case FULL_EMBEDDED_OBJECT:
-    case DATA_EMBEDDED_OBJECT:
       Object::VerifyAnyTagged(isolate, target_object(isolate));
       break;
     case CODE_TARGET:
@@ -527,7 +516,13 @@ void RelocInfo::Verify(Isolate* isolate) {
           OffHeapInstructionStream::TryLookupCode(isolate, addr)));
       break;
     }
-    case RUNTIME_ENTRY:
+    case NEAR_BUILTIN_ENTRY: {
+      Address addr = target_address();
+      CHECK_NE(addr, kNullAddress);
+      CHECK(Builtins::IsBuiltinId(
+          OffHeapInstructionStream::TryLookupCode(isolate, addr)));
+      break;
+    }
     case EXTERNAL_REFERENCE:
     case DEOPT_SCRIPT_OFFSET:
     case DEOPT_INLINING_ID:

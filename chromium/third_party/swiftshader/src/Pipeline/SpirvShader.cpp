@@ -30,24 +30,16 @@ namespace sw {
 SpirvShader::SpirvShader(
     VkShaderStageFlagBits pipelineStage,
     const char *entryPointName,
-    SpirvBinary const &insns,
+    const SpirvBinary &insns,
     const vk::RenderPass *renderPass,
     uint32_t subpassIndex,
-    bool robustBufferAccess,
-    const std::shared_ptr<vk::dbg::Context> &dbgctx,
-    std::shared_ptr<SpirvProfiler> profiler)
+    bool robustBufferAccess)
     : insns{ insns }
     , inputs{ MAX_INTERFACE_COMPONENTS }
     , outputs{ MAX_INTERFACE_COMPONENTS }
     , robustBufferAccess(robustBufferAccess)
-    , profiler(profiler)
 {
 	ASSERT(insns.size() > 0);
-
-	if(dbgctx)
-	{
-		dbgInit(dbgctx);
-	}
 
 	if(renderPass)
 	{
@@ -196,8 +188,8 @@ SpirvShader::SpirvShader(
 		case spv::OpGroupDecorate:
 			{
 				uint32_t group = insn.word(1);
-				auto const &groupDecorations = decorations[group];
-				auto const &descriptorGroupDecorations = descriptorDecorations[group];
+				const auto &groupDecorations = decorations[group];
+				const auto &descriptorGroupDecorations = descriptorDecorations[group];
 				for(auto i = 2u; i < insn.wordCount(); i++)
 				{
 					// Remaining operands are targets to apply the group to.
@@ -210,7 +202,7 @@ SpirvShader::SpirvShader(
 
 		case spv::OpGroupMemberDecorate:
 			{
-				auto const &srcDecorations = decorations[insn.word(1)];
+				const auto &srcDecorations = decorations[insn.word(1)];
 				for(auto i = 2u; i < insn.wordCount(); i += 2)
 				{
 					// remaining operands are pairs of <id>, literal for members to apply to.
@@ -459,6 +451,8 @@ SpirvShader::SpirvShader(
 				case spv::CapabilityUniformTexelBufferArrayDynamicIndexing: capabilities.UniformTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityStorageTexelBufferArrayDynamicIndexing: capabilities.StorageTexelBufferArrayDynamicIndexing = true; break;
 				case spv::CapabilityUniformBufferArrayNonUniformIndexing: capabilities.UniformBufferArrayNonUniformIndex = true; break;
+				case spv::CapabilitySampledImageArrayNonUniformIndexing: capabilities.SampledImageArrayNonUniformIndexing = true; break;
+				case spv::CapabilityStorageImageArrayNonUniformIndexing: capabilities.StorageImageArrayNonUniformIndexing = true; break;
 				case spv::CapabilityPhysicalStorageBufferAddresses: capabilities.PhysicalStorageBufferAddresses = true; break;
 				default:
 					UNSUPPORTED("Unsupported capability %u", insn.word(1));
@@ -504,7 +498,6 @@ SpirvShader::SpirvShader(
 			{
 				static constexpr std::pair<const char *, Extension::Name> extensionsByName[] = {
 					{ "GLSL.std.450", Extension::GLSLstd450 },
-					{ "OpenCL.DebugInfo.100", Extension::OpenCLDebugInfo100 },
 					{ "NonSemantic.", Extension::NonSemanticInfo },
 				};
 				static constexpr auto extensionCount = sizeof(extensionsByName) / sizeof(extensionsByName[0]);
@@ -572,6 +565,8 @@ SpirvShader::SpirvShader(
 		case spv::OpPtrAccessChain:
 		case spv::OpSampledImage:
 		case spv::OpImage:
+		case spv::OpCopyObject:
+		case spv::OpCopyLogical:
 			{
 				// Propagate the descriptor decorations to the result.
 				Object::ID resultId = insn.word(2);
@@ -765,8 +760,6 @@ SpirvShader::SpirvShader(
 		case spv::OpGroupNonUniformLogicalAnd:
 		case spv::OpGroupNonUniformLogicalOr:
 		case spv::OpGroupNonUniformLogicalXor:
-		case spv::OpCopyObject:
-		case spv::OpCopyLogical:
 		case spv::OpArrayLength:
 		case spv::OpIsHelperInvocationEXT:
 			// Instructions that yield an intermediate value or divergent pointer
@@ -778,9 +771,6 @@ SpirvShader::SpirvShader(
 			{
 			case Extension::GLSLstd450:
 				DefineResult(insn);
-				break;
-			case Extension::OpenCLDebugInfo100:
-				DefineOpenCLDebugInfo100(insn);
 				break;
 			case Extension::NonSemanticInfo:
 				// An extended set name which is prefixed with "NonSemantic." is
@@ -850,13 +840,10 @@ SpirvShader::SpirvShader(
 		WriteCFGGraphVizDotFile(path);
 	}
 #endif
-
-	dbgCreateFile();
 }
 
 SpirvShader::~SpirvShader()
 {
-	dbgTerm();
 }
 
 void SpirvShader::DeclareType(InsnIterator insn)
@@ -972,7 +959,7 @@ void SpirvShader::ProcessInterfaceVariable(Object &object)
 	{
 		object.kind = Object::Kind::InterfaceVariable;
 		VisitInterface(resultId,
-		               [&userDefinedInterface](Decorations const &d, AttribType type) {
+		               [&userDefinedInterface](const Decorations &d, AttribType type) {
 			               // Populate a single scalar slot in the interface from a collection of decorations and the intended component type.
 			               int32_t scalarSlot = (d.Location << 2) | d.Component;
 			               ASSERT(scalarSlot >= 0 &&
@@ -1052,6 +1039,9 @@ void SpirvShader::ProcessExecutionMode(InsnIterator insn)
 	case spv::ExecutionModeDepthUnchanged:
 		// TODO(b/177915067): Can be used to optimize depth test, currently unused.
 		executionModes.DepthUnchanged = true;
+		break;
+	case spv::ExecutionModeStencilRefReplacingEXT:
+		executionModes.StencilRefReplacing = true;
 		break;
 	case spv::ExecutionModeLocalSize:
 	case spv::ExecutionModeLocalSizeId:
@@ -1161,7 +1151,7 @@ int SpirvShader::VisitInterfaceInner(Type::ID id, Decorations d, const Interface
 
 	ApplyDecorationsForId(&d, id);
 
-	auto const &obj = getType(id);
+	const auto &obj = getType(id);
 	switch(obj.opcode())
 	{
 	case spv::OpTypePointer:
@@ -1379,7 +1369,7 @@ SIMD::Pointer SpirvShader::WalkExplicitLayoutAccessChain(Object::ID baseId, Obje
 	return ptr;
 }
 
-SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, bool nonUniform, EmitState const *state) const
+SIMD::Pointer SpirvShader::WalkAccessChain(Object::ID baseId, Object::ID elementId, const Span &indexIds, bool nonUniform, const EmitState *state) const
 {
 	// TODO: avoid doing per-lane work in some cases if we can?
 	auto routine = state->routine;
@@ -1707,9 +1697,12 @@ void SpirvShader::DefineResult(const InsnIterator &insn)
 
 	switch(getType(typeId).opcode())
 	{
+	case spv::OpTypeSampledImage:
+		object.kind = Object::Kind::SampledImage;
+		break;
+
 	case spv::OpTypePointer:
 	case spv::OpTypeImage:
-	case spv::OpTypeSampledImage:
 	case spv::OpTypeSampler:
 		object.kind = Object::Kind::Pointer;
 		break;
@@ -1719,10 +1712,9 @@ void SpirvShader::DefineResult(const InsnIterator &insn)
 	}
 
 	object.definition = insn;
-	dbgDeclareResult(insn, resultId);
 }
 
-OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, EmitState const *state) const
+OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, const EmitState *state) const
 {
 	auto it = descriptorDecorations.find(pointerId);
 	if(it != descriptorDecorations.end())
@@ -1778,11 +1770,6 @@ OutOfBoundsBehavior SpirvShader::getOutOfBoundsBehavior(Object::ID pointerId, Em
 
 void SpirvShader::emitProlog(SpirvRoutine *routine) const
 {
-	if(IsProfilingEnabled())
-	{
-		routine->profData = std::make_unique<SpirvProfileData>();
-	}
-
 	for(auto insn : *this)
 	{
 		switch(insn.opcode())
@@ -1833,12 +1820,9 @@ void SpirvShader::emitProlog(SpirvRoutine *routine) const
 	}
 }
 
-void SpirvShader::emit(SpirvRoutine *routine, RValue<SIMD::Int> const &activeLaneMask, RValue<SIMD::Int> const &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, unsigned int multiSampleCount) const
+void SpirvShader::emit(SpirvRoutine *routine, const RValue<SIMD::Int> &activeLaneMask, const RValue<SIMD::Int> &storesAndAtomicsMask, const vk::DescriptorSet::Bindings &descriptorSets, unsigned int multiSampleCount) const
 {
 	EmitState state(routine, entryPoint, activeLaneMask, storesAndAtomicsMask, descriptorSets, multiSampleCount);
-
-	dbgBeginEmit(&state);
-	defer(dbgEndEmit(&state));
 
 	// Emit everything up to the first label
 	// TODO: Separate out dispatch of block from non-block instructions?
@@ -1875,16 +1859,7 @@ void SpirvShader::EmitInstructions(InsnIterator begin, InsnIterator end, EmitSta
 
 SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitState *state) const
 {
-	dbgBeginEmitInstruction(insn, state);
-	defer(dbgEndEmitInstruction(insn, state));
-
 	auto opcode = insn.opcode();
-
-	if(IsProfilingEnabled() && IsStatement(opcode))
-	{
-		int64_t *counter = &state->routine->profData->spvOpExecutionCount[opcode];
-		AddAtomic(Pointer<Long>(ConstantPointer(counter)), 1);
-	}
 
 #if SPIRV_SHADER_ENABLE_DBG
 	{
@@ -1957,7 +1932,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitResult::Continue;
 
 	case spv::OpLine:
-		return EmitLine(insn, state);
+		return EmitResult::Continue;  // TODO(b/251802301)
 
 	case spv::OpLabel:
 		return EmitResult::Continue;
@@ -2180,7 +2155,7 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 	case spv::OpImageDrefGather:
 	case spv::OpImageFetch:
 	case spv::OpImageQueryLod:
-		return EmitImageSample(ImageInstruction(insn, *this), state);
+		return EmitImageSample(ImageInstruction(insn, *this, state), state);
 
 	case spv::OpImageQuerySizeLod:
 		return EmitImageQuerySizeLod(insn, state);
@@ -2195,17 +2170,19 @@ SpirvShader::EmitResult SpirvShader::EmitInstruction(InsnIterator insn, EmitStat
 		return EmitImageQuerySamples(insn, state);
 
 	case spv::OpImageRead:
-		return EmitImageRead(ImageInstruction(insn, *this), state);
+		return EmitImageRead(ImageInstruction(insn, *this, state), state);
 
 	case spv::OpImageWrite:
-		return EmitImageWrite(ImageInstruction(insn, *this), state);
+		return EmitImageWrite(ImageInstruction(insn, *this, state), state);
 
 	case spv::OpImageTexelPointer:
-		return EmitImageTexelPointer(ImageInstruction(insn, *this), state);
+		return EmitImageTexelPointer(ImageInstruction(insn, *this, state), state);
 
 	case spv::OpSampledImage:
+		return EmitSampledImage(insn, state);
+
 	case spv::OpImage:
-		return EmitSampledImageCombineOrSplit(insn, state);
+		return EmitImage(insn, state);
 
 	case spv::OpCopyObject:
 	case spv::OpCopyLogical:
@@ -2549,7 +2526,7 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicOp(InsnIterator insn, EmitState *
 
 	SIMD::Int mask = state->activeLaneMask() & state->storesAndAtomicsMask();
 
-	if(getObject(pointerId).opcode() == spv::OpImageTexelPointer)
+	if((getObject(pointerId).opcode() == spv::OpImageTexelPointer) && ptr.isBasePlusOffset)
 	{
 		mask &= ptr.isInBounds(sizeof(int32_t), OutOfBoundsBehavior::Nullify);
 	}
@@ -2642,12 +2619,23 @@ SpirvShader::EmitResult SpirvShader::EmitAtomicCompareExchange(InsnIterator insn
 
 SpirvShader::EmitResult SpirvShader::EmitCopyObject(InsnIterator insn, EmitState *state) const
 {
-	auto type = getType(insn.resultTypeId());
-	auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
 	auto src = Operand(this, state, insn.word(3));
-	for(uint32_t i = 0; i < type.componentCount; i++)
+	if(src.isPointer())
 	{
-		dst.move(i, src.Int(i));
+		state->createPointer(insn.resultId(), src.Pointer());
+	}
+	else if(src.isSampledImage())
+	{
+		state->createSampledImage(insn.resultId(), src.SampledImage());
+	}
+	else
+	{
+		auto type = getType(insn.resultTypeId());
+		auto &dst = state->createIntermediate(insn.resultId(), type.componentCount);
+		for(uint32_t i = 0; i < type.componentCount; i++)
+		{
+			dst.move(i, src.Int(i));
+		}
 	}
 	return EmitResult::Continue;
 }
@@ -2691,8 +2679,6 @@ SpirvShader::EmitResult SpirvShader::EmitExtendedInstruction(InsnIterator insn, 
 	{
 	case Extension::GLSLstd450:
 		return EmitExtGLSLstd450(insn, state);
-	case Extension::OpenCLDebugInfo100:
-		return EmitOpenCLDebugInfo100(insn, state);
 	case Extension::NonSemanticInfo:
 		// An extended set name which is prefixed with "NonSemantic." is
 		// guaranteed to contain only non-semantic instructions and all
@@ -2727,7 +2713,7 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 					auto &dst = routine->getVariable(insn.resultId());
 					int offset = 0;
 					VisitInterface(insn.resultId(),
-					               [&](Decorations const &d, AttribType type) {
+					               [&](const Decorations &d, AttribType type) {
 						               auto scalarSlot = d.Location << 2 | d.Component;
 						               routine->outputs[scalarSlot] = dst[offset++];
 					               });
@@ -2737,11 +2723,6 @@ void SpirvShader::emitEpilog(SpirvRoutine *routine) const
 		default:
 			break;
 		}
-	}
-
-	if(IsProfilingEnabled())
-	{
-		profiler->RegisterShaderForProfiling(std::to_string(insns.getIdentifier()) + "_" + std::to_string((uintptr_t)routine), std::move(routine->profData));
 	}
 }
 
@@ -2787,15 +2768,17 @@ SpirvShader::Operand::Operand(const EmitState *state, const Object &object)
     : constant(object.kind == SpirvShader::Object::Kind::Constant ? object.constantValue.data() : nullptr)
     , intermediate(object.kind == SpirvShader::Object::Kind::Intermediate ? &state->getIntermediate(object.id()) : nullptr)
     , pointer(object.kind == SpirvShader::Object::Kind::Pointer ? &state->getPointer(object.id()) : nullptr)
+    , sampledImage(object.kind == SpirvShader::Object::Kind::SampledImage ? &state->getSampledImage(object.id()) : nullptr)
     , componentCount(intermediate ? intermediate->componentCount : object.constantValue.size())
 {
-	ASSERT(intermediate || constant || pointer);
+	ASSERT(intermediate || constant || pointer || sampledImage);
 }
 
 SpirvShader::Operand::Operand(const Intermediate &value)
     : constant(nullptr)
     , intermediate(&value)
     , pointer(nullptr)
+    , sampledImage(nullptr)
     , componentCount(value.componentCount)
 {
 }
@@ -2818,12 +2801,12 @@ bool SpirvShader::Object::isConstantZero() const
 	return true;
 }
 
-SpirvRoutine::SpirvRoutine(vk::PipelineLayout const *pipelineLayout)
+SpirvRoutine::SpirvRoutine(const vk::PipelineLayout *pipelineLayout)
     : pipelineLayout(pipelineLayout)
 {
 }
 
-void SpirvRoutine::setImmutableInputBuiltins(SpirvShader const *shader)
+void SpirvRoutine::setImmutableInputBuiltins(const SpirvShader *shader)
 {
 	setInputBuiltin(shader, spv::BuiltInSubgroupLocalInvocationId, [&](const SpirvShader::BuiltinMapping &builtin, Array<SIMD::Float> &value) {
 		ASSERT(builtin.SizeInComponents == 1);

@@ -104,16 +104,6 @@ typedef struct aom_rational64 {
 } aom_rational64_t;  // alias for struct aom_rational
 
 enum {
-  NORMAL = 0,
-  FOURFIVE = 1,
-  THREEFIVE = 2,
-  THREEFOUR = 3,
-  ONEFOUR = 4,
-  ONEEIGHT = 5,
-  ONETWO = 6
-} UENUM1BYTE(AOM_SCALING);
-
-enum {
   // Good Quality Fast Encoding. The encoder balances quality with the amount of
   // time it takes to encode the output. Speed setting controls how fast.
   GOOD,
@@ -199,8 +189,6 @@ enum {
 } UENUM1BYTE(SCENECUT_MODE);
 
 #define MAX_VBR_CORPUS_COMPLEXITY 10000
-
-/*!\cond */
 
 typedef enum {
   MOD_FP,           // First pass
@@ -573,13 +561,13 @@ typedef struct {
   int drop_frames_water_mark;
   /*!
    * under_shoot_pct indicates the tolerance of the VBR algorithm to
-   * undershoot and is used as a trigger threshold for more agressive
+   * undershoot and is used as a trigger threshold for more aggressive
    * adaptation of Q. It's value can range from 0-100.
    */
   int under_shoot_pct;
   /*!
    * over_shoot_pct indicates the tolerance of the VBR algorithm to overshoot
-   * and is used as a trigger threshold for more agressive adaptation of Q.
+   * and is used as a trigger threshold for more aggressive adaptation of Q.
    * It's value can range from 0-1000.
    */
   int over_shoot_pct;
@@ -861,6 +849,12 @@ typedef struct {
    * 3: Loop filter is disables for the frames with low motion
    */
   LOOPFILTER_CONTROL loopfilter_control;
+
+  /*!
+   * Indicates if the application of post-processing filters should be skipped
+   * on reconstructed frame.
+   */
+  bool skip_postproc_filtering;
 } AlgoCfg;
 /*!\cond */
 
@@ -1067,6 +1061,9 @@ typedef struct AV1EncoderConfig {
 
   // Exit the encoder when it fails to encode to a given level.
   int strict_level_conformance;
+
+  // Max depth for the GOP after a key frame
+  int kf_max_pyr_height;
   /*!\endcond */
 } AV1EncoderConfig;
 
@@ -1363,8 +1360,8 @@ typedef struct {
 #endif  // CONFIG_MULTITHREAD
   /*!
    * Buffer to store the superblock whose encoding is complete.
-   * cur_col[i] stores the number of superblocks which finished encoding in the
-   * ith superblock row.
+   * num_finished_cols[i] stores the number of superblocks which finished
+   * encoding in the ith superblock row.
    */
   int *num_finished_cols;
   /*!
@@ -2354,6 +2351,22 @@ typedef struct DuckyEncodeInfo {
 /*!\endcond */
 #endif
 
+/*!\cond */
+typedef struct RTC_REF {
+  /*!
+   * LAST_FRAME (0), LAST2_FRAME(1), LAST3_FRAME(2), GOLDEN_FRAME(3),
+   * BWDREF_FRAME(4), ALTREF2_FRAME(5), ALTREF_FRAME(6).
+   */
+  int reference[INTER_REFS_PER_FRAME];
+  int ref_idx[INTER_REFS_PER_FRAME];
+  int refresh[REF_FRAMES];
+  int set_ref_frame_config;
+  int non_reference_frame;
+  int ref_frame_comp[3];
+  int gld_idx_1layer;
+} RTC_REF;
+/*!\endcond */
+
 /*!
  * \brief Structure to hold data corresponding to an encoded frame.
  */
@@ -2842,6 +2855,11 @@ typedef struct AV1_COMP {
    * Refresh frame flags for golden, bwd-ref and alt-ref frames.
    */
   RefreshFrameInfo refresh_frame;
+
+  /*!
+   * Flag to reduce the number of reference frame buffers used in rt.
+   */
+  int rt_reduce_num_ref_buffers;
 
   /*!
    * Flags signalled by the external interface at frame level.
@@ -3388,6 +3406,16 @@ typedef struct AV1_COMP {
    * Frames since last frame with cdf update.
    */
   int frames_since_last_update;
+
+  /*!
+   * Struct for the reference structure for RTC.
+   */
+  RTC_REF rtc_ref;
+
+  /*!
+   * Block level thresholds to force zeromv-skip at partition level.
+   */
+  unsigned int zeromv_skip_thresh_exit_part[BLOCK_SIZES_ALL];
 } AV1_COMP;
 
 /*!
@@ -3599,7 +3627,8 @@ int av1_get_active_map(AV1_COMP *cpi, unsigned char *map, int rows, int cols);
 
 int av1_set_internal_size(AV1EncoderConfig *const oxcf,
                           ResizePendingParams *resize_pending_params,
-                          AOM_SCALING horiz_mode, AOM_SCALING vert_mode);
+                          AOM_SCALING_MODE horiz_mode,
+                          AOM_SCALING_MODE vert_mode);
 
 int av1_get_quantizer(struct AV1_COMP *cpi);
 
@@ -3734,8 +3763,10 @@ static INLINE void alloc_frame_mvs(AV1_COMMON *const cm, RefCntBuffer *buf) {
 // the frame token allocation.
 static INLINE unsigned int allocated_tokens(const TileInfo *tile,
                                             int sb_size_log2, int num_planes) {
-  int tile_mb_rows = (tile->mi_row_end - tile->mi_row_start + 2) >> 2;
-  int tile_mb_cols = (tile->mi_col_end - tile->mi_col_start + 2) >> 2;
+  int tile_mb_rows =
+      ROUND_POWER_OF_TWO(tile->mi_row_end - tile->mi_row_start, 2);
+  int tile_mb_cols =
+      ROUND_POWER_OF_TWO(tile->mi_col_end - tile->mi_col_start, 2);
 
   return get_token_alloc(tile_mb_rows, tile_mb_cols, sb_size_log2, num_planes);
 }
@@ -3820,6 +3851,13 @@ static INLINE int is_one_pass_rt_params(const AV1_COMP *cpi) {
          cpi->oxcf.gf_cfg.lag_in_frames == 0;
 }
 
+// Use default/internal reference structure for single-layer RTC.
+static INLINE int use_rtc_reference_structure_one_layer(const AV1_COMP *cpi) {
+  return is_one_pass_rt_params(cpi) && cpi->ppi->number_spatial_layers == 1 &&
+         cpi->ppi->number_temporal_layers == 1 &&
+         !cpi->rtc_ref.set_ref_frame_config;
+}
+
 // Function return size of frame stats buffer
 static INLINE int get_stats_buf_size(int num_lap_buffer, int num_lag_buffer) {
   /* if lookahead is enabled return num_lap_buffers else num_lag_buffers */
@@ -3866,12 +3904,12 @@ void av1_setup_frame_size(AV1_COMP *cpi);
 
 // Returns 1 if a frame is scaled and 0 otherwise.
 static INLINE int av1_resize_scaled(const AV1_COMMON *cm) {
-  return !(cm->superres_upscaled_width == cm->render_width &&
-           cm->superres_upscaled_height == cm->render_height);
+  return cm->superres_upscaled_width != cm->render_width ||
+         cm->superres_upscaled_height != cm->render_height;
 }
 
 static INLINE int av1_frame_scaled(const AV1_COMMON *cm) {
-  return !av1_superres_scaled(cm) && av1_resize_scaled(cm);
+  return av1_superres_scaled(cm) || av1_resize_scaled(cm);
 }
 
 // Don't allow a show_existing_frame to coincide with an error resilient
@@ -4036,6 +4074,12 @@ static INLINE int is_frame_resize_pending(const AV1_COMP *const cpi) {
            cpi->common.height != resize_pending_params->height));
 }
 
+// Check if CDEF is used.
+static INLINE int is_cdef_used(const AV1_COMMON *const cm) {
+  return cm->seq_params->enable_cdef && !cm->features.coded_lossless &&
+         !cm->tiles.large_scale;
+}
+
 // Check if loop restoration filter is used.
 static INLINE int is_restoration_used(const AV1_COMMON *const cm) {
   return cm->seq_params->enable_restoration && !cm->features.all_lossless &&
@@ -4046,6 +4090,12 @@ static INLINE int is_inter_tx_size_search_level_one(
     const TX_SPEED_FEATURES *tx_sf) {
   return (tx_sf->inter_tx_size_search_init_depth_rect >= 1 &&
           tx_sf->inter_tx_size_search_init_depth_sqr >= 1);
+}
+
+// Enable switchable motion mode only if warp and OBMC tools are allowed
+static INLINE bool is_switchable_motion_mode_allowed(bool allow_warped_motion,
+                                                     bool enable_obmc) {
+  return (allow_warped_motion || enable_obmc);
 }
 
 #if CONFIG_AV1_TEMPORAL_DENOISING

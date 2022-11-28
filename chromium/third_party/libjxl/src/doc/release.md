@@ -129,6 +129,10 @@ This will update the version in the following files:
  * `debian/changelog` to create the Debian package release with the new version.
    Debian changelog shouldn't repeat the library changelog, instead it should
    include changes to the packaging scripts.
+ 
+If there were incompatible API/ABI changes, make sure to also adapt the 
+corresponding section in 
+[CMakeLists.txt](https://github.com/libjxl/libjxl/blob/main/lib/CMakeLists.txt#L12).
 
 ## Cherry-pick fixes to a release
 
@@ -260,3 +264,37 @@ instructions:
    to see the results.
 
  * Finally click "Publish release" and go celebrate with the team. 🎉
+
+### How to build downstream projects
+
+```bash
+docker run -it debian:bullseye /bin/bash
+
+apt update
+apt install -y clang cmake git libbrotli-dev nasm pkg-config ninja-build
+export CC=clang
+export CXX=clang++
+
+git clone --recurse-submodules --depth 1 -b v0.7.x \
+  https://github.com/libjxl/libjxl.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/ImageMagick/ImageMagick.git
+git clone --recurse-submodules --depth 1 \
+  https://github.com/FFmpeg/FFmpeg.git
+
+cd ~/libjxl
+git checkout v0.7.x
+cmake -B build -G Ninja .
+cmake --build build
+cmake --install build
+
+cd ~/ImageMagick
+./configure --with-jxl=yes
+# check for "JPEG XL --with-jxl=yes yes"
+make -j 80
+
+cd ~/FFmpeg
+./configure --enable-libjxl
+# check for libjxl decoder/encoder support
+make -j 80
+```

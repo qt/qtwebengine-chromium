@@ -33,6 +33,7 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
 #include "src/gpu/ganesh/GrGpuResourcePriv.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -401,20 +402,23 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
     GrSamplerState sampler(GrSamplerState::WrapMode::kRepeat, SkFilterMode::kNearest);
     auto te = GrTextureEffect::Make(
             std::move(tex), kPremul_SkAlphaType, SkMatrix::I(), sampler, *caps);
-    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
-        uniform half range;
-        uniform shader table;
-        half4 main(float2 xy, half4 color) {
-            half value = table.eval(sk_FragCoord.xy).a - 0.5; // undo the bias in the table
+    static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
+        "uniform half range;"
+        "uniform shader inputFP;"
+        "uniform shader table;"
+        "half4 main(float2 xy) {"
+            "half4 color = inputFP.eval(xy);"
+            "half value = table.eval(sk_FragCoord.xy).a - 0.5;" // undo the bias in the table
             // For each color channel, add the random offset to the channel value and then clamp
             // between 0 and alpha to keep the color premultiplied.
-            return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
-        }
-    )");
-    return GrSkSLFP::Make(effect, "Dither", std::move(inputFP),
+            "return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);"
+        "}"
+    );
+    return GrSkSLFP::Make(effect, "Dither", /*inputFP=*/nullptr,
                           GrSkSLFP::OptFlags::kPreservesOpaqueInput,
                           "range", range,
-                          "table", std::move(te));
+                          "inputFP", std::move(inputFP),
+                          "table", GrSkSLFP::IgnoreOptFlags(std::move(te)));
 }
 #endif
 

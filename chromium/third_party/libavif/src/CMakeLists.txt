@@ -3,6 +3,11 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+# New in CMake version 3.15. MSVC warning flags are not in CMAKE_<LANG>_FLAGS by default.
+if(POLICY CMP0092)
+    cmake_policy(SET CMP0092 NEW)
+endif()
+
 # Specify search path for CMake modules to be loaded by include() and find_package()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
@@ -119,29 +124,37 @@ if(AVIF_LOCAL_LIBYUV)
         set(LIBYUV_LIBRARY ${LIB_FILENAME} PARENT_SCOPE)
     endif()
 endif()
+option(AVIF_LOCAL_LIBSHARPYUV "Build libsharpyuv by providing your own copy inside the ext subdir." OFF)
+if(AVIF_LOCAL_LIBSHARPYUV)
+    set(LIB_FILENAME "${CMAKE_CURRENT_SOURCE_DIR}/ext/libwebp/build/libsharpyuv${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    message(STATUS "AVIF_LOCAL_LIBSHARPYUV LIB_FILENAME ${LIB_FILENAME}")
+    if(NOT EXISTS "${LIB_FILENAME}")
+        message(FATAL_ERROR "libavif(AVIF_LOCAL_LIBSHARPYUV): ${LIB_FILENAME} is missing, bailing out")
+    endif()
+    if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
+        set(LIBSHARPYUV_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext/libwebp")
+        set(LIBSHARPYUV_LIBRARY ${LIB_FILENAME})
+    else()
+        set(LIBSHARPYUV_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ext/libwebp" PARENT_SCOPE)
+        set(LIBSHARPYUV_LIBRARY ${LIB_FILENAME} PARENT_SCOPE)
+    endif()
+endif()
 # ---------------------------------------------------------------------------------------
 
 # Enable all warnings
 include(CheckCCompilerFlag)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang")
     message(STATUS "libavif: Enabling warnings for Clang")
-    add_definitions(-Wall -Wextra -Wshorten-64-to-32)
+    add_compile_options(-Wall -Wextra -Wshorten-64-to-32)
 elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
     message(STATUS "libavif: Enabling warnings for GCC")
-    add_definitions(-Wall -Wextra)
+    add_compile_options(-Wall -Wextra)
 elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
     message(STATUS "libavif: Enabling warnings for MSVC")
-    add_definitions(
-        /Wall # All warnings
-        /wd4255 # Disable: no function prototype given
+    add_compile_options(
+        /W4
         /wd4324 # Disable: structure was padded due to alignment specifier
-        /wd4668 # Disable: is not defined as a preprocessor macro, replacing with '0'
-        /wd4710 # Disable: function not inlined
-        /wd4711 # Disable: function selected for inline expansion
-        /wd4738 # Disable: storing 32-bit float result in memory, possible loss of performance
-        /wd4820 # Disable: bytes padding added after data member
         /wd4996 # Disable: potentially unsafe stdlib methods
-        /wd5045 # Disable: Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
         # This tells MSVC to read source code as UTF-8 and assume console can only use ASCII (minimal safe).
         # libavif uses ANSI API to print to console, which is not portable between systems using different
         # languages and results in mojibake unless we only use codes shared by every code page: ASCII.
@@ -158,9 +171,9 @@ endif()
 if(AVIF_ENABLE_WERROR)
     # Warnings as errors
     if(CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU")
-        add_definitions(-Werror)
+        add_compile_options(-Werror)
     elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
-        add_definitions(/WX)
+        add_compile_options(/WX)
     else()
         message(FATAL_ERROR "libavif: Unknown compiler, bailing out")
     endif()
@@ -169,7 +182,7 @@ endif()
 if(AVIF_ENABLE_COVERAGE)
     if(CMAKE_C_COMPILER_ID MATCHES "Clang" OR CMAKE_C_COMPILER_ID MATCHES "GNU")
         message(STATUS "libavif: Enabling coverage for Clang")
-        add_definitions(-fprofile-instr-generate -fcoverage-mapping -O0)
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping -O0)
         set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-fprofile-instr-generate -fcoverage-mapping")
     else()
         # TODO: Add support for other compilers
@@ -182,18 +195,25 @@ set(AVIF_SRCS
     src/avif.c
     src/colr.c
     src/diag.c
+    src/exif.c
     src/io.c
     src/mem.c
     src/obu.c
     src/rawdata.c
     src/read.c
     src/reformat.c
+    src/reformat_libsharpyuv.c
     src/reformat_libyuv.c
     src/scale.c
     src/stream.c
     src/utils.c
     src/write.c
 )
+
+# Only applicable to macOS. In GitHub CI's macos-latest os image, this prevents using the libpng
+# and libjpeg headers from /Library/Frameworks/Mono.framework/Headers instead of
+# /usr/local/include.
+set(CMAKE_FIND_FRAMEWORK LAST)
 
 set(AVIF_PLATFORM_DEFINITIONS)
 set(AVIF_PLATFORM_INCLUDES)
@@ -226,6 +246,16 @@ if(libyuv_FOUND)
     endif()
 else()
     message(STATUS "libavif: libyuv not found; libyuv-based fast paths disabled.")
+endif()
+
+find_package(libsharpyuv QUIET) # not required
+if(libsharpyuv_FOUND)
+    message(STATUS "libavif: libsharpyuv found; sharp rgb to yuv conversion enabled.")
+    set(AVIF_PLATFORM_DEFINITIONS ${AVIF_PLATFORM_DEFINITIONS} -DAVIF_LIBSHARPYUV_ENABLED=1)
+    set(AVIF_PLATFORM_INCLUDES ${AVIF_PLATFORM_INCLUDES} ${LIBSHARPYUV_INCLUDE_DIR})
+    set(AVIF_PLATFORM_LIBRARIES ${AVIF_PLATFORM_LIBRARIES} ${LIBSHARPYUV_LIBRARY})
+else()
+    message(STATUS "libavif: libsharpyuv not found")
 endif()
 
 set(AVIF_CODEC_DEFINITIONS)
@@ -450,11 +480,18 @@ if(AVIF_BUILD_APPS OR (AVIF_BUILD_TESTS AND AVIF_ENABLE_GTEST))
     find_package(JPEG REQUIRED)
 
     add_library(
-        avif_apps OBJECT apps/shared/avifjpeg.c apps/shared/iccjpeg.c apps/shared/avifpng.c apps/shared/avifutil.c
+        avif_apps STATIC apps/shared/avifjpeg.c apps/shared/iccjpeg.c apps/shared/avifpng.c apps/shared/avifutil.c
                          apps/shared/y4m.c
     )
     target_link_libraries(avif_apps avif ${AVIF_PLATFORM_LIBRARIES} ${PNG_LIBRARY} ${ZLIB_LIBRARY} ${JPEG_LIBRARY})
-    target_include_directories(avif_apps PRIVATE ${PNG_PNG_INCLUDE_DIR} ${JPEG_INCLUDE_DIR} INTERFACE apps/shared)
+    # In GitHub CI's macos-latest os image, /usr/local/include has not only the headers of libpng
+    # libjpeg but also the headers of an older version of libavif. Put the avif include directory
+    # before ${PNG_PNG_INCLUDE_DIR} ${JPEG_INCLUDE_DIR} to prevent picking up old libavif headers
+    # from /usr/local/include.
+    target_include_directories(
+        avif_apps PRIVATE $<TARGET_PROPERTY:avif,INTERFACE_INCLUDE_DIRECTORIES> ${PNG_PNG_INCLUDE_DIR} ${JPEG_INCLUDE_DIR}
+        INTERFACE apps/shared
+    )
 endif()
 
 if(AVIF_BUILD_APPS)

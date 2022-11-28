@@ -16,9 +16,13 @@ import subprocess
 import sys
 
 import common
+import pdfium_root
 import pngdiffer
 import suppressor
 from skia_gold import skia_gold
+
+pdfium_root.add_source_directory_to_import_path(os.path.join('build', 'util'))
+from lib.results import result_sink, result_types
 
 
 # Arbitrary timestamp, expressed in seconds since the epoch, used to make sure
@@ -39,6 +43,10 @@ class KeyboardInterruptError(Exception):
 #   x_filename - "x.ext"
 #   x_path - "path/to/a/b/c/x.ext"
 #   c_dir - "path/to/a/b/c"
+
+
+def _GetTestId(test_path):
+  return os.path.splitext(os.path.basename(test_path))[0]
 
 
 def TestOneFileParallel(this, test_case):
@@ -105,7 +113,7 @@ class TestRunner:
     # The output filename without image extension becomes the test name.
     # For example, "/path/to/.../testing/corpus/example_005.pdf.0.png"
     # becomes "example_005.pdf.0".
-    test_name = os.path.splitext(os.path.split(img_path)[1])[0]
+    test_name = _GetTestId(img_path)
     skia_success = skia_tester.UploadTestResultToSkiaGold(test_name, img_path)
     sys.stdout.flush()
     return test_name, skia_success
@@ -115,7 +123,7 @@ class TestRunner:
   # tests and outputfiles is a list tuples:
   #          (path_to_image, md5_hash_of_pixelbuffer)
   def GenerateAndTest(self, input_filename, source_dir):
-    input_root, _ = os.path.splitext(input_filename)
+    input_root = _GetTestId(input_filename)
     pdf_path = os.path.join(self.working_dir, input_root + '.pdf')
 
     # Remove any existing generated images from previous runs.
@@ -276,13 +284,40 @@ class TestRunner:
       self.result_suppressed_cases.append(input_filename)
       if success:
         self.surprises.append(input_path)
+
+        # There isn't an actual status for succeeded-but-ignored, so use the
+        # "abort" status to differentiate this from failed-but-ignored.
+        #
+        # Note that this appears as a preliminary failure in Gerrit.
+        result_status = result_types.UNKNOWN
+      else:
+        # There isn't an actual status for failed-but-ignored, so use the
+        # "skip" status to differentiate this from succeeded-but-ignored.
+        result_status = result_types.SKIP
     else:
-      if not success:
+      if success:
+        result_status = result_types.PASS
+      else:
         self.failures.append(input_path)
+        result_status = result_types.FAIL
+
+    if self.resultdb:
+      # TODO(crbug.com/pdfium/1916): Populate more ResultDB fields.
+      self.resultdb.Post(
+          test_id=_GetTestId(input_filename),
+          status=result_status,
+          duration=None,
+          test_log=None,
+          test_file=None)
 
   def Run(self):
     # Running a test defines a number of attributes on the fly.
     # pylint: disable=attribute-defined-outside-init
+
+    if self.test_dir == 'corpus':
+      relative_test_dir = self.test_dir
+    else:
+      relative_test_dir = os.path.join('resources', self.test_dir)
 
     parser = argparse.ArgumentParser()
 
@@ -359,9 +394,17 @@ class TestRunner:
         help='Prevents the return value from being non-zero '
         'when image comparison fails.')
 
+    parser.add_argument(
+        'inputted_file_paths',
+        nargs='*',
+        help='Path to test files to run, relative to '
+        f'testing/{relative_test_dir}. If omitted, runs all test files under '
+        f'testing/{relative_test_dir}.',
+        metavar='relative/test/path')
+
     skia_gold.add_skia_gold_args(parser)
 
-    self.options, self.inputted_file_paths = parser.parse_known_args()
+    self.options = parser.parse_args()
 
     if (self.options.regenerate_expected and
         self.options.regenerate_expected not in ['all', 'platform']):
@@ -375,10 +418,6 @@ class TestRunner:
     self.third_party_font_dir = finder.ThirdPartyFontsDir()
 
     self.source_dir = finder.TestingDir()
-    if self.test_dir != 'corpus':
-      test_dir = finder.TestingDir(os.path.join('resources', self.test_dir))
-    else:
-      test_dir = finder.TestingDir(self.test_dir)
 
     self.pdfium_test_path = finder.ExecutablePath('pdfium_test')
     if not os.path.exists(self.pdfium_test_path):
@@ -405,15 +444,17 @@ class TestRunner:
       print('FAILURE:', error_message)
       return 1
 
+    self.resultdb = result_sink.TryInitClient()
+    if self.resultdb:
+      print('Detected ResultSink environment')
 
-    walk_from_dir = finder.TestingDir(test_dir)
+    walk_from_dir = finder.TestingDir(relative_test_dir)
 
     self.test_cases = []
     self.execution_suppressed_cases = []
     input_file_re = re.compile('^.+[.](in|pdf)$')
-    if self.inputted_file_paths:
-      for file_name in self.inputted_file_paths:
-        file_name.replace('.pdf', '.in')
+    if self.options.inputted_file_paths:
+      for file_name in self.options.inputted_file_paths:
         input_path = os.path.join(walk_from_dir, file_name)
         if not os.path.isfile(input_path):
           print("Can't find test file '{}'".format(file_name))

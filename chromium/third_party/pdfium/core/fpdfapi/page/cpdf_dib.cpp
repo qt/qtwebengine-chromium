@@ -154,8 +154,8 @@ JpxDecodeAction GetJpxDecodeAction(const CJPX_Decoder::JpxImageInfo& jpx_info,
 
 }  // namespace
 
-CPDF_DIB::CPDF_DIB(CPDF_Document* pDoc, const CPDF_Stream* pStream)
-    : m_pDocument(pDoc), m_pStream(pStream) {}
+CPDF_DIB::CPDF_DIB(CPDF_Document* pDoc, RetainPtr<const CPDF_Stream> pStream)
+    : m_pDocument(pDoc), m_pStream(std::move(pStream)) {}
 
 CPDF_DIB::~CPDF_DIB() = default;
 
@@ -264,10 +264,10 @@ CPDF_DIB::LoadState CPDF_DIB::ContinueLoadDIBBase(PauseIndicatorIface* pPause) {
   if (!m_pJbig2Context) {
     m_pJbig2Context = std::make_unique<Jbig2Context>();
     if (m_pStreamAcc->GetImageParam()) {
-      const CPDF_Stream* pGlobals =
+      RetainPtr<const CPDF_Stream> pGlobals =
           m_pStreamAcc->GetImageParam()->GetStreamFor("JBIG2Globals");
       if (pGlobals) {
-        m_pGlobalAcc = pdfium::MakeRetain<CPDF_StreamAcc>(pGlobals);
+        m_pGlobalAcc = pdfium::MakeRetain<CPDF_StreamAcc>(std::move(pGlobals));
         m_pGlobalAcc->LoadAllDataFiltered();
       }
     }
@@ -275,15 +275,13 @@ CPDF_DIB::LoadState CPDF_DIB::ContinueLoadDIBBase(PauseIndicatorIface* pPause) {
     pdfium::span<const uint8_t> pSrcSpan;
     if (m_pStreamAcc) {
       pSrcSpan = m_pStreamAcc->GetSpan();
-      if (m_pStreamAcc->GetStream())
-        nSrcKey = m_pStreamAcc->GetStream()->KeyForCache();
+      nSrcKey = m_pStreamAcc->KeyForCache();
     }
     uint64_t nGlobalKey = 0;
     pdfium::span<const uint8_t> pGlobalSpan;
     if (m_pGlobalAcc) {
       pGlobalSpan = m_pGlobalAcc->GetSpan();
-      if (m_pGlobalAcc->GetStream())
-        nGlobalKey = m_pGlobalAcc->GetStream()->KeyForCache();
+      nGlobalKey = m_pGlobalAcc->KeyForCache();
     }
     iDecodeStatus = Jbig2Decoder::StartDecode(
         m_pJbig2Context.get(), m_pDocument->GetOrCreateCodecContext(), m_Width,
@@ -319,7 +317,7 @@ CPDF_DIB::LoadState CPDF_DIB::ContinueLoadDIBBase(PauseIndicatorIface* pPause) {
 
 bool CPDF_DIB::LoadColorInfo(const CPDF_Dictionary* pFormResources,
                              const CPDF_Dictionary* pPageResources) {
-  absl::optional<DecoderArray> decoder_array = GetDecoderArray(m_pDict.Get());
+  absl::optional<DecoderArray> decoder_array = GetDecoderArray(m_pDict);
   if (!decoder_array.has_value())
     return false;
 
@@ -339,20 +337,21 @@ bool CPDF_DIB::LoadColorInfo(const CPDF_Dictionary* pFormResources,
     }
     m_bImageMask = true;
     m_bpc = m_nComponents = 1;
-    const CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
+    RetainPtr<const CPDF_Array> pDecode = m_pDict->GetArrayFor("Decode");
     m_bDefaultDecode = !pDecode || !pDecode->GetIntegerAt(0);
     return true;
   }
 
-  const CPDF_Object* pCSObj = m_pDict->GetDirectObjectFor("ColorSpace");
+  RetainPtr<const CPDF_Object> pCSObj =
+      m_pDict->GetDirectObjectFor("ColorSpace");
   if (!pCSObj)
     return false;
 
   auto* pDocPageData = CPDF_DocPageData::FromDocument(m_pDocument.Get());
   if (pFormResources)
-    m_pColorSpace = pDocPageData->GetColorSpace(pCSObj, pFormResources);
+    m_pColorSpace = pDocPageData->GetColorSpace(pCSObj.Get(), pFormResources);
   if (!m_pColorSpace)
-    m_pColorSpace = pDocPageData->GetColorSpace(pCSObj, pPageResources);
+    m_pColorSpace = pDocPageData->GetColorSpace(pCSObj.Get(), pPageResources);
   if (!m_pColorSpace)
     return false;
 
@@ -388,11 +387,11 @@ bool CPDF_DIB::GetDecodeAndMaskArray() {
 
   m_CompData.resize(m_nComponents);
   int max_data = (1 << m_bpc) - 1;
-  const CPDF_Array* pDecode = m_pDict->GetArrayFor("Decode");
+  RetainPtr<const CPDF_Array> pDecode = m_pDict->GetArrayFor("Decode");
   if (pDecode) {
     for (uint32_t i = 0; i < m_nComponents; i++) {
-      m_CompData[i].m_DecodeMin = pDecode->GetNumberAt(i * 2);
-      float max = pDecode->GetNumberAt(i * 2 + 1);
+      m_CompData[i].m_DecodeMin = pDecode->GetFloatAt(i * 2);
+      float max = pDecode->GetFloatAt(i * 2 + 1);
       m_CompData[i].m_DecodeStep = (max - m_CompData[i].m_DecodeMin) / max_data;
       float def_value;
       float def_min;
@@ -417,7 +416,7 @@ bool CPDF_DIB::GetDecodeAndMaskArray() {
   if (m_pDict->KeyExist("SMask"))
     return true;
 
-  const CPDF_Object* pMask = m_pDict->GetDirectObjectFor("Mask");
+  RetainPtr<const CPDF_Object> pMask = m_pDict->GetDirectObjectFor("Mask");
   if (!pMask)
     return true;
 
@@ -703,7 +702,7 @@ bool CPDF_DIB::LoadInternal(const CPDF_Dictionary* pFormResources,
   if (!m_pStream)
     return false;
 
-  m_pDict.Reset(m_pStream->GetDict());
+  m_pDict = m_pStream->GetDict();
   if (!m_pDict)
     return false;
 
@@ -728,12 +727,9 @@ bool CPDF_DIB::LoadInternal(const CPDF_Dictionary* pFormResources,
   if (!src_size.IsValid())
     return false;
 
-  m_pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(m_pStream.Get());
+  m_pStreamAcc = pdfium::MakeRetain<CPDF_StreamAcc>(m_pStream);
   m_pStreamAcc->LoadAllDataImageAcc(src_size.ValueOrDie());
-  if (m_pStreamAcc->GetSize() == 0 || !m_pStreamAcc->GetData())
-    return false;
-
-  return true;
+  return !m_pStreamAcc->GetSpan().empty();
 }
 
 CPDF_DIB::LoadState CPDF_DIB::StartLoadMask() {
@@ -754,17 +750,17 @@ CPDF_DIB::LoadState CPDF_DIB::StartLoadMask() {
 
   RetainPtr<const CPDF_Stream> mask(m_pDict->GetStreamFor("SMask"));
   if (!mask) {
-    mask.Reset(ToStream(m_pDict->GetDirectObjectFor("Mask")));
+    mask = ToStream(m_pDict->GetDirectObjectFor("Mask"));
     return mask ? StartLoadMaskDIB(std::move(mask)) : LoadState::kSuccess;
   }
 
-  const CPDF_Array* pMatte = mask->GetDict()->GetArrayFor("Matte");
+  RetainPtr<const CPDF_Array> pMatte = mask->GetDict()->GetArrayFor("Matte");
   if (pMatte && m_pColorSpace &&
       m_Family != CPDF_ColorSpace::Family::kPattern &&
       pMatte->size() == m_nComponents &&
       m_pColorSpace->CountComponents() <= m_nComponents) {
     std::vector<float> colors =
-        ReadArrayElementsToVector(pMatte, m_nComponents);
+        ReadArrayElementsToVector(pMatte.Get(), m_nComponents);
 
     float R;
     float G;
@@ -804,7 +800,8 @@ bool CPDF_DIB::IsJBigImage() const {
 
 CPDF_DIB::LoadState CPDF_DIB::StartLoadMaskDIB(
     RetainPtr<const CPDF_Stream> mask_stream) {
-  m_pMask = pdfium::MakeRetain<CPDF_DIB>(m_pDocument.Get(), mask_stream.Get());
+  m_pMask =
+      pdfium::MakeRetain<CPDF_DIB>(m_pDocument.Get(), std::move(mask_stream));
   LoadState ret = m_pMask->StartLoadDIBBase(
       false, nullptr, nullptr, true, CPDF_ColorSpace::Family::kUnknown, false);
   if (ret == LoadState::kContinue) {

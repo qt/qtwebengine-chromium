@@ -325,6 +325,20 @@ void ParallelMove::PrepareInsertAfter(
   if (replacement != nullptr) move->set_source(replacement->source());
 }
 
+bool ParallelMove::Equals(const ParallelMove& that) const {
+  if (this->size() != that.size()) return false;
+  for (size_t i = 0; i < this->size(); ++i) {
+    if (!(*this)[i]->Equals(*that[i])) return false;
+  }
+  return true;
+}
+
+void ParallelMove::Eliminate() {
+  for (MoveOperands* move : *this) {
+    move->Eliminate();
+  }
+}
+
 Instruction::Instruction(InstructionCode opcode)
     : opcode_(opcode),
       bit_field_(OutputCountField::encode(0) | InputCountField::encode(0) |
@@ -567,13 +581,6 @@ Handle<CodeT> Constant::ToCode() const {
   return value;
 }
 
-const StringConstantBase* Constant::ToDelayedStringConstant() const {
-  DCHECK_EQ(kDelayedStringConstant, type());
-  const StringConstantBase* value =
-      base::bit_cast<StringConstantBase*>(static_cast<intptr_t>(value_));
-  return value;
-}
-
 std::ostream& operator<<(std::ostream& os, const Constant& constant) {
   switch (constant.type()) {
     case Constant::kInt32:
@@ -591,9 +598,6 @@ std::ostream& operator<<(std::ostream& os, const Constant& constant) {
       return os << Brief(*constant.ToHeapObject());
     case Constant::kRpoNumber:
       return os << "RPO" << constant.ToRpoNumber().ToInt();
-    case Constant::kDelayedStringConstant:
-      return os << "DelayedStringConstant: "
-                << constant.ToDelayedStringConstant();
   }
   UNREACHABLE();
 }
@@ -813,7 +817,7 @@ void InstructionSequence::ComputeAssemblyOrder() {
     if (block->ao_number() != invalid) continue;  // loop rotated.
     if (block->IsLoopHeader()) {
       bool header_align = true;
-      if (FLAG_turbo_loop_rotation) {
+      if (v8_flags.turbo_loop_rotation) {
         // Perform loop rotation for non-deferred loops.
         InstructionBlock* loop_end =
             instruction_blocks_->at(block->loop_end().ToSize() - 1);

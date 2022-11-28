@@ -28,11 +28,8 @@ using BuilderTest_Type = TestHelper;
 TEST_F(BuilderTest_Type, GenerateRuntimeArray) {
     auto* ary = ty.array(ty.i32());
     auto* str = Structure("S", utils::Vector{Member("x", ary)});
-    GlobalVar("a", ty.Of(str), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("a", ty.Of(str), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -48,11 +45,8 @@ TEST_F(BuilderTest_Type, GenerateRuntimeArray) {
 TEST_F(BuilderTest_Type, ReturnsGeneratedRuntimeArray) {
     auto* ary = ty.array(ty.i32());
     auto* str = Structure("S", utils::Vector{Member("x", ary)});
-    GlobalVar("a", ty.Of(str), ast::StorageClass::kStorage, ast::Access::kRead,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("a", ty.Of(str), ast::AddressSpace::kStorage, ast::Access::kRead, Binding(0_a),
+              Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -67,7 +61,7 @@ TEST_F(BuilderTest_Type, ReturnsGeneratedRuntimeArray) {
 
 TEST_F(BuilderTest_Type, GenerateArray) {
     auto* ary = ty.array(ty.i32(), 4_u);
-    GlobalVar("a", ary, ast::StorageClass::kPrivate);
+    GlobalVar("a", ary, ast::AddressSpace::kPrivate);
 
     spirv::Builder& b = Build();
 
@@ -84,7 +78,7 @@ TEST_F(BuilderTest_Type, GenerateArray) {
 
 TEST_F(BuilderTest_Type, GenerateArray_WithStride) {
     auto* ary = ty.array(ty.i32(), 4_u, 16u);
-    GlobalVar("a", ary, ast::StorageClass::kPrivate);
+    GlobalVar("a", ary, ast::AddressSpace::kPrivate);
 
     spirv::Builder& b = Build();
 
@@ -104,7 +98,7 @@ TEST_F(BuilderTest_Type, GenerateArray_WithStride) {
 
 TEST_F(BuilderTest_Type, ReturnsGeneratedArray) {
     auto* ary = ty.array(ty.i32(), 4_u);
-    GlobalVar("a", ary, ast::StorageClass::kPrivate);
+    GlobalVar("a", ary, ast::AddressSpace::kPrivate);
 
     spirv::Builder& b = Build();
 
@@ -299,7 +293,7 @@ TEST_F(BuilderTest_Type, ReturnsGeneratedF16Matrix) {
 
 TEST_F(BuilderTest_Type, GeneratePtr) {
     auto* i32 = create<sem::I32>();
-    auto* ptr = create<sem::Pointer>(i32, ast::StorageClass::kOut, ast::Access::kReadWrite);
+    auto* ptr = create<sem::Pointer>(i32, ast::AddressSpace::kOut, ast::Access::kReadWrite);
 
     spirv::Builder& b = Build();
 
@@ -314,7 +308,7 @@ TEST_F(BuilderTest_Type, GeneratePtr) {
 
 TEST_F(BuilderTest_Type, ReturnsGeneratedPtr) {
     auto* i32 = create<sem::I32>();
-    auto* ptr = create<sem::Pointer>(i32, ast::StorageClass::kOut, ast::Access::kReadWrite);
+    auto* ptr = create<sem::Pointer>(i32, ast::AddressSpace::kOut, ast::Access::kReadWrite);
 
     spirv::Builder& b = Build();
 
@@ -342,7 +336,7 @@ OpMemberName %1 0 "a"
 TEST_F(BuilderTest_Type, GenerateStruct_DecoratedMembers) {
     auto* s = Structure("S", utils::Vector{
                                  Member("a", ty.f32()),
-                                 Member("b", ty.f32(), utils::Vector{MemberAlign(8)}),
+                                 Member("b", ty.f32(), utils::Vector{MemberAlign(8_i)}),
                              });
 
     spirv::Builder& b = Build();
@@ -582,7 +576,7 @@ TEST_F(BuilderTest_Type, ReturnsGeneratedVoid) {
 }
 
 struct PtrData {
-    ast::StorageClass ast_class;
+    ast::AddressSpace ast_class;
     SpvStorageClass result;
 };
 inline std::ostream& operator<<(std::ostream& out, PtrData data) {
@@ -590,25 +584,25 @@ inline std::ostream& operator<<(std::ostream& out, PtrData data) {
     return out;
 }
 using PtrDataTest = TestParamHelper<PtrData>;
-TEST_P(PtrDataTest, ConvertStorageClass) {
+TEST_P(PtrDataTest, ConvertAddressSpace) {
     auto params = GetParam();
 
     spirv::Builder& b = Build();
 
-    EXPECT_EQ(b.ConvertStorageClass(params.ast_class), params.result);
+    EXPECT_EQ(b.ConvertAddressSpace(params.ast_class), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
     BuilderTest_Type,
     PtrDataTest,
-    testing::Values(PtrData{ast::StorageClass::kNone, SpvStorageClassMax},
-                    PtrData{ast::StorageClass::kIn, SpvStorageClassInput},
-                    PtrData{ast::StorageClass::kOut, SpvStorageClassOutput},
-                    PtrData{ast::StorageClass::kUniform, SpvStorageClassUniform},
-                    PtrData{ast::StorageClass::kWorkgroup, SpvStorageClassWorkgroup},
-                    PtrData{ast::StorageClass::kHandle, SpvStorageClassUniformConstant},
-                    PtrData{ast::StorageClass::kStorage, SpvStorageClassStorageBuffer},
-                    PtrData{ast::StorageClass::kPrivate, SpvStorageClassPrivate},
-                    PtrData{ast::StorageClass::kFunction, SpvStorageClassFunction}));
+    testing::Values(PtrData{ast::AddressSpace::kNone, SpvStorageClassMax},
+                    PtrData{ast::AddressSpace::kIn, SpvStorageClassInput},
+                    PtrData{ast::AddressSpace::kOut, SpvStorageClassOutput},
+                    PtrData{ast::AddressSpace::kUniform, SpvStorageClassUniform},
+                    PtrData{ast::AddressSpace::kWorkgroup, SpvStorageClassWorkgroup},
+                    PtrData{ast::AddressSpace::kHandle, SpvStorageClassUniformConstant},
+                    PtrData{ast::AddressSpace::kStorage, SpvStorageClassStorageBuffer},
+                    PtrData{ast::AddressSpace::kPrivate, SpvStorageClassPrivate},
+                    PtrData{ast::AddressSpace::kFunction, SpvStorageClassFunction}));
 
 TEST_F(BuilderTest_Type, DepthTexture_Generate_2d) {
     auto* two_d = create<sem::DepthTexture>(ast::TextureDimension::k2d);
@@ -842,11 +836,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_1d) {
     auto* s = ty.storage_texture(ast::TextureDimension::k1d, ast::TexelFormat::kR32Float,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -861,11 +851,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_2d) {
     auto* s = ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Float,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -880,11 +866,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_2dArray) {
     auto* s = ty.storage_texture(ast::TextureDimension::k2dArray, ast::TexelFormat::kR32Float,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -899,11 +881,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_3d) {
     auto* s = ty.storage_texture(ast::TextureDimension::k3d, ast::TexelFormat::kR32Float,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -918,11 +896,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_SampledTypeFloat_Format_r32floa
     auto* s = ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Float,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -937,11 +911,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_SampledTypeSint_Format_r32sint)
     auto* s = ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Sint,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 
@@ -956,11 +926,7 @@ TEST_F(BuilderTest_Type, StorageTexture_Generate_SampledTypeUint_Format_r32uint)
     auto* s = ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Uint,
                                  ast::Access::kWrite);
 
-    GlobalVar("test_var", s,
-              utils::Vector{
-                  create<ast::BindingAttribute>(0u),
-                  create<ast::GroupAttribute>(0u),
-              });
+    GlobalVar("test_var", s, Binding(0_a), Group(0_a));
 
     spirv::Builder& b = Build();
 

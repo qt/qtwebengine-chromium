@@ -17,7 +17,6 @@ V8_INLINE bool EquivalentIndices(uint32_t index1, uint32_t index2,
                                  const WasmModule* module1,
                                  const WasmModule* module2) {
   DCHECK(index1 != index2 || module1 != module2);
-  if (!FLAG_wasm_type_canonicalization) return false;
   return module1->isorecursive_canonical_type_ids[index1] ==
          module2->isorecursive_canonical_type_ids[index2];
 }
@@ -99,8 +98,9 @@ bool ValidFunctionSubtypeDefinition(uint32_t subtype_index,
   return true;
 }
 
-HeapType::Representation NullSentinelImpl(TypeInModule type) {
-  switch (type.type.heap_type().representation()) {
+HeapType::Representation NullSentinelImpl(HeapType type,
+                                          const WasmModule* module) {
+  switch (type.representation()) {
     case HeapType::kI31:
     case HeapType::kNone:
     case HeapType::kEq:
@@ -119,9 +119,8 @@ HeapType::Representation NullSentinelImpl(TypeInModule type) {
     case HeapType::kNoFunc:
       return HeapType::kNoFunc;
     default:
-      return type.module->has_signature(type.type.ref_index())
-                 ? HeapType::kNoFunc
-                 : HeapType::kNone;
+      return module->has_signature(type.ref_index()) ? HeapType::kNoFunc
+                                                     : HeapType::kNone;
   }
 }
 
@@ -219,12 +218,13 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsHeapSubtypeOfImpl(
       return super_heap == HeapType::kArray || super_heap == HeapType::kData ||
              super_heap == HeapType::kEq || super_heap == HeapType::kAny;
     case HeapType::kString:
+      // stringref is a subtype of anyref under wasm-gc.
+      return sub_heap == super_heap ||
+             (v8_flags.experimental_wasm_gc && super_heap == HeapType::kAny);
     case HeapType::kStringViewWtf8:
     case HeapType::kStringViewWtf16:
     case HeapType::kStringViewIter:
-      // stringref is a subtype of anyref (aka externref) under wasm-gc.
-      return sub_heap == super_heap ||
-             (FLAG_experimental_wasm_gc && super_heap == HeapType::kAny);
+      return sub_heap == super_heap;
     case HeapType::kBottom:
       UNREACHABLE();
     case HeapType::kNone:
@@ -288,19 +288,8 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool IsHeapSubtypeOfImpl(
   // The {IsSubtypeOf} entry point already has a fast path checking ValueType
   // equality; here we catch (ref $x) being a subtype of (ref null $x).
   if (sub_module == super_module && sub_index == super_index) return true;
-
-  if (FLAG_wasm_type_canonicalization) {
-    return GetTypeCanonicalizer()->IsCanonicalSubtype(sub_index, super_index,
-                                                      sub_module, super_module);
-  } else {
-    uint32_t explicit_super = sub_module->supertype(sub_index);
-    while (true) {
-      if (explicit_super == super_index) return true;
-      // Reached the end of the explicitly defined inheritance chain.
-      if (explicit_super == kNoSuperType) return false;
-      explicit_super = sub_module->supertype(explicit_super);
-    }
-  }
+  return GetTypeCanonicalizer()->IsCanonicalSubtype(sub_index, super_index,
+                                                    sub_module, super_module);
 }
 
 V8_NOINLINE bool EquivalentTypes(ValueType type1, ValueType type2,
@@ -478,6 +467,9 @@ HeapType::Representation CommonAncestorWithGeneric(HeapType heap1,
                                                          : HeapType::kNoExtern;
     case HeapType::kExtern:
       return HeapType::kExtern;
+    case HeapType::kString:
+    case HeapType::kStringViewIter:
+      return heap1 == heap2 ? heap1.representation() : HeapType::kBottom;
     default:
       UNREACHABLE();
   }
@@ -551,10 +543,16 @@ TypeInModule Intersection(ValueType type1, ValueType type2,
 }
 
 ValueType ToNullSentinel(TypeInModule type) {
-  HeapType::Representation null_heap = NullSentinelImpl(type);
+  HeapType::Representation null_heap =
+      NullSentinelImpl(type.type.heap_type(), type.module);
   DCHECK(
       IsHeapSubtypeOf(HeapType(null_heap), type.type.heap_type(), type.module));
   return ValueType::RefNull(null_heap);
+}
+
+bool IsSameTypeHierarchy(HeapType type1, HeapType type2,
+                         const WasmModule* module) {
+  return NullSentinelImpl(type1, module) == NullSentinelImpl(type2, module);
 }
 
 }  // namespace wasm

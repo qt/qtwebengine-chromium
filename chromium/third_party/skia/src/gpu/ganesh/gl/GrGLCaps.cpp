@@ -62,6 +62,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fMustResetBlendFuncBetweenDualSourceAndDisable = false;
     fBindTexture0WhenChangingTextureFBOMultisampleCount = false;
     fRebindColorAttachmentAfterCheckFramebufferStatus = false;
+    fFlushBeforeWritePixels = false;
     fProgramBinarySupport = false;
     fProgramParameterSupport = false;
     fSamplerObjectSupport = false;
@@ -383,6 +384,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
                 ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k130;
 
         shaderCaps->fShaderDerivativeSupport = true;
+        shaderCaps->fExplicitTextureLodSupport =
+                ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k130;
 
         shaderCaps->fIntegerSupport = version >= GR_GL_VER(3, 0) &&
             ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k130;
@@ -394,13 +397,14 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     } else if (GR_IS_GR_GL_ES(standard)) {
         shaderCaps->fDualSourceBlendingSupport = ctxInfo.hasExtension("GL_EXT_blend_func_extended");
 
-        shaderCaps->fShaderDerivativeSupport = version >= GR_GL_VER(3, 0) ||
-            ctxInfo.hasExtension("GL_OES_standard_derivatives");
-
-        shaderCaps->fIntegerSupport =
+        shaderCaps->fShaderDerivativeSupport =
                 // We use this value for GLSL ES 3.0.
-                version >= GR_GL_VER(3, 0) &&
+                version >= GR_GL_VER(3, 0) || ctxInfo.hasExtension("GL_OES_standard_derivatives");
+        shaderCaps->fExplicitTextureLodSupport =
                 ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k300es;
+
+        shaderCaps->fIntegerSupport = version >= GR_GL_VER(3, 0) &&
+                                      ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k300es;
         shaderCaps->fNonsquareMatrixSupport =
                 ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k300es;
         shaderCaps->fInverseHyperbolicSupport =
@@ -409,6 +413,9 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         shaderCaps->fShaderDerivativeSupport = version >= GR_GL_VER(2, 0) ||
                                                ctxInfo.hasExtension("GL_OES_standard_derivatives") ||
                                                ctxInfo.hasExtension("OES_standard_derivatives");
+        shaderCaps->fExplicitTextureLodSupport =
+                version >= GR_GL_VER(2, 0) &&
+                ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k300es;
         shaderCaps->fIntegerSupport = (version >= GR_GL_VER(2, 0));
         shaderCaps->fNonsquareMatrixSupport =
                 ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k300es;
@@ -1038,6 +1045,8 @@ void GrGLCaps::initGLSL(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli
     } else if (GR_IS_GR_GL_ES(standard)) {
         shaderCaps->fBuiltinFMASupport =
                  ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k320es;
+    } else if (GR_IS_GR_WEBGL(standard)) {
+        shaderCaps->fBuiltinFMASupport = false;
     }
 
     shaderCaps->fBuiltinDeterminantSupport = ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k150;
@@ -3385,7 +3394,7 @@ void GrGLCaps::setupSampleCounts(const GrGLContextInfo& ctxInfo, const GrGLInter
                         --count;
                         SkASSERT(!count || temp[count -1] > 1);
                     }
-                    fFormatTable[i].fColorSampleCounts.setCount(count+1);
+                    fFormatTable[i].fColorSampleCounts.resize(count+1);
                     // We initialize our supported values with 1 (no msaa) and reverse the order
                     // returned by GL so that the array is ascending.
                     fFormatTable[i].fColorSampleCounts[0] = 1;
@@ -3423,7 +3432,7 @@ void GrGLCaps::setupSampleCounts(const GrGLContextInfo& ctxInfo, const GrGLInter
                 }
             }
         } else if (FormatInfo::kFBOColorAttachment_Flag & fFormatTable[i].fFlags) {
-            fFormatTable[i].fColorSampleCounts.setCount(1);
+            fFormatTable[i].fColorSampleCounts.resize(1);
             fFormatTable[i].fColorSampleCounts[0] = 1;
         }
     }
@@ -3505,7 +3514,7 @@ bool GrGLCaps::canCopyAsBlit(GrGLFormat dstFormat, int dstSampleCnt,
                              GrGLFormat srcFormat, int srcSampleCnt,
                              const GrTextureType* srcTypeIfTexture,
                              const SkRect& srcBounds, bool srcBoundsExact,
-                             const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+                             const SkIRect& srcRect, const SkIRect& dstRect) const {
     auto blitFramebufferFlags = fBlitFramebufferFlags;
     if (!this->canFormatBeFBOColorAttachment(dstFormat) ||
         !this->canFormatBeFBOColorAttachment(srcFormat)) {
@@ -3521,6 +3530,21 @@ bool GrGLCaps::canCopyAsBlit(GrGLFormat dstFormat, int dstSampleCnt,
 
     if (GrGLCaps::kNoSupport_BlitFramebufferFlag & blitFramebufferFlags) {
         return false;
+    }
+
+    if (dstSampleCnt > 1 && dstSampleCnt != srcSampleCnt) {
+        // Regardless of support-level, all blits require src and dst sample counts to match if
+        // the dst is MSAA.
+        return false;
+    }
+
+    if (srcRect.width() != dstRect.width() || srcRect.height() != dstRect.height()) {
+        // If the blit would scale contents, it's only valid for non-MSAA framebuffers that we
+        // can write directly to.
+        if ((GrGLCaps::kNoScalingOrMirroring_BlitFramebufferFlag & blitFramebufferFlags) ||
+            this->useDrawInsteadOfAllRenderTargetWrites() || srcSampleCnt > 1) {
+            return false;
+        }
     }
 
     if (GrGLCaps::kResolveMustBeFull_BlitFrambufferFlag & blitFramebufferFlags) {
@@ -3552,7 +3576,7 @@ bool GrGLCaps::canCopyAsBlit(GrGLFormat dstFormat, int dstSampleCnt,
 
     if (GrGLCaps::kRectsMustMatchForMSAASrc_BlitFramebufferFlag & blitFramebufferFlags) {
         if (srcSampleCnt > 1) {
-            if (dstPoint.fX != srcRect.fLeft || dstPoint.fY != srcRect.fTop) {
+            if (dstRect != srcRect) {
                 return false;
             }
         }
@@ -3578,8 +3602,8 @@ static bool has_msaa_render_buffer(const GrSurfaceProxy* surf, const GrGLCaps& g
            !rt->glRTFBOIDIs0();
 }
 
-bool GrGLCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                                const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+bool GrGLCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRect,
+                                const GrSurfaceProxy* src, const SkIRect& srcRect) const {
     int dstSampleCnt = 0;
     int srcSampleCnt = 0;
     if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
@@ -3609,11 +3633,15 @@ bool GrGLCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy*
 
     auto dstFormat = dst->backendFormat().asGLFormat();
     auto srcFormat = src->backendFormat().asGLFormat();
-    return this->canCopyTexSubImage(dstFormat, has_msaa_render_buffer(dst, *this), dstTexTypePtr,
-                                    srcFormat, has_msaa_render_buffer(src, *this), srcTexTypePtr) ||
-           this->canCopyAsBlit(dstFormat, dstSampleCnt, dstTexTypePtr, srcFormat, srcSampleCnt,
+    // Only copyAsBlit() and copyAsDraw() can handle scaling between src and dst.
+    if (srcRect.size() == dstRect.size() &&
+        this->canCopyTexSubImage(dstFormat, has_msaa_render_buffer(dst, *this), dstTexTypePtr,
+                                 srcFormat, has_msaa_render_buffer(src, *this), srcTexTypePtr)) {
+        return true;
+    }
+    return this->canCopyAsBlit(dstFormat, dstSampleCnt, dstTexTypePtr, srcFormat, srcSampleCnt,
                                srcTexTypePtr, src->getBoundsRect(), src->priv().isExact(), srcRect,
-                               dstPoint) ||
+                               dstRect) ||
            this->canCopyAsDraw(dstFormat, SkToBool(srcTex));
 }
 
@@ -3787,6 +3815,24 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 #endif
 
+    // Reported on skia-discuss as occurring with these GL strings:
+    // GL_VERSION:  3.1.0 - Build 9.17.10.4459
+    // GL_VENDOR:   Intel
+    // GL_RENDERER: Intel(R) HD Graphics 2000
+    // https://groups.google.com/g/skia-discuss/c/dYV1blEAda0/m/-zuZLXQKAwAJ?utm_medium=email&utm_source=footer
+    // See also http://skbug.com/9286
+    if (ctxInfo.renderer() == GrGLRenderer::kIntelSandyBridge &&
+        ctxInfo.driver() == GrGLDriver::kIntel) {
+        fMapBufferType  = kNone_MapBufferType;
+        fMapBufferFlags = kNone_MapFlags;
+        // On skia-discuss it was reported that after turning off mapping there was this
+        // shader compilation error.
+        // ERROR: 0:18: 'assign' :  cannot convert from '3-component vector of float' to 'varying 2-component vector of float'
+        // for this line:
+        // vTransformedCoords_5_S0 = mat3x2(umatrix_S1_c0_c1) * vec3(_tmp_2_inPosition, 1.0);
+        fShaderCaps->fNonsquareMatrixSupport = false;
+    }
+
     if (ctxInfo.isOverCommandBuffer() && ctxInfo.version() >= GR_GL_VER(3,0)) {
         formatWorkarounds->fDisallowTextureUnorm16 = true;  // http://crbug.com/1224108
         formatWorkarounds->fDisallowETC2Compression = true;  // http://crbug.com/1224111
@@ -3873,6 +3919,13 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         // It appears that all the Adreno GPUs have less than optimal performance when
         // drawing w/ large index buffers.
         fAvoidLargeIndexBufferDraws = true;
+    }
+
+    if (ctxInfo.renderer() == GrGLRenderer::kMali4xx ||
+        (ctxInfo.renderer() == GrGLRenderer::kWebGL &&
+         ctxInfo.webglRenderer() == GrGLRenderer::kMali4xx)) {
+        // Perspective SDF text runs significantly slower on Mali-4xx hardware
+        fDisablePerspectiveSDFText = true;
     }
 
     // This was reproduced on the following configurations:
@@ -4220,6 +4273,16 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fDisableTessellationPathRenderer = true;
     }
 
+    // The Wembley device draws the mesh_update GM incorrectly when using transfer buffers. Buffer
+    // to buffer transfers affect draws earlier in the GL command sequence.
+    // Android API: 31
+    // GL_VERSION : OpenGL ES 3.2 build 1.13@5720833
+    // GL_RENDERER: PowerVR Rogue GE8300
+    // GL_VENDOR  : Imagination Technologies
+    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue) {
+        fTransferFromBufferToBufferSupport = false;
+    }
+
 #ifdef SK_BUILD_FOR_WIN
     // glDrawElementsIndirect fails GrMeshTest on every Win10 Intel bot.
     if (ctxInfo.driver() == GrGLDriver::kIntel ||
@@ -4346,13 +4409,6 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fProgramBinarySupport = false;
     }
 
-    // Two Adreno 530 devices (LG G6 and OnePlus 3T) appear to have driver bugs that are corrupting
-    // SkSL::Program memory. To get better/different crash reports, disable node-pooling, so that
-    // program allocations aren't reused.  (crbug.com/1147008, crbug.com/1164271)
-    if (ctxInfo.renderer() == GrGLRenderer::kAdreno530) {
-        shaderCaps->fUseNodePools = false;
-    }
-
     // skbug.com/11204. Avoid recursion issue in SurfaceContext::writePixels.
     if (fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO) {
         fReuseScratchTextures = false;
@@ -4460,6 +4516,19 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driver()        == GrGLDriver::kARM     &&
         ctxInfo.driverVersion()  < GR_GL_DRIVER_VER(1, 19, 0)) {
         fAnisoSupport = false;
+    }
+
+    // b/229626353
+    // On certain classes of Adreno running WebGL, glTexSubImage2D() occasionally fails to upload
+    // texels on time for sampling. The solution is to call glFlush() before glTexSubImage2D().
+    // Seen on:
+    // * Nexus 5x (Adreno 418)
+    // * Nexus 6 (Adreno 420)
+    // * Pixel 3 (Adreno 630)
+    if (ctxInfo.renderer()      == GrGLRenderer::kWebGL &&
+        (ctxInfo.webglRenderer() == GrGLRenderer::kAdreno4xx_other ||
+         ctxInfo.webglRenderer() == GrGLRenderer::kAdreno630)) {
+        fFlushBeforeWritePixels = true;
     }
 }
 
@@ -4704,7 +4773,7 @@ bool GrGLCaps::isFormatRenderable(const GrBackendFormat& format, int sampleCount
 int GrGLCaps::getRenderTargetSampleCount(int requestedCount, GrGLFormat format) const {
     const FormatInfo& info = this->getFormatInfo(format);
 
-    int count = info.fColorSampleCounts.count();
+    int count = info.fColorSampleCounts.size();
     if (!count) {
         return 0;
     }
@@ -4728,10 +4797,10 @@ int GrGLCaps::getRenderTargetSampleCount(int requestedCount, GrGLFormat format) 
 int GrGLCaps::maxRenderTargetSampleCount(GrGLFormat format) const {
     const FormatInfo& info = this->getFormatInfo(format);
     const auto& table = info.fColorSampleCounts;
-    if (!table.count()) {
+    if (table.empty()) {
         return 0;
     }
-    int count = table[table.count() - 1];
+    int count = table[table.size() - 1];
     if (fDriverBugWorkarounds.max_msaa_sample_count_4) {
         count = std::min(count, 4);
     }

@@ -36,6 +36,10 @@
 #include "src/gpu/ganesh/effects/GrYUVtoRGBEffect.h"
 #endif
 
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/TextureUtils.h"
+#endif
+
 // Ref-counted tuple(SkImageGenerator, SkMutex) which allows sharing one generator among N images
 class SharedGenerator final : public SkNVRefCnt<SharedGenerator> {
 public:
@@ -373,6 +377,7 @@ GrSurfaceProxyView SkImage_Lazy::textureProxyViewFromPlanes(GrRecordingContext* 
                      this->dimensions());
 
     auto sfc = ctx->priv().makeSFC(info,
+                                   "ImageLazy_TextureProxyViewFromPlanes",
                                    SkBackingFit::kExact,
                                    1,
                                    GrMipmapped::kNo,
@@ -518,7 +523,6 @@ GrSurfaceProxyView SkImage_Lazy::lockTextureProxyView(GrRecordingContext* rConte
         ScopedGenerator generator(fSharedGenerator);
         if (auto view = generator->generateTexture(rContext,
                                                    this->imageInfo(),
-                                                   {0,0},
                                                    mipmapped,
                                                    texGenPolicy)) {
             installKey(view);
@@ -575,5 +579,48 @@ GrColorType SkImage_Lazy::colorTypeOfLockTextureProxy(const GrCaps* caps) const 
 
 void SkImage_Lazy::addUniqueIDListener(sk_sp<SkIDChangeListener> listener) const {
     fUniqueIDListeners.add(std::move(listener));
+}
+#endif // SK_SUPPORT_GPU
+
+#ifdef SK_GRAPHITE_ENABLED
+
+/*
+ *  We only have 2 ways to create a Graphite-backed image.
+ *
+ *  1. Ask the generator to natively create one
+ *  2. Ask the generator to return RGB(A) data, which the GPU can convert
+ */
+sk_sp<SkImage> SkImage_Lazy::onMakeTextureImage(skgpu::graphite::Recorder* recorder,
+                                                RequiredImageProperties requiredProps) const {
+    using namespace skgpu::graphite;
+
+    // 1. Ask the generator to natively create one.
+    {
+        // Disable mipmaps here bc Graphite doesn't currently support mipmap regeneration
+        // In this case, we would allocate the mipmaps and fill in the base layer but the mipmap
+        // levels would never be filled out - yielding incorrect draws. Please see: b/238754357.
+        requiredProps.fMipmapped = Mipmapped::kNo;
+
+        ScopedGenerator generator(fSharedGenerator);
+        sk_sp<SkImage> newImage = generator->makeTextureImage(recorder,
+                                                              this->imageInfo(),
+                                                              requiredProps.fMipmapped);
+        if (newImage) {
+            SkASSERT(as_IB(newImage)->isGraphiteBacked());
+            return newImage;
+        }
+    }
+
+    // 2. Ask the generator to return a bitmap, which the GPU can convert.
+    if (SkBitmap bitmap; this->getROPixels(nullptr, &bitmap, CachingHint::kDisallow_CachingHint)) {
+        return skgpu::graphite::MakeFromBitmap(recorder,
+                                               this->imageInfo().colorInfo(),
+                                               bitmap,
+                                               nullptr,
+                                               SkBudgeted::kNo,
+                                               requiredProps);
+    }
+
+    return nullptr;
 }
 #endif
