@@ -257,6 +257,9 @@ typedef struct {
 
   double frame_level_rate_correction_factors[RATE_FACTOR_LEVELS];
   /*!\endcond */
+
+  int prev_coded_width;
+  int prev_coded_height;
 } RATE_CONTROL;
 
 /*!
