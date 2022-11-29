@@ -12,7 +12,7 @@
 
 #if DCHECK_IS_ON()
 #include "base/command_line.h"
-#include "sandbox/policy/switches.h"
+#include "content/public/common/content_switches.h"
 #endif
 
 namespace content {
@@ -46,7 +46,7 @@ uint32_t GetPseudonymizationSalt() {
     // Only the Browser process needs to initialize the `salt` on demand.
     // Other processes (identified via the process-type arg) should
     // receive the salt from their parent processes.
-    DCHECK(!command_line.HasSwitch(switches::kProcessType));
+    DCHECK(!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kProcessType));
 #endif
     salt = InitializeSalt();
   }
