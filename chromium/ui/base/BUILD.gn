@@ -423,19 +423,20 @@ component("base") {
       ]
     }
 
-    if (is_win) {
-      sources += [ "pointer/pointer_device_win.cc" ]
-    } else if (is_android) {
-      sources += [ "pointer/pointer_device_android.cc" ]
-    } else if (is_ios && target_platform == "iphoneos") {
-      sources += [ "pointer/pointer_device_ios.cc" ]
-    } else if (is_linux || is_chromeos) {
-      sources += [ "pointer/pointer_device_linux.cc" ]
-    } else if (is_fuchsia && is_web_engine) {
-      sources += [ "pointer/pointer_device_web_engine.cc" ]
-    } else {
-      # Empty implementation for all other cases.
-      sources += [ "pointer/pointer_device_default.cc" ]
+    if (!is_qtwebengine) {
+      if (is_win) {
+        sources += [ "pointer/pointer_device_win.cc" ]
+      } else if (is_android) {
+        sources += [ "pointer/pointer_device_android.cc" ]
+      } else if (is_ios && target_platform == "iphoneos") {
+        sources += [ "pointer/pointer_device_ios.cc" ]
+      } else if (is_linux || is_chromeos) {
+        sources += [ "pointer/pointer_device_linux.cc" ]
+      } else if (is_fuchsia && is_web_engine) {
+        sources += [ "pointer/pointer_device_web_engine.cc" ]
+      } else {
+        # Empty implementation for all other cases.
+        sources += [ "pointer/pointer_device_default.cc" ]
     }
   }
 
@@ -667,6 +668,11 @@ component("base") {
         "win/win_cursor_factory.h",
       ]
     }
+
+    sources -= [
+      "pointer/touch_ui_controller.cc",
+      "pointer/touch_ui_controller.h",
+    ]
   }
 }
 
