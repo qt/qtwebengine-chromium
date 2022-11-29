@@ -5284,7 +5284,7 @@
 <translation id="6052976518993719690">‏صلاحية شهادة SSL (طبقة المقابس الآمنة)</translation>
 <translation id="6053401458108962351">&amp;محو بيانات التصفح...</translation>
 <translation id="6054284857788651331">مجموعة علامات تبويب تم إغلاقها مؤخرًا</translation>
-<translation id="6054961935262556546">تغيير حق الدخول</translation>
+<translation id="6054961935262556546">تغيير إذن الوصول</translation>
 <translation id="6055171183283175969">كلمة المرور التي أدخلتها غير صحيحة.</translation>
 <translation id="6055392876709372977">‏PKCS #1 SHA-256 مع ترميز RSA</translation>
 <translation id="6055544610007596637">‏تثبيت التطبيقات على جهاز <ph name="DEVICE_TYPE" /> من "متجر Google Play"</translation>
@@ -6631,7 +6631,7 @@
 <translation id="7364796246159120393">اختيار ملفّ</translation>
 <translation id="7365076891350562061">حجم الشاشة</translation>
 <translation id="7365995455115045224">تم تثبيت علامة التبويب "<ph name="WINDOW_TITLE" />"</translation>
-<translation id="7366316827772164604">جارٍ البحث عن أجهزة قريبة...</translation>
+<translation id="7366316827772164604">جارٍ البحث عن أجهزة مجاورة…</translation>
 <translation id="7366415735885268578">إضافة موقع إلكتروني</translation>
 <translation id="7366909168761621528">بيانات التصفح</translation>
 <translation id="7367714965999718019">منشئ رمز الاستجابة السريعة</translation>

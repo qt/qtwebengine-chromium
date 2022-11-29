@@ -1109,7 +1109,7 @@
 否则，请立即退出，以便在这台设备上反映对此帐号所做的更改。
 
 您可以在设备上安装 Family Link 应用，从而管理此帐号的设置。我们已通过电子邮件将相关说明发送给您。</translation>
-<translation id="2039464276165755892">当系统检测到有其他人在窥探时隐藏通知内容</translation>
+<translation id="2039464276165755892">当系统检测到有人在窥视时隐藏通知内容</translation>
 <translation id="2040460856718599782">糟糕！尝试验证您的身份时出现错误。请仔细检查您的登录凭据，然后重试。</translation>
 <translation id="2040894699575719559">无权获取位置信息</translation>
 <translation id="2042279886444479655">使用中的配置文件</translation>
@@ -2838,7 +2838,7 @@
 <translation id="3677959414150797585">包括应用、网页等。仅当您已选择分享使用情况数据时，才会发送统计信息以完善建议。</translation>
 <translation id="3678156199662914018">扩展程序：<ph name="EXTENSION_NAME" /></translation>
 <translation id="3678188444105291936">当您退出访客模式后，您在此窗口中查看过的网页将不会显示在浏览器历史记录中，也不会在计算机上留下其他痕迹（例如 Cookie）。系统不会保留您下载的文件和创建的书签。</translation>
-<translation id="368019053277764111">在侧边栏中打开搜索框</translation>
+<translation id="368019053277764111">在侧边栏中打开搜索页面</translation>
 <translation id="3680683624079082902">文字转语音的语音偏好</translation>
 <translation id="3681311097828166361">感谢您提交反馈。您目前处于离线状态，系统将在您上线后提交您的反馈报告。</translation>
 <translation id="3681548574519135185">聚焦环</translation>
@@ -3272,7 +3272,7 @@
 <translation id="4075639477629295004">无法投放“<ph name="FILE_NAME" />”。</translation>
 <translation id="4077917118009885966">已拦截此网站上的广告</translation>
 <translation id="4077919383365622693"><ph name="SITE" /> 存储的所有数据和 Cookie 都会被清除。</translation>
-<translation id="4078738236287221428">首次加载时强制缓存</translation>
+<translation id="4078738236287221428">加强</translation>
 <translation id="4079140982534148664">使用增强的“拼写检查”功能</translation>
 <translation id="4081203444152654304">使用 <ph name="VISUAL_SEARCH_PROVIDER" />搜索图片中的内容</translation>
 <translation id="4081242589061676262">无法投放文件。</translation>
@@ -7692,7 +7692,7 @@
 <translation id="8379991678458444070">只需为此标签页添加书签，便可在需要时快速返回到此处</translation>
 <translation id="8380266723152870797">窗口名称</translation>
 <translation id="8380941800586852976">危险</translation>
-<translation id="8382715499079447151">窥探保护功能</translation>
+<translation id="8382715499079447151">防窥视功能</translation>
 <translation id="8382913212082956454">复制电子邮件地址(&amp;E)</translation>
 <translation id="8383266303049437646"><ph name="BEGIN_PARAGRAPH1" />请尝试执行以下问题排查步骤：
     <ph name="BEGIN_LIST" />

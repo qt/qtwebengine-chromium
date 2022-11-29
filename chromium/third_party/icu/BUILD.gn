@@ -419,7 +419,7 @@ if (icu_use_data_file) {
 
   if (is_chromeos) {
     copy("icudata_hash") {
-      sources = [ "//third_party/icu/chromeos/icudtl.dat.hash" ]
+      sources = [ "chromeos/icudtl.dat.hash" ]
       outputs = [ "$root_out_dir/icudtl.dat.hash" ]
     }
   }
