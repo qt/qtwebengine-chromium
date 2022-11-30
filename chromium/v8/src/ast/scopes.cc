@@ -760,9 +760,8 @@ void DeclarationScope::AddLocal(Variable* var) {
 }
 
 void Scope::Snapshot::Reparent(DeclarationScope* new_parent) {
-  DCHECK(!IsCleared());
-  DCHECK_EQ(new_parent, outer_scope_and_calls_eval_.GetPointer()->inner_scope_);
-  DCHECK_EQ(new_parent->outer_scope_, outer_scope_and_calls_eval_.GetPointer());
+  DCHECK_EQ(new_parent, outer_scope_->inner_scope_);
+  DCHECK_EQ(new_parent->outer_scope_, outer_scope_);
   DCHECK_EQ(new_parent, new_parent->GetClosureScope());
   DCHECK_NULL(new_parent->inner_scope_);
   DCHECK(new_parent->unresolved_list_.is_empty());
@@ -787,7 +786,6 @@ void Scope::Snapshot::Reparent(DeclarationScope* new_parent) {
     new_parent->sibling_ = top_inner_scope_;
   }
 
-  Scope* outer_scope_ = outer_scope_and_calls_eval_.GetPointer();
   new_parent->unresolved_list_.MoveTail(&outer_scope_->unresolved_list_,
                                         top_unresolved_);
 
@@ -804,16 +802,11 @@ void Scope::Snapshot::Reparent(DeclarationScope* new_parent) {
   outer_closure->locals_.Rewind(top_local_);
 
   // Move eval calls since Snapshot's creation into new_parent.
-  if (outer_scope_and_calls_eval_->calls_eval_) {
-    new_parent->RecordDeclarationScopeEvalCall();
-    new_parent->inner_scope_calls_eval_ = true;
+  if (outer_scope_->calls_eval_) {
+    new_parent->RecordEvalCall();
+    declaration_scope_->sloppy_eval_can_extend_vars_ = false;
   }
 
-  // We are in the arrow function case. The calls eval we may have recorded
-  // is intended for the inner scope and we should simply restore the
-  // original "calls eval" flag of the outer scope.
-  RestoreEvalFlag();
-  Clear();
 }
 
 void Scope::ReplaceOuterScope(Scope* outer) {
@@ -2410,6 +2403,9 @@ void Scope::AllocateVariablesRecursively() {
   this->ForEach([](Scope* scope) -> Iteration {
     DCHECK(!scope->already_resolved_);
     if (WasLazilyParsed(scope)) return Iteration::kContinue;
+    if (scope->sloppy_eval_can_extend_vars_) {
+      scope->num_heap_slots_ = Context::MIN_CONTEXT_EXTENDED_SLOTS;
+    }
     DCHECK_EQ(scope->ContextHeaderLength(), scope->num_heap_slots_);
 
     // Allocate variables for this scope.
