@@ -284,8 +284,8 @@ void MetricsLog::RecordCoreSystemProfile(MetricsServiceClient* client,
   // Exclude these switches which are very frequently on the command line but
   // serve no meaningful purpose.
   static const char* const kSwitchesToFilter[] = {
-      switches::kFlagSwitchesBegin,
-      switches::kFlagSwitchesEnd,
+      ::switches::kFlagSwitchesBegin,
+      ::switches::kFlagSwitchesEnd,
   };
 
   for (const char* filter_switch : kSwitchesToFilter)
