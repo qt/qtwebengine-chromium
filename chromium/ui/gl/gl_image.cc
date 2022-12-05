@@ -67,6 +67,12 @@ bool GLImage::BindTexImage(unsigned target) {
   return false;
 }
 
+bool GLImage::BindTexImageWithInternalformat(unsigned target,
+                                             unsigned internalformat) {
+  NOTREACHED();
+  return false;
+}
+
 void GLImage::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }

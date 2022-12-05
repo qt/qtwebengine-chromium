@@ -6,30 +6,29 @@
 #define UI_GL_GL_IMAGE_IO_SURFACE_H_
 
 #include <CoreVideo/CVPixelBuffer.h>
-#include <EGL/egl.h>
-#include <EGL/eglext.h>
 #include <IOSurface/IOSurface.h>
 #include <stdint.h>
-#include <map>
 
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/raw_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/generic_shared_memory_id.h"
-#include "ui/gl/buffer_format_utils.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gl_image.h"
 
-namespace gl {
+#if defined(__OBJC__)
+@class CALayer;
+#else
+typedef void* CALayer;
+#endif
 
-class GLDisplayEGL;
-class ScopedEGLSurfaceIOSurface;
+namespace gl {
 
 class GL_EXPORT GLImageIOSurface : public GLImage {
  public:
-  static GLImageIOSurface* Create(const gfx::Size& size);
+  static GLImageIOSurface* Create(const gfx::Size& size,
+                                  unsigned internalformat);
 
   GLImageIOSurface(const GLImageIOSurface&) = delete;
   GLImageIOSurface& operator=(const GLImageIOSurface&) = delete;
@@ -63,32 +62,46 @@ class GL_EXPORT GLImageIOSurface : public GLImage {
   unsigned GetDataType() override;
   BindOrCopy ShouldBindOrCopy() override;
   bool BindTexImage(unsigned target) override;
-  void ReleaseTexImage(unsigned target) override;
+  bool BindTexImageWithInternalformat(unsigned target,
+                                      unsigned internalformat) override;
+  void ReleaseTexImage(unsigned target) override {}
   void SetColorSpace(const gfx::ColorSpace& color_space) override;
   void Flush() override {}
   void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                     uint64_t process_tracing_id,
                     const std::string& dump_name) override;
+  bool EmulatingRGB() const override;
   bool IsInUseByWindowServer() const override;
   void DisableInUseByWindowServer() override;
 
   gfx::GenericSharedMemoryId io_surface_id() const { return io_surface_id_; }
-  base::ScopedCFTypeRef<IOSurfaceRef> io_surface() { return io_surface_; }
-  base::ScopedCFTypeRef<CVPixelBufferRef> cv_pixel_buffer() {
-    return cv_pixel_buffer_;
-  }
+  base::ScopedCFTypeRef<IOSurfaceRef> io_surface();
+  base::ScopedCFTypeRef<CVPixelBufferRef> cv_pixel_buffer();
+
+  static unsigned GetInternalFormatForTesting(gfx::BufferFormat format);
 
   // Downcasts from |image|. Returns |nullptr| on failure.
   static GLImageIOSurface* FromGLImage(GLImage* image);
 
  protected:
-  GLImageIOSurface(const gfx::Size& size);
+  GLImageIOSurface(const gfx::Size& size, unsigned internalformat);
   ~GLImageIOSurface() override;
+  virtual bool BindTexImageImpl(unsigned target, unsigned internalformat);
 
+  static bool ValidFormat(gfx::BufferFormat format);
   Type GetType() const override;
+  class RGBConverter;
 
   const gfx::Size size_;
-  gfx::BufferFormat format_ = gfx::BufferFormat::RGBA_8888;
+
+  // The "internalformat" exposed to the command buffer, which may not be
+  // "internalformat" requested by the client.
+  const unsigned internalformat_;
+
+  // The "internalformat" requested by the client.
+  const unsigned client_internalformat_;
+
+  gfx::BufferFormat format_;
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
   base::ScopedCFTypeRef<CVPixelBufferRef> cv_pixel_buffer_;
   gfx::GenericSharedMemoryId io_surface_id_;
@@ -101,8 +114,6 @@ class GL_EXPORT GLImageIOSurface : public GLImage {
   base::ThreadChecker thread_checker_;
 
   bool disable_in_use_by_window_server_ = false;
-  std::map<const GLDisplayEGL*, std::unique_ptr<ScopedEGLSurfaceIOSurface>>
-      egl_surface_map_;
 };
 
 }  // namespace gl

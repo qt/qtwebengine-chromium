@@ -18,47 +18,175 @@
 #include "ui/gfx/mac/display_icc_profiles.h"
 #include "ui/gfx/mac/io_surface.h"
 #include "ui/gl/buffer_format_utils.h"
-#include "ui/gl/egl_surface_io_surface.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
-#include "ui/gl/gl_display.h"
 #include "ui/gl/gl_enums.h"
-#include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/scoped_binders.h"
+
+#if defined(USE_EGL)
+#include "ui/gl/gl_image_io_surface_egl.h"
+#include "ui/gl/gl_implementation.h"
+#endif  // defined(USE_EGL)
+
+// Note that this must be included after gl_bindings.h to avoid conflicts.
+#include <OpenGL/CGLIOSurface.h>
+#include <Quartz/Quartz.h>
+#include <stddef.h>
 
 using gfx::BufferFormat;
 
 namespace gl {
-
 namespace {
 
-// If enabled, this will release all EGL state as soon as the underlying
-// texture is released. This has the potential to cause performance regressions,
-// and so is disabled by default.
-BASE_FEATURE(kTightlyScopedIOSurfaceEGLState,
-             "TightlyScopedIOSurfaceEGLState",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+bool ValidInternalFormat(unsigned internalformat) {
+  switch (internalformat) {
+    case GL_RED:
+    case GL_R16_EXT:
+    case GL_RG:
+    case GL_BGRA_EXT:
+    case GL_RGB:
+    case GL_RGB10_A2_EXT:
+    case GL_RGB_YCBCR_420V_CHROMIUM:
+    case GL_RGB_YCBCR_422_CHROMIUM:
+    case GL_RGB_YCBCR_P010_CHROMIUM:
+    case GL_RGBA:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GLenum TextureFormat(gfx::BufferFormat format) {
+  switch (format) {
+    case gfx::BufferFormat::R_8:
+      return GL_RED;
+    case gfx::BufferFormat::R_16:
+      return GL_R16_EXT;
+    case gfx::BufferFormat::RG_88:
+      return GL_RG;
+    case gfx::BufferFormat::RG_1616:
+      return GL_RG16_EXT;
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:  // See https://crbug.com/595948.
+    case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBA_F16:
+    case gfx::BufferFormat::BGRA_1010102:
+      return GL_RGBA;
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+      return GL_RGB_YCBCR_420V_CHROMIUM;
+    case gfx::BufferFormat::P010:
+      return GL_RGB_YCBCR_P010_CHROMIUM;
+    case gfx::BufferFormat::BGR_565:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBA_1010102:
+    case gfx::BufferFormat::YVU_420:
+      NOTREACHED() << gfx::BufferFormatToString(format);
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+GLenum DataFormat(gfx::BufferFormat format) {
+  switch (format) {
+    case gfx::BufferFormat::R_8:
+      return GL_RED;
+    case gfx::BufferFormat::R_16:
+      return GL_R16_EXT;
+    case gfx::BufferFormat::RG_88:
+      return GL_RG;
+    case gfx::BufferFormat::RG_1616:
+      return GL_RG16_EXT;
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::RGBA_8888:  // See https://crbug.com/533677#c6.
+    case gfx::BufferFormat::BGRA_1010102:
+      return GL_BGRA;
+    case gfx::BufferFormat::RGBA_F16:
+      return GL_RGBA;
+    case gfx::BufferFormat::BGR_565:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBA_1010102:
+    case gfx::BufferFormat::YVU_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+    case gfx::BufferFormat::P010:
+      NOTREACHED() << gfx::BufferFormatToString(format);
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+GLenum DataType(gfx::BufferFormat format) {
+  switch (format) {
+    case gfx::BufferFormat::R_8:
+    case gfx::BufferFormat::RG_88:
+      return GL_UNSIGNED_BYTE;
+    case gfx::BufferFormat::R_16:
+    case gfx::BufferFormat::RG_1616:
+      return GL_UNSIGNED_SHORT;
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::RGBA_8888:
+      return GL_UNSIGNED_INT_8_8_8_8_REV;
+    case gfx::BufferFormat::BGRA_1010102:
+      return GL_UNSIGNED_INT_2_10_10_10_REV;
+    case gfx::BufferFormat::RGBA_F16:
+      return GL_HALF_APPLE;
+    case gfx::BufferFormat::BGR_565:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBA_1010102:
+    case gfx::BufferFormat::YVU_420:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+    case gfx::BufferFormat::P010:
+      NOTREACHED() << gfx::BufferFormatToString(format);
+      return 0;
+  }
+
+  NOTREACHED();
+  return 0;
+}
+
+// When an IOSurface is bound to a texture with internalformat "GL_RGB", many
+// OpenGL operations are broken. Therefore, don't allow an IOSurface to be bound
+// with GL_RGB unless overridden via BindTexImageWithInternalformat.
+// https://crbug.com/595948, https://crbug.com/699566.
+GLenum ConvertRequestedInternalFormat(GLenum internalformat) {
+  if (internalformat == GL_RGB)
+    return GL_RGBA;
+  return internalformat;
+}
 
 }  // namespace
 
-////////////////////////////////////////////////////////////////////////////////
-// GLImageIOSurface
-
 // static
-GLImageIOSurface* GLImageIOSurface::Create(const gfx::Size& size) {
+GLImageIOSurface* GLImageIOSurface::Create(const gfx::Size& size,
+                                           unsigned internalformat) {
+#if defined(USE_EGL)
   switch (GetGLImplementation()) {
     case kGLImplementationEGLGLES2:
     case kGLImplementationEGLANGLE:
-      return new GLImageIOSurface(size);
+      return new GLImageIOSurfaceEGL(size, internalformat);
     default:
       break;
   }
-  NOTREACHED();
-  return nullptr;
+#endif  // defined(USE_EGL)
+
+  return new GLImageIOSurface(size, internalformat);
 }
 
-GLImageIOSurface::GLImageIOSurface(const gfx::Size& size) : size_(size) {}
+GLImageIOSurface::GLImageIOSurface(const gfx::Size& size,
+                                   unsigned internalformat)
+    : size_(size),
+      internalformat_(ConvertRequestedInternalFormat(internalformat)),
+      client_internalformat_(internalformat),
+      format_(gfx::BufferFormat::RGBA_8888) {}
 
 GLImageIOSurface::~GLImageIOSurface() {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -67,7 +195,7 @@ GLImageIOSurface::~GLImageIOSurface() {
 bool GLImageIOSurface::Initialize(IOSurfaceRef io_surface,
                                   uint32_t io_surface_plane,
                                   gfx::GenericSharedMemoryId io_surface_id,
-                                  BufferFormat format) {
+                                  gfx::BufferFormat format) {
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(!io_surface_);
   if (!io_surface) {
@@ -75,26 +203,15 @@ bool GLImageIOSurface::Initialize(IOSurfaceRef io_surface,
     return false;
   }
 
-  switch (format) {
-    case BufferFormat::R_8:
-    case BufferFormat::RG_88:
-    case BufferFormat::R_16:
-    case BufferFormat::RG_1616:
-    case BufferFormat::BGRA_8888:
-    case BufferFormat::BGRX_8888:
-    case BufferFormat::RGBA_8888:
-    case BufferFormat::RGBX_8888:
-    case BufferFormat::RGBA_F16:
-    case BufferFormat::BGRA_1010102:
-      break;
-    case BufferFormat::YUV_420_BIPLANAR:
-    case BufferFormat::P010:
-    case BufferFormat::BGR_565:
-    case BufferFormat::RGBA_4444:
-    case BufferFormat::RGBA_1010102:
-    case BufferFormat::YVU_420:
-      LOG(ERROR) << "Invalid format: " << BufferFormatToString(format);
-      return false;
+  if (!ValidInternalFormat(internalformat_)) {
+    LOG(ERROR) << "Invalid internalformat: "
+               << GLEnums::GetStringEnum(internalformat_);
+    return false;
+  }
+
+  if (!ValidFormat(format)) {
+    LOG(ERROR) << "Invalid format: " << gfx::BufferFormatToString(format);
+    return false;
   }
 
   format_ = format;
@@ -108,7 +225,7 @@ bool GLImageIOSurface::InitializeWithCVPixelBuffer(
     CVPixelBufferRef cv_pixel_buffer,
     uint32_t io_surface_plane,
     gfx::GenericSharedMemoryId io_surface_id,
-    BufferFormat format,
+    gfx::BufferFormat format,
     const gfx::ColorSpace& color_space) {
   IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(cv_pixel_buffer);
   if (!io_surface) {
@@ -130,43 +247,31 @@ gfx::Size GLImageIOSurface::GetSize() {
 }
 
 unsigned GLImageIOSurface::GetInternalFormat() {
-  return BufferFormatToGLInternalFormat(format_);
+  return internalformat_;
 }
 
 unsigned GLImageIOSurface::GetDataType() {
-  return BufferFormatToGLDataType(format_);
+  return gl::BufferFormatToGLDataType(format_);
 }
 
-GLImage::BindOrCopy GLImageIOSurface::ShouldBindOrCopy() {
+GLImageIOSurface::BindOrCopy GLImageIOSurface::ShouldBindOrCopy() {
   return BIND;
 }
 
 bool GLImageIOSurface::BindTexImage(unsigned target) {
+  return BindTexImageWithInternalformat(target, 0);
+}
+
+bool GLImageIOSurface::BindTexImageWithInternalformat(unsigned target,
+                                                      unsigned internalformat) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(BIND, ShouldBindOrCopy());
   TRACE_EVENT0("gpu", "GLImageIOSurface::BindTexImage");
   base::TimeTicks start_time = base::TimeTicks::Now();
 
-  GLDisplayEGL* display = GLDisplayEGL::GetDisplayForCurrentContext();
-  if (!display) {
-    LOG(ERROR) << "No GLDisplayEGL current.";
-    return false;
-  }
+  DCHECK(io_surface_);
 
-  auto found = egl_surface_map_.find(display);
-  if (found == egl_surface_map_.end()) {
-    auto egl_surface = ScopedEGLSurfaceIOSurface::Create(
-        display->GetDisplay(), io_surface_, io_surface_plane_, format_);
-    if (!egl_surface) {
-      LOG(ERROR) << "Failed to create ScopedEGLSurfaceIOSurface.";
-      return false;
-    }
-    found =
-        egl_surface_map_.insert(std::make_pair(display, std::move(egl_surface)))
-            .first;
-  }
-  ScopedEGLSurfaceIOSurface* egl_surface = found->second.get();
-  if (!egl_surface->BindTexImage(target)) {
-    LOG(ERROR) << "Failed BindTexImage.";
+  if (!BindTexImageImpl(target, internalformat)) {
     return false;
   }
 
@@ -175,19 +280,31 @@ bool GLImageIOSurface::BindTexImage(unsigned target) {
   return true;
 }
 
-void GLImageIOSurface::ReleaseTexImage(unsigned target) {
-  auto found =
-      egl_surface_map_.find(GLDisplayEGL::GetDisplayForCurrentContext());
-  if (found == egl_surface_map_.end()) {
-    LOG(ERROR) << "Called ReleaseTexImage without BindTexImage.";
-    return;
+bool GLImageIOSurface::BindTexImageImpl(unsigned target,
+                                        unsigned internalformat) {
+  if (target != GL_TEXTURE_RECTANGLE_ARB) {
+    // This might be supported in the future. For now, perform strict
+    // validation so we know what's going on.
+    LOG(ERROR) << "IOSurface requires TEXTURE_RECTANGLE_ARB target";
+    return false;
   }
 
-  ScopedEGLSurfaceIOSurface* egl_surface = found->second.get();
-  egl_surface->ReleaseTexImage();
+  CGLContextObj cgl_context =
+      static_cast<CGLContextObj>(GLContext::GetCurrent()->GetHandle());
 
-  if (base::FeatureList::IsEnabled(kTightlyScopedIOSurfaceEGLState))
-    egl_surface_map_.erase(found);
+  GLenum texture_format =
+      internalformat ? internalformat : TextureFormat(format_);
+  CGLError cgl_error = CGLTexImageIOSurface2D(
+      cgl_context, GL_TEXTURE_RECTANGLE_ARB, texture_format, size_.width(),
+      size_.height(), DataFormat(format_), DataType(format_), io_surface_.get(),
+      io_surface_plane_);
+  if (cgl_error != kCGLNoError) {
+    LOG(ERROR) << "Error in CGLTexImageIOSurface2D: "
+               << CGLErrorString(cgl_error);
+    return false;
+  }
+
+  return true;
 }
 
 void GLImageIOSurface::OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
@@ -239,6 +356,10 @@ void GLImageIOSurface::OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
   }
 }
 
+bool GLImageIOSurface::EmulatingRGB() const {
+  return client_internalformat_ == GL_RGB;
+}
+
 bool GLImageIOSurface::IsInUseByWindowServer() const {
   // IOSurfaceIsInUse() will always return true if the IOSurface is wrapped in
   // a CVPixelBuffer. Ignore the signal for such IOSurfaces (which are the ones
@@ -250,6 +371,14 @@ bool GLImageIOSurface::IsInUseByWindowServer() const {
 
 void GLImageIOSurface::DisableInUseByWindowServer() {
   disable_in_use_by_window_server_ = true;
+}
+
+base::ScopedCFTypeRef<IOSurfaceRef> GLImageIOSurface::io_surface() {
+  return io_surface_;
+}
+
+base::ScopedCFTypeRef<CVPixelBufferRef> GLImageIOSurface::cv_pixel_buffer() {
+  return cv_pixel_buffer_;
 }
 
 GLImage::Type GLImageIOSurface::GetType() const {
@@ -278,10 +407,44 @@ void GLImageIOSurface::SetColorSpace(const gfx::ColorSpace& color_space) {
 }
 
 // static
+unsigned GLImageIOSurface::GetInternalFormatForTesting(
+    gfx::BufferFormat format) {
+  DCHECK(ValidFormat(format));
+  return TextureFormat(format);
+}
+
+// static
 GLImageIOSurface* GLImageIOSurface::FromGLImage(GLImage* image) {
   if (!image || image->GetType() != Type::IOSURFACE)
     return nullptr;
   return static_cast<GLImageIOSurface*>(image);
+}
+
+// static
+bool GLImageIOSurface::ValidFormat(gfx::BufferFormat format) {
+  switch (format) {
+    case gfx::BufferFormat::R_8:
+    case gfx::BufferFormat::RG_88:
+    case gfx::BufferFormat::R_16:
+    case gfx::BufferFormat::RG_1616:
+    case gfx::BufferFormat::BGRA_8888:
+    case gfx::BufferFormat::BGRX_8888:
+    case gfx::BufferFormat::RGBA_8888:
+    case gfx::BufferFormat::RGBX_8888:
+    case gfx::BufferFormat::RGBA_F16:
+    case gfx::BufferFormat::BGRA_1010102:
+    case gfx::BufferFormat::YUV_420_BIPLANAR:
+    case gfx::BufferFormat::P010:
+      return true;
+    case gfx::BufferFormat::BGR_565:
+    case gfx::BufferFormat::RGBA_4444:
+    case gfx::BufferFormat::RGBA_1010102:
+    case gfx::BufferFormat::YVU_420:
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
 }
 
 }  // namespace gl

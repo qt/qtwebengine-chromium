@@ -2193,7 +2193,7 @@ bool VTVideoDecodeAccelerator::SendFrame(const Frame& frame) {
     const GLenum gl_format = viz::GLDataFormat(viz_resource_format);
 
     scoped_refptr<gl::GLImageIOSurface> gl_image(
-        gl::GLImageIOSurface::Create(plane_size));
+        gl::GLImageIOSurface::Create(plane_size, gl_format));
     if (!gl_image->InitializeWithCVPixelBuffer(
             frame.image.get(), plane,
             gfx::GenericSharedMemoryId(g_cv_pixel_buffer_ids.GetNext()),
