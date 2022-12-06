@@ -97,7 +97,9 @@ config("compiler") {
     cflags += [ "/D__WRL_ENABLE_FUNCTION_STATICS__" ]
 
     # Tell clang which version of MSVC to emulate.
-    cflags += [ "-fmsc-version=1934" ]
+    if (!ninja_use_custom_environment_files) {
+      cflags += [ "-fmsc-version=1934" ]
+    }
 
     if (is_component_build) {
       cflags += [
@@ -168,7 +170,7 @@ config("compiler") {
     ldflags += [ "/TIMESTAMP:" + build_timestamp ]
 
     # Don't look for libpaths in %LIB%, similar to /X in cflags above.
-    ldflags += [ "/lldignoreenv" ]
+#    ldflags += [ "/lldignoreenv" ]
   }
 
   # Some binaries create PDBs larger than 4 GiB. Increasing the PDB page size

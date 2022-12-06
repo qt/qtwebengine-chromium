@@ -1717,7 +1717,7 @@ void CompositorFrameReporter::CalculateEventLatencyPrediction(
   // Determine dispatch-to-compositor transition stage duration.
   auto stage_it = base::ranges::lower_bound(
       stage_history_, dispatch_end_time, {},
-      &CompositorFrameReporter::StageData::start_time);
+      [](const CompositorFrameReporter::StageData &d) { return  d.start_time; });
   if (stage_it != stage_history_.end()) {
     if (dispatch_end_time < stage_it->start_time) {
       base::TimeDelta stage_duration = stage_it->start_time - dispatch_end_time;

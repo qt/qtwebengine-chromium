@@ -83,6 +83,80 @@ inline T* AlignUp(T* ptr, uintptr_t alignment) {
 // clearly a return value that makes sense, and even though some processor clz
 // instructions have defined behaviour for 0. We could drop to raw __asm__ to
 // do better, but we'll avoid doing that unless we see proof that we need to.
+
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+template <typename T, unsigned bits = sizeof(T) * 8>
+ALWAYS_INLINE
+    typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
+                            unsigned>::type
+    CountLeadingZeroBits(T x) {
+  static_assert(bits > 0, "invalid instantiation");
+  unsigned long index;
+  return LIKELY(_BitScanReverse(&index, static_cast<uint32_t>(x)))
+             ? (31 - index - (32 - bits))
+             : bits;
+}
+
+template <typename T, unsigned bits = sizeof(T) * 8>
+ALWAYS_INLINE
+    typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
+                            unsigned>::type
+    CountLeadingZeroBits(T x) {
+  static_assert(bits > 0, "invalid instantiation");
+  unsigned long index;
+// MSVC only supplies _BitScanReverse64 when building for a 64-bit target.
+#if defined(ARCH_CPU_64_BITS)
+  return LIKELY(_BitScanReverse64(&index, static_cast<uint64_t>(x)))
+             ? (63 - index)
+             : 64;
+#else
+  uint32_t left = static_cast<uint32_t>(x >> 32);
+  if (LIKELY(_BitScanReverse(&index, left)))
+    return 31 - index;
+
+  uint32_t right = static_cast<uint32_t>(x);
+  if (LIKELY(_BitScanReverse(&index, right)))
+    return 63 - index;
+
+  return 64;
+#endif
+}
+template <typename T, unsigned bits = sizeof(T) * 8>
+ALWAYS_INLINE
+    typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
+                            unsigned>::type
+    CountTrailingZeroBits(T x) {
+  static_assert(bits > 0, "invalid instantiation");
+  unsigned long index;
+  return LIKELY(_BitScanForward(&index, static_cast<uint32_t>(x))) ? index
+                                                                   : bits;
+}
+
+template <typename T, unsigned bits = sizeof(T) * 8>
+ALWAYS_INLINE
+    typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
+                            unsigned>::type
+    CountTrailingZeroBits(T x) {
+  static_assert(bits > 0, "invalid instantiation");
+  unsigned long index;
+// MSVC only supplies _BitScanForward64 when building for a 64-bit target.
+#if defined(ARCH_CPU_64_BITS)
+  return LIKELY(_BitScanForward64(&index, static_cast<uint64_t>(x))) ? index
+                                                                     : 64;
+#else
+  uint32_t right = static_cast<uint32_t>(x);
+  if (LIKELY(_BitScanForward(&index, right)))
+    return index;
+
+  uint32_t left = static_cast<uint32_t>(x >> 32);
+  if (LIKELY(_BitScanForward(&index, left)))
+    return 32 + index;
+
+  return 64;
+#endif
+}
+
+#elif defined(COMPILER_GCC) || defined(__clang__)
 template <typename T, int bits = sizeof(T) * 8>
 ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 8,
@@ -106,7 +180,7 @@ ALWAYS_INLINE constexpr
                              : __builtin_ctz(static_cast<uint32_t>(value))
                        : bits;
 }
-
+#endif
 // Returns the integer i such as 2^i <= n < 2^(i+1).
 //
 // There is a common `BitLength` function, which returns the number of bits
@@ -114,12 +188,20 @@ ALWAYS_INLINE constexpr
 // use `Log2Floor` and add 1 to the result.
 //
 // TODO(pkasting): When C++20 is available, replace with std::bit_xxx().
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+inline int Log2Floor(uint32_t n) {
+#else
 constexpr int Log2Floor(uint32_t n) {
+#endif
   return 31 - CountLeadingZeroBits(n);
 }
 
 // Returns the integer i such as 2^(i-1) < n <= 2^i.
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+inline int Log2Ceiling(uint32_t n) {
+#else
 constexpr int Log2Ceiling(uint32_t n) {
+#endif
   // When n == 0, we want the function to return -1.
   // When n == 0, (n - 1) will underflow to 0xFFFFFFFF, which is
   // why the statement below starts with (n ? 32 : -1).

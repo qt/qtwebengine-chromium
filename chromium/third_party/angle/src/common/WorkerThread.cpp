@@ -299,7 +299,7 @@ std::shared_ptr<WorkerThreadPool> WorkerThreadPool::Create(size_t numThreads,
     std::shared_ptr<WorkerThreadPool> pool(nullptr);
 
 #if ANGLE_DELEGATE_WORKERS
-    const bool hasPostWorkerTaskImpl = platform->postWorkerTask != nullptr;
+    const bool hasPostWorkerTaskImpl = (platform->postWorkerTask != nullptr);
     if (hasPostWorkerTaskImpl && multithreaded)
     {
         pool = std::shared_ptr<WorkerThreadPool>(new DelegateWorkerPool(platform));

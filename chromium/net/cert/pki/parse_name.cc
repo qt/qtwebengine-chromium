@@ -11,6 +11,8 @@
 #include "third_party/boringssl/src/include/openssl/bytestring.h"
 #include "third_party/boringssl/src/include/openssl/mem.h"
 
+#include <assert.h>
+
 namespace net {
 
 namespace {

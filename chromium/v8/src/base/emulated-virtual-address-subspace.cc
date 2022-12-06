@@ -175,6 +175,7 @@ EmulatedVirtualAddressSubspace::AllocateSubspace(
     Address hint, size_t size, size_t alignment,
     PagePermissions max_page_permissions) {
   UNREACHABLE();
+  return nullptr;
 }
 
 bool EmulatedVirtualAddressSubspace::RecommitPages(

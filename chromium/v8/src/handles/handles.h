@@ -11,6 +11,7 @@
 #include "src/base/macros.h"
 #include "src/common/checks.h"
 #include "src/common/globals.h"
+#include "src/objects/objects.h"
 #include "src/zone/zone.h"
 
 #ifdef V8_ENABLE_DIRECT_HANDLE
@@ -29,7 +30,6 @@ class Isolate;
 class LocalHeap;
 class LocalIsolate;
 class TaggedIndex;
-class Object;
 class OrderedHashMap;
 class OrderedHashSet;
 class OrderedNameDictionary;

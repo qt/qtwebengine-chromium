@@ -451,6 +451,7 @@ bool ServiceFormHttpsRecordRdata::IsSupportedKey(uint16_t key) {
 #else
   // Only intended for DCHECKs.
   base::ImmediateCrash();
+  return false;
 #endif  // DCHECK_IS_ON()
 }
 

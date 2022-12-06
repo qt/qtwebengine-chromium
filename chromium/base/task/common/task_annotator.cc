@@ -199,7 +199,7 @@ void TaskAnnotator::RunTaskImpl(PendingTask& pending_task) {
       g_task_annotator_observer->BeforeRunTask(&pending_task);
     }
     std::move(pending_task.task).Run();
-#if BUILDFLAG(IS_WIN) && defined(ARCH_CPU_X86_FAMILY)
+#if BUILDFLAG(IS_WIN) && defined(ARCH_CPU_X86_FAMILY) && defined(__clang__)
     // Some tasks on some machines clobber the non-volatile XMM registers in
     // violation of the Windows ABI. This empty assembly language block with
     // clobber directives tells the compiler to assume that these registers

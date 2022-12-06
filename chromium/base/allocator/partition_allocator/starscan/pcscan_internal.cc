@@ -335,6 +335,7 @@ class SuperPageSnapshot final {
   //
   // For systems with runtime-defined page size, assume partition page size is
   // at least 16kiB.
+#if defined(COMPILER_GCC) || defined(__clang__)
   static constexpr size_t kMinPartitionPageSize =
       __builtin_constant_p(PartitionPageSize()) ? PartitionPageSize() : 1 << 14;
   static constexpr size_t kStateBitmapMinReservedSize =
@@ -343,6 +344,12 @@ class SuperPageSnapshot final {
           : partition_alloc::internal::base::bits::AlignUp(
                 sizeof(AllocationStateMap),
                 kMinPartitionPageSize);
+#else
+  static constexpr size_t kMinPartitionPageSize = 1 << 14;
+  static constexpr size_t kStateBitmapMinReservedSize =
+      base::bits::AlignUp(sizeof(AllocationStateMap),
+                          kMinPartitionPageSize);
+#endif
   // Take into account guard partition page at the end of super-page.
   static constexpr size_t kGuardPagesSize = 2 * kMinPartitionPageSize;
 
