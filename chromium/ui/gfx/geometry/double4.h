@@ -44,9 +44,117 @@ namespace gfx {
 //   https://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html
 
 #if !defined(__GNUC__) && !defined(__clang__)
-#error Unsupported compiler.
-#endif
+struct DoubleBoolean4 {
+    alignas(16) int64_t b[4];
+    DoubleBoolean4 operator&(const DoubleBoolean4& o) const
+    { DoubleBoolean4 out;
+        out.b[0] = b[0] & o.b[0];
+        out.b[1] = b[1] & o.b[1];
+        out.b[2] = b[2] & o.b[2];
+        out.b[3] = b[3] & o.b[3];
+        return out;
+    }
+};
 
+struct Double4 {
+    alignas(16) double d[4];
+    DoubleBoolean4 operator==(const Double4& o) const
+    { return { d[0] == o.d[0],
+               d[1] == o.d[1],
+               d[2] == o.d[2],
+               d[3] == o.d[3] };
+    }
+    double& operator[](int i) { return d[i]; }
+    void operator*=(const Double4& o)
+    { d[0] *= o.d[0];
+      d[1] *= o.d[1];
+      d[2] *= o.d[2];
+      d[3] *= o.d[3];
+    }
+    void operator*=(double o)
+    { d[0] *= o;
+      d[1] *= o;
+      d[2] *= o;
+      d[3] *= o;
+    }
+    void operator+=(const Double4& o)
+    { d[0] += o.d[0];
+      d[1] += o.d[1];
+      d[2] += o.d[2];
+      d[3] += o.d[3];
+    }
+    void operator-=(const Double4& o)
+    { d[0] -= o.d[0];
+      d[1] -= o.d[1];
+      d[2] -= o.d[2];
+      d[3] -= o.d[3];
+    }
+    Double4 operator*(const Double4& o) const
+    { return { d[0] * o.d[0],
+               d[1] * o.d[1],
+               d[2] * o.d[2],
+               d[3] * o.d[3] };
+    }
+    Double4 operator*(double o) const
+    { return { d[0] * o,
+               d[1] * o,
+               d[2] * o,
+               d[3] * o };
+    }
+    Double4 operator/(double o) const
+    { return { d[0] / o,
+               d[1] / o,
+               d[2] / o,
+               d[3] / o };
+    }
+    Double4 operator+(const Double4& o) const
+    { return { d[0] + o.d[0],
+               d[1] + o.d[1],
+               d[2] + o.d[2],
+               d[3] + o.d[3] };
+    }
+    Double4 operator+(double o) const
+    { return { d[0] + o,
+               d[1] + o,
+               d[2] + o,
+               d[3] + o };
+    }
+    Double4 operator-(const Double4& o) const
+    { return { d[0] - o.d[0],
+               d[1] - o.d[1],
+               d[2] - o.d[2],
+               d[3] - o.d[3] };
+    }
+    friend Double4 operator*(double d, const Double4 &o)
+    { return o * d; }
+    friend Double4 operator/(double d, const Double4 &o)
+    { return { d / o.d[0],
+               d / o.d[1],
+               d / o.d[2],
+               d / o.d[3] };
+    }
+};
+
+ALWAYS_INLINE double Sum(Double4 v) {
+  return v.d[0] + v.d[1] + v.d[2] + v.d[3];
+}
+
+ALWAYS_INLINE Double4 LoadDouble4(const double s[4]) {
+  return Double4({s[0], s[1], s[2], s[3]});
+}
+
+ALWAYS_INLINE void StoreDouble4(Double4 v, double d[4]) {
+  d[0] = v.d[0];
+  d[1] = v.d[1];
+  d[2] = v.d[2];
+  d[3] = v.d[3];
+}
+
+ALWAYS_INLINE int64_t AllTrue(DoubleBoolean4 v) {
+  return v.b[0] & v.b[1] & v.b[2] & v.b[3];
+}
+
+#else
 typedef double __attribute__((vector_size(4 * sizeof(double)))) Double4;
 typedef float __attribute__((vector_size(4 * sizeof(float)))) Float4;
 
@@ -86,7 +194,7 @@ typedef int32_t __attribute__((vector_size(4 * sizeof(int32_t)))) FloatBoolean4;
 ALWAYS_INLINE int32_t AllTrue(FloatBoolean4 b4) {
   return b4[0] & b4[1] & b4[2] & b4[3];
 }
-
+#endif
 }  // namespace gfx
 
 #endif  // UI_GFX_GEOMETRY_DOUBLE4_H_

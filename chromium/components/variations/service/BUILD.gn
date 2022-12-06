@@ -5,6 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/features.gni")
 
 declare_args() {
   # Set to true make a build that disables activation of field trial tests
@@ -77,6 +78,15 @@ static_library("service") {
     deps += [
       "//chromeos/ash/components/dbus/featured",
       "//components/variations/cros:proto",
+    ]
+  }
+  if (is_qtwebengine) {
+    sources -= [
+      "variations_field_trial_creator.cc",
+      "variations_field_trial_creator.h",
+    ]
+    deps -= [
+      "//components/variations/field_trial_config",
     ]
   }
 }

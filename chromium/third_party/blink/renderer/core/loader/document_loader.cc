@@ -518,7 +518,7 @@ DocumentLoader::DocumentLoader(
       navigation_api_back_entries_(params_->navigation_api_back_entries),
       navigation_api_forward_entries_(params_->navigation_api_forward_entries),
       extra_data_(std::move(extra_data)),
-      reduced_accept_language_(params_->reduced_accept_language),
+      reduced_accept_language_(static_cast<String>(params_->reduced_accept_language)),
       navigation_delivery_type_(params_->navigation_delivery_type),
       view_transition_state_(std::move(params_->view_transition_state)),
       load_with_storage_access_(params_->load_with_storage_access),

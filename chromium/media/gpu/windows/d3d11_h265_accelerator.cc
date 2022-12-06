@@ -218,11 +218,15 @@ void D3D11H265Accelerator::FillPicParamsWithConstants(
   pic->main.ReservedBits7 = 0;
 }
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 #define ARG_SEL(_1, _2, NAME, ...) NAME
 #define SPS_TO_PP1(a) (pic_param->main).a = sps->a;
 #define SPS_TO_PPEXT(a) pic_param->a = sps->a;
 #define SPS_TO_PP2(a, b) (pic_param->main).a = sps->b;
-#define SPS_TO_PP(...) ARG_SEL(__VA_ARGS__, SPS_TO_PP2, SPS_TO_PP1)(__VA_ARGS__)
+#define SPS_TO_PP(...) CR_EXPAND_ARG(ARG_SEL(__VA_ARGS__, SPS_TO_PP2, SPS_TO_PP1)(__VA_ARGS__))
 void D3D11H265Accelerator::PicParamsFromSPS(DXVA_PicParams_HEVC_Rext* pic_param,
                                             const H265SPS* sps) {
   // Refer to formula 7-14 and 7-16 of HEVC spec.

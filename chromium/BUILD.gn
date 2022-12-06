@@ -638,7 +638,7 @@ group("gn_all") {
       ]
     }
 
-    if (is_win) {
+    if (is_win && !is_qtwebengine) {
       deps += [
         "//base:pe_image_test",
         "//chrome/chrome_elf:chrome_elf_unittests",
@@ -669,7 +669,7 @@ group("gn_all") {
           host_os == "win") {
         deps += [ "//chrome/test/mini_installer:mini_installer_tests" ]
       }
-    } else if (!is_android && !is_ios && !is_fuchsia) {
+    } else if (!is_android && !is_ios && !is_fuchsia && !is_qtwebengine) {
       deps += [ "//third_party/breakpad:symupload($host_toolchain)" ]
     }
 
@@ -684,7 +684,7 @@ group("gn_all") {
       ]
     }
 
-    if (is_mac || is_win || is_android || is_linux || is_chromeos) {
+    if ((is_mac || is_win || is_android || is_linux || is_chromeos) && !is_qtwebengine) {
       deps += [
         "//third_party/crashpad/crashpad:crashpad_tests",
         "//third_party/crashpad/crashpad/handler:crashpad_handler",

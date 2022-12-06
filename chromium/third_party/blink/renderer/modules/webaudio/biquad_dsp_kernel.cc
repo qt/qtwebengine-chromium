@@ -59,10 +59,10 @@ bool BiquadDSPKernel::HasConstantValuesForTesting(float* values,
 
 void BiquadDSPKernel::UpdateCoefficientsIfNecessary(int frames_to_process) {
   if (GetBiquadProcessor()->FilterCoefficientsDirty()) {
-    float cutoff_frequency[RenderQuantumFrames()];
-    float q[RenderQuantumFrames()];
-    float gain[RenderQuantumFrames()];
-    float detune[RenderQuantumFrames()];  // in Cents
+    Vector<float> cutoff_frequency(RenderQuantumFrames());
+    Vector<float> q(RenderQuantumFrames());
+    Vector<float> gain(RenderQuantumFrames());
+    Vector<float> detune(RenderQuantumFrames());  // in Cents
 
     SECURITY_CHECK(static_cast<unsigned>(frames_to_process) <=
                    RenderQuantumFrames());
@@ -70,32 +70,32 @@ void BiquadDSPKernel::UpdateCoefficientsIfNecessary(int frames_to_process) {
     if (GetBiquadProcessor()->HasSampleAccurateValues() &&
         GetBiquadProcessor()->IsAudioRate()) {
       GetBiquadProcessor()->Parameter1().CalculateSampleAccurateValues(
-          cutoff_frequency, frames_to_process);
+          cutoff_frequency.data(), frames_to_process);
       GetBiquadProcessor()->Parameter2().CalculateSampleAccurateValues(
-          q, frames_to_process);
+          q.data(), frames_to_process);
       GetBiquadProcessor()->Parameter3().CalculateSampleAccurateValues(
-          gain, frames_to_process);
+          gain.data(), frames_to_process);
       GetBiquadProcessor()->Parameter4().CalculateSampleAccurateValues(
-          detune, frames_to_process);
+          detune.data(), frames_to_process);
 
       // If all the values are actually constant for this render (or the
       // automation rate is "k-rate" for all of the AudioParams), we don't need
       // to compute filter coefficients for each frame since they would be the
       // same as the first.
       bool isConstant =
-          HasConstantValues(cutoff_frequency, frames_to_process) &&
-          HasConstantValues(q, frames_to_process) &&
-          HasConstantValues(gain, frames_to_process) &&
-          HasConstantValues(detune, frames_to_process);
+          HasConstantValues(cutoff_frequency.data(), frames_to_process) &&
+          HasConstantValues(q.data(), frames_to_process) &&
+          HasConstantValues(gain.data(), frames_to_process) &&
+          HasConstantValues(detune.data(), frames_to_process);
 
-      UpdateCoefficients(isConstant ? 1 : frames_to_process, cutoff_frequency,
-                         q, gain, detune);
+      UpdateCoefficients(isConstant ? 1 : frames_to_process, cutoff_frequency.data(),
+                         q.data(), gain.data(), detune.data());
     } else {
       cutoff_frequency[0] = GetBiquadProcessor()->Parameter1().FinalValue();
       q[0] = GetBiquadProcessor()->Parameter2().FinalValue();
       gain[0] = GetBiquadProcessor()->Parameter3().FinalValue();
       detune[0] = GetBiquadProcessor()->Parameter4().FinalValue();
-      UpdateCoefficients(1, cutoff_frequency, q, gain, detune);
+      UpdateCoefficients(1, cutoff_frequency.data(), q.data(), gain.data(), detune.data());
     }
   }
 }
