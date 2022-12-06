@@ -522,8 +522,8 @@ template("build_webui") {
   }
 
   enable_type_aware_eslint_checks =
-      !defined(invoker.enable_type_aware_eslint_checks) ||
-      invoker.enable_type_aware_eslint_checks
+      (!defined(invoker.enable_type_aware_eslint_checks) ||
+      invoker.enable_type_aware_eslint_checks) && !is_win
 
   if (enable_type_aware_eslint_checks) {
     eslint_ts("lint_ts") {

@@ -70,4 +70,9 @@ if (use_blink) {
       "//url",
     ]
   }
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/variations/field_trial_config",
+    ]
+  }
 }

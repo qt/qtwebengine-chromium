@@ -116,6 +116,7 @@ void LCDTextMetricsReporter::NotifyPauseFrameProduction() {
 
   Report(layer_tree_host_impl_->active_tree(),
          [is_high_dpi](int64_t text_pixels, LCDTextDisallowedReason reason) {
+#if !defined(COMPILER_MSVC)
            if (is_high_dpi) {
              UMA_HISTOGRAM_SCALED_ENUMERATION(kMetricNameLCDTextKPixelsHighDPI,
                                               reason, text_pixels, 1000);
@@ -123,6 +124,7 @@ void LCDTextMetricsReporter::NotifyPauseFrameProduction() {
              UMA_HISTOGRAM_SCALED_ENUMERATION(kMetricNameLCDTextKPixelsLowDPI,
                                               reason, text_pixels, 1000);
            }
+#endif
          });
 }
 

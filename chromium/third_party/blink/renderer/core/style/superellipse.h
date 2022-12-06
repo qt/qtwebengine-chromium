@@ -56,7 +56,7 @@ class Superellipse {
   // https://drafts.csswg.org/css-borders-4/#superellipse-param
   constexpr double Parameter() const { return param_; }
 
-  constexpr double Exponent() const {
+  double Exponent() const {
     return std::pow(2, ClampTo<float>(param_, -kHighCurvatureThreshold,
                                       kHighCurvatureThreshold));
   }

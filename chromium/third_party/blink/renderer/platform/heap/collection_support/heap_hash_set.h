@@ -69,7 +69,9 @@ class BasicHeapHashSet final
                     "instead of BasicHeapHashSet<>.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 // On-stack for in-field version of HashSet for referring to

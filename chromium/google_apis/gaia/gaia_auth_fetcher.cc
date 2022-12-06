@@ -845,6 +845,7 @@ void GaiaAuthFetcher::OnGetCheckConnectionInfoFetched(const std::string& data,
 void GaiaAuthFetcher::OnOAuthMultiloginFetched(const std::string& data,
                                                net::Error net_error,
                                                int response_code) {
+#if !defined(COMPILER_MSVC)
   OAuthMultiloginResult result =
       (net_error == net::Error::OK)
           ? OAuthMultiloginResult(data, response_code,
@@ -852,6 +853,7 @@ void GaiaAuthFetcher::OnOAuthMultiloginFetched(const std::string& data,
                                   standard_device_bound_session_credentials_)
           : OAuthMultiloginResult(OAuthMultiloginResponseStatus::kRetry);
   consumer_->OnOAuthMultiloginFinished(result);
+#endif
 }
 
 void GaiaAuthFetcher::OnURLLoadComplete(

@@ -154,7 +154,7 @@ ColorProviderUtilsCallbacks::~ColorProviderUtilsCallbacks() = default;
 #include "ui/color/color_id_map_macros.inc"
 
 std::string ColorIdName(ColorId color_id) {
-  static constexpr auto kColorIdMap =
+  static const auto kColorIdMap =
       base::MakeFixedFlatMap<ColorId, const char*>({COLOR_IDS});
   auto it = kColorIdMap.find(color_id);
   if (it != kColorIdMap.cend()) {

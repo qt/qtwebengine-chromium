@@ -8,7 +8,6 @@
 #include <array>
 #include <cmath>
 #include <compare>
-#include <memory>
 #include <optional>
 #include <ostream>
 #include <string_view>
@@ -468,11 +467,14 @@ void DictValue::Merge(DictValue dict) {
 
 const Value* DictValue::Find(std::string_view key) const {
   DCHECK(IsStringUTF8AllowingNoncharacters(key));
-  return FindPtrOrNull(storage_, key);
+
+  auto it = storage_.find(key);
+  return it != storage_.end() ? it->second.get() : nullptr;
 }
 
 Value* DictValue::Find(std::string_view key) {
-  return FindPtrOrNull(storage_, key);
+  auto it = storage_.find(key);
+  return it != storage_.end() ? it->second.get() : nullptr;
 }
 
 std::optional<bool> DictValue::FindBool(std::string_view key) const {
@@ -973,6 +975,7 @@ bool operator==(const DictValue& lhs, const DictValue& rhs) {
                             deref_2nd);
 }
 
+#if !defined(COMPILER_MSVC)
 std::partial_ordering operator<=>(const DictValue& lhs, const DictValue& rhs) {
   return std::lexicographical_compare_three_way(
       lhs.storage_.begin(), lhs.storage_.end(), rhs.storage_.begin(),
@@ -980,6 +983,29 @@ std::partial_ordering operator<=>(const DictValue& lhs, const DictValue& rhs) {
         return std::tie(a.first, *a.second) <=> std::tie(b.first, *b.second);
       });
 }
+#else
+bool operator!=(const DictValue& lhs, const DictValue& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const DictValue& lhs, const DictValue& rhs) {
+  auto deref_2nd = [](const auto& p) { return std::tie(p.first, *p.second); };
+  return std::ranges::lexicographical_compare(lhs.storage_, rhs.storage_, {},
+                                              deref_2nd, deref_2nd);
+}
+
+bool operator>(const DictValue& lhs, const DictValue& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const DictValue& lhs, const DictValue& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const DictValue& lhs, const DictValue& rhs) {
+  return !(lhs < rhs);
+}
+#endif
 
 // static
 ListValue ListValue::with_capacity(size_t capacity) {
@@ -1006,41 +1032,41 @@ size_t ListValue::size() const {
 
 ListValue::iterator ListValue::begin() {
   // SAFETY: Both iterators point to a single allocation.
-  return UNSAFE_BUFFERS(iterator(base::to_address(storage_.begin()),
-                                 base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(
+      iterator(storage_.data(), storage_.data() + storage_.size()));
 }
 
 ListValue::const_iterator ListValue::begin() const {
   // SAFETY: Both iterators point to a single allocation.
-  return UNSAFE_BUFFERS(const_iterator(base::to_address(storage_.begin()),
-                                       base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(
+      const_iterator(storage_.data(), storage_.data() + storage_.size()));
 }
 
 ListValue::const_iterator ListValue::cbegin() const {
   // SAFETY: Both iterators point to a single allocation.
-  return UNSAFE_BUFFERS(const_iterator(base::to_address(storage_.cbegin()),
-                                       base::to_address(storage_.cend())));
+  return UNSAFE_BUFFERS(
+      const_iterator(storage_.data(), storage_.data() + storage_.size()));
 }
 
 ListValue::iterator ListValue::end() {
   // SAFETY: All iterators point to a single allocation.
-  return UNSAFE_BUFFERS(iterator(base::to_address(storage_.begin()),
-                                 base::to_address(storage_.end()),
-                                 base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(iterator(storage_.data(),
+                                 storage_.data() + storage_.size(),
+                                 storage_.data() + storage_.size()));
 }
 
 ListValue::const_iterator ListValue::end() const {
   // SAFETY: All iterators point to a single allocation.
-  return UNSAFE_BUFFERS(const_iterator(base::to_address(storage_.begin()),
-                                       base::to_address(storage_.end()),
-                                       base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(const_iterator(storage_.data(),
+                                       storage_.data() + storage_.size(),
+                                       storage_.data() + storage_.size()));
 }
 
 ListValue::const_iterator ListValue::cend() const {
   // SAFETY: All iterators point to a single allocation.
-  return UNSAFE_BUFFERS(const_iterator(base::to_address(storage_.cbegin()),
-                                       base::to_address(storage_.cend()),
-                                       base::to_address(storage_.cend())));
+  return UNSAFE_BUFFERS(const_iterator(storage_.data(),
+                                       storage_.data() + storage_.size(),
+                                       storage_.data() + storage_.size()));
 }
 
 ListValue::reverse_iterator ListValue::rend() {
@@ -1098,35 +1124,35 @@ Value& ListValue::operator[](size_t index) {
 }
 
 bool ListValue::contains(bool val) const {
-  return contains(val, &Value::is_bool, &Value::GetBool);
+  return contains<bool, bool>(val, &Value::is_bool, &Value::GetBool);
 }
 
 bool ListValue::contains(int val) const {
-  return contains(val, &Value::is_int, &Value::GetInt);
+  return contains<int, int>(val, &Value::is_int, &Value::GetInt);
 }
 
 bool ListValue::contains(double val) const {
-  return contains(val, &Value::is_double, &Value::GetDouble);
+  return contains<double, double>(val, &Value::is_double, &Value::GetDouble);
 }
 
 bool ListValue::contains(std::string_view val) const {
-  return contains(val, &Value::is_string, &Value::GetString);
+  return contains<std::string_view, const std::string&>(val, &Value::is_string, &Value::GetString);
 }
 
 bool ListValue::contains(const char* val) const {
-  return contains(std::string_view(val), &Value::is_string, &Value::GetString);
+  return contains<std::string_view, const std::string&>(std::string_view(val), &Value::is_string, &Value::GetString);
 }
 
 bool ListValue::contains(const BlobStorage& val) const {
-  return contains(val, &Value::is_blob, &Value::GetBlob);
+  return contains<BlobStorage, const BlobStorage&>(val, &Value::is_blob, &Value::GetBlob);
 }
 
 bool ListValue::contains(const DictValue& val) const {
-  return contains(val, &Value::is_dict, &Value::GetDict);
+  return contains<DictValue, const DictValue&>(val, &Value::is_dict, &Value::GetDict);
 }
 
 bool ListValue::contains(const ListValue& val) const {
-  return contains(val, &Value::is_list, &Value::GetList);
+  return contains<ListValue, const ListValue&>(val, &Value::is_list, &Value::GetList);
 }
 
 void ListValue::clear() {
@@ -1136,17 +1162,17 @@ void ListValue::clear() {
 ListValue::iterator ListValue::erase(iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
   // SAFETY: All iterators point to a single allocation.
-  return UNSAFE_BUFFERS(iterator(base::to_address(storage_.begin()),
-                                 base::to_address(next_it),
-                                 base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(iterator(storage_.data(),
+                                 storage_.data() + (next_it - storage_.begin()),
+                                 storage_.data() + storage_.size()));
 }
 
 ListValue::const_iterator ListValue::erase(const_iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
   // SAFETY: All iterators point to a single allocation.
-  return UNSAFE_BUFFERS(const_iterator(base::to_address(storage_.begin()),
-                                       base::to_address(next_it),
-                                       base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(const_iterator(
+      storage_.data(), storage_.data() + (next_it - storage_.begin()),
+      storage_.data() + storage_.size()));
 }
 
 ListValue::iterator ListValue::erase(iterator first, iterator last) {
@@ -1284,9 +1310,9 @@ ListValue::iterator ListValue::Insert(const_iterator pos, Value&& value) {
   auto inserted_it =
       storage_.insert(storage_.begin() + (pos - begin()), std::move(value));
   // SAFETY: All pointers point to a single allocation.
-  return UNSAFE_BUFFERS(iterator(base::to_address(storage_.begin()),
-                                 base::to_address(inserted_it),
-                                 base::to_address(storage_.end())));
+  return UNSAFE_BUFFERS(iterator(
+      storage_.data(), storage_.data() + (inserted_it - storage_.begin()),
+      storage_.data() + storage_.size()));
 }
 
 size_t ListValue::EraseValue(const Value& value) {
@@ -1315,11 +1341,38 @@ ListValue::ListValue(const std::vector<Value>& storage) {
   }
 }
 
+#if !defined(COMPILER_MSVC)
 // This can't be declared in the header because of a circular dependency between
 // ListValue::operator<=> and Value::operator<=>.
 std::partial_ordering operator<=>(const ListValue& lhs,
                                   const ListValue& rhs) = default;
+#else
+bool operator==(const ListValue& lhs, const ListValue& rhs) {
+  return lhs.storage_ == rhs.storage_;
+}
 
+bool operator!=(const ListValue& lhs, const ListValue& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const ListValue& lhs, const ListValue& rhs) {
+  return lhs.storage_ < rhs.storage_;
+}
+
+bool operator>(const ListValue& lhs, const ListValue& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const ListValue& lhs, const ListValue& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const ListValue& lhs, const ListValue& rhs) {
+  return !(lhs < rhs);
+}
+#endif
+
+#if !defined(COMPILER_MSVC)
 bool Value::operator==(bool rhs) const {
   return is_bool() && GetBool() == rhs;
 }
@@ -1343,6 +1396,55 @@ bool Value::operator==(const DictValue& rhs) const {
 bool Value::operator==(const ListValue& rhs) const {
   return is_list() && GetList() == rhs;
 }
+#else
+bool operator==(const Value& lhs, const Value& rhs) {
+  return lhs.data_ == rhs.data_;
+}
+
+bool operator!=(const Value& lhs, const Value& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const Value& lhs, const Value& rhs) {
+  return lhs.data_ < rhs.data_;
+}
+
+bool operator>(const Value& lhs, const Value& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const Value& lhs, const Value& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const Value& lhs, const Value& rhs) {
+  return !(lhs < rhs);
+}
+
+bool operator==(const Value& lhs, bool rhs) {
+  return lhs.is_bool() && lhs.GetBool() == rhs;
+}
+
+bool operator==(const Value& lhs, int rhs) {
+  return lhs.is_int() && lhs.GetInt() == rhs;
+}
+
+bool operator==(const Value& lhs, double rhs) {
+  return lhs.is_double() && lhs.GetDouble() == rhs;
+}
+
+bool operator==(const Value& lhs, std::string_view rhs) {
+  return lhs.is_string() && lhs.GetString() == rhs;
+}
+
+bool operator==(const Value& lhs, const DictValue& rhs) {
+  return lhs.is_dict() && lhs.GetDict() == rhs;
+}
+
+bool operator==(const Value& lhs, const ListValue& rhs) {
+  return lhs.is_list() && lhs.GetList() == rhs;
+}
+#endif
 
 size_t Value::EstimateMemoryUsage() const {
   switch (type()) {

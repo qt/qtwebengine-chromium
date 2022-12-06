@@ -217,7 +217,7 @@ class VideoEncodeAcceleratorAdapter::MappableSharedImageVideoFramePool
   }
 
  private:
-  friend class RefCountedThreadSafe<MappableSharedImageVideoFramePool>;
+  friend class base::RefCountedThreadSafe<MappableSharedImageVideoFramePool>;
   ~MappableSharedImageVideoFramePool() = default;
 
   // |shared_image| will be used when MappableSI is enabled. It will be null
@@ -308,7 +308,7 @@ class VideoEncodeAcceleratorAdapter::ReadOnlyRegionPool
   }
 
  private:
-  friend class RefCountedThreadSafe<ReadOnlyRegionPool>;
+  friend class base::RefCountedThreadSafe<ReadOnlyRegionPool>;
   ~ReadOnlyRegionPool() = default;
 
   void ReuseBuffer(std::unique_ptr<base::MappedReadOnlyRegion> region) {

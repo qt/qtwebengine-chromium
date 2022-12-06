@@ -4499,7 +4499,7 @@ MaybeDirectHandle<JSTemporalPlainDate> JSTemporalPlainDate::Add(
   static const char method_name[] = "Temporal.PlainDate.prototype.add";
   // 3. Return ? AddDurationToDate(add, temporalDate, temporalDurationLike,
   // options).
-  return temporal::AddDurationToGeneric(isolate, &temporal_rs::PlainDate::add,
+  return temporal::AddDurationToGeneric<JSTemporalPlainDate>(isolate, &temporal_rs::PlainDate::add,
                                         temporal_date, temporal_duration_like,
                                         options_obj, method_name);
 }
@@ -5046,7 +5046,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> JSTemporalPlainDateTime::Add(
   static const char method_name[] = "Temporal.PlainDateTime.prototype.add";
   // 3. Return ? AddDurationToDateTime(add, temporalDate, temporalDurationLike,
   // options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalPlainDateTime>(
       isolate, &temporal_rs::PlainDateTime::add, date_time,
       temporal_duration_like, options, method_name);
 }
@@ -5058,7 +5058,7 @@ MaybeDirectHandle<JSTemporalPlainDateTime> JSTemporalPlainDateTime::Subtract(
   static const char method_name[] = "Temporal.PlainDateTime.prototype.subtract";
   // 3. Return ? AddDurationToDateTime(subtract, temporalDate,
   // temporalDurationLike, options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalPlainDateTime>(
       isolate, &temporal_rs::PlainDateTime::subtract, date_time,
       temporal_duration_like, options, method_name);
 }
@@ -5445,7 +5445,7 @@ MaybeDirectHandle<JSTemporalPlainYearMonth> JSTemporalPlainYearMonth::Add(
   static const char method_name[] = "Temporal.PlainYearMonth.prototype.add";
   // 3. Return ? AddDurationToYearMonth(add, temporalDate, temporalDurationLike,
   // options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalPlainYearMonth>(
       isolate, &temporal_rs::PlainYearMonth::add, year_month,
       temporal_duration_like, options, method_name);
 }
@@ -5458,7 +5458,7 @@ MaybeDirectHandle<JSTemporalPlainYearMonth> JSTemporalPlainYearMonth::Subtract(
       "Temporal.PlainYearMonth.prototype.subtract";
   // 3. Return ? AddDurationToYearMonth(subtract, temporalDate,
   // temporalDurationLike, options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalPlainYearMonth>(
       isolate, &temporal_rs::PlainYearMonth::subtract, year_month,
       temporal_duration_like, options, method_name);
 }
@@ -6512,7 +6512,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::Add(
   static const char method_name[] = "Temporal.ZonedDateTime.prototype.add";
   // 3. Return ? AddDurationToZonedDateTime(add, temporalDate,
   // temporalDurationLike, options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalZonedDateTime>(
       isolate, &temporal_rs::ZonedDateTime::add_with_provider, zoned_date_time,
       temporal_duration_like, options, method_name, TimeZoneProvider());
 }
@@ -6523,7 +6523,7 @@ MaybeDirectHandle<JSTemporalZonedDateTime> JSTemporalZonedDateTime::Subtract(
   static const char method_name[] = "Temporal.ZonedDateTime.prototype.subtract";
   // 3. Return ? AddDurationToZonedDateTime(subtract, temporalDate,
   // temporalDurationLike, options).
-  return temporal::AddDurationToGeneric(
+  return temporal::AddDurationToGeneric<JSTemporalZonedDateTime>(
       isolate, &temporal_rs::ZonedDateTime::subtract_with_provider,
       zoned_date_time, temporal_duration_like, options, method_name,
       TimeZoneProvider());

@@ -103,8 +103,8 @@ assert(!is_wasm, "base must not be built in most wasm toolchains")
 
 # This is here instead of in //build because //build is DEPS'd in by a few
 # subprojects that still support MSVC.
-assert(!is_win || is_clang,
-       "only clang-cl is supported on Windows, see https://crbug.com/988071")
+#assert(!is_win || is_clang,
+#       "only clang-cl is supported on Windows, see https://crbug.com/988071")
 
 if (is_android || is_robolectric) {
   import("//build/config/android/rules.gni")
@@ -1996,6 +1996,14 @@ component("base") {
       "win/wrapped_window_proc.cc",
       "win/wrapped_window_proc.h",
     ]
+
+    # winternl.h and NTSecAPI.h have different definitions of UNICODE_STRING.
+    # There's only one client of NTSecAPI.h in base but several of winternl.h,
+    # so exclude the NTSecAPI.h one.
+    jumbo_excluded_sources += [ "rand_util_win.cc" ]
+
+    # lmerrlog.h and pdh.h have different definitions of HLOG.
+    jumbo_excluded_sources += [ "win/win_util.cc" ]
 
     deps += [ "//base/win:base_win_buildflags" ]
 

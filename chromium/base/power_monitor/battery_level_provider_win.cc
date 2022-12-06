@@ -6,7 +6,7 @@
 
 #include "base/compiler_specific.h"
 
-#define INITGUID
+#include <initguid.h>
 #include <windows.h>  // Must be in front of other Windows header files.
 
 #include <devguid.h>

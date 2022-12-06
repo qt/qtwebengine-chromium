@@ -328,11 +328,12 @@ bool ReadStreamToStringWithMaxSize(FILE* stream,
   }
 
   std::string content_string;
-  bool read_successs = ReadStreamToSpanWithMaxSize(
-      stream, max_size, [&content_string](size_t size) {
+  auto f = [&content_string](size_t size) {
         content_string.resize(size);
         return as_writable_byte_span(content_string);
-      });
+  };
+  bool read_successs = ReadStreamToSpanWithMaxSize(
+      stream, max_size, f);
 
   if (contents) {
     contents->swap(content_string);

@@ -459,7 +459,9 @@ class IsolateData final {
   // following the IsolateData field predictable. This solves the issue with
   // C++ compilers for 32-bit platforms which are not consistent at aligning
   // int64_t fields.
-  V8_NO_UNIQUE_ADDRESS uint8_t trailing_padding_[kTrailingPaddingSize];
+  // FIXME: If the static_assert fails, traling_padding_ can be uncommented.
+  static_assert(kTrailingPaddingSize == 0);
+  //V8_NO_UNIQUE_ADDRESS uint8_t trailing_padding_[kTrailingPaddingSize];
 
   V8_INLINE static void AssertPredictableLayout();
 

@@ -16,7 +16,11 @@
 // clang-format on
 
 // Now include the real ATL headers.
+#ifndef ReportEvent
+#define ReportEvent ReportEventW
+#endif
 #include <atlbase.h>
+#undef ReportEvent
 
 // clang-format off
 // TODO(crbug.com/445551452): Remove this.

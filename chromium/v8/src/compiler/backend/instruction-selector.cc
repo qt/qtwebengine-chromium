@@ -1069,7 +1069,7 @@ void InstructionSelector::AppendDeoptimizeArguments(
   int const state_id = sequence()->AddDeoptimizationEntry(
       descriptor, kind, reason, node_id, feedback);
   args->push_back(g.TempImmediate(state_id));
-  StateObjectDeduplicator deduplicator(instruction_zone());
+  InstructionSelector::StateObjectDeduplicator deduplicator(instruction_zone());
   AddInputsToFrameStateDescriptor(descriptor, frame_state, &g, &deduplicator,
                                   args, FrameStateInputKind::kAny,
                                   instruction_zone());

@@ -1573,7 +1573,7 @@ BASE_FEATURE(kSCTAuditing, base::FEATURE_ENABLED_BY_DEFAULT);
 // Non-Chrome builds should not use Chrome's infrastructure.
 BASE_FEATURE(kSCTAuditing, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-constexpr base::FeatureParam<double> kSCTAuditingSamplingRate{
+const base::FeatureParam<double> kSCTAuditingSamplingRate{
     &kSCTAuditing, "sampling_rate", 0.0001};
 
 // SCT auditing hashdance allows Chrome clients who are not opted-in to Enhanced

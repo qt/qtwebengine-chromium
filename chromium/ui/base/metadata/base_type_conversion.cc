@@ -429,21 +429,21 @@ ValidStrings TypeConverter<bool>::GetValidStrings() {
   return {u"false", u"true"};
 }
 
-std::u16string TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ToString(
+std::u16string TypeConverter<SkColorUnique>::ToString(
     SkColor source_value) {
   return base::UTF8ToUTF16(color_utils::SkColorToRgbaString(source_value));
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::FromString(
+std::optional<SkColor> TypeConverter<SkColorUnique>::FromString(
     const std::u16string& source_value) {
   return GetNextColor(source_value.cbegin(), source_value.cend());
 }
 
-ValidStrings TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetValidStrings() {
+ValidStrings TypeConverter<SkColorUnique>::GetValidStrings() {
   return {};
 }
 
-bool TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
+bool TypeConverter<SkColorUnique>::GetNextColor(
     std::u16string::const_iterator start,
     std::u16string::const_iterator end,
     std::u16string& color,
@@ -478,7 +478,7 @@ bool TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
   return false;
 }
 
-bool TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
+bool TypeConverter<SkColorUnique>::GetNextColor(
     std::u16string::const_iterator start,
     std::u16string::const_iterator end,
     std::u16string& color) {
@@ -486,7 +486,7 @@ bool TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
   return GetNextColor(start, end, color, next_token);
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
+std::optional<SkColor> TypeConverter<SkColorUnique>::GetNextColor(
     std::u16string::const_iterator start,
     std::u16string::const_iterator end,
     std::u16string::const_iterator& next_token) {
@@ -507,7 +507,7 @@ std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
   return std::nullopt;
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
+std::optional<SkColor> TypeConverter<SkColorUnique>::GetNextColor(
     std::u16string::const_iterator start,
     std::u16string::const_iterator end) {
   std::u16string::const_iterator next_token;
@@ -515,7 +515,7 @@ std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::GetNextColor(
 }
 
 std::optional<SkColor>
-TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::RgbaPiecesToSkColor(
+TypeConverter<SkColorUnique>::RgbaPiecesToSkColor(
     const std::vector<std::u16string_view>& pieces,
     size_t start_piece) {
   int r, g, b;
@@ -534,7 +534,7 @@ TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::RgbaPiecesToSkColor(
              : std::nullopt;
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ParseHexString(
+std::optional<SkColor> TypeConverter<SkColorUnique>::ParseHexString(
     const std::u16string& hex_string) {
   SkColor value;
   if (base::HexStringToUInt(base::UTF16ToUTF8(hex_string), &value)) {
@@ -546,7 +546,7 @@ std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ParseHexString(
   return std::nullopt;
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ParseHslString(
+std::optional<SkColor> TypeConverter<SkColorUnique>::ParseHslString(
     const std::u16string& hsl_string) {
   std::u16string pruned_string;
   base::RemoveChars(hsl_string, u"(%)hsla", &pruned_string);
@@ -572,7 +572,7 @@ std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ParseHslString(
   return std::nullopt;
 }
 
-std::optional<SkColor> TypeConverter<UNIQUE_TYPE_NAME(SkColor)>::ParseRgbString(
+std::optional<SkColor> TypeConverter<SkColorUnique>::ParseRgbString(
     const std::u16string& rgb_string) {
   // Declare a constant string here for use below since it might trigger an
   // ASAN error due to the stack temp going out of scope before the call to

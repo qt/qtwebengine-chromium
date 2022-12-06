@@ -250,7 +250,7 @@ void InsertNodeForTask(TaskGraph* graph,
                        uint16_t priority,
                        size_t dependencies,
                        bool has_external_dependency = false) {
-  TRACE_EVENT("cc", __PRETTY_FUNCTION__, "category", category, "deps",
+  TRACE_EVENT("cc", PRETTY_FUNCTION, "category", category, "deps",
               dependencies);
   DCHECK(!std::ranges::contains(graph->nodes, task, &TaskGraph::Node::task));
   graph->nodes.emplace_back(task, category, priority, dependencies,
@@ -1140,7 +1140,7 @@ void TileManager::FreeResourcesForTile(Tile* tile) {
 
 void TileManager::FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(
     Tile* tile) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   bool was_ready_to_draw = tile->draw_info().IsReadyToDraw();
   FreeResourcesForTile(tile);
   client_->NotifyTileStateChanged(tile, /*update_damage=*/was_ready_to_draw,

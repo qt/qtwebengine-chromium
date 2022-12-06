@@ -121,7 +121,7 @@ bool GetAppOutputInternal(
            bytes_available -= bytes_read) {
         const DWORD bytes_to_read = std::min(kBufferSize, bytes_available);
         if (const BOOL success =
-                ReadFile(out_read, buffer, bytes_to_read, &bytes_read, nullptr);
+                ::ReadFile(out_read, buffer, bytes_to_read, &bytes_read, nullptr);
             !success || !bytes_read) {
           break;
         }

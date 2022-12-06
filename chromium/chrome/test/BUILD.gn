@@ -6203,7 +6203,7 @@ if (is_linux || is_chromeos || is_mac || is_win || is_android) {
 
   sizes_test("chrome_sizes") {
     data_deps = [ "//chrome" ]
-    if (is_win) {
+    if (is_win && !is_qtwebengine) {
       data_deps += [ "//chrome/installer/mini_installer" ]
     }
     if (is_android) {

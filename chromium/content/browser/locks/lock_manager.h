@@ -424,7 +424,7 @@ class LockManager<LockGroupIdType>::LockGroupState {
   // requests against that resource. All the granted locks for a resource reside
   // at the front of the resource's
   // request queue.
-  base::flat_map<std::string, std::list<Lock>> resource_names_to_requests_;
+  std::map<std::string, std::list<Lock>> resource_names_to_requests_;
 
   // LockGroupState::lock_id_to_iterator_ maps a lock's id to the
   // iterator pointing to its location in its associated request queue.

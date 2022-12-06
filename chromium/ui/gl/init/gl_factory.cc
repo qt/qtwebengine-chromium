@@ -48,11 +48,13 @@ GLImplementationParts GetRequestedGLImplementation() {
 
   std::vector<GLImplementationParts> allowed_impls =
       GetAllowedGLImplementations();
+  std::vector<GLImplementationParts> new_allowed_impls;
 
   // If the passthrough command decoder is enabled, put ANGLE first if allowed
   if (UsePassthroughCommandDecoder(cmd)) {
     std::vector<GLImplementationParts> angle_impls = {};
     std::vector<GLImplementationParts> software_impls = {};
+    std::vector<GLImplementationParts> new_allowed_impls = {};
     auto iter = allowed_impls.begin();
     while (iter != allowed_impls.end()) {
       // Filter out disabled software implementations
@@ -73,11 +75,14 @@ GLImplementationParts GetRequestedGLImplementation() {
         angle_impls.emplace_back(*iter);
         iter = allowed_impls.erase(iter);
       } else {
+        new_allowed_impls.emplace_back(*iter);
         iter++;
       }
     }
-    allowed_impls.insert(allowed_impls.begin(), angle_impls.begin(),
-                         angle_impls.end());
+    allowed_impls = std::move(angle_impls);
+    allowed_impls.insert(allowed_impls.end(), new_allowed_impls.begin(),
+                         new_allowed_impls.end());
+
     // Insert software implementations at the end, after all other hardware
     // implementations.
     allowed_impls.insert(allowed_impls.end(), software_impls.begin(),

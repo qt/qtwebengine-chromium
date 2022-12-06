@@ -599,4 +599,9 @@ bool is_inbounds(float_t v) {
 #define END_ALLOW_MISSING_DESIGNATED_FIELD_INITIALIZERS()
 #endif  // defined(__clang__)
 
+#if !defined(_MSC_VER) || defined(__clang__)
+#define ATTRIBUTE_V8_TLS_MODEL __attribute__((tls_model(V8_TLS_MODEL)))
+#else
+#define ATTRIBUTE_V8_TLS_MODEL
+#endif
 #endif  // V8_BASE_MACROS_H_

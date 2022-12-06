@@ -30,4 +30,8 @@ using RefCountedScenarioMapping = base::RefCountedData<
 
 }  // namespace performance_scenarios
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(performance_scenarios::RefCountedScenarioMapping);
+#endif
+
 #endif  // COMPONENTS_PERFORMANCE_MANAGER_SCENARIO_API_PERFORMANCE_SCENARIO_MEMORY_FORWARD_H_

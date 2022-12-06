@@ -842,7 +842,7 @@ BASE_FEATURE(kProcessPerSiteUpToMainFrameThreshold,
 );
 
 // Specifies the threshold for `kProcessPerSiteUpToMainFrameThreshold` feature.
-constexpr base::FeatureParam<int> kProcessPerSiteMainFrameThreshold{
+const base::FeatureParam<int> kProcessPerSiteMainFrameThreshold{
     &kProcessPerSiteUpToMainFrameThreshold, "ProcessPerSiteMainFrameThreshold",
     2};
 

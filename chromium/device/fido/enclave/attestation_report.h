@@ -17,7 +17,12 @@ namespace device::enclave {
 // The version of all the components in the Trusted Computing Base (TCB).
 //
 // See Table 3 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma pack(push, 1)
+struct TcbVersion {
+#else
 struct __attribute__((packed)) TcbVersion {
+#endif
   // The current security version number (SVN) of the secure processor (PSP)
   // bootloader.
   uint8_t boot_loader;
@@ -33,6 +38,10 @@ struct __attribute__((packed)) TcbVersion {
   // The lowest current patch level of all the CPU cores.
   uint8_t microcode;
 };
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma pack(pop)
+#endif
 
 // The required policy for a guest to run.
 //
@@ -62,7 +71,12 @@ const size_t REPORT_DATA_SIZE = 64;
 // The data contained in an attestation report.
 //
 // See Table 22 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma pack(push, 1)
+struct AttestationReportData {
+#else
 struct __attribute__((packed)) AttestationReportData {
+#endif
   // The version of the attestation report format.
   //
   // This implementation is based on version 2.
@@ -177,6 +191,10 @@ struct __attribute__((packed)) AttestationReportData {
 
   std::array<uint8_t, 168> reserved5;
 };
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma pack(pop)
+#endif
 
 // An ECDSA signature.
 //

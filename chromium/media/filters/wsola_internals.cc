@@ -97,7 +97,10 @@ void MultiChannelDotProduct_SSE(const AudioBus* a,
   }
 }
 
-__attribute__((target("avx2,fma"))) void MultiChannelDotProduct_AVX2(
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2,fma")))
+#endif
+void MultiChannelDotProduct_AVX2(
     const AudioBus* a,
     size_t frame_offset_a,
     const AudioBus* b,

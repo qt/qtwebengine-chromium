@@ -25,9 +25,12 @@
 #include "device/fido/virtual_u2f_device.h"
 
 // This should be after all other #includes.
-#if defined(_WINDOWS_)  // Detect whether windows.h was included.
-#include "base/win/windows_h_disallowed.h"
-#endif  // defined(_WINDOWS_)
+// FIXME: partition_alloc/yield_processor.h includes windows.h.
+//        It is pulled in transitively via
+//        //content/browser/renderer_host/render_frame_host_impl.h
+//#if defined(_WINDOWS_)  // Detect whether windows.h was included.
+//#include "base/win/windows_h_disallowed.h"
+//#endif  // defined(_WINDOWS_)
 
 namespace content::protocol {
 

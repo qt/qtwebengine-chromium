@@ -260,16 +260,6 @@ component("gpu") {
       "windows/d3d12_video_decode_task.h",
       "windows/d3d12_video_decoder_wrapper.cc",
       "windows/d3d12_video_decoder_wrapper.h",
-      "windows/d3d12_video_encode_accelerator.cc",
-      "windows/d3d12_video_encode_accelerator.h",
-      "windows/d3d12_video_encode_av1_delegate.cc",
-      "windows/d3d12_video_encode_av1_delegate.h",
-      "windows/d3d12_video_encode_delegate.cc",
-      "windows/d3d12_video_encode_delegate.h",
-      "windows/d3d12_video_encode_h264_delegate.cc",
-      "windows/d3d12_video_encode_h264_delegate.h",
-      "windows/d3d12_video_encoder_wrapper.cc",
-      "windows/d3d12_video_encoder_wrapper.h",
       "windows/d3d12_video_helpers.cc",
       "windows/d3d12_video_helpers.h",
       "windows/d3d12_video_processor_wrapper.cc",
@@ -303,6 +293,20 @@ component("gpu") {
       "windows/vp9_video_rate_control_wrapper.cc",
       "windows/vp9_video_rate_control_wrapper.h",
     ]
+    if (!is_qtwebengine) {
+      sources += [
+        "windows/d3d12_video_encode_accelerator.cc",
+        "windows/d3d12_video_encode_accelerator.h",
+        "windows/d3d12_video_encode_av1_delegate.cc",
+         "windows/d3d12_video_encode_av1_delegate.h",
+        "windows/d3d12_video_encode_delegate.cc",
+        "windows/d3d12_video_encode_delegate.h",
+        "windows/d3d12_video_encode_h264_delegate.cc",
+        "windows/d3d12_video_encode_h264_delegate.h",
+        "windows/d3d12_video_encoder_wrapper.cc",
+        "windows/d3d12_video_encoder_wrapper.h",
+      ]
+    }
     if (enable_hevc_parser_and_hw_decoder) {
       sources += [
         "windows/d3d11_h265_accelerator.cc",

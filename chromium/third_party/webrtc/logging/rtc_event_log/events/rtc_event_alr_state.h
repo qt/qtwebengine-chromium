@@ -54,7 +54,11 @@ class RtcEventAlrState final : public RtcEvent {
   bool in_alr() const { return in_alr_; }
 
   static std::string Encode(ArrayView<const RtcEvent*> batch) {
+#if !defined(WEBRTC_WIN)
     return RtcEventAlrState::definition_.EncodeBatch(batch);
+#else
+    return "";
+#endif
   }
 
   static RtcEventLogParseStatus Parse(absl::string_view s,
@@ -66,6 +70,7 @@ class RtcEventAlrState final : public RtcEvent {
 
   const bool in_alr_;
 
+#if !defined(WEBRTC_WIN)
   static constexpr RtcEventDefinition<RtcEventAlrState,
                                       LoggedAlrStateEvent,
                                       bool>
@@ -76,6 +81,7 @@ class RtcEventAlrState final : public RtcEvent {
                               /*id=*/.field_id = 1,
                               .field_type = FieldType::kFixed8,
                               /*width=*/.value_width = 1}}};
+#endif
 };
 
 }  // namespace webrtc

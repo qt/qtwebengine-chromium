@@ -20,6 +20,8 @@ limitations under the License.
 #ifndef SENTENCE_FEATURES_H_
 #define SENTENCE_FEATURES_H_
 
+#include "build/build_config.h"
+
 #include "feature_extractor.h"
 #include "cld_3/protos/sentence.pb.h"
 

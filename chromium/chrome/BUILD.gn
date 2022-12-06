@@ -79,7 +79,7 @@ if (is_win && enable_resource_allowlist_generation) {
   _chrome_resource_allowlist = "$target_gen_dir/chrome_resource_allowlist.txt"
 }
 
-if (is_win) {
+if (is_win && !is_qtwebengine) {
   action("reorder_imports") {
     script = "//build/win/reorder-imports.py"
 
@@ -142,7 +142,7 @@ if (!is_android && !is_mac) {
     # Windows-only deps are OK because chrome_initial uses initialexe/chrome as
     # the output name for that platform.
     # See crbug.com/1146571.
-    if (is_win) {
+    if (is_win && !is_qtwebengine) {
       public_deps += [ ":reorder_imports" ]
       data_deps += [ ":reorder_imports" ]
     }

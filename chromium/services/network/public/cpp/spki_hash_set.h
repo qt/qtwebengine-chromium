@@ -9,6 +9,8 @@
 #include "base/containers/flat_set.h"
 #include "net/base/hash_value.h"
 
+#include <string>
+
 namespace network {
 
 // SPKIHashSet is a set of SHA-256 SPKI fingerprints (RFC 7469, Section 2.4).

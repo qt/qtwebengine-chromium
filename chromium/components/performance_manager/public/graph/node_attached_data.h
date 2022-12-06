@@ -96,7 +96,7 @@ class NodeAttachedDataMapHelper {
 
 // static
 template <typename UserDataType>
-constexpr int NodeAttachedDataImpl<UserDataType>::kUserDataKey;
+const int NodeAttachedDataImpl<UserDataType>::kUserDataKey;
 
 template <typename UserDataType>
 template <typename NodeType>

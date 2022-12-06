@@ -237,7 +237,7 @@ WindowTreeHostPlatform::CreatePlatformWindow(
 #if BUILDFLAG(IS_OZONE)
   return ui::OzonePlatform::GetInstance()->CreatePlatformWindow(
       this, std::move(properties));
-#elif BUILDFLAG(IS_WIN)
+#elif BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   auto window = std::make_unique<ui::WinWindow>(this, properties.bounds);
   window->SetInputMethod(GetInputMethod());
   return window;

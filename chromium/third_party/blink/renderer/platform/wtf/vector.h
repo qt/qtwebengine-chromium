@@ -1743,7 +1743,9 @@ class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator> {
           "off-heap Vector.  Use HeapVector<Member<T>> instead.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 //

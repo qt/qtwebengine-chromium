@@ -85,7 +85,7 @@ generate_grd("build_grd") {
       "$target_gen_dir/cr_components/most_visited/resources.grdp",
     ]
 
-    if (!is_android) {
+    if (!is_android && !is_qtwebengine) {
       public_deps += [
         "cr_components/composebox:build_grdp",
         "cr_components/history:build_grdp",

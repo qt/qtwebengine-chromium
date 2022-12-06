@@ -20,7 +20,7 @@ class WasmCodeCoverageReducer : public Next {
   // Increments a coverage counter at a given address.
   V<None> REDUCE(WasmIncCoverageCounter)(Address address) {
     V<WordPtr> counter_address =
-        __ WordPtrConstant(reinterpret_cast<uintptr_t>(address));
+        __ WordPtrConstant(static_cast<uintptr_t>(address));
     V<Word32> value =
         __ LoadOffHeap(counter_address, 0, MemoryRepresentation::Uint32());
     V<Word32> incremented_value = __ Word32Add(value, 1);

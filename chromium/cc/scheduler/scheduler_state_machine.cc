@@ -717,7 +717,7 @@ bool SchedulerStateMachine::ShouldThrottleSendBeginMainFrame() const {
     result = false;
   }
 
-  TRACE_EVENT_INSTANT("cc", __PRETTY_FUNCTION__, "result", result);
+  TRACE_EVENT_INSTANT("cc", PRETTY_FUNCTION, "result", result);
   return result;
 }
 
@@ -1733,7 +1733,7 @@ bool SchedulerStateMachine::ImplLatencyTakesPriority() const {
 }
 
 void SchedulerStateMachine::SetNeedsBeginMainFrame(bool now) {
-  TRACE_EVENT1("cc", __PRETTY_FUNCTION__, "now", now);
+  TRACE_EVENT1("cc", PRETTY_FUNCTION, "now", now);
   needs_begin_main_frame_ = true;
 
   if (now) {

@@ -5,7 +5,7 @@
 #ifndef GPU_VULKAN_VULKAN_INFO_H_
 #define GPU_VULKAN_VULKAN_INFO_H_
 
-#include <vulkan/vulkan_core.h>
+#include "third_party/vulkan-headers/src/include/vulkan/vulkan_core.h"
 
 #include <string_view>
 #include <vector>

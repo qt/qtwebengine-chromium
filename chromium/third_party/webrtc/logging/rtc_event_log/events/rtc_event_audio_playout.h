@@ -56,13 +56,18 @@ class RtcEventAudioPlayout final : public RtcEvent {
   uint32_t ssrc() const { return ssrc_; }
 
   static std::string Encode(ArrayView<const RtcEvent*> batch) {
+#if !defined(WEBRTC_WIN)
     return RtcEventAudioPlayout::definition_.EncodeBatch(batch);
+#else
+    return "";
+#endif
   }
 
   static RtcEventLogParseStatus Parse(
       absl::string_view encoded_bytes,
       bool batched,
       std::map<uint32_t, std::vector<LoggedAudioPlayoutEvent>>& output) {
+#if !defined(WEBRTC_WIN)
     std::vector<LoggedAudioPlayoutEvent> temp_output;
     auto status = RtcEventAudioPlayout::definition_.ParseBatch(
         encoded_bytes, batched, temp_output);
@@ -70,6 +75,9 @@ class RtcEventAudioPlayout final : public RtcEvent {
       output[event.ssrc].push_back(event);
     }
     return status;
+#else
+    return RtcEventLogParseStatus::Success();
+#endif
   }
 
  private:
@@ -77,6 +85,7 @@ class RtcEventAudioPlayout final : public RtcEvent {
 
   const uint32_t ssrc_;
 
+#if !defined(WEBRTC_WIN)
   static constexpr RtcEventDefinition<RtcEventAudioPlayout,
                                       LoggedAudioPlayoutEvent,
                                       uint32_t>
@@ -87,6 +96,7 @@ class RtcEventAudioPlayout final : public RtcEvent {
                               /*id=*/.field_id = 1,
                               .field_type = FieldType::kFixed32,
                               /*width=*/.value_width = 32}}};
+#endif
 };
 
 }  // namespace webrtc

@@ -12,6 +12,8 @@
 
 #include "rtc_base/net_helpers.h"
 
+#include <memory>
+
 #if defined(WEBRTC_WIN)
 #include <ws2spi.h>
 #include <ws2tcpip.h>

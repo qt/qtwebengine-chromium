@@ -611,7 +611,7 @@ group("gn_all") {
       ]
     }
 
-    if (is_win) {
+    if (is_win && !is_qtwebengine) {
       deps += [
         "//base:pe_image_test",
         "//chrome/chrome_elf:chrome_elf_unittests",
@@ -679,7 +679,7 @@ group("gn_all") {
       ]
     }
 
-    if (is_mac || is_win || is_android || is_linux || is_chromeos) {
+    if ((is_mac || is_win || is_android || is_linux || is_chromeos) && !is_qtwebengine) {
       deps += [
         "//third_party/crashpad/crashpad:crashpad_tests",
         "//third_party/crashpad/crashpad/handler:crashpad_handler",
@@ -1570,6 +1570,12 @@ group("chromium_builder_perf") {
       "//components:components_perftests",
       "//third_party/angle/src/tests:angle_perftests",
     ]
+    if (is_qtwebengine) {
+      data_deps -= [
+        "//chrome/installer/mini_installer",
+        "//third_party/angle/src/tests:angle_perftests",
+      ]
+    }
   }
 }
 

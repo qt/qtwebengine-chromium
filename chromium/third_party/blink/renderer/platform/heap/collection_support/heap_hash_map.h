@@ -83,10 +83,12 @@ using HeapHashMap = BasicHeapHashMap<internal::HeapCollectionType::kDisallowNew,
                                      KeyTraitsArg,
                                      MappedTraitsArg>;
 
+#if !defined(COMPILER_MSVC)
 static_assert(IsDisallowNew<HeapHashMap<int, int>>);
 #define COMMA ,
 ASSERT_SIZE(HashMap<int COMMA int>, HeapHashMap<int COMMA int>);
 #undef COMMA
+#endif  // !defined(COMPILER_MSVC)
 
 // GCed version of HashSet for referring to GarbageCollected objects.
 template <typename KeyArg,
@@ -99,10 +101,12 @@ using GCedHeapHashMap = BasicHeapHashMap<internal::HeapCollectionType::kGCed,
                                          KeyTraitsArg,
                                          MappedTraitsArg>;
 
+#if !defined(COMPILER_MSVC)
 static_assert(!IsDisallowNew<GCedHeapHashMap<int, int>>);
 #define COMMA ,
 ASSERT_SIZE(HashMap<int COMMA int>, GCedHeapHashMap<int COMMA int>);
 #undef COMMA
+#endif  // !defined(COMPILER_MSVC)
 
 }  // namespace blink
 

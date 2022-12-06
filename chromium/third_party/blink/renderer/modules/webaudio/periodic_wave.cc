@@ -339,10 +339,10 @@ void PeriodicWaveImpl::WaveDataForFundamentalFrequency(
   // zeroes.
   v_ratio = vbslq_f32(pos, v_ratio, vdupq_n_f32(0.5));
 
-  float ratio[4] __attribute__((aligned(16)));
+  alignas(16) float ratio[4];
   vst1q_f32(ratio, v_ratio);
 
-  float cents_above_lowest_frequency[4] __attribute__((aligned(16)));
+  alignas(16) float cents_above_lowest_frequency[4];
 
   for (int k = 0; k < 4; ++k) {
     UNSAFE_TODO(cents_above_lowest_frequency[k]) =
@@ -360,8 +360,8 @@ void PeriodicWaveImpl::WaveDataForFundamentalFrequency(
   uint32x4_t v_index2 = vaddq_u32(v_index1, vdupq_n_u32(1));
   v_index2 = vminq_u32(v_index2, vdupq_n_u32(NumberOfRanges() - 1));
 
-  uint32_t range_index1[4] __attribute__((aligned(16)));
-  uint32_t range_index2[4] __attribute__((aligned(16)));
+  alignas(16) uint32_t range_index1[4];
+  alignas(16) uint32_t range_index2[4];
 
   vst1q_u32(range_index1, v_index1);
   vst1q_u32(range_index2, v_index2);

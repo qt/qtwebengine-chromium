@@ -968,7 +968,7 @@ if (is_win || is_mac || is_linux) {
     data_deps = [
       ":enterprise_companion_test_crx",
       ":updater_selfupdate_test_crx",
-      "//chrome/updater/test/test_installer:app_installers",
+#      "//chrome/updater/test/test_installer:app_installers",
     ]
 
     defines = []

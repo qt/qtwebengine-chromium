@@ -32,7 +32,11 @@ RtcEventLogParseStatus RtcEventAlrState::Parse(
     absl::string_view s,
     bool batched,
     std::vector<LoggedAlrStateEvent>& output) {
+#if !defined(WEBRTC_WIN)
   return RtcEventAlrState::definition_.ParseBatch(s, batched, output);
+#else
+  return RtcEventLogParseStatus::Success();
+#endif
 }
 
 }  // namespace webrtc

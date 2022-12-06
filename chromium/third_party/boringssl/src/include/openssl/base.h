@@ -247,6 +247,14 @@ typedef int CRYPTO_THREADID;
 // an opaque, non-NULL |ASN1_NULL*| pointer.
 typedef struct asn1_null_st ASN1_NULL;
 
+#ifdef X509_name_st
+#undef X509_name_st
+#endif
+
+#ifdef X509_NAME
+#undef X509_NAME
+#endif
+
 // CRYPTO_MUST_BE_NULL is an opaque type that is never returned from BoringSSL.
 // It is used in function parameters that must be NULL.
 typedef struct crypto_must_be_null_st CRYPTO_MUST_BE_NULL;

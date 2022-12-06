@@ -126,7 +126,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   static constexpr size_t kGuardrailsLargeImageThresholdBytes =
       200 * 1024;  // 200kB
 
-  class CORE_EXPORT EventListenerObserver : public GarbageCollectedMixin {
+  class CORE_EXPORT EventListenerObserver : public cppgc::GarbageCollectedMixin {
    public:
     virtual void DidAddEventListener(LocalDOMWindow*, const AtomicString&) = 0;
     virtual void DidRemoveEventListener(LocalDOMWindow*,

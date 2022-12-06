@@ -177,7 +177,7 @@ class PLATFORM_EXPORT ContouredRect {
           gfx::Vector2dF(normalized_half_corner, normalized_half_corner));
     }
 
-    static constexpr float HalfCornerForCurvature(float curvature) {
+    static float HalfCornerForCurvature(float curvature) {
       return std::pow(0.5, 1 / ClampCurvature(curvature));
     }
 

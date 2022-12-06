@@ -72,9 +72,9 @@ GetConnectionAttributes() {
 
   base::span<WLAN_INTERFACE_INFO> interfaces =
       internal::WlanInterfaceInfoListToSpan(interface_list.get());
-  for (auto& interface : interfaces) {
-    if (interface.isState == wlan_interface_state_connected) {
-      info = &interface;
+  for (auto& _interface : interfaces) {
+    if (_interface.isState == wlan_interface_state_connected) {
+      info = &_interface;
       break;
     }
   }
