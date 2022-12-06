@@ -8,6 +8,8 @@
 #include "base/component_export.h"
 #include "base/containers/flat_set.h"
 
+#include <string>
+
 namespace net {
 struct SHA256HashValue;
 }  // namespace net

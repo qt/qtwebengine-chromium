@@ -136,7 +136,7 @@ BASE_FEATURE(kForceGoogleSafeSearchForSupervisedUsers,
 //   roll out that change
 // * If the exact URL needs changing this can be done without requiring a binary
 //   rollout
-constexpr base::FeatureParam<std::string> kManagedByParentUiMoreInfoUrl{
+const base::FeatureParam<std::string> kManagedByParentUiMoreInfoUrl{
     &kEnableManagedByParentUi, "more_info_url",
     "https://familylink.google.com/setting/resource/94"};
 

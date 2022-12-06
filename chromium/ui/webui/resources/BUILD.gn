@@ -82,7 +82,7 @@ generate_grd("build_grd") {
           [ "$target_gen_dir/cr_components/certificate_manager/resources.grdp" ]
     }
 
-    if (!is_android) {
+    if (!is_android && !is_qtwebengine) {
       public_deps += [
         "cr_components/history_clusters:build_grdp",
         "cr_components/omnibox:build_grdp",

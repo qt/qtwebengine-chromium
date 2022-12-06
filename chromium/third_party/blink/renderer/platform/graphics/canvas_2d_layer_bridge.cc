@@ -95,7 +95,7 @@ static void LoseContextInBackgroundWrapper(
 }
 
 void Canvas2DLayerBridge::Hibernate() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   CHECK(resource_host_);
   DCHECK(!IsHibernating());
   DCHECK(hibernation_scheduled_);

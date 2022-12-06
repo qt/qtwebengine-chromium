@@ -5,7 +5,6 @@
 #include "base/values.h"
 
 #include <cmath>
-#include <memory>
 #include <ostream>
 #include <tuple>
 #include <utility>
@@ -15,7 +14,7 @@
 #include "base/check_op.h"
 #include "base/containers/checked_iterators.h"
 #include "base/containers/cxx20_erase_vector.h"
-#include "base/containers/map_util.h"
+#include "base/cxx20_to_address.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -421,11 +420,14 @@ void Value::Dict::Merge(Dict dict) {
 
 const Value* Value::Dict::Find(StringPiece key) const {
   DCHECK(IsStringUTF8AllowingNoncharacters(key));
-  return FindPtrOrNull(storage_, key);
+
+  auto it = storage_.find(key);
+  return it != storage_.end() ? it->second.get() : nullptr;
 }
 
 Value* Value::Dict::Find(StringPiece key) {
-  return FindPtrOrNull(storage_, key);
+  auto it = storage_.find(key);
+  return it != storage_.end() ? it->second.get() : nullptr;
 }
 
 absl::optional<bool> Value::Dict::FindBool(StringPiece key) const {
@@ -941,36 +943,35 @@ size_t Value::List::size() const {
 }
 
 Value::List::iterator Value::List::begin() {
-  return iterator(std::to_address(storage_.begin()),
-                  std::to_address(storage_.end()));
+  return iterator(storage_.data(), storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::begin() const {
-  return const_iterator(std::to_address(storage_.begin()),
-                        std::to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::cbegin() const {
-  return const_iterator(std::to_address(storage_.cbegin()),
-                        std::to_address(storage_.cend()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::iterator Value::List::end() {
-  return iterator(std::to_address(storage_.begin()),
-                  std::to_address(storage_.end()),
-                  std::to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + storage_.size(),
+                  storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::end() const {
-  return const_iterator(std::to_address(storage_.begin()),
-                        std::to_address(storage_.end()),
-                        std::to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::cend() const {
-  return const_iterator(std::to_address(storage_.cbegin()),
-                        std::to_address(storage_.cend()),
-                        std::to_address(storage_.cend()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::reverse_iterator Value::List::rend() {
@@ -1033,31 +1034,32 @@ void Value::List::clear() {
 
 Value::List::iterator Value::List::erase(iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
-  return iterator(std::to_address(storage_.begin()), std::to_address(next_it),
-                  std::to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + (next_it - storage_.begin()),
+                  storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::erase(const_iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
-  return const_iterator(std::to_address(storage_.begin()),
-                        std::to_address(next_it),
-                        std::to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + (next_it - storage_.begin()),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::iterator Value::List::erase(iterator first, iterator last) {
   auto next_it = storage_.erase(storage_.begin() + (first - begin()),
                                 storage_.begin() + (last - begin()));
-  return iterator(std::to_address(storage_.begin()), std::to_address(next_it),
-                  std::to_address(storage_.end()));
+  return iterator(base::to_address(storage_.begin()), base::to_address(next_it),
+                  base::to_address(storage_.end()));
 }
 
 Value::List::const_iterator Value::List::erase(const_iterator first,
                                                const_iterator last) {
   auto next_it = storage_.erase(storage_.begin() + (first - begin()),
                                 storage_.begin() + (last - begin()));
-  return const_iterator(std::to_address(storage_.begin()),
-                        std::to_address(next_it),
-                        std::to_address(storage_.end()));
+  return const_iterator(base::to_address(storage_.begin()),
+                        base::to_address(next_it),
+                        base::to_address(storage_.end()));
 }
 
 Value::List Value::List::Clone() const {
@@ -1175,9 +1177,9 @@ Value::List&& Value::List::Append(List&& value) && {
 Value::List::iterator Value::List::Insert(const_iterator pos, Value&& value) {
   auto inserted_it =
       storage_.insert(storage_.begin() + (pos - begin()), std::move(value));
-  return iterator(std::to_address(storage_.begin()),
-                  std::to_address(inserted_it),
-                  std::to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + (inserted_it - storage_.begin()),
+                  storage_.data() + storage_.size());
 }
 
 size_t Value::List::EraseValue(const Value& value) {

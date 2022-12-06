@@ -271,6 +271,10 @@ if (!is_cronet_build || is_ios) {
       ]
     }
 
+    if (is_qtwebengine) {
+      deps -= [ "//components/variations/field_trial_config" ]
+    }
+
     if (is_win) {
       sources += [
         "drive_metrics_provider_win.cc",

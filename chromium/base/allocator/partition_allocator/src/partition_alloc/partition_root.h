@@ -91,9 +91,9 @@ static constexpr size_t kAllocInfoSize = 1 << 24;
 struct AllocInfo {
   std::atomic<size_t> index{0};
   struct {
-    uintptr_t addr;
-    size_t size;
-  } allocs[kAllocInfoSize] = {};
+    uintptr_t addr = reinterpret_cast<uintptr_t>(nullptr);
+    size_t size = 0;
+  } allocs[kAllocInfoSize];
 };
 
 #if BUILDFLAG(RECORD_ALLOC_INFO)

@@ -630,7 +630,7 @@ void PipelineImpl::RendererWrapper::CreateRendererInternal(
     // media task runner.
     auto renderer_created_cb = base::BindPostTaskToCurrentDefault(
         base::BindOnce(&RendererWrapper::OnRendererCreated,
-                       weak_factory_.GetWeakPtr(), std::move(done_cb)));
+                       weak_factory_.GetWeakPtr(), std::move(done_cb)), FROM_HERE);
     main_task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&PipelineImpl::AsyncCreateRenderer, weak_pipeline_,

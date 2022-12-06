@@ -18,6 +18,7 @@ build_cpuinfo_shared_library =
     build_webnn_with_xnnpack && is_linux && is_component_build
 
 config("cpuinfo_config") {
+  if (is_clang || !is_win) {
   cflags = [
     # For chipset.c and utils.h.
     "-Wno-implicit-function-declaration",
@@ -28,6 +29,7 @@ config("cpuinfo_config") {
     # A lot of locations.
     "-Wno-unused-function",
   ]
+  }
 
   if (build_cpuinfo_shared_library) {
     # Export all symbols when building shared library.

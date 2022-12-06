@@ -12,6 +12,7 @@
 #include "src/common/checks.h"
 #include "src/common/globals.h"
 #include "src/objects/tagged.h"
+#include "src/objects/objects.h"
 #include "src/zone/zone.h"
 #include "v8-handle-base.h"  // NOLINT(build/include_directory)
 
@@ -34,7 +35,6 @@ class Isolate;
 class LocalHeap;
 class LocalIsolate;
 class TaggedIndex;
-class Object;
 class OrderedHashMap;
 class OrderedHashSet;
 class OrderedNameDictionary;

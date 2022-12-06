@@ -8,6 +8,7 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <stdint.h>
+#include <vector>
 #include <wrl/client.h>
 
 #include "base/functional/callback.h"

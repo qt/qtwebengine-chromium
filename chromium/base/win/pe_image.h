@@ -15,7 +15,7 @@
 
 #include <stdint.h>
 
-#include <DelayIMP.h>
+#include <delayimp.h>
 
 namespace base {
 namespace win {

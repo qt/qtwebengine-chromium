@@ -106,7 +106,7 @@ bool ContactTypeHintMatchesFieldType(const std::string& token,
 // `value` matches any of them.
 std::optional<HtmlFieldType> ParseStandardizedAutocompleteAttribute(
     std::string_view value) {
-  auto* it = kStandardizedAttributes.find(value);
+  auto it = kStandardizedAttributes.find(value);
   return it != kStandardizedAttributes.end()
              ? std::optional<HtmlFieldType>(it->second)
              : std::nullopt;
@@ -124,7 +124,7 @@ std::optional<HtmlFieldType> ParseProposedAutocompleteAttribute(
           {"username", HtmlFieldType::kEmail},
       });
 
-  auto* it = proposed_attributes.find(value);
+  auto it = proposed_attributes.find(value);
   return it != proposed_attributes.end()
              ? std::optional<HtmlFieldType>(it->second)
              : std::nullopt;
@@ -150,7 +150,7 @@ std::optional<HtmlFieldType> ParseNonStandarizedAutocompleteAttribute(
           {"upi-vpa", HtmlFieldType::kUpiVpa},
       });
 
-  auto* it = non_standardized_attributes.find(value);
+  auto it = non_standardized_attributes.find(value);
   return it != non_standardized_attributes.end()
              ? std::optional<HtmlFieldType>(it->second)
              : std::nullopt;
@@ -164,7 +164,9 @@ std::optional<HtmlFieldType> ParseNonStandarizedAutocompleteAttribute(
 // `ParseAutocompleteAttribute()`.
 bool ShouldIgnoreAutocompleteValue(std::string_view value) {
   static constexpr char16_t kRegex[] = u"address";
-  return MatchesRegex<kRegex>(base::UTF8ToUTF16(value));
+  static base::NoDestructor<std::unique_ptr<const icu::RegexPattern>>
+      regex_pattern(CompileRegex(kRegex));
+  return MatchesRegex(base::UTF8ToUTF16(value), **regex_pattern, nullptr);
 }
 
 }  // namespace

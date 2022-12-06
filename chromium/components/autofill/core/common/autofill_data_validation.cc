@@ -60,18 +60,38 @@ bool IsValidPasswordFormFillData(const PasswordFormFillData& form) {
 }
 
 bool IsValidOptionVector(const base::span<const SelectOption>& options) {
-  return options.size() <= kMaxListSize &&
-         base::ranges::all_of(options, &IsValidOption);
+  if (options.size() > kMaxListSize)
+    return false;
+  for (const auto& option : options) {
+    if (!IsValidString16(option.content))
+      return false;
+  }
+  return true;
+//   return options.size() <= kMaxListSize &&
+//          base::ranges::all_of(options, &IsValidString16,
+//                               &SelectOption::content);
 }
 
 bool IsValidString16Vector(const base::span<const std::u16string>& strings) {
-  return strings.size() <= kMaxListSize &&
-         base::ranges::all_of(strings, &IsValidString16);
+  if (strings.size() > kMaxListSize)
+    return false;
+  for (const auto& i : strings) {
+    if (!IsValidString16(i))
+      return false;
+  }
+  return true;
+//   return v.size() <= kMaxListSize && base::ranges::all_of(v, &IsValidString16);
 }
 
 bool IsValidFormDataVector(const base::span<const FormData>& forms) {
-  return forms.size() <= kMaxListSize &&
-         base::ranges::all_of(forms, &IsValidFormData);
+  if (forms.size() > kMaxListSize)
+    return false;
+  for (const auto& i : forms) {
+    if (!IsValidFormData(i))
+      return false;
+  }
+  return true;
+//   return v.size() <= kMaxListSize && base::ranges::all_of(v, &IsValidFormData);
 }
 
 }  // namespace autofill

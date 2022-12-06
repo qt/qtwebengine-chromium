@@ -67,9 +67,13 @@ namespace logging {
 // implemented yet. If output spam is a serious concern,
 // NOTIMPLEMENTED_LOG_ONCE() can be used.
 #if DCHECK_IS_ON()
-#define NOTIMPLEMENTED() \
+#ifdef _MSC_VER
+#define NOTIMPLEMENTED()                                     \
+  ::logging::CheckError::NotImplemented(__FUNCSIG__)
+#else
+#define NOTIMPLEMENTED()                                     \
   ::logging::CheckError::NotImplemented(__PRETTY_FUNCTION__)
-
+#endif
 // The lambda returns false the first time it is run, and true every other time.
 #define NOTIMPLEMENTED_LOG_ONCE()                                \
   LOGGING_CHECK_FUNCTION_IMPL(NOTIMPLEMENTED(), []() {           \

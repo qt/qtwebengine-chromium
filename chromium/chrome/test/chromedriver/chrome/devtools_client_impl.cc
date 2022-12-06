@@ -621,7 +621,7 @@ void DevToolsClientImpl::AddListener(DevToolsEventListener* listener) {
   DCHECK(!IsConnected() || !listener->ListensToConnections());
   if (IsConnected() && listener->ListensToConnections()) {
     LOG(WARNING)
-        << __PRETTY_FUNCTION__
+        << PRETTY_FUNCTION
         << " subscribing a listener to the already connected DevToolsClient."
         << " Connection notification will not arrive.";
   }

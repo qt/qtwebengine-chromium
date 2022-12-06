@@ -57,21 +57,25 @@ struct HashTraits<scoped_refptr<StringImpl>>
   static constexpr bool kSafeToCompareToEmptyOrDeleted = false;
 };
 
-template <>
-struct HashTraits<String> : SimpleClassHashTraits<String> {
-  static unsigned GetHash(const String& key) { return key.Impl()->GetHash(); }
-  static bool Equal(const String& a, const String& b) {
-    return EqualNonNull(a.Impl(), b.Impl());
-  }
-  static constexpr bool kSafeToCompareToEmptyOrDeleted = false;
-  static bool IsEmptyValue(const String& s) { return s.IsNull(); }
-  static bool IsDeletedValue(const String& s) {
-    return HashTraits<scoped_refptr<StringImpl>>::IsDeletedValue(s.impl_);
-  }
-  static void ConstructDeletedValue(String& slot) {
-    HashTraits<scoped_refptr<StringImpl>>::ConstructDeletedValue(slot.impl_);
-  }
-};
+inline unsigned HashTraits<String>::GetHash(const String& key) {
+  return key.Impl()->GetHash();
+}
+
+inline bool HashTraits<String>::Equal(const String& a, const String& b) {
+  return EqualNonNull(a.Impl(), b.Impl());
+}
+
+inline bool HashTraits<String>::IsEmptyValue(const String& s) {
+  return s.IsNull();
+}
+
+inline bool HashTraits<String>::IsDeletedValue(const String& s) {
+  return HashTraits<scoped_refptr<StringImpl>>::IsDeletedValue(s.impl_);
+}
+
+inline void HashTraits<String>::ConstructDeletedValue(String& slot) {
+  HashTraits<scoped_refptr<StringImpl>>::ConstructDeletedValue(slot.impl_);
+}
 
 }  // namespace WTF
 

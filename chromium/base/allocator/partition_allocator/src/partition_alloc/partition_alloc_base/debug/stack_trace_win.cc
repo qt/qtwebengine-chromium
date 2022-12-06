@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include <psapi.h>  // Depends on "windows.h"
+#include <vector>
 
 namespace partition_alloc::internal::base::debug {
 
@@ -26,7 +27,7 @@ void PrintStackTraceInternal(const void** trace, size_t count) {
 
   constexpr size_t kMaxTraces = 32u;
   count = std::max(count, kMaxTraces);
-  bool is_output_trace[kMaxTraces];
+  std::vector<bool> is_output_trace(kMaxTraces);
   for (size_t i = 0; i < count; ++i) {
     is_output_trace[i] = false;
   }

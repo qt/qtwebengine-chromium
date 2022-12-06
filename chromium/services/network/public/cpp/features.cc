@@ -334,7 +334,7 @@ BASE_FEATURE(kPervasivePayloadsList,
 // number is an integer. The URL is the canonical URL as returned by
 // GURL::spec(). The checksum is the SHA-256 of the payload and selected headers
 // converted to uppercase hexadecimal.
-constexpr base::FeatureParam<std::string> kCacheTransparencyPervasivePayloads{
+const base::FeatureParam<std::string> kCacheTransparencyPervasivePayloads{
     &kPervasivePayloadsList, "pervasive-payloads", ""};
 
 // Enables support for the `Variants` response header and reduce

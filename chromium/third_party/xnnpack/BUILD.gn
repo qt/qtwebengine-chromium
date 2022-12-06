@@ -24,10 +24,12 @@ config("xnnpack_config") {
     "src/src",
   ]
 
-  cflags = [
-    "-Wno-unused-function",
-    "-Wno-deprecated-comma-subscript",
-  ]
+  if (is_clang || !is_win) {
+    cflags = [
+      "-Wno-unused-function",
+      "-Wno-deprecated-comma-subscript",
+    ]
+  }
 
   defines = [
     # Don't enable this without first talking to Chrome Security!

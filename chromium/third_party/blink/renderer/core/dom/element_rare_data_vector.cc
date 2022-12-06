@@ -46,8 +46,13 @@ ElementRareDataVector::~ElementRareDataVector() {
 unsigned ElementRareDataVector::GetFieldIndex(FieldId field_id) const {
   unsigned field_id_int = static_cast<unsigned>(field_id);
   DCHECK(fields_bitfield_ & (static_cast<BitfieldType>(1) << field_id_int));
+#ifdef _MSC_VER
+  return __popcnt(fields_bitfield_ &
+                            ~(~static_cast<BitfieldType>(0) << field_id_int));
+#else
   return __builtin_popcount(fields_bitfield_ &
                             ~(~static_cast<BitfieldType>(0) << field_id_int));
+#endif
 }
 
 ElementRareDataField* ElementRareDataVector::GetField(FieldId field_id) const {

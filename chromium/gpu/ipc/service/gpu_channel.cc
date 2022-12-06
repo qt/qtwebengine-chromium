@@ -346,7 +346,7 @@ SequenceId GpuChannelMessageFilter::GetSequenceId(int32_t route_id) const {
 
 void GpuChannelMessageFilter::FlushDeferredRequests(
     std::vector<mojom::DeferredRequestPtr> requests) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   base::AutoLock auto_lock(gpu_channel_lock_);
   if (!gpu_channel_)
     return;
@@ -491,7 +491,7 @@ void GpuChannelMessageFilter::CreateGpuMemoryBuffer(
 void GpuChannelMessageFilter::GetGpuMemoryBufferHandleInfo(
     const gpu::Mailbox& mailbox,
     GetGpuMemoryBufferHandleInfoCallback callback) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   base::AutoLock auto_lock(gpu_channel_lock_);
   int32_t routing_id =
       static_cast<int32_t>(GpuChannelReservedRoutes::kSharedImageInterface);
@@ -848,7 +848,7 @@ void GpuChannel::RemoveRoute(int32_t route_id) {
 
 void GpuChannel::ExecuteDeferredRequest(
     mojom::DeferredRequestParamsPtr params) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   switch (params->which()) {
 #if BUILDFLAG(IS_ANDROID)
     case mojom::DeferredRequestParams::Tag::kDestroyStreamTexture:

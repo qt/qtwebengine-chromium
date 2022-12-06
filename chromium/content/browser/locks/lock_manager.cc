@@ -80,6 +80,10 @@ class LockHandleImpl final : public blink::mojom::LockHandle {
 // handle, which will notify the context and remove this.
 class LockManager::Lock {
  public:
+  Lock(const Lock &lock)
+      : name_(lock.name_), mode_(lock.mode_), lock_id_(lock.lock_id_), client_id_(lock.client_id_),
+        lock_manager_(lock.lock_manager_), /*request_(lock.request_.Clone()),*/ handle_(lock.handle_) {}
+  Lock(Lock &&lock) = default;
   Lock(const std::string& name,
        LockMode mode,
        int64_t lock_id,

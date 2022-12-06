@@ -244,7 +244,7 @@ class PolicyBase final : public TargetPolicy {
   HANDLE stdout_handle_;
   HANDLE stderr_handle_;
   // An opaque blob of data the delegate uses to prime any pre-sandbox hooks.
-  std::unique_ptr<std::vector<const uint8_t>> delegate_data_;
+  std::unique_ptr<std::vector<uint8_t>> delegate_data_;
 
   std::unique_ptr<Dispatcher> dispatcher_;
 

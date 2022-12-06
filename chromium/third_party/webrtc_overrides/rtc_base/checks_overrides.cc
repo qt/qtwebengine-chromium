@@ -10,7 +10,11 @@ namespace rtc::webrtc_checks_impl {
 
 RTC_NORETURN void WriteFatalLog(absl::string_view output) {
   LOG(FATAL) << output;
+#if !defined(_MSC_VER) || defined(__clang__)
   __builtin_unreachable();
+#else
+  __assume(0);
+#endif
 }
 
 RTC_NORETURN void WriteFatalLog(const char* file,
@@ -20,7 +24,11 @@ RTC_NORETURN void WriteFatalLog(const char* file,
     logging::LogMessage msg(file, line, logging::LOGGING_FATAL);
     msg.stream() << output;
   }
+#if !defined(_MSC_VER) || defined(__clang__)
   __builtin_unreachable();
+#else
+  __assume(0);
+#endif
 }
 
 }  // namespace rtc::webrtc_checks_impl
