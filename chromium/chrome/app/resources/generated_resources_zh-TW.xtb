@@ -873,7 +873,7 @@
 <translation id="1800502858278951817">沒有任何擴充功能要求讀取及變更 <ph name="SITE_NAME" /> 的權限</translation>
 <translation id="1802624026913571222">蓋上機蓋時進入休眠狀態</translation>
 <translation id="1802687198411089702">網頁無回應。你可以等待網頁回應，也可以離開網頁。</translation>
-<translation id="1803531841600994172">翻譯目標語言</translation>
+<translation id="1803531841600994172">譯文語言</translation>
 <translation id="1803545009660609783">重新調校</translation>
 <translation id="1805738995123446102">背景分頁正在使用你的麥克風</translation>
 <translation id="1805822111539868586">查看檢視模式</translation>
@@ -2298,7 +2298,7 @@
 <translation id="3067198360141518313">執行這個外掛程式</translation>
 <translation id="3071624960923923138">按一下這裡即可開啟新分頁</translation>
 <translation id="3072775339180057696">要允許網站讀取「<ph name="FILE_NAME" />」嗎？</translation>
-<translation id="3074499504015191586">翻譯完整頁面</translation>
+<translation id="3074499504015191586">翻譯整頁內容</translation>
 <translation id="3075874217500066906">Powerwash 程序必須重新啟動才能開始執行。重新啟動後，系統將向你確認是否繼續程序。</translation>
 <translation id="3076909148546628648"><ph name="DOWNLOAD_RECEIVED" />/<ph name="DOWNLOAD_TOTAL" /></translation>
 <translation id="3076966043108928831">只儲存在這部裝置上</translation>
@@ -4592,7 +4592,7 @@
 <translation id="5293170712604732402">將設定還原成原始預設值</translation>
 <translation id="5294097441441645251">開頭必須是小寫字元或底線</translation>
 <translation id="5294618183559481278"><ph name="DEVICE_TYPE" /> 會使用內建感應器偵測裝置前方的人員。所有資料都會立即在這部裝置上處理，完成後便會全數刪除。感應器資料絕不會傳送給 Google。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
-<translation id="5296350763804564124">系統會提供互動朗讀內容，讓你不用看螢幕也能夠輕鬆使用裝置。你可透過已連結的裝置使用點字反饋功能。</translation>
+<translation id="5296350763804564124">系統會提供互動朗讀內容，讓你不用看螢幕也能夠輕鬆使用裝置。你可透過已連結的裝置使用點字回饋功能。</translation>
 <translation id="5297005732522718715">重新整理網路共用設定</translation>
 <translation id="5297082477358294722">密碼已儲存。你可以查看及管理 <ph name="SAVED_PASSWORDS_STORE" />中儲存的密碼。</translation>
 <translation id="5297946558563358707">有人在窺探你的螢幕時，螢幕右下方會顯示「隱私權」眼睛圖示</translation>
@@ -5272,7 +5272,7 @@
 <translation id="5933522550144185133">「<ph name="APP_NAME" />」正在使用你的攝影機和麥克風</translation>
 <translation id="5935158534896975820">正在準備憑證簽署要求 (在伺服器上等待)</translation>
 <translation id="5935656526031444304">管理安全瀏覽功能</translation>
-<translation id="5936065461722368675">翻譯完整頁面</translation>
+<translation id="5936065461722368675">翻譯整頁內容</translation>
 <translation id="5938002010494270685">可進行安全性更新</translation>
 <translation id="5939518447894949180">重設</translation>
 <translation id="5939719276406088041">無法建立捷徑</translation>
@@ -8720,7 +8720,7 @@
 <translation id="9186963452600581158">使用孩子的 Google 帳戶登入</translation>
 <translation id="9187967020623675250">按鍵不符。按下任意鍵即可<ph name="RESPONSE" />。</translation>
 <translation id="9188732951356337132">傳送使用狀況與診斷資料。這個裝置目前會自動將診斷資料以及裝置和應用程式的使用狀況資料傳送給 Google。這些資料將有助於系統和應用程式提高穩定性及做出其他改善，並不會用於識別貴子女的身分。部分匯總資料還能夠為 Google 應用程式和合作夥伴 (例如 Android 開發人員) 提供幫助。如果貴子女的「其他網路和應用程式活動」設定為開啟，系統可能會將這些資料儲存到他們的 Google 帳戶。<ph name="BEGIN_LINK2" />瞭解詳情<ph name="END_LINK2" /></translation>
-<translation id="9192019773545828776">系統會提供互動朗讀內容，讓你不用看螢幕也能夠輕鬆使用裝置。你可透過已連結的裝置使用點字反饋功能。使用 Ctrl + Alt + Z 鍵即可開啟或關閉 ChromeVox。使用搜尋鍵 + 向左鍵或向右鍵即可瀏覽。使用搜尋鍵 + 空格鍵即可選取 (亦即啟用)。</translation>
+<translation id="9192019773545828776">系統會提供互動朗讀內容，讓你不用看螢幕也能夠輕鬆使用裝置。你可透過已連結的裝置使用點字回饋功能。使用 Ctrl + Alt + Z 鍵即可開啟或關閉 ChromeVox。使用搜尋鍵 + 向左鍵或向右鍵即可瀏覽。使用搜尋鍵 + 空格鍵即可選取 (亦即啟用)。</translation>
 <translation id="919686179725692564">進一步瞭解如何備份應用程式</translation>
 <translation id="9198090666959937775">使用你的 Android 手機做為安全金鑰</translation>
 <translation id="9199503643457729322">按一下即可離開「隱私權指南」頁面。</translation>

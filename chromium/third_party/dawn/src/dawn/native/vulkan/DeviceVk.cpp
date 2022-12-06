@@ -1037,7 +1037,7 @@ void Device::CheckDebugMessagesAfterDestruction() const {
     }
 
     // Crash in debug
-    UNREACHABLE();
+    ASSERT(false);
 }
 
 MaybeError Device::WaitForIdleForDestruction() {
