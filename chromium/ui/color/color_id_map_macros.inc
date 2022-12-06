@@ -18,7 +18,8 @@
   { enum_name, #enum_name }
 #define E_CPONLY(...) E(__VA_ARGS__)
 #define GET_E(_1, _2, _3, macro_name, ...) macro_name
-#define E(...) GET_E(__VA_ARGS__, E3, E2, E1)(__VA_ARGS__),
+#define EXPAND_E(x) x
+#define E(...) EXPAND_E(GET_E(__VA_ARGS__, E3, E2, E1)(__VA_ARGS__)),
 
 #else
 #undef E1
@@ -26,5 +27,6 @@
 #undef E3
 #undef E_CPONLY
 #undef GET_E
+#undef EXPAND_E
 #undef E
 #endif

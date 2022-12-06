@@ -402,6 +402,7 @@ concept ByteSpanConstructibleFrom =
     SpanConstructibleFrom<T> &&
     CanSafelyConvertToByteSpan<ElementTypeOfSpanConstructedFrom<T>>;
 
+#if !defined(COMPILER_MSVC)
 // Allows one-off use of a type that wouldn't normally convert to a byte span.
 template <typename T>
 concept CanSafelyConvertNonUniqueToByteSpan =
@@ -411,6 +412,26 @@ concept CanSafelyConvertNonUniqueToByteSpan =
     std::is_trivially_copyable_v<T> &&
     // If this fails, `allow_nonunique_obj` wasn't necessary.
     !std::has_unique_object_representations_v<T>;
+#else
+template<typename T>
+struct ByteSpanSafetyCheckSkippedForType { static constexpr bool value = false; };
+
+template <typename T>
+concept CanSafelyConvertNonUniqueToByteSpan =
+    ByteSpanSafetyCheckSkippedForType<T>::value == true ||
+    (std::is_trivially_copyable_v<T> &&
+    !std::has_unique_object_representations_v<T>);
+
+// Used to bypass the safety check when compiling a class with std::atomic,
+// which is not trivially copyable on MSVC
+#define SKIP_BYTE_SPAN_SAFETY_CHECK_FOR(X)      \
+  namespace base::internal {                    \
+  template <>                                   \
+  struct ByteSpanSafetyCheckSkippedForType<X> { \
+    static constexpr bool value = true;         \
+  };                                            \
+  }  // namespace base::internal
+#endif // !BUILDFLAG(COMPILER_MSVC)
 
 template <typename T>
 concept ByteSpanConstructibleFromNonUnique =

@@ -38,7 +38,9 @@ class HeapHashCountedSet final
                     "HashCountedSet<> instead of HeapHashCountedSet<>.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 ASSERT_SIZE(HeapHashCountedSet<int>, HashCountedSet<int>);

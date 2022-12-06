@@ -137,12 +137,6 @@ struct PlainHashReader {
 };
 
 /*
- *  Likely and unlikely macros.
- */
-#define _likely_(x) __builtin_expect(x, 1)
-#define _unlikely_(x) __builtin_expect(x, 0)
-
-/*
  *  Default seed.
  */
 static constexpr uint64_t RAPID_SEED = 0xbdd89aa982704029ull;
@@ -263,8 +257,8 @@ ALWAYS_INLINE uint64_t rapidhash_internal(const uint8_t* p,
 
   seed ^= rapid_mix(seed ^ secret[0], secret[1]) ^ len;
   uint64_t a, b;
-  if (_likely_(len <= 16)) {
-    if (_likely_(len >= 4)) {
+  if (len <= 16) [[likely]] {
+    if (len >= 4) [[likely]] {
       // Read the first and last 32 bits (they may overlap).
       const uint8_t* plast = p + (len - 4) * x / y;
       a = (Reader::Read32(p) << 32) | Reader::Read32(plast);
@@ -272,7 +266,7 @@ ALWAYS_INLINE uint64_t rapidhash_internal(const uint8_t* p,
       // This is equivalent to: delta = (len >= 8) ? 4 : 0;
       const uint64_t delta = ((len & 24) >> (len >> 3)) * x / y;
       b = ((Reader::Read32(p + delta) << 32) | Reader::Read32(plast - delta));
-    } else if (_likely_(len > 0)) {
+    } else if (len > 0) [[likely]] {
       // 1, 2 or 3 bytes.
       a = Reader::ReadSmall(p, len);
       b = 0;
@@ -281,18 +275,18 @@ ALWAYS_INLINE uint64_t rapidhash_internal(const uint8_t* p,
     }
   } else {
     size_t i = len;
-    if (_unlikely_(i > 48)) {
+    if (i > 48) [[unlikely]] {
       uint64_t see1 = seed, see2 = seed;
       do {
-        seed = rapid_mix(Reader::Read64(p) ^ secret[0],
-                         Reader::Read64(p + 8 * x / y) ^ seed);
+        [[likely]] seed = rapid_mix(Reader::Read64(p) ^ secret[0],
+                                    Reader::Read64(p + 8 * x / y) ^ seed);
         see1 = rapid_mix(Reader::Read64(p + 16 * x / y) ^ secret[1],
                          Reader::Read64(p + 24 * x / y) ^ see1);
         see2 = rapid_mix(Reader::Read64(p + 32 * x / y) ^ secret[2],
                          Reader::Read64(p + 40 * x / y) ^ see2);
         p += 48 * x / y;
         i -= 48;
-      } while (_likely_(i >= 48));
+      } while (i >= 48);
       seed ^= see1 ^ see2;
     }
     if (i > 16) {
@@ -336,8 +330,5 @@ ALWAYS_INLINE static uint64_t rapidhash(const uint8_t* key,
                                         uint64_t seed = RAPID_SEED) {
   return rapidhash_internal<Reader>(key, len, seed, rapid_secret);
 }
-
-#undef _likely_
-#undef _unlikely_
 
 #endif  // _THIRD_PARTY_RAPIDHASH_H

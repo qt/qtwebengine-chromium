@@ -35,7 +35,7 @@ struct BLINK_COMMON_EXPORT FramePolicy {
   ~FramePolicy();
 
   friend bool BLINK_COMMON_EXPORT operator==(const FramePolicy& lhs,
-                                             const FramePolicy& rhs);
+                                             const FramePolicy& rhs) = default;
 
   network::mojom::WebSandboxFlags sandbox_flags;
   ParsedPermissionsPolicy container_policy;

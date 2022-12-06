@@ -13,6 +13,7 @@
 #include <mftransform.h>
 
 #include <algorithm>
+#include <bitset>
 #include <iterator>
 #include <memory>
 #include <utility>
@@ -1791,7 +1792,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
   if (base::FeatureList::IsEnabled(kMediaFoundationD3DVideoProcessing)) {
     is_supported_format =
         std::ranges::find(kSupportedPixelFormatsD3DVideoProcessing,
-                          frame->format()) != kSupportedPixelFormats.end();
+                          frame->format()) != kSupportedPixelFormatsD3DVideoProcessing.end();
   } else {
     is_supported_format =
         std::ranges::find(kSupportedPixelFormats, frame->format()) !=

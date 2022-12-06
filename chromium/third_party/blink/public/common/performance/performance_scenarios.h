@@ -163,4 +163,8 @@ BLINK_COMMON_EXPORT SharedAtomicRef<InputScenario> GetInputScenario(
 
 }  // namespace blink::performance_scenarios
 
+#if defined(COMPILER_MSVC)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(blink::performance_scenarios::ScenarioState)
+#endif
+
 #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_PERFORMANCE_PERFORMANCE_SCENARIOS_H_

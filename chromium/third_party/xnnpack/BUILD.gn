@@ -25,10 +25,12 @@ config("xnnpack_config") {
     "src",
   ]
 
-  cflags = [
-    "-Wno-unused-function",
-    "-Wno-deprecated-comma-subscript",
-  ]
+  if (is_clang || !is_win) {
+    cflags = [
+      "-Wno-unused-function",
+      "-Wno-deprecated-comma-subscript",
+    ]
+  }
 
   defines = [
     "CHROMIUM",

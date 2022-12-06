@@ -6,7 +6,7 @@
 
 namespace device {
 
-const float GamepadButton::kDefaultButtonPressedThreshold;
-const double GamepadHapticActuator::kMaxEffectDurationMillis;
+constexpr float GamepadButton::kDefaultButtonPressedThreshold;
+constexpr double GamepadHapticActuator::kMaxEffectDurationMillis;
 
 }  // namespace device

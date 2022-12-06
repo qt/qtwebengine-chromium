@@ -22,7 +22,14 @@
 
 #else
 
+#if defined(COMPILER_MSVC)
+#include <intrin.h>
 #if PA_BUILDFLAG(PA_ARCH_CPU_X86_64) || PA_BUILDFLAG(PA_ARCH_CPU_X86)
+#define PA_YIELD_PROCESSOR _mm_pause()
+#else
+#define PA_YIELD_PROCESSOR __yield()
+#endif // PA_BUILDFLAG(PA_ARCH_CPU_X86_64) || PA_BUILDFLAG(PA_ARCH_CPU_X86)
+#elif PA_BUILDFLAG(PA_ARCH_CPU_X86_64) || PA_BUILDFLAG(PA_ARCH_CPU_X86)
 #define PA_YIELD_PROCESSOR __asm__ __volatile__("pause")
 #elif (PA_BUILDFLAG(PA_ARCH_CPU_ARMEL) && __ARM_ARCH >= 6) || \
     PA_BUILDFLAG(PA_ARCH_CPU_ARM64)

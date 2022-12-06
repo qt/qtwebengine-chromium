@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_EVALUATION_INPUT_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_EVALUATION_INPUT_H_
 
+#include <functional>
 #include <optional>
 
 #include "base/containers/flat_map.h"
@@ -23,11 +24,11 @@ enum class CalcSizeKeywordBehavior { kAsSpecified, kAsAuto };
 struct EvaluationInput {
   STACK_ALLOCATED();
 
-  using IntrinsicLengthEvaluator = base::FunctionRef<LayoutUnit(const Length&)>;
+  using IntrinsicLengthEvaluator = base::FunctionRef<blink::LayoutUnit(const blink::Length&)>;
 
  public:
   std::optional<float> size_keyword_basis = std::nullopt;
-  std::optional<IntrinsicLengthEvaluator> intrinsic_evaluator = std::nullopt;
+  std::function<LayoutUnit(const Length&)> intrinsic_evaluator;
   CalcSizeKeywordBehavior calc_size_keyword_behavior =
       CalcSizeKeywordBehavior::kAsSpecified;
   base::flat_map<ColorChannelKeyword, float> color_channel_keyword_values;

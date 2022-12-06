@@ -128,11 +128,11 @@ constexpr float Grad2turn(float g) {
   return g * (1.0f / 400.0f);
 }
 
-constexpr double RoundHalfTowardsPositiveInfinity(double value) {
+inline double RoundHalfTowardsPositiveInfinity(double value) {
   return std::floor(value + 0.5);
 }
 
-constexpr float RoundHalfTowardsPositiveInfinity(float value) {
+inline float RoundHalfTowardsPositiveInfinity(float value) {
   return std::floor(value + 0.5f);
 }
 
@@ -315,7 +315,9 @@ constexpr LimitType ClampTo(
     LimitType max = DefaultMaximumForClamp<LimitType>()) {
   // We use __builtin_isnan instead of std::isnan here because std::isnan
   // is not constexpr prior to C++23.
+#if !defined(COMPILER_MSVC)
   DCHECK(!__builtin_isnan(static_cast<double>(value)));
+#endif
   DCHECK_LE(min, max);  // This also ensures |min| and |max| aren't NaN.
   return ClampToHelper<LimitType, ValueType>::ClampTo(value, min, max);
 }
