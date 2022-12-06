@@ -58,7 +58,7 @@ class PA_TRIVIAL_ABI PA_GSL_POINTER raw_ref {
  public:
   // Users may specify `RawPtrTraits` via raw_ref's second template parameter
   // `ReferenceTraits`, or specialization of `raw_ptr_traits::kTypeTraits<T>`.
-  constexpr static auto Traits =
+  constexpr static RawPtrTraits Traits =
       ReferenceTraits | raw_ptr_traits::kTypeTraits<T>;
 
  private:

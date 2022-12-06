@@ -1542,6 +1542,8 @@ config("toolchain") {
       # warns if there's no return there (see https://crbug.com/v8/7658)
       "/wd4715",  # Not all control paths return a value.
 
+      "/wd4716",  # Function must return value
+
       "/wd4718",  # Recursive call has no side-effect.
       "/wd4723",  # https://crbug.com/v8/7771
       "/wd4724",  # https://crbug.com/v8/7771

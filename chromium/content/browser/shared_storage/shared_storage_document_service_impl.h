@@ -81,7 +81,7 @@ class CONTENT_EXPORT SharedStorageDocumentServiceImpl final
   base::WeakPtr<SharedStorageDocumentServiceImpl> GetWeakPtr();
 
  private:
-  friend class DocumentUserData;
+  friend class DocumentUserData<SharedStorageDocumentServiceImpl>;
 
   explicit SharedStorageDocumentServiceImpl(RenderFrameHost*);
 

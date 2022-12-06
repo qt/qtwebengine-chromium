@@ -6,6 +6,7 @@
 #define UI_BASE_RESOURCE_RESOURCE_HANDLE_H_
 
 #include <stdint.h>
+#include <vector>
 
 #include <optional>
 #include <string_view>

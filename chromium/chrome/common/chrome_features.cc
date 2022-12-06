@@ -840,39 +840,39 @@ BASE_FEATURE(kKAnonymityService,
 
 // Origin to use for requests to the k-Anonymity Auth server to get trust
 // tokens.
-constexpr base::FeatureParam<std::string> kKAnonymityServiceAuthServer{
+const base::FeatureParam<std::string> kKAnonymityServiceAuthServer{
     &kKAnonymityService, "KAnonymityServiceAuthServer",
     "https://chromekanonymityauth-pa.googleapis.com/"};
 
 // Origin to use as a relay for OHTTP requests to the k-Anonymity Join server.
-constexpr base::FeatureParam<std::string> kKAnonymityServiceJoinRelayServer{
+const base::FeatureParam<std::string> kKAnonymityServiceJoinRelayServer{
     &kKAnonymityService, "KAnonymityServiceJoinRelayServer",
     "https://google-ohttp-relay-join.fastly-edge.com/"};
 
 // Origin to use to notify the k-Anonymity Join server of group membership.
-constexpr base::FeatureParam<std::string> kKAnonymityServiceJoinServer{
+const base::FeatureParam<std::string> kKAnonymityServiceJoinServer{
     &kKAnonymityService, "KAnonymityServiceJoinServer",
     "https://chromekanonymity-pa.googleapis.com/"};
 
 // Minimum amount of time allowed between notifying the Join server of
 // membership in a distinct group.
-constexpr base::FeatureParam<base::TimeDelta> kKAnonymityServiceJoinInterval{
+const base::FeatureParam<base::TimeDelta> kKAnonymityServiceJoinInterval{
     &kKAnonymityService, "KAnonymityServiceJoinInterval", base::Days(1)};
 
 // Origin to use as a relay for OHTTP requests to the k-Anonymity Query server.
-constexpr base::FeatureParam<std::string> kKAnonymityServiceQueryRelayServer{
+const base::FeatureParam<std::string> kKAnonymityServiceQueryRelayServer{
     &kKAnonymityService, "KAnonymityServiceQueryRelayServer",
     "https://google-ohttp-relay-query.fastly-edge.com/"};
 
 // Origin to use to request k-anonymity status from the k-Anonymity Query
 // server.
-constexpr base::FeatureParam<std::string> kKAnonymityServiceQueryServer{
+const base::FeatureParam<std::string> kKAnonymityServiceQueryServer{
     &kKAnonymityService, "KAnonymityServiceQueryServer",
     "https://chromekanonymityquery-pa.googleapis.com/"};
 
 // Minimum amount of time allowed between requesting k-anonymity status from the
 // Query server for a distinct group.
-constexpr base::FeatureParam<base::TimeDelta> kKAnonymityServiceQueryInterval{
+const base::FeatureParam<base::TimeDelta> kKAnonymityServiceQueryInterval{
     &kKAnonymityService, "KAnonymityServiceJoinInterval", base::Days(1)};
 
 // When enabled, the k-Anonymity Service will send requests to the Join and
@@ -1189,7 +1189,7 @@ BASE_FEATURE(kSCTAuditing, "SCTAuditing", base::FEATURE_ENABLED_BY_DEFAULT);
 // Non-Chrome builds should not use Chrome's infrastructure.
 BASE_FEATURE(kSCTAuditing, "SCTAuditing", base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-constexpr base::FeatureParam<double> kSCTAuditingSamplingRate{
+const base::FeatureParam<double> kSCTAuditingSamplingRate{
     &kSCTAuditing, "sampling_rate", 0.0001};
 
 // SCT auditing hashdance allows Chrome clients who are not opted-in to Enhanced

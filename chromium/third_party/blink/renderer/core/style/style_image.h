@@ -213,7 +213,7 @@ class CORE_EXPORT StyleImage : public GarbageCollected<StyleImage> {
   static gfx::SizeF ApplyZoom(const gfx::SizeF&, float multiplier);
 };
 
-constexpr bool EqualResolutions(const float res1, const float res2) {
+inline bool EqualResolutions(const float res1, const float res2) {
   return std::abs(res1 - res2) < std::numeric_limits<float>::epsilon();
 }
 

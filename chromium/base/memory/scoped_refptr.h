@@ -337,8 +337,11 @@ class TRIVIAL_ABI scoped_refptr {
   friend auto operator<=>(const scoped_refptr<T>& lhs, std::nullptr_t null) {
     return lhs.ptr_ <=> static_cast<T*>(nullptr);
   }
-
+#if (defined(__GNUC__) && __GNUC__ < 13) || defined(COMPILER_MSVC)
+ public:
+#else
  protected:
+#endif
   // RAW_PTR_EXCLUSION: scoped_refptr<> has its own UaF prevention mechanism.
   // Given how widespread it is, we it'll likely a perf regression for no
   // additional security benefit.

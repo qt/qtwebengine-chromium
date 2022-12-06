@@ -336,7 +336,8 @@ class PA_TRIVIAL_ABI PA_GSL_POINTER raw_ptr {
  public:
   // Users may specify `RawPtrTraits` via raw_ptr's second template parameter
   // `PointerTraits`, or specialization of `raw_ptr_traits::kTypeTraits<T>`.
-  constexpr static auto Traits = PointerTraits | raw_ptr_traits::kTypeTraits<T>;
+  constexpr static RawPtrTraits Traits =
+      PointerTraits | raw_ptr_traits::kTypeTraits<T>;
   using Impl = typename raw_ptr_traits::ImplForTraits<Traits>;
   // Needed to make gtest Pointee matcher work with raw_ptr.
   using element_type = T;

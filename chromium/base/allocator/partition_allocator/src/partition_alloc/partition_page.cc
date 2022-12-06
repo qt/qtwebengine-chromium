@@ -323,6 +323,7 @@ void UnmapNow(uintptr_t reservation_start,
   if (pool == kBRPPoolHandle) {
     // In 32-bit mode, the beginning of a reservation may be excluded from the
     // BRP pool, so shift the pointer. Other pools don't have this logic.
+#if 0 // msvc failure
 #if PA_BUILDFLAG(HAS_64_BIT_POINTERS)
     PA_DCHECK(IsManagedByPartitionAllocBRPPool(reservation_start));
 #else
@@ -330,8 +331,8 @@ void UnmapNow(uintptr_t reservation_start,
         reservation_start +
         AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
             AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap));
+#endif // msvc failure
 #endif  // PA_BUILDFLAG(HAS_64_BIT_POINTERS)
-
   } else
 #endif  // PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
   {

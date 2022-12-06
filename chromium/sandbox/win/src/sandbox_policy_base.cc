@@ -792,7 +792,7 @@ bool PolicyBase::SetupHandleCloser(TargetProcess& target) {
 
 std::optional<base::span<const uint8_t>> PolicyBase::delegate_data_span() {
   if (delegate_data_) {
-    return base::make_span(*delegate_data_);
+    return base::span<const uint8_t>(delegate_data_->data(), delegate_data_->data() + delegate_data_->size());
   }
   return std::nullopt;
 }

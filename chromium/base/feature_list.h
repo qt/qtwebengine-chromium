@@ -106,6 +106,7 @@ enum class FeatureMacroHandshake { kSecret };
 // [1]:
 // https://crsrc.org/c/docs/speed/binary_size/android_binary_size_trybot.md#Mutable-Constants
 struct BASE_EXPORT LOGICALLY_CONST Feature {
+  constexpr Feature() : name(nullptr), default_state(FEATURE_DISABLED_BY_DEFAULT) {}
   constexpr Feature(const char* name,
                     FeatureState default_state,
                     internal::FeatureMacroHandshake)

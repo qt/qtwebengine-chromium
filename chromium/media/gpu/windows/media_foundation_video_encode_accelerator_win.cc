@@ -12,6 +12,7 @@
 #include <mftransform.h>
 
 #include <algorithm>
+#include <bitset>
 #include <iterator>
 #include <memory>
 #include <utility>

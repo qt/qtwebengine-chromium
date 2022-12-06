@@ -54,7 +54,7 @@ class MODULES_EXPORT MediaStreamTrack
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  class MODULES_EXPORT Observer : public GarbageCollectedMixin {
+  class MODULES_EXPORT Observer : public cppgc::GarbageCollectedMixin {
    public:
     virtual ~Observer() = default;
     virtual void TrackChangedState() = 0;

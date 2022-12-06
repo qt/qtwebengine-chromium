@@ -11,10 +11,10 @@
 
 #include "ui/gl/dcomp_surface_proxy.h"
 
-class ID3D11Texture2D;
-class IDCompositionSurface;
-class IDXGISwapChain1;
-class IUnknown;
+struct ID3D11Texture2D;
+struct IDCompositionSurface;
+struct IDXGISwapChain1;
+struct IUnknown;
 
 namespace gl {
 

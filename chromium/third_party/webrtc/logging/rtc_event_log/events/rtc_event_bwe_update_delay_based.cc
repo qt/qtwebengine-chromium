@@ -15,11 +15,13 @@
 
 namespace webrtc {
 
+#if !defined(WEBRTC_WIN)
 constexpr RtcEventDefinition<RtcEventBweUpdateDelayBased,
                              LoggedBweDelayBasedUpdate,
                              int32_t,
                              BandwidthUsage>
     RtcEventBweUpdateDelayBased::definition_;
+#endif
 
 RtcEventBweUpdateDelayBased::RtcEventBweUpdateDelayBased(
     int32_t bitrate_bps,

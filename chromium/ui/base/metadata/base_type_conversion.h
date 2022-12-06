@@ -321,7 +321,7 @@ MAKE_TYPE_UNIQUE(SkColor);
 
 template <>
 struct COMPONENT_EXPORT(UI_BASE_METADATA)
-    TypeConverter<UNIQUE_TYPE_NAME(SkColor)>
+    TypeConverter<SkColorUnique>
     : BaseTypeConverter<true, false, kSkColorPrefix> {
   static std::u16string ToString(SkColor source_value);
   static std::optional<SkColor> FromString(const std::u16string& source_value);
@@ -370,7 +370,7 @@ struct COMPONENT_EXPORT(UI_BASE_METADATA)
       const std::u16string& rgb_string);
 };
 
-using SkColorConverter = TypeConverter<UNIQUE_TYPE_NAME(SkColor)>;
+using SkColorConverter = TypeConverter<SkColorUnique>;
 
 }  // namespace metadata
 }  // namespace ui

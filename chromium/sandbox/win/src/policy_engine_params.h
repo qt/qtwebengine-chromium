@@ -117,9 +117,7 @@ class ParameterSet {
 template <typename T>
 class ParameterSetEx : public ParameterSet {
  public:
-  explicit ParameterSetEx(const void* address) {
-    static_assert(false, "Type not supported.");
-  }
+  explicit ParameterSetEx(const void* address);
 };
 
 template <>

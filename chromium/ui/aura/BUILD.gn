@@ -152,9 +152,10 @@ component("aura") {
       "native_window_occlusion_tracker_win.cc",
       "native_window_occlusion_tracker_win.h",
     ]
+    sources -= [ "input_state_lookup.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources -= [ "input_state_lookup.cc" ]
 
     deps += [

@@ -16,10 +16,10 @@ base::AtomicSequenceNumber g_sequence_token_generator;
 
 base::AtomicSequenceNumber g_task_token_generator;
 
-ABSL_CONST_INIT thread_local SequenceToken current_sequence_token;
-ABSL_CONST_INIT thread_local TaskToken current_task_token;
-ABSL_CONST_INIT thread_local bool current_task_is_thread_bound = true;
-ABSL_CONST_INIT thread_local bool current_task_is_running_synchronously = false;
+thread_local SequenceToken current_sequence_token;
+thread_local TaskToken current_task_token;
+thread_local bool current_task_is_thread_bound = true;
+thread_local bool current_task_is_running_synchronously = false;
 
 }  // namespace
 

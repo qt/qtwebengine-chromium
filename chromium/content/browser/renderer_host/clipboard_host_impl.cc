@@ -107,7 +107,7 @@ std::u16string ExtractText(ui::ClipboardBuffer clipboard_buffer,
                                    clipboard_buffer, data_dst.get())) {
     clipboard->ReadText(clipboard_buffer, data_dst.get(), &result);
   } else {
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
     if (clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextAType(),
                                      clipboard_buffer, data_dst.get())) {
       std::string ascii;
@@ -255,7 +255,7 @@ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
       result =
           clipboard->IsFormatAvailable(ui::ClipboardFormatType::PlainTextType(),
                                        clipboard_buffer, data_endpoint.get());
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
       result |= clipboard->IsFormatAvailable(
           ui::ClipboardFormatType::PlainTextAType(), clipboard_buffer,
           data_endpoint.get());

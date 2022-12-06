@@ -555,13 +555,14 @@ DocumentLoader::DocumentLoader(
       navigation_api_forward_entries_(params_->navigation_api_forward_entries),
       navigation_api_previous_entry_(params_->navigation_api_previous_entry),
       extra_data_(std::move(extra_data)),
-      reduced_accept_language_(params_->reduced_accept_language),
+      reduced_accept_language_(static_cast<String>(params_->reduced_accept_language)),
       navigation_delivery_type_(params_->navigation_delivery_type),
       view_transition_state_(std::move(params_->view_transition_state)),
       load_with_storage_access_(params_->load_with_storage_access),
       browsing_context_group_info_(params_->browsing_context_group_info),
       modified_runtime_features_(std::move(params_->modified_runtime_features)),
-      cookie_deprecation_label_(params_->cookie_deprecation_label),
+      cookie_deprecation_label_(
+          static_cast<String>(params_->cookie_deprecation_label)),
       content_settings_(std::move(params_->content_settings)) {
   TRACE_EVENT_WITH_FLOW0("loading", "DocumentLoader::DocumentLoader",
                          TRACE_ID_LOCAL(this), TRACE_EVENT_FLAG_FLOW_OUT);

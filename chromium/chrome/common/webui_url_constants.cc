@@ -847,10 +847,11 @@ const char* const kChromeHostURLs[] = {
     kChromeUIDlpInternalsHost,
 #endif  // BUILDFLAG(IS_CHROMEOS)
 };
-const size_t kNumberOfChromeHostURLs = std::size(kChromeHostURLs);
+const size_t kNumberOfChromeHostURLs = sizeof(kChromeHostURLs) / sizeof(const char*);
 
 // Add chrome://internals/* subpages here to be included in chrome://chrome-urls
 // (about:about).
+#if !defined(COMPILER_MSVC)
 const char* const kChromeInternalsPathURLs[] = {
 #if BUILDFLAG(IS_ANDROID)
     kChromeUIInternalsQueryTilesPath,
@@ -861,6 +862,10 @@ const char* const kChromeInternalsPathURLs[] = {
 };
 const size_t kNumberOfChromeInternalsPathURLs =
     sizeof(kChromeInternalsPathURLs) / sizeof(const char*);
+#else
+const char* const kChromeInternalsPathURLs[1] = { nullptr };
+const size_t kNumberOfChromeInternalsPathURLs = 0;
+#endif // !defined(COMPILER_MSVC)
 
 const char* const kChromeDebugURLs[] = {
     // TODO(crbug.com/40253037): make this list comprehensive

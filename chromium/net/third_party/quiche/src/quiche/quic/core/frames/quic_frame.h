@@ -40,7 +40,7 @@
 #include "quiche/common/quiche_buffer_allocator.h"
 
 #ifndef QUIC_FRAME_DEBUG
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
+#if (!defined(NDEBUG) || defined(ADDRESS_SANITIZER)) && !defined(COMPILER_MSVC)
 #define QUIC_FRAME_DEBUG 1
 #else  // !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
 #define QUIC_FRAME_DEBUG 0

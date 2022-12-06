@@ -41,6 +41,10 @@ class CORE_EXPORT PreferenceObject final
   ScriptPromise<IDLUndefined> requestOverride(ScriptState*,
                                               std::optional<AtomicString>);
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  // called from generated class
+  ScriptPromise requestOverride(ScriptState*, const AtomicString& string);
+#endif
   const FrozenArray<IDLString>& validValues();
 
   void PreferenceMaybeChanged();

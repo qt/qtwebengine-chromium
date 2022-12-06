@@ -268,6 +268,14 @@ typedef int CRYPTO_THREADID;
 // an opaque, non-NULL |ASN1_NULL*| pointer.
 typedef struct asn1_null_st ASN1_NULL;
 
+#ifdef X509_name_st
+#undef X509_name_st
+#endif
+
+#ifdef X509_NAME
+#undef X509_NAME
+#endif
+
 typedef int ASN1_BOOLEAN;
 typedef struct ASN1_ITEM_st ASN1_ITEM;
 typedef struct asn1_object_st ASN1_OBJECT;

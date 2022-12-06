@@ -1891,17 +1891,17 @@ BASE_FEATURE(kPrivateAggregationApi,
 // Selectively allows the JavaScript API to be disabled in just one of the
 // contexts. The Protected Audience param's name has not been updated (from
 // "fledge") for consistency across versions
-constexpr base::FeatureParam<bool> kPrivateAggregationApiEnabledInSharedStorage{
+const base::FeatureParam<bool> kPrivateAggregationApiEnabledInSharedStorage{
     &kPrivateAggregationApi, "enabled_in_shared_storage",
     /*default_value=*/true};
-constexpr base::FeatureParam<bool>
+const base::FeatureParam<bool>
     kPrivateAggregationApiEnabledInProtectedAudience{&kPrivateAggregationApi,
                                                      "enabled_in_fledge",
                                                      /*default_value=*/true};
 
 // Selectively allows the Protected Audience-specific extensions to be disabled.
 // The name has not been updated (from "fledge") for consistency across versions
-constexpr base::FeatureParam<bool>
+const base::FeatureParam<bool>
     kPrivateAggregationApiProtectedAudienceExtensionsEnabled{
         &kPrivateAggregationApi, "fledge_extensions_enabled",
         /*default_value=*/true};
@@ -1909,7 +1909,7 @@ constexpr base::FeatureParam<bool>
 // Selectively allows the debug mode to be disabled while leaving the rest of
 // the API in place. If disabled, any `enableDebugMode()` calls will essentially
 // have no effect.
-constexpr base::FeatureParam<bool> kPrivateAggregationApiDebugModeEnabledAtAll{
+const base::FeatureParam<bool> kPrivateAggregationApiDebugModeEnabledAtAll{
     &kPrivateAggregationApi, "debug_mode_enabled_at_all",
     /*default_value=*/true};
 

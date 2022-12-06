@@ -225,7 +225,7 @@ void PrintJob::StartPrinting() {
     return;
   }
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   // Do not collect duration metric if the print job will need to invoke a
   // "Save Print Output As" dialog that waits on a user to select a filename.
   const std::string printer_name =

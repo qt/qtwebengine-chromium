@@ -924,7 +924,7 @@ config("compiler") {
   # present. On Android this increases binary size due to more thinks for long
   # jumps. Turn it off by default and enable selectively for targets where it's
   # beneficial.
-  if (use_lld && !enable_call_graph_profile_sort) {
+  if (use_lld && !enable_call_graph_profile_sort && !is_qtwebengine) {
     if (is_win) {
       ldflags += [ "/call-graph-profile-sort:no" ]
     } else {
@@ -1955,6 +1955,13 @@ config("default_warnings") {
 
       "/wd4068",  # unknown pragma
       "/wd5051",  # attribute requires newer c++
+      "/w34996",
+    ]
+
+    cflags_cc += [
+      # Allow "noexcept" annotations even though we compile with exceptions
+      # disabled.
+      "/wd4577",
     ]
     if (!is_clang) {
       # TODO(thakis): Remove this once

@@ -91,8 +91,8 @@ assert(!is_nacl || is_nacl_saigo,
 
 # This is here instead of in //build because //build is DEPS'd in by a few
 # subprojects that still support MSVC.
-assert(!is_win || is_clang,
-       "only clang-cl is supported on Windows, see https://crbug.com/988071")
+#assert(!is_win || is_clang,
+#       "only clang-cl is supported on Windows, see https://crbug.com/988071")
 
 # Whether we should provide a `__libcpp_verbose_abort` handler that discards
 # `__VA_ARGS__` and just calls base::ImmediateCrash() for hardening failures.

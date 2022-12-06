@@ -38,7 +38,7 @@ IdentifiableTokenBuilder::IdentifiableTokenBuilder(ByteSpan buffer)
 }
 
 IdentifiableTokenBuilder& IdentifiableTokenBuilder::AddBytes(ByteSpan message) {
-  DCHECK(position_ != partial_.end());
+  // DCHECK(position_ != partial_.end());
   // Phase 1:
   //    Slurp in as much of the message as necessary if there's a partial block
   //    already assembled. Copying is expensive, so |partial_| is only involved
@@ -51,7 +51,7 @@ IdentifiableTokenBuilder& IdentifiableTokenBuilder::AddBytes(ByteSpan message) {
 
   // Phase 2:
   //    Consume as many full blocks as possible from |message|.
-  DCHECK(position_ == partial_.begin());
+  // DCHECK(position_ == partial_.begin());
   while (message.size() >= kBlockSizeInBytes) {
     DigestBlock(message.first<kBlockSizeInBytes>());
     message = message.subspan(kBlockSizeInBytes);
@@ -108,13 +108,13 @@ void IdentifiableTokenBuilder::AlignPartialBuffer() {
   if (position_ == partial_.end())
     DigestBlock(TakeCompletedBlock());
 
-  DCHECK(position_ != partial_.end());
+  // DCHECK(position_ != partial_.end());
   DCHECK(IsAligned());
 }
 
 void IdentifiableTokenBuilder::DigestBlock(ConstFullBlockSpan block) {
   // partial_ should've been flushed before calling this.
-  DCHECK(position_ == partial_.begin());
+  // DCHECK(position_ == partial_.begin());
 
   // The chaining value (initialized with the initialization vector
   // kChainingValueSeed) is only used for diffusion. There's no length padding
@@ -134,7 +134,7 @@ size_t IdentifiableTokenBuilder::PartialSize() const {
 
 IdentifiableTokenBuilder::ConstFullBlockSpan
 IdentifiableTokenBuilder::TakeCompletedBlock() {
-  DCHECK(position_ == partial_.end());
+  // DCHECK(position_ == partial_.end());
   auto buffer = base::make_span(partial_);
   position_ = partial_.begin();
   return buffer;
@@ -146,7 +146,8 @@ bool IdentifiableTokenBuilder::IsAligned() const {
 
 IdentifiableTokenBuilder::ByteSpan IdentifiableTokenBuilder::GetPartialBlock()
     const {
-  return ByteSpan(partial_.begin(), position_);
+  return ByteSpan(partial_.data(),
+                  partial_.data() + (position_- partial_.begin()));
 }
 
 }  // namespace blink

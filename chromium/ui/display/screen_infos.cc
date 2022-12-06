@@ -30,9 +30,12 @@ ScreenInfo& ScreenInfos::mutable_current() {
 }
 
 const ScreenInfo& ScreenInfos::current() const {
-  const auto& current_screen_info = base::ranges::find(
-      screen_infos, current_display_id, &ScreenInfo::display_id);
-  CHECK(current_screen_info != screen_infos.end());
+  auto current_screen_info = screen_infos.cbegin();
+  while (current_screen_info != screen_infos.cend() && current_screen_info->display_id != current_display_id)
+    ++current_screen_info;
+//   const auto& current_screen_info = base::ranges::find(
+//       screen_infos, current_display_id, &ScreenInfo::display_id);
+  CHECK(current_screen_info != screen_infos.cend());
   return *current_screen_info;
 }
 
