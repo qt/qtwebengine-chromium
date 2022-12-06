@@ -84,7 +84,7 @@
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && (!defined(_MSC_VER) || defined(__clang__))
 #include <immintrin.h>
 // Including these headers directly should generally be avoided. Since
 // Chrome is compiled with -msse3 (the minimal requirement), we include the
@@ -118,7 +118,7 @@ static double SincScaleFactor(double io_ratio) {
 void SincResampler::InitializeCPUSpecificFeatures() {
 #if defined(ARCH_CPU_ARM_FAMILY) && defined(USE_NEON)
   convolve_proc_ = Convolve_NEON;
-#elif defined(ARCH_CPU_X86_FAMILY)
+#elif defined(ARCH_CPU_X86_FAMILY) && (!defined(_MSC_VER) || defined(__clang__))
   base::CPU cpu;
   // Using AVX2 instead of SSE2 when AVX2/FMA3 supported.
   if (cpu.has_avx2() && cpu.has_fma3())
@@ -372,7 +372,7 @@ float SincResampler::Convolve_C(const float* input_ptr, const float* k1,
       kernel_interpolation_factor * sum2);
 }
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && (!defined(_MSC_VER) || defined(__clang__))
 float SincResampler::Convolve_SSE(const float* input_ptr, const float* k1,
                                   const float* k2,
                                   double kernel_interpolation_factor) {

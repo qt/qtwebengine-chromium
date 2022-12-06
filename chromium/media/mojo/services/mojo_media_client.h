@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
+#include "media/base/audio_decoder.h"
 #include "media/base/overlay_info.h"
 #include "media/base/supported_video_decoder_config.h"
 #include "media/media_buildflags.h"

@@ -88,7 +88,7 @@ AudioSystemImpl::MaybeBindToCurrentLoop(
     base::OnceCallback<void(Args...)> callback) {
   return audio_manager_->GetTaskRunner()->BelongsToCurrentThread()
              ? std::move(callback)
-             : media::BindToCurrentLoop(std::move(callback));
+             : media::BindToCurrentLoop(std::move(callback), FROM_HERE);
 }
 
 // static

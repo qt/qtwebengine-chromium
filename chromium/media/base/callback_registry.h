@@ -62,7 +62,7 @@ class CallbackRegistry<void(Args...)> {
     // Use BindToCurrentLoop so that the callbacks are always posted to the
     // thread where Register() is called. Also, this helps avoid reentrancy
     // and deadlock issues, e.g. Register() is called in one of the callbacks.
-    callbacks_[registration_id] = BindToCurrentLoop(std::move(cb));
+    callbacks_[registration_id] = BindToCurrentLoop(std::move(cb), FROM_HERE);
 
     return std::make_unique<RegistrationImpl>(this, registration_id);
   }

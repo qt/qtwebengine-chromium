@@ -145,8 +145,6 @@ FixedArray Heap::single_character_string_table() {
     /* never in new space and never on a page that is being compacted.    */   \
     DCHECK_IMPLIES(deserialization_complete(),                                 \
                    !RootsTable::IsImmortalImmovable(RootIndex::k##CamelName)); \
-    DCHECK_IMPLIES(RootsTable::IsImmortalImmovable(RootIndex::k##CamelName),   \
-                   IsImmovable(HeapObject::cast(value)));                      \
     roots_table()[RootIndex::k##CamelName] = value.ptr();                      \
   }
 ROOT_LIST(ROOT_ACCESSOR)

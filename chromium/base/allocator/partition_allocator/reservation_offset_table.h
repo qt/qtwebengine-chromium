@@ -166,7 +166,7 @@ PA_ALWAYS_INLINE uintptr_t ComputeReservationStart(uintptr_t address,
 // If the given address doesn't point to direct-map allocated memory,
 // returns 0.
 PA_ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(uintptr_t address) {
-#if BUILDFLAG(PA_DCHECK_IS_ON)
+#if BUILDFLAG(PA_DCHECK_IS_ON) && !defined(COMPILER_MSVC)
   bool is_in_brp_pool = IsManagedByPartitionAllocBRPPool(address);
   bool is_in_regular_pool = IsManagedByPartitionAllocRegularPool(address);
   // When ENABLE_BACKUP_REF_PTR_SUPPORT is off, BRP pool isn't used.

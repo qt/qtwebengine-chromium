@@ -278,7 +278,7 @@ component("partition_alloc") {
     }
   }
   if (build_with_chromium) {
-    if (current_cpu == "x64") {
+    if (current_cpu == "x64" && (!is_win || is_clang)) {
       defines += [ "PA_PCSCAN_STACK_SUPPORTED" ]
       sources += [ "starscan/stack/asm/x64/push_registers_asm.cc" ]
     } else if (current_cpu == "x86") {

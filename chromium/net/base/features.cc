@@ -341,7 +341,7 @@ const base::FeatureParam<bool> kOptimizeNetworkBuffersInputStreamCheckAvailable{
 BASE_FEATURE(kStorageAccessAPI,
              "StorageAccessAPI",
              base::FEATURE_DISABLED_BY_DEFAULT);
-constexpr int kStorageAccessAPIDefaultImplicitGrantLimit = 5;
+const int kStorageAccessAPIDefaultImplicitGrantLimit = 5;
 const base::FeatureParam<int> kStorageAccessAPIImplicitGrantLimit{
     &kStorageAccessAPI, "storage-access-api-implicit-grant-limit",
     kStorageAccessAPIDefaultImplicitGrantLimit};

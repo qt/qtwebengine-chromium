@@ -6,6 +6,7 @@
 #define UI_BASE_RESOURCE_RESOURCE_HANDLE_H_
 
 #include <stdint.h>
+#include <vector>
 
 #include "base/strings/string_piece.h"
 #include "ui/base/resource/data_pack_export.h"

@@ -595,7 +595,7 @@ jumbo_source_set("browser_sources") {
     sources += [ "ax_inspect_factory_fuchsia.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources += [ "ax_inspect_factory_win.cc" ]
   }
 
