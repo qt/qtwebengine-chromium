@@ -288,7 +288,7 @@ component("partition_alloc") {
     }
   }
   if (use_starscan) {
-    if (current_cpu == "x64") {
+    if (current_cpu == "x64" && (!is_win || is_clang)) {
       assert(pcscan_stack_supported)
       sources += [ "starscan/stack/asm/x64/push_registers_asm.cc" ]
     } else if (current_cpu == "x86") {

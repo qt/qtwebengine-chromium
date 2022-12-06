@@ -7,9 +7,9 @@
 
 #include "build/build_config.h"
 
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+// #if defined(COMPILER_MSVC) && !defined(__clang__)
+// #error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+// #endif
 
 // This is a wrapper around `__has_cpp_attribute`, which can be used to test for
 // the presence of an attribute. In case the compiler does not support this
@@ -201,7 +201,7 @@
 
 // Macro useful for writing cross-platform function pointers.
 #if !defined(CDECL)
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && (defined(__i386) || defined(__i386__) || defined(_M_IX86))
 #define CDECL __cdecl
 #else  // BUILDFLAG(IS_WIN)
 #define CDECL

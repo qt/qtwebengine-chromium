@@ -6,6 +6,8 @@
 
 #include "net/cert/pki/string_util.h"
 
+#include <assert.h>
+
 namespace net {
 
 namespace {

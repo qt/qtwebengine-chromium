@@ -185,8 +185,8 @@ class QUIC_NO_EXPORT QuicIntervalDeque {
       ++(*this);
       return copy;
     }
-    reference operator*() { return deque_->container_[index_]; }
-    reference operator*() const { return deque_->container_[index_]; }
+    reference operator*() { return *&deque_->container_[index_]; }
+    reference operator*() const { return *&deque_->container_[index_]; }
     pointer operator->() { return &deque_->container_[index_]; }
     bool operator==(const Iterator& rhs) const {
       return index_ == rhs.index_ && deque_ == rhs.deque_;

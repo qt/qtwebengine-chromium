@@ -95,7 +95,10 @@ constexpr const char* ScannerIdToTracingString(
     case partition_alloc::internal::StatsCollector::ScannerId::kOverall:
       return "PCScan.Scanner";
     case partition_alloc::internal::StatsCollector::ScannerId::kNumIds:
+#if defined(__GNUC__) || defined(__clang__)
       __builtin_unreachable();
+#endif
+      return nullptr;
   }
 }
 
@@ -111,7 +114,10 @@ constexpr const char* MutatorIdToTracingString(
     case partition_alloc::internal::StatsCollector::MutatorId::kOverall:
       return "PCScan.Mutator";
     case partition_alloc::internal::StatsCollector::MutatorId::kNumIds:
+#if defined(__GNUC__) || defined(__clang__)
       __builtin_unreachable();
+#endif
+      return nullptr;
   }
 }
 #endif  // BUILDFLAG(ENABLE_BASE_TRACING)

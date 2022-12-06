@@ -1034,7 +1034,7 @@ BASE_FEATURE(kServiceWorkerSkipIgnorableFetchHandler,
 
 // This feature param controls if the empty service worker fetch handler is
 // skipped.
-constexpr base::FeatureParam<bool> kSkipEmptyFetchHandler{
+const base::FeatureParam<bool> kSkipEmptyFetchHandler{
     &kServiceWorkerSkipIgnorableFetchHandler,
     "SkipEmptyFetchHandler",
     false,

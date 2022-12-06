@@ -60,8 +60,13 @@ namespace logging {
 // does support the pattern of appending a custom error message.  As in, the
 // NOTIMPLEMENTED_LOG_ONCE() << "foo message"; pattern is not supported.
 #if DCHECK_IS_ON()
-#define NOTIMPLEMENTED() \
+#ifdef _MSC_VER
+#define NOTIMPLEMENTED()                                     \
+  ::logging::CheckError::NotImplemented(__FILE__, __LINE__,  __FUNCSIG__)
+#else
+#define NOTIMPLEMENTED()                                     \
   ::logging::CheckError::NotImplemented(__FILE__, __LINE__, __PRETTY_FUNCTION__)
+#endif
 #else
 #define NOTIMPLEMENTED() EAT_CHECK_STREAM_PARAMS()
 #endif

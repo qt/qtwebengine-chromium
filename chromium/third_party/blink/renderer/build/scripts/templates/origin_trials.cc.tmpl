@@ -89,7 +89,7 @@ base::span<const OriginTrialFeature> origin_trials::FeaturesForTrial(
   auto it = base::ranges::find(kTrialToFeaturesMap, trial_name,
                                &TrialToFeature::trial_name);
   DCHECK(it != std::end(kTrialToFeaturesMap));
-  return {it->features.begin(), it->feature_count};
+  return {it->features.data(), it->feature_count};
 }
 
 base::span<const OriginTrialFeature> origin_trials::GetImpliedFeatures(

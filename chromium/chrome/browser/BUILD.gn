@@ -5534,7 +5534,7 @@ static_library("browser") {
       "webauthn/local_credential_management_mac.h",
     ]
   }
-  if (is_win) {
+  if (is_win && toolkit_views) {
     libs += [
       "secur32.lib",
 

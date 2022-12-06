@@ -246,6 +246,10 @@ jumbo_static_library("metrics") {
     sources += [ "drive_metrics_provider_fuchsia.cc" ]
   }
 
+  if (is_qtwebengine) {
+    deps -= [ "//components/variations/field_trial_config" ]
+  }
+
   if (is_win || is_linux) {
     sources += [
       "motherboard.cc",
