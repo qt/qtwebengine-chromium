@@ -35,8 +35,12 @@ ScreenDetailed* ScreenDetails::currentScreen() const {
   if (screens_.empty())
     return nullptr;
 
-  auto it = base::ranges::find(screens_, current_display_id_,
-                               &ScreenDetailed::DisplayId);
+  auto it = screens_.begin();
+  for (; it != screens_.end(); ++it) {
+    const auto& screen = *it;
+    if (screen->DisplayId() == current_display_id_)
+      break;
+  }
   CHECK(it != screens_.end(), base::NotFatalUntil::M130);
   return it->Get();
 }
@@ -79,8 +83,13 @@ void ScreenDetails::UpdateScreenInfosImpl(LocalDOMWindow* window,
   // Check if any screens have been removed and remove them from `screens_`.
   for (WTF::wtf_size_t i = 0; i < screens_.size();
        /*conditionally incremented*/) {
-    if (base::Contains(new_infos.screen_infos, screens_[i]->DisplayId(),
-                       &display::ScreenInfo::display_id)) {
+    auto it = new_infos.screen_infos.cbegin();
+    bool found = false;
+    for(; it != new_infos.screen_infos.cend() && !found; ++it)
+        found = found || it->display_id == screens_[i]->DisplayId();
+//     if (base::Contains(new_infos.screen_infos, screens_[i]->DisplayId(),
+//                        &display::ScreenInfo::display_id)) {
+    if (found) {
       ++i;
     } else {
       screens_.EraseAt(i);
@@ -91,8 +100,12 @@ void ScreenDetails::UpdateScreenInfosImpl(LocalDOMWindow* window,
 
   // Check if any screens have been added, and append them to `screens_`.
   for (const auto& info : new_infos.screen_infos) {
-    if (!base::Contains(screens_, info.display_id,
-                        &ScreenDetailed::DisplayId)) {
+    bool found = false;
+    for(auto it = screens_.begin(); it != screens_.end() && !found; ++it)
+        found = found || (*it)->DisplayId() == info.display_id;
+//     if (!base::Contains(screens_, info.display_id,
+//                         &ScreenDetailed::DisplayId)) {
+    if (found) {
       screens_.push_back(
           MakeGarbageCollected<ScreenDetailed>(window, info.display_id));
       added_or_removed = true;

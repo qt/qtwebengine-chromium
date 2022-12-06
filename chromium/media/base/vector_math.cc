@@ -19,7 +19,7 @@
 #include "build/build_config.h"
 
 // NaCl does not allow intrinsics.
-#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL)
+#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL) && (!defined(_MSC_VER) || defined(__clang__))
 #include <immintrin.h>
 // Including these headers directly should generally be avoided. Since
 // Chrome is compiled with -msse3 (the minimal requirement), we include the
@@ -40,7 +40,7 @@ void FMAC(const float src[], float scale, int len, float dest[]) {
   DCHECK(base::IsAligned(src, kRequiredAlignment));
   DCHECK(base::IsAligned(dest, kRequiredAlignment));
   static const auto fmac_func = [] {
-#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL)
+#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL) && (!defined(_MSC_VER) || defined(__clang__))
     base::CPU cpu;
     if (cpu.has_avx2() && cpu.has_fma3())
       return FMAC_AVX2;
@@ -64,7 +64,7 @@ void FMUL(const float src[], float scale, int len, float dest[]) {
   DCHECK(base::IsAligned(src, kRequiredAlignment));
   DCHECK(base::IsAligned(dest, kRequiredAlignment));
   static const auto fmul_func = [] {
-#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL)
+#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL) && (!defined(_MSC_VER) || defined(__clang__))
     base::CPU cpu;
     if (cpu.has_avx2())
       return FMUL_AVX2;
@@ -88,7 +88,7 @@ std::pair<float, float> EWMAAndMaxPower(
     float initial_value, const float src[], int len, float smoothing_factor) {
   DCHECK(base::IsAligned(src, kRequiredAlignment));
   static const auto ewma_and_max_power_func = [] {
-#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL)
+#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL) && (!defined(_MSC_VER) || defined(__clang__))
     base::CPU cpu;
     if (cpu.has_avx2() && cpu.has_fma3())
       return EWMAAndMaxPower_AVX2;
@@ -117,7 +117,7 @@ std::pair<float, float> EWMAAndMaxPower_C(
   return result;
 }
 
-#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL)
+#if defined(ARCH_CPU_X86_FAMILY) && !BUILDFLAG(IS_NACL) && (!defined(_MSC_VER) || defined(__clang__))
 void FMUL_SSE(const float src[], float scale, int len, float dest[]) {
   const int rem = len % 4;
   const int last_index = len - rem;

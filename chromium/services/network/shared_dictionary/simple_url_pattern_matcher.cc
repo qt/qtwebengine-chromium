@@ -28,20 +28,20 @@ namespace network {
 namespace {
 
 // https://urlpattern.spec.whatwg.org/#default-options
-constexpr liburlpattern::Options kDefaultOptions = {.delimiter_list = "",
-                                                    .prefix_list = "",
-                                                    .sensitive = true,
-                                                    .strict = true};
+const liburlpattern::Options kDefaultOptions = {.delimiter_list = "",
+                                                .prefix_list = "",
+                                                .sensitive = true,
+                                                .strict = true};
 // https://urlpattern.spec.whatwg.org/#hostname-options
-constexpr liburlpattern::Options kHostnameOptions = {.delimiter_list = ".",
-                                                     .prefix_list = "",
-                                                     .sensitive = true,
-                                                     .strict = true};
+const liburlpattern::Options kHostnameOptions = {.delimiter_list = ".",
+                                                 .prefix_list = "",
+                                                 .sensitive = true,
+                                                 .strict = true};
 // https://urlpattern.spec.whatwg.org/#pathname-options
-constexpr liburlpattern::Options kPathnameOptions = {.delimiter_list = "/",
-                                                     .prefix_list = "/",
-                                                     .sensitive = true,
-                                                     .strict = true};
+const liburlpattern::Options kPathnameOptions = {.delimiter_list = "/",
+                                                 .prefix_list = "/",
+                                                 .sensitive = true,
+                                                 .strict = true};
 
 std::string EscapePatternString(std::string_view input) {
   std::string result;

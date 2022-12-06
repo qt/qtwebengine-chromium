@@ -38,7 +38,9 @@ class HeapHashSet final
                     "instead of HeapHashSet<>.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 ASSERT_SIZE(HeapHashSet<int>, HashSet<int>);

@@ -9,6 +9,7 @@
 
 #include "base/component_export.h"
 #include "base/process/process_handle.h"
+#include "base/win/windows_types.h"
 #include "ui/accessibility/platform/inspect/ax_event_recorder.h"
 #include "ui/accessibility/platform/inspect/ax_inspect.h"
 
@@ -33,7 +34,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXEventRecorderWin
   ~AXEventRecorderWin() override;
 
   // Callback registered by SetWinEventHook. Just calls OnWinEventHook.
-  static CALLBACK void WinEventHookThunk(HWINEVENTHOOK handle,
+  static void CALLBACK WinEventHookThunk(HWINEVENTHOOK handle,
                                          DWORD event,
                                          HWND hwnd,
                                          LONG obj_id,

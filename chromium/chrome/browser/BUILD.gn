@@ -6252,7 +6252,7 @@ static_library("browser") {
     sources += [ "hang_monitor/hang_crash_dump.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     libs += [
       "secur32.lib",
 

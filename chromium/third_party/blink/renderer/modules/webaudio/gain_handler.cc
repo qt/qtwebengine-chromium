@@ -85,9 +85,9 @@ void GainHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
            render_quantum_frames_expected);
   DCHECK_LE(frames_to_process, render_quantum_frames_expected);
 
-  float values[render_quantum_frames_expected];
+  std::vector<float> values(render_quantum_frames_expected);
 
-  gain_->CalculateSampleAccurateValues(values, frames_to_process);
+  gain_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 // As soon as we know the channel count of our input, we can lazily initialize.

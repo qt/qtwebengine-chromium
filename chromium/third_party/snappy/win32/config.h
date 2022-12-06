@@ -2,13 +2,13 @@
 #define THIRD_PARTY_SNAPPY_OPENSOURCE_CMAKE_CONFIG_H_
 
 /* Define to 1 if the compiler supports __attribute__((always_inline)). */
-#define HAVE_ATTRIBUTE_ALWAYS_INLINE 1
+/* #define HAVE_ATTRIBUTE_ALWAYS_INLINE 1 */
 
 /* Define to 1 if the compiler supports __builtin_ctz and friends. */
-#define HAVE_BUILTIN_CTZ 1
+/* #define HAVE_BUILTIN_CTZ 1 */
 
 /* Define to 1 if the compiler supports __builtin_expect. */
-#define HAVE_BUILTIN_EXPECT 1
+/* #define HAVE_BUILTIN_EXPECT 1 */
 
 /* Define to 1 if you have a definition for mmap() in <sys/mman.h>. */
 /* #undef HAVE_FUNC_MMAP */

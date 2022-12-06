@@ -7,7 +7,9 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
 config("common_config") {
-  cflags = [ "-Wno-shadow" ]
+  if (is_clang || !is_win) {
+    cflags = [ "-Wno-shadow" ]
+  }
 
   if (is_win) {
     defines = [

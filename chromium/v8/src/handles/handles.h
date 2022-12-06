@@ -14,6 +14,7 @@
 #include "src/common/globals.h"
 #include "src/objects/casting.h"
 #include "src/objects/tagged.h"
+#include "src/objects/objects.h"
 #include "v8-handle-base.h"  // NOLINT(build/include_directory)
 
 #ifdef V8_ENABLE_DIRECT_HANDLE
@@ -37,7 +38,6 @@ class Isolate;
 class LocalHeap;
 class LocalIsolate;
 class TaggedIndex;
-class Object;
 class OrderedHashMap;
 class OrderedHashSet;
 class OrderedNameDictionary;

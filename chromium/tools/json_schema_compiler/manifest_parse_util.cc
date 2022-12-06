@@ -10,6 +10,8 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 
+#include <string>
+
 namespace json_schema_compiler {
 namespace manifest_parse_util {
 
@@ -156,8 +158,13 @@ bool ParseFromDictionary(const base::Value::Dict& dict,
                          std::string& out,
                          std::u16string& error,
                          std::vector<std::string_view>& error_path_reversed) {
-  return ParseHelper(dict, key, base::Value::Type::STRING,
-                     &base::Value::GetString, out, error, error_path_reversed);
+  const base::Value* value =
+      FindKeyOfType(dict, key, base::Value::Type::STRING, error, error_path_reversed);
+  if (!value)
+    return false;
+
+  out = value->GetString();
+  return true;
 }
 
 }  // namespace manifest_parse_util

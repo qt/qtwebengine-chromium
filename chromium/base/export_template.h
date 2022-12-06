@@ -105,6 +105,7 @@
 #define EXPORT_TEMPLATE_STYLE_MATCH_DECLSPEC_dllexport EXPORT_DLLEXPORT
 #define EXPORT_TEMPLATE_STYLE_MATCH_DECLSPEC_dllimport DEFAULT
 
+#if defined(__clang__)
 // Sanity checks.
 //
 // EXPORT_TEMPLATE_TEST uses the same macro invocation pattern as
@@ -143,5 +144,6 @@ EXPORT_TEMPLATE_TEST(DEFAULT, __declspec(dllimport));
 #undef EXPORT_TEMPLATE_TEST
 #undef EXPORT_TEMPLATE_TEST_DEFAULT_DEFAULT
 #undef EXPORT_TEMPLATE_TEST_EXPORT_DLLEXPORT_EXPORT_DLLEXPORT
+#endif
 
 #endif  // BASE_EXPORT_TEMPLATE_H_

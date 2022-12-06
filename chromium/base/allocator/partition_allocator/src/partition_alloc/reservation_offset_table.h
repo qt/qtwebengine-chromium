@@ -181,7 +181,7 @@ PA_ALWAYS_INLINE uintptr_t ComputeReservationStart(uintptr_t address,
 // If the given address doesn't point to direct-map allocated memory,
 // returns 0.
 PA_ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(uintptr_t address) {
-#if PA_BUILDFLAG(DCHECKS_ARE_ON)
+#if PA_BUILDFLAG(DCHECKS_ARE_ON) && !defined(COMPILER_MSVC)
   bool is_in_brp_pool = IsManagedByPartitionAllocBRPPool(address);
   bool is_in_regular_pool = IsManagedByPartitionAllocRegularPool(address);
   bool is_in_configurable_pool =
@@ -202,7 +202,7 @@ PA_ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(uintptr_t address) {
     return 0;
   }
   uintptr_t reservation_start = ComputeReservationStart(address, offset_ptr);
-#if PA_BUILDFLAG(DCHECKS_ARE_ON)
+#if PA_BUILDFLAG(DCHECKS_ARE_ON) && !defined(COMPILER_MSVC)
   // MSVC workaround: the preprocessor seems to choke on an `#if` embedded
   // inside another macro (PA_DCHECK).
 #if !PA_BUILDFLAG(HAS_64_BIT_POINTERS)

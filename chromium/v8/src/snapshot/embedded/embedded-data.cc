@@ -237,8 +237,8 @@ EmbeddedData EmbeddedData::NewFromIsolate(Isolate* isolate) {
   Builtins* builtins = isolate->builtins();
 
   // Store instruction stream lengths and offsets.
-  std::vector<struct LayoutDescription> layout_descriptions(kTableSize);
-  std::vector<struct BuiltinLookupEntry> offset_descriptions(kTableSize);
+  std::vector<struct EmbeddedData::LayoutDescription> layout_descriptions(kTableSize);
+  std::vector<struct EmbeddedData::BuiltinLookupEntry> offset_descriptions(kTableSize);
 
   bool saw_unsafe_builtin = false;
   uint32_t raw_code_size = 0;

@@ -39,6 +39,7 @@ int GetProtectionFromMemoryPermission(PageAllocator::Permission permission) {
     default:
       UNREACHABLE();
   }
+  return -1;
 }
 
 }  // namespace

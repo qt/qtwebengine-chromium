@@ -50,9 +50,11 @@ class WindowsSpellChecker : public PlatformSpellChecker {
       const std::u16string& text,
       spellcheck_platform::TextCheckCompleteCallback callback) override;
 
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   void GetPerLanguageSuggestions(
       const std::u16string& word,
       spellcheck_platform::GetSuggestionsCallback callback);
+#endif
 
   void AddWordForAllLanguages(const std::u16string& word);
 

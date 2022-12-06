@@ -40,7 +40,7 @@ struct IsTraceMethodConst<T, std::void_t<decltype(std::declval<const T>().Trace(
 
 template <typename T, typename = void>
 struct IsTraceable : std::false_type {
-  static_assert(sizeof(T), "T must be fully defined");
+//  static_assert(sizeof(T), "T must be fully defined");
 };
 
 template <typename T>

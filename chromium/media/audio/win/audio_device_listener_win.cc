@@ -35,6 +35,8 @@ static std::string RoleToString(ERole role) {
   }
 }
 
+constexpr base::TimeDelta AudioDeviceListenerWin::kDeviceChangeLimit;
+
 AudioDeviceListenerWin::AudioDeviceListenerWin(
     base::RepeatingClosure listener_cb)
     : listener_cb_(std::move(listener_cb)),

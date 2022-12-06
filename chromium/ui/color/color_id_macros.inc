@@ -26,7 +26,12 @@
 #define E3(enum_name, old_enum_name, enum_value) D2(enum_name, enum_value)
 #define E_CPONLY(...) E(__VA_ARGS__)
 #define GET_E(_1, _2, _3, macro_name, ...) macro_name
+#ifndef __GNUC__
+#define EXPAND_E(x) x
+#define E(...) EXPAND_E(GET_E(__VA_ARGS__, E3, E2, E1)(__VA_ARGS__)),
+#else
 #define E(...) GET_E(__VA_ARGS__, E3, E2, E1)(__VA_ARGS__),
+#endif
 #else  // !defined(COLOR_ID_MACROS_DEFINED)
 #undef D1
 #undef D2
@@ -36,5 +41,8 @@
 #undef E_CPONLY
 #undef GET_E
 #undef E
+#ifndef __GNUC__
+#undef EXPAND_E
+#endif
 #undef COLOR_ID_MACROS_DEFINED
 #endif  // !defined(COLOR_ID_MACROS_DEFINED)

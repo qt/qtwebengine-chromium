@@ -102,7 +102,7 @@ void DelayHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   constexpr unsigned render_quantum_frames_expected = 128;
   CHECK_EQ(render_quantum_frames_, render_quantum_frames_expected);
   DCHECK_LE(frames_to_process, render_quantum_frames_expected);
-  float values[render_quantum_frames_expected];
+  std::vector<float> values(render_quantum_frames_expected);
   delay_time_->CalculateSampleAccurateValues(values, frames_to_process);
 }
 

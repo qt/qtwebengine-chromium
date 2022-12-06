@@ -108,7 +108,11 @@
 
 #if defined(SK_DEBUG)
     #define SkASSERT(cond)            SkASSERT_RELEASE(cond)
+#if defined(_MSC_VER) && !defined(__clang__) //TODO: check if still needed
+    #define SkASSERTF(cond, fmt, ...) SkASSERT_RELEASE(cond)
+#else
     #define SkASSERTF(cond, fmt, ...) SkASSERTF_RELEASE(cond, fmt, ##__VA_ARGS__)
+#endif
     #define SkDEBUGFAIL(message)      SK_ABORT("%s", message)
     #define SkDEBUGFAILF(fmt, ...)    SK_ABORT(fmt, ##__VA_ARGS__)
     #define SkAssertResult(cond)      SkASSERT(cond)

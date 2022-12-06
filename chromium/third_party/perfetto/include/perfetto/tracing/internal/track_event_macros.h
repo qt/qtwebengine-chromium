@@ -116,11 +116,6 @@
   do {                                                                         \
     ::perfetto::internal::ValidateEventNameType<decltype(name)>();             \
     namespace tns = PERFETTO_TRACK_EVENT_NAMESPACE;                            \
-    /* Compute the category index outside the lambda to work around a */       \
-    /* GCC 7 bug */                                                            \
-    constexpr auto PERFETTO_UID(                                               \
-        kCatIndex_ADD_TO_PERFETTO_DEFINE_CATEGORIES_IF_FAILS_) =               \
-        PERFETTO_GET_CATEGORY_INDEX(category);                                 \
     if (::PERFETTO_TRACK_EVENT_NAMESPACE::internal::IsDynamicCategory(         \
             category)) {                                                       \
       tns::TrackEvent::CallIfEnabled(                                          \
@@ -132,12 +127,11 @@
           });                                                                  \
     } else {                                                                   \
       tns::TrackEvent::CallIfCategoryEnabled(                                  \
-          PERFETTO_UID(kCatIndex_ADD_TO_PERFETTO_DEFINE_CATEGORIES_IF_FAILS_), \
+          PERFETTO_GET_CATEGORY_INDEX(category),                               \
           [&](uint32_t instances) PERFETTO_NO_THREAD_SAFETY_ANALYSIS {         \
             tns::TrackEvent::method(                                           \
                 instances,                                                     \
-                PERFETTO_UID(                                                  \
-                    kCatIndex_ADD_TO_PERFETTO_DEFINE_CATEGORIES_IF_FAILS_),    \
+                PERFETTO_GET_CATEGORY_INDEX(category),                         \
                 ::perfetto::internal::DecayEventNameType(name),                \
                 ##__VA_ARGS__);                                                \
           });                                                                  \

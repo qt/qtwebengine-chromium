@@ -21,8 +21,10 @@
 
 namespace webrtc {
 constexpr RtcEvent::Type RtcEventAlrState::kType;
+#if !defined(WEBRTC_WIN)
 constexpr RtcEventDefinition<RtcEventAlrState, LoggedAlrStateEvent, bool>
     RtcEventAlrState::definition_;
+#endif
 
 RtcEventAlrState::RtcEventAlrState(bool in_alr) : in_alr_(in_alr) {}
 
@@ -39,7 +41,11 @@ RtcEventLogParseStatus RtcEventAlrState::Parse(
     absl::string_view s,
     bool batched,
     std::vector<LoggedAlrStateEvent>& output) {
+#if !defined(WEBRTC_WIN)
   return RtcEventAlrState::definition_.ParseBatch(s, batched, output);
+#else
+  return RtcEventLogParseStatus::Success();
+#endif
 }
 
 }  // namespace webrtc

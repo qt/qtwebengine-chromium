@@ -95,7 +95,7 @@ void RegisterWebUIControllerInterfaceBinder(
           return;
         }
 
-        const int size = sizeof...(WebUIControllerSubclasses);
+        constexpr int size = sizeof...(WebUIControllerSubclasses);
         bool is_bound =
             internal::BinderHelper<Interface, size - 1,
                                    std::tuple<WebUIControllerSubclasses...>>::

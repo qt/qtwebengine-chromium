@@ -44,7 +44,7 @@ double EstimateCpuFrequency() {
 }
 
 std::optional<CpuThroughputEstimationResult> EstimateCpuThroughput() {
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && !defined(COMPILER_MSVC)
   TRACE_EVENT0("power", "EstimateCpuThroughput");
 
 #if BUILDFLAG(IS_WIN)

@@ -19,10 +19,12 @@
 
 namespace webrtc {
 
+#if !defined(WEBRTC_WIN)
 constexpr RtcEventDefinition<RtcEventAudioPlayout,
                              LoggedAudioPlayoutEvent,
                              uint32_t>
     RtcEventAudioPlayout::definition_;
+#endif
 
 RtcEventAudioPlayout::RtcEventAudioPlayout(uint32_t ssrc) : ssrc_(ssrc) {}
 

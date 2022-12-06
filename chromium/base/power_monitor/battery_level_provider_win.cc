@@ -4,7 +4,7 @@
 
 #include "base/power_monitor/battery_level_provider.h"
 
-#define INITGUID
+#include <initguid.h>
 #include <windows.h>  // Must be in front of other Windows header files.
 
 #include <devguid.h>

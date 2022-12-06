@@ -30,8 +30,11 @@ DirectFromSellerSignalsSubresource::operator=(
 DirectFromSellerSignalsSubresource&
 DirectFromSellerSignalsSubresource::operator=(
     DirectFromSellerSignalsSubresource&&) = default;
-bool operator==(const DirectFromSellerSignalsSubresource&,
-                const DirectFromSellerSignalsSubresource&) = default;
+bool operator==(const DirectFromSellerSignalsSubresource& a,
+                const DirectFromSellerSignalsSubresource& b) {
+  return std::tie(a.bundle_url, a.token) == std::tie(b.bundle_url, b.token);
+}
+
 
 DirectFromSellerSignals::DirectFromSellerSignals() = default;
 DirectFromSellerSignals::DirectFromSellerSignals(
@@ -44,14 +47,25 @@ DirectFromSellerSignals& DirectFromSellerSignals::operator=(
     const DirectFromSellerSignals&) = default;
 DirectFromSellerSignals& DirectFromSellerSignals::operator=(
     DirectFromSellerSignals&&) = default;
-bool operator==(const DirectFromSellerSignals&,
-                const DirectFromSellerSignals&) = default;
+bool operator==(const DirectFromSellerSignals& a,
+                const DirectFromSellerSignals& b) {
+  return std::tie(a.prefix, a.per_buyer_signals, a.seller_signals,
+                  a.auction_signals) == std::tie(b.prefix, b.per_buyer_signals,
+                                                 b.seller_signals,
+                                                 b.auction_signals);
+}
 
-bool operator==(const AuctionConfig::BuyerTimeouts&,
-                const AuctionConfig::BuyerTimeouts&) = default;
+bool operator==(const AuctionConfig::BuyerTimeouts& a,
+                const AuctionConfig::BuyerTimeouts& b) {
+  return std::tie(a.all_buyers_timeout, a.per_buyer_timeouts) ==
+         std::tie(b.all_buyers_timeout, b.per_buyer_timeouts);
+}
 
-bool operator==(const AuctionConfig::BuyerCurrencies&,
-                const AuctionConfig::BuyerCurrencies&) = default;
+bool operator==(const AuctionConfig::BuyerCurrencies& a,
+                const AuctionConfig::BuyerCurrencies& b) {
+  return std::tie(a.all_buyers_currency, a.per_buyer_currencies) ==
+         std::tie(b.all_buyers_currency, b.per_buyer_currencies);
+}
 
 AuctionConfig::NonSharedParams::NonSharedParams() = default;
 AuctionConfig::NonSharedParams::NonSharedParams(const NonSharedParams&) =
@@ -63,17 +77,47 @@ AuctionConfig::NonSharedParams& AuctionConfig::NonSharedParams::operator=(
     const NonSharedParams&) = default;
 AuctionConfig::NonSharedParams& AuctionConfig::NonSharedParams::operator=(
     NonSharedParams&&) = default;
-bool operator==(const AuctionConfig::NonSharedParams&,
-                const AuctionConfig::NonSharedParams&) = default;
+bool operator==(const AuctionConfig::NonSharedParams& a,
+                const AuctionConfig::NonSharedParams& b) {
+  return std::tie(a.interest_group_buyers, a.auction_signals, a.seller_signals,
+                  a.seller_timeout, a.per_buyer_signals, a.buyer_timeouts,
+                  a.buyer_cumulative_timeouts, a.seller_currency,
+                  a.buyer_currencies, a.per_buyer_group_limits,
+                  a.all_buyers_group_limit, a.per_buyer_priority_signals,
+                  a.all_buyers_priority_signals, a.auction_report_buyer_keys,
+                  a.auction_report_buyers,
+                  a.auction_report_buyer_debug_mode_config, a.requested_size,
+                  a.all_slots_requested_sizes, a.required_seller_capabilities,
+                  a.auction_nonce, a.component_auctions,
+                  a.deprecated_render_url_replacements,
+                  a.max_trusted_scoring_signals_url_length) ==
+         std::tie(b.interest_group_buyers, b.auction_signals, b.seller_signals,
+                  b.seller_timeout, b.per_buyer_signals, b.buyer_timeouts,
+                  b.buyer_cumulative_timeouts, b.seller_currency,
+                  b.buyer_currencies, b.per_buyer_group_limits,
+                  b.all_buyers_group_limit, b.per_buyer_priority_signals,
+                  b.all_buyers_priority_signals, b.auction_report_buyer_keys,
+                  b.auction_report_buyers,
+                  b.auction_report_buyer_debug_mode_config, b.requested_size,
+                  b.all_slots_requested_sizes, b.required_seller_capabilities,
+                  b.auction_nonce, b.component_auctions,
+                  b.deprecated_render_url_replacements,
+                  b.max_trusted_scoring_signals_url_length);
+}
 
 bool operator==(
-    const AuctionConfig::NonSharedParams::AuctionReportBuyersConfig&,
-    const AuctionConfig::NonSharedParams::AuctionReportBuyersConfig&) = default;
+    const AuctionConfig::NonSharedParams::AuctionReportBuyersConfig& a,
+    const AuctionConfig::NonSharedParams::AuctionReportBuyersConfig& b) {
+  return std::tie(a.bucket, a.scale) == std::tie(b.bucket, b.scale);
+}
 
 bool operator==(
-    const AuctionConfig::NonSharedParams::AuctionReportBuyerDebugModeConfig&,
-    const AuctionConfig::NonSharedParams::AuctionReportBuyerDebugModeConfig&) =
-    default;
+    const AuctionConfig::NonSharedParams::AuctionReportBuyerDebugModeConfig& a,
+    const AuctionConfig::NonSharedParams::AuctionReportBuyerDebugModeConfig&
+        b) {
+  return std::tie(a.is_enabled, a.debug_key) ==
+         std::tie(b.is_enabled, b.debug_key);
+}
 
 AuctionConfig::ServerResponseConfig::ServerResponseConfig() = default;
 AuctionConfig::ServerResponseConfig::ServerResponseConfig(
@@ -90,8 +134,11 @@ AuctionConfig::ServerResponseConfig&
 AuctionConfig::ServerResponseConfig::operator=(ServerResponseConfig&&) =
     default;
 
-bool operator==(const AuctionConfig::ServerResponseConfig&,
-                const AuctionConfig::ServerResponseConfig&) = default;
+bool operator==(const AuctionConfig::ServerResponseConfig& a,
+                const AuctionConfig::ServerResponseConfig& b) {
+  return a.request_id == b.request_id
+         && a.got_response == b.got_response;
+}
 
 AuctionConfig::AuctionConfig() = default;
 AuctionConfig::AuctionConfig(const AuctionConfig&) = default;
@@ -101,7 +148,21 @@ AuctionConfig::~AuctionConfig() = default;
 AuctionConfig& AuctionConfig::operator=(const AuctionConfig&) = default;
 AuctionConfig& AuctionConfig::operator=(AuctionConfig&&) = default;
 
-bool operator==(const AuctionConfig&, const AuctionConfig&) = default;
+bool operator==(const AuctionConfig& a, const AuctionConfig& b) {
+  return std::tie(a.seller, a.decision_logic_url, a.trusted_scoring_signals_url,
+                  a.non_shared_params,
+                  a.direct_from_seller_signals,
+                  a.expects_direct_from_seller_signals_header_ad_slot,
+                  a.seller_experiment_group_id, a.all_buyer_experiment_group_id,
+                  a.per_buyer_experiment_group_ids,
+                  a.expects_additional_bids) ==
+         std::tie(b.seller, b.decision_logic_url, b.trusted_scoring_signals_url,
+                  b.non_shared_params,
+                  b.direct_from_seller_signals,
+                  b.expects_direct_from_seller_signals_header_ad_slot,
+                  b.seller_experiment_group_id, b.all_buyer_experiment_group_id,
+                  b.per_buyer_experiment_group_ids, b.expects_additional_bids);
+}
 
 int AuctionConfig::NumPromises() const {
   int total = 0;

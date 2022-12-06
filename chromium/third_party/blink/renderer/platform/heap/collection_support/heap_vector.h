@@ -27,6 +27,9 @@ class HeapVector final : public GarbageCollected<HeapVector<T, inlineCapacity>>,
  public:
   HeapVector() = default;
 
+  void operator delete(void* p) { delete
+                                  (Vector<T, inlineCapacity, HeapAllocator>*)p; }
+
   explicit HeapVector(wtf_size_t size) : BaseVector(size) {}
 
   HeapVector(wtf_size_t size, const T& val) : BaseVector(size, val) {}
@@ -105,7 +108,9 @@ class HeapVector final : public GarbageCollected<HeapVector<T, inlineCapacity>>,
     constexpr TypeConstraints();
   };
   static_assert(std::is_empty_v<TypeConstraints>);
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 template <typename T>

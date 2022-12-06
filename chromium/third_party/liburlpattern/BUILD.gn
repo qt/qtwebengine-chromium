@@ -6,7 +6,9 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
 config("warnings") {
-  cflags = [ "-Wno-shadow" ]
+  if(is_clang || !is_win) {
+    cflags = [ "-Wno-shadow" ]
+  }
 }
 
 component("liburlpattern") {

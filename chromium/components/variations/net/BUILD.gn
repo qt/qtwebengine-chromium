@@ -42,6 +42,11 @@ static_library("net") {
       "//third_party/blink/public/common",
     ]
   }
+  if (is_qtwebengine) {
+    deps -= [
+      "//components/variations/field_trial_config",
+    ]
+  }
 }
 
 component("omnibox_http_headers") {
