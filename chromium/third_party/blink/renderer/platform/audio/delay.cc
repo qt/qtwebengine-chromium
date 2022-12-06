@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/platform/audio/delay.h"
 
 #include <cmath>
+#include <tuple>
 
 #include "base/notreached.h"
 #include "build/build_config.h"

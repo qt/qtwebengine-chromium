@@ -33,6 +33,9 @@ class BasicHeapVector final
  public:
   BasicHeapVector() = default;
 
+  void operator delete(void* p) { delete
+                                  (Vector<T, inlineCapacity, HeapAllocator>*)p; }
+
   explicit BasicHeapVector(wtf_size_t size) : BaseVector(size) {}
 
   BasicHeapVector(wtf_size_t size, const T& val) : BaseVector(size, val) {}
@@ -145,7 +148,9 @@ class BasicHeapVector final
         : public std::true_type {};
   };
   static_assert(std::is_empty_v<TypeConstraints>);
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 template <internal::HeapCollectionType CollectionType,

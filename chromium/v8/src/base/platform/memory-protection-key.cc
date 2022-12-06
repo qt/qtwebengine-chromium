@@ -41,6 +41,7 @@ int GetProtectionFromMemoryPermission(PagePermissions permission) {
     default:
       UNREACHABLE();
   }
+  return -1;
 }
 
 }  // namespace

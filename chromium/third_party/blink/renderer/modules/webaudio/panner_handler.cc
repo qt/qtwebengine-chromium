@@ -231,15 +231,15 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
   CHECK_EQ(render_quantum_frames, render_quantum_frames_expected);
   CHECK_LE(frames_to_process, render_quantum_frames_expected);
 
-  float panner_x[render_quantum_frames_expected];
-  float panner_y[render_quantum_frames_expected];
-  float panner_z[render_quantum_frames_expected];
-  float orientation_x[render_quantum_frames_expected];
-  float orientation_y[render_quantum_frames_expected];
-  float orientation_z[render_quantum_frames_expected];
+  std::array<float, render_quantum_frames_expected> panner_x;
+  std::array<float, render_quantum_frames_expected> panner_y;
+  std::array<float, render_quantum_frames_expected> panner_z;
+  std::array<float, render_quantum_frames_expected> orientation_x;
+  std::array<float, render_quantum_frames_expected> orientation_y;
+  std::array<float, render_quantum_frames_expected> orientation_z;
   std::array<double, render_quantum_frames_expected> azimuth;
   std::array<double, render_quantum_frames_expected> elevation;
-  float total_gain[render_quantum_frames_expected];
+  std::array<float, render_quantum_frames_expected> total_gain;
 
   position_x_->CalculateSampleAccurateValues(
       base::span(panner_x).first(frames_to_process));
@@ -301,7 +301,7 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
   panner_->PanWithSampleAccurateValues(azimuth, elevation, source, destination,
                                        frames_to_process,
                                        InternalChannelInterpretation());
-  destination->CopyWithSampleAccurateGainValuesFrom(*destination, total_gain,
+  destination->CopyWithSampleAccurateGainValuesFrom(*destination, total_gain.data(),
                                                     frames_to_process);
 }
 
@@ -312,7 +312,7 @@ void PannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   constexpr unsigned render_quantum_frames_expected = 128;
   CHECK_EQ(GetDeferredTaskHandler().RenderQuantumFrames(),
            render_quantum_frames_expected);
-  float values[render_quantum_frames_expected];
+  std::vector<float> values(render_quantum_frames_expected);
 
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 

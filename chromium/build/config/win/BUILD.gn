@@ -84,6 +84,16 @@ config("compiler") {
   # modes.
   cflags_c = [ "/TC" ]
 
+  cflags_cc = [ "/TP" ]
+# FIXME check if needed
+#  if (is_msvc && !is_clang) {
+#    cflags += [
+#      "/Zc:preprocessor",
+#      "/wd5105",
+#      "/Zc:__cplusplus",
+#    ]
+#  }
+
   if (is_clang) {
     # Required to make the 19041 SDK compatible with clang-cl.
     # See https://crbug.com/1089996 issue #2 for details.
@@ -160,7 +170,7 @@ config("compiler") {
     ldflags += [ "/TIMESTAMP:" + build_timestamp ]
 
     # Don't look for libpaths in %LIB%, similar to /X in cflags above.
-    ldflags += [ "/lldignoreenv" ]
+#    ldflags += [ "/lldignoreenv" ]
   }
 
   # Some binaries create PDBs larger than 4 GiB. Increasing the PDB page size

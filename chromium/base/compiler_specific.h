@@ -7,9 +7,9 @@
 
 #include "build/build_config.h"
 
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+// #if defined(COMPILER_MSVC) && !defined(__clang__)
+// #error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+// #endif
 
 // A wrapper around `__has_attribute()`, which is similar to the C++20-standard
 // `__has_cpp_attribute()`, but tests for support for `__attribute__(())`s.
@@ -918,8 +918,12 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
 //   // from earlier calls, assuming the args match.
 //   CONST_FUNCTION int Func(int);
 // ```
+#if !defined(COMPILER_MSVC) || defined(__clang__) // MSVC has no concept of gnu::const, and throws a compiler error
 #if __has_cpp_attribute(gnu::const)
 #define CONST_FUNCTION [[gnu::const]]
+#else
+#define CONST_FUNCTION
+#endif
 #else
 #define CONST_FUNCTION
 #endif

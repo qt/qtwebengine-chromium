@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/platform/graphics/canvas_hibernation_handler.h"
 
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/memory/post_delayed_memory_reduction_task.h"
 #include "base/strings/stringprintf.h"
@@ -235,7 +236,7 @@ CanvasHibernationHandler::GetMainThreadTaskRunner() const {
 
 void CanvasHibernationHandler::Encode(
     std::unique_ptr<CanvasHibernationHandler::BackgroundTaskParams> params) {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   // Using thread time, since this is a BEST_EFFORT task, which may be
   // descheduled.
   base::ElapsedThreadTimer thread_timer;
@@ -303,7 +304,7 @@ void CanvasHibernationHandler::Encode(
 }
 
 sk_sp<SkImage> CanvasHibernationHandler::GetImage() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCheckInvariant();
   if (image_) {
     return image_;
@@ -398,7 +399,7 @@ void CanvasHibernationHandler::HibernateOrLogFailure(
 }
 
 void CanvasHibernationHandler::Hibernate() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCHECK(!IsHibernating());
   DCHECK(hibernation_scheduled_);
 

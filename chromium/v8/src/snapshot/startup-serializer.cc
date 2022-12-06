@@ -224,7 +224,21 @@ void SerializedHandleChecker::VisitRootPointers(Root root,
                                                 FullObjectSlot start,
                                                 FullObjectSlot end) {
   for (FullObjectSlot p = start; p < end; ++p) {
+#if defined(V8_CC_MSVC)
+    bool found = false;
+    for (const auto& obj : serialized_) {
+      if (obj == *p) {
+        found = true;
+        break;
+      }
+    }
+
+    if (found)
+      continue;
+#else
     if (serialized_.find(*p) != serialized_.end()) continue;
+#endif
+
     PrintF("%s handle not serialized: ",
            root == Root::kGlobalHandles ? "global" : "eternal");
     Print(*p);

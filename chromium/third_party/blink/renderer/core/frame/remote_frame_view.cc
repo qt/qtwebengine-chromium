@@ -113,7 +113,7 @@ bool RemoteFrameView::UpdateViewportIntersectionsForSubtree(
 
 void RemoteFrameView::SetViewportIntersection(
     const mojom::blink::ViewportIntersectionState& intersection_state) {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   mojom::blink::ViewportIntersectionState new_state(intersection_state);
   new_state.compositor_visible_rect = compositing_rect_;
 

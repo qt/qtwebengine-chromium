@@ -176,6 +176,7 @@ EmulatedVirtualAddressSubspace::AllocateSubspace(
     PagePermissions max_page_permissions,
     std::optional<MemoryProtectionKeyId> key) {
   UNIMPLEMENTED();
+  return nullptr;
 }
 
 bool EmulatedVirtualAddressSubspace::RecommitPages(

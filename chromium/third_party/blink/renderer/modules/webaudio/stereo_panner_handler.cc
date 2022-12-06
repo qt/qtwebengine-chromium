@@ -99,7 +99,7 @@ void StereoPannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
   CHECK_EQ(GetDeferredTaskHandler().RenderQuantumFrames(),
            render_quantum_frames_expected);
 
-  float values[render_quantum_frames_expected];
+  std::vector<float> values(render_quantum_frames_expected);
   DCHECK_LE(frames_to_process, render_quantum_frames_expected);
 
   pan_->CalculateSampleAccurateValues(

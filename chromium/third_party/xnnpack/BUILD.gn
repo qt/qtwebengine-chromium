@@ -39,10 +39,12 @@ config("xnnpack_public_config") {
 }
 
 config("xnnpack_private_config") {
-  cflags = [
-    "-Wno-unused-function",
-    "-Wno-deprecated-comma-subscript",
-  ]
+  if (is_clang || !is_win) {
+    cflags = [
+      "-Wno-unused-function",
+      "-Wno-deprecated-comma-subscript",
+    ]
+  }
 }
 
 if (current_cpu == "x64" || current_cpu == "x86") {

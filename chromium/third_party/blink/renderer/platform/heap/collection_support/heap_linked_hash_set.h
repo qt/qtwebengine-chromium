@@ -47,7 +47,9 @@ class BasicHeapLinkedHashSet final
                     "instead of BasicHeapLinkedHashSet<>.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 // On-stack for in-field version of WTF::LinkedHashSet for referring to

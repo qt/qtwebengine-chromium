@@ -199,7 +199,9 @@ component("config") {
   }
   if (is_win) {
     sources += [ "gpu_info_collector_win.cc" ]
-    deps += [ "//third_party/microsoft_dxheaders:dxguids" ]
+    if (!is_qtwebengine) {
+      deps += [ "//third_party/microsoft_dxheaders:dxguids" ]
+    }
     libs = [ "dxgi.lib" ]
   }
   if (is_mac) {

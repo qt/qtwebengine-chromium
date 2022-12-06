@@ -325,7 +325,7 @@ struct NativeValueTraits<IDLByteStringBase<mode>>
       v8::Isolate* isolate,
       v8::Local<v8::Value> value,
       ExceptionState& exception_state) {
-    if (value->IsString() and value.As<v8::String>()->ContainsOnlyOneByte()) {
+    if (value->IsString() && value.As<v8::String>()->ContainsOnlyOneByte()) {
       return bindings::NativeValueTraitsStringAdapter(isolate,
                                                       value.As<v8::String>());
     }

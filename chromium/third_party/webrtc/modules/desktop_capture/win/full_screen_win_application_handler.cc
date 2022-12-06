@@ -257,6 +257,8 @@ bool FullScreenPowerPointHandler::IsSlideShowWindow(HWND window) const {
          IsFullScreenWindow(window);
 }
 
+constexpr char FullScreenPowerPointHandler::kDocumentTitleSeparator[];
+
 class OpenOfficeApplicationHandler : public FullScreenApplicationHandler {
  public:
   explicit OpenOfficeApplicationHandler(DesktopCapturer::SourceId sourceId)

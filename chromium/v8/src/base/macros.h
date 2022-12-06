@@ -589,4 +589,10 @@ bool is_inbounds(float_t v) {
 #define FRIEND_TEST(test_case_name, test_name)
 #endif
 
+#if !defined(_MSC_VER) || defined(__clang__)
+#define ATTRIBUTE_V8_TLS_MODEL __attribute__((tls_model(V8_TLS_MODEL)))
+#else
+#define ATTRIBUTE_V8_TLS_MODEL
+#endif
+
 #endif  // V8_BASE_MACROS_H_

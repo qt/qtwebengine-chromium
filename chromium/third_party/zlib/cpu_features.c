@@ -66,7 +66,19 @@ int ZLIB_INTERNAL riscv_cpu_enable_vclmul = 0;
 static void _cpu_check_features(void);
 #endif
 
-#if defined(ARMV8_OS_ANDROID) || defined(ARMV8_OS_LINUX) || \
+#if defined(ARMV8_OS_WINDOWS) || defined(X86_WINDOWS)
+static INIT_ONCE cpu_check_inited_once = INIT_ONCE_STATIC_INIT;
+static BOOL CALLBACK _cpu_check_features_forwarder(PINIT_ONCE once, PVOID param, PVOID* context)
+{
+    _cpu_check_features();
+    return TRUE;
+}
+void ZLIB_INTERNAL cpu_check_features(void)
+{
+    InitOnceExecuteOnce(&cpu_check_inited_once, _cpu_check_features_forwarder,
+                        NULL, NULL);
+}
+#elif defined(ARMV8_OS_ANDROID) || defined(ARMV8_OS_LINUX) || \
     defined(ARMV8_OS_MACOS) || defined(ARMV8_OS_FUCHSIA) || \
     defined(X86_NOT_WINDOWS) || defined(ARMV8_OS_IOS) || \
     defined(RISCV_RVV)
@@ -82,18 +94,6 @@ void ZLIB_INTERNAL cpu_check_features(void)
 #if !defined(ARMV8_OS_MACOS)
     pthread_once(&cpu_check_inited_once, _cpu_check_features);
 #endif
-}
-#elif defined(ARMV8_OS_WINDOWS) || defined(X86_WINDOWS)
-static INIT_ONCE cpu_check_inited_once = INIT_ONCE_STATIC_INIT;
-static BOOL CALLBACK _cpu_check_features_forwarder(PINIT_ONCE once, PVOID param, PVOID* context)
-{
-    _cpu_check_features();
-    return TRUE;
-}
-void ZLIB_INTERNAL cpu_check_features(void)
-{
-    InitOnceExecuteOnce(&cpu_check_inited_once, _cpu_check_features_forwarder,
-                        NULL, NULL);
 }
 #endif
 

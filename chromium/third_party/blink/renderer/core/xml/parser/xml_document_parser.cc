@@ -1047,10 +1047,12 @@ void XMLDocumentParser::StartElementNs(
 
   v8::Isolate* isolate = document_->GetAgent().isolate();
   v8::TryCatch try_catch(isolate);
-  if (!HandleElementAttributes(prefixed_attributes, attributes,
+  if (parsing_fragment_ ? !HandleElementAttributes(prefixed_attributes, attributes,
                                prefix_to_namespace_map_,
-                               parsing_fragment_ ? PassThroughException(isolate)
-                                                 : IGNORE_EXCEPTION)) {
+                               PassThroughException(isolate))
+                        : !HandleElementAttributes(prefixed_attributes, attributes,
+                               prefix_to_namespace_map_,
+                               IGNORE_EXCEPTION)) {
     StopParsing();
     if (parsing_fragment_) {
       DCHECK(try_catch.HasCaught());
