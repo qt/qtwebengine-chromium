@@ -118,9 +118,10 @@ source_set("buildflag_macro") {
   public_configs = [ ":public_includes" ]
 }
 
-stack_scan_supported = current_cpu == "x64" || current_cpu == "x86" ||
-                       current_cpu == "arm" || current_cpu == "arm64" ||
-                       current_cpu == "riscv64" || current_cpu == "loong64"
+stack_scan_supported = (current_cpu == "x64" || current_cpu == "x86" ||
+                        current_cpu == "arm" || current_cpu == "arm64" ||
+                        current_cpu == "riscv64" || current_cpu == "loong64") &&
+                       (is_clang || !is_win)
 
 # When developers are repeatedly growing a buffer with `realloc`, they are
 # expected to request a new size that is larger than the current size by

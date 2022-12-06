@@ -274,7 +274,7 @@ void ClientResourceProvider::PrepareSendToParent(
 
 void ClientResourceProvider::ReceiveReturnsFromParent(
     std::vector<ReturnedResource> resources) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   std::vector<base::OnceClosure> impl_release_callbacks;

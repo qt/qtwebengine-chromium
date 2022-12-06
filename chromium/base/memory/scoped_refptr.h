@@ -359,13 +359,16 @@ class TRIVIAL_ABI scoped_refptr {
     return H::combine(std::move(h), p.ptr_);
   }
 
- protected:
   // RAW_PTR_EXCLUSION: scoped_refptr<> has its own UaF prevention
   // mechanism. Given how widespread it is, raw_ptr would likely
   // introduce a perf regression for no additional security benefit.
   RAW_PTR_EXCLUSION T* ptr_ = nullptr;
 
+#if (defined(__GNUC__) && __GNUC__ < 13) || defined(COMPILER_MSVC)
+ public:
+#else
  private:
+#endif
   template <typename U>
   friend scoped_refptr<U> base::AdoptRef(U*);
   friend class ::base::SequencedTaskRunner;

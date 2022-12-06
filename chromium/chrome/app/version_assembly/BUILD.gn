@@ -25,14 +25,14 @@ windows_manifest("chrome_exe_manifest") {
     as_invoker_manifest,
     common_controls_manifest,
     default_compatibility_manifest,
-    version_assembly_output_file,
+#    version_assembly_output_file,
   ]
 
   if (enable_segment_heap) {
     sources += [ segment_heap_manifest ]
   }
 
-  public_deps = [ ":chrome_exe_version_manifest" ]
+#  public_deps = [ ":chrome_exe_version_manifest" ]
 }
 
 # Generates the manifest for the version assembly, which is the versioned

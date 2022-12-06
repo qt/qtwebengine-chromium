@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -358,6 +359,7 @@ class small_vector {
     union BackingStore {
         BackingStore() {}
         ~BackingStore() {}
+        BackingStore(const BackingStore& other) noexcept { ::memcpy(data, other.data, sizeof(value_type)); }
 
         uint8_t data[sizeof(value_type)];
         value_type object;

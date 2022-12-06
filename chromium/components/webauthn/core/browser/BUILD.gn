@@ -38,7 +38,7 @@ source_set("browser") {
     ]
   }
 
-  if (!is_android) {
+  if (!is_android && !is_qtwebengine) {
     sources += [
       "passkey_change_quota_tracker.cc",
       "passkey_change_quota_tracker.h",

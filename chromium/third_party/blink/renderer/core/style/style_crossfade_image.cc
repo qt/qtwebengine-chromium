@@ -307,7 +307,12 @@ HeapVector<float> StyleCrossfadeImage::ComputeWeights(
       continue;
     }
     if (percentage == nullptr) {
+#if !defined(COMPILER_MSVC)
       result.push_back(0.0 / 0.0);  // NaN.
+#else
+      char input;
+      result.push_back(nan(&input));  // NaN.
+#endif
       ++num_missing;
     } else {
       result.push_back(percentage->ComputeNumber(length_resolver));

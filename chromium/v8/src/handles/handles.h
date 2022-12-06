@@ -16,6 +16,7 @@
 #include "src/common/globals.h"
 #include "src/objects/casting.h"
 #include "src/objects/tagged.h"
+#include "src/objects/objects.h"
 
 #ifdef V8_ENABLE_DIRECT_HANDLE
 #include "src/flags/flags.h"
@@ -38,7 +39,6 @@ class Isolate;
 class LocalHeap;
 class LocalIsolate;
 class TaggedIndex;
-class Object;
 class OrderedHashMap;
 class OrderedHashSet;
 class OrderedNameDictionary;

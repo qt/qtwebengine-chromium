@@ -791,13 +791,13 @@ class GSL_POINTER span {
   template <typename OtherElementType,
             size_t OtherExtent,
             typename OtherInternalPtrType>
-    requires((OtherExtent == dynamic_extent || extent == OtherExtent) &&
+    requires((OtherExtent == dynamic_extent || Extent == OtherExtent) &&
              std::equality_comparable_with<const element_type,
                                            const OtherElementType>)
   friend constexpr bool operator==(
       span lhs,
       span<OtherElementType, OtherExtent, OtherInternalPtrType> rhs) {
-    return std::ranges::equal(span<const element_type, extent>(lhs),
+    return std::ranges::equal(span<const element_type, Extent>(lhs),
                               span<const OtherElementType, OtherExtent>(rhs));
   }
 
@@ -826,7 +826,7 @@ class GSL_POINTER span {
   template <typename OtherElementType,
             size_t OtherExtent,
             typename OtherInternalPtrType>
-    requires((OtherExtent == dynamic_extent || extent == OtherExtent) &&
+    requires((OtherExtent == dynamic_extent || Extent == OtherExtent) &&
              std::three_way_comparable_with<const element_type,
                                             const OtherElementType>)
   friend constexpr auto operator<=>(
@@ -848,13 +848,13 @@ class GSL_POINTER span {
   // would leave the gcc build broken. The consequence of not upgrading this is
   // that some errors will only be detected at runtime instead of compile time.
   constexpr reference operator[](size_type idx) const
-    requires(extent > 0)
+    requires(Extent > 0)
   {
     return at(idx);
   }
   // When `idx` is outside the span, the underlying call will `CHECK()`.
   constexpr reference at(StrictNumeric<size_type> idx) const
-    requires(extent > 0)
+    requires(Extent > 0)
   {
     return *get_at(idx);
   }
@@ -863,7 +863,7 @@ class GSL_POINTER span {
   //
   // (Not in `std::`; necessary when underlying memory is not yet initialized.)
   constexpr pointer get_at(StrictNumeric<size_type> idx) const
-    requires(extent > 0)
+    requires(Extent > 0)
   {
     CHECK(size_type{idx} < extent);
     // SAFETY: `data()` points to at least `extent` elements, so `idx` must be
@@ -874,13 +874,13 @@ class GSL_POINTER span {
   // Reference to first/last elements.
   // When `empty()`, the underlying call will `CHECK()`.
   constexpr reference front() const
-    requires(extent > 0)
+    requires(Extent > 0)
   {
     return operator[](0);
   }
   // When `empty()`, the underlying call will `CHECK()`.
   constexpr reference back() const
-    requires(extent > 0)
+    requires(Extent > 0)
   {
     return operator[](size() - 1);
   }
@@ -957,7 +957,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       : data_(first), size_(count) {
     // Non-zero `count` implies non-null `data_`. Use `SpanOrSize<T>` to
     // represent a size that might not be accompanied by the actual data.
-    DCHECK(count == 0 || !!data_);
+    // DCHECK(count == 0 || !!data_);
   }
 
   // Iterator + sentinel.

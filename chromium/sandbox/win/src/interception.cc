@@ -414,7 +414,7 @@ InterceptionManager::PatchClientFunctions(DllInterceptionData* thunks,
   ServiceResolverThunk thunk(child_->Process(), /*relaxed=*/true);
 
   patch.originals = {};
-  for (const auto& interception : interceptions_) {
+  for (auto& interception : interceptions_) {
     if (interception.dll != kNtdllName) {
       return base::unexpected(SBOX_ERROR_BAD_PARAMS);
     }
@@ -431,7 +431,7 @@ InterceptionManager::PatchClientFunctions(DllInterceptionData* thunks,
           reinterpret_cast<const void**>(&address));
       if (!NT_SUCCESS(ret)) {
         ::SetLastError(GetLastErrorFromNtStatus(ret));
-        return SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK;
+        return base::unexpected(SBOX_ERROR_CANNOT_RESOLVE_INTERCEPTION_THUNK);
       }
 
       // Translate the local address to an address on the child.

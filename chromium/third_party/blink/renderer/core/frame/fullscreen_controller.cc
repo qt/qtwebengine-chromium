@@ -132,7 +132,7 @@ FullscreenController::FullscreenController(WebViewImpl* web_view_base)
       pending_frames_(MakeGarbageCollected<PendingFullscreenSet>()) {}
 
 void FullscreenController::DidEnterFullscreen() {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   // |Browser::EnterFullscreenModeForTab()| can enter fullscreen without going
   // through |Fullscreen::RequestFullscreen()|, in which case there will be no
   // fullscreen element. Do nothing.
@@ -158,7 +158,7 @@ void FullscreenController::DidEnterFullscreen() {
 }
 
 void FullscreenController::DidExitFullscreen() {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   // The browser process can exit fullscreen at any time, e.g. if the user
   // presses Esc. After |Browser::EnterFullscreenModeForTab()|,
   // |Browser::ExitFullscreenModeForTab()| will make it seem like we exit when
@@ -195,7 +195,7 @@ void FullscreenController::DidExitFullscreen() {
 void FullscreenController::EnterFullscreen(LocalFrame& frame,
                                            const FullscreenOptions* options,
                                            FullscreenRequestType request_type) {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   const auto& screen_info = frame.GetChromeClient().GetScreenInfo(frame);
 
   const bool requesting_other_screen =
@@ -269,7 +269,7 @@ void FullscreenController::EnterFullscreen(LocalFrame& frame,
 }
 
 void FullscreenController::ExitFullscreen(LocalFrame& frame) {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   // If not in fullscreen, ignore any attempt to exit. In particular, when
   // entering fullscreen, allow the transition into fullscreen to complete. Note
   // that the browser process is ultimately in control and can still exit
@@ -287,7 +287,7 @@ void FullscreenController::FullscreenElementChanged(
     Element* new_element,
     const FullscreenOptions* options,
     FullscreenRequestType request_type) {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   DCHECK_NE(old_element, new_element);
 
   // We only override the WebView's background color for overlay fullscreen

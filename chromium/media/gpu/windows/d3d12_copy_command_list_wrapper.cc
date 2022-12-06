@@ -4,6 +4,8 @@
 
 #include "media/gpu/windows/d3d12_copy_command_list_wrapper.h"
 
+#include <d3d12.h>
+
 namespace media {
 
 // static

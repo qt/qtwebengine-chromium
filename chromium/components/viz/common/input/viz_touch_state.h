@@ -27,4 +27,8 @@ struct VIZ_COMMON_EXPORT VizTouchState {
 
 }  // namespace viz
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(viz::VizTouchState)
+#endif
+
 #endif  // COMPONENTS_VIZ_COMMON_INPUT_VIZ_TOUCH_STATE_H_

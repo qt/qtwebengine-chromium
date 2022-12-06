@@ -25,6 +25,13 @@ struct VersionState {
   std::atomic<VersionType> version;
   std::atomic<CountType> committed_writes_count;
 };
+}  // namespace mojo
+
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(mojo::VersionState)
+#endif
+
+namespace mojo {
 
 // This file contains classes to share a version between processes through
 // shared memory. A version is a nonzero monotonically increasing integer. A

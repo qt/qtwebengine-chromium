@@ -63,7 +63,7 @@ class ZstdSourceStream : public FilterSourceStream {
     // memory.
     max_expected_allocation_ = (1 << window_log_max) * 11 / 10;
 
-    ZSTD_customMem custom_mem = {&customMalloc, &customFree, this};
+    ZSTD_customMem custom_mem = {&customMalloc_s, &customFree_s, this};
     dctx_.reset(ZSTD_createDCtx_advanced(custom_mem));
     CHECK(dctx_);
 
@@ -113,7 +113,7 @@ class ZstdSourceStream : public FilterSourceStream {
     base::debug::DumpWithoutCrashing();
   }
 
-  static void* customMalloc(void* opaque, size_t size) {
+  static void* customMalloc_s(void* opaque, size_t size) {
     return reinterpret_cast<ZstdSourceStream*>(opaque)->customMalloc(size);
   }
 
@@ -134,7 +134,7 @@ class ZstdSourceStream : public FilterSourceStream {
     return address;
   }
 
-  static void customFree(void* opaque, void* address) {
+  static void customFree_s(void* opaque, void* address) {
     return reinterpret_cast<ZstdSourceStream*>(opaque)->customFree(address);
   }
 

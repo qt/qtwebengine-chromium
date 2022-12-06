@@ -66,7 +66,6 @@ HoverType GetPrimaryHoverType() {
 }
 #endif
 
-#if !BUILDFLAG(IS_WIN)
 std::optional<PointerDevice> GetPointerDevice(PointerDevice::Key key) {
   return std::nullopt;
 }
@@ -74,6 +73,5 @@ std::optional<PointerDevice> GetPointerDevice(PointerDevice::Key key) {
 std::vector<PointerDevice> GetPointerDevices() {
   return {};
 }
-#endif
 
 }  // namespace ui

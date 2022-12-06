@@ -66,9 +66,17 @@ std::tuple<int, double> OscillatorHandler::ProcessKRateVector(
   const float32x4_t v_incr = vdupq_n_f32(4 * incr);
 
   float virtual_read_index_flt = virtual_read_index;
+#if defined(_MSC_VER) && !defined(__clang__)
+  float32x4_t v_virt_index;
+  vsetq_lane_f32(virtual_read_index_flt + 0 * incr, v_virt_index, 0);
+  vsetq_lane_f32(virtual_read_index_flt + 1 * incr, v_virt_index, 1);
+  vsetq_lane_f32(virtual_read_index_flt + 2 * incr, v_virt_index, 2);
+  vsetq_lane_f32(virtual_read_index_flt + 3 * incr, v_virt_index, 3);
+#else
   float32x4_t v_virt_index = {
       virtual_read_index_flt + 0 * incr, virtual_read_index_flt + 1 * incr,
       virtual_read_index_flt + 2 * incr, virtual_read_index_flt + 3 * incr};
+#endif
 
   // Temporary arrsys to hold the read indices so we can access them
   // individually to get the samples needed for interpolation.
@@ -185,10 +193,18 @@ double OscillatorHandler::ProcessARateVectorKernel(
   const float32x4_t v_wave_size = vdupq_n_f32(periodic_wave_size);
   const float32x4_t v_inv_wave_size = vdupq_n_f32(inv_periodic_wave_size);
 
+#if defined(_MSC_VER) && !defined(__clang__)
+  float32x4_t v_virt_index;
+  vsetq_lane_f32(virt_index[0], v_virt_index, 0);
+  vsetq_lane_f32(virt_index[1], v_virt_index, 1);
+  vsetq_lane_f32(virt_index[2], v_virt_index, 2);
+  vsetq_lane_f32(virt_index[3], v_virt_index, 3);
+#else
   // The virtual indices we're working with now.
   float32x4_t v_virt_index = {
       static_cast<float>(virt_index[0]), static_cast<float>(virt_index[1]),
       static_cast<float>(virt_index[2]), static_cast<float>(virt_index[3])};
+#endif
 
   // It's possible that casting from double to float caused the index to
   // be equal to periodic_wave_size, so wrap them if needed.

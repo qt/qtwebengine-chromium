@@ -68,4 +68,17 @@ using SharedAtomic = std::atomic<T>;
 
 }  // namespace base::subtle
 
+// This macro is used to compile buffer class when it contains std::atomic
+// which is non-trivially-copyable class on msvc. Note that, std::atomic<X>
+// cannot be instantiated if X is non-trivially-copyable.
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+#define SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(X) \
+  namespace base::subtle {                     \
+  template <>                                  \
+  struct SharedMemorySafetyChecker<X> {        \
+    static constexpr bool kIsAllowed = true;   \
+  };                                           \
+  }  // namespace base::subtle
+#endif  // defined(COMPILER_MSVC) && !defined(__clang__)
+
 #endif  // BASE_MEMORY_SHARED_MEMORY_SAFETY_CHECKER_H_

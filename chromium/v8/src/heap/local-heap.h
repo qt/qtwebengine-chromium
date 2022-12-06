@@ -35,7 +35,7 @@ class Safepoint;
 
 // Do not use this variable directly, use LocalHeap::Current() instead.
 // Defined outside of LocalHeap because LocalHeap uses V8_EXPORT_PRIVATE.
-__attribute__((tls_model(V8_TLS_MODEL))) extern thread_local LocalHeap*
+ATTRIBUTE_V8_TLS_MODEL extern thread_local LocalHeap*
     g_current_local_heap_ V8_CONSTINIT;
 
 // LocalHeap is used by the GC to track all threads with heap access in order to

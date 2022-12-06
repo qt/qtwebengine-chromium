@@ -148,10 +148,10 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
     return &shared_space_allocator_.value();
   }
 
-  bool RetryCustomAllocate(CustomAllocationFunction allocate,
+  bool RetryCustomAllocate(v8::base::FunctionRef<bool(void)> allocate,
                            AllocationType allocation,
                            GarbageCollectionReason gc_reason);
-  void RetryCustomAllocateOrFail(CustomAllocationFunction allocate,
+  void RetryCustomAllocateOrFail(v8::base::FunctionRef<bool(void)> allocate,
                                  AllocationType allocation,
                                  GarbageCollectionReason gc_reason);
 

@@ -12,9 +12,9 @@
 
 #include "build/build_config.h"
 
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
-#endif
+//#if defined(COMPILER_MSVC) && !defined(__clang__)
+//#error "Only clang-cl is supported on Windows, see https://crbug.com/988071"
+//#endif
 
 #if defined(__has_attribute)
 #define HAS_ATTRIBUTE(x) __has_attribute(x)

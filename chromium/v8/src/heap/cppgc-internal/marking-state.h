@@ -365,7 +365,7 @@ class MutatorMarkingState final : public BasicMarkingState {
   ~MutatorMarkingState() override = default;
 
   inline bool MarkNoPush(HeapObjectHeader& header) {
-    return MutatorMarkingState::BasicMarkingState::MarkNoPush(header);
+    return BasicMarkingState::MarkNoPush(header);
   }
 
   inline void ReTraceMarkedWeakContainer(cppgc::Visitor&, HeapObjectHeader&);

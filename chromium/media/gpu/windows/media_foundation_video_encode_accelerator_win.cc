@@ -14,6 +14,7 @@
 #include <wrl/implements.h>
 
 #include <algorithm>
+#include <bitset>
 #include <iterator>
 #include <memory>
 #include <utility>

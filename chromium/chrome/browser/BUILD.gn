@@ -4103,7 +4103,7 @@ source_set("browser") {
     ]
   }
 
-  if (is_win) {
+  if (is_win && toolkit_views) {
     public_deps += [
       "//chrome/browser/win",
       "//chrome/browser/win:jumplist",

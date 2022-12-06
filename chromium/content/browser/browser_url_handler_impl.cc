@@ -180,6 +180,7 @@ void BrowserURLHandlerImpl::RemoveHandlerForTesting(URLHandler handler) {
   auto it = url_handlers_.begin();
   for (; it != url_handlers_.end(); ++it) {
     if (it->first == handler) {
+      CHECK(url_handlers_.end() != it);
       url_handlers_.erase(it);
       return;
     }

@@ -11,6 +11,7 @@ config("cpuinfo_include") {
 }
 
 config("cpuinfo_config") {
+  if (is_clang || !is_win) {
   cflags = [
     # For chipset.c and utils.h.
     "-Wno-implicit-function-declaration",
@@ -27,6 +28,7 @@ config("cpuinfo_config") {
     # A lot of locations.
     "-Wno-unused-function",
   ]
+  }
 
   if (is_linux && is_component_build) {
     # Export all symbols when building as a shared library so that the

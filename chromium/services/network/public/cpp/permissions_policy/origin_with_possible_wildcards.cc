@@ -94,7 +94,9 @@ bool OriginWithPossibleWildcards::DoesMatchOrigin(
 }
 
 bool operator==(const OriginWithPossibleWildcards& lhs,
-                const OriginWithPossibleWildcards& rhs) = default;
+                const OriginWithPossibleWildcards& rhs) {
+  return lhs.csp_source == rhs.csp_source;
+}
 
 std::strong_ordering operator<=>(const OriginWithPossibleWildcards& lhs,
                                  const OriginWithPossibleWildcards& rhs) {

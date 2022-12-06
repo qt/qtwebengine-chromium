@@ -20,7 +20,7 @@ class IntegrityBlockAttributes {
                            std::vector<uint8_t> cbor);
   ~IntegrityBlockAttributes();
 
-  bool operator<=>(const IntegrityBlockAttributes& other) const = default;
+  auto operator<=>(const IntegrityBlockAttributes& other) const = default;
 
   IntegrityBlockAttributes(const IntegrityBlockAttributes&);
   IntegrityBlockAttributes& operator=(const IntegrityBlockAttributes&);

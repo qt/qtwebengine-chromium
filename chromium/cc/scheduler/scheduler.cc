@@ -707,7 +707,7 @@ void Scheduler::BeginImplFrameSynchronous(const viz::BeginFrameArgs& args) {
 }
 
 void Scheduler::FinishImplFrame() {
-  TRACE_EVENT0("cc", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("cc", PRETTY_FUNCTION);
   DCHECK(!needs_finish_frame_for_synchronous_compositor_);
   state_machine_->OnBeginImplFrameIdle();
 
@@ -761,7 +761,7 @@ void Scheduler::FinishImplFrame() {
 
 void Scheduler::SendDidNotProduceFrame(const viz::BeginFrameArgs& args,
                                        FrameSkippedReason reason) {
-  TRACE_EVENT1("cc", __PRETTY_FUNCTION__, "reason", reason);
+  TRACE_EVENT1("cc", PRETTY_FUNCTION, "reason", reason);
   if (last_begin_frame_ack_.frame_id == args.frame_id)
     return;
   last_begin_frame_ack_ = viz::BeginFrameAck(args, false /* has_damage */);
@@ -1135,7 +1135,7 @@ void Scheduler::ClearHistory() {
 
 
 void Scheduler::SetRequestHighFramerate(bool flag) {
-  TRACE_EVENT("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT("blink", PRETTY_FUNCTION);
   state_machine_->SetRequestHighFramerate(flag);
 }
 

@@ -294,11 +294,17 @@ constexpr std::string_view GetEnumValueName(Enum value)
 // string_view if the requirements of GetEnumValueName() are not met.
 template <typename Enum>
 constexpr std::string_view GetEnumValueNameForGenericCode(Enum value) {
+// Older versions of MSVC compiler (e.g. 14.36) have trouble with constexpr
+// 0-length std::array, and would return empty string here anyway.
+#ifdef _MSC_VER
+  return {};
+#else
   if constexpr (requires { GetEnumValueName(value); }) {
     return GetEnumValueName(value);
   } else {
     return {};
   }
+#endif // _MSC_VER
 }
 
 // Streams the stringification of `value` to `os`. It has a couple of extra

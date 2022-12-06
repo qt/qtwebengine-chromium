@@ -15,6 +15,11 @@
 #include "third_party/blink/renderer/modules/xr/xr_frame_provider.h"
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
 #include "third_party/blink/renderer/modules/xr/xr_webgl_layer.h"
+
+#ifndef M_PI
+#define M_PI           3.14159265358979323846  /* pi */
+#endif
+
 namespace blink {
 
 namespace {

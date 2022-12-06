@@ -215,7 +215,7 @@ bool DetectLowEndDevice() {
     }
   }
 #endif  // BUILDFLAG(IS_ANDROID)
-  return ram_size > ByteSize(0) &&
+  return ram_size > MiBU(0) &&
          ram_size <= MiBU(checked_cast<unsigned>(
                          features::kLowMemoryDeviceThresholdMB.Get()));
   // LINT.ThenChange(//base/android/java/src/org/chromium/base/SysUtils.java)

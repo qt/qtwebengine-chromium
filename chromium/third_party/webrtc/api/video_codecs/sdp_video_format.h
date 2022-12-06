@@ -29,7 +29,7 @@ namespace webrtc {
 // SDP specification for a single video codec.
 // NOTE: This class is still under development and may change without notice.
 struct RTC_EXPORT SdpVideoFormat {
-  using Parameters [[deprecated("Use CodecParameterMap")]] =
+  using Parameters =
       std::map<std::string, std::string>;
 
   explicit SdpVideoFormat(absl::string_view name);

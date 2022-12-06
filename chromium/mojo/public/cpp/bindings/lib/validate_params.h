@@ -63,11 +63,11 @@ template <uint32_t expected_num_elements,
           const ContainerValidateParams* element_validate_params>
 struct ArrayValidateParamsHolder {
   static inline constexpr ContainerValidateParams kInstance = {
-      .expected_num_elements = expected_num_elements,
-      .element_is_nullable = element_is_nullable,
-      .key_validate_params = nullptr,
-      .element_validate_params = element_validate_params,
-      .validate_enum_func = nullptr,
+      /*.expected_num_elements =*/ expected_num_elements,
+      /*.element_is_nullable =*/ element_is_nullable,
+      /*.key_validate_params =*/ nullptr,
+      /*.element_validate_params =*/ element_validate_params,
+      /*.validate_enum_func =*/ nullptr,
   };
 };
 
@@ -77,11 +77,11 @@ template <uint32_t expected_num_elements,
 struct ArrayOfEnumsValidateParamsHolder {
   // static_assert(validate_enum_func);
   static inline constexpr ContainerValidateParams kInstance = {
-      .expected_num_elements = expected_num_elements,
-      .element_is_nullable = element_is_nullable,
-      .key_validate_params = nullptr,
-      .element_validate_params = nullptr,
-      .validate_enum_func = validate_enum_func,
+      /*.expected_num_elements =*/ expected_num_elements,
+      /*.element_is_nullable =*/ element_is_nullable,
+      /*.key_validate_params =*/ nullptr,
+      /*.element_validate_params =*/ nullptr,
+      /*.validate_enum_func =*/ validate_enum_func,
   };
 };
 
@@ -89,11 +89,11 @@ template <const ContainerValidateParams& key_validate_params,
           const ContainerValidateParams& element_validate_params>
 struct MapValidateParamsHolder {
   static inline constexpr ContainerValidateParams kInstance = {
-      .expected_num_elements = 0,
-      .element_is_nullable = false,
-      .key_validate_params = &key_validate_params,
-      .element_validate_params = &element_validate_params,
-      .validate_enum_func = nullptr,
+      /*.expected_num_elements =*/ 0,
+      /*.element_is_nullable =*/ false,
+      /*.key_validate_params =*/ &key_validate_params,
+      /*.element_validate_params =*/ &element_validate_params,
+      /*.validate_enum_func =*/ nullptr,
   };
 };
 

@@ -430,6 +430,7 @@ VISIT(SkipUntilOneOfMasked, cp_offset, advance_by, both_chars, both_mask,
                           on_match2, on_failure);
 }
 
+#if !defined(V8_CC_MSVC)
 VISIT(SkipUntilOneOfMasked3, bc0_cp_offset, bc0_advance_by, bc0_table,
       bc1_bounds_check_offset, bc1_on_failure, bc1_cp_offset, bc2_characters,
       bc2_mask, bc3_by, bc4_bounds_check_offset, bc4_cp_offset, bc5_characters,
@@ -476,6 +477,7 @@ VISIT(SkipUntilOneOfMasked3, bc0_cp_offset, bc0_advance_by, bc0_table,
 
   __ SkipUntilOneOfMasked3(args);
 }
+#endif
 
 VISIT_METHODS_END()
 

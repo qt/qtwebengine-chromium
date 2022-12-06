@@ -8,6 +8,9 @@
 
 #include <psapi.h>
 
+#include <algorithm>
+#include <vector>
+
 #include "partition_alloc/partition_alloc_base/compiler_specific.h"
 #include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 #include "partition_alloc/partition_alloc_base/logging.h"
@@ -27,7 +30,7 @@ void PrintStackTraceInternal(const void** trace, size_t count) {
 
   constexpr size_t kMaxTraces = 32u;
   count = std::max(count, kMaxTraces);
-  bool is_output_trace[kMaxTraces];
+  std::vector<bool> is_output_trace(kMaxTraces);
   for (size_t i = 0; i < count; ++i) {
     PA_UNSAFE_TODO(is_output_trace[i]) = false;
   }

@@ -27,7 +27,7 @@ if (enable_print_media_l10n) {
   }
 }
 
-static_library("common") {
+source_set("common") {
   sources = [
     "cloud_print_cdd_conversion.cc",
     "cloud_print_cdd_conversion.h",

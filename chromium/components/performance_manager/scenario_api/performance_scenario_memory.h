@@ -24,6 +24,14 @@ struct COMPONENT_EXPORT(SCENARIO_API) ScenarioState {
 };
 #pragma clang diagnostic pop
 
+}  // namespace performnace_scenarios
+
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(performance_scenarios::ScenarioState);
+#endif
+
+namespace performance_scenarios {
+
 // A scoped object that maps shared memory for the scenario state into the
 // current process as long as it exists.
 class COMPONENT_EXPORT(SCENARIO_API) ScopedReadOnlyScenarioMemory {

@@ -52,7 +52,7 @@ group("telemetry_chrome_test") {
     data_deps += [ "//chrome" ]
   }
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     data_deps += [ "//chrome:reorder_imports" ]
   }
 

@@ -160,7 +160,7 @@ bool ColorProviderUtilsCallbacks::NameToColorId(std::string_view color_name,
 
 std::string ColorIdName(ColorId color_id) {
 #include "ui/color/color_id_map_macros.inc"  // NOLINT(build/include)
-  static constexpr auto kColorIdMap =
+  static const auto kColorIdMap =
       base::MakeFixedFlatMap<ColorId, const char*>({COLOR_IDS});
 // Note that this second include is not redundant. The second inclusion of the
 // .inc file serves to undefine the macros the first inclusion defined.

@@ -12,6 +12,10 @@
 #include "third_party/blink/renderer/modules/xr/xr_graphics_binding.h"
 #include "ui/gfx/geometry/transform.h"
 
+#ifndef M_PI
+#define M_PI           3.14159265358979323846  /* pi */
+#endif
+
 namespace {
 const double kDegToRad = M_PI / 180.0;
 

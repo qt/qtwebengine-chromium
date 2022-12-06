@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr partition_alloc::PartitionOptions kOptions = {};
+const partition_alloc::PartitionOptions kOptions = {};
 
 partition_alloc::PartitionAllocator& GetGeneralPartitionAllocator() {
   static auto* general_allocator =

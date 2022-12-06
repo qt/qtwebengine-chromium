@@ -41,11 +41,13 @@ config("xnnpack_public_config") {
 }
 
 config("xnnpack_private_config") {
+  if (is_clang || !is_win) {
   cflags = [
     "-Wno-unused-function",
     "-Wno-deprecated-comma-subscript",
     "-Wno-gcc-compat",
   ]
+  }
 }
 
 if (current_cpu == "x64" || current_cpu == "x86") {

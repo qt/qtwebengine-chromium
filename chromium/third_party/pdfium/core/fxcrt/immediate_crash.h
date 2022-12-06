@@ -85,7 +85,13 @@
 
 #elif defined(COMPILER_MSVC)
 
-#if defined(ARCH_CPU_ARM64)
+#if !defined(__clang__)
+
+// MSVC x64 doesn't support inline asm, so use the MSVC intrinsic.
+#define TRAP_SEQUENCE1_() __debugbreak()
+#define TRAP_SEQUENCE2_()
+
+#elif defined(ARCH_CPU_ARM64)
 
 // Windows ARM64 uses "BRK #F000" as its breakpoint instruction, and
 // __debugbreak() generates that in both VC++ and clang.

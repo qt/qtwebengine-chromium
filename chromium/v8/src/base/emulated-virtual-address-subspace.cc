@@ -177,6 +177,7 @@ EmulatedVirtualAddressSubspace::AllocateSubspace(
     std::optional<MemoryProtectionKeyId> key,
     std::optional<SharedMemoryHandle> handle) {
   UNIMPLEMENTED();
+  return nullptr;
 }
 
 bool EmulatedVirtualAddressSubspace::RecommitPages(

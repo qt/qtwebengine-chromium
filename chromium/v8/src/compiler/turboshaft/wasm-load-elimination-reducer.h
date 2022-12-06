@@ -545,6 +545,8 @@ class V8_EXPORT_PRIVATE WasmLoadEliminationReducer : public Next {
   EMIT_OP(StringPrepareForGetCodeUnit)
   EMIT_OP(AnyConvertExtern)
 
+#undef EMIT_OP
+
   OpIndex REDUCE_INPUT_GRAPH(StructGet)(OpIndex ig_index,
                                         const StructGetOp& op) {
     // Atomic loads are never eliminated (not even on unshared objects).

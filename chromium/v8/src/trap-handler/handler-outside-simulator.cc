@@ -6,7 +6,7 @@
 #include "src/trap-handler/trap-handler-simulator.h"
 #include "src/trap-handler/trap-handler.h"
 
-#if V8_TRAP_HANDLER_SUPPORTED
+#if V8_TRAP_HANDLER_SUPPORTED && defined(V8_TRAP_HANDLER_VIA_SIMULATOR)
 
 #if V8_OS_DARWIN
 #define SYMBOL(name) "_" #name

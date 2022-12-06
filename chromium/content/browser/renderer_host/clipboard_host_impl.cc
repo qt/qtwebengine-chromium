@@ -218,7 +218,7 @@ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
               case blink::mojom::ClipboardFormat::kPlaintext:
                 result =
                     formats.contains(ui::ClipboardFormatType::PlainTextType());
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
                 result |=
                     formats.contains(ui::ClipboardFormatType::PlainTextAType());
 #endif
@@ -1105,7 +1105,7 @@ void ClipboardHostImpl::ExtractText(
                                   std::move(callback));
               return;
             }
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
             if (formats.contains(ui::ClipboardFormatType::PlainTextAType())) {
               clipboard->ReadAsciiText(
                   clipboard_buffer, data_dst,

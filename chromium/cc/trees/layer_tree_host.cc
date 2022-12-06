@@ -813,7 +813,7 @@ LayerTreeHost::RequestHighFramerate() {
 }
 
 void LayerTreeHost::SetRequestHighFramerate(bool flag) {
-  TRACE_EVENT("cc", __PRETTY_FUNCTION__);
+  TRACE_EVENT("cc", PRETTY_FUNCTION);
   proxy_->SetRequestHighFramerate(flag);
 }
 

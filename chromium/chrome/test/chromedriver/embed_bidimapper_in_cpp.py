@@ -33,6 +33,16 @@ def main():
     script_name = 'k%sScript' % base_name
     with open(js_file, 'r', encoding='utf-8') as f:
       contents = f.read()
+
+      # This is a workaround for MSVC 16k string literal limit.
+      if os.name == 'nt':
+          lines = ''
+          for c in contents:
+              lines += c
+              if c == ';' or c == '}':
+                  lines += '\n'
+          contents = lines
+
       global_string_map[script_name] = contents
 
   cpp_source.WriteSource('bidimapper', 'chrome/test/chromedriver/bidimapper',

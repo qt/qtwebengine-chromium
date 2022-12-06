@@ -57,6 +57,14 @@ mojom::SupportsLoadingModePtr ParseSupportsLoadingMode(
 
     // Each supported token maps 1:1 to an enumerator.
     const auto& token = item.item.GetString();
+#ifdef _MSC_VER
+    for (const KnownLoadingMode& it : kKnownLoadingModes) {
+        if (it.token == token) {
+            modes.push_back(it.enumerator);
+            break;
+        }
+    }
+#else
     const auto* it =
         std::ranges::find(kKnownLoadingModes, token, &KnownLoadingMode::token);
     if (it == std::ranges::end(kKnownLoadingModes)) {
@@ -64,6 +72,7 @@ mojom::SupportsLoadingModePtr ParseSupportsLoadingMode(
     }
 
     modes.push_back(it->enumerator);
+#endif
   }
 
   // Order and repetition are not significant.

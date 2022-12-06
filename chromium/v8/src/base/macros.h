@@ -667,9 +667,15 @@ static_assert(V8_ENABLE_SIMD128);
 #define END_ALLOW_MISSING_DESIGNATED_FIELD_INITIALIZERS()
 #endif  // defined(__clang__)
 
+#if !defined(_MSC_VER) || defined(__clang__)
+#define ATTRIBUTE_V8_TLS_MODEL __attribute__((tls_model(V8_TLS_MODEL)))
+#else
+#define ATTRIBUTE_V8_TLS_MODEL
+#endif
+
 // Disable/enable -Wlifetime-safety warnings in code.
-#if defined(__clang__) && defined(__has_warning) && \
-    __has_warning("-Wlifetime-safety")
+#if defined(__clang__) && defined(__has_warning)
+#if __has_warning("-Wlifetime-safety")
 #define START_IGNORE_LIFETIME_SAFETY_WARNINGS() \
   _Pragma("clang diagnostic push")              \
       _Pragma("clang diagnostic ignored \"-Wlifetime-safety\"")
@@ -677,16 +683,24 @@ static_assert(V8_ENABLE_SIMD128);
 #else
 #define START_IGNORE_LIFETIME_SAFETY_WARNINGS()
 #define END_IGNORE_LIFETIME_SAFETY_WARNINGS()
+#endif
+#else
+#define START_IGNORE_LIFETIME_SAFETY_WARNINGS()
+#define END_IGNORE_LIFETIME_SAFETY_WARNINGS()
 #endif  // defined(__clang__)
 
 // Disable/enable -Wreturn-stack-address warnings in code.
-#if defined(__clang__) && defined(__has_warning) && \
-    __has_warning("-Wreturn-stack-address")
+#if defined(__clang__) && defined(__has_warning)
+#if __has_warning("-Wreturn-stack-address")
 #define START_IGNORE_RETURN_STACK_ADDRESS_WARNINGS() \
   _Pragma("clang diagnostic push")                   \
       _Pragma("clang diagnostic ignored \"-Wreturn-stack-address\"")
 #define END_IGNORE_RETURN_STACK_ADDRESS_WARNINGS() \
   _Pragma("clang diagnostic pop")
+#else
+#define START_IGNORE_RETURN_STACK_ADDRESS_WARNINGS()
+#define END_IGNORE_RETURN_STACK_ADDRESS_WARNINGS()
+#endif
 #else
 #define START_IGNORE_RETURN_STACK_ADDRESS_WARNINGS()
 #define END_IGNORE_RETURN_STACK_ADDRESS_WARNINGS()
