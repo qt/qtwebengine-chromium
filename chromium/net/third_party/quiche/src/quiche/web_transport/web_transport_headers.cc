@@ -51,10 +51,16 @@ absl::Status CheckMemberType(const ParameterizedMember& member,
   return CheckItemType(member.member[0], expected_type);
 }
 
+#if !defined(COMPILER_MSVC)
 ABSL_CONST_INIT std::array kInitHeaderFields{
-    std::make_pair("u", &WebTransportInitHeader::initial_unidi_limit),
-    std::make_pair("bl", &WebTransportInitHeader::initial_incoming_bidi_limit),
-    std::make_pair("br", &WebTransportInitHeader::initial_outgoing_bidi_limit),
+#else
+std::array kInitHeaderFields{
+#endif
+  std::make_pair("u", &WebTransportInitHeader::initial_unidi_limit),
+      std::make_pair("bl",
+                     &WebTransportInitHeader::initial_incoming_bidi_limit),
+      std::make_pair("br",
+                     &WebTransportInitHeader::initial_outgoing_bidi_limit),
 };
 }  // namespace
 

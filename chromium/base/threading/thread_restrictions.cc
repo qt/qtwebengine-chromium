@@ -48,7 +48,6 @@ constinit thread_local BooleanWithOptionalStack
     tls_base_sync_primitives_disallowed;
 constinit thread_local BooleanWithOptionalStack
     tls_cpu_intensive_work_disallowed;
-
 }  // namespace
 
 void AssertBlockingAllowed() {

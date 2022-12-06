@@ -106,13 +106,13 @@ void DynamicsCompressorHandler::ProcessOnlyAudioParams(
            render_quantum_frames_expected);
   DCHECK_LE(frames_to_process, render_quantum_frames_expected);
 
-  float values[render_quantum_frames_expected];
+  std::vector<float> values(render_quantum_frames_expected);
 
-  threshold_->CalculateSampleAccurateValues(values, frames_to_process);
-  knee_->CalculateSampleAccurateValues(values, frames_to_process);
-  ratio_->CalculateSampleAccurateValues(values, frames_to_process);
-  attack_->CalculateSampleAccurateValues(values, frames_to_process);
-  release_->CalculateSampleAccurateValues(values, frames_to_process);
+  threshold_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  knee_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  ratio_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  attack_->CalculateSampleAccurateValues(values.data(), frames_to_process);
+  release_->CalculateSampleAccurateValues(values.data(), frames_to_process);
 }
 
 void DynamicsCompressorHandler::Initialize() {

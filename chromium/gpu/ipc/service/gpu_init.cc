@@ -64,10 +64,10 @@
 #include "ui/ozone/public/surface_factory_ozone.h"
 #endif
 
-#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_WIN)
 #include "gpu/config/gpu_driver_bug_workarounds.h"
-#include "ui/gl/direct_composition_support.h"
 #include "ui/gl/gl_surface_egl.h"
+#include "ui/gl/direct_composition_support.h"
 #endif
 
 #if BUILDFLAG(IS_ANDROID)

@@ -8,7 +8,7 @@ import("//printing/buildflags/buildflags.gni")
 
 assert(enable_printing)
 
-static_library("common") {
+source_set("common") {
   sources = [
     "cloud_print_cdd_conversion.cc",
     "cloud_print_cdd_conversion.h",

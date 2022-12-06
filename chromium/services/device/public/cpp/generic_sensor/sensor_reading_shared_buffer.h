@@ -8,6 +8,7 @@
 #include "device/base/synchronization/one_writer_seqlock.h"
 #include "services/device/public/cpp/generic_sensor/sensor_reading.h"
 #include "services/device/public/mojom/sensor.mojom-shared.h"
+#include "base/memory/shared_memory_safety_checker.h"
 
 namespace device {
 
@@ -28,10 +29,14 @@ using SensorReadingSharedBuffer = SensorReadingSharedBufferImpl<void>;
 // Gets the shared reading buffer offset for the given sensor type.
 uint64_t GetSensorReadingSharedBufferOffset(mojom::SensorType type);
 
+}  // namespace device
+
+#if defined(COMPILER_MSVC)
+SKIP_SAFETY_CHECK_FOR(device::SensorReadingSharedBuffer)
+#else
 // SensorReadingSharedBuffer is used in shared memory, so it must be trivially
 // copyable.
-static_assert(std::is_trivially_copyable_v<SensorReadingSharedBuffer>);
-
-}  // namespace device
+static_assert(std::is_trivially_copyable_v<device::SensorReadingSharedBuffer>);
+#endif
 
 #endif  // SERVICES_DEVICE_PUBLIC_CPP_GENERIC_SENSOR_SENSOR_READING_SHARED_BUFFER_H_

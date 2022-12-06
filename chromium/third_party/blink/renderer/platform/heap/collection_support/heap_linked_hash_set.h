@@ -39,7 +39,9 @@ class HeapLinkedHashSet final
                     "instead of HeapLinkedHashSet<>.");
     }
   };
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 ASSERT_SIZE(HeapLinkedHashSet<int>, LinkedHashSet<int>);

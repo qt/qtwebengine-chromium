@@ -75,6 +75,9 @@ struct TriggerFillFieldLogEvent {
   // The country_code associated with the information filled. Only present for
   // autofill addresses (i.e. `AutofillEventType::kAutofillProfile`).
   std::string associated_country_code = internal::IsRequired();
+#else
+  std::string associated_country_code;
+#endif
   // The time at which the event occurred.
   base::Time timestamp = internal::IsRequired();
 #else

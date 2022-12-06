@@ -810,7 +810,8 @@ ax::mojom::Role StringToRole(const std::string& role) {
     return ax::mojom::Role::kMain;
   } else if (role == "kMark") {
     return ax::mojom::Role::kMark;
-  } else if (role == "kMarquee") {
+  }
+  if (role == "kMarquee") {
     return ax::mojom::Role::kMarquee;
   } else if (role == "kMath") {
     return ax::mojom::Role::kMath;

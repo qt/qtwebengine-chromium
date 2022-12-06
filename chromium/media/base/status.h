@@ -60,11 +60,13 @@ struct SecondArgType<R(A1, A2)> {
 };
 
 union UKMPackHelper {
+#pragma pack(push, 1)
   struct bits {
     uint16_t group;
     StatusCodeType code;
     uint32_t extra_data;
-  } __attribute__((packed)) bits;
+  } bits;
+#pragma pack(pop)
   UKMPackedType packed;
 
   static_assert(sizeof(bits) == sizeof(packed));

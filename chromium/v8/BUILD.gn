@@ -1637,7 +1637,7 @@ config("toolchain") {
     "-Wno-invalid-offsetof",
   ]
 
-  if (!is_clang) {
+  if (!is_clang && !is_win) {
     cflags += [
       # Disable gcc warnings for optimizations based on the assumption that
       # signed overflow does not occur. Generates false positives (see
