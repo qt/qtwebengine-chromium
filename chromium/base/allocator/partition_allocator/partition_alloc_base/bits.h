@@ -126,19 +126,13 @@ PA_ALWAYS_INLINE constexpr
 #endif  // defined(COMPILER_MSVC) && !defined(__clang__)
 }
 
-#undef PA_BITOPS_CONSTEXPR
-
 // Returns the integer i such as 2^i <= n < 2^(i+1).
 //
 // There is a common `BitLength` function, which returns the number of bits
 // required to represent a value. Rather than implement that function,
 // use `Log2Floor` and add 1 to the result.
 constexpr int Log2Floor(uint32_t n) {
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-  return 31 - qConstexprCountLeadingZeroBits32(n);
-#else
   return 31 - CountLeadingZeroBits(n);
-#endif
 }
 
 // Returns the integer i such as 2^(i-1) < n <= 2^i.
@@ -146,11 +140,7 @@ constexpr int Log2Ceiling(uint32_t n) {
   // When n == 0, we want the function to return -1.
   // When n == 0, (n - 1) will underflow to 0xFFFFFFFF, which is
   // why the statement below starts with (n ? 32 : -1).
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-  return (n ? 32 : -1) - qConstexprCountLeadingZeroBits32(n - 1);
-#else
   return (n ? 32 : -1) - CountLeadingZeroBits(n - 1);
-#endif
 }
 
 // Returns a value of type T with a single bit set in the left-most position.

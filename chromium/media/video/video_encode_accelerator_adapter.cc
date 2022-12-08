@@ -189,7 +189,7 @@ class VideoEncodeAcceleratorAdapter::GpuMemoryBufferVideoFramePool
   }
 
  private:
-  friend class RefCountedThreadSafe<GpuMemoryBufferVideoFramePool>;
+  friend class base::RefCountedThreadSafe<GpuMemoryBufferVideoFramePool>;
   ~GpuMemoryBufferVideoFramePool() = default;
 
   void ReuseFrame(const gpu::SyncToken& token,
@@ -273,7 +273,7 @@ class VideoEncodeAcceleratorAdapter::ReadOnlyRegionPool
   }
 
  private:
-  friend class RefCountedThreadSafe<ReadOnlyRegionPool>;
+  friend class base::RefCountedThreadSafe<ReadOnlyRegionPool>;
   ~ReadOnlyRegionPool() = default;
 
   void ReuseBuffer(std::unique_ptr<base::MappedReadOnlyRegion> region) {

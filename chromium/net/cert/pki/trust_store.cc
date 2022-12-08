@@ -4,6 +4,8 @@
 
 #include "net/cert/pki/trust_store.h"
 
+#include <assert.h>
+
 namespace net {
 
 CertificateTrust CertificateTrust::ForTrustAnchor() {

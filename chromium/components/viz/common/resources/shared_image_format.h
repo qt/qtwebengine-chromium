@@ -184,9 +184,6 @@ class SharedImageFormat {
 
 static_assert(sizeof(SharedImageFormat) <= 8);
 
-constexpr SharedImageFormat SharedImageFormat::kRGBA_8888 =
-    SharedImageFormat::SinglePlane(ResourceFormat::RGBA_8888);
-
 }  // namespace viz
 
 #endif  // COMPONENTS_VIZ_COMMON_RESOURCES_SHARED_IMAGE_FORMAT_H_

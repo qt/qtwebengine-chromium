@@ -67,8 +67,8 @@ class alignas(8) AtomicQueueState {
 // changes which might break that usage (e.g. introduction of a non-trivial
 // destructor.)
 static_assert(sizeof(AtomicQueueState) == 16, "Invalid AtomicQueueState size");
-static_assert(std::is_trivially_copyable_v<AtomicQueueState>,
-              "AtomicQueueState must be trivially copyable");
+//static_assert(std::is_trivially_copyable_v<AtomicQueueState>,
+//              "AtomicQueueState must be trivially copyable");
 
 }  // namespace ipcz
 
