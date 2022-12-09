@@ -271,9 +271,11 @@ bool ZipFiles(const base::FilePath& src_dir,
               Paths src_relative_paths,
               int dest_fd) {
   DCHECK(base::DirectoryExists(src_dir));
-  return Zip({.src_dir = src_dir,
-              .dest_fd = dest_fd,
-              .src_files = src_relative_paths});
+  ZipParams params = {};
+  params.src_dir = src_dir;
+  params.dest_fd = dest_fd;
+  params.src_files = src_relative_paths;
+  return Zip(params);
 }
 #endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
