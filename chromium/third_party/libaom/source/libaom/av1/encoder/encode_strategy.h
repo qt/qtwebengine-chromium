@@ -86,11 +86,8 @@ int av1_get_refresh_ref_frame_map(int refresh_frame_flags);
  *                                 in AV1Common.
  */
 void av1_get_ref_frames(RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
-                        int cur_frame_disp,
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
-                        const AV1_COMP *cpi, int gf_index,
+                        int cur_frame_disp, const AV1_COMP *cpi, int gf_index,
                         int is_parallel_encode,
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
                         int remapped_ref_idx[REF_FRAMES]);
 
 int is_forced_keyframe_pending(struct lookahead_ctx *lookahead,
@@ -98,12 +95,12 @@ int is_forced_keyframe_pending(struct lookahead_ctx *lookahead,
                                const COMPRESSOR_STAGE compressor_stage);
 
 static AOM_INLINE int is_frame_droppable(
-    const SVC *const svc,
+    const RTC_REF *const rtc_ref,
     const ExtRefreshFrameFlagsInfo *const ext_refresh_frame_flags) {
   // Droppable frame is only used by external refresh flags. VoD setting won't
   // trigger its use case.
-  if (svc->set_ref_frame_config)
-    return svc->non_reference_frame;
+  if (rtc_ref->set_ref_frame_config)
+    return rtc_ref->non_reference_frame;
   else if (ext_refresh_frame_flags->update_pending)
     return !(ext_refresh_frame_flags->alt_ref_frame ||
              ext_refresh_frame_flags->alt2_ref_frame ||
@@ -130,13 +127,9 @@ static AOM_INLINE int get_current_frame_ref_type(const AV1_COMP *const cpi) {
   }
 }
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
 int av1_calc_refresh_idx_for_intnl_arf(
     AV1_COMP *cpi, RefFrameMapPair ref_frame_map_pairs[REF_FRAMES],
     int gf_index);
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
 /*!\endcond */
 #ifdef __cplusplus
 }  // extern "C"

@@ -46,7 +46,7 @@ static AOM_INLINE void alloc_context_buffers_ext(
     dealloc_context_buffers_ext(mbmi_ext_info);
     CHECK_MEM_ERROR(
         cm, mbmi_ext_info->frame_base,
-        aom_calloc(new_ext_mi_size, sizeof(*mbmi_ext_info->frame_base)));
+        aom_malloc(new_ext_mi_size * sizeof(*mbmi_ext_info->frame_base)));
     mbmi_ext_info->alloc_size = new_ext_mi_size;
   }
   // The stride needs to be updated regardless of whether new allocation
@@ -261,10 +261,8 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
 #endif
 
   if (!is_stat_generation_stage(cpi)) {
-    int num_cdef_workers =
-        av1_get_num_mod_workers_for_alloc(&cpi->ppi->p_mt_info, MOD_CDEF);
     av1_free_cdef_buffers(cm, &cpi->ppi->p_mt_info.cdef_worker,
-                          &cpi->mt_info.cdef_sync, num_cdef_workers);
+                          &cpi->mt_info.cdef_sync);
   }
 
   aom_free_frame_buffer(&cpi->trial_frame_rst);
@@ -296,6 +294,8 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   }
 
   if (cpi->ppi->use_svc) av1_free_svc_cyclic_refresh(cpi);
+  aom_free(cpi->svc.layer_context);
+  cpi->svc.layer_context = NULL;
 
   if (cpi->consec_zero_mv) {
     aom_free(cpi->consec_zero_mv);
@@ -378,7 +378,7 @@ static AOM_INLINE YV12_BUFFER_CONFIG *realloc_and_scale_source(
           cm->seq_params->subsampling_x, cm->seq_params->subsampling_y,
           cm->seq_params->use_highbitdepth, AOM_BORDER_IN_PIXELS,
           cm->features.byte_alignment, NULL, NULL, NULL,
-          cpi->oxcf.tool_cfg.enable_global_motion))
+          cpi->oxcf.tool_cfg.enable_global_motion, 0))
     aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                        "Failed to reallocate scaled source buffer");
   assert(cpi->scaled_source.y_crop_width == scaled_width);

@@ -141,7 +141,7 @@ static AOM_FORCE_INLINE void dr_prediction_z1_HxW_internal_sse4_1(
   __m128i a_mbase_x;
 
   a16 = _mm_set1_epi16(16);
-  a_mbase_x = _mm_set1_epi8(above[max_base_x]);
+  a_mbase_x = _mm_set1_epi8((char)above[max_base_x]);
   c3f = _mm_set1_epi16(0x3f);
 
   int x = dx;
@@ -210,7 +210,7 @@ static void dr_prediction_z1_4xN_sse4_1(int N, uint8_t *dst, ptrdiff_t stride,
 
   dr_prediction_z1_HxW_internal_sse4_1(4, N, dstvec, above, upsample_above, dx);
   for (int i = 0; i < N; i++) {
-    *(uint32_t *)(dst + stride * i) = _mm_cvtsi128_si32(dstvec[i]);
+    *(int *)(dst + stride * i) = _mm_cvtsi128_si32(dstvec[i]);
   }
 }
 
@@ -255,7 +255,7 @@ static AOM_FORCE_INLINE void dr_prediction_z1_32xN_internal_sse4_1(
   __m128i a_mbase_x, diff, c3f;
 
   a16 = _mm_set1_epi16(16);
-  a_mbase_x = _mm_set1_epi8(above[max_base_x]);
+  a_mbase_x = _mm_set1_epi8((char)above[max_base_x]);
   c3f = _mm_set1_epi16(0x3f);
 
   int x = dx;
@@ -353,7 +353,7 @@ static void dr_prediction_z1_64xN_sse4_1(int N, uint8_t *dst, ptrdiff_t stride,
   __m128i max_base, base_inc, mask;
 
   a16 = _mm_set1_epi16(16);
-  a_mbase_x = _mm_set1_epi8(above[max_base_x]);
+  a_mbase_x = _mm_set1_epi8((char)above[max_base_x]);
   max_base = _mm_set1_epi8(max_base_x);
   c3f = _mm_set1_epi16(0x3f);
 
@@ -412,14 +412,14 @@ static void dr_prediction_z1_64xN_sse4_1(int N, uint8_t *dst, ptrdiff_t stride,
         res = _mm_packus_epi16(res, res1);  // 16 8bit values
 
         base_inc =
-            _mm_setr_epi8((uint8_t)(base + j), (uint8_t)(base + j + 1),
-                          (uint8_t)(base + j + 2), (uint8_t)(base + j + 3),
-                          (uint8_t)(base + j + 4), (uint8_t)(base + j + 5),
-                          (uint8_t)(base + j + 6), (uint8_t)(base + j + 7),
-                          (uint8_t)(base + j + 8), (uint8_t)(base + j + 9),
-                          (uint8_t)(base + j + 10), (uint8_t)(base + j + 11),
-                          (uint8_t)(base + j + 12), (uint8_t)(base + j + 13),
-                          (uint8_t)(base + j + 14), (uint8_t)(base + j + 15));
+            _mm_setr_epi8((int8_t)(base + j), (int8_t)(base + j + 1),
+                          (int8_t)(base + j + 2), (int8_t)(base + j + 3),
+                          (int8_t)(base + j + 4), (int8_t)(base + j + 5),
+                          (int8_t)(base + j + 6), (int8_t)(base + j + 7),
+                          (int8_t)(base + j + 8), (int8_t)(base + j + 9),
+                          (int8_t)(base + j + 10), (int8_t)(base + j + 11),
+                          (int8_t)(base + j + 12), (int8_t)(base + j + 13),
+                          (int8_t)(base + j + 14), (int8_t)(base + j + 15));
 
         mask = _mm_cmpgt_epi8(_mm_subs_epu8(max_base, base_inc),
                               _mm_setzero_si128());
@@ -571,7 +571,7 @@ static void dr_prediction_z2_Nx4_sse4_1(int N, uint8_t *dst, ptrdiff_t stride,
     resy = _mm_srli_si128(resx, 4);
 
     resxy = _mm_blendv_epi8(resx, resy, *(__m128i *)Mask[0][base_min_diff]);
-    *(uint32_t *)(dst) = _mm_cvtsi128_si32(resxy);
+    *(int *)(dst) = _mm_cvtsi128_si32(resxy);
     dst += stride;
   }
 }
@@ -743,7 +743,7 @@ static void dr_prediction_z2_HxW_sse4_1(int H, int W, uint8_t *dst,
     __m128i resx, resy;
     __m128i resxy;
     int y = r + 1;
-    ydx = _mm_set1_epi16((uint16_t)(y * dx));
+    ydx = _mm_set1_epi16((int16_t)(y * dx));
 
     int base_x = (-y * dx) >> frac_bits_x;
     for (int j = 0; j < W; j += 16) {
@@ -938,10 +938,10 @@ static void dr_prediction_z3_4x4_sse4_1(uint8_t *dst, ptrdiff_t stride,
   transpose4x8_8x4_low_sse2(&dstvec[0], &dstvec[1], &dstvec[2], &dstvec[3],
                             &d[0], &d[1], &d[2], &d[3]);
 
-  *(uint32_t *)(dst + stride * 0) = _mm_cvtsi128_si32(d[0]);
-  *(uint32_t *)(dst + stride * 1) = _mm_cvtsi128_si32(d[1]);
-  *(uint32_t *)(dst + stride * 2) = _mm_cvtsi128_si32(d[2]);
-  *(uint32_t *)(dst + stride * 3) = _mm_cvtsi128_si32(d[3]);
+  *(int *)(dst + stride * 0) = _mm_cvtsi128_si32(d[0]);
+  *(int *)(dst + stride * 1) = _mm_cvtsi128_si32(d[1]);
+  *(int *)(dst + stride * 2) = _mm_cvtsi128_si32(d[2]);
+  *(int *)(dst + stride * 3) = _mm_cvtsi128_si32(d[3]);
   return;
 }
 
@@ -974,7 +974,7 @@ static void dr_prediction_z3_4x8_sse4_1(uint8_t *dst, ptrdiff_t stride,
   transpose4x8_8x4_sse2(&dstvec[0], &dstvec[1], &dstvec[2], &dstvec[3], &d[0],
                         &d[1], &d[2], &d[3], &d[4], &d[5], &d[6], &d[7]);
   for (int i = 0; i < 8; i++) {
-    *(uint32_t *)(dst + stride * i) = _mm_cvtsi128_si32(d[i]);
+    *(int *)(dst + stride * i) = _mm_cvtsi128_si32(d[i]);
   }
 }
 
@@ -1034,7 +1034,7 @@ static void dr_prediction_z3_4x16_sse4_1(uint8_t *dst, ptrdiff_t stride,
   dr_prediction_z1_HxW_internal_sse4_1(16, 4, dstvec, left, upsample_left, dy);
   transpose4x16_sse2(dstvec, d);
   for (int i = 0; i < 16; i++) {
-    *(uint32_t *)(dst + stride * i) = _mm_cvtsi128_si32(d[i]);
+    *(int *)(dst + stride * i) = _mm_cvtsi128_si32(d[i]);
   }
 }
 

@@ -130,9 +130,7 @@ static const int av1_arg_ctrl_map[] = { AOME_SET_CPUUSED,
                                         AOME_SET_SHARPNESS,
                                         AOME_SET_STATIC_THRESHOLD,
                                         AV1E_SET_ROW_MT,
-#if CONFIG_FRAME_PARALLEL_ENCODE
                                         AV1E_SET_FP_MT,
-#endif
                                         AV1E_SET_TILE_COLUMNS,
                                         AV1E_SET_TILE_ROWS,
                                         AV1E_SET_ENABLE_TPL_MODEL,
@@ -336,9 +334,7 @@ const arg_def_t *av1_ctrl_args[] = {
   &g_av1_codec_arg_defs.sharpness,
   &g_av1_codec_arg_defs.static_thresh,
   &g_av1_codec_arg_defs.rowmtarg,
-#if CONFIG_FRAME_PARALLEL_ENCODE
   &g_av1_codec_arg_defs.fpmtarg,
-#endif
   &g_av1_codec_arg_defs.tile_cols,
   &g_av1_codec_arg_defs.tile_rows,
   &g_av1_codec_arg_defs.enable_tpl_model,
@@ -455,6 +451,7 @@ const arg_def_t *av1_key_val_args[] = {
   &g_av1_codec_arg_defs.fwd_kf_dist,
   &g_av1_codec_arg_defs.strict_level_conformance,
   &g_av1_codec_arg_defs.dist_metric,
+  &g_av1_codec_arg_defs.kf_max_pyr_height,
   NULL,
 };
 
@@ -1993,6 +1990,10 @@ int main(int argc, const char **argv_) {
    * codec.
    */
   argv = argv_dup(argc - 1, argv_ + 1);
+  if (!argv) {
+    fprintf(stderr, "Error allocating argument list\n");
+    return EXIT_FAILURE;
+  }
   parse_global_config(&global, &argv);
 
   if (argc < 2) usage_exit();
@@ -2572,13 +2573,16 @@ int main(int argc, const char **argv_) {
 
     if (pass == global.passes - 1) {
       FOREACH_STREAM(stream, streams) {
-        int levels[32] = { 0 };
-        int target_levels[32] = { 0 };
+        int num_operating_points;
+        int levels[32];
+        int target_levels[32];
+        aom_codec_control(&stream->encoder, AV1E_GET_NUM_OPERATING_POINTS,
+                          &num_operating_points);
         aom_codec_control(&stream->encoder, AV1E_GET_SEQ_LEVEL_IDX, levels);
         aom_codec_control(&stream->encoder, AV1E_GET_TARGET_SEQ_LEVEL_IDX,
                           target_levels);
 
-        for (int i = 0; i < 32; i++) {
+        for (int i = 0; i < num_operating_points; i++) {
           if (levels[i] > target_levels[i]) {
             aom_tools_warn(
                 "Failed to encode to target level %d.%d for operating point "

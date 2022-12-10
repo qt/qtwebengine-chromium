@@ -233,7 +233,7 @@ static AV1_DENOISER_DECISION perform_motion_compensation(
         frame == ALTREF_FRAME ||
         (frame == GOLDEN_FRAME && use_gf_temporal_ref) ||
         (frame != LAST_FRAME &&
-         ((ctx->zeromv_lastref_sse<(5 * ctx->zeromv_sse)>> 2) ||
+         ((ctx->zeromv_lastref_sse < (5 * ctx->zeromv_sse) >> 2) ||
           denoiser->denoising_level >= kDenHigh))) {
       frame = LAST_FRAME;
       ctx->newmv_sse = ctx->zeromv_lastref_sse;
@@ -348,7 +348,7 @@ void av1_denoiser_denoise(AV1_COMP *cpi, MACROBLOCK *mb, int mi_row, int mi_col,
     decision = perform_motion_compensation(
         &cpi->common, denoiser, mb, bs, increase_denoising, mi_row, mi_col, ctx,
         motion_magnitude, &zeromv_filter, cpi->svc.number_spatial_layers,
-        cpi->source->y_width, cpi->svc.ref_idx[0], cpi->svc.ref_idx[3],
+        cpi->source->y_width, cpi->rtc_ref.ref_idx[0], cpi->rtc_ref.ref_idx[3],
         cpi->ppi->use_svc, cpi->svc.spatial_layer_id, use_gf_temporal_ref);
 
   if (decision == FILTER_BLOCK) {
@@ -395,10 +395,11 @@ static void swap_frame_buffer(YV12_BUFFER_CONFIG *const dest,
 }
 
 void av1_denoiser_update_frame_info(
-    AV1_DENOISER *denoiser, YV12_BUFFER_CONFIG src, struct SVC *svc,
-    FRAME_TYPE frame_type, int refresh_alt_ref_frame, int refresh_golden_frame,
-    int refresh_last_frame, int alt_fb_idx, int gld_fb_idx, int lst_fb_idx,
-    int resized, int svc_refresh_denoiser_buffers, int second_spatial_layer) {
+    AV1_DENOISER *denoiser, YV12_BUFFER_CONFIG src, struct RTC_REF *rtc_ref,
+    struct SVC *svc, FRAME_TYPE frame_type, int refresh_alt_ref_frame,
+    int refresh_golden_frame, int refresh_last_frame, int alt_fb_idx,
+    int gld_fb_idx, int lst_fb_idx, int resized,
+    int svc_refresh_denoiser_buffers, int second_spatial_layer) {
   const int shift = second_spatial_layer ? denoiser->num_ref_frames : 0;
   // Copy source into denoised reference buffers on KEY_FRAME or
   // if the just encoded frame was resized. For SVC, copy source if the base
@@ -415,10 +416,10 @@ void av1_denoiser_update_frame_info(
     return;
   }
 
-  if (svc->set_ref_frame_config) {
+  if (rtc_ref->set_ref_frame_config) {
     int i;
     for (i = 0; i < REF_FRAMES; i++) {
-      if (svc->refresh[svc->spatial_layer_id] & (1 << i))
+      if (rtc_ref->refresh[svc->spatial_layer_id] & (1 << i))
         copy_frame(&denoiser->running_avg_y[i + 1 + shift],
                    &denoiser->running_avg_y[INTRA_FRAME + shift]);
     }
@@ -487,7 +488,7 @@ static int av1_denoiser_realloc_svc_helper(AV1_COMMON *cm,
         &denoiser->running_avg_y[fb_idx], cm->width, cm->height,
         cm->seq_params->subsampling_x, cm->seq_params->subsampling_y,
         cm->seq_params->use_highbitdepth, AOM_BORDER_IN_PIXELS,
-        cm->features.byte_alignment);
+        cm->features.byte_alignment, 0);
     if (fail) {
       av1_denoiser_free(denoiser);
       return 1;
@@ -497,15 +498,16 @@ static int av1_denoiser_realloc_svc_helper(AV1_COMMON *cm,
 }
 
 int av1_denoiser_realloc_svc(AV1_COMMON *cm, AV1_DENOISER *denoiser,
-                             struct SVC *svc, int svc_buf_shift,
-                             int refresh_alt, int refresh_gld, int refresh_lst,
-                             int alt_fb_idx, int gld_fb_idx, int lst_fb_idx) {
+                             struct RTC_REF *rtc_ref, struct SVC *svc,
+                             int svc_buf_shift, int refresh_alt,
+                             int refresh_gld, int refresh_lst, int alt_fb_idx,
+                             int gld_fb_idx, int lst_fb_idx) {
   int fail = 0;
-  if (svc->set_ref_frame_config) {
+  if (rtc_ref->set_ref_frame_config) {
     int i;
     for (i = 0; i < REF_FRAMES; i++) {
       if (cm->current_frame.frame_type == KEY_FRAME ||
-          svc->refresh[svc->spatial_layer_id] & (1 << i)) {
+          rtc_ref->refresh[svc->spatial_layer_id] & (1 << i)) {
         fail = av1_denoiser_realloc_svc_helper(cm, denoiser,
                                                i + 1 + svc_buf_shift);
       }
@@ -574,7 +576,7 @@ int av1_denoiser_alloc(AV1_COMMON *cm, struct SVC *svc, AV1_DENOISER *denoiser,
       fail = aom_alloc_frame_buffer(
           &denoiser->running_avg_y[i + denoiser->num_ref_frames * layer],
           denoise_width, denoise_height, ssx, ssy, use_highbitdepth, border,
-          legacy_byte_alignment);
+          legacy_byte_alignment, 0);
       if (fail) {
         av1_denoiser_free(denoiser);
         return 1;
@@ -586,7 +588,7 @@ int av1_denoiser_alloc(AV1_COMMON *cm, struct SVC *svc, AV1_DENOISER *denoiser,
 
     fail = aom_alloc_frame_buffer(
         &denoiser->mc_running_avg_y[layer], denoise_width, denoise_height, ssx,
-        ssy, use_highbitdepth, border, legacy_byte_alignment);
+        ssy, use_highbitdepth, border, legacy_byte_alignment, 0);
     if (fail) {
       av1_denoiser_free(denoiser);
       return 1;
@@ -595,9 +597,9 @@ int av1_denoiser_alloc(AV1_COMMON *cm, struct SVC *svc, AV1_DENOISER *denoiser,
 
   // denoiser->last_source only used for noise_estimation, so only for top
   // layer.
-  fail =
-      aom_alloc_frame_buffer(&denoiser->last_source, width, height, ssx, ssy,
-                             use_highbitdepth, border, legacy_byte_alignment);
+  fail = aom_alloc_frame_buffer(&denoiser->last_source, width, height, ssx, ssy,
+                                use_highbitdepth, border, legacy_byte_alignment,
+                                0);
   if (fail) {
     av1_denoiser_free(denoiser);
     return 1;
@@ -671,8 +673,10 @@ void av1_denoiser_set_noise_level(AV1_COMP *const cpi, int noise_level) {
 int64_t av1_scale_part_thresh(int64_t threshold, AV1_DENOISER_LEVEL noise_level,
                               CONTENT_STATE_SB content_state,
                               int temporal_layer_id) {
-  if ((content_state.source_sad == kLowSad && content_state.low_sumdiff) ||
-      (content_state.source_sad == kHighSad && content_state.low_sumdiff) ||
+  if ((content_state.source_sad_nonrd <= kLowSad &&
+       content_state.low_sumdiff) ||
+      (content_state.source_sad_nonrd == kHighSad &&
+       content_state.low_sumdiff) ||
       (content_state.lighting_change && !content_state.low_sumdiff) ||
       (noise_level == kDenHigh) || (temporal_layer_id != 0)) {
     int64_t scaled_thr =
@@ -689,10 +693,10 @@ int64_t av1_scale_acskip_thresh(int64_t threshold,
                                 AV1_DENOISER_LEVEL noise_level, int abs_sumdiff,
                                 int temporal_layer_id) {
   if (noise_level >= kDenLow && abs_sumdiff < 5)
-    return threshold *=
-           (noise_level == kDenLow) ? 2 : (temporal_layer_id == 2) ? 10 : 6;
-  else
-    return threshold;
+    threshold *= (noise_level == kDenLow)   ? 2
+                 : (temporal_layer_id == 2) ? 10
+                                            : 6;
+  return threshold;
 }
 
 void av1_denoiser_reset_on_first_frame(AV1_COMP *const cpi) {
@@ -708,6 +712,7 @@ void av1_denoiser_reset_on_first_frame(AV1_COMP *const cpi) {
 
 void av1_denoiser_update_ref_frame(AV1_COMP *const cpi) {
   AV1_COMMON *const cm = &cpi->common;
+  RTC_REF *const rtc_ref = &cpi->rtc_ref;
   SVC *const svc = &cpi->svc;
 
   if (cpi->oxcf.noise_sensitivity > 0 && denoise_svc(cpi) &&
@@ -737,7 +742,8 @@ void av1_denoiser_update_ref_frame(AV1_COMP *const cpi) {
           svc->number_spatial_layers - svc->spatial_layer_id == 2 ? 1 : 0;
       // Check if we need to allocate extra buffers in the denoiser
       // for refreshed frames.
-      if (av1_denoiser_realloc_svc(cm, &cpi->denoiser, svc, svc_buf_shift,
+      if (av1_denoiser_realloc_svc(cm, &cpi->denoiser, rtc_ref,
+                                   svc, svc_buf_shift,
                                    cpi->refresh_alt_ref_frame,
                                    cpi->refresh_golden_frame,
                                    cpi->refresh_last_frame, cpi->alt_fb_idx,
@@ -747,10 +753,10 @@ void av1_denoiser_update_ref_frame(AV1_COMP *const cpi) {
 #endif
     }
     av1_denoiser_update_frame_info(
-        &cpi->denoiser, *cpi->source, svc, frame_type,
+        &cpi->denoiser, *cpi->source, rtc_ref, svc, frame_type,
         cpi->refresh_frame.alt_ref_frame, cpi->refresh_frame.golden_frame, 1,
-        svc->ref_idx[6], svc->ref_idx[3], svc->ref_idx[0], resize_pending,
-        svc_refresh_denoiser_buffers, denoise_svc_second_layer);
+        rtc_ref->ref_idx[6], rtc_ref->ref_idx[3], rtc_ref->ref_idx[0],
+        resize_pending, svc_refresh_denoiser_buffers, denoise_svc_second_layer);
   }
 }
 

@@ -133,6 +133,16 @@ static AOM_INLINE void compute_global_motion_for_ref_frame(
       params_this_motion = params_by_motion[i].params;
       av1_convert_model_to_params(params_this_motion, &tmp_wm_params);
 
+      // Work around a bug in the AV1 specification
+      //
+      // For TRANSLATION type global motion models, gm_get_motion_vector() gives
+      // the wrong motion vector (see comments in that function for details).
+      // As translation-type models do not give much gain, we can avoid this bug
+      // by never choosing a TRANSLATION type model
+      if (tmp_wm_params.wmtype == TRANSLATION) {
+        continue;
+      }
+
       if (tmp_wm_params.wmtype != IDENTITY) {
         av1_compute_feature_segmentation_map(
             segment_map, segment_map_w, segment_map_h,
@@ -154,6 +164,12 @@ static AOM_INLINE void compute_global_motion_for_ref_frame(
             GM_REFINEMENT_COUNT, best_warp_error, segment_map, segment_map_w,
             erroradv_threshold);
 
+        // av1_refine_integerized_param() can return a TRANSLATION type model
+        // even if its input is some other type, so we have to skip those too
+        if (tmp_wm_params.wmtype == TRANSLATION) {
+          continue;
+        }
+
         if (warp_error < best_warp_error) {
           best_warp_error = warp_error;
           // Save the wm_params modified by
@@ -168,6 +184,8 @@ static AOM_INLINE void compute_global_motion_for_ref_frame(
       if (!av1_get_shear_params(&cm->global_motion[frame]))
         cm->global_motion[frame] = default_warp_params;
 
+#if 0
+    // We never choose translational models, so this code is disabled
     if (cm->global_motion[frame].wmtype == TRANSLATION) {
       cm->global_motion[frame].wmmat[0] =
           convert_to_trans_prec(cm->features.allow_high_precision_mv,
@@ -178,6 +196,7 @@ static AOM_INLINE void compute_global_motion_for_ref_frame(
                                 cm->global_motion[frame].wmmat[1]) *
           GM_TRANS_ONLY_DECODE_FACTOR;
     }
+#endif
 
     if (cm->global_motion[frame].wmtype == IDENTITY) continue;
 
@@ -354,22 +373,6 @@ static AOM_INLINE void update_valid_ref_frames_for_gm(
   }
 }
 
-// Allocates and initializes memory for segment_map and MotionModel.
-static AOM_INLINE void alloc_global_motion_data(MotionModel *params_by_motion,
-                                                uint8_t **segment_map,
-                                                const int segment_map_w,
-                                                const int segment_map_h) {
-  for (int m = 0; m < RANSAC_NUM_MOTIONS; m++) {
-    av1_zero(params_by_motion[m]);
-    params_by_motion[m].inliers =
-        aom_malloc(sizeof(*(params_by_motion[m].inliers)) * 2 * MAX_CORNERS);
-  }
-
-  *segment_map = (uint8_t *)aom_malloc(sizeof(*segment_map) * segment_map_w *
-                                       segment_map_h);
-  av1_zero_array(*segment_map, segment_map_w * segment_map_h);
-}
-
 // Deallocates segment_map and inliers.
 static AOM_INLINE void dealloc_global_motion_data(MotionModel *params_by_motion,
                                                   uint8_t *segment_map) {
@@ -378,6 +381,30 @@ static AOM_INLINE void dealloc_global_motion_data(MotionModel *params_by_motion,
   for (int m = 0; m < RANSAC_NUM_MOTIONS; m++) {
     aom_free(params_by_motion[m].inliers);
   }
+}
+
+// Allocates and initializes memory for segment_map and MotionModel.
+static AOM_INLINE bool alloc_global_motion_data(MotionModel *params_by_motion,
+                                                uint8_t **segment_map,
+                                                const int segment_map_w,
+                                                const int segment_map_h) {
+  av1_zero_array(params_by_motion, RANSAC_NUM_MOTIONS);
+  for (int m = 0; m < RANSAC_NUM_MOTIONS; m++) {
+    params_by_motion[m].inliers =
+        aom_malloc(sizeof(*(params_by_motion[m].inliers)) * 2 * MAX_CORNERS);
+    if (!params_by_motion[m].inliers) {
+      dealloc_global_motion_data(params_by_motion, NULL);
+      return false;
+    }
+  }
+
+  *segment_map = (uint8_t *)aom_calloc(segment_map_w * segment_map_h,
+                                       sizeof(*segment_map));
+  if (!*segment_map) {
+    dealloc_global_motion_data(params_by_motion, NULL);
+    return false;
+  }
+  return true;
 }
 
 // Initializes parameters used for computing global motion.
@@ -460,7 +487,7 @@ void av1_compute_global_motion_facade(AV1_COMP *cpi) {
     if (cpi->gf_frame_index == 0) {
       for (int i = 0; i < FRAME_UPDATE_TYPES; i++) {
         cpi->ppi->valid_gm_model_found[i] = INT32_MAX;
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
         if (cpi->ppi->fpmt_unit_test_cfg == PARALLEL_SIMULATION_ENCODE)
           cpi->ppi->temp_valid_gm_model_found[i] = INT32_MAX;
 #endif

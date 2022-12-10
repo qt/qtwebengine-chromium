@@ -1,3 +1,212 @@
+2022-08-31 v3.5.0
+  This release is ABI compatible with the last one, including speedup and memory
+  optimizations, and new APIs and features.
+
+  - New Features
+    * Support for frame parallel encode for larger number of threads. --fp-mt
+      flag is available for all build configurations.
+    * New codec control AV1E_GET_NUM_OPERATING_POINTS
+
+  - Speedup and Memory Optimizations
+    * Speed-up multithreaded encoding for good quality mode for larger number of
+      threads through frame parallel encoding:
+      o 30-34% encode time reduction for 1080p, 16 threads, 1x1 tile
+        configuration (tile_rows x tile_columns)
+      o 18-28% encode time reduction for 1080p, 16 threads, 2x4 tile
+        configuration
+      o 18-20% encode time reduction for 2160p, 32 threads, 2x4 tile
+        configuration
+    * 16-20% speed-up for speed=6 to 8 in still-picture encoding mode
+    * 5-6% heap memory reduction for speed=6 to 10 in real-time encoding mode
+    * Improvements to the speed for speed=7, 8 in real-time encoding mode
+    * Improvements to the speed for speed=9, 10 in real-time screen encoding
+      mode
+    * Optimizations to improve multi-thread efficiency in real-time encoding
+      mode
+    * 10-15% speed up for SVC with temporal layers
+    * SIMD optimizations:
+      o Improve av1_quantize_fp_32x32_neon() 1.05x to 1.24x faster
+      o Add aom_highbd_quantize_b{,_32x32,_64x64}_adaptive_neon() 3.15x to 5.6x
+        faster than "C"
+      o Improve av1_quantize_fp_64x64_neon() 1.17x to 1.66x faster
+      o Add aom_quantize_b_avx2() 1.4x to 1.7x faster than aom_quantize_b_avx()
+      o Add aom_quantize_b_32x32_avx2() 1.4x to 2.3x faster than
+        aom_quantize_b_32x32_avx()
+      o Add aom_quantize_b_64x64_avx2() 2.0x to 2.4x faster than
+        aom_quantize_b_64x64_ssse3()
+      o Add aom_highbd_quantize_b_32x32_avx2() 9.0x to 10.5x faster than
+        aom_highbd_quantize_b_32x32_c()
+      o Add aom_highbd_quantize_b_64x64_avx2() 7.3x to 9.7x faster than
+        aom_highbd_quantize_b_64x64_c()
+      o Improve aom_highbd_quantize_b_avx2() 1.07x to 1.20x faster
+      o Improve av1_quantize_fp_avx2() 1.13x to 1.49x faster
+      o Improve av1_quantize_fp_32x32_avx2() 1.07x to 1.54x faster
+      o Improve av1_quantize_fp_64x64_avx2()  1.03x to 1.25x faster
+      o Improve av1_quantize_lp_avx2() 1.07x to 1.16x faster
+
+  - Bug fixes including but not limited to
+    * aomedia:3206 Assert that skip_width > 0 for deconvolve function
+    * aomedia:3278 row_mt enc: Delay top-right sync when intraBC is enabled
+    * aomedia:3282 blend_a64_*_neon: fix bus error in armv7
+    * aomedia:3283 FRAME_PARALLEL: Propagate border size to all cpis
+    * aomedia:3283 RESIZE_MODE: Fix incorrect strides being used for motion
+      search
+    * aomedia:3286 rtc-svc: Fix to dynamic_enable spatial layers
+    * aomedia:3289 rtc-screen: Fix to skipping inter-mode test in nonrd
+    * aomedia:3289 rtc-screen: Fix for skip newmv on flat blocks
+    * aomedia:3299 Fix build failure with CONFIG_TUNE_VMAF=1
+    * aomedia:3296 Fix the conflict --enable-tx-size-search=0 with nonrd mode
+      --enable-tx-size-search will be ignored in non-rd pick mode
+    * aomedia:3304 Fix off-by-one error of max w/h in validate_config
+    * aomedia:3306 Do not use pthread_setname_np on GNU/Hurd
+    * aomedia:3325 row-multithreading produces invalid bitstream in some cases
+    * chromium:1346938, chromium:1338114
+    * compiler_flags.cmake: fix flag detection w/cmake 3.17-3.18.2
+    * tools/*.py: update to python3
+    * aom_configure.cmake: detect PIE and set CONFIG_PIC
+    * test/simd_cmp_impl: use explicit types w/CompareSimd*
+    * rtc: Fix to disable segm for aq-mode=3
+    * rtc: Fix to color_sensitivity in variance partition
+    * rtc-screen: Fix bsize in model rd computation for intra chroma
+    * Fixes to ensure the correct behavior of the encoder algorithms (like
+      segmentation, computation of statistics, etc.)
+
+2022-06-17 v3.4.0
+  This release includes compression efficiency and perceptual quality
+  improvements, speedup and memory optimizations, and some new features.
+  There are no ABI or API breaking changes in this release.
+
+  - New Features
+    * New --dist-metric flag with "qm-psnr" value to use quantization
+      matrices in the distortion computation for RD search. The default
+      value is "psnr".
+    * New command line option "--auto-intra-tools-off=1" to make
+      all-intra encoding faster for high bit rate under
+      "--deltaq-mode=3" mode.
+    * New rate control library aom_av1_rc for real-time hardware
+      encoders. Supports CBR for both one spatial layer and SVC.
+    * New image format AOM_IMG_FMT_NV12 can be used as input to the
+      encoder. The presence of AOM_IMG_FMT_NV12 can be detected at
+      compile time by checking if the macro AOM_HAVE_IMG_FMT_NV12 is
+      defined.
+    * New codec controls for the encoder:
+      o AV1E_SET_AUTO_INTRA_TOOLS_OFF. Only in effect if
+        --deltaq-mode=3.
+      o AV1E_SET_RTC_EXTERNAL_RC
+      o AV1E_SET_FP_MT. Only supported if libaom is built with
+        -DCONFIG_FRAME_PARALLEL_ENCODE=1.
+      o AV1E_GET_TARGET_SEQ_LEVEL_IDX
+    * New key-value pairs for the key-value API:
+      o --auto-intra-tools-off=0 (default) or 1. Only in effect if
+        --deltaq-mode=3.
+      o --strict-level-conformance=0 (default) or 1
+      o --fp-mt=0 (default) or 1. Only supported if libaom is built
+        with -DCONFIG_FRAME_PARALLEL_ENCODE=1.
+    * New aomenc options (not supported by the key-value API):
+      o --nv12
+
+  - Compression Efficiency Improvements
+    * Correctly calculate SSE for high bitdepth in skip mode, 0.2% to
+      0.6% coding gain.
+    * RTC at speed 9/10: BD-rate gain of ~4/5%
+    * RTC screen content coding: many improvements for real-time screen
+      at speed 10 (quality, speedup, and rate control), up to high
+      resolutions (1080p).
+    * RTC-SVC: fixes to make intra-only frames work for spatial layers.
+    * RTC-SVC: quality improvements for temporal layers.
+    * AV1 RT: A new passive rate control strategy for screen content, an
+      average of 7.5% coding gain, with some clips of 20+%. The feature
+      is turned off by default due to higher bit rate variation.
+
+  - Perceptual Quality Improvements
+    * RTC: Visual quality improvements for high speeds (9/10)
+    * Improvements in coding quality for all intra mode
+
+  - Speedup and Memory Optimizations
+    * ~10% speedup in good quality mode encoding.
+    * ~7% heap memory reduction in good quality encoding mode for speed
+      5 and 6.
+    * Ongoing improvements to intra-frame encoding performance on Arm
+    * Faster encoding speed for "--deltaq-mode=3" mode.
+    * ~10% speedup for speed 5/6, ~15% speedup for speed 7/8, and
+      ~10% speedup for speed 9/10 in real time encoding mode
+    * ~20% heap memory reduction in still-picture encoding mode for
+      360p-720p resolutions with multiple threads
+    * ~13% speedup for speed 6 and ~12% speedup for speed 9 in
+      still-picture encoding mode.
+    * Optimizations to improve multi-thread efficiency for still-picture
+      encoding mode.
+
+  - Bug Fixes
+    * b/204460717: README.md: replace master with main
+    * b/210677928: libaom disable_order is surprising for
+      max_reference_frames=3
+    * b/222461449: -DCONFIG_TUNE_BUTTERAUGLI=1 broken
+    * b/227207606: write_greyscale writes incorrect chroma in highbd
+      mode
+    * b/229955363: Integer-overflow in linsolve_wiener
+    * https://crbug.com/aomedia/2032
+    * https://crbug.com/aomedia/2397
+    * https://crbug.com/aomedia/2563
+    * https://crbug.com/aomedia/2815
+    * https://crbug.com/aomedia/3009
+    * https://crbug.com/aomedia/3018
+    * https://crbug.com/aomedia/3045
+    * https://crbug.com/aomedia/3101
+    * https://crbug.com/aomedia/3130
+    * https://crbug.com/aomedia/3173
+    * https://crbug.com/aomedia/3184
+    * https://crbug.com/aomedia/3187
+    * https://crbug.com/aomedia/3190
+    * https://crbug.com/aomedia/3195
+    * https://crbug.com/aomedia/3197
+    * https://crbug.com/aomedia/3201
+    * https://crbug.com/aomedia/3202
+    * https://crbug.com/aomedia/3204
+    * https://crbug.com/aomedia/3205
+    * https://crbug.com/aomedia/3207
+    * https://crbug.com/aomedia/3208
+    * https://crbug.com/aomedia/3209
+    * https://crbug.com/aomedia/3213
+    * https://crbug.com/aomedia/3214
+    * https://crbug.com/aomedia/3219
+    * https://crbug.com/aomedia/3222
+    * https://crbug.com/aomedia/3223
+    * https://crbug.com/aomedia/3225
+    * https://crbug.com/aomedia/3226
+    * https://crbug.com/aomedia/3228
+    * https://crbug.com/aomedia/3232
+    * https://crbug.com/aomedia/3236
+    * https://crbug.com/aomedia/3237
+    * https://crbug.com/aomedia/3238
+    * https://crbug.com/aomedia/3240
+    * https://crbug.com/aomedia/3243
+    * https://crbug.com/aomedia/3244
+    * https://crbug.com/aomedia/3246
+    * https://crbug.com/aomedia/3248
+    * https://crbug.com/aomedia/3250
+    * https://crbug.com/aomedia/3251
+    * https://crbug.com/aomedia/3252
+    * https://crbug.com/aomedia/3255
+    * https://crbug.com/aomedia/3257
+    * https://crbug.com/aomedia/3259
+    * https://crbug.com/aomedia/3260
+    * https://crbug.com/aomedia/3267
+    * https://crbug.com/aomedia/3268
+    * https://crbug.com/aomedia/3269
+    * https://crbug.com/aomedia/3276
+    * https://crbug.com/aomedia/3278
+    * https://crbug.com/chromium/1290068
+    * https://crbug.com/chromium/1303237
+    * https://crbug.com/chromium/1304990
+    * https://crbug.com/chromium/1321141
+    * https://crbug.com/chromium/1321388
+    * https://crbug.com/oss-fuzz/44846
+    * https://crbug.com/oss-fuzz/44856
+    * https://crbug.com/oss-fuzz/44862
+    * https://crbug.com/oss-fuzz/44904
+    * https://crbug.com/oss-fuzz/45056
+
 2022-01-28 v3.3.0
   This release includes compression efficiency and perceptual quality
   improvements, speedup and memory optimizations, some new features, and
@@ -76,7 +285,7 @@
   - Perceptual Quality Improvements
     * Added a new mode --deltaq-mode=3 to improve perceptual quality
       based on a differential contrast model for still images.
-    * Added a new mode –deltaq-mode=4 to improve perceptual quality
+    * Added a new mode --deltaq-mode=4 to improve perceptual quality
       based on user rated cq_level data set for still images.
     * Weighting of some intra mode and partition size choices to better
       manage and retain texture.
@@ -181,7 +390,7 @@
         "enable-diagonal-intra" for the aom_codec_set_option() function.
 
     New aom_tune_metric enum value: AOM_TUNE_BUTTERAUGLI. The new aomenc option
-    --tune=butteraugli was added to optimize the encoder’s perceptual quality by
+    --tune=butteraugli was added to optimize the encoder's perceptual quality by
     optimizing the Butteraugli metric. Install libjxl (JPEG XL) and then pass
     -DCONFIG_TUNE_BUTTERAUGLI=1 to the cmake command to enable it.
 
@@ -281,7 +490,7 @@
 
     Issue 2869: Add -Wimplicit-function-declaration as C flag only.
 
-    Issue 2878: Avoid memset in the av1_filter_intra_predictor module
+    Issue 2878: Avoid memset in the av1_filter_intra_predictor module
     functions.
 
     Issue 2903: Fix a typo bug in apply_temporal_filter_planewise.

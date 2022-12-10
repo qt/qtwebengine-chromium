@@ -15,6 +15,64 @@
 #include <string.h>
 #include "aom_dsp/aom_dsp_common.h"
 
+// Support for xN Neon intrinsics is lacking in some compilers.
+#if defined(__arm__) || defined(_M_ARM)
+#define ARM_32_BIT
+#endif
+
+// DEFICIENT_CLANG_32_BIT includes clang-cl.
+#if defined(__clang__) && defined(ARM_32_BIT) && \
+    (__clang_major__ <= 6 || (defined(__ANDROID__) && __clang_major__ <= 7))
+#define DEFICIENT_CLANG_32_BIT  // This includes clang-cl.
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__) && defined(ARM_32_BIT)
+#define GCC_32_BIT
+#endif
+
+#if defined(DEFICIENT_CLANG_32_BIT) || defined(GCC_32_BIT)
+
+static INLINE uint8x16x3_t vld1q_u8_x3(const uint8_t *ptr) {
+  uint8x16x3_t res = { { vld1q_u8(ptr + 0 * 16), vld1q_u8(ptr + 1 * 16),
+                         vld1q_u8(ptr + 2 * 16) } };
+  return res;
+}
+
+static INLINE uint8x16x2_t vld1q_u8_x2(const uint8_t *ptr) {
+  uint8x16x2_t res = { { vld1q_u8(ptr + 0 * 16), vld1q_u8(ptr + 1 * 16) } };
+  return res;
+}
+
+static INLINE uint16x8x4_t vld1q_u16_x4(const uint16_t *ptr) {
+  uint16x8x4_t res = { { vld1q_u16(ptr + 0 * 8), vld1q_u16(ptr + 1 * 8),
+                         vld1q_u16(ptr + 2 * 8), vld1q_u16(ptr + 3 * 8) } };
+  return res;
+}
+
+#elif defined(__GNUC__) && !defined(__clang__)  // GCC 64-bit.
+#if __GNUC__ < 8
+
+static INLINE uint8x16x2_t vld1q_u8_x2(const uint8_t *ptr) {
+  uint8x16x2_t res = { { vld1q_u8(ptr + 0 * 16), vld1q_u8(ptr + 1 * 16) } };
+  return res;
+}
+
+static INLINE uint16x8x4_t vld1q_u16_x4(const uint16_t *ptr) {
+  uint16x8x4_t res = { { vld1q_u16(ptr + 0 * 8), vld1q_u16(ptr + 1 * 8),
+                         vld1q_u16(ptr + 2 * 8), vld1q_u16(ptr + 3 * 8) } };
+  return res;
+}
+#endif  // __GNUC__ < 8
+
+#if __GNUC__ < 9
+static INLINE uint8x16x3_t vld1q_u8_x3(const uint8_t *ptr) {
+  uint8x16x3_t res = { { vld1q_u8(ptr + 0 * 16), vld1q_u8(ptr + 1 * 16),
+                         vld1q_u8(ptr + 2 * 16) } };
+  return res;
+}
+#endif  // __GNUC__ < 9
+#endif  // defined(__GNUC__) && !defined(__clang__)
+
 static INLINE void store_row2_u8_8x8(uint8_t *s, int p, const uint8x8_t s0,
                                      const uint8x8_t s1) {
   vst1_u8(s, s0);
@@ -316,14 +374,25 @@ static INLINE void load_s16_8x4(const int16_t *s, ptrdiff_t p,
   *s3 = vld1q_s16(s);
 }
 
+// Load 2 sets of 4 bytes when alignment is not guaranteed.
+static INLINE uint8x8_t load_unaligned_u8(const uint8_t *buf, int stride) {
+  uint32_t a;
+  memcpy(&a, buf, 4);
+  buf += stride;
+  uint32x2_t a_u32 = vdup_n_u32(a);
+  memcpy(&a, buf, 4);
+  a_u32 = vset_lane_u32(a, a_u32, 1);
+  return vreinterpret_u8_u32(a_u32);
+}
+
 // Load 4 sets of 4 bytes when alignment is not guaranteed.
 static INLINE uint8x16_t load_unaligned_u8q(const uint8_t *buf, int stride) {
   uint32_t a;
-  uint32x4_t a_u32 = vdupq_n_u32(0);
+  uint32x4_t a_u32;
   if (stride == 4) return vld1q_u8(buf);
   memcpy(&a, buf, 4);
   buf += stride;
-  a_u32 = vsetq_lane_u32(a, a_u32, 0);
+  a_u32 = vdupq_n_u32(a);
   memcpy(&a, buf, 4);
   buf += stride;
   a_u32 = vsetq_lane_u32(a, a_u32, 1);
@@ -331,7 +400,6 @@ static INLINE uint8x16_t load_unaligned_u8q(const uint8_t *buf, int stride) {
   buf += stride;
   a_u32 = vsetq_lane_u32(a, a_u32, 2);
   memcpy(&a, buf, 4);
-  buf += stride;
   a_u32 = vsetq_lane_u32(a, a_u32, 3);
   return vreinterpretq_u8_u32(a_u32);
 }
@@ -343,25 +411,25 @@ static INLINE void load_unaligned_u8_4x8(const uint8_t *buf, int stride,
 
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu0 = vset_lane_u32(a, *tu0, 0);
+  *tu0 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   buf += stride;
   *tu0 = vset_lane_u32(a, *tu0, 1);
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu1 = vset_lane_u32(a, *tu1, 0);
+  *tu1 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   buf += stride;
   *tu1 = vset_lane_u32(a, *tu1, 1);
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu2 = vset_lane_u32(a, *tu2, 0);
+  *tu2 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   buf += stride;
   *tu2 = vset_lane_u32(a, *tu2, 1);
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu3 = vset_lane_u32(a, *tu3, 0);
+  *tu3 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   *tu3 = vset_lane_u32(a, *tu3, 1);
 }
@@ -372,13 +440,13 @@ static INLINE void load_unaligned_u8_4x4(const uint8_t *buf, int stride,
 
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu0 = vset_lane_u32(a, *tu0, 0);
+  *tu0 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   buf += stride;
   *tu0 = vset_lane_u32(a, *tu0, 1);
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu1 = vset_lane_u32(a, *tu1, 0);
+  *tu1 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
   *tu1 = vset_lane_u32(a, *tu1, 1);
 }
@@ -398,9 +466,8 @@ static INLINE void load_unaligned_u8_4x2(const uint8_t *buf, int stride,
 
   memcpy(&a, buf, 4);
   buf += stride;
-  *tu0 = vset_lane_u32(a, *tu0, 0);
+  *tu0 = vdup_n_u32(a);
   memcpy(&a, buf, 4);
-  buf += stride;
   *tu0 = vset_lane_u32(a, *tu0, 1);
 }
 
@@ -413,15 +480,21 @@ static INLINE void load_unaligned_u8_4x2(const uint8_t *buf, int stride,
     memcpy(dst, &a, 4);                                \
   } while (0)
 
+#define store_unaligned_u8_2x1(dst, src, lane)         \
+  do {                                                 \
+    uint16_t a;                                        \
+    a = vget_lane_u16(vreinterpret_u16_u8(src), lane); \
+    memcpy(dst, &a, 2);                                \
+  } while (0)
+
 static INLINE void load_unaligned_u8_2x2(const uint8_t *buf, int stride,
                                          uint16x4_t *tu0) {
   uint16_t a;
 
   memcpy(&a, buf, 2);
   buf += stride;
-  *tu0 = vset_lane_u16(a, *tu0, 0);
+  *tu0 = vdup_n_u16(a);
   memcpy(&a, buf, 2);
-  buf += stride;
   *tu0 = vset_lane_u16(a, *tu0, 1);
 }
 
@@ -465,13 +538,13 @@ static INLINE void load_unaligned_u16_4x4(const uint16_t *buf, uint32_t stride,
 
   memcpy(&a, buf, 8);
   buf += stride;
-  *tu0 = vsetq_lane_u64(a, *tu0, 0);
+  *tu0 = vdupq_n_u64(a);
   memcpy(&a, buf, 8);
   buf += stride;
   *tu0 = vsetq_lane_u64(a, *tu0, 1);
   memcpy(&a, buf, 8);
   buf += stride;
-  *tu1 = vsetq_lane_u64(a, *tu1, 0);
+  *tu1 = vdupq_n_u64(a);
   memcpy(&a, buf, 8);
   *tu1 = vsetq_lane_u64(a, *tu1, 1);
 }

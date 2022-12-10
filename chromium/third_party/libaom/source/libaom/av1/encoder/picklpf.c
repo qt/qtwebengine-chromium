@@ -69,9 +69,12 @@ static int64_t try_filter_frame(const YV12_BUFFER_CONFIG *sd,
     case 2: cm->lf.filter_level_v = filter_level[0]; break;
   }
 
+  // lpf_opt_level = 1 : Enables dual/quad loop-filtering.
+  int lpf_opt_level = is_inter_tx_size_search_level_one(&cpi->sf.tx_sf);
+
   av1_loop_filter_frame_mt(&cm->cur_frame->buf, cm, &cpi->td.mb.e_mbd, plane,
                            plane + 1, partial_frame, mt_info->workers,
-                           num_workers, &mt_info->lf_row_sync, 0);
+                           num_workers, &mt_info->lf_row_sync, lpf_opt_level);
 
   filt_err = aom_get_sse_plane(sd, &cm->cur_frame->buf, plane,
                                cm->seq_params->use_highbitdepth);
@@ -209,7 +212,7 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
   if (disable_filter_rt_screen ||
       cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_NONE ||
       (cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_REFERENCE &&
-       cpi->svc.non_reference_frame)) {
+       cpi->rtc_ref.non_reference_frame)) {
     lf->filter_level[0] = 0;
     lf->filter_level[1] = 0;
     return;
@@ -268,7 +271,7 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
     lf->filter_level_u = clamp(filt_guess, min_filter_level, max_filter_level);
     lf->filter_level_v = clamp(filt_guess, min_filter_level, max_filter_level);
     if (cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_SELECTIVELY &&
-        !frame_is_intra_only(cm)) {
+        !frame_is_intra_only(cm) && !cpi->rc.high_source_sad) {
       if (cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN) {
         lf->filter_level[0] = 0;
         lf->filter_level[1] = 0;
@@ -298,7 +301,7 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
             &cpi->last_frame_uf, cm->width, cm->height,
             seq_params->subsampling_x, seq_params->subsampling_y,
             seq_params->use_highbitdepth, cpi->oxcf.border_in_pixels,
-            cm->features.byte_alignment, NULL, NULL, NULL, 0))
+            cm->features.byte_alignment, NULL, NULL, NULL, 0, 0))
       aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                          "Failed to allocate last frame buffer");
 

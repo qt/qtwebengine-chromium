@@ -10,6 +10,7 @@
  */
 
 #include <math.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "config/aom_dsp_rtcd.h"
@@ -266,6 +267,22 @@ static uint64_t compute_cdef_dist_highbd(void *dst, int dstride, uint16_t *src,
   return sum >> 2 * coeff_shift;
 }
 #endif
+
+// Checks dual and quad block processing is applicable for block widths 8 and 4
+// respectively.
+static INLINE int is_dual_or_quad_applicable(cdef_list *dlist, int width,
+                                             int cdef_count, int bi, int iter) {
+  assert(width == 8 || width == 4);
+  const int blk_offset = (width == 8) ? 1 : 3;
+  if ((iter + blk_offset) >= cdef_count) return 0;
+
+  if (dlist[bi].by == dlist[bi + blk_offset].by &&
+      dlist[bi].bx + blk_offset == dlist[bi + blk_offset].bx)
+    return 1;
+
+  return 0;
+}
+
 static uint64_t compute_cdef_dist(void *dst, int dstride, uint16_t *src,
                                   cdef_list *dlist, int cdef_count,
                                   BLOCK_SIZE bsize, int coeff_shift, int row,
@@ -274,19 +291,93 @@ static uint64_t compute_cdef_dist(void *dst, int dstride, uint16_t *src,
          bsize == BLOCK_8X8);
   uint64_t sum = 0;
   int bi, bx, by;
+  int iter = 0;
+  int inc = 1;
   uint8_t *dst8 = (uint8_t *)dst;
   uint8_t *dst_buff = &dst8[row * dstride + col];
   int src_stride, width, height, width_log2, height_log2;
   init_src_params(&src_stride, &width, &height, &width_log2, &height_log2,
                   bsize);
-  for (bi = 0; bi < cdef_count; bi++) {
+
+  const int num_blks = 16 / width;
+  for (bi = 0; bi < cdef_count; bi += inc) {
     by = dlist[bi].by;
     bx = dlist[bi].bx;
-    sum += aom_mse_wxh_16bit(
-        &dst_buff[(by << height_log2) * dstride + (bx << width_log2)], dstride,
-        &src[bi << (height_log2 + width_log2)], src_stride, width, height);
+    uint16_t *src_tmp = &src[bi << (height_log2 + width_log2)];
+    uint8_t *dst_tmp =
+        &dst_buff[(by << height_log2) * dstride + (bx << width_log2)];
+
+    if (is_dual_or_quad_applicable(dlist, width, cdef_count, bi, iter)) {
+      sum += aom_mse_16xh_16bit(dst_tmp, dstride, src_tmp, width, height);
+      iter += num_blks;
+      inc = num_blks;
+    } else {
+      sum += aom_mse_wxh_16bit(dst_tmp, dstride, src_tmp, src_stride, width,
+                               height);
+      iter += 1;
+      inc = 1;
+    }
   }
+
   return sum >> 2 * coeff_shift;
+}
+
+// Fill the boundary regions of the block with CDEF_VERY_LARGE, only if the
+// region is outside frame boundary
+static INLINE void fill_borders_for_fbs_on_frame_boundary(
+    uint16_t *inbuf, int hfilt_size, int vfilt_size,
+    bool is_fb_on_frm_left_boundary, bool is_fb_on_frm_right_boundary,
+    bool is_fb_on_frm_top_boundary, bool is_fb_on_frm_bottom_boundary) {
+  if (!is_fb_on_frm_left_boundary && !is_fb_on_frm_right_boundary &&
+      !is_fb_on_frm_top_boundary && !is_fb_on_frm_bottom_boundary)
+    return;
+  if (is_fb_on_frm_bottom_boundary) {
+    // Fill bottom region of the block
+    const int buf_offset =
+        (vfilt_size + CDEF_VBORDER) * CDEF_BSTRIDE + CDEF_HBORDER;
+    fill_rect(&inbuf[buf_offset], CDEF_BSTRIDE, CDEF_VBORDER, hfilt_size,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_bottom_boundary || is_fb_on_frm_left_boundary) {
+    const int buf_offset = (vfilt_size + CDEF_VBORDER) * CDEF_BSTRIDE;
+    // Fill bottom-left region of the block
+    fill_rect(&inbuf[buf_offset], CDEF_BSTRIDE, CDEF_VBORDER, CDEF_HBORDER,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_bottom_boundary || is_fb_on_frm_right_boundary) {
+    const int buf_offset =
+        (vfilt_size + CDEF_VBORDER) * CDEF_BSTRIDE + hfilt_size + CDEF_HBORDER;
+    // Fill bottom-right region of the block
+    fill_rect(&inbuf[buf_offset], CDEF_BSTRIDE, CDEF_VBORDER, CDEF_HBORDER,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_top_boundary) {
+    // Fill top region of the block
+    fill_rect(&inbuf[CDEF_HBORDER], CDEF_BSTRIDE, CDEF_VBORDER, hfilt_size,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_top_boundary || is_fb_on_frm_left_boundary) {
+    // Fill top-left region of the block
+    fill_rect(inbuf, CDEF_BSTRIDE, CDEF_VBORDER, CDEF_HBORDER, CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_top_boundary || is_fb_on_frm_right_boundary) {
+    const int buf_offset = hfilt_size + CDEF_HBORDER;
+    // Fill top-right region of the block
+    fill_rect(&inbuf[buf_offset], CDEF_BSTRIDE, CDEF_VBORDER, CDEF_HBORDER,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_left_boundary) {
+    const int buf_offset = CDEF_VBORDER * CDEF_BSTRIDE;
+    // Fill left region of the block
+    fill_rect(&inbuf[buf_offset], CDEF_BSTRIDE, vfilt_size, CDEF_HBORDER,
+              CDEF_VERY_LARGE);
+  }
+  if (is_fb_on_frm_right_boundary) {
+    const int buf_offset = CDEF_VBORDER * CDEF_BSTRIDE;
+    // Fill right region of the block
+    fill_rect(&inbuf[buf_offset + hfilt_size + CDEF_HBORDER], CDEF_BSTRIDE,
+              vfilt_size, CDEF_HBORDER, CDEF_VERY_LARGE);
+  }
 }
 
 // Calculates MSE at block level.
@@ -345,26 +436,35 @@ void av1_cdef_mse_calc_block(CdefSearchCtx *cdef_search_ctx, int fbr, int fbc,
   const int cdef_count = av1_cdef_compute_sb_list(
       mi_params, fbr * MI_SIZE_64X64, fbc * MI_SIZE_64X64, dlist, bs);
 
-  const int yoff = CDEF_VBORDER * (fbr != 0);
-  const int xoff = CDEF_HBORDER * (fbc != 0);
+  const bool is_fb_on_frm_left_boundary = (fbc == 0);
+  const bool is_fb_on_frm_right_boundary =
+      (fbc + hb_step == cdef_search_ctx->nhfb);
+  const bool is_fb_on_frm_top_boundary = (fbr == 0);
+  const bool is_fb_on_frm_bottom_boundary =
+      (fbr + vb_step == cdef_search_ctx->nvfb);
+  const int yoff = CDEF_VBORDER * (!is_fb_on_frm_top_boundary);
+  const int xoff = CDEF_HBORDER * (!is_fb_on_frm_left_boundary);
   int dirinit = 0;
   for (int pli = 0; pli < cdef_search_ctx->num_planes; pli++) {
-    for (int i = 0; i < CDEF_INBUF_SIZE; i++) inbuf[i] = CDEF_VERY_LARGE;
     /* We avoid filtering the pixels for which some of the pixels to
     average are outside the frame. We could change the filter instead,
     but it would add special cases for any future vectorization. */
-    const int ysize = (nvb << mi_high_l2[pli]) +
-                      CDEF_VBORDER * (fbr + vb_step < cdef_search_ctx->nvfb) +
-                      yoff;
-    const int xsize = (nhb << mi_wide_l2[pli]) +
-                      CDEF_HBORDER * (fbc + hb_step < cdef_search_ctx->nhfb) +
-                      xoff;
+    const int hfilt_size = (nhb << mi_wide_l2[pli]);
+    const int vfilt_size = (nvb << mi_high_l2[pli]);
+    const int ysize =
+        vfilt_size + CDEF_VBORDER * (!is_fb_on_frm_bottom_boundary) + yoff;
+    const int xsize =
+        hfilt_size + CDEF_HBORDER * (!is_fb_on_frm_right_boundary) + xoff;
     const int row = fbr * MI_SIZE_64X64 << mi_high_l2[pli];
     const int col = fbc * MI_SIZE_64X64 << mi_wide_l2[pli];
     struct macroblockd_plane pd = cdef_search_ctx->plane[pli];
     cdef_search_ctx->copy_fn(&in[(-yoff * CDEF_BSTRIDE - xoff)], CDEF_BSTRIDE,
                              pd.dst.buf, row - yoff, col - xoff, pd.dst.stride,
                              ysize, xsize);
+    fill_borders_for_fbs_on_frame_boundary(
+        inbuf, hfilt_size, vfilt_size, is_fb_on_frm_left_boundary,
+        is_fb_on_frm_right_boundary, is_fb_on_frm_top_boundary,
+        is_fb_on_frm_bottom_boundary);
     for (int gi = 0; gi < cdef_search_ctx->total_strengths; gi++) {
       int pri_strength, sec_strength;
       get_cdef_filter_strengths(cdef_search_ctx->pick_method, &pri_strength,
@@ -413,7 +513,7 @@ static void cdef_mse_calc_frame(CdefSearchCtx *cdef_search_ctx) {
 //   related to CDEF search context.
 // Returns:
 //   Nothing will be returned. Contents of cdef_search_ctx will be modified.
-static AOM_INLINE void cdef_alloc_data(CdefSearchCtx *cdef_search_ctx) {
+static AOM_INLINE bool cdef_alloc_data(CdefSearchCtx *cdef_search_ctx) {
   const int nvfb = cdef_search_ctx->nvfb;
   const int nhfb = cdef_search_ctx->nhfb;
   cdef_search_ctx->sb_index =
@@ -423,6 +523,14 @@ static AOM_INLINE void cdef_alloc_data(CdefSearchCtx *cdef_search_ctx) {
       aom_malloc(sizeof(**cdef_search_ctx->mse) * nvfb * nhfb);
   cdef_search_ctx->mse[1] =
       aom_malloc(sizeof(**cdef_search_ctx->mse) * nvfb * nhfb);
+  if (!(cdef_search_ctx->sb_index && cdef_search_ctx->mse[0] &&
+        cdef_search_ctx->mse[1])) {
+    aom_free(cdef_search_ctx->sb_index);
+    aom_free(cdef_search_ctx->mse[0]);
+    aom_free(cdef_search_ctx->mse[1]);
+    return false;
+  }
+  return true;
 }
 
 // Deallocates the memory allocated for members of CdefSearchCtx.
@@ -499,7 +607,7 @@ static AOM_INLINE void cdef_params_init(const YV12_BUFFER_CONFIG *frame,
 }
 
 static void pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
-                              int frames_since_key) {
+                              int is_screen_content) {
   const int bd = cm->seq_params->bit_depth;
   const int q =
       av1_ac_quant_QTX(cm->quant_params.base_qindex, 0, bd) >> (bd - 8);
@@ -518,42 +626,61 @@ static void pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
   int predicted_y_f2 = 0;
   int predicted_uv_f1 = 0;
   int predicted_uv_f2 = 0;
-  if (!frame_is_intra_only(cm)) {
-    predicted_y_f1 = clamp((int)roundf(q * q * -0.0000023593946f +
-                                       q * 0.0068615186f + 0.02709886f),
-                           0, 15);
-    predicted_y_f2 = clamp((int)roundf(q * q * -0.00000057629734f +
-                                       q * 0.0013993345f + 0.03831067f),
-                           0, 3);
-    predicted_uv_f1 = clamp((int)roundf(q * q * -0.0000007095069f +
-                                        q * 0.0034628846f + 0.00887099f),
-                            0, 15);
-    predicted_uv_f2 = clamp((int)roundf(q * q * 0.00000023874085f +
-                                        q * 0.00028223585f + 0.05576307f),
-                            0, 3);
+  if (is_screen_content) {
+    predicted_y_f1 =
+        (int)(5.88217781e-06 * q * q + 6.10391455e-03 * q + 9.95043102e-02);
+    predicted_y_f2 =
+        (int)(-7.79934857e-06 * q * q + 6.58957830e-03 * q + 8.81045025e-01);
+    predicted_uv_f1 =
+        (int)(-6.79500136e-06 * q * q + 1.02695586e-02 * q + 1.36126802e-01);
+    predicted_uv_f2 =
+        (int)(-9.99613695e-08 * q * q - 1.79361339e-05 * q + 1.17022324e+0);
+    predicted_y_f1 = clamp(predicted_y_f1, 0, 15);
+    predicted_y_f2 = clamp(predicted_y_f2, 0, 3);
+    predicted_uv_f1 = clamp(predicted_uv_f1, 0, 15);
+    predicted_uv_f2 = clamp(predicted_uv_f2, 0, 3);
   } else {
-    predicted_y_f1 = clamp(
-        (int)roundf(q * q * 0.0000033731974f + q * 0.008070594f + 0.0187634f),
-        0, 15);
-    predicted_y_f2 = clamp(
-        (int)roundf(q * q * 0.0000029167343f + q * 0.0027798624f + 0.0079405f),
-        0, 3);
-    predicted_uv_f1 = clamp(
-        (int)roundf(q * q * -0.0000130790995f + q * 0.012892405f - 0.00748388f),
-        0, 15);
-    predicted_uv_f2 = clamp((int)roundf(q * q * 0.0000032651783f +
-                                        q * 0.00035520183f + 0.00228092f),
-                            0, 3);
+    if (!frame_is_intra_only(cm)) {
+      predicted_y_f1 = clamp((int)roundf(q * q * -0.0000023593946f +
+                                         q * 0.0068615186f + 0.02709886f),
+                             0, 15);
+      predicted_y_f2 = clamp((int)roundf(q * q * -0.00000057629734f +
+                                         q * 0.0013993345f + 0.03831067f),
+                             0, 3);
+      predicted_uv_f1 = clamp((int)roundf(q * q * -0.0000007095069f +
+                                          q * 0.0034628846f + 0.00887099f),
+                              0, 15);
+      predicted_uv_f2 = clamp((int)roundf(q * q * 0.00000023874085f +
+                                          q * 0.00028223585f + 0.05576307f),
+                              0, 3);
+    } else {
+      predicted_y_f1 = clamp(
+          (int)roundf(q * q * 0.0000033731974f + q * 0.008070594f + 0.0187634f),
+          0, 15);
+      predicted_y_f2 = clamp((int)roundf(q * q * 0.0000029167343f +
+                                         q * 0.0027798624f + 0.0079405f),
+                             0, 3);
+      predicted_uv_f1 = clamp((int)roundf(q * q * -0.0000130790995f +
+                                          q * 0.012892405f - 0.00748388f),
+                              0, 15);
+      predicted_uv_f2 = clamp((int)roundf(q * q * 0.0000032651783f +
+                                          q * 0.00035520183f + 0.00228092f),
+                              0, 3);
+    }
   }
   cdef_info->cdef_strengths[0] =
       predicted_y_f1 * CDEF_SEC_STRENGTHS + predicted_y_f2;
   cdef_info->cdef_uv_strengths[0] =
       predicted_uv_f1 * CDEF_SEC_STRENGTHS + predicted_uv_f2;
 
+  // mbmi->cdef_strength is already set in the encoding stage. We don't need to
+  // set it again here.
   if (skip_cdef) {
     cdef_info->cdef_strengths[1] = 0;
     cdef_info->cdef_uv_strengths[1] = 0;
+    return;
   }
+
   const CommonModeInfoParams *const mi_params = &cm->mi_params;
   const int nvfb = (mi_params->mi_rows + MI_SIZE_64X64 - 1) / MI_SIZE_64X64;
   const int nhfb = (mi_params->mi_cols + MI_SIZE_64X64 - 1) / MI_SIZE_64X64;
@@ -562,10 +689,6 @@ static void pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
     for (int c = 0; c < nhfb; ++c) {
       MB_MODE_INFO *current_mbmi = mbmi[MI_SIZE_64X64 * c];
       current_mbmi->cdef_strength = 0;
-      if (skip_cdef && current_mbmi->skip_cdef_curr_sb &&
-          frames_since_key > 10) {
-        current_mbmi->cdef_strength = 1;
-      }
     }
     mbmi += MI_SIZE_64X64 * mi_params->mi_stride;
   }
@@ -574,8 +697,8 @@ static void pick_cdef_from_qp(AV1_COMMON *const cm, int skip_cdef,
 void av1_cdef_search(MultiThreadInfo *mt_info, const YV12_BUFFER_CONFIG *frame,
                      const YV12_BUFFER_CONFIG *ref, AV1_COMMON *cm,
                      MACROBLOCKD *xd, CDEF_PICK_METHOD pick_method, int rdmult,
-                     int skip_cdef_feature, int frames_since_key,
-                     CDEF_CONTROL cdef_control, int non_reference_frame) {
+                     int skip_cdef_feature, CDEF_CONTROL cdef_control,
+                     const int is_screen_content, int non_reference_frame) {
   assert(cdef_control != CDEF_NONE);
   if (cdef_control == CDEF_REFERENCE && non_reference_frame) {
     CdefInfo *const cdef_info = &cm->cdef_info;
@@ -587,7 +710,7 @@ void av1_cdef_search(MultiThreadInfo *mt_info, const YV12_BUFFER_CONFIG *frame,
   }
 
   if (pick_method == CDEF_PICK_FROM_Q) {
-    pick_cdef_from_qp(cm, skip_cdef_feature, frames_since_key);
+    pick_cdef_from_qp(cm, skip_cdef_feature, is_screen_content);
     return;
   }
   const CommonModeInfoParams *const mi_params = &cm->mi_params;
@@ -599,7 +722,14 @@ void av1_cdef_search(MultiThreadInfo *mt_info, const YV12_BUFFER_CONFIG *frame,
   // Initialize parameters related to CDEF search context.
   cdef_params_init(frame, ref, cm, xd, &cdef_search_ctx, pick_method);
   // Allocate CDEF search context buffers.
-  cdef_alloc_data(&cdef_search_ctx);
+  if (!cdef_alloc_data(&cdef_search_ctx)) {
+    CdefInfo *const cdef_info = &cm->cdef_info;
+    cdef_info->nb_cdef_strengths = 0;
+    cdef_info->cdef_bits = 0;
+    cdef_info->cdef_strengths[0] = 0;
+    cdef_info->cdef_uv_strengths[0] = 0;
+    return;
+  }
   // Frame level mse calculation.
   if (mt_info->num_workers > 1) {
     av1_cdef_mse_calc_frame_mt(cm, mt_info, &cdef_search_ctx);

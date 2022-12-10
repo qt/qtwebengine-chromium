@@ -226,12 +226,12 @@ void av1_cdef_mse_calc_block(CdefSearchCtx *cdef_search_ctx, int fbr, int fbc,
  * \param[in]      pick_method  The method used to select params
  * \param[in]      rdmult       rd multiplier to use in making param choices
  * \param[in]      skip_cdef_feature Speed feature to skip cdef
- * \param[in]      frames_since_key Number of frames since key frame
  * \param[in]      cdef_control  Parameter that controls CDEF application
+ * \param[in]      is_screen_content   Whether it is screen content type
  * \param[in]      non_reference_frame Indicates if current frame is
  * non-reference
  *
- * \return Nothing is returned. Instead, optimal CDEF parameters are stored
+ * \remark Nothing is returned. Instead, optimal CDEF parameters are stored
  * in the \c cdef_info structure of type \ref CdefInfo inside \c cm:
  * \arg \c cdef_bits: Bits of strength parameters
  * \arg \c nb_cdef_strengths: Number of strength parameters
@@ -246,8 +246,8 @@ void av1_cdef_search(struct MultiThreadInfo *mt_info,
                      const YV12_BUFFER_CONFIG *frame,
                      const YV12_BUFFER_CONFIG *ref, AV1_COMMON *cm,
                      MACROBLOCKD *xd, CDEF_PICK_METHOD pick_method, int rdmult,
-                     int skip_cdef_feature, int frames_since_key,
-                     CDEF_CONTROL cdef_control, int non_reference_frame);
+                     int skip_cdef_feature, CDEF_CONTROL cdef_control,
+                     const int is_screen_content, int non_reference_frame);
 
 #ifdef __cplusplus
 }  // extern "C"

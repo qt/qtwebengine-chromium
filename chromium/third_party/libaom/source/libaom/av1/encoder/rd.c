@@ -14,8 +14,6 @@
 #include <math.h>
 #include <stdio.h>
 
-#include "config/av1_rtcd.h"
-
 #include "aom_dsp/aom_dsp_common.h"
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/bitops.h"
@@ -25,23 +23,18 @@
 #include "av1/common/common.h"
 #include "av1/common/entropy.h"
 #include "av1/common/entropymode.h"
-#include "av1/common/mvref_common.h"
 #include "av1/common/pred_common.h"
 #include "av1/common/quant_common.h"
 #include "av1/common/reconinter.h"
 #include "av1/common/reconintra.h"
 #include "av1/common/seg_common.h"
 
-#include "av1/encoder/av1_quantize.h"
 #include "av1/encoder/cost.h"
-#include "av1/encoder/encodemb.h"
 #include "av1/encoder/encodemv.h"
 #include "av1/encoder/encoder.h"
-#include "av1/encoder/encodetxb.h"
-#include "av1/encoder/mcomp.h"
+#include "av1/encoder/nonrd_opt.h"
 #include "av1/encoder/ratectrl.h"
 #include "av1/encoder/rd.h"
-#include "av1/encoder/tokenize.h"
 
 #define RD_THRESH_POW 1.25
 
@@ -515,8 +508,26 @@ void av1_set_sad_per_bit(const AV1_COMP *cpi, int *sadperbit, int qindex) {
   }
 }
 
-static void set_block_thresholds(const AV1_COMMON *cm, RD_OPT *rd) {
+static void set_block_thresholds(const AV1_COMMON *cm, RD_OPT *rd,
+                                 int use_nonrd_pick_mode) {
   int i, bsize, segment_id;
+  THR_MODES mode_indices[RTC_REFS * RTC_MODES] = { 0 };
+  int num_modes_count = use_nonrd_pick_mode ? 0 : MAX_MODES;
+
+  if (use_nonrd_pick_mode) {
+    for (int r_idx = 0; r_idx < RTC_REFS; r_idx++) {
+      const MV_REFERENCE_FRAME ref = real_time_ref_combos[r_idx][0];
+      if (ref != INTRA_FRAME) {
+        for (i = 0; i < RTC_INTER_MODES; i++)
+          mode_indices[num_modes_count++] =
+              mode_idx[ref][mode_offset(inter_mode_list[i])];
+      } else {
+        for (i = 0; i < RTC_INTRA_MODES; i++)
+          mode_indices[num_modes_count++] =
+              mode_idx[ref][mode_offset(intra_mode_list[i])];
+      }
+    }
+  }
 
   for (segment_id = 0; segment_id < MAX_SEGMENTS; ++segment_id) {
     const int qindex = clamp(
@@ -531,10 +542,13 @@ static void set_block_thresholds(const AV1_COMMON *cm, RD_OPT *rd) {
       const int t = q * rd_thresh_block_size_factor[bsize];
       const int thresh_max = INT_MAX / t;
 
-      for (i = 0; i < MAX_MODES; ++i)
-        rd->threshes[segment_id][bsize][i] = rd->thresh_mult[i] < thresh_max
-                                                 ? rd->thresh_mult[i] * t / 4
-                                                 : INT_MAX;
+      for (i = 0; i < num_modes_count; ++i) {
+        const int mode_index = use_nonrd_pick_mode ? mode_indices[i] : i;
+        rd->threshes[segment_id][bsize][mode_index] =
+            rd->thresh_mult[mode_index] < thresh_max
+                ? rd->thresh_mult[mode_index] * t / 4
+                : INT_MAX;
+      }
     }
   }
 }
@@ -706,6 +720,34 @@ static INLINE int is_frame_level_cost_upd_freq_set(
           cost_upd_level == INTERNAL_COST_UPD_TILE || fill_costs);
 }
 
+// Decide whether we want to update the mode entropy cost for the current frame.
+// The logit is currently inherited from selective_disable_cdf_rtc.
+static AOM_INLINE int should_force_mode_cost_update(const AV1_COMP *cpi) {
+  const REAL_TIME_SPEED_FEATURES *const rt_sf = &cpi->sf.rt_sf;
+  if (!rt_sf->frame_level_mode_cost_update) {
+    return false;
+  }
+
+  if (cpi->oxcf.algo_cfg.cdf_update_mode == 2) {
+    return cpi->frames_since_last_update == 1;
+  } else if (cpi->oxcf.algo_cfg.cdf_update_mode == 1) {
+    if (cpi->svc.number_spatial_layers == 1 &&
+        cpi->svc.number_temporal_layers == 1) {
+      const AV1_COMMON *const cm = &cpi->common;
+      const RATE_CONTROL *const rc = &cpi->rc;
+
+      return frame_is_intra_only(cm) || is_frame_resize_pending(cpi) ||
+             rc->high_source_sad || rc->frames_since_key < 10 ||
+             cpi->cyclic_refresh->counter_encode_maxq_scene_change < 10 ||
+             cm->current_frame.frame_number % 8 == 0;
+    } else if (cpi->svc.number_temporal_layers > 1) {
+      return cpi->svc.temporal_layer_id != cpi->svc.number_temporal_layers - 1;
+    }
+  }
+
+  return false;
+}
+
 void av1_initialize_rd_consts(AV1_COMP *cpi) {
   AV1_COMMON *const cm = &cpi->common;
   MACROBLOCK *const x = &cpi->td.mb;
@@ -728,7 +770,7 @@ void av1_initialize_rd_consts(AV1_COMP *cpi) {
 
   av1_set_error_per_bit(&x->errorperbit, rd->RDMULT);
 
-  set_block_thresholds(cm, rd);
+  set_block_thresholds(cm, rd, cpi->sf.rt_sf.use_nonrd_pick_mode);
 
   populate_unified_cost_update_freq(cpi->oxcf.cost_upd_freq, sf);
   const INTER_MODE_SPEED_FEATURES *const inter_sf = &cpi->sf.inter_sf;
@@ -744,7 +786,8 @@ void av1_initialize_rd_consts(AV1_COMP *cpi) {
     av1_fill_coeff_costs(&x->coeff_costs, cm->fc, av1_num_planes(cm));
 
   // Frame level mode cost update
-  if (is_frame_level_cost_upd_freq_set(cm, inter_sf->mode_cost_upd_level,
+  if (should_force_mode_cost_update(cpi) ||
+      is_frame_level_cost_upd_freq_set(cm, inter_sf->mode_cost_upd_level,
                                        use_nonrd_pick_mode, frames_since_key))
     av1_fill_mode_rates(cm, &x->mode_costs, cm->fc);
 

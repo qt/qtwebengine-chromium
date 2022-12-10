@@ -65,8 +65,11 @@ std::unique_ptr<AV1RateControlRTC> AV1RateControlRTC::Create(
   rc_api->cpi_->ppi =
       static_cast<AV1_PRIMARY *>(aom_memalign(32, sizeof(AV1_PRIMARY)));
   if (!rc_api->cpi_->ppi) return nullptr;
+  av1_zero(*rc_api->cpi_->ppi);
   rc_api->cpi_->common.seq_params = &rc_api->cpi_->ppi->seq_params;
   av1_zero(*rc_api->cpi_->common.seq_params);
+  const int num_layers = cfg.ss_number_layers * cfg.ts_number_layers;
+  av1_alloc_layer_context(rc_api->cpi_, num_layers);
   rc_api->InitRateControl(cfg);
   if (cfg.aq_mode) {
     AV1_COMP *const cpi = rc_api->cpi_;
@@ -94,6 +97,9 @@ AV1RateControlRTC::~AV1RateControlRTC() {
         }
       }
     }
+    aom_free(cpi_->svc.layer_context);
+    cpi_->svc.layer_context = nullptr;
+
     if (cpi_->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ) {
       aom_free(cpi_->enc_seg.map);
       cpi_->enc_seg.map = nullptr;
@@ -112,6 +118,7 @@ void AV1RateControlRTC::InitRateControl(const AV1RateControlRtcConfig &rc_cfg) {
   cm->seq_params->bit_depth = AOM_BITS_8;
   cm->show_frame = 1;
   oxcf->profile = cm->seq_params->profile;
+  oxcf->mode = REALTIME;
   oxcf->rc_cfg.mode = AOM_CBR;
   oxcf->pass = AOM_RC_ONE_PASS;
   oxcf->q_cfg.aq_mode = rc_cfg.aq_mode ? CYCLIC_REFRESH_AQ : NO_AQ;

@@ -49,7 +49,7 @@ void AV1_K_MEANS_RENAME(av1_k_means, 2)(const int *data, int *centroids,
  * \param[in]    k                  Number of clusters.
  * \param[in]    dim                Data dimension.
  *
- * \return Returns nothing, but saves each data's cluster index in indices.
+ * \remark Returns nothing, but saves each data's cluster index in \a indices.
  */
 static INLINE void av1_calc_indices(const int *data, const int *centroids,
                                     uint8_t *indices, int n, int k, int dim) {
@@ -79,8 +79,8 @@ static INLINE void av1_calc_indices(const int *data, const int *centroids,
  * \param[in]    dim                Data dimension.
  * \param[in]    max_itr            Maximum number of iterations to run.
  *
- * \return Returns nothing, but saves each cluster's centroid in centroids and
- * each data's cluster index in indices.
+ * \remark Returns nothing, but saves each cluster's centroid in centroids and
+ * each data's cluster index in \a indices.
  *
  * \attention The output centroids are rounded off to nearest integers.
  */
@@ -186,7 +186,7 @@ void av1_rd_pick_palette_intra_sby(
     const struct AV1_COMP *cpi, struct macroblock *x, BLOCK_SIZE bsize,
     int dc_mode_cost, MB_MODE_INFO *best_mbmi, uint8_t *best_palette_color_map,
     int64_t *best_rd, int *rate, int *rate_tokenonly, int64_t *distortion,
-    int *skippable, int *beat_best_rd, struct PICK_MODE_CONTEXT *ctx,
+    uint8_t *skippable, int *beat_best_rd, struct PICK_MODE_CONTEXT *ctx,
     uint8_t *best_blk_skip, uint8_t *tx_type_map);
 
 /*!\brief Search for the best palette in the chroma plane.
@@ -201,7 +201,7 @@ void av1_rd_pick_palette_intra_sbuv(const struct AV1_COMP *cpi,
                                     MB_MODE_INFO *const best_mbmi,
                                     int64_t *best_rd, int *rate,
                                     int *rate_tokenonly, int64_t *distortion,
-                                    int *skippable);
+                                    uint8_t *skippable);
 
 /*!\brief Resets palette color map for chroma channels.
  */

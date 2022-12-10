@@ -32,12 +32,12 @@ unsigned int aom_get_mb_ss_sse2(const int16_t *src) {
 
   vsum = _mm_add_epi32(vsum, _mm_srli_si128(vsum, 8));
   vsum = _mm_add_epi32(vsum, _mm_srli_si128(vsum, 4));
-  return _mm_cvtsi128_si32(vsum);
+  return (unsigned int)_mm_cvtsi128_si32(vsum);
 }
 
 static INLINE __m128i load4x2_sse2(const uint8_t *const p, const int stride) {
-  const __m128i p0 = _mm_cvtsi32_si128(loadu_uint32(p + 0 * stride));
-  const __m128i p1 = _mm_cvtsi32_si128(loadu_uint32(p + 1 * stride));
+  const __m128i p0 = _mm_cvtsi32_si128(loadu_int32(p + 0 * stride));
+  const __m128i p1 = _mm_cvtsi32_si128(loadu_int32(p + 1 * stride));
   return _mm_unpacklo_epi8(_mm_unpacklo_epi32(p0, p1), _mm_setzero_si128());
 }
 
@@ -50,7 +50,7 @@ static INLINE __m128i load8_8to16_sse2(const uint8_t *const p) {
 static INLINE unsigned int add32x4_sse2(__m128i val) {
   val = _mm_add_epi32(val, _mm_srli_si128(val, 8));
   val = _mm_add_epi32(val, _mm_srli_si128(val, 4));
-  return _mm_cvtsi128_si32(val);
+  return (unsigned int)_mm_cvtsi128_si32(val);
 }
 
 // Accumulate 8 16bit in sum to 4 32bit number
@@ -103,7 +103,7 @@ static INLINE void variance_final_512_pel_sse2(__m128i vsse, __m128i vsum,
   vsum = _mm_add_epi16(vsum, _mm_srli_si128(vsum, 8));
   vsum = _mm_unpacklo_epi16(vsum, vsum);
   vsum = _mm_srai_epi32(vsum, 16);
-  *sum = add32x4_sse2(vsum);
+  *sum = (int)add32x4_sse2(vsum);
 }
 
 // Can handle 1024 pixels' diff sum (such as 32x32)
@@ -113,7 +113,7 @@ static INLINE void variance_final_1024_pel_sse2(__m128i vsse, __m128i vsum,
   *sse = add32x4_sse2(vsse);
 
   vsum = sum_to_32bit_sse2(vsum);
-  *sum = add32x4_sse2(vsum);
+  *sum = (int)add32x4_sse2(vsum);
 }
 
 static INLINE void variance4_sse2(const uint8_t *src, const int src_stride,
@@ -314,7 +314,7 @@ AOM_VAR_NO_LOOP_SSE2(16, 64, 10, 1024)
       ref += (ref_stride * uh);                                               \
     }                                                                         \
     *sse = add32x4_sse2(vsse);                                                \
-    int sum = add32x4_sse2(vsum);                                             \
+    int sum = (int)add32x4_sse2(vsum);                                        \
     assert(sum <= 255 * bw * bh);                                             \
     assert(sum >= -255 * bw * bh);                                            \
     return *sse - (uint32_t)(((int64_t)sum * sum) >> bits);                   \
@@ -678,8 +678,8 @@ uint64_t aom_mse_4xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
   const __m128i zeros = _mm_setzero_si128();
   __m128i square_result = _mm_setzero_si128();
   for (int i = 0; i < h; i += 2) {
-    dst0_8x8 = _mm_cvtsi32_si128(*(uint32_t const *)(&dst[(i + 0) * dstride]));
-    dst1_8x8 = _mm_cvtsi32_si128(*(uint32_t const *)(&dst[(i + 1) * dstride]));
+    dst0_8x8 = _mm_cvtsi32_si128(*(int const *)(&dst[(i + 0) * dstride]));
+    dst1_8x8 = _mm_cvtsi32_si128(*(int const *)(&dst[(i + 1) * dstride]));
     dst_16x8 = _mm_unpacklo_epi8(_mm_unpacklo_epi32(dst0_8x8, dst1_8x8), zeros);
 
     src0_16x4 = _mm_loadl_epi64((__m128i const *)(&src[(i + 0) * sstride]));
@@ -761,4 +761,18 @@ uint64_t aom_mse_wxh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
     case 8: return aom_mse_8xh_16bit_sse2(dst, dstride, src, sstride, h);
     default: assert(0 && "unsupported width"); return -1;
   }
+}
+
+uint64_t aom_mse_16xh_16bit_sse2(uint8_t *dst, int dstride, uint16_t *src,
+                                 int w, int h) {
+  assert((w == 8 || w == 4) && (h == 8 || h == 4) &&
+         "w=8/4 and h=8/4 must be satisfied");
+  const int num_blks = 16 / w;
+  uint64_t sum = 0;
+  for (int i = 0; i < num_blks; i++) {
+    sum += aom_mse_wxh_16bit_sse2(dst, dstride, src, w, w, h);
+    dst += w;
+    src += (w * h);
+  }
+  return sum;
 }

@@ -15,7 +15,7 @@
 // This is an example demonstrating how to control the AOM encoder's
 // ROI and Active maps.
 //
-// ROI (Reigon of Interest) maps are a way for the application to assign
+// ROI (Region of Interest) maps are a way for the application to assign
 // each macroblock in the image to a region, and then set quantizer and
 // filtering parameters on that image.
 //
@@ -27,12 +27,12 @@
 // Configuration
 // -------------
 // An ROI map is set on frame 22. If the width of the image in macroblocks
-// is evenly divisble by 4, then the output will appear to have distinct
+// is evenly divisible by 4, then the output will appear to have distinct
 // columns, where the quantizer, loopfilter, and static threshold differ
 // from column to column.
 //
 // An active map is set on frame 33. If the width of the image in macroblocks
-// is evenly divisble by 4, then the output will appear to have distinct
+// is evenly divisible by 4, then the output will appear to have distinct
 // columns, where one column will have motion and the next will not.
 //
 // The active map is cleared on frame 44.
@@ -69,6 +69,7 @@ static void set_active_map(const aom_codec_enc_cfg_t *cfg,
   map.cols = (cfg->g_w + 15) / 16;
 
   map.active_map = (uint8_t *)malloc(map.rows * map.cols);
+  if (!map.active_map) die("Failed to allocate active map");
   for (i = 0; i < map.rows * map.cols; ++i) map.active_map[i] = i % 2;
 
   if (aom_codec_control(codec, AOME_SET_ACTIVEMAP, &map))

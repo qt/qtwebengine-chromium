@@ -279,7 +279,7 @@ int av1_neg_deinterleave(int diff, int ref, int max) {
 static int read_segment_id(AV1_COMMON *const cm, const MACROBLOCKD *const xd,
                            aom_reader *r, int skip) {
   int cdf_num;
-  const int pred = av1_get_spatial_seg_pred(cm, xd, &cdf_num);
+  const int pred = av1_get_spatial_seg_pred(cm, xd, &cdf_num, 0);
   if (skip) return pred;
 
   FRAME_CONTEXT *ec_ctx = xd->tile_ctx;
@@ -1204,7 +1204,9 @@ static INLINE int assign_mv(AV1_COMMON *cm, MACROBLOCKD *xd,
                          .as_int;
       break;
     }
-    default: { return 0; }
+    default: {
+      return 0;
+    }
   }
 
   int ret = is_mv_valid(&mv[0].as_mv);
@@ -1475,7 +1477,6 @@ static void read_inter_block_mode_info(AV1Decoder *const pbi,
   read_mb_interp_filter(xd, features->interp_filter,
                         cm->seq_params->enable_dual_filter, mbmi, r);
 
-#if !CONFIG_REALTIME_ONLY
   if (mbmi->motion_mode == WARPED_CAUSAL) {
     const int mi_row = xd->mi_row;
     const int mi_col = xd->mi_col;
@@ -1496,7 +1497,6 @@ static void read_inter_block_mode_info(AV1Decoder *const pbi,
       mbmi->wm_params.invalid = 1;
     }
   }
-#endif
 
   xd->cfl.store_y = store_cfl_required(cm, xd);
 

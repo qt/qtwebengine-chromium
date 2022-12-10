@@ -57,44 +57,6 @@ int av1_allow_warp(const MB_MODE_INFO *const mbmi,
   return 0;
 }
 
-void av1_init_inter_params(InterPredParams *inter_pred_params, int block_width,
-                           int block_height, int pix_row, int pix_col,
-                           int subsampling_x, int subsampling_y, int bit_depth,
-                           int use_hbd_buf, int is_intrabc,
-                           const struct scale_factors *sf,
-                           const struct buf_2d *ref_buf,
-                           int_interpfilters interp_filters) {
-  inter_pred_params->block_width = block_width;
-  inter_pred_params->block_height = block_height;
-  inter_pred_params->pix_row = pix_row;
-  inter_pred_params->pix_col = pix_col;
-  inter_pred_params->subsampling_x = subsampling_x;
-  inter_pred_params->subsampling_y = subsampling_y;
-  inter_pred_params->bit_depth = bit_depth;
-  inter_pred_params->use_hbd_buf = use_hbd_buf;
-  inter_pred_params->is_intrabc = is_intrabc;
-  inter_pred_params->scale_factors = sf;
-  inter_pred_params->ref_frame_buf = *ref_buf;
-  inter_pred_params->mode = TRANSLATION_PRED;
-  inter_pred_params->comp_mode = UNIFORM_SINGLE;
-
-  if (is_intrabc) {
-    inter_pred_params->interp_filter_params[0] = &av1_intrabc_filter_params;
-    inter_pred_params->interp_filter_params[1] = &av1_intrabc_filter_params;
-  } else {
-    inter_pred_params->interp_filter_params[0] =
-        av1_get_interp_filter_params_with_block_size(
-            interp_filters.as_filters.x_filter, block_width);
-    inter_pred_params->interp_filter_params[1] =
-        av1_get_interp_filter_params_with_block_size(
-            interp_filters.as_filters.y_filter, block_height);
-  }
-}
-
-void av1_init_comp_mode(InterPredParams *inter_pred_params) {
-  inter_pred_params->comp_mode = UNIFORM_COMP;
-}
-
 void av1_init_warp_params(InterPredParams *inter_pred_params,
                           const WarpTypesAllowed *warp_types, int ref,
                           const MACROBLOCKD *xd, const MB_MODE_INFO *mi) {
@@ -106,10 +68,6 @@ void av1_init_warp_params(InterPredParams *inter_pred_params,
   if (av1_allow_warp(mi, warp_types, &xd->global_motion[mi->ref_frame[ref]], 0,
                      inter_pred_params->scale_factors,
                      &inter_pred_params->warp_params)) {
-#if CONFIG_REALTIME_ONLY
-    aom_internal_error(xd->error_info, AOM_CODEC_UNSUP_FEATURE,
-                       "Warped motion is disabled in realtime only build.");
-#endif
     inter_pred_params->mode = WARP_PRED;
   }
 }
@@ -145,7 +103,6 @@ void av1_make_inter_predictor(const uint8_t *src, int src_stride, uint8_t *dst,
                     inter_pred_params->interp_filter_params);
 #endif
   }
-#if !CONFIG_REALTIME_ONLY
   // TODO(jingning): av1_warp_plane() can be further cleaned up.
   else if (inter_pred_params->mode == WARP_PRED) {
     av1_warp_plane(
@@ -158,9 +115,7 @@ void av1_make_inter_predictor(const uint8_t *src, int src_stride, uint8_t *dst,
         inter_pred_params->block_width, inter_pred_params->block_height,
         dst_stride, inter_pred_params->subsampling_x,
         inter_pred_params->subsampling_y, &inter_pred_params->conv_params);
-  }
-#endif
-  else {
+  } else {
     assert(0 && "Unsupported inter_pred_params->mode");
   }
 }

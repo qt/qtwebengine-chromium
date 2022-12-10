@@ -104,16 +104,6 @@ typedef struct aom_rational64 {
 } aom_rational64_t;  // alias for struct aom_rational
 
 enum {
-  NORMAL = 0,
-  FOURFIVE = 1,
-  THREEFIVE = 2,
-  THREEFOUR = 3,
-  ONEFOUR = 4,
-  ONEEIGHT = 5,
-  ONETWO = 6
-} UENUM1BYTE(AOM_SCALING);
-
-enum {
   // Good Quality Fast Encoding. The encoder balances quality with the amount of
   // time it takes to encode the output. Speed setting controls how fast.
   GOOD,
@@ -135,13 +125,13 @@ enum {
   FRAMEFLAGS_ERROR_RESILIENT = 1 << 6,
 } UENUM1BYTE(FRAMETYPE_FLAGS);
 
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
 enum {
   PARALLEL_ENCODE = 0,
   PARALLEL_SIMULATION_ENCODE,
   NUM_FPMT_TEST_ENCODES
 } UENUM1BYTE(FPMT_TEST_ENC_CFG);
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#endif  // CONFIG_FPMT_TEST
 // 0 level frames are sometimes used for rate control purposes, but for
 // reference mapping purposes, the minimum level should be 1.
 #define MIN_PYR_LEVEL 1
@@ -199,8 +189,6 @@ enum {
 } UENUM1BYTE(SCENECUT_MODE);
 
 #define MAX_VBR_CORPUS_COMPLEXITY 10000
-
-/*!\cond */
 
 typedef enum {
   MOD_FP,           // First pass
@@ -573,13 +561,13 @@ typedef struct {
   int drop_frames_water_mark;
   /*!
    * under_shoot_pct indicates the tolerance of the VBR algorithm to
-   * undershoot and is used as a trigger threshold for more agressive
+   * undershoot and is used as a trigger threshold for more aggressive
    * adaptation of Q. It's value can range from 0-100.
    */
   int under_shoot_pct;
   /*!
    * over_shoot_pct indicates the tolerance of the VBR algorithm to overshoot
-   * and is used as a trigger threshold for more agressive adaptation of Q.
+   * and is used as a trigger threshold for more aggressive adaptation of Q.
    * It's value can range from 0-1000.
    */
   int over_shoot_pct;
@@ -861,6 +849,12 @@ typedef struct {
    * 3: Loop filter is disables for the frames with low motion
    */
   LOOPFILTER_CONTROL loopfilter_control;
+
+  /*!
+   * Indicates if the application of post-processing filters should be skipped
+   * on reconstructed frame.
+   */
+  bool skip_postproc_filtering;
 } AlgoCfg;
 /*!\cond */
 
@@ -1067,6 +1061,9 @@ typedef struct AV1EncoderConfig {
 
   // Exit the encoder when it fails to encode to a given level.
   int strict_level_conformance;
+
+  // Max depth for the GOP after a key frame
+  int kf_max_pyr_height;
   /*!\endcond */
 } AV1EncoderConfig;
 
@@ -1363,16 +1360,24 @@ typedef struct {
 #endif  // CONFIG_MULTITHREAD
   /*!
    * Buffer to store the superblock whose encoding is complete.
-   * cur_col[i] stores the number of superblocks which finished encoding in the
-   * ith superblock row.
+   * num_finished_cols[i] stores the number of superblocks which finished
+   * encoding in the ith superblock row.
    */
   int *num_finished_cols;
   /*!
-   * Number of extra superblocks of the top row to be complete for encoding
-   * of the current superblock to start. A value of 1 indicates top-right
-   * dependency.
+   * Denotes the superblock interval at which conditional signalling should
+   * happen. Also denotes the minimum number of extra superblocks of the top row
+   * to be complete to start encoding the current superblock. A value of 1
+   * indicates top-right dependency.
    */
   int sync_range;
+  /*!
+   * Denotes the additional number of superblocks in the previous row to be
+   * complete to start encoding the current superblock when intraBC tool is
+   * enabled. This additional top-right delay is required to satisfy the
+   * hardware constraints for intraBC tool when row multithreading is enabled.
+   */
+  int intrabc_extra_top_right_sb_delay;
   /*!
    * Number of superblock rows.
    */
@@ -1445,6 +1450,8 @@ typedef struct ThreadData {
   // store source variance and log of source variance of each 4x4 sub-block
   // for subsequent retrieval.
   Block4x4VarInfo *src_var_info_of_4x4_sub_blocks;
+  // The pc tree root for RTC non-rd case.
+  PC_TREE *rt_pc_root;
 } ThreadData;
 
 struct EncWorkerData;
@@ -1505,15 +1512,15 @@ typedef struct {
   /**@}*/
 } AV1EncRowMultiThreadInfo;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
-/*!
- * \brief Max number of frames that can be encoded in a parallel encode set.
- */
-#define MAX_PARALLEL_FRAMES 4
 /*!
  * \brief Max number of recodes used to track the frame probabilities.
  */
 #define NUM_RECODES_PER_FRAME 10
+
+/*!
+ * \brief Max number of frames that can be encoded in a parallel encode set.
+ */
+#define MAX_PARALLEL_FRAMES 4
 
 /*!
  * \brief Buffers to be backed up during parallel encode set to be restored
@@ -1540,7 +1547,6 @@ typedef struct RestoreStateBuffers {
    */
   RestorationLineBuffers *rlbs;
 } RestoreStateBuffers;
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
 
 /*!
  * \brief Primary Encoder parameters related to multi-threading.
@@ -1572,7 +1578,6 @@ typedef struct PrimaryMultiThreadInfo {
    */
   AV1CdefWorkerData *cdef_worker;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Primary(Level 1) Synchronization object used to launch job in the worker
    * thread.
@@ -1583,7 +1588,6 @@ typedef struct PrimaryMultiThreadInfo {
    * Number of primary workers created for multi-threading.
    */
   int p_num_workers;
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
 } PrimaryMultiThreadInfo;
 
 /*!
@@ -1667,12 +1671,10 @@ typedef struct MultiThreadInfo {
    */
   AV1CdefWorkerData *cdef_worker;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Buffers to be stored/restored before/after parallel encode.
    */
   RestoreStateBuffers restore_state_buf;
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
 } MultiThreadInfo;
 
 /*!\cond */
@@ -2310,6 +2312,61 @@ typedef struct {
   uint8_t *entropy_ctx;
 } CoeffBufferPool;
 
+#if !CONFIG_REALTIME_ONLY
+/*!\cond */
+// DUCKY_ENCODE_FRAME_MODE is c version of EncodeFrameMode
+enum {
+  DUCKY_ENCODE_FRAME_MODE_NONE,  // Let native AV1 determine q index and rdmult
+  DUCKY_ENCODE_FRAME_MODE_QINDEX,  // DuckyEncode determines q index and AV1
+                                   // determines rdmult
+  DUCKY_ENCODE_FRAME_MODE_QINDEX_RDMULT,  // DuckyEncode determines q index and
+                                          // rdmult
+} UENUM1BYTE(DUCKY_ENCODE_FRAME_MODE);
+
+enum {
+  DUCKY_ENCODE_GOP_MODE_NONE,  // native AV1 decides GOP
+  DUCKY_ENCODE_GOP_MODE_RCL,   // rate control lib decides GOP
+} UENUM1BYTE(DUCKY_ENCODE_GOP_MODE);
+
+typedef struct DuckyEncodeFrameInfo {
+  DUCKY_ENCODE_FRAME_MODE qp_mode;
+  DUCKY_ENCODE_GOP_MODE gop_mode;
+  int q_index;
+  int rdmult;
+} DuckyEncodeFrameInfo;
+
+typedef struct DuckyEncodeFrameResult {
+  int global_order_idx;
+  int q_index;
+  int rdmult;
+  int rate;
+  int64_t dist;
+  double psnr;
+} DuckyEncodeFrameResult;
+
+typedef struct DuckyEncodeInfo {
+  DuckyEncodeFrameInfo frame_info;
+  DuckyEncodeFrameResult frame_result;
+} DuckyEncodeInfo;
+/*!\endcond */
+#endif
+
+/*!\cond */
+typedef struct RTC_REF {
+  /*!
+   * LAST_FRAME (0), LAST2_FRAME(1), LAST3_FRAME(2), GOLDEN_FRAME(3),
+   * BWDREF_FRAME(4), ALTREF2_FRAME(5), ALTREF_FRAME(6).
+   */
+  int reference[INTER_REFS_PER_FRAME];
+  int ref_idx[INTER_REFS_PER_FRAME];
+  int refresh[REF_FRAMES];
+  int set_ref_frame_config;
+  int non_reference_frame;
+  int ref_frame_comp[3];
+  int gld_idx_1layer;
+} RTC_REF;
+/*!\endcond */
+
 /*!
  * \brief Structure to hold data corresponding to an encoded frame.
  */
@@ -2358,19 +2415,17 @@ typedef struct AV1_COMP_DATA {
    * Decide to pop the source for this frame from input buffer queue.
    */
   int pop_lookahead;
-#if CONFIG_FRAME_PARALLEL_ENCODE
+
   /*!
    * Display order hint of frame whose packed data is in cx_data buffer.
    */
   int frame_display_order_hint;
-#endif
 } AV1_COMP_DATA;
 
 /*!
  * \brief Top level primary encoder structure
  */
 typedef struct AV1_PRIMARY {
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Array of frame level encoder stage top level structures
    */
@@ -2381,7 +2436,6 @@ typedef struct AV1_PRIMARY {
    * encode set.
    */
   struct AV1_COMP_DATA parallel_frames_data[MAX_PARALLEL_FRAMES - 1];
-
 #if CONFIG_FPMT_TEST
   /*!
    * Flag which enables/disables simulation path for fpmt unit test.
@@ -2407,7 +2461,13 @@ typedef struct AV1_PRIMARY {
    * model across frames.
    */
   int temp_valid_gm_model_found[FRAME_UPDATE_TYPES];
-#endif
+#endif  // CONFIG_FPMT_TEST
+  /*!
+   * Copy of cm->ref_frame_map maintained to facilitate sequential update of
+   * ref_frame_map by lower layer depth frames encoded ahead of time in a
+   * parallel encode set.
+   */
+  RefCntBuffer *ref_frame_map_copy[REF_FRAMES];
 
   /*!
    * Start time stamp of the last encoded show frame
@@ -2418,15 +2478,7 @@ typedef struct AV1_PRIMARY {
    * End time stamp of the last encoded show frame
    */
   int64_t ts_end_last_show_frame;
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
-  /*!
-   * Copy of cm->ref_frame_map maintained to facilitate sequential update of
-   * ref_frame_map by lower layer depth frames encoded ahead of time in a
-   * parallel encode set.
-   */
-  RefCntBuffer *ref_frame_map_copy[REF_FRAMES];
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
+
   /*!
    * Number of frame level contexts(cpis)
    */
@@ -2449,8 +2501,7 @@ typedef struct AV1_PRIMARY {
 
   /*!
    * Encode stage top level structure
-   * When CONFIG_FRAME_PARALLEL_ENCODE is enabled this is the same as
-   * parallel_cpi[0]
+   * During frame parallel encode, this is the same as parallel_cpi[0]
    */
   struct AV1_COMP *cpi;
 
@@ -2806,6 +2857,11 @@ typedef struct AV1_COMP {
   RefreshFrameInfo refresh_frame;
 
   /*!
+   * Flag to reduce the number of reference frame buffers used in rt.
+   */
+  int rt_reduce_num_ref_buffers;
+
+  /*!
    * Flags signalled by the external interface at frame level.
    */
   ExternalFlags ext_flags;
@@ -2985,7 +3041,6 @@ typedef struct AV1_COMP {
    */
   VarBasedPartitionInfo vbp_info;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Number of recodes in the frame.
    */
@@ -3029,7 +3084,6 @@ typedef struct AV1_COMP {
    * post encode updates for parallel frames.
    */
   double new_framerate;
-#endif
 
   /*!
    * Retain condition for fast_extra_bits calculation.
@@ -3230,13 +3284,11 @@ typedef struct AV1_COMP {
    */
   ExtPartController ext_part_controller;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Motion vector stats of the current encoded frame, used to update the
    * ppi->mv_stats during postencode.
    */
   MV_STATS mv_stats;
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
   /*!
    * Stores the reference refresh index for the current frame.
    */
@@ -3262,9 +3314,7 @@ typedef struct AV1_COMP {
    */
 
   int wanted_fb;
-#endif
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
+#endif  // CONFIG_FPMT_TEST
 
   /*!
    * A flag to indicate frames that will update their data to the primary
@@ -3338,6 +3388,34 @@ typedef struct AV1_COMP {
    * Buffer to store 64x64 SAD
    */
   uint64_t *src_sad_blk_64x64;
+
+  /*!
+   * A flag to indicate whether the encoder is controlled by DuckyEncode or not.
+   * 1:yes 0:no
+   */
+  int use_ducky_encode;
+
+#if !CONFIG_REALTIME_ONLY
+  /*! A structure that facilitates the communication between DuckyEncode and AV1
+   * encoder.
+   */
+  DuckyEncodeInfo ducky_encode_info;
+#endif  // CONFIG_REALTIME_ONLY
+        //
+  /*!
+   * Frames since last frame with cdf update.
+   */
+  int frames_since_last_update;
+
+  /*!
+   * Struct for the reference structure for RTC.
+   */
+  RTC_REF rtc_ref;
+
+  /*!
+   * Block level thresholds to force zeromv-skip at partition level.
+   */
+  unsigned int zeromv_skip_thresh_exit_part[BLOCK_SIZES_ALL];
 } AV1_COMP;
 
 /*!
@@ -3412,16 +3490,17 @@ typedef struct {
   size_t size;  // Size of resulting bitstream
 } EncodeFrameResults;
 
-void av1_initialize_enc(void);
+void av1_initialize_enc(unsigned int usage, enum aom_rc_mode end_usage);
 
-struct AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, AV1EncoderConfig *oxcf,
+struct AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi,
+                                       const AV1EncoderConfig *oxcf,
                                        BufferPool *const pool,
                                        COMPRESSOR_STAGE stage,
                                        int lap_lag_in_frames);
 
 struct AV1_PRIMARY *av1_create_primary_compressor(
     struct aom_codec_pkt_list *pkt_list_head, int num_lap_buffers,
-    AV1EncoderConfig *oxcf);
+    const AV1EncoderConfig *oxcf);
 
 void av1_remove_compressor(AV1_COMP *cpi);
 
@@ -3449,7 +3528,6 @@ void av1_init_seq_coding_tools(AV1_PRIMARY *const ppi,
 void av1_post_encode_updates(AV1_COMP *const cpi,
                              const AV1_COMP_DATA *const cpi_data);
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
 void av1_scale_references_fpmt(AV1_COMP *cpi, int *ref_buffers_used_map);
 
 void av1_increment_scaled_ref_counts_fpmt(BufferPool *buffer_pool,
@@ -3468,8 +3546,6 @@ AV1_COMP *av1_get_parallel_frame_enc_data(AV1_PRIMARY *const ppi,
 int av1_init_parallel_frame_context(const AV1_COMP_DATA *const first_cpi_data,
                                     AV1_PRIMARY *const ppi,
                                     int *ref_buffers_used_map);
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
-
 /*!\endcond */
 
 /*!\brief Obtain the raw frame data
@@ -3551,7 +3627,8 @@ int av1_get_active_map(AV1_COMP *cpi, unsigned char *map, int rows, int cols);
 
 int av1_set_internal_size(AV1EncoderConfig *const oxcf,
                           ResizePendingParams *resize_pending_params,
-                          AOM_SCALING horiz_mode, AOM_SCALING vert_mode);
+                          AOM_SCALING_MODE horiz_mode,
+                          AOM_SCALING_MODE vert_mode);
 
 int av1_get_quantizer(struct AV1_COMP *cpi);
 
@@ -3612,7 +3689,7 @@ static INLINE void init_ref_map_pair(
   }
 }
 
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
 static AOM_INLINE void calc_frame_data_update_flag(
     GF_GROUP *const gf_group, int gf_frame_index,
     bool *const do_frame_data_update) {
@@ -3686,8 +3763,10 @@ static INLINE void alloc_frame_mvs(AV1_COMMON *const cm, RefCntBuffer *buf) {
 // the frame token allocation.
 static INLINE unsigned int allocated_tokens(const TileInfo *tile,
                                             int sb_size_log2, int num_planes) {
-  int tile_mb_rows = (tile->mi_row_end - tile->mi_row_start + 2) >> 2;
-  int tile_mb_cols = (tile->mi_col_end - tile->mi_col_start + 2) >> 2;
+  int tile_mb_rows =
+      ROUND_POWER_OF_TWO(tile->mi_row_end - tile->mi_row_start, 2);
+  int tile_mb_cols =
+      ROUND_POWER_OF_TWO(tile->mi_col_end - tile->mi_col_start, 2);
 
   return get_token_alloc(tile_mb_rows, tile_mb_cols, sb_size_log2, num_planes);
 }
@@ -3772,6 +3851,13 @@ static INLINE int is_one_pass_rt_params(const AV1_COMP *cpi) {
          cpi->oxcf.gf_cfg.lag_in_frames == 0;
 }
 
+// Use default/internal reference structure for single-layer RTC.
+static INLINE int use_rtc_reference_structure_one_layer(const AV1_COMP *cpi) {
+  return is_one_pass_rt_params(cpi) && cpi->ppi->number_spatial_layers == 1 &&
+         cpi->ppi->number_temporal_layers == 1 &&
+         !cpi->rtc_ref.set_ref_frame_config;
+}
+
 // Function return size of frame stats buffer
 static INLINE int get_stats_buf_size(int num_lap_buffer, int num_lag_buffer) {
   /* if lookahead is enabled return num_lap_buffers else num_lag_buffers */
@@ -3818,12 +3904,12 @@ void av1_setup_frame_size(AV1_COMP *cpi);
 
 // Returns 1 if a frame is scaled and 0 otherwise.
 static INLINE int av1_resize_scaled(const AV1_COMMON *cm) {
-  return !(cm->superres_upscaled_width == cm->render_width &&
-           cm->superres_upscaled_height == cm->render_height);
+  return cm->superres_upscaled_width != cm->render_width ||
+         cm->superres_upscaled_height != cm->render_height;
 }
 
 static INLINE int av1_frame_scaled(const AV1_COMMON *cm) {
-  return !av1_superres_scaled(cm) && av1_resize_scaled(cm);
+  return av1_superres_scaled(cm) || av1_resize_scaled(cm);
 }
 
 // Don't allow a show_existing_frame to coincide with an error resilient
@@ -3980,18 +4066,36 @@ static AOM_INLINE int is_psnr_calc_enabled(const AV1_COMP *cpi) {
          cm->show_frame;
 }
 
-static INLINE int is_frame_resize_pending(AV1_COMP *const cpi) {
-  ResizePendingParams *const resize_pending_params =
+static INLINE int is_frame_resize_pending(const AV1_COMP *const cpi) {
+  const ResizePendingParams *const resize_pending_params =
       &cpi->resize_pending_params;
   return (resize_pending_params->width && resize_pending_params->height &&
           (cpi->common.width != resize_pending_params->width ||
            cpi->common.height != resize_pending_params->height));
 }
 
+// Check if CDEF is used.
+static INLINE int is_cdef_used(const AV1_COMMON *const cm) {
+  return cm->seq_params->enable_cdef && !cm->features.coded_lossless &&
+         !cm->tiles.large_scale;
+}
+
 // Check if loop restoration filter is used.
 static INLINE int is_restoration_used(const AV1_COMMON *const cm) {
   return cm->seq_params->enable_restoration && !cm->features.all_lossless &&
          !cm->tiles.large_scale;
+}
+
+static INLINE int is_inter_tx_size_search_level_one(
+    const TX_SPEED_FEATURES *tx_sf) {
+  return (tx_sf->inter_tx_size_search_init_depth_rect >= 1 &&
+          tx_sf->inter_tx_size_search_init_depth_sqr >= 1);
+}
+
+// Enable switchable motion mode only if warp and OBMC tools are allowed
+static INLINE bool is_switchable_motion_mode_allowed(bool allow_warped_motion,
+                                                     bool enable_obmc) {
+  return (allow_warped_motion || enable_obmc);
 }
 
 #if CONFIG_AV1_TEMPORAL_DENOISING

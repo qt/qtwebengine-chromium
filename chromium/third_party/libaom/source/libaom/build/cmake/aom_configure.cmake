@@ -40,6 +40,10 @@ if(FORCE_HIGHBITDEPTH_DECODING AND NOT CONFIG_AV1_HIGHBITDEPTH)
                          "FORCE_HIGHBITDEPTH_DECODING")
 endif()
 
+if(CONFIG_THREE_PASS AND NOT CONFIG_AV1_DECODER)
+  change_config_and_warn(CONFIG_THREE_PASS 0 "CONFIG_AV1_DECODER=0")
+endif()
+
 # Generate the user config settings.
 list(APPEND aom_build_vars ${AOM_CONFIG_VARS} ${AOM_OPTION_VARS})
 foreach(cache_var ${aom_build_vars})
@@ -67,7 +71,7 @@ if(NOT AOM_TARGET_CPU)
     endif()
   elseif(cpu_lowercase STREQUAL "i386" OR cpu_lowercase STREQUAL "x86")
     set(AOM_TARGET_CPU "x86")
-  elseif(cpu_lowercase MATCHES "^arm" OR cpu_lowercase MATCHES "^mips")
+  elseif(cpu_lowercase MATCHES "^arm")
     set(AOM_TARGET_CPU "${cpu_lowercase}")
   elseif(cpu_lowercase MATCHES "aarch64")
     set(AOM_TARGET_CPU "arm64")
@@ -110,6 +114,29 @@ endif()
 if(BUILD_SHARED_LIBS)
   set(CONFIG_PIC 1)
   set(CONFIG_SHARED 1)
+elseif(NOT CONFIG_PIC)
+  # Update the variable only when it does not carry the CMake assigned help
+  # string for variables specified via the command line. This allows the user to
+  # force CONFIG_PIC=0.
+  unset(cache_helpstring)
+  get_property(cache_helpstring CACHE CONFIG_PIC PROPERTY HELPSTRING)
+  if(NOT "${cache_helpstring}" STREQUAL "${cmake_cmdline_helpstring}")
+    aom_check_c_compiles("pie_check" "
+                          #if !(__pie__ || __PIE__)
+                          #error Neither __pie__ or __PIE__ are set
+                          #endif
+                          extern void unused(void);
+                          void unused(void) {}" HAVE_PIE)
+
+    if(HAVE_PIE)
+      # If -fpie or -fPIE are used ensure the assembly code has PIC enabled to
+      # avoid DT_TEXTRELs: /usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+      set(CONFIG_PIC 1)
+      message(
+        "CONFIG_PIC enabled for position independent executable (PIE) build")
+    endif()
+  endif()
+  unset(cache_helpstring)
 endif()
 
 if(NOT MSVC)
@@ -277,7 +304,17 @@ else()
   add_compiler_flag_if_supported("-Wall")
   add_compiler_flag_if_supported("-Wdisabled-optimization")
   add_compiler_flag_if_supported("-Wextra")
-  add_compiler_flag_if_supported("-Wextra-semi")
+  # Prior to version 3.19.0 cmake would fail to parse the warning emitted by gcc
+  # with this flag. Note the order of this check and -Wextra-semi-stmt is
+  # important due to is_flag_present() matching substrings with string(FIND
+  # ...).
+  if(CMAKE_VERSION VERSION_LESS "3.19"
+     AND CMAKE_C_COMPILER_ID STREQUAL "GNU"
+     AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
+    add_cxx_flag_if_supported("-Wextra-semi")
+  else()
+    add_compiler_flag_if_supported("-Wextra-semi")
+  endif()
   add_compiler_flag_if_supported("-Wextra-semi-stmt")
   add_compiler_flag_if_supported("-Wfloat-conversion")
   add_compiler_flag_if_supported("-Wformat=2")
@@ -291,6 +328,9 @@ else()
   add_compiler_flag_if_supported("-Wuninitialized")
   add_compiler_flag_if_supported("-Wunused")
   add_compiler_flag_if_supported("-Wvla")
+  add_cxx_flag_if_supported("-Wc++14-extensions")
+  add_cxx_flag_if_supported("-Wc++17-extensions")
+  add_cxx_flag_if_supported("-Wc++20-extensions")
 
   if(CMAKE_C_COMPILER_ID MATCHES "GNU" AND SANITIZE MATCHES "address|undefined")
 
@@ -332,6 +372,26 @@ else()
   endif()
   add_compiler_flag_if_supported("-D_LARGEFILE_SOURCE")
   add_compiler_flag_if_supported("-D_FILE_OFFSET_BITS=64")
+endif()
+
+# Prior to r23, or with ANDROID_USE_LEGACY_TOOLCHAIN_FILE set,
+# android.toolchain.cmake would set normal (non-cache) versions of variables
+# like CMAKE_C_FLAGS_RELEASE which would mask the ones added to the cache
+# variable in add_compiler_flag_if_supported(), etc. As a workaround we add
+# everything accumulated in AOM_C/CXX_FLAGS to the normal versions. This could
+# also be addressed by reworking the flag tests and adding the results directly
+# to target_compile_options() as in e.g., libgav1, but that's a larger task.
+# https://github.com/android/ndk/wiki/Changelog-r23#changes
+if(ANDROID
+   AND ("${ANDROID_NDK_MAJOR}" LESS 23 OR ANDROID_USE_LEGACY_TOOLCHAIN_FILE))
+  foreach(lang C;CXX)
+    string(STRIP "${AOM_${lang}_FLAGS}" AOM_${lang}_FLAGS)
+    if(AOM_${lang}_FLAGS)
+      foreach(config ${AOM_${lang}_CONFIGS})
+        set(${config} "${${config}} ${AOM_${lang}_FLAGS}")
+      endforeach()
+    endif()
+  endforeach()
 endif()
 
 set(AOM_LIB_LINK_TYPE PUBLIC)

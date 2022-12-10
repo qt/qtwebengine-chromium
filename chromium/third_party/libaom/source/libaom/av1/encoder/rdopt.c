@@ -1354,7 +1354,7 @@ static int64_t motion_mode_rd(
         get_frame_update_type(&cpi->ppi->gf_group, cpi->gf_frame_index);
     int use_actual_frame_probs = 1;
     int prune_obmc;
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
     use_actual_frame_probs =
         (cpi->ppi->fpmt_unit_test_cfg == PARALLEL_SIMULATION_ENCODE) ? 0 : 1;
     if (!use_actual_frame_probs) {
@@ -2533,7 +2533,7 @@ static AOM_INLINE int prune_zero_mv_with_sse(
  * is currently only used by realtime mode as \ref
  * av1_interpolation_filter_search is not called during realtime encoding.
  *
- * This funciton only searches over two possible filters. EIGHTTAP_REGULAR is
+ * This function only searches over two possible filters. EIGHTTAP_REGULAR is
  * always search. For lowres clips (<= 240p), MULTITAP_SHARP is also search. For
  * higher  res slips (>240p), EIGHTTAP_SMOOTH is also searched.
  *  *
@@ -2906,11 +2906,16 @@ static int64_t handle_inter_mode(
         }
 
         if (cpi->sf.rt_sf.skip_newmv_mode_based_on_sse) {
-          const double scale_factor[11] = { 0.7, 0.7, 0.7, 0.7, 0.7, 0.8,
-                                            0.8, 0.9, 0.9, 0.9, 0.9 };
-          assert(num_pels_log2_lookup[bsize] >= 4);
-          if (args->best_pred_sse <
-              scale_factor[num_pels_log2_lookup[bsize] - 4] * this_sse)
+          const int th_idx = cpi->sf.rt_sf.skip_newmv_mode_based_on_sse - 1;
+          const int pix_idx = num_pels_log2_lookup[bsize] - 4;
+          const double scale_factor[3][11] = {
+            { 0.7, 0.7, 0.7, 0.7, 0.7, 0.8, 0.8, 0.9, 0.9, 0.9, 0.9 },
+            { 0.7, 0.7, 0.7, 0.7, 0.8, 0.8, 1, 1, 1, 1, 1 },
+            { 0.7, 0.7, 0.7, 0.7, 1, 1, 1, 1, 1, 1, 1 }
+          };
+          assert(pix_idx >= 0);
+          assert(th_idx <= 2);
+          if (args->best_pred_sse < scale_factor[th_idx][pix_idx] * this_sse)
             continue;
         }
       }
@@ -3290,7 +3295,7 @@ void av1_rd_pick_intra_mode_sb(const struct AV1_COMP *cpi, struct macroblock *x,
   const int num_planes = av1_num_planes(cm);
   TxfmSearchInfo *txfm_info = &x->txfm_search_info;
   int rate_y = 0, rate_uv = 0, rate_y_tokenonly = 0, rate_uv_tokenonly = 0;
-  int y_skip_txfm = 0, uv_skip_txfm = 0;
+  uint8_t y_skip_txfm = 0, uv_skip_txfm = 0;
   int64_t dist_y = 0, dist_uv = 0;
 
   ctx->rd_stats.skip_txfm = 0;
@@ -3529,7 +3534,7 @@ static AOM_INLINE void refine_winner_mode_tx(
   const int num_planes = av1_num_planes(cm);
 
   if (!is_winner_mode_processing_enabled(cpi, x, best_mbmode,
-                                         best_mbmode->mode))
+                                         rd_cost->skip_txfm))
     return;
 
   // Set params for winner mode evaluation
@@ -3537,16 +3542,6 @@ static AOM_INLINE void refine_winner_mode_tx(
 
   // No best mode identified so far
   if (*best_mode_index == THR_INVALID) return;
-
-  int skip_winner_mode_eval =
-      cpi->sf.winner_mode_sf.disable_winner_mode_eval_for_txskip;
-  // Do not skip winner mode evaluation at low quantizers if normal mode's
-  // transform search was too aggressive.
-  if (cpi->sf.rd_sf.perform_coeff_opt >= 5 && x->qindex <= 70)
-    skip_winner_mode_eval = 0;
-
-  if (skip_winner_mode_eval && (best_mbmode->skip_txfm || rd_cost->skip_txfm))
-    return;
 
   best_rd = RDCOST(x->rdmult, rd_cost->rate, rd_cost->dist);
   for (int mode_idx = 0; mode_idx < winner_mode_count; mode_idx++) {
@@ -3564,7 +3559,7 @@ static AOM_INLINE void refine_winner_mode_tx(
     if (xd->lossless[winner_mbmi->segment_id] == 0 &&
         winner_mode_index != THR_INVALID &&
         is_winner_mode_processing_enabled(cpi, x, winner_mbmi,
-                                          winner_mbmi->mode)) {
+                                          rd_cost->skip_txfm)) {
       RD_STATS rd_stats = *winner_rd_stats;
       int skip_blk = 0;
       RD_STATS rd_stats_y, rd_stats_uv;
@@ -3708,13 +3703,6 @@ static const MV_REFERENCE_FRAME reduced_ref_combos[][2] = {
   { ALTREF_FRAME, INTRA_FRAME },  { BWDREF_FRAME, INTRA_FRAME },
 };
 
-static const MV_REFERENCE_FRAME real_time_ref_combos[][2] = {
-  { LAST_FRAME, NONE_FRAME },
-  { ALTREF_FRAME, NONE_FRAME },
-  { GOLDEN_FRAME, NONE_FRAME },
-  { INTRA_FRAME, NONE_FRAME }
-};
-
 typedef enum { REF_SET_FULL, REF_SET_REDUCED, REF_SET_REALTIME } REF_SET;
 
 static AOM_INLINE void default_skip_mask(mode_skip_mask_t *mask,
@@ -3846,8 +3834,8 @@ static AOM_INLINE void init_mode_skip_mask(mode_skip_mask_t *mask,
   }
 
   if (sf->inter_sf.alt_ref_search_fp) {
-    if (!cm->show_frame && x->best_pred_mv_sad < INT_MAX) {
-      int sad_thresh = x->best_pred_mv_sad + (x->best_pred_mv_sad >> 3);
+    if (!cm->show_frame && x->best_pred_mv_sad[0] < INT_MAX) {
+      int sad_thresh = x->best_pred_mv_sad[0] + (x->best_pred_mv_sad[0] >> 3);
       // Conservatively skip the modes w.r.t. BWDREF, ALTREF2 and ALTREF, if
       // those are past frames
       MV_REFERENCE_FRAME start_frame =
@@ -3872,8 +3860,8 @@ static AOM_INLINE void init_mode_skip_mask(mode_skip_mask_t *mask,
   }
 
   if (sf->rt_sf.prune_inter_modes_wrt_gf_arf_based_on_sad) {
-    if (x->best_pred_mv_sad < INT_MAX) {
-      int sad_thresh = x->best_pred_mv_sad + (x->best_pred_mv_sad >> 1);
+    if (x->best_pred_mv_sad[0] < INT_MAX) {
+      int sad_thresh = x->best_pred_mv_sad[0] + (x->best_pred_mv_sad[0] >> 1);
       const int prune_ref_list[2] = { GOLDEN_FRAME, ALTREF_FRAME };
 
       // Conservatively skip the modes w.r.t. GOLDEN and ALTREF references
@@ -3897,7 +3885,7 @@ static AOM_INLINE void init_mode_skip_mask(mode_skip_mask_t *mask,
   }
 
   mask->pred_modes[INTRA_FRAME] |=
-      ~(sf->intra_sf.intra_y_mode_mask[max_txsize_lookup[bsize]]);
+      ~(uint32_t)sf->intra_sf.intra_y_mode_mask[max_txsize_lookup[bsize]];
 }
 
 static AOM_INLINE void init_neighbor_pred_buf(
@@ -3990,7 +3978,8 @@ static AOM_INLINE void set_params_rd_pick_inter_mode(
 
   const int mi_row = xd->mi_row;
   const int mi_col = xd->mi_col;
-  x->best_pred_mv_sad = INT_MAX;
+  x->best_pred_mv_sad[0] = INT_MAX;
+  x->best_pred_mv_sad[1] = INT_MAX;
 
   for (MV_REFERENCE_FRAME ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME;
        ++ref_frame) {
@@ -4008,12 +3997,18 @@ static AOM_INLINE void set_params_rd_pick_inter_mode(
       assert(get_ref_frame_yv12_buf(cm, ref_frame) != NULL);
       setup_buffer_ref_mvs_inter(cpi, x, ref_frame, bsize, yv12_mb);
     }
-    // Store the best pred_mv_sad across all past frames
-    if ((cpi->sf.inter_sf.alt_ref_search_fp ||
-         cpi->sf.rt_sf.prune_inter_modes_wrt_gf_arf_based_on_sad) &&
-        cpi->ref_frame_dist_info.ref_relative_dist[ref_frame - LAST_FRAME] < 0)
-      x->best_pred_mv_sad =
-          AOMMIN(x->best_pred_mv_sad, x->pred_mv_sad[ref_frame]);
+    if (cpi->sf.inter_sf.alt_ref_search_fp ||
+        cpi->sf.rt_sf.prune_inter_modes_wrt_gf_arf_based_on_sad) {
+      // Store the best pred_mv_sad across all past frames
+      if (cpi->ref_frame_dist_info.ref_relative_dist[ref_frame - LAST_FRAME] <
+          0)
+        x->best_pred_mv_sad[0] =
+            AOMMIN(x->best_pred_mv_sad[0], x->pred_mv_sad[ref_frame]);
+      else
+        // Store the best pred_mv_sad across all future frames
+        x->best_pred_mv_sad[1] =
+            AOMMIN(x->best_pred_mv_sad[1], x->pred_mv_sad[ref_frame]);
+    }
   }
 
   if (!cpi->sf.rt_sf.use_real_time_ref_set && is_comp_ref_allowed(bsize)) {
@@ -4050,7 +4045,7 @@ static AOM_INLINE void set_params_rd_pick_inter_mode(
       get_frame_update_type(&cpi->ppi->gf_group, cpi->gf_frame_index);
   int use_actual_frame_probs = 1;
   int prune_obmc;
-#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
+#if CONFIG_FPMT_TEST
   use_actual_frame_probs =
       (cpi->ppi->fpmt_unit_test_cfg == PARALLEL_SIMULATION_ENCODE) ? 0 : 1;
   if (!use_actual_frame_probs) {
@@ -5324,19 +5319,11 @@ static void handle_winner_cand(
  * InterModeSearchState::intra_search_state so it can be reused later by \ref
  * av1_search_palette_mode.
  *
- * \return Returns the rdcost of the current intra-mode if it's available,
- * otherwise returns INT64_MAX. The corresponding values in x->e_mbd.mi[0],
- * rd_stats, rd_stats_y/uv, and best_intra_rd are also updated. Moreover, in the
- * first evocation of the function, the chroma intra mode result is cached in
- * intra_search_state to be used in subsequent calls. In the first evaluation
- * with directional mode, a prune_mask computed with histogram of gradient is
- * also stored in intra_search_state.
- *
  * \param[in,out] search_state      Struct keep track of the prediction mode
  *                                  search state in interframe.
  *
  * \param[in]     cpi               Top-level encoder structure.
- * \param[in]     x                 Pointer to struct holding all the data for
+ * \param[in,out] x                 Pointer to struct holding all the data for
  *                                  the current prediction block.
  * \param[out]    rd_cost           Stores the best rd_cost among all the
  *                                  prediction modes searched.
@@ -5344,21 +5331,21 @@ static void handle_winner_cand(
  * \param[in,out] ctx               Structure to hold the number of 4x4 blks to
  *                                  copy the tx_type and txfm_skip arrays.
  *                                  for only the Y plane.
- * \param[in,out] sf_args           Stores the list of intra mode candidates
+ * \param[in]     sf_args           Stores the list of intra mode candidates
  *                                  to be searched.
  * \param[in]     intra_ref_frame_cost  The entropy cost for signaling that the
  *                                      current ref frame is an intra frame.
  * \param[in]     yrd_threshold     The rdcost threshold for luma intra mode to
  *                                  terminate chroma intra mode search.
  *
- * \return Returns INT64_MAX if the determined motion mode is invalid and the
- * current motion mode being tested should be skipped. It returns 0 if the
- * motion mode search is a success.
+ * \remark If a new best mode is found, search_state and rd_costs are updated
+ * correspondingly. While x is also modified, it is only used as a temporary
+ * buffer, and the final decisions are stored in search_state.
  */
 static AOM_INLINE void search_intra_modes_in_interframe(
     InterModeSearchState *search_state, const AV1_COMP *cpi, MACROBLOCK *x,
     RD_STATS *rd_cost, BLOCK_SIZE bsize, PICK_MODE_CONTEXT *ctx,
-    InterModeSFArgs *sf_args, unsigned int intra_ref_frame_cost,
+    const InterModeSFArgs *sf_args, unsigned int intra_ref_frame_cost,
     int64_t yrd_threshold) {
   const AV1_COMMON *const cm = &cpi->common;
   const SPEED_FEATURES *const sf = &cpi->sf;
@@ -5387,7 +5374,8 @@ static AOM_INLINE void search_intra_modes_in_interframe(
     if (sf->intra_sf.skip_intra_in_interframe &&
         search_state->intra_search_state.skip_intra_modes)
       break;
-    set_y_mode_and_delta_angle(mode_idx, mbmi);
+    set_y_mode_and_delta_angle(
+        mode_idx, mbmi, sf->intra_sf.prune_luma_odd_delta_angles_in_intra);
     assert(mbmi->mode < INTRA_MODE_END);
 
     // Use intra_y_mode_mask speed feature to skip intra mode evaluation.

@@ -12,6 +12,8 @@
 #ifndef AOM_AV1_ENCODER_TEMPORAL_FILTER_H_
 #define AOM_AV1_ENCODER_TEMPORAL_FILTER_H_
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -200,7 +202,8 @@ int av1_is_temporal_filter_on(const struct AV1EncoderConfig *oxcf);
  * \param[in,out]   tf_info           Temporal filter info for a gop
  * \param[in,out]   cpi               Top level encoder instance structure
  */
-void av1_tf_info_alloc(TEMPORAL_FILTER_INFO *tf_info, struct AV1_COMP *cpi);
+void av1_tf_info_alloc(TEMPORAL_FILTER_INFO *tf_info,
+                       const struct AV1_COMP *cpi);
 
 /*!\brief Free buffers for TEMPORAL_FILTER_INFO
  * \param[in,out]   tf_info           Temporal filter info for a gop
@@ -284,7 +287,7 @@ double av1_estimate_noise_from_single_plane(const YV12_BUFFER_CONFIG *frame,
 * \param[in]   mb_row                Macroblock row to be filtered
 filtering
 *
-* \return Nothing will be returned, but the contents of td->diff will be
+* \remark Nothing will be returned, but the contents of td->diff will be
 modified.
 */
 void av1_tf_do_filtering_row(struct AV1_COMP *cpi, struct ThreadData *td,
@@ -348,7 +351,7 @@ int av1_get_q(const struct AV1_COMP *cpi);
 //   is_high_bitdepth: Whether the frame is high-bitdepth or not.
 // Returns:
 //   Nothing will be returned. But the contents of tf_data will be modified.
-static AOM_INLINE void tf_alloc_and_reset_data(TemporalFilterData *tf_data,
+static AOM_INLINE bool tf_alloc_and_reset_data(TemporalFilterData *tf_data,
                                                int num_pels,
                                                int is_high_bitdepth) {
   tf_data->tmp_mbmi = (MB_MODE_INFO *)malloc(sizeof(*tf_data->tmp_mbmi));
@@ -364,6 +367,13 @@ static AOM_INLINE void tf_alloc_and_reset_data(TemporalFilterData *tf_data,
   else
     tf_data->pred =
         (uint8_t *)aom_memalign(32, num_pels * sizeof(*tf_data->pred));
+  if (!(tf_data->accum && tf_data->count && tf_data->pred)) {
+    aom_free(tf_data->accum);
+    aom_free(tf_data->count);
+    aom_free(tf_data->pred);
+    return false;
+  }
+  return true;
 }
 
 // Setup macroblockd params for temporal filtering process.
