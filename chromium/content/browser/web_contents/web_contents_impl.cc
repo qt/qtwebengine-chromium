@@ -5031,7 +5031,8 @@ void WebContentsImpl::OnSavePage() {
     return;
   }
 
-  Stop();
+  if (IsLoading())
+    Stop();
 
   // Create the save package and possibly prompt the user for the name to save
   // the page as. The user prompt is an asynchronous operation that runs on
