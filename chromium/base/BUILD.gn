@@ -1046,6 +1046,7 @@ jumbo_component("base") {
 
   jumbo_excluded_sources = [
       "logging.cc",
+      "strings/string_piece.cc",
   ]
 
   if (is_win) {
