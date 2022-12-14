@@ -45,11 +45,11 @@ namespace blink {
 
 namespace {
 
-class BaselineAccumulator {
+class BaselineAccumulatorFlex {
   STACK_ALLOCATED();
 
  public:
-  explicit BaselineAccumulator(const ComputedStyle& style)
+  explicit BaselineAccumulatorFlex(const ComputedStyle& style)
       : font_baseline_(style.GetFontBaseline()) {}
 
   void AccumulateItem(const NGBoxFragment& fragment,
@@ -1431,7 +1431,7 @@ NGLayoutResult::EStatus NGFlexLayoutAlgorithm::GiveItemsFinalPositionAndSize(
     }
   }
 
-  BaselineAccumulator baseline_accumulator(Style());
+  BaselineAccumulatorFlex baseline_accumulator(Style());
   NGLayoutResult::EStatus status = NGLayoutResult::kSuccess;
 
   for (wtf_size_t flex_line_idx = 0; flex_line_idx < flex_line_outputs->size();
@@ -1578,7 +1578,7 @@ NGFlexLayoutAlgorithm::GiveItemsFinalPositionAndSizeForFragmentation(
   if (BreakToken())
     previously_consumed_block_size = BreakToken()->ConsumedBlockSize();
 
-  BaselineAccumulator baseline_accumulator(Style());
+  BaselineAccumulatorFlex baseline_accumulator(Style());
   for (auto entry = item_iterator.NextItem(*broke_before_row);
        NGFlexItem* flex_item = entry.flex_item;
        entry = item_iterator.NextItem(*broke_before_row)) {

@@ -2972,11 +2972,11 @@ namespace {
 // opposed to DOM order). The baseline of the grid is determined by the first
 // grid item with baseline alignment in the first row. If no items have
 // baseline alignment, fall back to the first item in row-major order.
-class BaselineAccumulator {
+class BaselineAccumulatorGrid {
   STACK_ALLOCATED();
 
  public:
-  explicit BaselineAccumulator(FontBaseline font_baseline)
+  explicit BaselineAccumulatorGrid(FontBaseline font_baseline)
       : font_baseline_(font_baseline) {}
 
   void Accumulate(const GridItemData& grid_item,
@@ -3120,7 +3120,7 @@ void NGGridLayoutAlgorithm::PlaceGridItems(
         layout_data.Rows()->GetSetCount() + 1, EBreakBetween::kAuto);
   }
 
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
 
   for (const auto& grid_item : grid_items) {
     LogicalRect containing_grid_area;
@@ -3317,7 +3317,7 @@ void NGGridLayoutAlgorithm::PlaceGridItemsForFragmentation(
 
   HeapVector<ResultAndOffsets> result_and_offsets;
   HeapVector<GridItemPlacementData*> out_of_fragmentainer_space_item_placement;
-  BaselineAccumulator baseline_accumulator(Style().GetFontBaseline());
+  BaselineAccumulatorGrid baseline_accumulator(Style().GetFontBaseline());
   LayoutUnit max_row_expansion;
   wtf_size_t expansion_row_set_index;
   wtf_size_t breakpoint_row_set_index;
@@ -3343,7 +3343,7 @@ void NGGridLayoutAlgorithm::PlaceGridItemsForFragmentation(
     // Reset our state.
     result_and_offsets.clear();
     out_of_fragmentainer_space_item_placement.clear();
-    baseline_accumulator = BaselineAccumulator(Style().GetFontBaseline());
+    baseline_accumulator = BaselineAccumulatorGrid(Style().GetFontBaseline());
     max_row_expansion = LayoutUnit();
     expansion_row_set_index = kNotFound;
     breakpoint_row_set_index = kNotFound;

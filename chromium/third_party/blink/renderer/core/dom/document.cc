@@ -8848,7 +8848,7 @@ static wtf_size_t MaxEventNodePathCachedEntriesValue() {
   return kMaxEventNodePathCachedEntriesValue;
 }
 
-static bool EventNodePathCachingEnabled() {
+static bool EventNodePathCachingEnabledD() {
   // Cache the feature value since checking for each event path regresses
   // performance.
   static const bool kEnabled =
@@ -8857,7 +8857,7 @@ static bool EventNodePathCachingEnabled() {
 }
 
 const EventPath::NodePath& Document::GetOrCalculateEventNodePath(Node& node) {
-  DCHECK(EventNodePathCachingEnabled());
+  DCHECK(EventNodePathCachingEnabledD());
   if (event_node_path_dom_tree_version_ != dom_tree_version_) {
     if (!event_node_path_cache_.empty()) {
       event_node_path_cache_.clear();

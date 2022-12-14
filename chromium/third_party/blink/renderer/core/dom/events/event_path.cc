@@ -111,7 +111,7 @@ EventPath::NodePath EventPath::CalculateNodePath(Node& node) {
   return node_path;
 }
 
-static bool EventNodePathCachingEnabled() {
+static bool EventNodePathCachingEnabledEP() {
   // Cache the feature value since checking for each event path regresses
   // performance.
   static const bool kEnabled =
@@ -123,7 +123,7 @@ void EventPath::CalculatePath() {
   DCHECK(node_);
   DCHECK(node_event_contexts_.empty());
 
-  if (EventNodePathCachingEnabled())
+  if (EventNodePathCachingEnabledEP())
     CalculatePathCachingEnabled();
   else
     CalculatePathCachingDisabled();
