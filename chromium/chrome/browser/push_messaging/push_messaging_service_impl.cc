@@ -94,14 +94,6 @@ using instance_id::InstanceID;
 
 namespace {
 
-#ifdef TOOLKIT_QT
-GURL CreateCustomEndpoint(Profile *profile, const std::string& subscription_id) {
-  const GURL endpoint(profile->GetPushMessagingEndpoint() + subscription_id);
-  DCHECK(endpoint.is_valid());
-  return endpoint;
-}
-#endif
-
 // Scope passed to getToken to obtain GCM registration tokens.
 // Must match Java GoogleCloudMessaging.INSTANCE_ID_SCOPE.
 const char kGCMScope[] = "GCM";
@@ -1162,11 +1154,7 @@ void PushMessagingServiceImpl::DidSubscribe(
 
   switch (result) {
     case InstanceID::SUCCESS: {
-#ifndef TOOLKIT_QT
       const GURL endpoint = push_messaging::CreateEndpoint(subscription_id);
-#else
-      const GURL endpoint = CreateCustomEndpoint(profile_, subscription_id);
-#endif
 
       // Make sure that this subscription has associated encryption keys prior
       // to returning it to the developer - they'll need this information in
@@ -1241,11 +1229,7 @@ void PushMessagingServiceImpl::GetSubscriptionInfo(
     return;
   }
 
-#ifndef TOOLKIT_QT
   const GURL endpoint = push_messaging::CreateEndpoint(subscription_id);
-#else
-  const GURL endpoint = CreateCustomEndpoint(profile_, subscription_id);
-#endif
 
   const std::string& app_id = app_identifier.app_id();
   absl::optional<base::Time> expiration_time = app_identifier.expiration_time();
