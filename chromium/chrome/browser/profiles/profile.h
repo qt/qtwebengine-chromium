@@ -50,9 +50,6 @@ class Profile : public content::BrowserContext {
   // off-the-record profiles of a Guest session.
   virtual bool IsGuestSession() const;
 
-#ifdef TOOLKIT_QT
-  virtual std::string GetPushMessagingEndpoint() const;
-#endif
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_H_

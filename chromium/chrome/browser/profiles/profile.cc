@@ -46,9 +46,3 @@ bool Profile::IsSystemProfile() const {
   return profile_metrics::GetBrowserProfileType(this) ==
          profile_metrics::BrowserProfileType::kSystem;
 }
-
-#ifdef TOOLKIT_QT
-std::string Profile::GetPushMessagingEndpoint() const {
-  return "";
-}
-#endif
