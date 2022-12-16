@@ -687,7 +687,6 @@ jumbo_source_set("browser_sources") {
     ]
 
     deps -= [
-      "//components/cast_certificate",
       "//components/content_settings/core/browser",
       "//components/content_settings/core/common",
       "//components/crx_file",
