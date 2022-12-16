@@ -150,7 +150,7 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
   }
 
   // Navigate the tab to a new location if the url is different.
-  if (params->update_properties.url.get()) {
+  if (params->update_properties.url) {
     std::string updated_url = *params->update_properties.url;
     if (!UpdateURL(updated_url, tab_id, &error))
       return RespondNow(Error(std::move(error)));
