@@ -540,6 +540,7 @@ void ContentAutofillDriver::FillFormForAssistant(
     const FormData& raw_form,
     const FormFieldData& raw_field,
     const autofill_assistant::AutofillAssistantIntent intent) {
+#if !defined(TOOLKIT_QT)
   FormData form = raw_form;
   FormFieldData field = raw_field;
   SetFrameAndFormMetaData(form, &field);
@@ -564,6 +565,7 @@ void ContentAutofillDriver::FillFormForAssistant(
           NOTREACHED();
         }
       });
+#endif
 }
 
 void ContentAutofillDriver::DidNavigateFrame(

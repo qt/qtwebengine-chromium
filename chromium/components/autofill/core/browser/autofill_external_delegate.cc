@@ -324,9 +324,9 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const Suggestion& suggestion,
     manager_->client()->HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
   }
 #else
-  if (frontend_id == POPUP_ITEM_ID_DATALIST_ENTRY) {
+  if (suggestion.frontend_id == POPUP_ITEM_ID_DATALIST_ENTRY) {
     driver_->RendererShouldAcceptDataListSuggestion(query_field_.global_id(),
-                                                    value);
+                                                    suggestion.main_text.value);
   } else {
       // QtWebEngine supports datalist only.
       NOTREACHED();

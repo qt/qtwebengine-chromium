@@ -203,8 +203,8 @@ class ProfileImportProcess {
 
   // Records UMA and UKM metrics. Should only be called after a user decision
   // was supplied or a silent update happens.
-  void CollectMetrics(ukm::UkmRecorder* ukm_recorder,
-                      ukm::SourceId source_id) const;
+//  void CollectMetrics(ukm::UkmRecorder* ukm_recorder,
+//                      ukm::SourceId source_id) const;
 
  private:
   // Determines the import type of |observed_profile_| with respect to
