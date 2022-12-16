@@ -1,4 +1,4 @@
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -17,6 +17,9 @@ if (is_win) {
   assert(current_cpu == "x64" && (is_linux || is_chromeos),
          "Only Linux X64 MSAN is supported")
   platform_config_root = "config/linux-noasm/$current_cpu"
+} else if (current_cpu == "riscv64" || current_cpu == "loong64" ||
+           current_cpu == "ppc64") {
+  platform_config_root = "config/linux-noasm/generic"
 } else {
   # Linux configuration files seem to work on Mac, so just reuse them.
   platform_config_root = "config/linux/$current_cpu"
@@ -243,15 +246,8 @@ if (current_cpu == "x86" || current_cpu == "x64") {
     sources = [
       "libdav1d/src/x86/cpu.c",
       "libdav1d/src/x86/cpu.h",
-      "libdav1d/src/x86/refmvs_init.c",
     ]
 
-    # x86/msac.h redefines macros in msac.h if x86/msac.h is included and
-    # HAVE_ASM is 0, so we must exclude msac_init.c if !enable_nasm. Also, it
-    # is only used for x64.
-    if (enable_nasm && current_cpu == "x64") {
-      sources += [ "libdav1d/src/x86/msac_init.c" ]
-    }
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
       "//build/config/compiler:no_chromium_code",
@@ -267,7 +263,6 @@ if (current_cpu == "x86" || current_cpu == "x64") {
     sources = [
       "libdav1d/src/arm/cpu.c",
       "libdav1d/src/arm/cpu.h",
-      "libdav1d/src/arm/refmvs_init.c",
     ]
 
     # These are not template based so should only be built once.

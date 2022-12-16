@@ -30,7 +30,7 @@
 
 decl_splat_mv_fn(dav1d_splat_mv_neon);
 
-COLD void dav1d_refmvs_dsp_init_arm(Dav1dRefmvsDSPContext *const c) {
+static ALWAYS_INLINE void refmvs_dsp_init_arm(Dav1dRefmvsDSPContext *const c) {
     const unsigned flags = dav1d_get_cpu_flags();
 
     if (!(flags & DAV1D_ARM_CPU_FLAG_NEON)) return;

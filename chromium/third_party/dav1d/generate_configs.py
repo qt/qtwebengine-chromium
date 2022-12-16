@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Creates config files for building dav1d."""
@@ -165,6 +165,19 @@ def GenerateWindowsArm64Config(src_dir):
                  (r'#define ARCH_AARCH64 0', r'#define ARCH_AARCH64 1')])
 
 
+def GenerateGenericConfig(src_dir):
+    generic_dir = 'config/linux-noasm/generic'
+    if not os.path.exists(generic_dir):
+        os.makedirs(generic_dir)
+
+    shutil.copy(os.path.join(src_dir, 'config.h'), generic_dir)
+
+    # Mark architecture as unknown.
+    RewriteFile(os.path.join(generic_dir, 'config.h'),
+                [(r'#define ARCH_X86 1', r'#define ARCH_X86 0'),
+                 (r'#define ARCH_X86_64 1', r'#define ARCH_X86_64 0')])
+
+
 def CopyVersions(src_dir, dest_dir):
     if not os.path.exists(dest_dir):
         os.makedirs(dest_dir)
@@ -193,7 +206,10 @@ def main():
     linux_env['CC'] = 'clang'
 
     GenerateConfig('config/linux/x64', linux_env)
-    GenerateConfig('config/linux-noasm/x64', linux_env, ['-Denable_asm=false'])
+
+    noasm_dir = 'config/linux-noasm/x64'
+    GenerateConfig(noasm_dir, linux_env, ['-Denable_asm=false'])
+    GenerateGenericConfig(noasm_dir)
 
     GenerateConfig('config/linux/x86', linux_env,
                    ['--cross-file', '../crossfiles/linux32.crossfile'])
