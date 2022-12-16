@@ -66,7 +66,7 @@ ResourcesPrivateGetStringsFunction::~ResourcesPrivateGetStringsFunction() {}
 ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
   std::unique_ptr<get_strings::Params> params(
       get_strings::Params::Create(args()));
-  auto dict = std::make_unique<base::DictionaryValue>();
+  base::Value::Dict dict;
 
   api::resources_private::Component component = params->component;
 
@@ -75,8 +75,8 @@ ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
       break;
     case api::resources_private::COMPONENT_PDF:
 #if BUILDFLAG(ENABLE_PDF)
-      pdf_extension_util::AddStrings(pdf_extension_util::PdfViewerContext::kPdfViewer, dict.get());
-      pdf_extension_util::AddAdditionalData(dict.get());
+      pdf_extension_util::AddStrings(pdf_extension_util::PdfViewerContext::kAll, &dict);
+      pdf_extension_util::AddAdditionalData(true, &dict);
 #else
       NOTREACHED();
 #endif  // BUILDFLAG(ENABLE_PDF)
@@ -85,8 +85,7 @@ ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
       NOTREACHED();
   }
 
-  return RespondNow(
-      OneArgument(base::Value::FromUniquePtrValue(std::move(dict))));
+  return RespondNow(WithArguments(std::move(dict)));
 }
 
 }  // namespace extensions
