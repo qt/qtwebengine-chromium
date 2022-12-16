@@ -1,5 +1,6 @@
 /*
- * Copyright © 2020, VideoLAN and dav1d authors
+ * Copyright © 2019, VideoLAN and dav1d authors
+ * Copyright © 2019, Michail Alvanos
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -24,20 +25,24 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "src/cpu.h"
-#include "src/msac.h"
-#include "src/x86/msac.h"
+#include "common/intops.h"
 
-#if ARCH_X86_64
-void dav1d_msac_init_x86(MsacContext *const s) {
+#include "src/cpu.h"
+#include "src/looprestoration.h"
+
+void dav1d_wiener_filter_vsx(uint8_t *p, const ptrdiff_t stride,
+                             const uint8_t (*const left)[4],
+                             const uint8_t *lpf,
+                             const int w, const int h,
+                             const LooprestorationParams *const params,
+                             const enum LrEdgeFlags edges HIGHBD_DECL_SUFFIX);
+
+static ALWAYS_INLINE void loop_restoration_dsp_init_ppc(Dav1dLoopRestorationDSPContext *const c, const int bpc) {
     const unsigned flags = dav1d_get_cpu_flags();
 
-    if (flags & DAV1D_X86_CPU_FLAG_SSE2) {
-        s->symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_sse2;
-    }
+    if (!(flags & DAV1D_PPC_CPU_FLAG_VSX)) return;
 
-    if (flags & DAV1D_X86_CPU_FLAG_AVX2) {
-        s->symbol_adapt16 = dav1d_msac_decode_symbol_adapt16_avx2;
-    }
-}
+#if BITDEPTH == 8
+    c->wiener[0] = c->wiener[1] = dav1d_wiener_filter_vsx;
 #endif
+}
