@@ -4,7 +4,6 @@
 
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
 
-#include "ash/constants/ash_features.h"
 #include "base/check.h"
 #include "base/notreached.h"
 #include "build/chromeos_buildflags.h"
