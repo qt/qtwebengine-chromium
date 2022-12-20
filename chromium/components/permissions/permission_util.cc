@@ -473,6 +473,7 @@ GURL PermissionUtil::GetCanonicalOrigin(ContentSettingsType permission,
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
   const std::vector<
       raw_ptr<permissions::PermissionRequest, VectorExperimental>>& requests =
@@ -508,6 +509,7 @@ bool PermissionUtil::CanPermissionRequestIgnoreStatus(
 
   NOTREACHED_IN_MIGRATION();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // static
 bool PermissionUtil::DoesPlatformSupportChip() {
