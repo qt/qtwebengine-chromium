@@ -149,6 +149,7 @@ bool ForceSigninVerifier::ShouldSendRequest() {
 }
 
 void ForceSigninVerifier::CloseAllBrowserWindows() {
+#ifndef TOOLKIT_QT
   // Do not sign the user out to allow them to reauthenticate from the profile
   // picker.
   BrowserList::CloseAllBrowsersWithProfile(
@@ -157,6 +158,7 @@ void ForceSigninVerifier::CloseAllBrowserWindows() {
                           weak_factory_.GetWeakPtr()),
       /*on_close_aborted=*/base::DoNothing(),
       /*skip_beforeunload=*/true);
+#endif
 }
 
 void ForceSigninVerifier::OnCloseBrowsersSuccess(
