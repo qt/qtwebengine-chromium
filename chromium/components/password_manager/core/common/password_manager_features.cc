@@ -38,7 +38,7 @@ BASE_FEATURE(kEnableOverwritingPlaceholderUsernames,
 
 // Enables a second, Gaia-account-scoped password store for users who are signed
 // in but not syncing.
-BASE_FEATURE(kEnablePasswordsAccountStorage,
+CONSTINIT const base::Feature kEnablePasswordsAccountStorage(
              "EnablePasswordsAccountStorage",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -63,7 +63,7 @@ BASE_FEATURE(kEnablePasswordManagerWithinFencedFrame,
 
 // Enables filling password on a website when there is saved password on
 // affiliated website.
-BASE_FEATURE(kFillingAcrossAffiliatedWebsites,
+CONSTINIT const base::Feature kFillingAcrossAffiliatedWebsites(
              "FillingAcrossAffiliatedWebsites",
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -150,7 +150,7 @@ BASE_FEATURE(kPasswordChangeWellKnown,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables import passwords flow from Chrome's settings page.
-BASE_FEATURE(kPasswordImport,
+CONSTINIT const base::Feature kPasswordImport(
              "PasswordImport",
              base::FEATURE_ENABLED_BY_DEFAULT);
 

@@ -258,7 +258,7 @@ BASE_FEATURE(kDefaultANGLEOpenGL,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Default to using ANGLE's Metal backend.
-BASE_FEATURE(kDefaultANGLEMetal,
+CONSTINIT const base::Feature kDefaultANGLEMetal(
              "DefaultANGLEMetal",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT

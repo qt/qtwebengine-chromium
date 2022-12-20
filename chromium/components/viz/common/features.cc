@@ -33,7 +33,7 @@ const char kDynamicSchedulerPercentile[] = "percentile";
 
 namespace features {
 
-BASE_FEATURE(kUseMultipleOverlays,
+CONSTINIT const base::Feature kUseMultipleOverlays(
              "UseMultipleOverlays",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -43,7 +43,7 @@ BASE_FEATURE(kUseMultipleOverlays,
 );
 const char kMaxOverlaysParam[] = "max_overlays";
 
-BASE_FEATURE(kDelegatedCompositing,
+CONSTINIT const base::Feature kDelegatedCompositing(
              "DelegatedCompositing",
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -209,7 +209,7 @@ BASE_FEATURE(kBufferQueueImageSetPurgeable,
 // On platforms using SkiaOutputDeviceBufferQueue, when this is true
 // SkiaRenderer will allocate and maintain a buffer queue of images for the root
 // render pass, instead of SkiaOutputDeviceBufferQueue itself.
-BASE_FEATURE(kRendererAllocatesImages,
+CONSTINIT const base::Feature kRendererAllocatesImages(
              "RendererAllocatesImages",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT

@@ -337,7 +337,7 @@ BASE_FEATURE(kPreloadMetadataLazyLoad,
 
 // Let videos be resumed via remote controls (for example, the notification)
 // when in background.
-BASE_FEATURE(kResumeBackgroundVideo,
+CONSTINIT const base::Feature kResumeBackgroundVideo(
              "resume-background-video",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -375,7 +375,7 @@ BASE_FEATURE(kUseAndroidOverlayForSecureOnly,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Allows usage of OS-level (platform) audio encoders.
-BASE_FEATURE(kPlatformAudioEncoder,
+CONSTINIT const base::Feature kPlatformAudioEncoder(
              "PlatformAudioEncoder",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -416,7 +416,7 @@ BASE_FEATURE(kCdmProcessSiteIsolation,
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
 // If echo cancellation for a mic signal is requested, mix and cancel all audio
 // playback going to a specific output device in the audio service.
-BASE_FEATURE(kChromeWideEchoCancellation,
+CONSTINIT const base::Feature kChromeWideEchoCancellation(
              "ChromeWideEchoCancellation",
 #if BUILDFLAG(IS_CHROMEOS_DEVICE)
     base::FEATURE_DISABLED_BY_DEFAULT
@@ -509,7 +509,7 @@ BASE_FEATURE(kMemoryPressureBasedSourceBufferGC,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables binding software video NV12/P010 GMBs as separate shared images.
-BASE_FEATURE(kMultiPlaneSoftwareVideoSharedImages,
+CONSTINIT const base::Feature kMultiPlaneSoftwareVideoSharedImages(
              "MultiPlaneSoftwareVideoSharedImages",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -520,7 +520,7 @@ BASE_FEATURE(kMultiPlaneSoftwareVideoSharedImages,
 
 // Enable binding multiple shared images to a single GpuMemoryBuffer for video
 // frames created by video capture.
-BASE_FEATURE(kMultiPlaneVideoCaptureSharedImages,
+CONSTINIT const base::Feature kMultiPlaneVideoCaptureSharedImages(
              "MultiPlaneVideoCaptureSharedImages",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -565,7 +565,7 @@ BASE_FEATURE(kD3D11VideoDecoderUseSharedHandle,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Runs the media service in the GPU process on a dedicated thread.
-BASE_FEATURE(kDedicatedMediaServiceThread,
+CONSTINIT const base::Feature kDedicatedMediaServiceThread(
              "DedicatedMediaServiceThread",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -584,7 +584,7 @@ BASE_FEATURE(kFallbackAfterDecodeError,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Show toolbar button that opens dialog for controlling media sessions.
-BASE_FEATURE(kGlobalMediaControls,
+CONSTINIT const base::Feature kGlobalMediaControls(
              "GlobalMediaControls",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -631,7 +631,7 @@ const base::FeatureParam<kCrosGlobalMediaControlsPinOptions>
         &kCrosGlobalMediaControlsParamOptions);
 
 // Show picture-in-picture button in Global Media Controls.
-BASE_FEATURE(kGlobalMediaControlsPictureInPicture,
+CONSTINIT const base::Feature kGlobalMediaControlsPictureInPicture(
              "GlobalMediaControlsPictureInPicture",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -760,7 +760,7 @@ BASE_FEATURE(kVideoBlitColorAccuracy,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enable VP9 k-SVC decoding with HW decoder for webrtc use case.
-BASE_FEATURE(kVp9kSVCHWDecoding,
+CONSTINIT const base::Feature kVp9kSVCHWDecoding(
              "Vp9kSVCHWDecoding",
 #if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -896,7 +896,7 @@ BASE_FEATURE(kWebContentsCaptureHiDpi,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables handling of hardware media keys for controlling media.
-BASE_FEATURE(kHardwareMediaKeyHandling,
+CONSTINIT const base::Feature kHardwareMediaKeyHandling(
              "HardwareMediaKeyHandling",
 #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(USE_MPRIS)
@@ -1320,7 +1320,7 @@ BASE_FEATURE(kMediaPowerExperiment,
 
 // Enables flash to be ducked by audio focus. This is enabled on Chrome OS which
 // has audio focus enabled.
-BASE_FEATURE(kAudioFocusDuckFlash,
+CONSTINIT const base::Feature kAudioFocusDuckFlash(
              "AudioFocusDuckFlash",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1339,7 +1339,7 @@ BASE_FEATURE(kAudioFocusLossSuspendMediaSession,
 
 // Enables the internal Media Session logic without enabling the Media Session
 // service.
-BASE_FEATURE(kInternalMediaSession,
+CONSTINIT const base::Feature kInternalMediaSession(
              "InternalMediaSession",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

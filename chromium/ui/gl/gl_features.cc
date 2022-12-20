@@ -85,7 +85,7 @@ BASE_FEATURE(kAndroidFrameDeadline,
 // Feature lives in ui/gl because it affects the GL binding initialization on
 // platforms that would otherwise not default to using EGL bindings.
 // Launched on Windows, still experimental on other platforms.
-BASE_FEATURE(kDefaultPassthroughCommandDecoder,
+CONSTINIT const base::Feature kDefaultPassthroughCommandDecoder(
              "DefaultPassthroughCommandDecoder",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // !defined(PASSTHROUGH_COMMAND_DECODER_LAUNCHED)

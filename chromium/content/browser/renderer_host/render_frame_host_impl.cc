@@ -301,7 +301,7 @@ BASE_FEATURE(kDisableFrameNameUpdateOnNonCurrentRenderFrameHost,
 // once the https://crbug.com/1341507 is resolved. This crash started to happen
 // on Android with bfcache experiments, so we're enabling this flag only on
 // Android.
-BASE_FEATURE(kEvictOnAXEvents,
+CONSTINIT const base::Feature kEvictOnAXEvents(
              "EvictOnAXEvents",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

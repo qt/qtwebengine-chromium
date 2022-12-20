@@ -28,7 +28,7 @@ bool IsImpulseScrollAnimationEnabled() {
 
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
-BASE_FEATURE(kSynchronizedScrolling,
+CONSTINIT const base::Feature kSynchronizedScrolling(
              "SynchronizedScrolling",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -46,7 +46,7 @@ BASE_FEATURE(kRemoveMobileViewportDoubleTap,
 
 // Design doc: bit.ly/scrollunification
 // Disabled on Windows due to crbug.com/1378021.
-BASE_FEATURE(kScrollUnification,
+CONSTINIT const base::Feature kScrollUnification(
              "ScrollUnification",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -102,7 +102,7 @@ BASE_FEATURE(kRasterTilePriorityQueue,
              "RasterTilePriorityQueue",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUIEnableSharedImageCacheForGpu,
+CONSTINIT const base::Feature kUIEnableSharedImageCacheForGpu(
              "UIEnableSharedImageCacheForGpu",
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT);

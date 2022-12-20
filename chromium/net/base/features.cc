@@ -163,7 +163,7 @@ const base::FeatureParam<int> kCertDualVerificationTrialImpl{
 #endif
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
-BASE_FEATURE(kChromeRootStoreUsed,
+CONSTINIT const base::Feature kChromeRootStoreUsed(
              "ChromeRootStoreUsed",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
