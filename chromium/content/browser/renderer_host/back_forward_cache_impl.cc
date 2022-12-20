@@ -60,7 +60,7 @@ class RenderProcessHostInternalObserver;
 
 // Allows overriding the sizes of back/forward cache.
 // Sizes set via this feature's parameters take precedence over others.
-BASE_FEATURE(kBackForwardCacheSize,
+CONSTINIT const base::Feature kBackForwardCacheSize(
              "BackForwardCacheSize",
 // Sets the BackForwardCache size for desktop.
 // See crbug.com/1291435.

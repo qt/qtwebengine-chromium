@@ -139,7 +139,7 @@ BASE_FEATURE(kAutofillEnableStickyManualFallbackForCards,
 // enrollment of a credit card through their chrome browser after certain
 // autofill flows (for example, downstream and upstream), and from the settings
 // page.
-BASE_FEATURE(kAutofillEnableUpdateVirtualCardEnrollment,
+CONSTINIT const base::Feature kAutofillEnableUpdateVirtualCardEnrollment(
              "AutofillEnableUpdateVirtualCardEnrollment",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -261,7 +261,7 @@ BASE_FEATURE(kAutofillUpstreamAllowAdditionalEmailDomains,
 
 // When enabled, Chrome allows credit card upload to Google Payments, no matter
 // the user's email domain.
-BASE_FEATURE(kAutofillUpstreamAllowAllEmailDomains,
+CONSTINIT const base::Feature kAutofillUpstreamAllowAllEmailDomains(
              "AutofillUpstreamAllowAllEmailDomains",
              base::FEATURE_DISABLED_BY_DEFAULT);
 

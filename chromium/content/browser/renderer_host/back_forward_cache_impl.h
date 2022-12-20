@@ -66,7 +66,7 @@ CONTENT_EXPORT extern const base::FeatureParam<int>
 // Controls the interaction between back/forward cache and
 // unload. When enabled, pages with unload handlers may enter the
 // cache.
-BASE_FEATURE(kBackForwardCacheUnloadAllowed,
+CONSTINIT const base::Feature kBackForwardCacheUnloadAllowed(
              "BackForwardCacheUnloadAllowed",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

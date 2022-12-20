@@ -54,7 +54,7 @@ BASE_FEATURE(kForceStartupSigninPromo,
 #endif
 
 // Enables a new version of the sync confirmation UI.
-BASE_FEATURE(kTangibleSync,
+CONSTINIT const base::Feature kTangibleSync(
              "TangibleSync",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT

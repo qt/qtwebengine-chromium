@@ -17,7 +17,7 @@ const int kReportIntervalSeconds = 10;
 
 }  // namespace
 
-BASE_FEATURE(kWebRtcThermalResource,
+CONSTINIT const base::Feature kWebRtcThermalResource(
              "WebRtcThermalResource",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT

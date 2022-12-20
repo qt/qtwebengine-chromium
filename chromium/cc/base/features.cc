@@ -28,7 +28,7 @@ bool IsImpulseScrollAnimationEnabled() {
 
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
-BASE_FEATURE(kSynchronizedScrolling,
+CONSTINIT const base::Feature kSynchronizedScrolling(
              "SynchronizedScrolling",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -81,7 +81,7 @@ BASE_FEATURE(kNormalPriorityImageDecoding,
              "NormalPriorityImageDecoding",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUseDMSAAForTiles,
+CONSTINIT const base::Feature kUseDMSAAForTiles(
              "UseDMSAAForTiles",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -98,7 +98,7 @@ BASE_FEATURE(kRasterTilePriorityQueue,
              "RasterTilePriorityQueue",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kUIEnableSharedImageCacheForGpu,
+CONSTINIT const base::Feature kUIEnableSharedImageCacheForGpu(
              "UIEnableSharedImageCacheForGpu",
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT);

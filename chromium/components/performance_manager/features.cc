@@ -138,7 +138,7 @@ const base::FeatureParam<int> kMemoryUsageInHovercardsHighThresholdBytes{
 
 #endif
 
-BASE_FEATURE(kBFCachePerformanceManagerPolicy,
+CONSTINIT const base::Feature kBFCachePerformanceManagerPolicy(
              "BFCachePerformanceManagerPolicy",
 #if !BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

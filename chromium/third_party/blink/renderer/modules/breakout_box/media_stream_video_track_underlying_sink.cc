@@ -25,7 +25,7 @@ namespace blink {
 
 namespace {
 
-BASE_FEATURE(kBreakoutBoxEagerConversion,
+CONSTINIT const base::Feature kBreakoutBoxEagerConversion(
              "BreakoutBoxEagerConversion",
 // This feature has the same restrictions as TwoCopyCanvasCapture; see
 // comments there.

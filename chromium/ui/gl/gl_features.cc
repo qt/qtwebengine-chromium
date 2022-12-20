@@ -84,7 +84,7 @@ BASE_FEATURE(kAndroidFrameDeadline,
 // the --use-cmd-decoder=passthrough or --use-cmd-decoder=validating flags.
 // Feature lives in ui/gl because it affects the GL binding initialization on
 // platforms that would otherwise not default to using EGL bindings.
-BASE_FEATURE(kDefaultPassthroughCommandDecoder,
+CONSTINIT const base::Feature kDefaultPassthroughCommandDecoder(
              "DefaultPassthroughCommandDecoder",
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT

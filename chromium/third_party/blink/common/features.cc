@@ -411,8 +411,7 @@ BASE_FEATURE(kCacheStorageCodeCacheHintHeader,
 const base::FeatureParam<std::string> kCacheStorageCodeCacheHintHeaderName{
     &kCacheStorageCodeCacheHintHeader, "name", "x-CacheStorageCodeCacheHint"};
 
-BASE_FEATURE(
-    kCanvas2DHibernation,
+CONSTINIT const base::Feature kCanvas2DHibernation(
     "Canvas2DHibernation",
 #if BUILDFLAG(IS_MAC)
     // Canvas hibernation is not always enabled on MacOS X due to a bug that
@@ -698,7 +697,7 @@ BASE_FEATURE(kEnableMachineLearningNeuralNetworkService,
              "MachineLearningNeuralNetworkService",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kEstablishGpuChannelAsync,
+CONSTINIT const base::Feature kEstablishGpuChannelAsync(
              "EstablishGpuChannelAsync",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -753,7 +752,7 @@ BASE_FEATURE(kFileSystemUrlNavigationForChromeAppsOnly,
              "FileSystemUrlNavigationForChromeAppsOnly",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kFilteringScrollPrediction,
+CONSTINIT const base::Feature kFilteringScrollPrediction(
              "FilteringScrollPrediction",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -987,7 +986,7 @@ BASE_FEATURE(kLCPVideoFirstFrame,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // A feature to reduce the set of resources fetched by No-State Prefetch.
-BASE_FEATURE(kLightweightNoStatePrefetch,
+CONSTINIT const base::Feature kLightweightNoStatePrefetch(
              "LightweightNoStatePrefetch",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1009,7 +1008,7 @@ BASE_FEATURE(kLogUnexpectedIPCPostedToBackForwardCachedDocuments,
 // Enables the use of GpuMemoryBuffer images for low latency 2d canvas.
 // TODO(khushalsagar): Enable this if we're using SurfaceControl and GMBs allow
 // us to overlay these resources.
-BASE_FEATURE(kLowLatencyCanvas2dImageChromium,
+CONSTINIT const base::Feature kLowLatencyCanvas2dImageChromium(
              "LowLatencyCanvas2dImageChromium",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1095,7 +1094,7 @@ BASE_FEATURE(kMemoryCacheStrongReferenceSingleUnload,
 // If kNavigationPredictor is enabled, then metrics of anchor elements
 // in the first viewport after the page load and the metrics of the clicked
 // anchor element will be extracted and recorded.
-BASE_FEATURE(kNavigationPredictor,
+CONSTINIT const base::Feature kNavigationPredictor(
              "NavigationPredictor",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1196,7 +1195,7 @@ BASE_FEATURE(kPrecompileInlineScripts,
 
 // Whether we should composite a PLSA (paint layer scrollable area) even if it
 // means losing lcd text.
-BASE_FEATURE(kPreferCompositingToLCDText,
+CONSTINIT const base::Feature kPreferCompositingToLCDText(
              "PreferCompositingToLCDText",
 // On Android we never have LCD text. On Chrome OS we prefer composited
 // scrolling for better scrolling performance.
@@ -1208,7 +1207,7 @@ BASE_FEATURE(kPreferCompositingToLCDText,
 );
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kPrefetchFontLookupTables,
+CONSTINIT const base::Feature kPrefetchFontLookupTables(
              "PrefetchFontLookupTables",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -1630,7 +1629,7 @@ BASE_FEATURE(kStartMediaStreamCaptureIndicatorInBrowser,
 
 // Freeze scheduler task queues in background after allowed grace time.
 // "stop" is a legacy name.
-BASE_FEATURE(kStopInBackground,
+CONSTINIT const base::Feature kStopInBackground(
              "stop-in-background",
 // b/248036988 - Disable this for Chromecast on Android builds to prevent apps
 // that play audio in the background from stopping.
@@ -1806,7 +1805,7 @@ BASE_FEATURE(kWebAudioSinkSelection,
 // Enables cache-aware WebFonts loading. See https://crbug.com/570205.
 // The feature is disabled on Android for WebView API issue discussed at
 // https://crbug.com/942440.
-BASE_FEATURE(kWebFontsCacheAwareTimeoutAdaption,
+CONSTINIT const base::Feature kWebFontsCacheAwareTimeoutAdaption(
              "WebFontsCacheAwareTimeoutAdaption",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -1877,7 +1876,7 @@ BASE_FEATURE(kWebRtcThreadsUseResourceEfficientType,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Instructs WebRTC to honor the Min/Max Video Encode Accelerator dimensions.
-BASE_FEATURE(kWebRtcUseMinMaxVEADimensions,
+CONSTINIT const base::Feature kWebRtcUseMinMaxVEADimensions(
              "WebRtcUseMinMaxVEADimensions",
 // TODO(crbug.com/1008491): enable other platforms.
 #if BUILDFLAG(IS_CHROMEOS)

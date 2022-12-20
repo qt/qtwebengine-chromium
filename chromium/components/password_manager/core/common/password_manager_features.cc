@@ -45,7 +45,7 @@ BASE_FEATURE(kEnableOverwritingPlaceholderUsernames,
 
 // Enables a second, Gaia-account-scoped password store for users who are signed
 // in but not syncing.
-BASE_FEATURE(kEnablePasswordsAccountStorage,
+CONSTINIT const base::Feature kEnablePasswordsAccountStorage(
              "EnablePasswordsAccountStorage",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -70,7 +70,7 @@ BASE_FEATURE(kEnablePasswordManagerWithinFencedFrame,
 
 // Enables filling password on a website when there is saved password on
 // affiliated website.
-BASE_FEATURE(kFillingAcrossAffiliatedWebsites,
+CONSTINIT const base::Feature kFillingAcrossAffiliatedWebsites(
              "FillingAcrossAffiliatedWebsites",
 #if !BUILDFLAG(IS_ANDROID)  // Desktop and iOS
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -188,7 +188,7 @@ BASE_FEATURE(kPasswordGenerationExperiment,
 // Enables requesting and saving passwords grouping information from the
 // affiliation service.
 // TODO(crbug.com/1359392): Remove once launched on all platforms.
-BASE_FEATURE(kPasswordsGrouping,
+CONSTINIT const base::Feature kPasswordsGrouping(
              "PasswordsGrouping",
 #if BUILDFLAG(USE_BLINK)
              base::FEATURE_DISABLED_BY_DEFAULT

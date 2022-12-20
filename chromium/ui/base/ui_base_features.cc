@@ -156,7 +156,7 @@ BASE_FEATURE(kSystemCaptionStyle,
 // to be used in determining the concrete object size of a custom cursor in
 // blink. Currently enabled by default on Windows only.
 // TODO(crbug.com/1333523) - Implement for other platforms.
-BASE_FEATURE(kSystemCursorSizeSupported,
+CONSTINIT const base::Feature kSystemCursorSizeSupported(
              "SystemCursorSizeSupported",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -175,7 +175,7 @@ BASE_FEATURE(kSystemKeyboardLock,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables GPU rasterization for all UI drawing (where not blocklisted).
-BASE_FEATURE(kUiGpuRasterization,
+CONSTINIT const base::Feature kUiGpuRasterization(
              "UiGpuRasterization",
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_CHROMEOS_ASH) || \
     BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -190,7 +190,7 @@ bool IsUiGpuRasterizationEnabled() {
 }
 
 // Enables scrolling with layers under ui using the ui::Compositor.
-BASE_FEATURE(kUiCompositorScrollWithLayers,
+CONSTINIT const base::Feature kUiCompositorScrollWithLayers(
              "UiCompositorScrollWithLayers",
 // TODO(https://crbug.com/615948): Use composited scrolling on all platforms.
 #if BUILDFLAG(IS_APPLE)
@@ -202,7 +202,7 @@ BASE_FEATURE(kUiCompositorScrollWithLayers,
 
 // Enables the use of a touch fling curve that is based on the behavior of
 // native apps on Windows.
-BASE_FEATURE(kExperimentalFlingAnimation,
+CONSTINIT const base::Feature kExperimentalFlingAnimation(
              "ExperimentalFlingAnimation",
 // TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
@@ -217,7 +217,7 @@ BASE_FEATURE(kExperimentalFlingAnimation,
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
 // Cached in Java as well, make sure defaults are updated together.
-BASE_FEATURE(kElasticOverscroll,
+CONSTINIT const base::Feature kElasticOverscroll(
              "ElasticOverscroll",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -311,7 +311,7 @@ bool IsForcedColorsEnabled() {
 // Enables the eye-dropper in the refresh color-picker for Windows, Mac
 // and Linux. This feature will be released for other platforms in later
 // milestones.
-BASE_FEATURE(kEyeDropper,
+CONSTINIT const base::Feature kEyeDropper(
              "EyeDropper",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
              base::FEATURE_ENABLED_BY_DEFAULT

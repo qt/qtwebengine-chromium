@@ -15,7 +15,7 @@ BASE_FEATURE(kPreemptiveLinkToTextGeneration,
 const base::FeatureParam<int> kPreemptiveLinkGenTimeoutLengthMs{
     &kPreemptiveLinkToTextGeneration, "TimeoutLengthMs", 500};
 
-BASE_FEATURE(kSharedHighlightingAmp,
+CONSTINIT const base::Feature kSharedHighlightingAmp(
              "SharedHighlightingAmp",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT

@@ -159,7 +159,7 @@ BASE_FEATURE(kNetworkServiceCookiesHighPriorityTaskRunner,
 // On Chrome OS, the Network Service must run on the IO thread because
 // ProfileIOData and NetworkContext both try to set up NSS, which has to be
 // called from the IO thread.
-BASE_FEATURE(kNetworkServiceDedicatedThread,
+CONSTINIT const base::Feature kNetworkServiceDedicatedThread(
              "NetworkServiceDedicatedThread",
 #if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_DISABLED_BY_DEFAULT
