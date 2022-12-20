@@ -10,8 +10,11 @@
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/permissions/permission_prompt.h"
+#endif
 #include "content/public/browser/permission_result.h"
+#include "components/permissions/permission_request_enums.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 
@@ -58,9 +61,11 @@ class PermissionUtil {
   // Returns the permission string for the given permission.
   static std::string GetPermissionString(ContentSettingsType);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the gesture type corresponding to whether a permission request is
   // made with or without a user gesture.
   static PermissionRequestGestureType GetGestureType(bool user_gesture);
+#endif
 
   // Limited conversion of ContentSettingsType to PermissionType. Returns true
   // if the conversion was performed.
@@ -85,12 +90,14 @@ class PermissionUtil {
   // acceptance data)
   static bool IsLowPriorityPermissionRequest(const PermissionRequest* request);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Check whether the given permission request could prompt a secondary UI, it
   // means:
   // - The request is initiated from a permission element.
   // - The request type is permission element supported type.
   static bool ShouldCurrentRequestUsePermissionElementSecondaryUI(
       PermissionPrompt::Delegate* delegate);
+#endif
 
   // Checks whether the given ContentSettingsType is a guard content setting,
   // meaning it does not support allow setting and toggles between "ask" and
@@ -167,6 +174,7 @@ class PermissionUtil {
                                  const GURL& requesting_origin,
                                  const GURL& embedding_origin);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns `true` if at least one of the `delegate->Requests()` was requested
   // with a user gesture.
   static bool HasUserGesture(PermissionPrompt::Delegate* delegate);
@@ -174,6 +182,7 @@ class PermissionUtil {
   static bool CanPermissionRequestIgnoreStatus(
       const PermissionRequestData& request,
       content::PermissionStatusSource source);
+#endif
 
   // Returns `true` if the current platform support permission chips.
   static bool DoesPlatformSupportChip();
