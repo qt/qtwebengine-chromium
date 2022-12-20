@@ -210,8 +210,7 @@ void InstantiatePersistentHistogramsImpl(const base::FilePath& metrics_dir,
 
 }  // namespace
 
-BASE_FEATURE(
-    kPersistentHistogramsFeature,
+CONSTINIT const base::Feature kPersistentHistogramsFeature(
     "PersistentHistograms",
 #if BUILDFLAG(IS_FUCHSIA)
     // TODO(crbug.com/1295119): Enable once writable mmap() is supported. Also

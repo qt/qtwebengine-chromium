@@ -138,7 +138,7 @@ constexpr base::FeatureParam<int> kCanvasDisableAccelerationPercentParam{
 
 namespace {
 
-BASE_FEATURE(kOneCopyCanvasCapture,
+CONSTINIT const base::Feature kOneCopyCanvasCapture(
              "OneCopyCanvasCapture",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT

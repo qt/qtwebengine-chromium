@@ -55,7 +55,7 @@ bool IsDeviceBlocked(const char* field, const std::string& block_list) {
 }  // namespace
 
 // Used to limit GL version to 2.0 for skia raster and compositing.
-BASE_FEATURE(kUseGles2ForOopR,
+CONSTINIT const base::Feature kUseGles2ForOopR(
              "UseGles2ForOopR",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || \
     BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
@@ -139,7 +139,7 @@ BASE_FEATURE(kAggressiveSkiaGpuResourcePurge,
 // --enable-gpu-rasterization or --disable-gpu-rasterization.
 // DefaultEnableGpuRasterization has launched on Mac, Windows, ChromeOS,
 // Android and Linux.
-BASE_FEATURE(kDefaultEnableGpuRasterization,
+CONSTINIT const base::Feature kDefaultEnableGpuRasterization(
              "DefaultEnableGpuRasterization",
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_LINUX)
@@ -150,7 +150,7 @@ BASE_FEATURE(kDefaultEnableGpuRasterization,
 );
 
 // Enables the use of out of process rasterization for canvas.
-BASE_FEATURE(kCanvasOopRasterization,
+CONSTINIT const base::Feature kCanvasOopRasterization(
              "CanvasOopRasterization",
 #if BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_WIN) || \
     (BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_ANDROID)
@@ -248,7 +248,7 @@ BASE_FEATURE(kVaapiWebPImageDecodeAcceleration,
 // native implementation if --use-vulkan flag is not used. Otherwise
 // --use-vulkan will be followed.
 // Note Android WebView uses kWebViewVulkan instead of this.
-BASE_FEATURE(kVulkan,
+CONSTINIT const base::Feature kVulkan(
              "Vulkan",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -257,7 +257,7 @@ BASE_FEATURE(kVulkan,
 #endif
 );
 
-BASE_FEATURE(kEnableDrDc,
+CONSTINIT const base::Feature kEnableDrDc(
              "EnableDrDc",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -350,7 +350,7 @@ const base::FeatureParam<std::string> kDrDcBlockListByAndroidBuildFP{
 // Enable Skia Graphite. This will use the Dawn backend by default, but can be
 // overridden with command line flags for testing on non-official developer
 // builds. See --skia-graphite-backend flag in gpu_switches.h.
-BASE_FEATURE(kSkiaGraphite,
+CONSTINIT const base::Feature kSkiaGraphite(
              "SkiaGraphite",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -405,7 +405,7 @@ BASE_FEATURE(kForceRestartGpuKillSwitch,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Using the new SchedulerDfs GPU scheduler.
-BASE_FEATURE(kUseGpuSchedulerDfs,
+CONSTINIT const base::Feature kUseGpuSchedulerDfs(
              "UseGpuSchedulerDfs",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT

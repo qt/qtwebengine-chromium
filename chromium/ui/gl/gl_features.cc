@@ -78,7 +78,7 @@ bool IsDeviceBlocked(const char* field, const std::string& block_list) {
 // the --use-cmd-decoder=passthrough or --use-cmd-decoder=validating flags.
 // Feature lives in ui/gl because it affects the GL binding initialization on
 // platforms that would otherwise not default to using EGL bindings.
-BASE_FEATURE(kDefaultPassthroughCommandDecoder,
+CONSTINIT const base::Feature kDefaultPassthroughCommandDecoder(
              "DefaultPassthroughCommandDecoder",
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

@@ -193,7 +193,7 @@ BASE_FEATURE(kWebAuthnDontPrelinkInProfiles,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enabled in M118 for macOS only.
-BASE_FEATURE(kWebAuthnNewPasskeyUI,
+CONSTINIT const base::Feature kWebAuthnNewPasskeyUI(
              "WebAuthenticationNewPasskeyUI",
 #if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -213,7 +213,7 @@ BASE_FEATURE(kWebAuthnRequireUIForComplexDiscoveries,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enabled in M118 for non-ChromeOS (see crbug.com/1480732).
-BASE_FEATURE(kWebAuthnFilterGooglePasskeys,
+CONSTINIT const base::Feature kWebAuthnFilterGooglePasskeys(
              "WebAuthenticationFilterGooglePasskeys",
 #if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_DISABLED_BY_DEFAULT

@@ -15,7 +15,7 @@ namespace features {
 // SiteIsolationPolicy::IsIsolationForPasswordSitesEnabled() rather than
 // checking the feature directly, since that decision is influenced by other
 // factors as well.
-BASE_FEATURE(kSiteIsolationForPasswordSites,
+CONSTINIT const base::Feature kSiteIsolationForPasswordSites(
              "site-isolation-for-password-sites",
 // Enabled by default on Android; see https://crbug.com/849815.  Note that this
 // should not affect Android Webview, which does not include this code.
@@ -37,7 +37,7 @@ BASE_FEATURE(kSiteIsolationForPasswordSites,
 //
 // This feature does not affect Android Webview, which does not include this
 // code.
-BASE_FEATURE(kSiteIsolationForOAuthSites,
+CONSTINIT const base::Feature kSiteIsolationForOAuthSites(
              "SiteIsolationForOAuthSites",
 // Enabled by default on Android only; see https://crbug.com/1206770.
 #if BUILDFLAG(IS_ANDROID)

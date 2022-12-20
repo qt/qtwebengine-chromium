@@ -93,7 +93,7 @@ BASE_FEATURE(kSplitAuthCacheByNetworkIsolationKey,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable usage of hardcoded DoH upgrade mapping for use in automatic mode.
-BASE_FEATURE(kDnsOverHttpsUpgrade,
+CONSTINIT const base::Feature kDnsOverHttpsUpgrade(
              "DnsOverHttpsUpgrade",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
@@ -381,7 +381,7 @@ BASE_FEATURE(kPrivateNetworkAccessPermissionPrompt,
 // Windows sandboxing systems allow us to specify system DNS resolution as an
 // allowed action, and ChromeOS uses a simple, known system DNS configuration
 // that can be adequately sandboxed.
-BASE_FEATURE(kOutOfProcessSystemDnsResolution,
+CONSTINIT const base::Feature kOutOfProcessSystemDnsResolution(
              "OutOfProcessSystemDnsResolution",
 #if BUILDFLAG(IS_LINUX)
              base::FEATURE_ENABLED_BY_DEFAULT

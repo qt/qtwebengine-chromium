@@ -308,33 +308,49 @@ void UnmapNow(uintptr_t reservation_start,
   if (pool == kBRPPoolHandle) {
     // In 32-bit mode, the beginning of a reservation may be excluded from the
     // BRP pool, so shift the pointer. Other pools don't have this logic.
-//     PA_DCHECK(IsManagedByPartitionAllocBRPPool(
-// #if BUILDFLAG(HAS_64_BIT_POINTERS)
-//         reservation_start
-// #else
-//         reservation_start +
-//         AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
-//             AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
-// #endif  // BUILDFLAG(HAS_64_BIT_POINTERS)
-//         ));
+ #if BUILDFLAG(HAS_64_BIT_POINTERS)
+    PA_DCHECK(IsManagedByPartitionAllocBRPPool(
+         reservation_start
+        ));
+ #else
+    PA_DCHECK(IsManagedByPartitionAllocBRPPool(
+         reservation_start +
+         AddressPoolManagerBitmap::kBytesPer1BitOfBRPPoolBitmap *
+             AddressPoolManagerBitmap::kGuardOffsetOfBRPPoolBitmap
+         ));
+ #endif  // BUILDFLAG(HAS_64_BIT_POINTERS)
   } else
 #endif  // BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
   {
+#if BUILDFLAG(ENABLE_PKEYS) && BUILDFLAG(HAS_64_BIT_POINTERS)
     PA_DCHECK(pool == kRegularPoolHandle
 #if BUILDFLAG(ENABLE_THREAD_ISOLATION)
               || pool == kThreadIsolatedPoolHandle
 #endif
 #if BUILDFLAG(HAS_64_BIT_POINTERS)
               ||
-              (IsConfigurablePoolAvailable() && pool == kConfigurablePoolHandle)
-#endif
-    );
+              (IsConfigurablePoolAvailable() && pool == kConfigurablePoolHandle));
+#elif BUILDFLAG(ENABLE_PKEYS) && !BUILDFLAG(HAS_64_BIT_POINTERS)
+    PA_DCHECK(pool == kRegularPoolHandle
+              || pool == kPkeyPoolHandle);
+#elif !BUILDFLAG(ENABLE_PKEYS) && BUILDFLAG(HAS_64_BIT_POINTERS)
+    PA_DCHECK(pool == kRegularPoolHandle
+              ||
+              (IsConfigurablePoolAvailable() && pool == kConfigurablePoolHandle));
+#else
+    PA_DCHECK(pool == kRegularPoolHandle);
+#endif  // BUILDFLAG(ENABLE_PKEYS)
+
     // Non-BRP pools don't need adjustment that BRP needs in 32-bit mode.
     PA_DCHECK(IsManagedByPartitionAllocRegularPool(reservation_start) ||
 #if BUILDFLAG(ENABLE_THREAD_ISOLATION)
               IsManagedByPartitionAllocThreadIsolatedPool(reservation_start) ||
 #endif
               IsManagedByPartitionAllocConfigurablePool(reservation_start));
+#else
+    PA_DCHECK(IsManagedByPartitionAllocRegularPool(reservation_start) ||
+              IsManagedByPartitionAllocConfigurablePool(reservation_start));
+#endif  // BUILDFLAG(ENABLE_PKEYS)
   }
 #endif  // BUILDFLAG(PA_DCHECK_IS_ON)
 

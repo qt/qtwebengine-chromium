@@ -330,7 +330,7 @@ BASE_FEATURE(kTailoredSecurityObserverRetries,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
-BASE_FEATURE(kTailoredSecurityIntegration,
+CONSTINIT const base::Feature kTailoredSecurityIntegration(
              "TailoredSecurityIntegration",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT

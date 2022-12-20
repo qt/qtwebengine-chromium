@@ -348,7 +348,7 @@ BASE_FEATURE(kKerberosInBrowserRedirect,
 #endif
 
 // A flag to use asynchronous session creation for new QUIC sessions.
-BASE_FEATURE(kAsyncQuicSession,
+CONSTINIT const base::Feature kAsyncQuicSession(
              "AsyncQuicSession",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -357,7 +357,7 @@ BASE_FEATURE(kAsyncQuicSession,
 #endif
 
 // A flag to make multiport context creation asynchronous.
-BASE_FEATURE(kAsyncMultiPortPath,
+CONSTINIT const base::Feature kAsyncMultiPortPath(
              "AsyncMultiPortPath",
 #if !BUILDFLAG(CRONET_BUILD) && (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID))
              base::FEATURE_ENABLED_BY_DEFAULT);

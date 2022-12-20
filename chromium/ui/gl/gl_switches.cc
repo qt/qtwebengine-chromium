@@ -228,7 +228,7 @@ BASE_FEATURE(kDirectCompositionLetterboxVideoOptimization,
 // Allow dual GPU rendering through EGL where supported, i.e., allow a WebGL
 // or WebGPU context to be on the high performance GPU if preferred and Chrome
 // internal rendering to be on the low power GPU.
-BASE_FEATURE(kEGLDualGPURendering,
+CONSTINIT const base::Feature kEGLDualGPURendering(
              "EGLDualGPURendering",
 #if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -257,7 +257,7 @@ BASE_FEATURE(kDefaultANGLEOpenGL,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Default to using ANGLE's Metal backend.
-BASE_FEATURE(kDefaultANGLEMetal,
+CONSTINIT const base::Feature kDefaultANGLEMetal(
              "DefaultANGLEMetal",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_ENABLED_BY_DEFAULT

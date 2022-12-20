@@ -38,7 +38,7 @@ const base::FeatureParam<UnretainedDanglingPtrMode>
         &kUnretainedDanglingPtrModeOption,
 };
 
-BASE_FEATURE(kPartitionAllocDanglingPtr,
+CONSTINIT const base::Feature kPartitionAllocDanglingPtr(
              "PartitionAllocDanglingPtr",
 #if BUILDFLAG(ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG) ||                   \
     (BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS) && BUILDFLAG(IS_LINUX) && \
@@ -110,7 +110,7 @@ BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
-BASE_FEATURE(kPartitionAllocBackupRefPtr,
+CONSTINIT const base::Feature kPartitionAllocBackupRefPtr(
              "PartitionAllocBackupRefPtr",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS) ||     \
@@ -220,7 +220,7 @@ const base::FeatureParam<bool> kBackupRefPtrAsanEnableInstantiationCheckParam{
 //
 // We enable this by default everywhere except for 32-bit Android, since we saw
 // regressions there.
-BASE_FEATURE(kPartitionAllocUseDenserDistribution,
+CONSTINIT const base::Feature kPartitionAllocUseDenserDistribution(
              "PartitionAllocUseDenserDistribution",
 #if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_32_BITS)
              FEATURE_DISABLED_BY_DEFAULT
@@ -276,7 +276,7 @@ BASE_FEATURE(kPartitionAllocPCScanEagerClearing,
              FEATURE_DISABLED_BY_DEFAULT);
 
 // In addition to heap, scan also the stack of the current mutator.
-BASE_FEATURE(kPartitionAllocPCScanStackScanning,
+CONSTINIT const base::Feature kPartitionAllocPCScanStackScanning(
              "PartitionAllocPCScanStackScanning",
 #if BUILDFLAG(PCSCAN_STACK_SUPPORTED)
              FEATURE_ENABLED_BY_DEFAULT

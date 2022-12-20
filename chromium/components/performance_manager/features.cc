@@ -151,7 +151,7 @@ const base::FeatureParam<MemoryUsageInHovercardsUpdateTrigger>
 
 #endif
 
-BASE_FEATURE(kBFCachePerformanceManagerPolicy,
+CONSTINIT const base::Feature kBFCachePerformanceManagerPolicy(
              "BFCachePerformanceManagerPolicy",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
