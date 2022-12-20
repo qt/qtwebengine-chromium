@@ -10,8 +10,11 @@
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/permissions/permission_prompt.h"
+#endif
 #include "content/public/browser/permission_result.h"
+#include "components/permissions/permission_request_enums.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 
@@ -148,9 +151,11 @@ class PermissionUtil {
                                  const GURL& requesting_origin,
                                  const GURL& embedding_origin);
 
+#if !defined(TOOLKIT_QT)
   // Returns `true` if at least one of the `delegate->Requests()` was requested
   // with a user gesture.
   static bool HasUserGesture(PermissionPrompt::Delegate* delegate);
+#endif
 
   static bool CanPermissionRequestIgnoreStatus(
       const PermissionRequestData& request,
