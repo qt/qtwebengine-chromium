@@ -409,6 +409,7 @@ GURL PermissionUtil::GetCanonicalOrigin(ContentSettingsType permission,
   }
 }
 
+#if !defined(TOOLKIT_QT)
 bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
   const std::vector<permissions::PermissionRequest*>& requests =
       delegate->Requests();
@@ -419,4 +420,5 @@ bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
                permissions::PermissionRequestGestureType::GESTURE;
       });
 }
+#endif
 }  // namespace permissions
