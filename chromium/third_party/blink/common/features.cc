@@ -213,7 +213,7 @@ BASE_FEATURE(kMixedContentAutoupgrade,
 // anchor element will be extracted and recorded. Additionally, navigation
 // predictor may preconnect/prefetch to resources/origins to make the
 // future navigations faster.
-BASE_FEATURE(kNavigationPredictor,
+CONSTINIT const base::Feature kNavigationPredictor(
              "NavigationPredictor",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -374,7 +374,7 @@ BASE_FEATURE(kPreviewsResourceLoadingHintsSpecificResourceTypes,
 //
 // TODO(https://crbug.com/926186): Disabled by default on Android for historical
 // reasons. Consider enabling by default if experiment results are positive.
-BASE_FEATURE(kPurgeRendererMemoryWhenBackgrounded,
+CONSTINIT const base::Feature kPurgeRendererMemoryWhenBackgrounded(
              "PurgeRendererMemoryWhenBackgrounded",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -480,7 +480,7 @@ BASE_FEATURE(kServiceWorkerUpdateDelay,
 
 // Freeze scheduler task queues in background after allowed grace time.
 // "stop" is a legacy name.
-BASE_FEATURE(kStopInBackground,
+CONSTINIT const base::Feature kStopInBackground(
              "stop-in-background",
 // b/248036988 - Disable this for Chromecast on Android builds to prevent apps
 // that play audio in the background from stopping.
@@ -528,7 +528,7 @@ BASE_FEATURE(kDecodeLossyWebPImagesToYUV,
 // Enables cache-aware WebFonts loading. See https://crbug.com/570205.
 // The feature is disabled on Android for WebView API issue discussed at
 // https://crbug.com/942440.
-BASE_FEATURE(kWebFontsCacheAwareTimeoutAdaption,
+CONSTINIT const base::Feature kWebFontsCacheAwareTimeoutAdaption(
              "WebFontsCacheAwareTimeoutAdaption",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -545,7 +545,7 @@ BASE_FEATURE(kAudioWorkletThreadRealtimePriority,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // A feature to reduce the set of resources fetched by No-State Prefetch.
-BASE_FEATURE(kLightweightNoStatePrefetch,
+CONSTINIT const base::Feature kLightweightNoStatePrefetch(
              "LightweightNoStatePrefetch",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -606,7 +606,7 @@ const base::FeatureParam<int> kForceDarkBackgroundLightnessThresholdParam{
     &kForceWebContentsDarkMode, "background_lightness_threshold", -1};
 
 // Instructs WebRTC to honor the Min/Max Video Encode Accelerator dimensions.
-BASE_FEATURE(kWebRtcUseMinMaxVEADimensions,
+CONSTINIT const base::Feature kWebRtcUseMinMaxVEADimensions(
              "WebRtcUseMinMaxVEADimensions",
 // TODO(crbug.com/1008491): enable other platforms.
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -667,7 +667,7 @@ BASE_FEATURE(kDispatchBeforeUnloadOnFreeze,
 // Enables the use of GpuMemoryBuffer images for low latency 2d canvas.
 // TODO(khushalsagar): Enable this if we're using SurfaceControl and GMBs allow
 // us to overlay these resources.
-BASE_FEATURE(kLowLatencyCanvas2dImageChromium,
+CONSTINIT const base::Feature kLowLatencyCanvas2dImageChromium(
              "LowLatencyCanvas2dImageChromium",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1528,7 +1528,7 @@ const base::FeatureParam<bool> kPretokenizeInlineSheets = {
 const base::FeatureParam<bool> kPretokenizeExternalSheets = {
     &kPretokenizeCSS, "pretokenize_external_sheets", true};
 
-BASE_FEATURE(kSimulateClickOnAXFocus,
+CONSTINIT const base::Feature kSimulateClickOnAXFocus(
              "SimulateClickOnAXFocus",
 #if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT

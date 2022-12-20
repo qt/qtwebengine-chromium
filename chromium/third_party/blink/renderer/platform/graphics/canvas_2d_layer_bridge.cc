@@ -60,8 +60,7 @@ namespace blink {
 
 namespace {
 
-BASE_FEATURE(
-    kCanvas2DHibernation,
+CONSTINIT const base::Feature kCanvas2DHibernation(
     "Canvas2DHibernation",
 #if BUILDFLAG(IS_MAC)
     // Canvas hibernation is not always enabled on MacOS X due to a bug that

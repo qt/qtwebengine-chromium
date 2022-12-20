@@ -101,8 +101,7 @@ size_t CalculateRequiredCountsBytes(size_t bucket_count) {
 
 }  // namespace
 
-BASE_FEATURE(
-    kPersistentHistogramsFeature,
+CONSTINIT const base::Feature kPersistentHistogramsFeature(
     "PersistentHistograms",
 #if BUILDFLAG(IS_FUCHSIA)
     // TODO(crbug.com/1295119): Enable once writable mmap() is supported.

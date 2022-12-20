@@ -13,7 +13,7 @@ BASE_FEATURE(kUseDownloadOfflineContentProvider,
              "UseDownloadOfflineContentProvider",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDownloadAutoResumptionNative,
+CONSTINIT const base::Feature kDownloadAutoResumptionNative(
              "DownloadsAutoResumptionNative",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -22,7 +22,7 @@ BASE_FEATURE(kDownloadAutoResumptionNative,
 #endif
 );
 
-BASE_FEATURE(kParallelDownloading,
+CONSTINIT const base::Feature kParallelDownloading(
              "ParallelDownloading",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -45,7 +45,7 @@ BASE_FEATURE(kUseInProgressDownloadManagerForDownloadService,
              "UseInProgressDownloadManagerForDownloadService",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAllowDownloadResumptionWithoutStrongValidators,
+CONSTINIT const base::Feature kAllowDownloadResumptionWithoutStrongValidators(
              "AllowDownloadResumptionWithoutStrongValidators",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT

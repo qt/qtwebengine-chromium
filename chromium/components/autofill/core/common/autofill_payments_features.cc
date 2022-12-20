@@ -37,7 +37,7 @@ BASE_FEATURE(kAutofillAutoTriggerManualFallbackForCards,
 
 // Enables the use of platform authenticators through WebAuthn to retrieve
 // credit cards from Google payments.
-BASE_FEATURE(kAutofillCreditCardAuthentication,
+CONSTINIT const base::Feature kAutofillCreditCardAuthentication(
              "AutofillCreditCardAuthentication",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
              // Better Auth project is fully launched on Win/Mac/Clank.
@@ -134,7 +134,7 @@ BASE_FEATURE(kAutofillEnableUnmaskCardRequestSetInstrumentId,
 // enrollment of a credit card through their chrome browser after certain
 // autofill flows (for example, downstream and upstream), and from the settings
 // page.
-BASE_FEATURE(kAutofillEnableUpdateVirtualCardEnrollment,
+CONSTINIT const base::Feature kAutofillEnableUpdateVirtualCardEnrollment(
              "AutofillEnableUpdateVirtualCardEnrollment",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT

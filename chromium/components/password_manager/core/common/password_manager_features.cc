@@ -32,7 +32,7 @@ BASE_FEATURE(kBiometricTouchToFill,
 
 // Enables submission detection for forms dynamically cleared but not removed
 // from the page.
-BASE_FEATURE(kDetectFormSubmissionOnFormClear,
+CONSTINIT const base::Feature kDetectFormSubmissionOnFormClear(
              "DetectFormSubmissionOnFormClear",
 #if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -60,7 +60,7 @@ BASE_FEATURE(kEnableOverwritingPlaceholderUsernames,
 
 // Enables a second, Gaia-account-scoped password store for users who are signed
 // in but not syncing.
-BASE_FEATURE(kEnablePasswordsAccountStorage,
+CONSTINIT const base::Feature kEnablePasswordsAccountStorage(
              "EnablePasswordsAccountStorage",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -126,7 +126,7 @@ BASE_FEATURE(kIOSPasswordManagerCrossOriginIframeSupport,
 #endif  // IS_IOS
 
 // Enables (un)muting compromised passwords from bulk leak check in settings.
-BASE_FEATURE(kMuteCompromisedPasswords,
+CONSTINIT const base::Feature kMuteCompromisedPasswords(
              "MuteCompromisedPasswords",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -151,7 +151,7 @@ BASE_FEATURE(kLeakDetectionUnauthenticated,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables automatic password change flow from leaked password dialog.
-BASE_FEATURE(kPasswordChange,
+CONSTINIT const base::Feature kPasswordChange(
              "PasswordChange",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -160,7 +160,7 @@ BASE_FEATURE(kPasswordChange,
 #endif
 
 // Enables password change flow from bulk leak check in settings.
-BASE_FEATURE(kPasswordChangeInSettings,
+CONSTINIT const base::Feature kPasswordChangeInSettings(
              "PasswordChangeInSettings",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -175,7 +175,7 @@ BASE_FEATURE(kPasswordChangeWellKnown,
 
 // Enables fetching credentials capabilities from server for the
 // |PasswordChangeInSettings| and |PasswordChange| features.
-BASE_FEATURE(kPasswordDomainCapabilitiesFetching,
+CONSTINIT const base::Feature kPasswordDomainCapabilitiesFetching(
              "PasswordDomainCapabilitiesFetching",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT);

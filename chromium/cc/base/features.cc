@@ -28,7 +28,7 @@ bool IsImpulseScrollAnimationEnabled() {
 
 // Whether the compositor should attempt to sync with the scroll handlers before
 // submitting a frame.
-BASE_FEATURE(kSynchronizedScrolling,
+CONSTINIT const base::Feature kSynchronizedScrolling(
              "SynchronizedScrolling",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);

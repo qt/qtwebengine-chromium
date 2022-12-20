@@ -217,7 +217,7 @@ void ApplyMetadataAndRunCallback(
   std::move(orig_callback).Run(std::move(wrapped));
 }
 
-BASE_FEATURE(kGpuMemoryBufferReadbackFromTexture,
+CONSTINIT const base::Feature kGpuMemoryBufferReadbackFromTexture(
              "GpuMemoryBufferReadbackFromTexture",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT

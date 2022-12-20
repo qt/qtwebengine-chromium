@@ -41,7 +41,7 @@ BASE_FEATURE(kAdpf, "Adpf", base::FEATURE_DISABLED_BY_DEFAULT);
 const base::FeatureParam<int> kAdpfTargetDurationMs{&kAdpf,
                                                     "AdpfTargetDurationMs", 0};
 
-BASE_FEATURE(kEnableOverlayPrioritization,
+CONSTINIT const base::Feature kEnableOverlayPrioritization(
              "EnableOverlayPrioritization",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -50,7 +50,7 @@ BASE_FEATURE(kEnableOverlayPrioritization,
 #endif
 );
 
-BASE_FEATURE(kUseMultipleOverlays,
+CONSTINIT const base::Feature kUseMultipleOverlays(
              "UseMultipleOverlays",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -60,7 +60,7 @@ BASE_FEATURE(kUseMultipleOverlays,
 );
 const char kMaxOverlaysParam[] = "max_overlays";
 
-BASE_FEATURE(kDelegatedCompositing,
+CONSTINIT const base::Feature kDelegatedCompositing(
              "DelegatedCompositing",
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT

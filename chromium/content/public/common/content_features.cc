@@ -42,7 +42,7 @@ BASE_FEATURE(kAudioServiceLaunchOnStartup,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Runs the audio service in a separate process.
-BASE_FEATURE(kAudioServiceOutOfProcess,
+CONSTINIT const base::Feature kAudioServiceOutOfProcess(
              "AudioServiceOutOfProcess",
 // TODO(crbug.com/1052397): Remove !IS_CHROMEOS_LACROS once lacros starts being
 // built with OS_CHROMEOS instead of OS_LINUX.
@@ -56,7 +56,7 @@ BASE_FEATURE(kAudioServiceOutOfProcess,
 
 // Enables the audio-service sandbox. This feature has an effect only when the
 // kAudioServiceOutOfProcess feature is enabled.
-BASE_FEATURE(kAudioServiceSandbox,
+CONSTINIT const base::Feature kAudioServiceSandbox(
              "AudioServiceSandbox",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_FUCHSIA)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -120,7 +120,7 @@ BASE_FEATURE(kEnableBackForwardCacheForScreenReader,
 
 // BackForwardCacheMemoryControls is enabled only on Android to disable
 // BackForwardCache for lower memory devices due to memory limiations.
-BASE_FEATURE(kBackForwardCacheMemoryControls,
+CONSTINIT const base::Feature kBackForwardCacheMemoryControls(
              "BackForwardCacheMemoryControls",
 
 #if BUILDFLAG(IS_ANDROID)
@@ -200,7 +200,7 @@ BASE_FEATURE(kBrowserVerifiedUserActivationMouse,
 
 // If Canvas2D Image Chromium is allowed, this feature controls whether it is
 // enabled.
-BASE_FEATURE(kCanvas2DImageChromium,
+CONSTINIT const base::Feature kCanvas2DImageChromium(
              "Canvas2DImageChromium",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -277,7 +277,7 @@ BASE_FEATURE(kDevicePosture,
 
 // Controls whether the Digital Goods API is enabled.
 // https://github.com/WICG/digital-goods/
-BASE_FEATURE(kDigitalGoodsApi,
+CONSTINIT const base::Feature kDigitalGoodsApi(
              "DigitalGoodsApi",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -332,7 +332,7 @@ BASE_FEATURE(kEnableServiceWorkersForChromeUntrusted,
 // media-device enumeration will provide at most one device per type and the
 // device IDs will not be available.
 // TODO(crbug.com/1019176): remove the feature in M89.
-BASE_FEATURE(kEnumerateDevicesHideDeviceIDs,
+CONSTINIT const base::Feature kEnumerateDevicesHideDeviceIDs(
              "EnumerateDevicesHideDeviceIDs",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -566,7 +566,7 @@ BASE_FEATURE(kJavaScriptExperimentalSharedMemory,
 BASE_FEATURE(kLazyFrameLoading,
              "LazyFrameLoading",
              base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE(kLazyFrameVisibleLoadTimeMetrics,
+CONSTINIT const base::Feature kLazyFrameVisibleLoadTimeMetrics(
              "LazyFrameVisibleLoadTimeMetrics",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -577,7 +577,7 @@ BASE_FEATURE(kLazyFrameVisibleLoadTimeMetrics,
 BASE_FEATURE(kLazyImageLoading,
              "LazyImageLoading",
              base::FEATURE_ENABLED_BY_DEFAULT);
-BASE_FEATURE(kLazyImageVisibleLoadTimeMetrics,
+CONSTINIT const base::Feature kLazyImageVisibleLoadTimeMetrics(
              "LazyImageVisibleLoadTimeMetrics",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -598,7 +598,7 @@ BASE_FEATURE(kLegacyWindowsDWriteFontFallback,
              "LegacyWindowsDWriteFontFallback",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kLogJsConsoleMessages,
+CONSTINIT const base::Feature kLogJsConsoleMessages(
              "LogJsConsoleMessages",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -622,7 +622,7 @@ BASE_FEATURE(kLowerV8MemoryLimitForNonMainRenderers,
 // creation. This will break ordering guarantees between different agent
 // scheduling groups (ordering withing a group is still preserved).
 // DO NOT USE! The feature is not yet fully implemented. See crbug.com/1111231.
-BASE_FEATURE(kMBIMode,
+CONSTINIT const base::Feature kMBIMode(
              "MBIMode",
 #if BUILDFLAG(MBI_MODE_PER_RENDER_PROCESS_HOST) || \
     BUILDFLAG(MBI_MODE_PER_SITE_INSTANCE)
@@ -650,7 +650,7 @@ const base::FeatureParam<MBIMode> kMBIModeParam {
 // If this feature is enabled, media-device enumerations use a cache that is
 // invalidated upon notifications sent by base::SystemMonitor. If disabled, the
 // cache is considered invalid on every enumeration request.
-BASE_FEATURE(kMediaDevicesSystemMonitorCache,
+CONSTINIT const base::Feature kMediaDevicesSystemMonitorCache(
              "MediaDevicesSystemMonitorCaching",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -707,7 +707,7 @@ BASE_FEATURE(kNavigationThreadingOptimizations,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If the network service is enabled, runs it in process.
-BASE_FEATURE(kNetworkServiceInProcess,
+CONSTINIT const base::Feature kNetworkServiceInProcess(
              "NetworkServiceInProcess2",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -875,7 +875,7 @@ BASE_FEATURE(kPushSubscriptionChangeEvent,
 // that if a user later switches to that tab, the current page will be
 // reloaded.  This will hide crashed subframes from the user at the cost of
 // extra reloads.
-BASE_FEATURE(kReloadHiddenTabsWithCrashedSubframes,
+CONSTINIT const base::Feature kReloadHiddenTabsWithCrashedSubframes(
              "ReloadHiddenTabsWithCrashedSubframes",
 #if BUILDFLAG(IS_ANDROID)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -943,7 +943,7 @@ BASE_FEATURE(kSavePageAsWebBundle,
 // controls the render side feature state. SPC initial launch is intended
 // only for Mac devices with Touch ID and and Windows devices with
 // Windows Hello authentication available and setup.
-BASE_FEATURE(kSecurePaymentConfirmation,
+CONSTINIT const base::Feature kSecurePaymentConfirmation(
              "SecurePaymentConfirmationBrowser",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1013,7 +1013,7 @@ BASE_FEATURE(kSignedHTTPExchange,
 // navigations where the source and destination share subframes.
 // This is enabled only on platforms where the behavior leads to performance
 // gains, i.e., those where process startup is expensive.
-BASE_FEATURE(kSubframeShutdownDelay,
+CONSTINIT const base::Feature kSubframeShutdownDelay(
              "SubframeShutdownDelay",
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1058,7 +1058,7 @@ BASE_FEATURE(kWebLockScreenApi,
 // Cross-Origin-Opener-Policy header.  Note that this is only intended to be
 // used on Android, which does not use strict site isolation. See
 // https://crbug.com/1018656.
-BASE_FEATURE(kSiteIsolationForCrossOriginOpenerPolicy,
+CONSTINIT const base::Feature kSiteIsolationForCrossOriginOpenerPolicy(
              "SiteIsolationForCrossOriginOpenerPolicy",
 // Enabled by default on Android only; see https://crbug.com/1206770.
 #if BUILDFLAG(IS_ANDROID)
@@ -1163,7 +1163,7 @@ BASE_FEATURE(kTouchpadAsyncPinchEvents,
 
 // Allows swipe left/right from touchpad change browser navigation. Currently
 // only enabled by default on CrOS, LaCrOS and Windows.
-BASE_FEATURE(kTouchpadOverscrollHistoryNavigation,
+CONSTINIT const base::Feature kTouchpadOverscrollHistoryNavigation(
              "TouchpadOverscrollHistoryNavigation",
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
@@ -1267,7 +1267,7 @@ BASE_FEATURE(kWebAssemblyTiering,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enable WebAssembly trap handler.
-BASE_FEATURE(kWebAssemblyTrapHandler,
+CONSTINIT const base::Feature kWebAssemblyTrapHandler(
              "WebAssemblyTrapHandler",
 #if ((BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || \
       BUILDFLAG(IS_MAC)) &&                                                 \

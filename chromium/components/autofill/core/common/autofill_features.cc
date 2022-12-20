@@ -229,7 +229,7 @@ BASE_FEATURE(kAutofillEnableSupportForApartmentNumbers,
 
 // Controls whether we download server credit cards to the ephemeral
 // account-based storage when sync the transport is enabled.
-BASE_FEATURE(kAutofillEnableAccountWalletStorage,
+CONSTINIT const base::Feature kAutofillEnableAccountWalletStorage(
              "AutofillEnableAccountWalletStorage",
 #if BUILDFLAG(IS_CHROMEOS_ASH)
              // Wallet transport is currently unavailable on ChromeOS.

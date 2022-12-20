@@ -85,7 +85,7 @@ BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
              FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
-BASE_FEATURE(kPartitionAllocBackupRefPtr,
+CONSTINIT const base::Feature kPartitionAllocBackupRefPtr(
              "PartitionAllocBackupRefPtr",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || \
     (BUILDFLAG(USE_ASAN_BACKUP_REF_PTR) && BUILDFLAG(IS_LINUX))
@@ -172,7 +172,7 @@ BASE_FEATURE(kPartitionAllocPCScanEagerClearing,
              FEATURE_DISABLED_BY_DEFAULT);
 
 // In addition to heap, scan also the stack of the current mutator.
-BASE_FEATURE(kPartitionAllocPCScanStackScanning,
+CONSTINIT const base::Feature kPartitionAllocPCScanStackScanning(
              "PartitionAllocPCScanStackScanning",
 #if defined(PA_PCSCAN_STACK_SUPPORTED)
              FEATURE_ENABLED_BY_DEFAULT

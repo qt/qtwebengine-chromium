@@ -54,7 +54,7 @@
 
 namespace media {
 
-BASE_FEATURE(kMultiPlaneSoftwareVideoSharedImages,
+CONSTINIT const base::Feature kMultiPlaneSoftwareVideoSharedImages(
              "MultiPlaneSoftwareVideoSharedImages",
 #if BUILDFLAG(IS_MAC)
              base::FEATURE_ENABLED_BY_DEFAULT
