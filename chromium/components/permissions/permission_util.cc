@@ -694,6 +694,7 @@ GURL PermissionUtil::GetCanonicalOrigin(ContentSettingsType permission,
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool PermissionUtil::HasUserGesture(PermissionPrompt::Delegate* delegate) {
   const std::vector<std::unique_ptr<permissions::PermissionRequest>>& requests =
       delegate->Requests();
@@ -744,6 +745,7 @@ bool PermissionUtil::CanPermissionRequestIgnoreStatus(
 
   NOTREACHED();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // static
 bool PermissionUtil::DoesPlatformSupportChip() {
