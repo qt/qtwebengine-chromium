@@ -13,7 +13,6 @@
 #include <unistd.h>
 #endif
 #include <string.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
@@ -325,6 +324,7 @@ xsdIncorrectTestCase(xmlNodePtr cur) {
         fprintf(stderr, "out of memory !\n");
 	fatalError();
     }
+    xmlBufferSetAllocationScheme(buf, XML_BUFFER_ALLOC_DOUBLEIT);
     xmlNodeDump(buf, test->doc, test, 0, 0);
     pctxt = xmlRelaxNGNewMemParserCtxt((const char *)buf->content, buf->use);
     xmlRelaxNGSetParserErrors(pctxt, testErrorHandler, testErrorHandler,
@@ -363,6 +363,7 @@ installResources(xmlNodePtr tst, const xmlChar *base) {
         fprintf(stderr, "out of memory !\n");
 	fatalError();
     }
+    xmlBufferSetAllocationScheme(buf, XML_BUFFER_ALLOC_DOUBLEIT);
     xmlNodeDump(buf, tst->doc, tst, 0, 0);
 
     while (tst != NULL) {
@@ -458,6 +459,7 @@ xsdTestCase(xmlNodePtr tst) {
         fprintf(stderr, "out of memory !\n");
 	fatalError();
     }
+    xmlBufferSetAllocationScheme(buf, XML_BUFFER_ALLOC_DOUBLEIT);
     xmlNodeDump(buf, test->doc, test, 0, 0);
     pctxt = xmlRelaxNGNewMemParserCtxt((const char *)buf->content, buf->use);
     xmlRelaxNGSetParserErrors(pctxt, testErrorHandler, testErrorHandler,

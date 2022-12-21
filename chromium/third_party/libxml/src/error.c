@@ -16,9 +16,7 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/globals.h>
 
-void XMLCDECL xmlGenericErrorDefaultFunc	(void *ctx ATTRIBUTE_UNUSED,
-				 const char *msg,
-				 ...) LIBXML_ATTR_FORMAT(2,3);
+#include "private/error.h"
 
 #define XML_GET_VAR_STR(msg, str) {				\
     int       size, prev_size = -1;				\
@@ -82,6 +80,8 @@ xmlGenericErrorDefaultFunc(void *ctx ATTRIBUTE_UNUSED, const char *msg, ...) {
 /**
  * initGenericErrorDefaultFunc:
  * @handler:  the handler
+ *
+ * DEPRECATED: Use xmlSetGenericErrorFunc.
  *
  * Set or reset (if NULL) the default handler for generic errors
  * to the builtin error function.

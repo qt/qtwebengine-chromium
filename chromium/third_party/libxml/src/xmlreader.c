@@ -39,7 +39,8 @@
 #include <libxml/pattern.h>
 #endif
 
-#include "buf.h"
+#include "private/buf.h"
+#include "private/tree.h"
 
 #define MAX_ERR_MSG_SIZE 64000
 
@@ -1180,6 +1181,7 @@ xmlTextReaderCollectSiblings(xmlNodePtr node)
     buffer = xmlBufferCreate();
     if (buffer == NULL)
        return NULL;
+    xmlBufferSetAllocationScheme(buffer, XML_BUFFER_ALLOC_DOUBLEIT);
 
     for ( ; node != NULL; node = node->next) {
        switch (node->type) {
@@ -1384,9 +1386,6 @@ get_next_node:
     reader->node = reader->node->parent;
     if ((reader->node == NULL) ||
 	(reader->node->type == XML_DOCUMENT_NODE) ||
-#ifdef LIBXML_DOCB_ENABLED
-	(reader->node->type == XML_DOCB_DOCUMENT_NODE) ||
-#endif
 	(reader->node->type == XML_HTML_DOCUMENT_NODE)) {
 	if (reader->mode != XML_TEXTREADER_MODE_EOF) {
 	    val = xmlParseChunk(reader->ctxt, "", 0, 1);
@@ -1636,11 +1635,14 @@ xmlTextReaderReadInnerXml(xmlTextReaderPtr reader ATTRIBUTE_UNUSED)
     buff = xmlBufferCreate();
     if (buff == NULL)
         return NULL;
+    xmlBufferSetAllocationScheme(buff, XML_BUFFER_ALLOC_DOUBLEIT);
     for (cur_node = reader->node->children; cur_node != NULL;
          cur_node = cur_node->next) {
         /* XXX: Why is the node copied? */
         node = xmlDocCopyNode(cur_node, doc, 1);
+        /* XXX: Why do we need a second buffer? */
         buff2 = xmlBufferCreate();
+        xmlBufferSetAllocationScheme(buff2, XML_BUFFER_ALLOC_DOUBLEIT);
         if (xmlNodeDump(buff2, doc, node, 0, 0) == -1) {
             xmlFreeNode(node);
             xmlBufferFree(buff2);
@@ -1690,6 +1692,7 @@ xmlTextReaderReadOuterXml(xmlTextReaderPtr reader ATTRIBUTE_UNUSED)
 		node = xmlDocCopyNode(node, doc, 1);
 	}
     buff = xmlBufferCreate();
+    xmlBufferSetAllocationScheme(buff, XML_BUFFER_ALLOC_DOUBLEIT);
     if (xmlNodeDump(buff, doc, node, 0, 0) == -1) {
         xmlFreeNode(node);
         xmlBufferFree(buff);
@@ -2020,7 +2023,7 @@ xmlNewTextReader(xmlParserInputBufferPtr input, const char *URI) {
     }
     /* no operation on a reader should require a huge buffer */
     xmlBufSetAllocationScheme(ret->buffer,
-			      XML_BUFFER_ALLOC_BOUNDED);
+			      XML_BUFFER_ALLOC_DOUBLEIT);
     ret->sax = (xmlSAXHandler *) xmlMalloc(sizeof(xmlSAXHandler));
     if (ret->sax == NULL) {
 	xmlBufFree(ret->buffer);
@@ -2179,36 +2182,16 @@ xmlFreeTextReader(xmlTextReaderPtr reader) {
 	xmlFree(reader->patternTab);
     }
 #endif
-    if (reader->faketext != NULL) {
-	xmlFreeNode(reader->faketext);
-    }
+    if (reader->mode != XML_TEXTREADER_MODE_CLOSED)
+        xmlTextReaderClose(reader);
     if (reader->ctxt != NULL) {
         if (reader->dict == reader->ctxt->dict)
 	    reader->dict = NULL;
-#ifdef LIBXML_VALID_ENABLED
-	if ((reader->ctxt->vctxt.vstateTab != NULL) &&
-	    (reader->ctxt->vctxt.vstateMax > 0)){
-#ifdef LIBXML_REGEXP_ENABLED
-            while (reader->ctxt->vctxt.vstateNr > 0)
-                xmlValidatePopElement(&reader->ctxt->vctxt, NULL, NULL, NULL);
-#endif /* LIBXML_REGEXP_ENABLED */
-	    xmlFree(reader->ctxt->vctxt.vstateTab);
-	    reader->ctxt->vctxt.vstateTab = NULL;
-	    reader->ctxt->vctxt.vstateMax = 0;
-	}
-#endif /* LIBXML_VALID_ENABLED */
-	if (reader->ctxt->myDoc != NULL) {
-	    if (reader->preserve == 0)
-		xmlTextReaderFreeDoc(reader, reader->ctxt->myDoc);
-	    reader->ctxt->myDoc = NULL;
-	}
 	if (reader->allocs & XML_TEXTREADER_CTXT)
 	    xmlFreeParserCtxt(reader->ctxt);
     }
     if (reader->sax != NULL)
 	xmlFree(reader->sax);
-    if ((reader->input != NULL)  && (reader->allocs & XML_TEXTREADER_INPUT))
-	xmlFreeParserInputBuffer(reader->input);
     if (reader->buffer != NULL)
         xmlBufFree(reader->buffer);
     if (reader->entTab != NULL)
@@ -2239,7 +2222,23 @@ xmlTextReaderClose(xmlTextReaderPtr reader) {
     reader->node = NULL;
     reader->curnode = NULL;
     reader->mode = XML_TEXTREADER_MODE_CLOSED;
+    if (reader->faketext != NULL) {
+        xmlFreeNode(reader->faketext);
+        reader->faketext = NULL;
+    }
     if (reader->ctxt != NULL) {
+#ifdef LIBXML_VALID_ENABLED
+	if ((reader->ctxt->vctxt.vstateTab != NULL) &&
+	    (reader->ctxt->vctxt.vstateMax > 0)){
+#ifdef LIBXML_REGEXP_ENABLED
+            while (reader->ctxt->vctxt.vstateNr > 0)
+                xmlValidatePopElement(&reader->ctxt->vctxt, NULL, NULL, NULL);
+#endif /* LIBXML_REGEXP_ENABLED */
+	    xmlFree(reader->ctxt->vctxt.vstateTab);
+	    reader->ctxt->vctxt.vstateTab = NULL;
+	    reader->ctxt->vctxt.vstateMax = 0;
+	}
+#endif /* LIBXML_VALID_ENABLED */
 	xmlStopParser(reader->ctxt);
 	if (reader->ctxt->myDoc != NULL) {
 	    if (reader->preserve == 0)
@@ -2978,9 +2977,6 @@ xmlTextReaderNodeType(xmlTextReaderPtr reader) {
 	    return(XML_READER_TYPE_COMMENT);
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-#ifdef LIBXML_DOCB_ENABLED
-        case XML_DOCB_DOCUMENT_NODE:
-#endif
 	    return(XML_READER_TYPE_DOCUMENT);
         case XML_DOCUMENT_FRAG_NODE:
 	    return(XML_READER_TYPE_DOCUMENT_FRAGMENT);
@@ -3135,9 +3131,6 @@ xmlTextReaderName(xmlTextReaderPtr reader) {
 	    return(xmlStrdup(BAD_CAST "#comment"));
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-#ifdef LIBXML_DOCB_ENABLED
-        case XML_DOCB_DOCUMENT_NODE:
-#endif
 	    return(xmlStrdup(BAD_CAST "#document"));
         case XML_DOCUMENT_FRAG_NODE:
 	    return(xmlStrdup(BAD_CAST "#document-fragment"));
@@ -3206,9 +3199,6 @@ xmlTextReaderConstName(xmlTextReaderPtr reader) {
 	    return(CONSTSTR(BAD_CAST "#comment"));
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-#ifdef LIBXML_DOCB_ENABLED
-        case XML_DOCB_DOCUMENT_NODE:
-#endif
 	    return(CONSTSTR(BAD_CAST "#document"));
         case XML_DOCUMENT_FRAG_NODE:
 	    return(CONSTSTR(BAD_CAST "#document-fragment"));
@@ -3567,7 +3557,7 @@ xmlTextReaderConstValue(xmlTextReaderPtr reader) {
                         return (NULL);
                     }
 		    xmlBufSetAllocationScheme(reader->buffer,
-		                              XML_BUFFER_ALLOC_BOUNDED);
+		                              XML_BUFFER_ALLOC_DOUBLEIT);
                 } else
                     xmlBufEmpty(reader->buffer);
 	        xmlBufGetNodeContent(reader->buffer, node);
@@ -3577,7 +3567,7 @@ xmlTextReaderConstValue(xmlTextReaderPtr reader) {
 		    xmlBufFree(reader->buffer);
 		    reader->buffer = xmlBufCreateSize(100);
 		    xmlBufSetAllocationScheme(reader->buffer,
-		                              XML_BUFFER_ALLOC_BOUNDED);
+		                              XML_BUFFER_ALLOC_DOUBLEIT);
 		    ret = BAD_CAST "";
 		}
 		return(ret);
@@ -3624,7 +3614,7 @@ xmlTextReaderQuoteChar(xmlTextReaderPtr reader) {
     if (reader == NULL)
 	return(-1);
     /* TODO maybe lookup the attribute value for " first */
-    return((int) '"');
+    return('"');
 }
 
 /**
@@ -5091,7 +5081,7 @@ xmlTextReaderSetup(xmlTextReaderPtr reader,
     }
     /* no operation on a reader should require a huge buffer */
     xmlBufSetAllocationScheme(reader->buffer,
-			      XML_BUFFER_ALLOC_BOUNDED);
+			      XML_BUFFER_ALLOC_DOUBLEIT);
     if (reader->sax == NULL)
 	reader->sax = (xmlSAXHandler *) xmlMalloc(sizeof(xmlSAXHandler));
     if (reader->sax == NULL) {
