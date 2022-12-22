@@ -2500,7 +2500,7 @@ void WasmFrame::Print(StringStream* accumulator, PrintMode mode,
     return;
   }
   wasm::WasmCodeRefScope code_ref_scope;
-  accumulator->Add("Wasm [");
+  accumulator->Add(is_wasm_to_js() ? "Wasm-to-JS [" : "Wasm [");
   accumulator->PrintName(script().name());
   Address instruction_start = wasm_code()->instruction_start();
   base::Vector<const uint8_t> raw_func_name =
@@ -2629,6 +2629,15 @@ void WasmDebugBreakFrame::Print(StringStream* accumulator, PrintMode mode,
   PrintIndex(accumulator, mode, index);
   accumulator->Add("WasmDebugBreak");
   if (mode != OVERVIEW) accumulator->Add("\n");
+}
+
+WasmInstanceObject WasmToJsFrame::wasm_instance() const {
+  // WasmToJsFrames hold the {WasmApiFunctionRef} object in the instance slot.
+  // Load the instance from there.
+  const int offset = WasmFrameConstants::kWasmInstanceOffset;
+  Object func_ref_obj(Memory<Address>(fp() + offset));
+  WasmApiFunctionRef func_ref = WasmApiFunctionRef::cast(func_ref_obj);
+  return WasmInstanceObject::cast(func_ref.instance());
 }
 
 void JsToWasmFrame::Iterate(RootVisitor* v) const {
