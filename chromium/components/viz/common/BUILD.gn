@@ -47,6 +47,7 @@ viz_component("resource_format_utils") {
     "viz_resource_format_export.h",
   ]
 
+  jumbo_excluded_sources = [ "resources/resource_format_utils.cc" ]
   configs = [ "//third_party/khronos:khronos_headers" ]
 
   public_deps = [ ":resource_format" ]

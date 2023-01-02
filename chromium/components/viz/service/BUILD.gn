@@ -225,6 +225,10 @@ viz_component("service") {
   jumbo_excluded_sources = [
     "display/display.cc",
     "display/overlay_processor_on_gpu.cc",
+    "display_embedder/compositor_gpu_thread.cc",
+    "display_embedder/skia_output_device_gl.cc",
+    "display_embedder/skia_output_device_webview.cc",
+    "display_embedder/skia_output_surface_impl_on_gpu.cc",
     "frame_sinks/frame_sink_manager_impl.cc",
     "frame_sinks/video_capture/frame_sink_video_capturer_impl.cc",
   ]
