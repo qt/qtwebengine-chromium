@@ -427,16 +427,16 @@ bool VulkanSwapChain::AcquireNextImage() {
     return false;
 
   uint32_t next_image;
-  auto result = ({
+  auto result = [&]{
     base::ScopedBlockingCall scoped_blocking_call(
         FROM_HERE, base::BlockingType::MAY_BLOCK);
     static auto* kCrashKey = base::debug::AllocateCrashKeyString(
         "inside_acquire_next_image", base::debug::CrashKeySize::Size32);
     base::debug::ScopedCrashKeyString scoped_crash_key(kCrashKey, "1");
-    vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
+    return vkAcquireNextImageKHR(device, swap_chain_, acquire_next_image_timeout_ns_,
                           acquire_semaphore, /*fence=*/VK_NULL_HANDLE,
                           &next_image);
-  });
+  }();
 
   if (UNLIKELY(result == VK_TIMEOUT)) {
     LOG(ERROR) << "vkAcquireNextImageKHR() hangs.";
