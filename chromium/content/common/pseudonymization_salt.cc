@@ -12,7 +12,7 @@
 
 #if DCHECK_IS_ON()
 #include "base/command_line.h"
-#include "sandbox/policy/switches.h"
+#include "content/public/common/content_switches.h"
 #endif
 
 namespace content {
