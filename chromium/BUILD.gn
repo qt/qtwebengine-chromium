@@ -82,8 +82,11 @@ if (is_official_build) {
 
 group("gn_all") {
   testonly = true
+  deps = []
 
-  deps = [
+if (!is_qtwebengine){
+
+  deps += [
     ":gn_visibility",
     "//base:base_perftests",
     "//base:base_unittests",
@@ -111,7 +114,8 @@ group("gn_all") {
     "//url:url_unittests",
   ]
 
-  if (!is_component_build) {
+}
+  if (!is_component_build && !is_qtwebengine) {
     deps += [ "//third_party/abseil-cpp:absl_tests" ]
   }
 
@@ -119,7 +123,7 @@ group("gn_all") {
     deps += [ ":webui_closure_compile" ]
   }
 
-  if (!is_android && !is_castos) {
+  if (!is_android && !is_castos && !is_qtwebengine) {
     deps += [
       "//crypto:crypto_unittests",
       "//google_apis/gcm:gcm_unit_tests",
@@ -507,7 +511,7 @@ group("gn_all") {
     }
   }
 
-  if (is_ios || is_win || is_linux || is_chromeos_lacros || is_fuchsia) {
+  if (!is_qtwebengine && (is_ios || is_win || is_linux || is_chromeos_lacros || is_fuchsia)) {
     deps += [
       "//base:base_i18n_perftests",
       "//google_apis:google_apis_unittests",
