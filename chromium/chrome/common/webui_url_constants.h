@@ -299,6 +299,7 @@ inline constexpr char kChromeUIUntrustedThemeURL[] =
 inline constexpr char kChromeUIUsbInternalsHost[] = "usb-internals";
 inline constexpr char kChromeUIUserActionsHost[] = "user-actions";
 inline constexpr char kChromeUIVersionHost[] = "version";
+inline constexpr char kChromeUIVersionQtHost[] = "qt";
 inline constexpr char kChromeUIVersionURL[] = "chrome://version/";
 inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
 #if BUILDFLAG(ENABLE_WEBRTC)
