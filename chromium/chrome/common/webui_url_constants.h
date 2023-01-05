@@ -293,6 +293,7 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
 inline constexpr char kChromeUIUserEducationInternalsURL[] =
     "chrome://user-education-internals";
 inline constexpr char kChromeUIVersionHost[] = "version";
+inline constexpr char kChromeUIVersionQtHost[] = "qt";
 inline constexpr char kChromeUIVersionURL[] = "chrome://version/";
 inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
 #if BUILDFLAG(ENABLE_WEBRTC)
