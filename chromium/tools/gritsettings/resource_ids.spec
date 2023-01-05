@@ -1105,6 +1105,7 @@
 
   "qtwebengine/browser/qt_webengine_resources.grd": {
     "includes": [4940],
+    "structures": [4960],
   },
 
   # This file is generated during the build.
