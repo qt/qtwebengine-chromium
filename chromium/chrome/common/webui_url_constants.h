@@ -222,6 +222,7 @@ extern const char kChromeUIUntrustedThemeURL[];
 extern const char kChromeUIUsbInternalsHost[];
 extern const char kChromeUIUserActionsHost[];
 extern const char kChromeUIVersionHost[];
+extern const char kChromeUIVersionQtHost[];
 extern const char kChromeUIVersionURL[];
 extern const char kChromeUIWelcomeHost[];
 extern const char kChromeUIWelcomeURL[];

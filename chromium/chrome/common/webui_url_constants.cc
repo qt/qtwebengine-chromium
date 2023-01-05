@@ -231,6 +231,7 @@ const char kChromeUIUntrustedThemeURL[] = "chrome-untrusted://theme/";
 const char kChromeUIUsbInternalsHost[] = "usb-internals";
 const char kChromeUIUserActionsHost[] = "user-actions";
 const char kChromeUIVersionHost[] = "version";
+const char kChromeUIVersionQtHost[] = "qt";
 const char kChromeUIVersionURL[] = "chrome://version/";
 const char kChromeUIWelcomeHost[] = "welcome";
 const char kChromeUIWelcomeURL[] = "chrome://welcome/";
