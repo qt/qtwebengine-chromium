@@ -8,7 +8,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <algorithm>
+#include <map>
 #include <string>
+#include <vector>
 
 #include "base/base_paths.h"
 #include "base/big_endian.h"
