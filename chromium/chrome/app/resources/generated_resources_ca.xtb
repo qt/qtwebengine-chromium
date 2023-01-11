@@ -1371,7 +1371,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="2251218783371366160">Obre amb el lector del sistema</translation>
 <translation id="225163402930830576">Actualitza les xarxes</translation>
 <translation id="2251809247798634662">Finestra d'incògnit nova</translation>
-<translation id="2252017960592955005">Protecció de visualització (beta)</translation>
+<translation id="2252017960592955005">Protecció antimirades (beta)</translation>
 <translation id="225240747099314620">Permet els identificadors per a contingut protegit (és possible que calgui reiniciar l'ordinador)</translation>
 <translation id="2252617660166797081">Més informació sobre el canvi automàtic de contrasenyes</translation>
 <translation id="2255077166240162850">Aquest dispositiu s'ha bloquejat amb un domini o un mode diferents.</translation>
@@ -1951,7 +1951,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="2764786626780673772">Detalls de la VPN</translation>
 <translation id="2764920001292228569">Introdueix un nom per al perfil</translation>
 <translation id="2765100602267695013">Contacta amb el teu proveïdor de telefonia mòbil</translation>
-<translation id="2765217105034171413">Petit</translation>
+<translation id="2765217105034171413">Petita</translation>
 <translation id="2766006623206032690">En&amp;ganxa i ves</translation>
 <translation id="2766161002040448006">Pregunta als teus pares</translation>
 <translation id="2767077837043621282">El Chromebook no s'ha pogut actualitzar. Torna-ho a provar més tard.</translation>
@@ -3118,7 +3118,7 @@ Pots gestionar la configuració d'aquest compte instal·lant l'aplicació Family
 <translation id="3867944738977021751">Camps del certificat</translation>
 <translation id="3869917919960562512">Índex incorrecte.</translation>
 <translation id="3870931306085184145">No hi ha cap contrasenya desada per a <ph name="DOMAIN" /></translation>
-<translation id="3871350334636688135">Passades 24 hores, l'administrador durà a terme una actualització amb què se suprimiran les teves dades locals quan reiniciïs el dispositiu. Desa les dades locals que necessitis a l'emmagatzematge en núvol abans que passin 24 hores.</translation>
+<translation id="3871350334636688135">Passades 24 hores, l'administrador durà a terme una actualització amb què se suprimiran les teves dades locals quan reiniciïs el dispositiu. Desa les dades locals que necessitis a l'emmagatzematge al núvol abans que passin 24 hores.</translation>
 <translation id="3872220884670338524">Més accions, compte desat per a <ph name="USERNAME" /> a <ph name="DOMAIN" /></translation>
 <translation id="3872991219937722530">Allibera espai de disc o el dispositiu deixarà de respondre.</translation>
 <translation id="3873315167136380065">Si vols activar aquesta opció, <ph name="BEGIN_LINK" />restableix la sincronització<ph name="END_LINK" /> per suprimir la frase de contrasenya de sincronització</translation>
@@ -7873,7 +7873,7 @@ Deseu el fitxer de clau en una ubicació segura. El necessitareu per crear versi
 <translation id="8380266723152870797">Nom de la finestra</translation>
 <translation id="8380941800586852976">Perillós</translation>
 <translation id="8382677870544805359">Hauràs de restablir les dades de fàbrica d'aquest dispositiu per poder utilitzar les funcions d'empresa.</translation>
-<translation id="8382715499079447151">Protecció de visualització</translation>
+<translation id="8382715499079447151">Protecció antimirades</translation>
 <translation id="8382913212082956454">Copia l'&amp;adreça electrònica</translation>
 <translation id="8383266303049437646"><ph name="BEGIN_PARAGRAPH1" />Prova aquests passos per resoldre el problema:
     <ph name="BEGIN_LIST" />

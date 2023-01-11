@@ -1875,7 +1875,7 @@
 <translation id="270921614578699633">次の平均:</translation>
 <translation id="2709516037105925701">自動入力</translation>
 <translation id="2710101514844343743">使用状況データと診断データ</translation>
-<translation id="271033894570825754">新しいファイル</translation>
+<translation id="271033894570825754">New</translation>
 <translation id="2711073837061989559">試用版</translation>
 <translation id="2712173769900027643">許可をリクエスト</translation>
 <translation id="2712207122921938368">別のデバイスでパスキーを作成する</translation>
@@ -1943,7 +1943,7 @@
 <translation id="2757338480560142065">保存するパスワードが <ph name="WEBSITE" /> のパスワードと一致していることを確認してください</translation>
 <translation id="2762441749940182211">カメラがブロックされています</translation>
 <translation id="2764786626780673772">VPN の詳細</translation>
-<translation id="2764920001292228569">プロフィールに名前を付けてください</translation>
+<translation id="2764920001292228569">プロファイルに名前を付けてください</translation>
 <translation id="2765100602267695013">ご利用の携帯通信会社にお問い合わせください。</translation>
 <translation id="2765217105034171413">小</translation>
 <translation id="2766006623206032690">貼り付けて移動(&amp;S)</translation>
@@ -2096,7 +2096,7 @@
 <translation id="2889064240420137087">次のプログラムでリンクを開く...</translation>
 <translation id="2891566119238851894">サイドパネルで検索を開きます。サイドパネルで検索が開いていません。</translation>
 <translation id="2891922230654533301">デバイスを使用して <ph name="APP_NAME" /> にログインしますか？</translation>
-<translation id="2893013536106749396">関心のある事柄についての最新情報を知らせてくれるカードを選んでください</translation>
+<translation id="2893013536106749396">関心のある事柄についての最新情報を表示するカードを選んでください</translation>
 <translation id="2893168226686371498">既定のブラウザ</translation>
 <translation id="2893180576842394309">検索やその他の Google サービスをカスタマイズするために、Google で履歴が使用されることがあります</translation>
 <translation id="2894757982205307093">グループにタブを追加</translation>
@@ -2559,7 +2559,7 @@
 <translation id="3359256513598016054">証明書ポリシーの制約</translation>
 <translation id="3360297538363969800">印刷できませんでした。プリンタを確認してもう一度お試しください。</translation>
 <translation id="3361421571228286637">{COUNT,plural, =1{<ph name="DEVICE_NAME" /> が <ph name="ATTACHMENTS" />を共有しています。}other{<ph name="DEVICE_NAME" /> が <ph name="ATTACHMENTS" />を共有しています。}}</translation>
-<translation id="3361954577771524115">アプリを使用する</translation>
+<translation id="3361954577771524115">アプリから</translation>
 <translation id="3363202073972776113">この新しいプロフィールは組織によって管理されます。<ph name="BEGIN_LINK" />詳細<ph name="END_LINK" /></translation>
 <translation id="3364986687961713424">管理者からのメッセージ: <ph name="ADMIN_MESSAGE" /></translation>
 <translation id="3365598184818502391">Ctrl キーまたは Alt キーのいずれかを使用してください</translation>
@@ -4333,7 +4333,7 @@
 <translation id="5051836348807686060">選択した言語ではスペルチェックを使用できません</translation>
 <translation id="5052499409147950210">サイトの編集</translation>
 <translation id="505347685865235222">名前のないグループ - <ph name="GROUP_CONTENT_STRING" /></translation>
-<translation id="5054374119096692193">[<ph name="BEGIN_LINK" />Chrome をカスタマイズ<ph name="END_LINK" />] ですべてのカード オプションをご覧ください</translation>
+<translation id="5054374119096692193">[<ph name="BEGIN_LINK" />このページをカスタマイズ<ph name="END_LINK" />] ですべてのカード オプションを確認できます</translation>
 <translation id="5056950756634735043">コンテナに接続しています</translation>
 <translation id="5057110919553308744">拡張機能をクリックしたとき</translation>
 <translation id="5059241099014281248">ログイン制限</translation>
@@ -5432,7 +5432,7 @@
 <translation id="608912389580139775">リーディング リストにこのページを追加するには、ブックマーク アイコンをクリックしてください</translation>
 <translation id="6091116443517744502">インターネット接続を確認し、もう一度お試しください</translation>
 <translation id="6091761513005122595">共有フォルダが正常にマウントされました。</translation>
-<translation id="6093803049406781019">プロフィールを削除</translation>
+<translation id="6093803049406781019">プロファイルを削除</translation>
 <translation id="6093888419484831006">更新をキャンセルしています...</translation>
 <translation id="6095541101974653012">ログアウトしました。</translation>
 <translation id="6095984072944024315">−</translation>

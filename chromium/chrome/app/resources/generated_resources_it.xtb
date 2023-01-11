@@ -1003,7 +1003,7 @@ A questo account potrebbero essere applicate le autorizzazioni già concesse all
 <translation id="1907044622262489040">Digita con la tua voce. Utilizza il tasto per la ricerca + D, quindi inizia a parlare.</translation>
 <translation id="1908591798274282246">Riapri gruppo chiuso</translation>
 <translation id="1909880997794698664">Vuoi mantenere definitivamente questo dispositivo in modalità kiosk?</translation>
-<translation id="1910721550319506122">Benvenuto!</translation>
+<translation id="1910721550319506122">Ti diamo il benvenuto</translation>
 <translation id="1915073950770830761">canary</translation>
 <translation id="1915307458270490472">Chiudi</translation>
 <translation id="1916502483199172559">Avatar rosso predefinito</translation>
@@ -1371,7 +1371,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="2251218783371366160">Apri con visualizzatore di sistema</translation>
 <translation id="225163402930830576">Aggiorna reti</translation>
 <translation id="2251809247798634662">Nuova finestra di navigazione in incognito</translation>
-<translation id="2252017960592955005">Protezione di visualizzazione (beta)</translation>
+<translation id="2252017960592955005">Visualizzazione protetta (beta)</translation>
 <translation id="225240747099314620">Consenti identificatori per contenuti protetti (potrebbe essere necessario riavviare il computer)</translation>
 <translation id="2252617660166797081">Scopri di più sulla modifica automatica delle password</translation>
 <translation id="2255077166240162850">Questo dispositivo è stato bloccato con un dominio o una modalità diversi.</translation>
@@ -2050,7 +2050,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="2843560154284403323">Per completare la configurazione di Linux, aggiorna ChromeOS e riprova.</translation>
 <translation id="2844169650293029770">Dispositivo USB-C (porta anteriore sinistra)</translation>
 <translation id="2844809857160214557">Visualizza e gestisci i processi di stampa</translation>
-<translation id="2845382757467349449">Mostra sempre barra dei Preferiti</translation>
+<translation id="2845382757467349449">Mostra sempre barra dei preferiti</translation>
 <translation id="284581348330507117">Crea password univoche</translation>
 <translation id="284805635805850872">Rimuovere il software dannoso?</translation>
 <translation id="2849035674501872372">Ricerca</translation>
@@ -2611,7 +2611,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="3405763860805964263">...</translation>
 <translation id="3406290648907941085">Possono utilizzare dispositivi e dati per la realtà virtuale</translation>
 <translation id="3406396172897554194">Cerca per lingua o nome del metodo di immissione</translation>
-<translation id="3406605057700382950">&amp;Mostra barra dei Preferiti</translation>
+<translation id="3406605057700382950">&amp;Mostra barra dei preferiti</translation>
 <translation id="3408849592677950451">{NUM_PASSWORDS,plural, =1{1 password importata in Gestore delle password di Google per <ph name="USER_EMAIL" />}other{{NUM_PASSWORDS} password importate in Gestore delle password di Google per <ph name="USER_EMAIL" />}}</translation>
 <translation id="3409785640040772790">Maps</translation>
 <translation id="3412265149091626468">Passa alla selezione</translation>
@@ -3473,7 +3473,7 @@ Puoi gestire le impostazioni dell'account installando l'app Family Link su quest
 <translation id="4209251085232852247">Disattivato</translation>
 <translation id="4210048056321123003">Download della macchina virtuale…</translation>
 <translation id="4210380525132844778">Motivo: la regola <ph name="RULE" /> è stata rilevata nell'elenco "<ph name="LIST_NAME" />".</translation>
-<translation id="421182450098841253">&amp;Mostra barra dei Preferiti</translation>
+<translation id="421182450098841253">&amp;Mostra barra dei preferiti</translation>
 <translation id="4211851069413100178">Invia dati diagnostici e sull'utilizzo. Contribuisci a migliorare la tua esperienza Android tramite l'invio automatico a Google di dati diagnostici e sull'utilizzo delle app e del dispositivo. Tali dati contribuiranno alla stabilità di app e sistema, nonché ad altri miglioramenti. Alcuni dati aggregati saranno utili anche alle app e ai partner di Google, ad esempio agli sviluppatori Android. Questa <ph name="BEGIN_LINK1" />impostazione<ph name="END_LINK1" /> è applicata dal proprietario. Il proprietario potrebbe decidere di inviare a Google dati di diagnostica e utilizzo relativi a questo dispositivo. Se hai attivato l'impostazione Attività web e app aggiuntiva, queste informazioni potrebbero essere salvate nel tuo Account Google. <ph name="BEGIN_LINK2" />Ulteriori informazioni<ph name="END_LINK2" /></translation>
 <translation id="4211904048067111541">Non usare più con app per Android</translation>
 <translation id="42126664696688958">Esporta</translation>
@@ -5508,7 +5508,7 @@ Puoi assegnare più sensori a questa azione.</translation>
 <translation id="6154240335466762404">Rimuovi tutte le porte</translation>
 <translation id="615436196126345398">Protocollo</translation>
 <translation id="6155141482566063812">Una scheda in secondo piano sta condividendo il tuo schermo</translation>
-<translation id="6156323911414505561">Mostra barra dei Preferiti</translation>
+<translation id="6156323911414505561">Mostra barra dei preferiti</translation>
 <translation id="6156863943908443225">Cache script</translation>
 <translation id="6156944117133588106">Mostra i pulsanti di navigazione in modalità tablet</translation>
 <translation id="615930144153753547">I siti possono mostrare immagini</translation>
@@ -7676,7 +7676,7 @@ Conserva il file di chiave in un luogo sicuro. Ti servirà per creare nuove vers
 <translation id="8193953846147532858"><ph name="BEGIN_LINK" />I tuoi dispositivi<ph name="END_LINK" /> · <ph name="EMAIL" /></translation>
 <translation id="8195027750202970175">Dimensioni su disco</translation>
 <translation id="8195191503358432289">Aggiungi password</translation>
-<translation id="8197673340773315084">Aggiungi un nome o un'etichetta, ad esempio Lavoro o Personale</translation>
+<translation id="8197673340773315084">Aggiungi un nome o un'etichetta, ad es. "Lavoro"</translation>
 <translation id="8198456017687137612">Trasmissione della scheda in corso…</translation>
 <translation id="8199300056570174101">Proprietà dispositivo e rete (servizio)</translation>
 <translation id="8200772114523450471">Riprendi</translation>
@@ -7871,7 +7871,7 @@ Conserva il file di chiave in un luogo sicuro. Ti servirà per creare nuove vers
 <translation id="8380266723152870797">Nome della finestra</translation>
 <translation id="8380941800586852976">Pericolosa</translation>
 <translation id="8382677870544805359">Dovrai ripristinare i dati di fabbrica di questo dispositivo per poter usare le funzionalità aziendali.</translation>
-<translation id="8382715499079447151">Protezione di visualizzazione</translation>
+<translation id="8382715499079447151">Visualizzazione protetta</translation>
 <translation id="8382913212082956454">Copia indirizzo &amp;email</translation>
 <translation id="8383266303049437646"><ph name="BEGIN_PARAGRAPH1" />Prova a svolgere i seguenti passaggi per la risoluzione dei problemi:
     <ph name="BEGIN_LIST" />
@@ -8744,7 +8744,7 @@ Conserva il file di chiave in un luogo sicuro. Ti servirà per creare nuove vers
 <translation id="9215742531438648683">Disinstallare il Google Play Store</translation>
 <translation id="9218430445555521422">Imposta come predefinito</translation>
 <translation id="9218842937876577955"><ph name="APP_NAME" /> (app non supportata)</translation>
-<translation id="9219582468404818260">Aiutaci a migliorare il Web</translation>
+<translation id="9219582468404818260">Aiutaci a migliorare il web</translation>
 <translation id="9220525904950070496">Rimuovi account</translation>
 <translation id="9220723036554088545">carica un file</translation>
 <translation id="9220820413868316583">Solleva, quindi riprova.</translation>
@@ -8759,7 +8759,7 @@ Conserva il file di chiave in un luogo sicuro. Ti servirà per creare nuove vers
 <translation id="932327136139879170">Home page</translation>
 <translation id="932508678520956232">Impossibile inizializzare la stampa.</translation>
 <translation id="933427034780221291">{NUM_FILES,plural, =1{Il file è troppo grande per essere sottoposto a un controllo di sicurezza. La dimensione massima dei file che puoi caricare è di 50 MB.}other{Alcuni di questi file sono troppo grandi per essere sottoposti a un controllo di sicurezza. La dimensione massima dei file che puoi caricare è di 50 MB.}}</translation>
-<translation id="93343527085570547">Vai alla <ph name="BEGIN_LINK1" />Guida di approfondimento legale<ph name="END_LINK1" /> per richiedere modifiche ai contenuti per motivi legali. Alcune informazioni sull'account e sul sistema potrebbero essere inviate a Google, che le userà per risolvere problemi tecnici e migliorare i suoi servizi nel rispetto delle sue <ph name="BEGIN_LINK2" />Norme sulla privacy<ph name="END_LINK2" /> e dei suoi <ph name="BEGIN_LINK3" />Termini di servizio<ph name="END_LINK3" />.</translation>
+<translation id="93343527085570547">Vai alla <ph name="BEGIN_LINK1" />Guida di approfondimento legale<ph name="END_LINK1" /> per richiedere modifiche ai contenuti per motivi legali. Alcuni dati dell'account e del sistema potrebbero essere inviati a Google, che li userà per risolvere problemi tecnici e migliorare i suoi servizi nel rispetto delle sue <ph name="BEGIN_LINK2" />Norme sulla privacy<ph name="END_LINK2" /> e dei suoi <ph name="BEGIN_LINK3" />Termini di servizio<ph name="END_LINK3" />.</translation>
 <translation id="93393615658292258">Solo password</translation>
 <translation id="934244546219308557">Assegna un nome a questo gruppo</translation>
 <translation id="934503638756687833">Se necessario verranno rimossi anche elementi non elencati qui. Leggi ulteriori informazioni sulla &lt;a href="<ph name="URL" />"&gt;protezione da software indesiderato&lt;/a&gt; nel whitepaper sulla privacy di Chrome.</translation>

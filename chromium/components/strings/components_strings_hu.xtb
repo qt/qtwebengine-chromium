@@ -2418,7 +2418,7 @@ További részletek:
 <translation id="7375532151824574023">{NUM_COOKIES,plural, =0{Nincs engedélyezett webhely}=1{1 engedélyezett webhely}other{# engedélyezett webhely}}</translation>
 <translation id="7375818412732305729">Fájlcsatolás történt</translation>
 <translation id="7377249249140280793"><ph name="RELATIVE_DATE" /> - <ph name="FULL_DATE" /></translation>
-<translation id="7378594059915113390">Médiatartalmak vezérlői</translation>
+<translation id="7378594059915113390">Médiavezérlők</translation>
 <translation id="7378627244592794276">Nem</translation>
 <translation id="7378810950367401542">/</translation>
 <translation id="7378877318020334501">Televíziós vígjátékok</translation>
@@ -2915,7 +2915,7 @@ További részletek:
 <translation id="8705331520020532516">Sorozatszám</translation>
 <translation id="8708134712139312373">Engedélyt kérhet a Bluetooth-eszközökhöz való csatlakozásra</translation>
 <translation id="8710842507289500830">Betűstílus</translation>
-<translation id="8712637175834984815">Sikerült</translation>
+<translation id="8712637175834984815">Értem</translation>
 <translation id="8713438021996895321">Költészet</translation>
 <translation id="8715502133575042727">Gyermekirodalom</translation>
 <translation id="8718314106902482036">A fizetés nem fejeződött be</translation>

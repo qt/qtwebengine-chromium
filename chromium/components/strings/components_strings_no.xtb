@@ -1067,7 +1067,7 @@ I motsatt fall blir dette blokkert av personverninnstillingene. Dette gjør at i
 <translation id="3748148204939282805">Angripere på <ph name="BEGIN_BOLD" /><ph name="SITE" /><ph name="END_BOLD" /> kan lure deg til å gjøre farlige ting, deriblant å installere programvare eller oppgi personopplysninger (for eksempel passord, telefonnumre og kredittkortinformasjon). <ph name="BEGIN_LEARN_MORE_LINK" />Finn ut mer<ph name="END_LEARN_MORE_LINK" /></translation>
 <translation id="3748912308089554501">Flybransjen</translation>
 <translation id="3754210790023674521">Avslutt bilde-i-bilde</translation>
-<translation id="3759461132968374835">Du har ingen nylig rapportert programstopp. Programstopp som inntraff når rapportering om programstopp var deaktivert, blir ikke vist her.</translation>
+<translation id="3759461132968374835">Du har ingen nylig rapporterte krasj. Krasj som inntraff når rapportering om krasj var deaktivert, blir ikke vist her.</translation>
 <translation id="3760561303380396507">Vil du bruke Windows Hello i stedet for CVC?</translation>
 <translation id="3761153679507778975">Musikk- og dansespill</translation>
 <translation id="3761171036307311438">Navn som er oppført på kortet:</translation>
@@ -1332,7 +1332,7 @@ I motsatt fall blir dette blokkert av personverninnstillingene. Dette gjør at i
 <translation id="4450893287417543264">Ikke vis igjen</translation>
 <translation id="4451135742916150903">Kan be om å få koble til HID-enheter</translation>
 <translation id="4452328064229197696">Passordet du nettopp brukte, er funnet i et databrudd. For å sikre kontoene dine anbefaler Google Passordlagring at du sjekker de lagrede passordene dine.</translation>
-<translation id="4455222631300069614">Bytt passord nå</translation>
+<translation id="4455222631300069614">Endre passord nå</translation>
 <translation id="4460315069258617173">Tillatt frem til du lukker faner for dette nettstedet</translation>
 <translation id="4464826014807964867">Nettsteder med informasjon fra organisasjonen din</translation>
 <translation id="447665707681730621"><ph name="BUBBLE_MESSAGE" />. <ph name="LEARN_MORE_TEXT" /></translation>
@@ -1675,7 +1675,7 @@ I motsatt fall blir dette blokkert av personverninnstillingene. Dette gjør at i
 <translation id="5306593769196050043">Begge arkene</translation>
 <translation id="5307166000025436103">OK</translation>
 <translation id="5308380583665731573">Koble til</translation>
-<translation id="5308689395849655368">Rapportering av programstopp er deaktivert.</translation>
+<translation id="5308689395849655368">Rapportering av krasj er deaktivert.</translation>
 <translation id="5310178588836736698">Terrengkjøretøy</translation>
 <translation id="5314967030527622926">Heftemaker</translation>
 <translation id="5316812925700871227">Rotér mot klokken</translation>
@@ -1801,7 +1801,7 @@ I motsatt fall blir dette blokkert av personverninnstillingene. Dette gjør at i
 <translation id="5645854190134202180">Andre vakt</translation>
 <translation id="5649053991847567735">Automatiske nedlastinger</translation>
 <translation id="5653432653077411130">Vannforsyning og -behandling</translation>
-<translation id="5654927323611874862">ID for opplastet programstopprapport:</translation>
+<translation id="5654927323611874862">ID for opplastet krasjrapport:</translation>
 <translation id="5659593005791499971">E-post</translation>
 <translation id="5663955426505430495">Enhetsadministratoren har installert utvidelser for tilleggsfunksjoner. Utvidelsene har tilgang til noen av dataene dine.</translation>
 <translation id="5666606186680807225">Strender og øyer</translation>

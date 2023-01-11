@@ -951,7 +951,7 @@ Los permisos que hayas dado a aplicaciones se pueden aplicar a esta cuenta. Pued
 <translation id="1861262398884155592">Esta carpeta está vacía</translation>
 <translation id="1862311223300693744">¿Tienes instalado algún software especial de VPN, proxy, cortafuegos o NAS?</translation>
 <translation id="1863182668524159459">No se ha encontrado ningún puerto serie</translation>
-<translation id="1864111464094315414">Acceder</translation>
+<translation id="1864111464094315414">Inicio de sesión</translation>
 <translation id="1864400682872660285">Más frío</translation>
 <translation id="1864454756846565995">Dispositivo USB-C (puerto trasero)</translation>
 <translation id="1865769994591826607">Solo conexiones al mismo sitio web</translation>
@@ -3431,7 +3431,7 @@ Puedes gestionar la configuración de esta cuenta instalando la aplicación Fami
 <translation id="4159681666905192102">Esta es una cuenta infantil administrada por <ph name="CUSTODIAN_EMAIL" /> y <ph name="SECOND_CUSTODIAN_EMAIL" />.</translation>
 <translation id="4163560723127662357">Teclado desconocido</translation>
 <translation id="4165942112764990069"><ph name="USER_EMAIL" /> no pertenece a una organización válida. Ponte en contacto con tu administrador. Si eres administrador, puedes configurar tu organización en g.co/ChromeEnterpriseAccount.</translation>
-<translation id="4165986682804962316">Configuración del sitio</translation>
+<translation id="4165986682804962316">Configuración de sitios</translation>
 <translation id="4167393659000039775">Google no se responsabiliza de las pérdidas de datos. Es posible que <ph name="DEVICE_OS" /> no funcione en modelos no certificados. Consulta más información en g.co/flex/InstallGuide.</translation>
 <translation id="4167686856635546851">Los sitios suelen utilizar JavaScript para mostrar contenido interactivo, como videojuegos o formularios web.</translation>
 <translation id="4168015872538332605">Algunas opciones que pertenecen a <ph name="PRIMARY_EMAIL" /> se están compartiendo contigo. Estas opciones solo se aplican a tu cuenta cuando utilizas el inicio de sesión múltiple.</translation>
@@ -3460,7 +3460,7 @@ Puedes gestionar la configuración de esta cuenta instalando la aplicación Fami
 <translation id="4198268995694216131">Más sitios</translation>
 <translation id="4200689466366162458">Palabras personalizadas</translation>
 <translation id="4200983522494130825">Nueva pes&amp;taña</translation>
-<translation id="4201546031411513170">Siempre puedes seleccionar qué contenido quieres sincronizar en los ajustes.</translation>
+<translation id="4201546031411513170">Siempre puedes seleccionar qué contenido quieres sincronizar en la configuración.</translation>
 <translation id="4203065553461038553">Nombre de archivo o ubicación demasiado largos</translation>
 <translation id="4204851595694839599">¿Cómo ha sido la experiencia de juego?</translation>
 <translation id="4205157409548006256">No se ha podido configurar Linux.</translation>
@@ -7679,7 +7679,7 @@ Guarda tu archivo de clave en un lugar seguro, ya que lo necesitarás para crear
 <translation id="8193953846147532858"><ph name="BEGIN_LINK" />Tus dispositivos<ph name="END_LINK" /> · <ph name="EMAIL" /></translation>
 <translation id="8195027750202970175">Tamaño en disco</translation>
 <translation id="8195191503358432289">Añade una contraseña</translation>
-<translation id="8197673340773315084">Añade un nombre o una etiqueta, como Trabajo o Personal</translation>
+<translation id="8197673340773315084">Añade un nombre o una etiqueta, como Trabajo</translation>
 <translation id="8198456017687137612">Enviando pestaña</translation>
 <translation id="8199300056570174101">Propiedades de los dispositivos y las redes (servicio)</translation>
 <translation id="8200772114523450471">Reanudar</translation>
@@ -7874,7 +7874,7 @@ Guarda tu archivo de clave en un lugar seguro, ya que lo necesitarás para crear
 <translation id="8380266723152870797">Nombre de la ventana</translation>
 <translation id="8380941800586852976">Peligroso</translation>
 <translation id="8382677870544805359">Tendrás que restablecer el estado de fábrica de este dispositivo para usar funciones empresariales.</translation>
-<translation id="8382715499079447151">Protección frente a visualizaciones</translation>
+<translation id="8382715499079447151">Protección contra fisgones</translation>
 <translation id="8382913212082956454">Copiar dir&amp;ección de correo electrónico</translation>
 <translation id="8383266303049437646"><ph name="BEGIN_PARAGRAPH1" />Prueba estos pasos para solucionar el problema:
     <ph name="BEGIN_LIST" />

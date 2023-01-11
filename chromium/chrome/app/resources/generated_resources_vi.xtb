@@ -1098,7 +1098,7 @@ Các quyền bạn từng cấp cho ứng dụng có thể áp dụng cho cả t
 <translation id="199191324030140441">Tắt chế độ Không làm phiền</translation>
 <translation id="1992397118740194946">Chưa đặt</translation>
 <translation id="1992924914582925289">Xóa khỏi thiết bị</translation>
-<translation id="1994173015038366702">URL trang web</translation>
+<translation id="1994173015038366702">URL của trang web</translation>
 <translation id="1995916364271252349">Kiểm soát thông tin mà các trang web có thể dùng và hiển thị (vị trí, máy ảnh, cửa sổ bật lên và thông tin khác)</translation>
 <translation id="1997433994358798851">Chrome cần có quyền sử dụng Bluetooth để kết nối với thiết bị của bạn</translation>
 <translation id="1997616988432401742">Chứng chỉ của bạn</translation>
@@ -1275,7 +1275,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="2147218225094845757">Ẩn bảng điều khiển bên</translation>
 <translation id="2148219725039824548">Lỗi khi kết nối với thư mục chia sẻ. Không tìm thấy thư mục chia sẻ đã chỉ định trên mạng.</translation>
 <translation id="2148756636027685713">Định dạng hoàn tất</translation>
-<translation id="2148892889047469596">Truyền thẻ</translation>
+<translation id="2148892889047469596">Thẻ Truyền</translation>
 <translation id="2149973817440762519">Chỉnh sửa dấu trang</translation>
 <translation id="2150139952286079145">Tìm kiếm máy in đích</translation>
 <translation id="2150661552845026580">Và "<ph name="EXTENSION_NAME" />"?</translation>
@@ -3678,7 +3678,7 @@ Bạn có thể quản lý các tùy chọn cài đặt của tài khoản này 
 <translation id="4400367121200150367">Trang web không bao giờ lưu mật khẩu sẽ xuất hiện tại đây</translation>
 <translation id="4400632832271803360">Giữ phím Trình khởi chạy để chuyển đổi chức năng của các phím hàng trên cùng</translation>
 <translation id="4400963414856942668">Bạn có thể nhấp vào dấu sao để đánh dấu một thẻ</translation>
-<translation id="4401912261345737180">Kết nối với một mã để truyền</translation>
+<translation id="4401912261345737180">Kết nối bằng một mã để truyền</translation>
 <translation id="4402755511846832236">Không cho các trang web biết khi bạn đang dùng thiết bị này</translation>
 <translation id="4403012369005671154">Chuyển lời nói thành văn bản</translation>
 <translation id="4403266582403435904">Dễ dàng khôi phục dữ liệu hoặc chuyển đổi thiết bị bất cứ lúc nào. Các bản sao lưu được tải lên Google và mã hóa bằng mật khẩu Tài khoản Google của con bạn.</translation>
@@ -4488,7 +4488,7 @@ Nhấn tổ hợp phím Ctrl + Alt + Giảm độ sáng để thu nhỏ.</transl
 <translation id="5177549709747445269">Bạn đang sử dụng dữ liệu di động</translation>
 <translation id="5178667623289523808">Tìm Trước</translation>
 <translation id="5181140330217080051">Đang tải xuống</translation>
-<translation id="5181172023548002891">Vào Trình quản lý mật khẩu của Google cho <ph name="ACCOUNT" /></translation>
+<translation id="5181172023548002891">Lưu mật khẩu của <ph name="ACCOUNT" /> vào Trình quản lý mật khẩu của Google</translation>
 <translation id="5184063094292164363">Bảng điều khiển &amp;JavaScript</translation>
 <translation id="5184209580557088469">Phiếu có tên người dùng này đã tồn tại</translation>
 <translation id="5184662919967270437">Đang cập nhật thiết bị của bạn</translation>
@@ -7695,7 +7695,7 @@ Giữ tệp khóa của bạn ở nơi an toàn. Bạn sẽ cần tệp khóa đ
 <translation id="8193953846147532858"><ph name="BEGIN_LINK" />Thiết bị của bạn<ph name="END_LINK" /> · <ph name="EMAIL" /></translation>
 <translation id="8195027750202970175">Dung lượng trên đĩa</translation>
 <translation id="8195191503358432289">Thêm mật khẩu</translation>
-<translation id="8197673340773315084">Thêm tên hoặc nhãn, chẳng hạn như Công việc hoặc Cá nhân</translation>
+<translation id="8197673340773315084">Thêm tên hoặc nhãn như "Công việc" hoặc "Cá nhân"</translation>
 <translation id="8198456017687137612">Đang truyền thẻ</translation>
 <translation id="8199300056570174101">Thuộc tính của thiết bị và mạng (dịch vụ)</translation>
 <translation id="8200772114523450471">Tiếp tục</translation>

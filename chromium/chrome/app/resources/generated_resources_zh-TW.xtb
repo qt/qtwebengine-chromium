@@ -581,7 +581,7 @@
 <translation id="1543284117603151572">從 Edge 匯入的書籤</translation>
 <translation id="1544588554445317666">請嘗試使用較短的檔案名稱，或將檔案儲存至其他資料夾</translation>
 <translation id="1545177026077493356">自動 Kiosk 模式</translation>
-<translation id="1545749641540134597">掃描 QR 圖碼</translation>
+<translation id="1545749641540134597">掃描 QR code</translation>
 <translation id="1545775234664667895">已安裝「<ph name="THEME_NAME" />」主題</translation>
 <translation id="1546280085599573572">這個擴充功能已變更您點選 [首頁] 按鈕時所顯示的網頁。</translation>
 <translation id="1546452108651444655"><ph name="CHILD_NAME" /> 要求安裝具有下列功能的<ph name="EXTENSION_TYPE" />：</translation>
@@ -2730,7 +2730,7 @@
 <translation id="3507888235492474624">重新掃描藍牙裝置</translation>
 <translation id="3508492320654304609">無法刪除你的登入資料</translation>
 <translation id="3508920295779105875">選擇另一個資料夾...</translation>
-<translation id="3509379002674019679">建立、儲存及管理密碼，讓你輕鬆登入網站和應用程式。</translation>
+<translation id="3509379002674019679">建立、儲存及管理密碼，輕鬆登入網站和應用程式。</translation>
 <translation id="3511200754045804813">重新掃描</translation>
 <translation id="3511307672085573050">複製連結網址(&amp;E)</translation>
 <translation id="351152300840026870">固定寬度字型</translation>
@@ -2836,7 +2836,7 @@
 <translation id="3617891479562106823">目前無法存取背景，請稍後再試。</translation>
 <translation id="3619115746895587757">卡布奇諾</translation>
 <translation id="3620136223548713675">地理位置</translation>
-<translation id="3621807901162200696">協助改善 Chrome OS 的功能與效能</translation>
+<translation id="3621807901162200696">協助改善 ChromeOS 的功能與效能</translation>
 <translation id="362266093274784978">{COUNT,plural, =1{1 個應用程式}other{# 個應用程式}}</translation>
 <translation id="362333465072914957">正在等待 CA 核發憑證</translation>
 <translation id="3624567683873126087">解鎖裝置並登入 Google 帳戶</translation>
@@ -4066,7 +4066,7 @@
 <translation id="4780321648949301421">另存網頁...</translation>
 <translation id="4781443161433589743">你啟用了 Chrome 最強大的安全防護功能</translation>
 <translation id="4781584184731045253">清除資料和權限</translation>
-<translation id="4782861709165039462">裝置硬體切換按鈕已停用所有的麥克風</translation>
+<translation id="4782861709165039462">裝置硬體切換鈕已停用所有的麥克風</translation>
 <translation id="4785719467058219317">你目前使用的安全金鑰並未在這個網站註冊</translation>
 <translation id="4785914069240823137">取消裁剪</translation>
 <translation id="4788092183367008521">請檢查你的網路連線，然後再試一次。</translation>
@@ -4364,7 +4364,7 @@
 <translation id="5073956501367595100">{0,plural,offset:2 =1{<ph name="FILE1" />}=2{<ph name="FILE1" />、<ph name="FILE2" />}other{<ph name="FILE1" />、<ph name="FILE2" /> 和另外 # 個檔案}}</translation>
 <translation id="5074318175948309511">你可能需要重新載入這個網頁，新設定才會生效。</translation>
 <translation id="5074761966806028321">仍需要權限才能完成設定</translation>
-<translation id="5075563999073408211">透過一或多個切換按鈕控制自己的裝置。切換按鈕可能是鍵盤按鍵、遊戲手把按鈕或專用裝置。</translation>
+<translation id="5075563999073408211">透過一或多個切換鈕控制自己的裝置。切換鈕可能是鍵盤按鍵、遊戲手把按鈕或專用裝置。</translation>
 <translation id="5075910247684008552">系統預設會封鎖安全網站上的不安全內容</translation>
 <translation id="5078638979202084724">將所有分頁加入書籤</translation>
 <translation id="5078796286268621944">PIN 不正確</translation>
@@ -4471,7 +4471,7 @@
 <translation id="5177549709747445269">您正在使用行動數據</translation>
 <translation id="5178667623289523808">尋找上一個項目</translation>
 <translation id="5181140330217080051">下載中</translation>
-<translation id="5181172023548002891">儲存至 <ph name="ACCOUNT" /> 的 Google 密碼管理員</translation>
+<translation id="5181172023548002891">儲存至 <ph name="ACCOUNT" /> 的 Google 密碼管理工具</translation>
 <translation id="5184063094292164363">JavaScript 控制台(&amp;J)</translation>
 <translation id="5184209580557088469">已有票證使用這個使用者名稱</translation>
 <translation id="5184662919967270437">正在更新您的裝置</translation>
@@ -5325,7 +5325,7 @@
 <translation id="5979084224081478209">檢查密碼</translation>
 <translation id="5979156418378918004">{NUM_EXTENSIONS,plural, =1{你已重新開啟 1 個可能有害的擴充功能}other{你已重新開啟 {NUM_EXTENSIONS} 個可能有害的擴充功能}}</translation>
 <translation id="5979353814339191480">這個選項適用於符合下列任一條件的 Chromebook：使用數據方案、行動網路連接器，或透過網路共用功能使用可攜式無線基地台</translation>
-<translation id="5979421442488174909">翻譯成<ph name="LANGUAGE" />(&amp;T)</translation>
+<translation id="5979421442488174909">翻譯成<ph name="LANGUAGE" /> (&amp;T)</translation>
 <translation id="5979469435153841984">如要將網頁加入書籤，請按一下網址列的星號</translation>
 <translation id="5981362776161841923">如要允許擴充功能，請變更下方的預設設定。</translation>
 <translation id="5984222099446776634">最近造訪的網站</translation>
@@ -5844,7 +5844,7 @@
 <translation id="648927581764831596">沒有可用的裝置</translation>
 <translation id="6490471652906364588">USB-C 裝置 (右側連接埠)</translation>
 <translation id="6491376743066338510">授權失敗</translation>
-<translation id="6492396476180293140">內部相機已透過硬體切換按鈕停用</translation>
+<translation id="6492396476180293140">內部相機已透過硬體切換鈕停用</translation>
 <translation id="6494327278868541139">顯示強化防護功能詳細資料</translation>
 <translation id="6494445798847293442">這不是憑證授權單位</translation>
 <translation id="6497457470714179223">{NUM_FILES,plural, =0{這項資料含有敏感內容或危險內容}=1{這個檔案含有敏感內容或危險內容}other{這些檔案含有敏感內容或危險內容}}</translation>
@@ -6509,7 +6509,7 @@
 <translation id="7098447629416471489">你所儲存的其他搜尋引擎會顯示在這裡</translation>
 <translation id="7098936390718461001">{NUM_APPS,plural, =1{移除應用程式}other{移除應用程式}}</translation>
 <translation id="7099337801055912064">無法載入大型 PPD。大小上限為 250 KB。</translation>
-<translation id="7099739618316136113">{COUNT,plural, =0{沒有任何密碼遭外洩}=1{{COUNT} 個遭外洩的密碼}other{{COUNT} 個遭外洩的密碼}}</translation>
+<translation id="7099739618316136113">{COUNT,plural, =0{沒有任何密碼遭外洩}=1{{COUNT} 組遭外洩的密碼}other{{COUNT} 組遭外洩的密碼}}</translation>
 <translation id="7102687220333134671">自動更新功能已開啟</translation>
 <translation id="7102832101143475489">要求逾時</translation>
 <translation id="710640343305609397">開啟網路設定</translation>

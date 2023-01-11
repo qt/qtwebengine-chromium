@@ -1158,7 +1158,7 @@
 <translation id="2048182445208425546">네트워크 트래픽에 액세스</translation>
 <translation id="2048554637254265991">컨테이너 관리자 시작 중에 오류가 발생했습니다. 다시 시도해 주세요.</translation>
 <translation id="2048653237708779538">실행할 수 없는 작업</translation>
-<translation id="2050339315714019657">세로 방향</translation>
+<translation id="2050339315714019657">인물</translation>
 <translation id="2052572566310583903">다른 기기에서 설치됨</translation>
 <translation id="2053105195397337973">Google은 추적을 제한하고 사이트에서 광고 스팸과 사기를 방지하도록 돕는 방안을 모색하고 있습니다.</translation>
 <translation id="2053312383184521053">유휴 상태 데이터</translation>
@@ -1705,7 +1705,7 @@
 <translation id="2514326558286966059">지문으로 신속하게 잠금 해제</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="251722524540674480">사용자 이름 확인</translation>
-<translation id="2517472476991765520">검색</translation>
+<translation id="2517472476991765520">스캔</translation>
 <translation id="2518024842978892609">클라이언트 인증서 사용</translation>
 <translation id="2519517390894391510">인증서 프로필 이름</translation>
 <translation id="2520644704042891903">사용 가능한 소켓 대기 중...</translation>
@@ -4076,7 +4076,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="4777458362738635055">기기의 다른 사용자가 이 네트워크를 사용할 수 있음</translation>
 <translation id="4777825441726637019">Play 스토어</translation>
 <translation id="4777943778632837590">네트워크 네임서버 구성</translation>
-<translation id="4779083564647765204">글꼴 크기</translation>
+<translation id="4779083564647765204">확대/축소</translation>
 <translation id="4779136857077979611">오니기리</translation>
 <translation id="4779766576531456629">eSIM 셀룰러 네트워크 이름 바꾸기</translation>
 <translation id="4780321648949301421">페이지를 다른 이름으로 저장...</translation>
@@ -6440,7 +6440,7 @@ https://support.google.com/chromebook/?p=tpm</translation>
 <translation id="7008815993384338777">현재 로밍 안함</translation>
 <translation id="7009709314043432820"><ph name="APP_NAME" />에서 카메라를 사용 중입니다.</translation>
 <translation id="701080569351381435">소스 보기</translation>
-<translation id="7011797924920577670">관심분야 예측</translation>
+<translation id="7011797924920577670">관심분야를 예측</translation>
 <translation id="7014174261166285193">설치에 실패했습니다.</translation>
 <translation id="7014480873681694324">강조표시 삭제</translation>
 <translation id="7014741021609395734">확대/축소 수준</translation>
@@ -7695,7 +7695,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="8193953846147532858"><ph name="BEGIN_LINK" />내 기기<ph name="END_LINK" /> · <ph name="EMAIL" /></translation>
 <translation id="8195027750202970175">디스크에서 차지하는 용량</translation>
 <translation id="8195191503358432289">비밀번호 추가</translation>
-<translation id="8197673340773315084">직장 또는 개인과 같은 이름 또는 라벨 추가</translation>
+<translation id="8197673340773315084">'직장', '개인'과 같은 이름 또는 라벨 추가</translation>
 <translation id="8198456017687137612">탭 전송 중</translation>
 <translation id="8199300056570174101">네트워크(서비스) 및 기기 속성</translation>
 <translation id="8200772114523450471">다시 시작</translation>
@@ -8013,7 +8013,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="8498395510292172881">Chrome에서 계속 읽기</translation>
 <translation id="8499083585497694743">마이크 음소거 해제</translation>
 <translation id="8502536196501630039">Google Play의 앱을 사용하려면 먼저 앱을 복원해야 합니다. 일부 데이터가 삭제되었을 수 있습니다.</translation>
-<translation id="8503813439785031346">사용자이름</translation>
+<translation id="8503813439785031346">사용자 이름</translation>
 <translation id="850382998924680137">오늘 조회함</translation>
 <translation id="8507227974644337342">화면 해상도</translation>
 <translation id="850875081535031620">유해한 소프트웨어가 발견되지 않음</translation>
@@ -8827,7 +8827,7 @@ https://support.google.com/chromebook/?p=sm</translation>
 <translation id="972996901592717370">전원 버튼을 손가락으로 터치하세요. 데이터는 안전하게 저장되며 절대 <ph name="DEVICE_TYPE" /> 외부로 유출되지 않습니다.</translation>
 <translation id="973473557718930265">종료</translation>
 <translation id="973558314812359997">마우스 커서 크기</translation>
-<translation id="975893173032473675">번역 도착어</translation>
+<translation id="975893173032473675">다음 언어로 번역</translation>
 <translation id="976499800099896273"><ph name="TYPED_WORD" />에서 <ph name="CORRECTED_WORD" />(으)로 수정된 것과 관련하여 자동 수정 실행취소 대화상자가 표시되었습니다.  액세스하려면 위쪽 화살표를, 무시하려면 Esc를 누르세요.</translation>
 <translation id="978146274692397928">초기 구두점 폭을 최대로 설정</translation>
 <translation id="97905529126098460">취소가 완료되면 이 창이 닫힙니다.</translation>
