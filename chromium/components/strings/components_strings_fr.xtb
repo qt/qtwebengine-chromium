@@ -1129,7 +1129,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="3949601375789751990">Votre historique de navigation s'affiche ici</translation>
 <translation id="3949790930165450333"><ph name="DEVICE_NAME" /> (<ph name="DEVICE_ID" />)</translation>
 <translation id="3949870428812919180">Aucun mode de paiement enregistré</translation>
-<translation id="3950820424414687140">Connexion</translation>
+<translation id="3950820424414687140">Se connecter</translation>
 <translation id="3961148744525529027">La feuille du gestionnaire de paiement est ouverte à moitié</translation>
 <translation id="3962859241508114581">Titre précédent</translation>
 <translation id="3963721102035795474">Mode lecture</translation>
@@ -2175,7 +2175,7 @@ Par défaut, ce type d'accès est bloqué par vos paramètres de confidentialit�
 <translation id="6709888928011386878">Instruments de musique</translation>
 <translation id="6710213216561001401">Précédent</translation>
 <translation id="6710594484020273272">&lt;Saisissez le terme de recherche&gt;</translation>
-<translation id="671076103358959139">Jeton d'inscription :</translation>
+<translation id="671076103358959139">Jeton d'enregistrement :</translation>
 <translation id="6711464428925977395">Le serveur proxy présente une erreur, ou l'adresse est incorrecte.</translation>
 <translation id="6716672519412350405"><ph name="URL" /> cherche à créer un plan 3D de votre environnement et à suivre la position de la caméra</translation>
 <translation id="6718612893943028815">Utiliser la caméra ?</translation>
@@ -2614,7 +2614,7 @@ Informations supplémentaires :
 <translation id="7798389633136518089">Règle ignorée, car non configurée par une source cloud.</translation>
 <translation id="7800304661137206267">La connexion est chiffrée au moyen de <ph name="CIPHER" />, avec <ph name="MAC" /> pour l'authentification des messages et <ph name="KX" /> pour la méthode d'échange de clés.</translation>
 <translation id="7802523362929240268">Ce site est légitime</translation>
-<translation id="780301667611848630">Non merci</translation>
+<translation id="780301667611848630">Non, merci</translation>
 <translation id="7805571567667010077">Gérée par votre organisation</translation>
 <translation id="7805768142964895445">État</translation>
 <translation id="7812922009395017822">Mir</translation>
