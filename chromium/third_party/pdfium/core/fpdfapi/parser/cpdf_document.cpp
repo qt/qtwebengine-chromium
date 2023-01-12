@@ -16,13 +16,16 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fxcodec/jbig2/JBig2_DocumentContext.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "third_party/base/optional.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
 
 const int kMaxPageLevel = 1024;
 
-int CountPages(CPDF_Dictionary* pPages,
+// Returns a value in the range [0, `CPDF_Document::kPageMaxNum`), or nullopt on
+// error.
+pdfium::Optional<int> CountPages(CPDF_Dictionary* pPages,
                std::set<CPDF_Dictionary*>* visited_pages) {
   int count = pPages->GetIntegerFor("Count");
   if (count > 0 && count < CPDF_Document::kPageMaxNum)
@@ -39,10 +42,18 @@ int CountPages(CPDF_Dictionary* pPages,
       // Use |visited_pages| to help detect circular references of pages.
       pdfium::ScopedSetInsertion<CPDF_Dictionary*> local_add(visited_pages,
                                                              pKid);
-      count += CountPages(pKid, visited_pages);
+      pdfium::Optional<int> local_count = 
+          CountPages(pKid, visited_pages);
+      if (!local_count.has_value()) {
+        return pdfium::nullopt;  // Propagate error.
+      }
+      count += local_count.value();
     } else {
       // This page is a leaf node.
       count++;
+    }
+    if (count >= CPDF_Document::kPageMaxNum) {
+      return pdfium::nullopt;  // Error: too many pages.
     }
   }
   pPages->SetNewFor<CPDF_Number>("Count", count);
@@ -346,7 +357,7 @@ int CPDF_Document::RetrievePageCount() {
 
   std::set<CPDF_Dictionary*> visited_pages;
   visited_pages.insert(pPages);
-  return CountPages(pPages, &visited_pages);
+  return CountPages(pPages, &visited_pages).value_or(0);
 }
 
 uint32_t CPDF_Document::GetUserPermissions() const {
