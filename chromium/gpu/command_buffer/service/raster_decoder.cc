@@ -2978,6 +2978,7 @@ void RasterDecoderImpl::DoReadbackARGBImagePixelsINTERNAL(
 namespace {
 struct YUVReadbackResult {
   std::unique_ptr<const SkImage::AsyncReadResult> async_result;
+  bool finished = false;
 };
 
 void OnReadYUVImagePixelsDone(
@@ -2985,6 +2986,7 @@ void OnReadYUVImagePixelsDone(
     std::unique_ptr<const SkImage::AsyncReadResult> async_result) {
   YUVReadbackResult* context = reinterpret_cast<YUVReadbackResult*>(raw_ctx);
   context->async_result = std::move(async_result);
+  context->finished = true;
 }
 }  // namespace
 
@@ -3158,6 +3160,10 @@ void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
   // asynchronous by removing this flush and implementing a query that can
   // signal back to client process.
   gr_context()->flushAndSubmit(true);
+
+  // The call above will sync up gpu and CPU, resulting in callback being run
+  // during flushAndSubmit. To prevent UAF make sure it indeed happened.
+  CHECK(yuv_result.finished);
   if (!yuv_result.async_result) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glReadbackYUVImagePixels",
                        "Failed to read pixels from SkImage");
