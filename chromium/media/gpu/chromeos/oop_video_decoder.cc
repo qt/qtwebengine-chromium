@@ -6,13 +6,16 @@
 
 #include "base/memory/ptr_util.h"
 #include "build/chromeos_buildflags.h"
-#include "chromeos/components/cdm_factory_daemon/stable_cdm_context_impl.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/gpu/macros.h"
 #include "media/mojo/common/mojo_decoder_buffer_converter.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chromeos/components/cdm_factory_daemon/stable_cdm_context_impl.h"
+#endif
 
 #if BUILDFLAG(USE_VAAPI)
 #include "media/gpu/vaapi/vaapi_wrapper.h"

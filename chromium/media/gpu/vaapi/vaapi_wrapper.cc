@@ -740,7 +740,7 @@ VADisplayState::VADisplayState()
 bool VADisplayState::Initialize() {
   base::AutoLock auto_lock(va_lock_);
 
-#if defined(USE_OZONE) && BUILDFLAG(IS_LINUX)
+#if defined(USE_OZONE) && BUILDFLAG(IS_LINUX) && !defined(TOOLKIT_QT)
   // TODO(crbug.com/1116701): add vaapi support for other Ozone platforms on
   // Linux. See comment in OzonePlatform::PlatformProperties::supports_vaapi
   // for more details. This will also require revisiting everything that's
@@ -755,8 +755,10 @@ bool VADisplayState::Initialize() {
 #if BUILDFLAG(USE_VAAPI_X11)
   libraries_initialized = libraries_initialized && IsVa_x11Initialized();
 #endif
-  if (!libraries_initialized)
+  if (!libraries_initialized) {
+    LOG(WARNING) << "libva failed to initialize";
     return false;
+  }
 
   // Manual refcounting to ensure the rest of the method is called only once.
   if (refcount_++ > 0)
@@ -802,6 +804,7 @@ absl::optional<VADisplay> GetVADisplayState(const base::ScopedFD& drm_fd) {
   switch (gl::GetGLImplementation()) {
     case gl::kGLImplementationEGLGLES2:
     case gl::kGLImplementationEGLANGLE:
+    case gl::kGLImplementationDesktopGL:
     case gl::kGLImplementationNone:
       return vaGetDisplayDRM(drm_fd.get());
     default:
