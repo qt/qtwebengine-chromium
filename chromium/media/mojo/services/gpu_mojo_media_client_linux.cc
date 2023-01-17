@@ -79,12 +79,14 @@ VideoDecoderType GetActualPlatformDecoderImplementation(
       if (gpu_preferences.gr_context_type != gpu::GrContextType::kVulkan) {
         return VideoDecoderType::kUnknown;
       }
+#if !defined(TOOLKIT_QT)
       if (!base::FeatureList::IsEnabled(features::kVulkanFromANGLE)) {
         return VideoDecoderType::kUnknown;
       }
       if (!base::FeatureList::IsEnabled(features::kDefaultANGLEVulkan)) {
         return VideoDecoderType::kUnknown;
       }
+#endif  // !defined(TOOLKIT_QT)
       // If Vulkan is active, check Vulkan info if VaapiVideoDecoder is allowed.
       if (!gpu_info.vulkan_info.has_value()) {
         return VideoDecoderType::kUnknown;

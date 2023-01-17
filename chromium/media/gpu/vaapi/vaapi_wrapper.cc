@@ -818,6 +818,7 @@ absl::optional<VADisplay> GetVADisplayState(const base::ScopedFD& drm_fd) {
   switch (gl::GetGLImplementation()) {
     case gl::kGLImplementationEGLGLES2:
     case gl::kGLImplementationEGLANGLE:
+    case gl::kGLImplementationDesktopGL:
     case gl::kGLImplementationNone:
       return vaGetDisplayDRM(drm_fd.get());
     default:

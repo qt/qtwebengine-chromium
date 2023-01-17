@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//gpu/vulkan/features.gni")
+import("//media/gpu/args.gni")
 import("//ui/base/ui_features.gni")
 
 visibility = [ "//ui/ozone/*" ]
@@ -81,8 +82,6 @@ source_set("x11") {
     "//ui/events/x",
     "//ui/gfx",
     "//ui/gfx/geometry",
-    "//ui/gfx/linux:gbm",
-    "//ui/gfx/linux:gpu_memory_buffer_support_x11",
     "//ui/gfx/x",
     "//ui/gl",
     "//ui/ozone:ozone_base",
@@ -99,7 +98,12 @@ source_set("x11") {
     ]
     deps += [ "//ui/linux:linux_ui" ]
   }
-
+  if (use_vaapi) {
+    deps += [
+      "//ui/gfx/linux:gbm",
+      "//ui/gfx/linux:gpu_memory_buffer_support_x11",
+    ]
+  }
   if (is_chromeos_ash) {
     deps += [ "//ui/base/ime/ash" ]
   } else {
