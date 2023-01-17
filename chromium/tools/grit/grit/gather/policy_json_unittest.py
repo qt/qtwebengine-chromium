@@ -5,18 +5,15 @@
 
 '''Unit tests for grit.gather.policy_json'''
 
-from __future__ import print_function
-
+import io
 import json
 import os
 import re
 import sys
-if __name__ == '__main__':
-  sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-
 import unittest
 
-from six import StringIO
+if __name__ == '__main__':
+  sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 
 from grit.gather import policy_json
 

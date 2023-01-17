@@ -5,12 +5,8 @@
 '''Support for "policy_templates.json" format used by the policy template
 generator as a source for generating ADM,ADMX,etc files.'''
 
-from __future__ import print_function
-
 import json
 import sys
-
-import six
 
 from grit.gather import skeleton_gatherer
 from grit import util
@@ -84,8 +80,8 @@ class PolicyJson(skeleton_gatherer.SkeletonGatherer):
     try:
       node = minidom.parseString(xml).childNodes[0]
     except ExpatError:
-      reason = '''Input isn't valid XML (has < & > been escaped?): ''' + string
-      six.reraise(Exception, reason, sys.exc_info()[2])
+      raise Exception('''Input isn't valid XML (has < & > been escaped?): ''' +
+                      string)
 
     for child in node.childNodes:
       if child.nodeType == minidom.Node.TEXT_NODE:
