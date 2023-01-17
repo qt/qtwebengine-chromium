@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 #include "components/browsing_data/core/clear_browsing_data_tab.h"
 #include "components/browsing_data/core/counters/browsing_data_counter.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace browsing_data {
 
@@ -76,7 +77,8 @@ bool GetDeletionPreferenceFromDataType(
     ClearBrowsingDataTab clear_browsing_data_tab,
     std::string* out_pref);
 
-BrowsingDataType GetDataTypeFromDeletionPreference(
+// Returns a BrowsingDataType if a type matching |pref_name| is found.
+absl::optional<BrowsingDataType> GetDataTypeFromDeletionPreference(
     const std::string& pref_name);
 
 }  // namespace browsing_data
