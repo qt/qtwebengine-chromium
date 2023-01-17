@@ -620,9 +620,11 @@ bool AV1VaapiVideoEncoderDelegate::SubmitSequenceParam() {
   seq_param_.seq_fields.bits.enable_superres = 0;
   seq_param_.seq_fields.bits.enable_cdef = 1;
   seq_param_.seq_fields.bits.enable_restoration = 0;
+#if VA_CHECK_VERSION(1, 17, 0)
   seq_param_.seq_fields.bits.bit_depth_minus8 = 0;
   seq_param_.seq_fields.bits.subsampling_x = 1;
   seq_param_.seq_fields.bits.subsampling_y = 1;
+#endif
 
   return vaapi_wrapper_->SubmitBuffer(VAEncSequenceParameterBufferType,
                                       sizeof(VAEncSequenceParameterBufferAV1),

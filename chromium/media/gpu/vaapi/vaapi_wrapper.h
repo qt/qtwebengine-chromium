@@ -113,8 +113,17 @@ class VADisplayStateHandle {
   // Creates a null VADisplayStateHandle.
   VADisplayStateHandle();
 
-  VADisplayStateHandle(VADisplayStateHandle&& other) = default;
-  VADisplayStateHandle& operator=(VADisplayStateHandle&& other) = default;
+  VADisplayStateHandle(VADisplayStateHandle&& other) {
+    va_display_state_ = other.va_display_state_;
+    other.va_display_state_ = nullptr;
+  }
+  VADisplayStateHandle& operator=(VADisplayStateHandle&& other) {
+    if (this != &other) {
+      va_display_state_ = other.va_display_state_;
+      other.va_display_state_ = nullptr;
+    }
+    return *this;
+  }
 
   VADisplayStateHandle(const VADisplayStateHandle&) = delete;
   VADisplayStateHandle& operator=(const VADisplayStateHandle&) = delete;
