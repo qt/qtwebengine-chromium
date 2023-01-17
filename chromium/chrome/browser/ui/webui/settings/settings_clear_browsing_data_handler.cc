@@ -259,13 +259,15 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
 
   CHECK(args_list[1].is_list());
   const base::Value::List& data_type_list = args_list[1].GetList();
+
   for (const base::Value& type : data_type_list) {
     const std::string pref_name = type.GetString();
-    BrowsingDataType data_type =
+    absl::optional<BrowsingDataType> data_type =
         browsing_data::GetDataTypeFromDeletionPreference(pref_name);
-    data_type_vector.push_back(data_type);
+    CHECK(data_type);
+    data_type_vector.push_back(*data_type);
 
-    switch (data_type) {
+    switch (*data_type) {
       case BrowsingDataType::HISTORY:
         if (prefs->GetBoolean(prefs::kAllowDeletingBrowserHistory))
           remove_mask |= chrome_browsing_data_remover::DATA_TYPE_HISTORY;
