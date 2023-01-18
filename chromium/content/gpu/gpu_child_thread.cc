@@ -26,7 +26,6 @@
 #include "content/common/process_visibility_tracker.h"
 #include "content/gpu/browser_exposed_gpu_interfaces.h"
 #include "content/gpu/gpu_service_factory.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/gpu/content_gpu_client.h"
