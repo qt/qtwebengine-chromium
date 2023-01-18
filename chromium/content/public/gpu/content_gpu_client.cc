@@ -19,4 +19,8 @@ ContentGpuClient::GetVizCompositorThreadRunner() {
   return nullptr;
 }
 
+gl::GLShareGroup* ContentGpuClient::GetInProcessGpuShareGroup() {
+  return nullptr;
+}
+
 }  // namespace content
