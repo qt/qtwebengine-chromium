@@ -27,7 +27,6 @@
 #include "content/common/process_visibility_tracker.h"
 #include "content/gpu/browser_exposed_gpu_interfaces.h"
 #include "content/gpu/gpu_service_factory.h"
-#include "content/public/browser/content_browser_client.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/gpu/content_gpu_client.h"
@@ -187,7 +186,7 @@ void GpuChildThread::OnGpuServiceConnection(viz::GpuServiceImpl* gpu_service) {
 #endif
 
 #if defined(TOOLKIT_QT)
-  gpu_channel_manager()->set_share_group(GetContentClient()->browser()->GetInProcessGpuShareGroup());
+  gpu_channel_manager()->set_share_group(GetContentClient()->gpu()->GetInProcessGpuShareGroup());
 #endif
 
   if (!IsInBrowserProcess()) {
