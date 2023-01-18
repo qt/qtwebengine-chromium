@@ -30,4 +30,8 @@ ContentGpuClient::GetGrContextOptionsProvider() {
 }
 #endif
 
+gl::GLShareGroup* ContentGpuClient::GetInProcessGpuShareGroup() {
+  return nullptr;
+}
+
 }  // namespace content
