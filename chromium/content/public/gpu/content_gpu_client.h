@@ -21,6 +21,10 @@ class SharedImageManager;
 class SyncPointManager;
 }
 
+namespace gl {
+class GLShareGroup;
+}
+
 namespace viz {
 class VizCompositorThreadRunner;
 }
@@ -61,6 +65,9 @@ class CONTENT_EXPORT ContentGpuClient {
   virtual const gpu::SharedContextState::GrContextOptionsProvider*
   GetGrContextOptionsProvider();
 #endif
+  // Allow an embedder to provide a share group reimplementation to connect renderer
+  // GL contexts with the root compositor.
+  virtual gl::GLShareGroup* GetInProcessGpuShareGroup();
 };
 
 }  // namespace content
