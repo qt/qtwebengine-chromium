@@ -2069,7 +2069,7 @@ void PeerConnection::SetSctpDataMid(const std::string& mid) {
 void PeerConnection::ResetSctpDataMid() {
   RTC_DCHECK_RUN_ON(signaling_thread());
   sctp_mid_s_.reset();
-  sctp_transport_name_s_.clear();
+  SetSctpTransportName("");
 }
 
 void PeerConnection::OnSctpDataChannelClosed(DataChannelInterface* channel) {
@@ -2279,6 +2279,12 @@ absl::optional<std::string> PeerConnection::sctp_transport_name() const {
   if (sctp_mid_s_ && transport_controller_copy_)
     return sctp_transport_name_s_;
   return absl::optional<std::string>();
+}
+
+void PeerConnection::SetSctpTransportName(std::string sctp_transport_name) {
+  RTC_DCHECK_RUN_ON(signaling_thread());
+  sctp_transport_name_s_ = std::move(sctp_transport_name);
+  ClearStatsCache();
 }
 
 absl::optional<std::string> PeerConnection::sctp_mid() const {
@@ -2503,7 +2509,7 @@ bool PeerConnection::SetupDataChannelTransport_n(const std::string& mid) {
         SafeTask(signaling_thread_safety_.flag(),
                  [this, name = dtls_transport->transport_name()] {
                    RTC_DCHECK_RUN_ON(signaling_thread());
-                   sctp_transport_name_s_ = std::move(name);
+                   SetSctpTransportName(std::move(name));
                  }));
   }
 
@@ -2880,7 +2886,7 @@ bool PeerConnection::OnTransportChanged(
           [this,
            name = std::string(dtls_transport->internal()->transport_name())] {
             RTC_DCHECK_RUN_ON(signaling_thread());
-            sctp_transport_name_s_ = std::move(name);
+            SetSctpTransportName(std::move(name));
           }));
     }
   }
