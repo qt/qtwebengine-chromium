@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
+#include "content/browser/loader/resource_timing_utils.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -31,145 +32,6 @@
 namespace content {
 
 namespace {
-
-// This logic is duplicated from Performance::PassesTimingAllowCheck. Ensure
-// that any changes are synced between both copies.
-bool PassesTimingAllowCheck(
-    const network::mojom::URLResponseHead& response_head,
-    const GURL& url,
-    const GURL& next_url,
-    const url::Origin& parent_origin,
-    bool& response_tainting_not_basic,
-    bool& tainted_origin_flag) {
-  const url::Origin response_origin = url::Origin::Create(url);
-  const bool is_same_origin = response_origin.IsSameOriginWith(parent_origin);
-  // Still same-origin and resource tainting is "basic": just return true.
-  if (!response_tainting_not_basic && is_same_origin) {
-    return true;
-  }
-
-  // Otherwise, a cross-origin response is currently (or has previously) been
-  // handled, so resource tainting is no longer "basic".
-  response_tainting_not_basic = true;
-
-  const network::mojom::TimingAllowOriginPtr& tao =
-      response_head.parsed_headers->timing_allow_origin;
-  if (!tao) {
-    return false;
-  }
-
-  if (tao->which() == network::mojom::TimingAllowOrigin::Tag::kAll)
-    return true;
-
-  // TODO(https://crbug.com/1128402): For now, this bookkeeping only exists to
-  // stay in sync with the Blink code.
-  bool is_next_resource_same_origin = true;
-  if (url != next_url) {
-    is_next_resource_same_origin =
-        response_origin.IsSameOriginWith(url::Origin::Create(next_url));
-  }
-
-  if (!is_same_origin && !is_next_resource_same_origin) {
-    tainted_origin_flag = true;
-  }
-
-  return base::Contains(tao->get_serialized_origins(),
-                        parent_origin.Serialize());
-}
-
-// This logic is duplicated from Performance::AllowsTimingRedirect(). Ensure
-// that any changes are synced between both copies.
-//
-// TODO(https://crbug.com/1201767): There is a *third* implementation of the TAO
-// check in CorsURLLoader, but it exactly implements the TAO check as defined in
-// the Fetch standard. Unfortunately, the definition in the standard always
-// allows timing details for navigations: the response tainting is always
-// considered "basic" for navigations, which means that timing details will
-// always be allowed, even for cross-origin frames. Oops.
-bool AllowTimingDetailsForParent(
-    const url::Origin& parent_origin,
-    const blink::mojom::CommonNavigationParams& common_params,
-    const blink::mojom::CommitNavigationParams& commit_params,
-    const network::mojom::URLResponseHead& response_head) {
-  bool response_tainting_not_basic = false;
-  bool tainted_origin_flag = false;
-
-  DCHECK_EQ(commit_params.redirect_infos.size(),
-            commit_params.redirect_response.size());
-  for (size_t i = 0; i < commit_params.redirect_infos.size(); ++i) {
-    const GURL& next_response_url =
-        i + 1 < commit_params.redirect_infos.size()
-            ? commit_params.redirect_infos[i + 1].new_url
-            : common_params.url;
-    if (!PassesTimingAllowCheck(
-            *commit_params.redirect_response[i],
-            commit_params.redirect_infos[i].new_url, next_response_url,
-            parent_origin, response_tainting_not_basic, tainted_origin_flag)) {
-      return false;
-    }
-  }
-
-  return PassesTimingAllowCheck(
-      response_head, common_params.url, common_params.url, parent_origin,
-      response_tainting_not_basic, tainted_origin_flag);
-}
-
-// This logic is duplicated from Performance::GenerateResourceTiming(). Ensure
-// that any changes are synced between both copies.
-blink::mojom::ResourceTimingInfoPtr GenerateResourceTiming(
-    const url::Origin& parent_origin,
-    const blink::mojom::CommonNavigationParams& common_params,
-    const blink::mojom::CommitNavigationParams& commit_params,
-    const network::mojom::URLResponseHead& response_head) {
-  // TODO(dcheng): There should be a Blink helper for populating the timing info
-  // that's exposed in //third_party/blink/common. This would allow a lot of the
-  // boilerplate to be shared.
-
-  auto timing_info = blink::mojom::ResourceTimingInfo::New();
-  const GURL& initial_url = !commit_params.original_url.is_empty()
-                                ? commit_params.original_url
-                                : common_params.url;
-  timing_info->name = initial_url.spec();
-  timing_info->start_time = common_params.navigation_start;
-  timing_info->alpn_negotiated_protocol =
-      response_head.alpn_negotiated_protocol;
-  timing_info->connection_info = net::HttpResponseInfo::ConnectionInfoToString(
-      response_head.connection_info);
-
-  // If there's no received headers end time, don't set load timing. This is the
-  // case for non-HTTP requests, requests that don't go over the wire, and
-  // certain error cases.
-  // TODO(dcheng): Is it actually possible to hit this path if
-  // `response_head.headers` is populated?
-  if (!response_head.load_timing.receive_headers_end.is_null()) {
-    timing_info->timing = response_head.load_timing;
-  }
-  // `response_end` will be populated after loading the body.
-  timing_info->context_type = blink::mojom::RequestContextType::OBJECT;
-
-  timing_info->allow_timing_details = AllowTimingDetailsForParent(
-      parent_origin, common_params, commit_params, response_head);
-
-  DCHECK_EQ(commit_params.redirect_infos.size(),
-            commit_params.redirect_response.size());
-
-  if (!commit_params.redirect_infos.empty()) {
-    timing_info->allow_redirect_details = timing_info->allow_timing_details;
-    timing_info->last_redirect_end_time =
-        commit_params.redirect_response.back()->load_timing.receive_headers_end;
-  } else {
-    timing_info->allow_redirect_details = false;
-    timing_info->last_redirect_end_time = base::TimeTicks();
-  }
-  // The final value for `encoded_body_size` and `decoded_body_size` will be
-  // populated after loading the body.
-  timing_info->did_reuse_connection = response_head.load_timing.socket_reused;
-  // Use url::Origin to handle cases like blob:https://.
-  timing_info->is_secure_transport = base::Contains(
-      url::GetSecureSchemes(), url::Origin::Create(common_params.url).scheme());
-  timing_info->allow_negative_values = false;
-  return timing_info;
-}
 
 std::string ExtractServerTimingValueIfNeeded(
     const network::mojom::URLResponseHead& response_head) {
@@ -205,9 +67,11 @@ void ObjectNavigationFallbackBodyLoader::CreateAndStart(
   // It's safe to snapshot the parent origin in the calculation here; if the
   // parent frame navigates, `render_frame_host_` will be deleted, which
   // triggers deletion of `this`, cancelling all remaining work.
-  blink::mojom::ResourceTimingInfoPtr timing_info = GenerateResourceTiming(
-      render_frame_host->GetParent()->GetLastCommittedOrigin(), common_params,
-      commit_params, response_head);
+  blink::mojom::ResourceTimingInfoPtr timing_info =
+      GenerateResourceTimingForNavigation(
+          render_frame_host->GetParent()->GetLastCommittedOrigin(),
+          common_params, commit_params, response_head,
+          blink::mojom::RequestContextType::OBJECT);
   std::string server_timing_value =
       ExtractServerTimingValueIfNeeded(response_head);
 

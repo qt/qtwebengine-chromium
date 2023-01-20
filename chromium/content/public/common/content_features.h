@@ -31,6 +31,8 @@ CONTENT_EXPORT BASE_DECLARE_FEATURE(kAvoidUnnecessaryBeforeUnloadCheckPostTask);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kAvoidUnnecessaryBeforeUnloadCheckSync);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBackgroundFetch);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBackForwardCache);
+CONTENT_EXPORT BASE_DECLARE_FEATURE(
+    kResourceTimingForCancelledNavigationInFrame);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBackForwardCacheMemoryControls);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBackForwardCacheMediaSessionService);
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kBlockInsecurePrivateNetworkRequests);
