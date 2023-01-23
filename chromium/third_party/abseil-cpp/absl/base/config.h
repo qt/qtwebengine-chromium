@@ -208,6 +208,17 @@ static_assert(ABSL_INTERNAL_INLINE_NAMESPACE_STR[0] != 'h' ||
 #define ABSL_HAVE_STD_IS_TRIVIALLY_ASSIGNABLE 1
 #endif
 
+// ABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE
+//
+// Checks whether `std::is_trivially_copyable<T>` is supported.
+//
+// Notes: Clang 15+ with libc++ supports these features, GCC hasn't been tested.
+#if defined(ABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE)
+#error ABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE cannot be directly set
+#elif defined(__clang__) && (__clang_major__ >= 15)
+#define ABSL_HAVE_STD_IS_TRIVIALLY_COPYABLE 1
+#endif
+
 // ABSL_HAVE_SOURCE_LOCATION_CURRENT
 //
 // Indicates whether `absl::SourceLocation::current()` will return useful
