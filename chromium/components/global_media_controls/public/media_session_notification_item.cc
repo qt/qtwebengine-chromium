@@ -8,9 +8,8 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "components/global_media_controls/public/constants.h"
+#include "components/media_message_center/media_notification_util.h"
 #include "components/media_message_center/media_notification_view.h"
-#include "components/url_formatter/elide_url.h"
-#include "components/url_formatter/url_formatter.h"
 #include "services/media_session/public/cpp/util.h"
 #include "services/media_session/public/mojom/media_controller.mojom.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
@@ -120,6 +119,10 @@ void MediaSessionNotificationItem::MediaSessionPositionChanged(
 
 void MediaSessionNotificationItem::UpdatePresentationRequestOrigin(
     const url::Origin& origin) {
+  if (!media_message_center::IsOriginGoodForDisplay(origin)) {
+    return;
+  }
+
   optional_presentation_request_origin_ = origin;
   if (view_ && !frozen_)
     view_->UpdateWithMediaMetadata(GetSessionMetadata());
@@ -268,9 +271,8 @@ media_session::MediaMetadata MediaSessionNotificationItem::GetSessionMetadata()
     const {
   media_session::MediaMetadata data = session_metadata_;
   if (optional_presentation_request_origin_.has_value()) {
-    data.source_title = url_formatter::FormatOriginForSecurityDisplay(
-        optional_presentation_request_origin_.value(),
-        url_formatter::SchemeDisplay::OMIT_HTTP_AND_HTTPS);
+    data.source_title = media_message_center::GetOriginNameForDisplay(
+        optional_presentation_request_origin_.value());
   }
   return data;
 }
