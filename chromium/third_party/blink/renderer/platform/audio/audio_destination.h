@@ -112,7 +112,11 @@ class PLATFORM_EXPORT AudioDestination
   virtual void Pause();
   virtual void Resume();
 
-  // Starts the destination with the AudioWorklet support.
+  // Sets the destination for worklet operation, but does not start rendering.
+  void SetWorkletTaskRunner(
+      scoped_refptr<base::SingleThreadTaskRunner> worklet_task_runner);
+
+  // Starts rendering in the AudioWorklet mode.
   void StartWithWorkletTaskRunner(
       scoped_refptr<base::SingleThreadTaskRunner> worklet_task_runner);
 
