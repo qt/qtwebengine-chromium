@@ -334,4 +334,16 @@ void RealtimeAudioDestinationHandler::StopPlatformDestination() {
   }
 }
 
-}  // namespace blink
+void RealtimeAudioDestinationHandler::PrepareTaskRunnerForWorklet() {
+  DCHECK(IsMainThread());
+  DCHECK_EQ(Context()->ContextState(), BaseAudioContext::kSuspended);
+  DCHECK(Context()->audioWorklet());
+  DCHECK(Context()->audioWorklet()->IsReady());
+
+  platform_destination_->SetWorkletTaskRunner(
+      Context()->audioWorklet()->GetMessagingProxy()
+          ->GetBackingWorkerThread()
+          ->GetTaskRunner(TaskType::kInternalMediaRealTime));
+}
+
+} // namespace blink

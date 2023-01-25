@@ -46,6 +46,7 @@ class OfflineAudioDestinationHandler final : public AudioDestinationHandler {
   void Pause() override;
   void Resume() override;
   uint32_t MaxChannelCount() const override;
+  void PrepareTaskRunnerForWorklet() override {}
 
   void RestartRendering() override;
 
