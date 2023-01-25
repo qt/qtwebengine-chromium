@@ -394,6 +394,7 @@ namespace {
 std::atomic<bool> g_getaddrinfo_discouraged{false};
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 extern "C" {
 __attribute__((visibility("default"), noinline)) int getaddrinfo(
     const char* node,
@@ -409,6 +410,7 @@ __attribute__((visibility("default"), noinline)) int getaddrinfo(
   return CALL_FUNC(getaddrinfo, node, service, hints, res);
 }
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void DiscourageGetaddrinfo() {
   g_getaddrinfo_discouraged = true;
