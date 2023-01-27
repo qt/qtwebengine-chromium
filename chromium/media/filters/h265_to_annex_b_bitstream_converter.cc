@@ -270,8 +270,8 @@ bool H265ToAnnexBBitstreamConverter::WriteParamSet(
 
   // Verify space.
   uint32_t bytes_left = *out_size;
-  if (bytes_left < kParamSetStartCodeSize ||
-      bytes_left - kParamSetStartCodeSize < size) {
+  if (bytes_left < kParamSetStartCodeSize2 ||
+      bytes_left - kParamSetStartCodeSize2 < size) {
     return false;
   }
 
