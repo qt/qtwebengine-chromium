@@ -152,8 +152,6 @@ class MEDIA_EXPORT FFmpegDemuxerStream : public DemuxerStream {
   base::TimeDelta start_time() const { return start_time_; }
   void set_start_time(base::TimeDelta time) { start_time_ = time; }
 
-  int64_t first_dts() const { return first_dts_; }
-
  private:
   friend class FFmpegDemuxerTest;
 
@@ -211,7 +209,6 @@ class MEDIA_EXPORT FFmpegDemuxerStream : public DemuxerStream {
   bool fixup_chained_ogg_;
 
   int num_discarded_packet_warnings_;
-  int64_t first_dts_;
   int64_t last_packet_pos_;
   int64_t last_packet_dts_;
 };
