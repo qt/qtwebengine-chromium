@@ -52,6 +52,8 @@ std::string ToString(const CustomScheme& cs)
     serialized += 'C';
   if (cs.flags & CustomScheme::CorsEnabled)
     serialized += 'F';
+  if (cs.flags & CustomScheme::FetchApiAllowed)
+    serialized += 'G';
 
   return serialized;
 }
@@ -95,6 +97,7 @@ private:
     case 'V': cs.flags |= CustomScheme::ViewSourceAllowed; break;
     case 'C': cs.flags |= CustomScheme::ContentSecurityPolicyIgnored; break;
     case 'F': cs.flags |= CustomScheme::CorsEnabled; break;
+    case 'G': cs.flags |= CustomScheme::FetchApiAllowed; break;
     case ';': Flush(); state = NAME; break;
     default: CHECK(false) << "Unexpected character '" << ch << "'.";
     }
