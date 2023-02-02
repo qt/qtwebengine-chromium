@@ -59,6 +59,9 @@ std::string ToString(const CustomScheme& cs) {
   if (cs.flags & CustomScheme::CorsEnabled) {
     serialized += 'F';
   }
+  if (cs.flags & CustomScheme::FetchApiAllowed) {
+    serialized += 'G';
+  }
 
   return serialized;
 }
@@ -139,6 +142,9 @@ class Parser {
         break;
       case 'F':
         cs.flags |= CustomScheme::CorsEnabled;
+        break;
+      case 'G':
+        cs.flags |= CustomScheme::FetchApiAllowed;
         break;
       case ';':
         Flush();
