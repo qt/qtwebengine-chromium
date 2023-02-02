@@ -86,6 +86,8 @@ class URLSchemesRegistry final {
     for (auto& cs : url::CustomScheme::GetSchemes()) {
       if (cs.flags & url::CustomScheme::ServiceWorkersAllowed)
         service_worker_schemes.insert(String(cs.name.c_str()));
+      if (cs.flags & url::CustomScheme::FetchApiAllowed)
+        fetch_api_schemes.insert(String(cs.name.c_str()));
     }
   }
   ~URLSchemesRegistry() = default;
