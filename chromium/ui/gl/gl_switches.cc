@@ -8,6 +8,7 @@
 
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "gpu/vulkan/buildflags.h"
 #include "ui/gl/buildflags.h"
 #include "ui/gl/gl_display_manager.h"
 
