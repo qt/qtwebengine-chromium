@@ -375,7 +375,7 @@ jumbo_component("gl") {
     deps += [ "//third_party/libsync" ]
   }
 
-  if (is_linux || is_chromeos) {
+  if ((is_linux || is_chromeos) && enable_vulkan) {
     deps += [ "//third_party/angle:angle_gpu_info_util" ]
   }
 
