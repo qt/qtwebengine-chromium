@@ -461,7 +461,7 @@ jumbo_component("gl") {
 
     deps += [ ":gl_jni_headers" ]
   }
-  if (is_linux) {
+  if (is_linux && enable_vulkan) {
     deps += [ "//third_party/angle:angle_gpu_info_util" ]
   }
 
