@@ -4,8 +4,6 @@
 
 #include "media/gpu/vaapi/vaapi_video_decoder.h"
 
-#include <vulkan/vulkan.h>
-
 #include <limits>
 #include <vector>
 
@@ -22,6 +20,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
+#include "gpu/vulkan/buildflags.h"
 #include "media/base/format_utils.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
@@ -41,6 +40,10 @@
 #include "media/gpu/vaapi/vp9_vaapi_video_decoder_delegate.h"
 #include "media/media_buildflags.h"
 #include "ui/gfx/buffer_format_util.h"
+
+#if BUILDFLAG(ENABLE_VULKAN)
+#include <vulkan/vulkan.h>
+#endif
 
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 #include "media/gpu/vaapi/h265_vaapi_video_decoder_delegate.h"
