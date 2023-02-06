@@ -2161,6 +2161,7 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
 #if BUILDFLAG(IS_OZONE_X11)
   // TODO(rivr): Set up a Vulkan swapchain so that Linux can also use
   // SkiaOutputDeviceDawn.
+#if BUILDFLAG(ENABLE_VULKAN)
   if (MayFallBackToSkiaOutputDeviceX11()) {
     output_device_ = SkiaOutputDeviceX11::Create(
         context_state_, dependency_->GetSurfaceHandle(),
@@ -2168,6 +2169,7 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
         GetDidSwapBuffersCompleteCallback());
     return !!output_device_;
   }
+#endif
   NOTREACHED();
 
 #elif BUILDFLAG(IS_WIN)
