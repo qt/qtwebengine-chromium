@@ -4,13 +4,6 @@
 
 #include "media/gpu/vaapi/vaapi_video_decoder.h"
 
-#include <vulkan/vulkan.h>
-
-// vulkan.h includes <X11/Xlib.h> when VK_USE_PLATFORM_XLIB_KHR is defined
-// after https://github.com/KhronosGroup/Vulkan-Headers/pull/534.
-// This defines some macros which break build, so undefine them here.
-#undef Status
-
 #include <limits>
 #include <vector>
 
@@ -27,6 +20,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/viz/common/resources/shared_image_format.h"
+#include "gpu/vulkan/buildflags.h"
 #include "media/base/format_utils.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
@@ -45,6 +39,15 @@
 #include "media/gpu/vaapi/vp8_vaapi_video_decoder_delegate.h"
 #include "media/gpu/vaapi/vp9_vaapi_video_decoder_delegate.h"
 #include "media/media_buildflags.h"
+
+#if BUILDFLAG(ENABLE_VULKAN)
+#include <vulkan/vulkan.h>
+
+// vulkan.h includes <X11/Xlib.h> when VK_USE_PLATFORM_XLIB_KHR is defined
+// after https://github.com/KhronosGroup/Vulkan-Headers/pull/534.
+// This defines some macros which break build, so undefine them here.
+#undef Status
+#endif
 
 #if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
 #include "media/gpu/vaapi/h265_vaapi_video_decoder_delegate.h"

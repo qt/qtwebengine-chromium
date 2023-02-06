@@ -10,6 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "gpu/vulkan/buildflags.h"
 #include "ui/gl/buildflags.h"
 #include "ui/gl/gl_display_manager.h"
 

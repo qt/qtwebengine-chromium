@@ -95,9 +95,13 @@ OzoneImageBackingFactory::CreateGpuMemoryBufferHandle(
       ui::OzonePlatform::GetInstance()
           ->GetSurfaceFactoryOzone()
           ->CreateNativePixmap(gpu::kNullSurfaceHandle,
+#if BUILDFLAG(ENABLE_VULKAN)
                                vulkan_context_provider
                                    ? vulkan_context_provider->GetDeviceQueue()
                                    : nullptr,
+#else
+                               nullptr,
+#endif
                                size, format, usage, size);
 
   if (!pixmap.get()) {
