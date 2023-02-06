@@ -5,13 +5,14 @@
 #include "ui/gl/gl_switches.h"
 
 #include "build/build_config.h"
+#include "gpu/vulkan/buildflags.h"
 #include "ui/gl/gl_display_manager.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
 #endif
 
-#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX) && BUILDFLAG(ENABLE_VULKAN)
 #include <vulkan/vulkan_core.h>
 #include "third_party/angle/src/gpu_info_util/SystemInfo.h"  // nogncheck
 #endif
@@ -288,6 +289,7 @@ bool IsDefaultANGLEVulkan() {
 #if defined(MEMORY_SANITIZER)
   return false;
 #else
+#if BUILDFLAG(ENABLE_VULKAN)
 #if BUILDFLAG(IS_ANDROID)
   // No support for devices before Q -- exit before checking feature flags
   // so that devices are not counted in finch trials.
@@ -321,9 +323,12 @@ bool IsDefaultANGLEVulkan() {
     return false;
   }
 
-#endif
+#endif  // BUILDFLAG(IS_LINUX)
   return base::FeatureList::IsEnabled(kDefaultANGLEVulkan);
 #endif  // defined(MEMORY_SANITIZER)
+#else
+  return false;
+#endif  // BUILDFLAG(ENABLE_VULKAN)
 }
 
 // Use waitable swap chain on Windows to reduce display latency.
