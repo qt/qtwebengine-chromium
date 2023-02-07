@@ -47,8 +47,10 @@
 #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
 #include "media/formats/webm/webm_crypto_helpers.h"
 #include "media/media_buildflags.h"
+#if !BUILDFLAG(USE_SYSTEM_FFMPEG)
 #include "third_party/ffmpeg/ffmpeg_features.h"
 #include "third_party/ffmpeg/libavcodec/packet.h"
+#endif  // !BUILDFLAG(USE_SYSTEM_FFMPEG)
 
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 #include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
