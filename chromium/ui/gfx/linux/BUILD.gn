@@ -45,7 +45,7 @@ source_set("gbm") {
   ]
 }
 
-if (ozone_platform_x11 && !is_qtwebengine) {
+if (ozone_platform_x11) {
   component("gpu_memory_buffer_support_x11") {
     sources = [
       "gpu_memory_buffer_support_x11.cc",
