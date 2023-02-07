@@ -342,20 +342,19 @@ scoped_refptr<gfx::NativePixmap> GbmSurfaceFactory::CreateNativePixmapForVulkan(
   DCHECK_EQ(format, display::DisplaySnapshot::PrimaryFormat());
   VkFormat vk_format = VK_FORMAT_B8G8R8A8_SRGB;
 
-  VkDmaBufImageCreateInfo dma_buf_image_create_info = {
-      /* .sType = */ static_cast<VkStructureType>(
-          VK_STRUCTURE_TYPE_DMA_BUF_IMAGE_CREATE_INFO_INTEL),
-      /* .pNext = */ nullptr,
-      /* .fd = */ vk_image_fd.release(),
-      /* .format = */ vk_format,
-      /* .extent = */
+  VkDmaBufImageCreateInfo dma_buf_image_create_info = {};
+      dma_buf_image_create_info.sType =  static_cast<VkStructureType>(
+          VK_STRUCTURE_TYPE_DMA_BUF_IMAGE_CREATE_INFO_INTEL);
+      dma_buf_image_create_info.pNext = nullptr;
+      dma_buf_image_create_info.fd = vk_image_fd.release();
+      dma_buf_image_create_info.format = vk_format,
+      dma_buf_image_create_info.extent =
       {
           /* .width = */ static_cast<uint32_t>(size.width()),
           /* .height = */ static_cast<uint32_t>(size.height()),
           /* .depth = */ 1,
-      },
-      /* .strideInBytes = */ buffer->GetPlaneStride(0),
-  };
+      };
+      dma_buf_image_create_info.strideInBytes =  buffer->GetPlaneStride(0);
 
   VkResult result =
       create_dma_buf_image_intel(vk_device, &dma_buf_image_create_info, nullptr,
