@@ -56,7 +56,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #endif  // !defined(TOOLKIT_QT)
 #include "chrome/common/chrome_switches.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/common/extensions/chrome_manifest_url_handlers.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/infobars/content/content_infobar_manager.h"
